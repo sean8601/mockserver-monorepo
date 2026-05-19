@@ -71,7 +71,6 @@
         <skipTests>false</skipTests>
         <skipAssembly>false</skipAssembly>
         <skipShade>false</skipShade>
-        <shade.install.phase>package</shade.install.phase>
         <mockserver.testOutput>verbose</mockserver.testOutput>
         <mockserver.testLogLevel>ERROR</mockserver.testLogLevel>
         <mockserver.testArgLine/>
@@ -90,14 +89,20 @@
     <modules>
         <module>mockserver-testing</module>
         <module>mockserver-client-java</module>
+        <module>mockserver-client-java-no-dependencies</module>
         <module>mockserver-core</module>
         <module>mockserver-integration-testing</module>
+        <module>mockserver-integration-testing-no-dependencies</module>
         <module>mockserver-war</module>
         <module>mockserver-proxy-war</module>
         <module>mockserver-netty</module>
+        <module>mockserver-netty-no-dependencies</module>
         <module>mockserver-junit-rule</module>
+        <module>mockserver-junit-rule-no-dependencies</module>
         <module>mockserver-junit-jupiter</module>
+        <module>mockserver-junit-jupiter-no-dependencies</module>
         <module>mockserver-spring-test-listener</module>
+        <module>mockserver-spring-test-listener-no-dependencies</module>
         <module>mockserver-examples</module>
     </modules>
 
@@ -108,12 +113,6 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-client-java</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>mockserver-client-java</artifactId>
-                <version>${project.version}</version>
-                <classifier>shaded</classifier>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
@@ -132,12 +131,6 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>mockserver-junit-jupiter</artifactId>
-                <version>${project.version}</version>
-                <classifier>shaded</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-junit-jupiter-no-dependencies</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -148,12 +141,6 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>mockserver-junit-rule</artifactId>
-                <version>${project.version}</version>
-                <classifier>shaded</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-junit-rule-no-dependencies</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -161,12 +148,6 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-netty</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>mockserver-netty</artifactId>
-                <version>${project.version}</version>
-                <classifier>shaded</classifier>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
@@ -198,12 +179,6 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>mockserver-spring-test-listener</artifactId>
-                <version>${project.version}</version>
-                <classifier>shaded</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-spring-test-listener-no-dependencies</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -222,6 +197,12 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-integration-testing</artifactId>
+                <version>${project.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>mockserver-integration-testing-no-dependencies</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>
             </dependency>
