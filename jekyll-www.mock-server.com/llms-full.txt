@@ -1995,7 +1995,7 @@ This retrieves detailed logs showing why the request didn't match any active exp
 
 ### Standalone JAR
 
-    java -jar mockserver-netty-5.15.0-shaded.jar -serverPort 1080 -logLevel INFO
+    java -jar mockserver-netty-no-dependencies-5.15.0.jar -serverPort 1080 -logLevel INFO
 
 ### npm Module
 

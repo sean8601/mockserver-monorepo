@@ -64,19 +64,30 @@ MockServer requires **Java 11+**. Java 11 is the minimum supported version to ma
 
 ##### Maven Central [![mockserver](https://img.shields.io/maven-central/v/org.mock-server/mockserver-netty.svg)](https://central.sonatype.com/search?q=g:org.mock-server)
 
-Maven Central contains the following MockServer artifacts:
+Maven Central contains the following MockServer artifacts under the `org.mock-server` groupId. Every artifact ships in two forms — `-no-dependencies` (shaded, zero transitive deps, **recommended**) and the plain form (transitive deps declared in the POM, for the rare case where you need to override versions yourself).
 
-* [mockserver-netty-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-netty-no-dependencies) - an HTTP(S) web server that mocks and records requests and responses, with all dependencies bundled and relocated — **zero transitive dependencies (recommended)**
-* [mockserver-netty](https://central.sonatype.com/artifact/org.mock-server/mockserver-netty) - as above but with transitive dependencies declared in the POM
-* [mockserver-war](https://central.sonatype.com/artifact/org.mock-server/mockserver-war) - a deployable WAR for mocking HTTP(S) responses (for any JEE web server)
-* [mockserver-proxy-war](https://central.sonatype.com/artifact/org.mock-server/mockserver-proxy-war) - a deployable WAR that records requests and responses (for any JEE web server)
-* [mockserver-maven-plugin](https://central.sonatype.com/artifact/org.mock-server/mockserver-maven-plugin) - a maven plugin to start, stop and fork MockServer using maven
-* [mockserver-client-java-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-client-java-no-dependencies) - a Java client to communicate with both the server and the proxy, with all dependencies bundled and relocated — **zero transitive dependencies (recommended)**
-* [mockserver-client-java](https://central.sonatype.com/artifact/org.mock-server/mockserver-client-java) - as above but with transitive dependencies declared in the POM
+**Server:**
+* [mockserver-netty-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-netty-no-dependencies) / [mockserver-netty](https://central.sonatype.com/artifact/org.mock-server/mockserver-netty) — Netty-based HTTP(S) mock + proxy server (embed in tests or run standalone)
+* [mockserver-war](https://central.sonatype.com/artifact/org.mock-server/mockserver-war) — deployable WAR for hosting MockServer in a servlet container (mock mode)
+* [mockserver-proxy-war](https://central.sonatype.com/artifact/org.mock-server/mockserver-proxy-war) — deployable WAR for hosting MockServer in a servlet container (proxy mode)
 
-> **Tip:** The `-no-dependencies` artifacts bundle all dependencies into a single JAR with relocated packages, so they declare zero transitive dependencies. This avoids classpath conflicts and eliminates CVE scanning noise from unused transitive dependencies. See the [Maven Central](https://www.mock-server.com/where/maven_central.html) page for all artifact variants.
+**Java client:**
+* [mockserver-client-java-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-client-java-no-dependencies) / [mockserver-client-java](https://central.sonatype.com/artifact/org.mock-server/mockserver-client-java) — Java client for the MockServer REST API
 
-In addition MockServer SNAPSHOT artifacts can also be found on [Sonatype](https://oss.sonatype.org/index.html#nexus-search;quick~org.mock-server).
+**Test framework integrations:**
+* [mockserver-junit-rule-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-junit-rule-no-dependencies) / [mockserver-junit-rule](https://central.sonatype.com/artifact/org.mock-server/mockserver-junit-rule) — JUnit 4 `@Rule`
+* [mockserver-junit-jupiter-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-junit-jupiter-no-dependencies) / [mockserver-junit-jupiter](https://central.sonatype.com/artifact/org.mock-server/mockserver-junit-jupiter) — JUnit 5 extension (`@MockServerSettings`, `@MockServerTest`)
+* [mockserver-spring-test-listener-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-spring-test-listener-no-dependencies) / [mockserver-spring-test-listener](https://central.sonatype.com/artifact/org.mock-server/mockserver-spring-test-listener) — Spring `TestExecutionListener`
+* [mockserver-integration-testing-no-dependencies](https://central.sonatype.com/artifact/org.mock-server/mockserver-integration-testing-no-dependencies) / [mockserver-integration-testing](https://central.sonatype.com/artifact/org.mock-server/mockserver-integration-testing) — shared integration-test helpers
+
+**Build-tool plugin:**
+* [mockserver-maven-plugin](https://central.sonatype.com/artifact/org.mock-server/mockserver-maven-plugin) — Maven plugin to start, stop, and fork MockServer during the build lifecycle
+
+> **Tip:** The `-no-dependencies` artifacts bundle all dependencies into a single JAR with packages relocated under `shaded_package.*`, so they declare zero transitive dependencies. This avoids classpath conflicts with versions of Netty / Jackson / Guava / Bouncy Castle that your project already uses, and it removes the noise from CVE scanners flagging unused transitive dependencies. See the [Maven Central](https://www.mock-server.com/where/maven_central.html) page for full coordinates, snapshot repository setup, and the executable `jar-with-dependencies` form for command-line use.
+
+> **6.0.0 breaking change:** the `<classifier>shaded</classifier>` form has been removed. Replace `mockserver-netty:<version>:shaded` with `mockserver-netty-no-dependencies:<version>` (and likewise for the other shaded artifacts). The replacement produces the same shaded bytes; only the coordinates change.
+
+SNAPSHOT builds are published to the Sonatype Central Portal snapshot repository at <https://central.sonatype.com/repository/maven-snapshots/org/mock-server/>.
 
 ##### Node Module & Grunt Plugin
 

@@ -563,11 +563,11 @@ i.e. mockserver -logLevel INFO -serverPort <span class="numeric_literal">1080,10
                                  Logger levels: FINEST, FINE, INFO, WARNING,
                                  SEVERE or OFF. If not specified default is INFO
 
-i.e. java -jar ./mockserver-netty-{{ site.mockserver_version }}-shaded.jar -serverPort <span class="numeric_literal">1080</span> -proxyRemotePort <span class="numeric_literal">80</span> -proxyRemoteHost www.mock-server.com</code></pre>
+i.e. java -jar ./mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar -serverPort <span class="numeric_literal">1080</span> -proxyRemotePort <span class="numeric_literal">80</span> -proxyRemoteHost www.mock-server.com</code></pre>
 
 <p>For example:</p>
 
-<pre><code class="code">java -jar ~/Downloads/mockserver-netty-{{ site.mockserver_version }}-shaded.jar -serverPort <span class="numeric_literal">1080,1081</span> -logLevel INFO</code></pre>
+<pre><code class="code">java -jar ~/Downloads/mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar -serverPort <span class="numeric_literal">1080,1081</span> -logLevel INFO</code></pre>
 
 <p>All interactions with the MockServer are logged including setting up expectations, matching expectations, clearing expectations and verifying requests.  This log information can be particularly helpful when trying to debug why a test is failing or expectations are not being matched.</p>
 
@@ -648,8 +648,8 @@ cd mockserver-monorepo/mockserver</code></pre>
 
 <pre><code class="code">./mvnw clean package</code></pre>
 
-<p>This will produce a jar file under the target directory called, as follows:</p>
+<p>This will produce an executable jar file under the target directory called, as follows:</p>
 
-<pre><code class="code">mockserver-netty/target/mockserver-netty-{{ site.mockserver_version }}-shaded.jar</code></pre>
+<pre><code class="code">mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar</code></pre>
 
 <p>Run MockServer then using the executable jar as per the instruction above in <a href="#running_from_command_line">Running From The Command Line</a></p>

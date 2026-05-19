@@ -116,7 +116,7 @@ else
   # General find-and-replace across docs (excluding changelog, target, etc.)
   OLD_PAT=$(escape_sed "$OLD_VERSION"); NEW_REP=$(escape_sed "$RELEASE_VERSION")
   OLD_API_PAT=$(escape_sed "$OLD_API_VERSION"); NEW_API=$(escape_sed "$API_VERSION")
-  for ext in "*.html" "*.md" "*.yaml" "*.yml" "*.json"; do
+  for ext in "*.html" "*.md" "*.yaml" "*.yml" "*.json" "*.txt"; do
     find "$REPO_ROOT" -name "$ext" \
       -not -path "*/node_modules/*" -not -path "*/.git/*" \
       -not -path "*/target/*" -not -path "*/helm/charts/*" \

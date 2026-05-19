@@ -7,17 +7,23 @@ MockServer is organized as a monorepo containing the Java server, client librari
 ```
 mockserver-monorepo/
 ├── mockserver/                     # Java server (multi-module Maven project)
-│   ├── mockserver-core/            # Core domain model, matching, serialisation
+│   ├── mockserver-core/            # Core domain model, matching, serialisation (internal)
+│   ├── mockserver-testing/         # Shared test utilities (internal, scope=test)
 │   ├── mockserver-client-java/     # Java client library
+│   ├── mockserver-client-java-no-dependencies/        # ↑ shaded, zero transitive deps
 │   ├── mockserver-netty/           # Netty-based HTTP server (main artifact)
+│   ├── mockserver-netty-no-dependencies/              # ↑ shaded, zero transitive deps
 │   ├── mockserver-war/             # WAR-packaged mock server
 │   ├── mockserver-proxy-war/       # WAR-packaged proxy
 │   ├── mockserver-junit-rule/      # JUnit 4 integration
+│   ├── mockserver-junit-rule-no-dependencies/         # ↑ shaded, zero transitive deps
 │   ├── mockserver-junit-jupiter/   # JUnit 5 integration
-│   ├── mockserver-spring-test-listener/ # Spring test integration
-│   ├── mockserver-testing/         # Shared test utilities
-│   ├── mockserver-integration-testing/ # Integration test infrastructure
-│   └── mockserver-examples/        # Usage examples
+│   ├── mockserver-junit-jupiter-no-dependencies/      # ↑ shaded, zero transitive deps
+│   ├── mockserver-spring-test-listener/               # Spring test integration
+│   ├── mockserver-spring-test-listener-no-dependencies/ # ↑ shaded, zero transitive deps
+│   ├── mockserver-integration-testing/                # Integration-test helpers
+│   ├── mockserver-integration-testing-no-dependencies/# ↑ shaded, zero transitive deps
+│   └── mockserver-examples/        # Usage examples (not published for consumption)
 ├── mockserver-ui/                  # React dashboard UI (Vite + TypeScript)
 ├── mockserver-node/                # Node.js MockServer launcher (npm)
 ├── mockserver-client-node/         # Node.js/browser client library (npm)
@@ -47,6 +53,27 @@ mockserver-monorepo/
 | `mockserver-performance-test/` | Python (Locust) | pip |
 
 The rest of this document focuses on the Java server architecture within `mockserver/`.
+
+## Published Maven Artifacts
+
+Everything published to Maven Central under `org.mock-server` is produced by a module under `mockserver/`, plus the standalone `mockserver-maven-plugin/` at the repo root. Each "shaded" module is a real sibling Maven module that depends on its source module and applies the maven-shade-plugin to produce a zero-transitive-deps jar.
+
+| Source module | Published artifactId(s) | Notes |
+|---------------|-------------------------|-------|
+| `mockserver-core/` | `mockserver-core` | Transitive dependency of every other Java module; not consumed directly. |
+| `mockserver-testing/` | `mockserver-testing` | Internal test scope; transitive only. |
+| `mockserver-client-java/` | `mockserver-client-java` + `mockserver-client-java-no-dependencies` | Java client for the REST API. |
+| `mockserver-netty/` | `mockserver-netty` + `mockserver-netty-no-dependencies` + `mockserver-netty:jar-with-dependencies` | Main HTTP server. The `jar-with-dependencies` classifier is the executable uber-jar (assembly plugin, not shade). |
+| `mockserver-war/` | `mockserver-war` | Servlet WAR (mock mode). |
+| `mockserver-proxy-war/` | `mockserver-proxy-war` | Servlet WAR (proxy mode). |
+| `mockserver-junit-rule/` | `mockserver-junit-rule` + `mockserver-junit-rule-no-dependencies` | JUnit 4 `@Rule`. |
+| `mockserver-junit-jupiter/` | `mockserver-junit-jupiter` + `mockserver-junit-jupiter-no-dependencies` | JUnit 5 extension. |
+| `mockserver-spring-test-listener/` | `mockserver-spring-test-listener` + `mockserver-spring-test-listener-no-dependencies` | Spring `TestExecutionListener`. |
+| `mockserver-integration-testing/` | `mockserver-integration-testing` + `mockserver-integration-testing-no-dependencies` | Integration-test helpers. |
+| `mockserver-examples/` | `mockserver-examples` | Published, but documents usage rather than being a consumer dependency. |
+| `mockserver-maven-plugin/` (repo root, not under `mockserver/`) | `mockserver-maven-plugin` | Maven plugin (`pre-integration-test` / `post-integration-test` hooks). Lives at the monorepo root and is NOT a child module of `mockserver/pom.xml`; it is built and deployed by the dedicated `:java: Maven Plugin` step in `.buildkite/release-pipeline.yml`, separately from the main reactor. |
+
+The `*-no-dependencies` form is a real sibling module (e.g. `mockserver/mockserver-netty-no-dependencies/pom.xml`) — *not* a classifier on the source artifactId. Each sibling module is a thin pom that pulls in the source module as its single compile dependency, then runs `maven-shade-plugin` with `<shadedArtifactAttached>false</shadedArtifactAttached>` so the shaded jar IS the module's main artifact. This structure lets `central-publishing-maven-plugin` upload everything to Maven Central via the standard bundle flow under each artifact's natural coordinates. Before 6.0.0, the shaded jars were renamed at deploy time via `gpg:sign-and-deploy-file` and published under both `<classifier>shaded</classifier>` and the `-no-dependencies` artifactId; that dual-publish path was removed when the deploy mechanism switched to Sonatype Central Portal in 6.0.0.
 
 ## High-Level Architecture
 

@@ -239,19 +239,17 @@ Integration tests use real embedded servers rather than mocks:
 | Embedded Tomcat 9.0.x | `mockserver-war`, `mockserver-proxy-war` | WAR deployment testing |
 | MockServer (Netty) | `mockserver-netty` | Full server lifecycle testing |
 
-### Shaded JAR Integration Tests
+### Downstream Dependency Integration Tests
 
-`mockserver-netty/src/integration-tests/` contains Maven Invoker and Gradle-based tests that verify the shaded JARs work correctly as dependencies:
+`mockserver/mockserver-netty/src/integration-tests/` contains Maven Invoker and Gradle-based tests that verify the published `mockserver-netty` artifacts work correctly when consumed by a downstream project:
 
 | Directory | Purpose |
 |-----------|---------|
-| `maven-netty-jar-with-dependencies-dependency/` | Tests fat JAR as Maven dependency |
-| `maven-netty-no-dependencies-dependency/` | Tests standard JAR as Maven dependency |
-| `maven-netty-shaded-dependency/` | Tests shaded JAR as Maven dependency |
-| `gradle-netty-shaded-dependencies/` | Tests Gradle dependency resolution (shaded) |
-| `gradle-netty-no-dependencies-dependencies/` | Tests Gradle dependency resolution (no-deps) |
+| `maven-netty-jar-with-dependencies-dependency/` | Tests the `:jar-with-dependencies` classifier as a Maven dependency |
+| `maven-netty-no-dependencies-dependency/` | Tests `mockserver-netty-no-dependencies` as a Maven dependency |
+| `gradle-netty-no-dependencies-dependencies/` | Tests `mockserver-netty-no-dependencies` from Gradle |
 
-These are run by `maven-invoker-plugin` 3.10.1 (Maven variants, `parallelThreads=2`) and `exec-maven-plugin` calling `gradle_integration_tests.sh` (Gradle variants) during the `integration-test`/`install` phases.
+These are run by `maven-invoker-plugin` (Maven variants, `parallelThreads=2`) and `exec-maven-plugin` calling `gradle_integration_tests.sh` (Gradle variant) during the `integration-test`/`install` phases. The legacy `maven-netty-shaded-dependency` and `gradle-netty-shaded-dependencies` directories were removed in 6.0.0 along with the `<classifier>shaded</classifier>` artifact form.
 
 ## Container Integration Tests
 
