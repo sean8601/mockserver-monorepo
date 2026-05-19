@@ -6,8 +6,16 @@ SHADED_DIR="mockserver/mockserver-netty-no-dependencies/target"
 
 echo "--- :buildkite: Downloading shaded JAR artifact"
 if command -v buildkite-agent &>/dev/null && buildkite-agent artifact download "$SHADED_DIR/mockserver-netty-no-dependencies-*.jar" . 2>/dev/null; then
-  SHADED_JAR=$(ls "$SHADED_DIR"/mockserver-netty-no-dependencies-*.jar 2>/dev/null \
-    | grep -Ev -- '-(sources|javadoc)\.jar$|/original-mockserver-netty-no-dependencies-' | head -1)
+  shopt -s nullglob
+  SHADED_JAR=""
+  for f in "$SHADED_DIR"/mockserver-netty-no-dependencies-*.jar; do
+    case "$(basename "$f")" in
+      *-sources.jar|*-javadoc.jar|original-*) continue ;;
+    esac
+    SHADED_JAR="$f"
+    break
+  done
+  shopt -u nullglob
   if [ -z "$SHADED_JAR" ]; then
     echo "Error: shaded JAR not found after artifact download"
     exit 1

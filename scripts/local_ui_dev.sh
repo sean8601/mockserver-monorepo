@@ -124,10 +124,21 @@ echo "→ Checking port availability..."
 check_port $MOCKSERVER_PORT "MockServer"
 check_port $UI_PORT "UI Dev Server"
 
-MOCKSERVER_JAR_GLOB="$REPO_ROOT/mockserver/mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-*.jar"
-ms_jar_present() {
-  ls $MOCKSERVER_JAR_GLOB 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.jar$|/original-mockserver-netty-no-dependencies-' | grep -q .
+ms_find_jar() {
+  shopt -s nullglob
+  local f
+  for f in "$REPO_ROOT"/mockserver/mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-*.jar; do
+    case "$(basename "$f")" in
+      *-sources.jar|*-javadoc.jar|original-*) continue ;;
+    esac
+    shopt -u nullglob
+    echo "$f"
+    return 0
+  done
+  shopt -u nullglob
+  return 1
 }
+ms_jar_present() { ms_find_jar >/dev/null; }
 
 if [ "$REBUILD" = true ] || ! ms_jar_present; then
   if [ "$REBUILD" = true ]; then
@@ -160,7 +171,7 @@ else
 fi
 
 MOCKSERVER_LOG="$REPO_ROOT/mockserver-dev.log"
-MOCKSERVER_JAR=$(ls $MOCKSERVER_JAR_GLOB 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.jar$|/original-mockserver-netty-no-dependencies-' | head -1)
+MOCKSERVER_JAR=$(ms_find_jar) || { echo "ERROR: MockServer JAR not found after build"; exit 1; }
 echo "→ Starting MockServer on port $MOCKSERVER_PORT..."
 java -jar "$MOCKSERVER_JAR" -serverPort $MOCKSERVER_PORT -logLevel INFO > "$MOCKSERVER_LOG" 2>&1 &
 MOCKSERVER_PID=$!
