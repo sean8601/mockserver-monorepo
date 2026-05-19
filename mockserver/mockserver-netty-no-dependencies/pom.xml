@@ -19,6 +19,25 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-netty</artifactId>
         </dependency>
+
+        <!-- test scope only: junit drives ExtendedNoDependenciesJarMockingIntegrationTest.
+             The smoke test deliberately uses only the JDK (java.net.http.HttpClient)
+             and ProcessBuilder so it cannot accidentally load mockserver-* classes
+             from both the unshaded mockserver-core and this module's shaded jar at
+             once — see NoDependenciesJarRunner javadoc.
+             mockserver-testing is included so the parent pom's failsafe listener
+             (org.mockserver.test.PrintOutCurrentTestRunListener) is resolvable. It
+             pulls in only junit + hamcrest, no mockserver-core, so no conflict. -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>mockserver-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

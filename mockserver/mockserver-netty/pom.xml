@@ -165,8 +165,12 @@
                 <configuration>
                     <skipInvocation>${skipTests}</skipInvocation>
                     <debug>false</debug>
+                    <!-- only stream the invoked child Maven build log on
+                         failure (invoker 3.3+) — passing builds stay quiet so
+                         the CI log is not flooded with per-invoker child output. -->
                     <streamLogs>false</streamLogs>
-                    <showErrors>false</showErrors>
+                    <streamLogsOnFailures>true</streamLogsOnFailures>
+                    <showErrors>true</showErrors>
                     <showVersion>true</showVersion>
                     <disableReports>true</disableReports>
                     <parallelThreads>${maven-invoker-parallel-threads}</parallelThreads>
