@@ -107,12 +107,15 @@ trigger_if_changed() {
   fi
 }
 
-trigger_if_changed "^(mockserver/|mockserver-ui/)" "mockserver-java" "MockServer Java"
+# Match changes under mockserver/ excluding the maven-plugin submodule (which has its own pipeline)
+if printf '%s\n' "$CHANGED_FILES" | grep -E -- "^(mockserver/|mockserver-ui/)" | grep -qvE -- "^mockserver/mockserver-maven-plugin/"; then
+  trigger_if_changed "^(mockserver/|mockserver-ui/)" "mockserver-java" "MockServer Java"
+fi
 trigger_if_changed "^mockserver-ui/" "mockserver-ui" "MockServer UI"
 trigger_if_changed "^(mockserver-node/|mockserver-client-node/)" "mockserver-node" "MockServer Node"
 trigger_if_changed "^mockserver-client-python/" "mockserver-python" "MockServer Python"
 trigger_if_changed "^mockserver-client-ruby/" "mockserver-ruby" "MockServer Ruby"
-trigger_if_changed "^mockserver-maven-plugin/" "mockserver-maven-plugin" "MockServer Maven Plugin"
+trigger_if_changed "^mockserver/mockserver-maven-plugin/" "mockserver-maven-plugin" "MockServer Maven Plugin"
 trigger_if_changed "^mockserver-performance-test/" "mockserver-performance-test" "MockServer Performance Test"
 trigger_if_changed "^container_integration_tests/" "mockserver-container-tests" "MockServer Container Tests"
 trigger_if_changed "^jekyll-www.mock-server.com/" "mockserver-website" "MockServer Website"

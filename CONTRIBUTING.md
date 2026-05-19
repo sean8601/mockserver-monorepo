@@ -16,9 +16,9 @@ This is a monorepo containing several projects:
 
 | Directory | Language | Description |
 |-----------|----------|-------------|
-| `mockserver/` | Java | Main MockServer (Netty HTTP server, 11 Maven modules) |
+| `mockserver/` | Java | Main MockServer (Netty HTTP server + Maven plugin sibling module) |
+| `mockserver/mockserver-maven-plugin/` | Java | Maven plugin for starting/stopping MockServer (separate build, inherits version from parent) |
 | `mockserver-ui/` | TypeScript | Dashboard React SPA |
-| `mockserver-maven-plugin/` | Java | Maven plugin for starting/stopping MockServer |
 | `mockserver-node/` | JavaScript | Node.js launcher |
 | `mockserver-client-node/` | JavaScript | Node.js/browser API client |
 | `mockserver-client-python/` | Python | Python API client |
@@ -66,7 +66,7 @@ bundle exec rspec
 
 ```bash
 cd mockserver && ./mvnw clean install -DskipTests
-./mvnw -f ../mockserver-maven-plugin/pom.xml clean verify
+./mvnw -f mockserver-maven-plugin/pom.xml clean verify
 ```
 
 ## Contributions

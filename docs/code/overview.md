@@ -29,7 +29,6 @@ mockserver-monorepo/
 ├── mockserver-client-node/         # Node.js/browser client library (npm)
 ├── mockserver-client-python/       # Python client library (PyPI)
 ├── mockserver-client-ruby/         # Ruby client library (RubyGems)
-├── mockserver-maven-plugin/        # Maven plugin for starting/stopping MockServer
 ├── mockserver-performance-test/    # Locust-based performance tests
 ├── container_integration_tests/    # Docker & Helm integration tests
 ├── jekyll-www.mock-server.com/     # Jekyll documentation website
@@ -49,14 +48,14 @@ mockserver-monorepo/
 | `mockserver-client-node/` | TypeScript | npm |
 | `mockserver-client-python/` | Python 3.9+ | pip/pytest |
 | `mockserver-client-ruby/` | Ruby 3.0+ | Bundler/RSpec |
-| `mockserver-maven-plugin/` | Java 11+ | Maven |
+| `mockserver/mockserver-maven-plugin/` | Java 11+ | Maven |
 | `mockserver-performance-test/` | Python (Locust) | pip |
 
 The rest of this document focuses on the Java server architecture within `mockserver/`.
 
 ## Published Maven Artifacts
 
-Everything published to Maven Central under `org.mock-server` is produced by a module under `mockserver/`, plus the standalone `mockserver-maven-plugin/` at the repo root. Each "shaded" module is a real sibling Maven module that depends on its source module and applies the maven-shade-plugin to produce a zero-transitive-deps jar.
+Everything published to Maven Central under `org.mock-server` is produced by a module under `mockserver/`, including the `mockserver-maven-plugin/` sibling. Each "shaded" module is a real sibling Maven module that depends on its source module and applies the maven-shade-plugin to produce a zero-transitive-deps jar.
 
 | Source module | Published artifactId(s) | Notes |
 |---------------|-------------------------|-------|
@@ -71,7 +70,7 @@ Everything published to Maven Central under `org.mock-server` is produced by a m
 | `mockserver-spring-test-listener/` | `mockserver-spring-test-listener` + `mockserver-spring-test-listener-no-dependencies` | Spring `TestExecutionListener`. |
 | `mockserver-integration-testing/` | `mockserver-integration-testing` + `mockserver-integration-testing-no-dependencies` | Integration-test helpers. |
 | `mockserver-examples/` | `mockserver-examples` | Published, but documents usage rather than being a consumer dependency. |
-| `mockserver-maven-plugin/` (repo root, not under `mockserver/`) | `mockserver-maven-plugin` | Maven plugin (`pre-integration-test` / `post-integration-test` hooks). Lives at the monorepo root and is NOT a child module of `mockserver/pom.xml`; it is built and deployed by the dedicated `:java: Maven Plugin` step in `.buildkite/release-pipeline.yml`, separately from the main reactor. |
+| `mockserver/mockserver-maven-plugin/` | `mockserver-maven-plugin` | Maven plugin (`pre-integration-test` / `post-integration-test` hooks). Inherits its version from `mockserver/pom.xml` and uses `${project.version}` for internal mockserver-* dependency refs, but is NOT a child module of `mockserver/pom.xml` — built and deployed by the dedicated `:java: Maven Plugin` step in `.buildkite/release-pipeline.yml`, separately from the main reactor. |
 
 The `*-no-dependencies` form is a real sibling module (e.g. `mockserver/mockserver-netty-no-dependencies/pom.xml`) — *not* a classifier on the source artifactId. Each sibling module is a thin pom that pulls in the source module as its single compile dependency, then runs `maven-shade-plugin` with `<shadedArtifactAttached>false</shadedArtifactAttached>` so the shaded jar IS the module's main artifact. This structure lets `central-publishing-maven-plugin` upload everything to Maven Central via the standard bundle flow under each artifact's natural coordinates. Before 6.0.0, the shaded jars were renamed at deploy time via `gpg:sign-and-deploy-file` and published under both `<classifier>shaded</classifier>` and the `-no-dependencies` artifactId; that dual-publish path was removed when the deploy mechanism switched to Sonatype Central Portal in 6.0.0.
 

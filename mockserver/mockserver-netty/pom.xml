@@ -211,30 +211,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- shaded dependency gradle integration tests -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.3</version>
-                <inherited>false</inherited>
-                <configuration>
-                    <skip>${skipTests}</skip>
-                    <workingDirectory>${basedir}</workingDirectory>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>gradle_integration_tests</id>
-                        <phase>install</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>src/integration-tests/gradle_integration_tests.sh</executable>
-                            <arguments>${project.version}</arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 

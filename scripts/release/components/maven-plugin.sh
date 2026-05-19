@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Release the mockserver-maven-plugin to Maven Central.
 #
-# Flow:
-#   1. Bump plugin dependency on core mockserver from SNAPSHOT -> release version.
-#   2. Build core mockserver locally (so the plugin can resolve it).
-#   3. Verify the plugin builds.
-#   4. Bump plugin's own version from SNAPSHOT -> release version, commit, tag, push.
-#   5. mvn deploy -P release (GPG sign + Sonatype upload).
-#   6. Bump plugin to next SNAPSHOT, commit, push.
+# The plugin inherits its version from the mockserver parent pom and uses
+# ${project.version} for its internal mockserver-* dependency references, so
+# version bumps are handled by the main maven-central release component. This
+# script just builds the core mockserver (so the plugin can resolve it), then
+# tags and deploys the plugin.
 #
-# Dry-run: do steps 1-3 (build + verify), skip steps 4-6.
+# Dry-run: build + verify only; skip tag + deploy.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,34 +24,11 @@ done
 
 require_cmd docker
 require_cmd git
-require_cmd python3
 require_release_inputs
 skip_unless_release_type "maven-plugin" full,post-maven
 
 log_step "Release mockserver-maven-plugin $RELEASE_VERSION (dry-run=$DRY_RUN)"
 sync_to_origin_master
-
-CURRENT_SNAPSHOT="${RELEASE_VERSION}-SNAPSHOT"
-PLUGIN_DIR="$REPO_ROOT/mockserver-maven-plugin"
-PLUGIN_POM="$PLUGIN_DIR/pom.xml"
-
-log_info "Bump plugin dependency: $CURRENT_SNAPSHOT -> $RELEASE_VERSION"
-if is_dry_run; then
-  log_dry "would: sed -i ... pom.xml dependency version"
-else
-  python3 - "$CURRENT_SNAPSHOT" "$RELEASE_VERSION" "$PLUGIN_POM" << 'PYEOF'
-import sys, pathlib
-old, new, path = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
-text = path.read_text()
-old_tag = f"<version>{old}</version>"
-new_tag = f"<version>{new}</version>"
-if old_tag not in text:
-    print(f"WARN: {old_tag} not in {path}", file=sys.stderr)
-else:
-    path.write_text(text.replace(old_tag, new_tag))
-    print(f"  updated {path}: {old} -> {new}")
-PYEOF
-fi
 
 log_info "Build core MockServer (in Docker)"
 in_maven -w /build/mockserver \
@@ -61,26 +36,18 @@ in_maven -w /build/mockserver \
 
 if is_dry_run; then
   log_info "Verify maven-plugin (in Docker, tests skipped in dry-run)"
-  in_maven -w /build/mockserver-maven-plugin -- mvn clean install -DskipTests
+  in_maven -w /build/mockserver/mockserver-maven-plugin -- mvn clean install -DskipTests
 else
   log_info "Verify maven-plugin (in Docker)"
-  in_maven -w /build/mockserver-maven-plugin -- mvn clean verify
+  in_maven -w /build/mockserver/mockserver-maven-plugin -- mvn clean verify
 fi
 
 if is_dry_run; then
-  log_dry "skip: commit, tag, deploy, snapshot bump, push"
+  log_dry "skip: tag, deploy"
   log_info "maven-plugin dry-run complete"
   exit 0
 fi
 
-git_commit_and_push "release: maven-plugin dependencies $RELEASE_VERSION" \
-  "mockserver-maven-plugin/pom.xml"
-
-log_info "Bump maven-plugin version: $CURRENT_SNAPSHOT -> $RELEASE_VERSION"
-update_pom_versions "$PLUGIN_DIR" "$CURRENT_SNAPSHOT" "$RELEASE_VERSION"
-
-git_commit_and_push "release: set maven-plugin version $RELEASE_VERSION" \
-  "mockserver-maven-plugin/pom.xml"
 git_tag_and_push "maven-plugin-$RELEASE_VERSION"
 
 log_info "Deploy maven-plugin to Sonatype (GPG-sign in container)"
@@ -90,7 +57,7 @@ SONATYPE_USERNAME=$(load_secret "mockserver-build/sonatype" "username")
 SONATYPE_PASSWORD=$(load_secret "mockserver-build/sonatype" "password")
 
 in_docker "$MAVEN_IMAGE" \
-  -w /build/mockserver-maven-plugin \
+  -w /build/mockserver/mockserver-maven-plugin \
   -v mockserver-m2-cache:/root/.m2 \
   -e "GPG_KEY_B64=$GPG_KEY_B64" \
   -e "GPG_PASSPHRASE=$GPG_PASSPHRASE" \
@@ -125,10 +92,5 @@ SETTINGS
       -Dgpg.useagent=false \
       --settings /tmp/settings.xml
   '
-
-log_info "Bump maven-plugin to next SNAPSHOT $NEXT_VERSION"
-update_pom_versions "$PLUGIN_DIR" "$RELEASE_VERSION" "$NEXT_VERSION"
-git_commit_and_push "release: maven-plugin next $NEXT_VERSION" \
-  "mockserver-maven-plugin/pom.xml"
 
 log_info "maven-plugin release complete"

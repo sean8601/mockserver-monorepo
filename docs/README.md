@@ -86,7 +86,6 @@ mockserver-monorepo/
 ├── mockserver-client-node/         # Node.js/browser client library (npm)
 ├── mockserver-client-python/       # Python client library (PyPI)
 ├── mockserver-client-ruby/         # Ruby client library (RubyGems)
-├── mockserver-maven-plugin/        # Maven plugin for starting/stopping MockServer
 ├── mockserver-performance-test/    # Locust-based performance tests
 ├── container_integration_tests/    # Docker & Helm integration tests
 ├── jekyll-www.mock-server.com/     # Jekyll documentation website

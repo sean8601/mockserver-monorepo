@@ -35,7 +35,7 @@ Dependabot monitors **8 package ecosystems** across the monorepo for outdated an
 | Ecosystem | Directory | PR Limit |
 |-----------|-----------|:--------:|
 | Maven | `/mockserver` | 10 |
-| Maven | `/mockserver-maven-plugin` | 5 |
+| Maven | `/mockserver/mockserver-maven-plugin` | 5 |
 | npm | `/mockserver-ui` | 5 |
 | npm | `/mockserver-client-node` | 5 |
 | npm | `/mockserver-node` | 5 |

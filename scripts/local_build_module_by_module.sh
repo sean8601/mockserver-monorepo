@@ -26,9 +26,9 @@ for module in $MODULE_LIST; do
     (runSubModule "$module");
 done
 
-cd ..
-
 if [[ -d mockserver-maven-plugin ]]; then
     printModule "mockserver-maven-plugin"
     (cd mockserver-maven-plugin && ./mvnw install -Dmaven-invoker-parallel-threads=2 -Djava.security.egd=file:/dev/./urandom)
 fi
+
+cd ..

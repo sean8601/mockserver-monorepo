@@ -14,6 +14,10 @@
     <description>MockServer Netty with all dependencies shaded</description>
     <url>https://www.mock-server.com</url>
 
+    <properties>
+        <maven-invoker-parallel-threads>2</maven-invoker-parallel-threads>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
@@ -280,6 +284,83 @@
                     <failOnError>false</failOnError>
                     <doclint>none</doclint>
                 </configuration>
+            </plugin>
+            <!-- shaded dependency maven integration tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-invoker-plugin</artifactId>
+                <version>3.10.1</version>
+                <configuration>
+                    <skipInvocation>${skipTests}</skipInvocation>
+                    <debug>false</debug>
+                    <!-- only stream the invoked child Maven build log on
+                         failure (invoker 3.3+) — passing builds stay quiet so
+                         the CI log is not flooded with per-invoker child output. -->
+                    <streamLogs>false</streamLogs>
+                    <streamLogsOnFailures>true</streamLogsOnFailures>
+                    <showErrors>true</showErrors>
+                    <showVersion>true</showVersion>
+                    <disableReports>true</disableReports>
+                    <parallelThreads>${maven-invoker-parallel-threads}</parallelThreads>
+                    <projectsDirectory>${basedir}/src/integration-tests/</projectsDirectory>
+                    <cloneProjectsTo>${project.build.directory}/integration-tests/</cloneProjectsTo>
+                    <reportsDirectory>${project.build.directory}</reportsDirectory>
+                    <cloneClean>true</cloneClean>
+                    <ignoreFailures>false</ignoreFailures>
+                    <addTestClassPath>true</addTestClassPath>
+                    <properties>
+                        <property>
+                            <name>mockserver.version</name>
+                            <value>${project.version}</value>
+                        </property>
+                    </properties>
+                    <environmentVariables>
+                        <mockserver.logLevel>DEBUG</mockserver.logLevel>
+                    </environmentVariables>
+                    <filterProperties>
+                        <mockserver.version>${project.version}</mockserver.version>
+                    </filterProperties>
+                    <settingsFile>src/integration-tests/settings.xml</settingsFile>
+                    <pomIncludes>
+                        <pomInclude>maven-**/pom.xml</pomInclude>
+                    </pomIncludes>
+                    <goals>
+                        <goal>test</goal>
+                    </goals>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>integration-test</id>
+                        <goals>
+                            <goal>install</goal>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- shaded dependency gradle integration tests -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <inherited>false</inherited>
+                <configuration>
+                    <skip>${skipTests}</skip>
+                    <workingDirectory>${basedir}</workingDirectory>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>gradle_integration_tests</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>src/integration-tests/gradle_integration_tests.sh</executable>
+                            <arguments>${project.version}</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

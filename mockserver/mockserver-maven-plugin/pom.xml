@@ -3,14 +3,13 @@
     <parent>
         <groupId>org.mock-server</groupId>
         <artifactId>mockserver</artifactId>
-        <version>5.16.0-SNAPSHOT</version>
-        <relativePath>../mockserver/pom.xml</relativePath>
+        <version>6.0.0</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>mockserver-maven-plugin</artifactId>
-    <version>5.16.0-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
 
     <name>MockServer Maven Plugin</name>
@@ -113,7 +112,7 @@
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-netty</artifactId>
-            <version>5.16.0-SNAPSHOT</version>
+            <version>${project.version}</version>
             <classifier>jar-with-dependencies</classifier>
             <scope>compile</scope>
         </dependency>
@@ -223,7 +222,7 @@
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-integration-testing</artifactId>
-            <version>5.16.0-SNAPSHOT</version>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -383,7 +382,11 @@
                 <configuration>
                     <skipInvocation>${skipTests}</skipInvocation>
                     <debug>false</debug>
+                    <!-- only stream the invoked child Maven build log on
+                         failure (invoker 3.3+) — passing builds stay quiet so
+                         the CI log is not flooded with per-invoker child output. -->
                     <streamLogs>false</streamLogs>
+                    <streamLogsOnFailures>true</streamLogsOnFailures>
                     <showErrors>false</showErrors>
                     <showVersion>true</showVersion>
                     <disableReports>true</disableReports>
