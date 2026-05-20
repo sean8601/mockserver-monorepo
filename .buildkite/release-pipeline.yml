@@ -74,7 +74,9 @@ steps:
 
   - label: ":globe_with_meridians: Versioned Site"
     command: ".buildkite/scripts/release-runner.sh versioned-site"
-    timeout_in_minutes: 15
+    # Creates CloudFront distributions and mirrors the full historical docs
+    # site (~460 MB, 35k+ objects) into the new versioned bucket — both slow.
+    timeout_in_minutes: 60
     agents: { queue: "release" }
 
   - wait
