@@ -118,8 +118,13 @@ log_info "New distribution: $NEW_DISTRIBUTION_ID"
 
 if [[ -n "$OLD_BUCKET" && "$OLD_BUCKET" != "$NEW_BUCKET" ]]; then
   log_info "Mirror content $OLD_BUCKET -> $NEW_BUCKET"
-  assume_website_role
-  aws s3 sync "s3://$OLD_BUCKET/" "s3://$NEW_BUCKET/"
+  # Subshell: assume_website_role exports website-account credentials. They
+  # must not leak into git_commit_and_push below, which reads the GitHub token
+  # from a build-account secret and so needs the agent's own credentials.
+  (
+    assume_website_role
+    aws s3 sync "s3://$OLD_BUCKET/" "s3://$NEW_BUCKET/"
+  )
 fi
 
 # Persist for downstream components (helm, javadoc, website, schema). The CI

@@ -63,17 +63,22 @@ else
   if [[ -z "${WEBSITE_BUCKET:-}" ]]; then
     log_error "WEBSITE_BUCKET not set"; exit 1
   fi
-  assume_website_role
-  rm -f "$REPO_ROOT"/helm/charts/index.yaml
-  aws s3 sync "s3://$WEBSITE_BUCKET/" "$REPO_ROOT/helm/charts/" \
-    --exclude "*" --include "mockserver-*.tgz" --include "index.yaml"
+  # Subshell: assume_website_role exports website-account credentials. They
+  # must not leak into git_commit_and_push below, which reads the GitHub token
+  # from a build-account secret and so needs the agent's own credentials.
+  (
+    assume_website_role
+    rm -f "$REPO_ROOT"/helm/charts/index.yaml
+    aws s3 sync "s3://$WEBSITE_BUCKET/" "$REPO_ROOT/helm/charts/" \
+      --exclude "*" --include "mockserver-*.tgz" --include "index.yaml"
 
-  log_info "Rebuild Helm repo index"
-  in_docker "$HELM_IMAGE" -w /build -- repo index helm/charts/ --url "https://www.mock-server.com"
+    log_info "Rebuild Helm repo index"
+    in_docker "$HELM_IMAGE" -w /build -- repo index helm/charts/ --url "https://www.mock-server.com"
 
-  log_info "Upload to S3"
-  aws s3 cp "$REPO_ROOT/helm/charts/mockserver-$RELEASE_VERSION.tgz" "s3://$WEBSITE_BUCKET/"
-  aws s3 cp "$REPO_ROOT/helm/charts/index.yaml" "s3://$WEBSITE_BUCKET/"
+    log_info "Upload to S3"
+    aws s3 cp "$REPO_ROOT/helm/charts/mockserver-$RELEASE_VERSION.tgz" "s3://$WEBSITE_BUCKET/"
+    aws s3 cp "$REPO_ROOT/helm/charts/index.yaml" "s3://$WEBSITE_BUCKET/"
+  )
 
   git_commit_and_push "release: Helm chart $RELEASE_VERSION" \
     helm/mockserver/Chart.yaml \
