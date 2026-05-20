@@ -257,4 +257,27 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- This module is internal build scaffolding: its only consumer is
+             the no-dependencies modules' invoker integration tests, which
+             need a shaded mockserver-integration-testing to exercise the
+             shaded jars in isolation. It is not a public artifact (unlike
+             the other *-no-dependencies modules), so it is excluded from the
+             Maven Central deployment. -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <configuration>
+                            <skipPublishing>true</skipPublishing>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

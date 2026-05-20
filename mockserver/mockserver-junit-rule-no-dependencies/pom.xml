@@ -256,4 +256,37 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- The parent pom's release profile attaches a -javadoc.jar via
+             maven-javadoc-plugin, but these no-dependencies modules have no
+             sources of their own, so nothing is produced and Maven Central
+             rejects the deployment. Build the javadoc jar from the
+             org.mock-server dependency sources that this module shades. -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <configuration>
+                                    <includeDependencySources>true</includeDependencySources>
+                                    <dependencySourceIncludes>
+                                        <dependencySourceInclude>org.mock-server:*</dependencySourceInclude>
+                                    </dependencySourceIncludes>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>
