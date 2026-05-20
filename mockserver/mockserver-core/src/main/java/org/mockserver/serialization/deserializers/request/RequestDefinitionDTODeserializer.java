@@ -45,6 +45,7 @@ public class RequestDefinitionDTODeserializer extends StdDeserializer<RequestDef
             Headers headers = null;
             Boolean keepAlive = null;
             Boolean secure = null;
+            Boolean respondBeforeBody = null;
             Protocol protocol = null;
             List<X509Certificate> clientCertificateChain = null;
             SocketAddress socketAddress = null;
@@ -109,6 +110,11 @@ public class RequestDefinitionDTODeserializer extends StdDeserializer<RequestDef
                         case "secure": {
                             jsonParser.nextToken();
                             secure = ctxt.readValue(jsonParser, Boolean.class);
+                            break;
+                        }
+                        case "respondBeforeBody": {
+                            jsonParser.nextToken();
+                            respondBeforeBody = ctxt.readValue(jsonParser, Boolean.class);
                             break;
                         }
                         case "socketAddress": {
@@ -238,6 +244,7 @@ public class RequestDefinitionDTODeserializer extends StdDeserializer<RequestDef
                     .setHeaders(headers)
                     .setKeepAlive(keepAlive)
                     .setSecure(secure)
+                    .setRespondBeforeBody(respondBeforeBody)
                     .setProtocol(protocol)
                     .setClientCertificateChain(clientCertificateChain)
                     .setSocketAddress(socketAddress)

@@ -432,6 +432,9 @@ components:
           type: boolean
         keepAlive:
           type: boolean
+        respondBeforeBody:
+          type: boolean
+          description: "If true, MockServer responds to a matching request before consuming its body and may close the connection. Required: the matcher must not specify a body matcher, and the action must be RESPONSE or ERROR."
         method:
           $ref: "#/components/schemas/StringOrJsonSchema"
         path:

@@ -11,6 +11,7 @@ module MockServer
     'status_code'                    => 'statusCode',
     'reason_phrase'                  => 'reasonPhrase',
     'keep_alive'                     => 'keepAlive',
+    'respond_before_body'            => 'respondBeforeBody',
     'query_string_parameters'        => 'queryStringParameters',
     'path_parameters'                => 'pathParameters',
     'socket_address'                 => 'socketAddress',
@@ -498,12 +499,12 @@ module MockServer
 
   class HttpRequest
     attr_accessor :method, :path, :query_string_parameters, :headers,
-                  :cookies, :body, :secure, :keep_alive, :path_parameters,
-                  :socket_address
+                  :cookies, :body, :secure, :keep_alive, :respond_before_body,
+                  :path_parameters, :socket_address
 
     def initialize(method: nil, path: nil, query_string_parameters: nil, headers: nil,
                    cookies: nil, body: nil, secure: nil, keep_alive: nil,
-                   path_parameters: nil, socket_address: nil)
+                   respond_before_body: nil, path_parameters: nil, socket_address: nil)
       @method = method
       @path = path
       @query_string_parameters = query_string_parameters
@@ -512,6 +513,7 @@ module MockServer
       @body = body
       @secure = secure
       @keep_alive = keep_alive
+      @respond_before_body = respond_before_body
       @path_parameters = path_parameters
       @socket_address = socket_address
     end
@@ -526,6 +528,7 @@ module MockServer
         'body'                  => MockServer.serialize_body(@body),
         'secure'                => @secure,
         'keepAlive'             => @keep_alive,
+        'respondBeforeBody'     => @respond_before_body,
         'pathParameters'        => MockServer.serialize_key_multi_values(@path_parameters),
         'socketAddress'         => @socket_address&.to_h
       })
@@ -543,6 +546,7 @@ module MockServer
         body:                    MockServer.deserialize_body(data['body']),
         secure:                  data['secure'],
         keep_alive:              data['keepAlive'],
+        respond_before_body:     data['respondBeforeBody'],
         path_parameters:         MockServer.deserialize_key_multi_values(data['pathParameters']),
         socket_address:          SocketAddress.from_hash(data['socketAddress'])
       )
@@ -592,6 +596,11 @@ module MockServer
 
     def with_keep_alive(keep_alive)
       @keep_alive = keep_alive
+      self
+    end
+
+    def with_respond_before_body(respond_before_body)
+      @respond_before_body = respond_before_body
       self
     end
   end

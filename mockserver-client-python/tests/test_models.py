@@ -586,6 +586,10 @@ class TestHttpRequest:
         r = HttpRequest.request().with_keep_alive(True)
         assert r.keep_alive is True
 
+    def test_with_respond_before_body(self):
+        r = HttpRequest.request().with_respond_before_body(True)
+        assert r.respond_before_body is True
+
     def test_builder_chaining_returns_self(self):
         r = HttpRequest.request()
         assert r.with_method("GET") is r
@@ -596,6 +600,7 @@ class TestHttpRequest:
         assert r.with_body("b") is r
         assert r.with_secure(True) is r
         assert r.with_keep_alive(True) is r
+        assert r.with_respond_before_body(True) is r
 
     def test_full_chaining(self):
         r = (
@@ -656,12 +661,15 @@ class TestHttpRequest:
         r = HttpRequest(
             keep_alive=True,
             secure=False,
+            respond_before_body=True,
             query_string_parameters=[KeyToMultiValue(name="q", values=["v"])],
         )
         result = r.to_dict()
         assert "keepAlive" in result
+        assert "respondBeforeBody" in result
         assert "queryStringParameters" in result
         assert "keep_alive" not in result
+        assert "respond_before_body" not in result
         assert "query_string_parameters" not in result
 
     def test_to_dict_with_socket_address(self):
@@ -687,10 +695,12 @@ class TestHttpRequest:
             "method": "GET",
             "path": "/test",
             "keepAlive": True,
+            "respondBeforeBody": True,
         })
         assert r.method == "GET"
         assert r.path == "/test"
         assert r.keep_alive is True
+        assert r.respond_before_body is True
 
     def test_from_dict_with_headers(self):
         r = HttpRequest.from_dict({

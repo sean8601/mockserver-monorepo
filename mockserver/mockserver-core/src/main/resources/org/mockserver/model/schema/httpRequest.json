@@ -9,6 +9,9 @@
     "keepAlive": {
       "type": "boolean"
     },
+    "respondBeforeBody": {
+      "type": "boolean"
+    },
     "method": {
       "$ref": "#/definitions/stringOrJsonSchema"
     },

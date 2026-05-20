@@ -157,3 +157,43 @@ mockServerClient("localhost", 1080).mockAnyResponse({
         <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
     </div>
 </div>
+<button id="button_respond_before_body" class="accordion">respond before request body is received</button>
+<div class="panel">
+    <p>Use <code class="inline code">respondBeforeBody</code> on the request matcher to dispatch the configured response before MockServer reads the request body. The matcher must not include a body matcher and only RESPONSE and ERROR actions are supported. The connection is always closed after the response (the inbound body has not been consumed, so reuse is unsafe), so any <code class="inline code">closeSocket</code> value is ignored — set <code class="inline code">keepAliveOverride(false)</code> on the response if you want the <code class="inline code">Connection: close</code> header on the wire. HTTP/1.1 only — HTTP/2 connections fall through to the standard pipeline. This is useful for reproducing client behaviour when a server responds and closes mid-upload.</p>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withMethod("POST")
+            .withPath("/upload")
+            .withRespondBeforeBody(true)
+    )
+    .respond(
+        response()
+            .withStatusCode(403)
+            .withBody("forbidden")
+            .withConnectionOptions(
+                connectionOptions().withKeepAliveOverride(false)
+            )
+    );</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+    "httpRequest" : {
+        "method" : "POST",
+        "path" : "/upload",
+        "respondBeforeBody" : true
+    },
+    "httpResponse" : {
+        "statusCode" : 403,
+        "body" : "forbidden",
+        "connectionOptions" : {
+            "keepAliveOverride" : false
+        }
+    }
+}'</code></pre>
+        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+    </div>
+</div>

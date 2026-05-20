@@ -2673,6 +2673,107 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldReturnEarlyMatchingExpectationWhenRespondBeforeBodyIsTrue() {
+        // given
+        Expectation expectation = new Expectation(
+            request().withMethod("POST").withPath("/upload").withRespondBeforeBody(true)
+        ).thenRespond(response().withStatusCode(403));
+        httpState.add(expectation);
+
+        // when
+        Expectation matched = httpState.firstMatchingEarlyExpectation(
+            request().withMethod("POST").withPath("/upload")
+        );
+
+        // then
+        assertThat(matched, is(expectation));
+    }
+
+    @Test
+    public void shouldReturnNullEarlyMatchingExpectationWhenRespondBeforeBodyIsNotSet() {
+        // given
+        httpState.add(new Expectation(
+            request().withMethod("POST").withPath("/upload")
+        ).thenRespond(response().withStatusCode(200)));
+
+        // when
+        Expectation matched = httpState.firstMatchingEarlyExpectation(
+            request().withMethod("POST").withPath("/upload")
+        );
+
+        // then
+        assertThat(matched, is(nullValue()));
+    }
+
+    @Test
+    public void shouldRejectRespondBeforeBodyWithBodyMatcher() {
+        // given
+        Expectation expectation = new Expectation(
+            request().withMethod("POST").withPath("/upload").withRespondBeforeBody(true).withBody("some-body")
+        ).thenRespond(response().withStatusCode(403));
+
+        // when / then
+        try {
+            httpState.add(expectation);
+            fail("expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            assertThat(expected.getMessage(), CoreMatchers.containsString("respondBeforeBody"));
+            assertThat(expected.getMessage(), CoreMatchers.containsString("body matcher"));
+        }
+    }
+
+    @Test
+    public void shouldRejectRespondBeforeBodyWithNullAction() {
+        // given an Expectation with respondBeforeBody=true but no configured action
+        Expectation expectation = new Expectation(
+            request().withMethod("POST").withPath("/upload").withRespondBeforeBody(true)
+        );
+
+        // when / then
+        try {
+            httpState.add(expectation);
+            fail("expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            assertThat(expected.getMessage(), CoreMatchers.containsString("respondBeforeBody"));
+            assertThat(expected.getMessage(), CoreMatchers.containsString("RESPONSE or ERROR action"));
+        }
+    }
+
+    @Test
+    public void shouldRejectRespondBeforeBodyWithForwardAction() {
+        // given
+        Expectation expectation = new Expectation(
+            request().withMethod("POST").withPath("/upload").withRespondBeforeBody(true)
+        ).thenForward(org.mockserver.model.HttpForward.forward().withHost("example.com").withPort(80));
+
+        // when / then
+        try {
+            httpState.add(expectation);
+            fail("expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            assertThat(expected.getMessage(), CoreMatchers.containsString("respondBeforeBody"));
+            assertThat(expected.getMessage(), CoreMatchers.containsString("RESPONSE"));
+        }
+    }
+
+    @Test
+    public void shouldAllowRespondBeforeBodyWithErrorAction() {
+        // given
+        Expectation expectation = new Expectation(
+            request().withMethod("POST").withPath("/upload").withRespondBeforeBody(true)
+        ).thenError(org.mockserver.model.HttpError.error().withDropConnection(true));
+
+        // when (no exception)
+        httpState.add(expectation);
+
+        // then
+        Expectation matched = httpState.firstMatchingEarlyExpectation(
+            request().withMethod("POST").withPath("/upload")
+        );
+        assertThat(matched, is(expectation));
+    }
+
+    @Test
     public void shouldResetFileStore() {
         // given
         httpState.getFileStore().store("test.txt", "data".getBytes(UTF_8));

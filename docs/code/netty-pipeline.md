@@ -117,7 +117,8 @@ graph LR
     A[HttpServerCodec] --> B[PreserveHeadersNettyRemoves]
     B --> C[HttpContentDecompressor]
     C --> D[HttpContentLengthRemover]
-    D --> E[HttpObjectAggregator]
+    D --> EMH[EarlyMatchingHandler]
+    EMH --> E[HttpObjectAggregator]
     E --> F[CallbackWebSocketServerHandler]
     F --> G[DashboardWebSocketHandler]
     G --> MCP["McpStreamableHttpHandler
@@ -132,6 +133,7 @@ graph LR
 | PreserveHeadersNettyRemoves | `o.m.codec` | Preserves `Host`, `Content-Length`, and `Transfer-Encoding` headers that Netty's HTTP codec would otherwise strip or modify during decode/encode |
 | HttpContentDecompressor | Netty built-in | Decompresses gzipped request bodies |
 | HttpContentLengthRemover | `o.m.netty.unification` | Strips empty Content-Length headers |
+| EarlyMatchingHandler | `o.m.netty.unification` | On the first `HttpRequest` (headers only), checks for an expectation with `respondBeforeBody=true` whose matcher has no body component. If found, dispatches the response (and any close) and discards remaining `HttpContent`, so the response can be sent before the body is read. Reproduces scenarios like okhttp/okhttp#1001 (issue #1831). Skipped for `CONNECT` and HTTP/2 |
 | HttpObjectAggregator | Netty built-in | Aggregates HTTP chunks into `FullHttpRequest` |
 | CallbackWebSocketServerHandler | `o.m.netty.websocketregistry` | Intercepts `/_mockserver_callback_websocket` |
 | DashboardWebSocketHandler | `o.m.dashboard` | Intercepts `/_mockserver_ui_websocket` |

@@ -34,6 +34,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     private Cookies cookies;
     private Boolean keepAlive = null;
     private Boolean secure = null;
+    private Boolean respondBeforeBody = null;
     private Protocol protocol = null;
     private Integer streamId = null;
     private List<X509Certificate> clientCertificateChain;
@@ -114,6 +115,25 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
                 secure = true;
             }
         }
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Boolean getRespondBeforeBody() {
+        return respondBeforeBody;
+    }
+
+    /**
+     * Match this request without waiting for the body to be received, and send the configured response
+     * before the body is consumed. Matchers with respondBeforeBody=true must not specify a body matcher
+     * and must use a RESPONSE or ERROR action; combine with connectionOptions.closeSocket=true on the
+     * response to close the connection after the response is sent. Useful for testing client behaviour
+     * when a server responds and closes mid-upload.
+     *
+     * @param respondBeforeBody true to dispatch the matched response before the request body is read
+     */
+    public HttpRequest withRespondBeforeBody(Boolean respondBeforeBody) {
+        this.respondBeforeBody = respondBeforeBody;
         this.hashCode = 0;
         return this;
     }
@@ -1199,6 +1219,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             .withCookies(cookies)
             .withKeepAlive(keepAlive)
             .withSecure(secure)
+            .withRespondBeforeBody(respondBeforeBody)
             .withProtocol(protocol)
             .withStreamId(streamId)
             .withClientCertificateChain(clientCertificateChain)
@@ -1219,6 +1240,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             .withCookies(cookies != null ? cookies.clone() : null)
             .withKeepAlive(keepAlive)
             .withSecure(secure)
+            .withRespondBeforeBody(respondBeforeBody)
             .withProtocol(protocol)
             .withStreamId(streamId)
             .withClientCertificateChain(clientCertificateChain != null && !clientCertificateChain.isEmpty() ? clientCertificateChain.stream().map(X509Certificate::clone).collect(Collectors.toList()) : null)
@@ -1261,6 +1283,9 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             }
             if (requestOverride.isKeepAlive() != null) {
                 withKeepAlive(requestOverride.isKeepAlive());
+            }
+            if (requestOverride.getRespondBeforeBody() != null) {
+                withRespondBeforeBody(requestOverride.getRespondBeforeBody());
             }
             if (requestOverride.getSocketAddress() != null) {
                 withSocketAddress(requestOverride.getSocketAddress());
@@ -1308,6 +1333,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             Objects.equals(cookies, that.cookies) &&
             Objects.equals(keepAlive, that.keepAlive) &&
             Objects.equals(secure, that.secure) &&
+            Objects.equals(respondBeforeBody, that.respondBeforeBody) &&
             Objects.equals(protocol, that.protocol) &&
             Objects.equals(streamId, that.streamId) &&
             Objects.equals(clientCertificateChain, that.clientCertificateChain) &&
@@ -1321,7 +1347,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         // need to call isSecure because getter can change the hashcode
         isSecure();
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), method, path, pathParameters, queryStringParameters, body, headers, cookies, keepAlive, secure, protocol, streamId, clientCertificateChain, socketAddress, localAddress, remoteAddress);
+            hashCode = Objects.hash(super.hashCode(), method, path, pathParameters, queryStringParameters, body, headers, cookies, keepAlive, secure, respondBeforeBody, protocol, streamId, clientCertificateChain, socketAddress, localAddress, remoteAddress);
         }
         return hashCode;
     }

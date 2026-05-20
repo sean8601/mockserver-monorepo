@@ -73,6 +73,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     public Expectation add(Expectation expectation, Cause cause) {
         Expectation upsertedExpectation = null;
         if (expectation != null) {
+            validateRespondBeforeBody(expectation);
             expectationRequestDefinitions.put(expectation.getId(), expectation.getHttpRequest());
             upsertedExpectation = httpRequestMatchers
                 .getByKey(expectation.getId())
@@ -128,6 +129,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 .forEach(expectation -> {
                     // ensure duplicate ids are skipped in input array
                     if (!addedIds.contains(expectation.getId())) {
+                        validateRespondBeforeBody(expectation);
                         addedIds.add(expectation.getId());
                         expectationRequestDefinitions.put(expectation.getId(), expectation.getHttpRequest());
                         existingKeysForCause.remove(expectation.getId());
@@ -180,6 +182,26 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             if (numberOfChanges.get() > 0) {
                 notifyListeners(this, cause);
             }
+        }
+    }
+
+    private void validateRespondBeforeBody(Expectation expectation) {
+        if (!(expectation.getHttpRequest() instanceof HttpRequest)) {
+            return;
+        }
+        HttpRequest request = (HttpRequest) expectation.getHttpRequest();
+        if (!Boolean.TRUE.equals(request.getRespondBeforeBody())) {
+            return;
+        }
+        if (request.getBody() != null) {
+            throw new IllegalArgumentException("respondBeforeBody=true cannot be combined with a body matcher: the body has not yet been received when matching occurs");
+        }
+        if (expectation.getAction() == null) {
+            throw new IllegalArgumentException("respondBeforeBody=true requires a RESPONSE or ERROR action");
+        }
+        Action.Type actionType = expectation.getAction().getType();
+        if (actionType != Action.Type.RESPONSE && actionType != Action.Type.ERROR) {
+            throw new IllegalArgumentException("respondBeforeBody=true only supports action types RESPONSE and ERROR, was: " + actionType);
         }
     }
 
@@ -288,6 +310,46 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             }
         }
         return matchedExpectation;
+    }
+
+    public Expectation firstMatchingEarlyExpectation(HttpRequest headersOnlyRequest) {
+        for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
+            Expectation expectation = httpRequestMatcher.getExpectation();
+            if (expectation == null || !(expectation.getHttpRequest() instanceof HttpRequest)) {
+                continue;
+            }
+            HttpRequest expectationRequest = (HttpRequest) expectation.getHttpRequest();
+            if (!Boolean.TRUE.equals(expectationRequest.getRespondBeforeBody())) {
+                continue;
+            }
+            if (httpRequestMatcher instanceof org.mockserver.matchers.HttpRequestPropertiesMatcher
+                && ((org.mockserver.matchers.HttpRequestPropertiesMatcher) httpRequestMatcher).hasBodyMatcher()) {
+                continue;
+            }
+            if (httpRequestMatcher.matches(null, headersOnlyRequest)) {
+                if (expectation.getScenarioName() != null && expectation.getScenarioState() != null) {
+                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                        continue;
+                    }
+                }
+                if (!expectation.matchesByPercentage()) {
+                    continue;
+                }
+                httpRequestMatcher.setResponseInProgress(true);
+                if (!expectation.consumeMatch()) {
+                    httpRequestMatcher.setResponseInProgress(false);
+                    continue;
+                }
+                if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
+                    scenarioManager.transitionState(expectation.getScenarioName(), expectation.getNewScenarioState());
+                }
+                if (expectation.getTimes() != null && !expectation.getTimes().isUnlimited()) {
+                    notifyListeners(this, Cause.API);
+                }
+                return expectation;
+            }
+        }
+        return null;
     }
 
     public void clear(RequestDefinition requestDefinition) {

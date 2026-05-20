@@ -59,18 +59,8 @@ public class FullHttpRequestToMockServerHttpRequest {
                             .setThrowable(fullHttpRequest.decoderResult().cause())
                     );
                 }
-                setMethod(httpRequest, fullHttpRequest);
-                httpRequest.withKeepAlive(isKeepAlive(fullHttpRequest));
-                httpRequest.withSecure(isSecure);
-                httpRequest.withProtocol(protocol == null ? Protocol.HTTP_1_1 : protocol);
-
-                setPath(httpRequest, fullHttpRequest);
-                setQueryString(httpRequest, fullHttpRequest);
-                setHeaders(httpRequest, fullHttpRequest, preservedHeaders);
-                setCookies(httpRequest, fullHttpRequest);
+                populateHeadersAndMetadata(httpRequest, fullHttpRequest, preservedHeaders, localAddress, remoteAddress, protocol);
                 setBody(httpRequest, fullHttpRequest);
-                setSocketAddress(httpRequest, fullHttpRequest, isSecure, port, localAddress, remoteAddress);
-                jdkCertificateToMockServerX509Certificate.setClientCertificates(httpRequest, clientCertificates);
             }
         } catch (Throwable throwable) {
             mockServerLogger.logEvent(
@@ -84,31 +74,52 @@ public class FullHttpRequestToMockServerHttpRequest {
         return httpRequest;
     }
 
-    private void setSocketAddress(HttpRequest httpRequest, FullHttpRequest fullHttpRequest, boolean isSecure, Integer port, SocketAddress localAddress, SocketAddress remoteAddress) {
-        httpRequest.withSocketAddress(isSecure, fullHttpRequest.headers().get("host"), port);
-        if (remoteAddress instanceof InetSocketAddress) {
-            httpRequest.withRemoteAddress(Strings.CS.removeStart(remoteAddress.toString(), "/"));
+    /**
+     * Map the headers/method/path/query/cookies of a Netty HttpRequest (no body) to a MockServer HttpRequest.
+     * Used by the early-response path which dispatches before HttpObjectAggregator buffers the body.
+     */
+    public HttpRequest mapHeadersOnlyHttpRequestToMockServerRequest(io.netty.handler.codec.http.HttpRequest nettyHttpRequest, List<Header> preservedHeaders, SocketAddress localAddress, SocketAddress remoteAddress, Protocol protocol) {
+        HttpRequest httpRequest = new HttpRequest();
+        try {
+            if (nettyHttpRequest != null) {
+                if (nettyHttpRequest.decoderResult().isFailure()) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.ERROR)
+                            .setMessageFormat("exception decoding request " + nettyHttpRequest.decoderResult().cause().getMessage())
+                            .setThrowable(nettyHttpRequest.decoderResult().cause())
+                    );
+                }
+                populateHeadersAndMetadata(httpRequest, nettyHttpRequest, preservedHeaders, localAddress, remoteAddress, protocol);
+            }
+        } catch (Throwable throwable) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setMessageFormat("exception decoding request headers{}")
+                    .setArguments(nettyHttpRequest)
+                    .setThrowable(throwable)
+            );
         }
-        if (localAddress instanceof InetSocketAddress) {
-            httpRequest.withLocalAddress(Strings.CS.removeStart(localAddress.toString(), "/"));
+        return httpRequest;
+    }
+
+    private void populateHeadersAndMetadata(HttpRequest httpRequest, io.netty.handler.codec.http.HttpRequest nettyHttpRequest, List<Header> preservedHeaders, SocketAddress localAddress, SocketAddress remoteAddress, Protocol protocol) {
+        httpRequest.withMethod(nettyHttpRequest.method().name());
+        httpRequest.withKeepAlive(isKeepAlive(nettyHttpRequest));
+        httpRequest.withSecure(isSecure);
+        httpRequest.withProtocol(protocol == null ? Protocol.HTTP_1_1 : protocol);
+        httpRequest.withPath(URLParser.returnPath(nettyHttpRequest.uri()));
+        if (nettyHttpRequest.uri().contains("?")) {
+            httpRequest.withQueryStringParameters(formParameterParser.retrieveQueryParameters(nettyHttpRequest.uri(), true));
         }
+        setHeadersFromNettyRequest(httpRequest, nettyHttpRequest, preservedHeaders);
+        setCookiesFromNettyRequest(httpRequest, nettyHttpRequest);
+        setSocketAddressFromNettyRequest(httpRequest, nettyHttpRequest, localAddress, remoteAddress);
+        jdkCertificateToMockServerX509Certificate.setClientCertificates(httpRequest, clientCertificates);
     }
 
-    private void setMethod(HttpRequest httpRequest, FullHttpRequest fullHttpResponse) {
-        httpRequest.withMethod(fullHttpResponse.method().name());
-    }
-
-    private void setPath(HttpRequest httpRequest, FullHttpRequest fullHttpRequest) {
-        httpRequest.withPath(URLParser.returnPath(fullHttpRequest.uri()));
-    }
-
-    private void setQueryString(HttpRequest httpRequest, FullHttpRequest fullHttpRequest) {
-        if (fullHttpRequest.uri().contains("?")) {
-            httpRequest.withQueryStringParameters(formParameterParser.retrieveQueryParameters(fullHttpRequest.uri(), true));
-        }
-    }
-
-    private void setHeaders(HttpRequest httpRequest, FullHttpRequest fullHttpResponse, List<Header> preservedHeaders) {
+    private void setHeadersFromNettyRequest(HttpRequest httpRequest, io.netty.handler.codec.http.HttpRequest nettyHttpRequest, List<Header> preservedHeaders) {
         boolean hasPreservedTransferEncoding = false;
         if (preservedHeaders != null) {
             for (Header preservedHeader : preservedHeaders) {
@@ -118,7 +129,7 @@ public class FullHttpRequestToMockServerHttpRequest {
                 }
             }
         }
-        HttpHeaders httpHeaders = fullHttpResponse.headers();
+        HttpHeaders httpHeaders = nettyHttpRequest.headers();
         if (!httpHeaders.isEmpty()) {
             Headers headers = new Headers();
             for (String headerName : httpHeaders.names()) {
@@ -135,13 +146,13 @@ public class FullHttpRequestToMockServerHttpRequest {
             }
         }
         if (Protocol.HTTP_2.equals(httpRequest.getProtocol())) {
-            Integer streamId = fullHttpResponse.headers().getInt(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text());
+            Integer streamId = nettyHttpRequest.headers().getInt(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text());
             httpRequest.withStreamId(streamId);
         }
     }
 
-    private void setCookies(HttpRequest httpRequest, FullHttpRequest fullHttpResponse) {
-        List<String> cookieHeaders = fullHttpResponse.headers().getAll(COOKIE);
+    private void setCookiesFromNettyRequest(HttpRequest httpRequest, io.netty.handler.codec.http.HttpRequest nettyHttpRequest) {
+        List<String> cookieHeaders = nettyHttpRequest.headers().getAll(COOKIE);
         if (!cookieHeaders.isEmpty()) {
             Cookies cookies = new Cookies();
             for (String cookieHeader : cookieHeaders) {
@@ -154,6 +165,16 @@ public class FullHttpRequestToMockServerHttpRequest {
                 }
             }
             httpRequest.withCookies(cookies);
+        }
+    }
+
+    private void setSocketAddressFromNettyRequest(HttpRequest httpRequest, io.netty.handler.codec.http.HttpRequest nettyHttpRequest, SocketAddress localAddress, SocketAddress remoteAddress) {
+        httpRequest.withSocketAddress(isSecure, nettyHttpRequest.headers().get("host"), port);
+        if (remoteAddress instanceof InetSocketAddress) {
+            httpRequest.withRemoteAddress(Strings.CS.removeStart(remoteAddress.toString(), "/"));
+        }
+        if (localAddress instanceof InetSocketAddress) {
+            httpRequest.withLocalAddress(Strings.CS.removeStart(localAddress.toString(), "/"));
         }
     }
 

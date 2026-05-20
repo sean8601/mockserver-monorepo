@@ -327,6 +327,18 @@ public class HttpState {
         }
     }
 
+    /**
+     * Returns the first expectation whose matcher has respondBeforeBody=true, has no body matcher,
+     * and matches the supplied headers-only request. Used by the early-response path that runs
+     * before the request body is aggregated.
+     */
+    public Expectation firstMatchingEarlyExpectation(HttpRequest headersOnly) {
+        if (requestMatchers.isEmpty()) {
+            return null;
+        }
+        return requestMatchers.firstMatchingEarlyExpectation(headersOnly);
+    }
+
     @VisibleForTesting
     public List<Expectation> allMatchingExpectation(HttpRequest request) {
         if (requestMatchers.isEmpty()) {

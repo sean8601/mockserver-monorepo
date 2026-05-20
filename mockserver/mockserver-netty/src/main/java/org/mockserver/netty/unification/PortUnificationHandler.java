@@ -386,6 +386,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             addLastIfNotPresent(pipeline, preserveHeadersNettyRemoves);
             addLastIfNotPresent(pipeline, new HttpContentDecompressor());
             addLastIfNotPresent(pipeline, httpContentLengthRemover);
+            addLastIfNotPresent(pipeline, new EarlyMatchingHandler(configuration, httpState, actionHandler, isSslEnabledUpstream(ctx.channel())));
             addLastIfNotPresent(pipeline, new HttpObjectAggregator(Integer.MAX_VALUE));
             if (configuration.tlsMutualAuthenticationRequired() && configuration.controlPlaneTLSMutualAuthenticationRequired() && !isSslEnabledUpstream(ctx.channel())) {
                 HttpResponse httpResponse = response()

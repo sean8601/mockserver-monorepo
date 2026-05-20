@@ -90,6 +90,63 @@ public class HttpActionHandler {
         this.httpClient = new NettyHttpClient(configuration, mockServerLogger, eventLoopGroup, proxyConfigurations, true, nettySslContextFactory);
     }
 
+    /**
+     * Dispatch an early-matched expectation before the request body has been received.
+     * Supports {@link Action.Type#RESPONSE} and {@link Action.Type#ERROR} only; other action types
+     * are rejected by {@code RequestMatchers.validateRespondBeforeBody} at expectation-add time.
+     */
+    public void processEarlyAction(final HttpRequest request, final Expectation expectation, final ChannelHandlerContext ctx, final ResponseWriter earlyResponseWriter, final boolean synchronous) {
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setType(RECEIVED_REQUEST)
+                .setLogLevel(Level.INFO)
+                .setCorrelationId(request.getLogCorrelationId())
+                .setHttpRequest(request)
+                .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
+                .setArguments(request)
+        );
+
+        final AtomicBoolean postProcessed = new AtomicBoolean(false);
+        Runnable expectationPostProcessor = () -> {
+            if (postProcessed.compareAndSet(false, true)) {
+                httpStateHandler.postProcess(expectation);
+            }
+        };
+
+        final Action action = expectation.getAction();
+        switch (action.getType()) {
+            case RESPONSE: {
+                scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
+                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
+                    writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor);
+                }, expectationPostProcessor), synchronous);
+                break;
+            }
+            case ERROR: {
+                scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
+                    getHttpErrorActionHandler().handle((HttpError) action, ctx);
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(EXPECTATION_RESPONSE)
+                            .setLogLevel(Level.INFO)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setHttpError((HttpError) action)
+                            .setExpectationId(action.getExpectationId())
+                            .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
+                            .setArguments(action, request, action, action.getExpectationId())
+                    );
+                    expectationPostProcessor.run();
+                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+                break;
+            }
+            default:
+                // Other action types are rejected at expectation-add time; nothing to dispatch here.
+                expectationPostProcessor.run();
+                break;
+        }
+    }
+
     public void processAction(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
         if (request.getHeaders() == null || !request.getHeaders().containsEntry(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
             mockServerLogger.logEvent(

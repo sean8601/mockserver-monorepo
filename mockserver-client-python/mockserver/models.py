@@ -8,6 +8,7 @@ _FIELD_MAP = {
     "status_code": "statusCode",
     "reason_phrase": "reasonPhrase",
     "keep_alive": "keepAlive",
+    "respond_before_body": "respondBeforeBody",
     "query_string_parameters": "queryStringParameters",
     "path_parameters": "pathParameters",
     "socket_address": "socketAddress",
@@ -474,6 +475,7 @@ class HttpRequest:
     body: Body | str | dict | None = None
     secure: bool | None = None
     keep_alive: bool | None = None
+    respond_before_body: bool | None = None
     path_parameters: list[KeyToMultiValue] | None = None
     socket_address: SocketAddress | None = None
 
@@ -487,6 +489,7 @@ class HttpRequest:
             "body": _serialize_body(self.body),
             "secure": self.secure,
             "keepAlive": self.keep_alive,
+            "respondBeforeBody": self.respond_before_body,
             "pathParameters": _serialize_key_multi_values(self.path_parameters),
             "socketAddress": self.socket_address.to_dict() if self.socket_address else None,
         })
@@ -504,6 +507,7 @@ class HttpRequest:
             body=_deserialize_body(data.get("body")),
             secure=data.get("secure"),
             keep_alive=data.get("keepAlive"),
+            respond_before_body=data.get("respondBeforeBody"),
             path_parameters=_deserialize_key_multi_values(data.get("pathParameters")),
             socket_address=SocketAddress.from_dict(data.get("socketAddress")),
         )
@@ -548,6 +552,10 @@ class HttpRequest:
 
     def with_keep_alive(self, keep_alive: bool) -> HttpRequest:
         self.keep_alive = keep_alive
+        return self
+
+    def with_respond_before_body(self, respond_before_body: bool) -> HttpRequest:
+        self.respond_before_body = respond_before_body
         return self
 
 

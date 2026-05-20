@@ -495,6 +495,19 @@ RSpec.describe 'MockServer models' do
         expect(result).to be(req)
         expect(req.keep_alive).to eq(true)
       end
+
+      it '#with_respond_before_body sets respond_before_body and returns self' do
+        req = MockServer::HttpRequest.new
+        result = req.with_respond_before_body(true)
+        expect(result).to be(req)
+        expect(req.respond_before_body).to eq(true)
+      end
+    end
+
+    it 'serializes respond_before_body as camelCase respondBeforeBody' do
+      req = MockServer::HttpRequest.new.with_respond_before_body(true)
+      expect(req.to_h).to include('respondBeforeBody' => true)
+      expect(req.to_h).not_to have_key('respond_before_body')
     end
 
     it 'serializes to camelCase hash stripping nils' do
@@ -535,6 +548,7 @@ RSpec.describe 'MockServer models' do
         'body' => 'test body',
         'secure' => true,
         'keepAlive' => false,
+        'respondBeforeBody' => true,
         'socketAddress' => { 'host' => 'example.com', 'port' => 443 }
       }
       req = MockServer::HttpRequest.from_hash(data)
@@ -545,6 +559,7 @@ RSpec.describe 'MockServer models' do
       expect(req.body).to eq('test body')
       expect(req.secure).to eq(true)
       expect(req.keep_alive).to eq(false)
+      expect(req.respond_before_body).to eq(true)
       expect(req.socket_address.host).to eq('example.com')
     end
 

@@ -63,6 +63,7 @@ export type RequestDefinition = HttpRequest | OpenAPIDefinition;
 export interface HttpRequest {
   secure?: boolean;
   keepAlive?: boolean;
+  respondBeforeBody?: boolean;
   method?: StringOrJsonSchema;
   path?: StringOrJsonSchema;
   pathParameters?: KeyToMultiValue;

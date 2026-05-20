@@ -84,6 +84,10 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         return httpRequest;
     }
 
+    public boolean hasBodyMatcher() {
+        return bodyMatcher != null;
+    }
+
     @Override
     public List<HttpRequest> getHttpRequests() {
         return httpRequests;

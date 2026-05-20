@@ -20,6 +20,7 @@ public class HttpRequestDTO extends RequestDefinitionDTO implements DTO<HttpRequ
     private Headers headers;
     private Boolean keepAlive;
     private Boolean secure;
+    private Boolean respondBeforeBody;
     private Protocol protocol;
     private List<X509Certificate> clientCertificateChain;
     private SocketAddress socketAddress;
@@ -42,6 +43,7 @@ public class HttpRequestDTO extends RequestDefinitionDTO implements DTO<HttpRequ
             body = BodyDTO.createDTO(httpRequest.getBody());
             keepAlive = httpRequest.isKeepAlive();
             secure = httpRequest.isSecure();
+            respondBeforeBody = httpRequest.getRespondBeforeBody();
             protocol = httpRequest.getProtocol();
             clientCertificateChain = httpRequest.getClientCertificateChain();
             socketAddress = httpRequest.getSocketAddress();
@@ -60,6 +62,7 @@ public class HttpRequestDTO extends RequestDefinitionDTO implements DTO<HttpRequ
             .withHeaders(headers)
             .withCookies(cookies)
             .withSecure(secure)
+            .withRespondBeforeBody(respondBeforeBody)
             .withProtocol(protocol)
             .withKeepAlive(keepAlive)
             .withClientCertificateChain(clientCertificateChain)
@@ -147,6 +150,15 @@ public class HttpRequestDTO extends RequestDefinitionDTO implements DTO<HttpRequ
 
     public HttpRequestDTO setSecure(Boolean secure) {
         this.secure = secure;
+        return this;
+    }
+
+    public Boolean getRespondBeforeBody() {
+        return respondBeforeBody;
+    }
+
+    public HttpRequestDTO setRespondBeforeBody(Boolean respondBeforeBody) {
+        this.respondBeforeBody = respondBeforeBody;
         return this;
     }
 
