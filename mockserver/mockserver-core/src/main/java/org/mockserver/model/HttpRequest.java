@@ -261,19 +261,20 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     }
 
     public static String[] splitHostPort(String hostPort) {
-        boolean isIpV6 = hostPort.matches("\\[(.*)].*");
-        if (isIpV6) {
+        // bracketed-IPv6 form per RFC 3986: starts with '[' and contains a matching ']'
+        if (hostPort.startsWith("[")) {
             int endOfHost = hostPort.indexOf(']');
-            String host = hostPort.substring(1, endOfHost);  // Strip [ and ]
-            int startOfPort = hostPort.indexOf(':', endOfHost);
-            if (startOfPort > 0) {
-                return new String[] { host, hostPort.substring(startOfPort + 1) };
-            } else {
-                return new String[] { host };
+            if (endOfHost > 0) {
+                String host = hostPort.substring(1, endOfHost);
+                int startOfPort = hostPort.indexOf(':', endOfHost);
+                if (startOfPort > 0) {
+                    return new String[] { host, hostPort.substring(startOfPort + 1) };
+                } else {
+                    return new String[] { host };
+                }
             }
-        } else {
-            return hostPort.split(":");
         }
+        return hostPort.split(":");
     }
 
     public HttpRequest withLocalAddress(String localAddress) {

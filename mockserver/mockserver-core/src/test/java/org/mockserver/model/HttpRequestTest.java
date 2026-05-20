@@ -411,6 +411,16 @@ public class HttpRequestTest {
         hostParts = HttpRequest.splitHostPort("[2001:db8::1]:8080");
         assertEquals("2001:db8::1", hostParts[0]);
         assertEquals("8080", hostParts[1]);
+
+        // Malformed bracketed input (missing closing ']') — should fall through to plain split
+        hostParts = HttpRequest.splitHostPort("[no-closing-bracket");
+        assertEquals("[no-closing-bracket", hostParts[0]);
+        assertEquals(1, hostParts.length);
+
+        // Malformed bracketed IPv6 with colons but no closing ']' — falls through to split(":");
+        // callers must read defensively (hostParts[0]/[1]) since splits on all colons.
+        hostParts = HttpRequest.splitHostPort("[2001:db8::1");
+        assertEquals("[2001", hostParts[0]);
     }
 
     @Test
