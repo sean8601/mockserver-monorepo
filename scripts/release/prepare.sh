@@ -26,6 +26,15 @@ require_release_inputs
 
 log_step "Prepare release $RELEASE_VERSION (dry-run=$DRY_RUN)"
 
+# Partial reruns (docker-only, post-maven) bump no pom version and create no
+# tag, so the version/tag/changelog validation below does not apply to them —
+# exit before it runs.
+case "$RELEASE_TYPE" in
+  docker-only|post-maven)
+    log_info "Skipping prepare for RELEASE_TYPE=$RELEASE_TYPE (no pom bump or tag)"
+    exit 0 ;;
+esac
+
 # Validation
 if [[ "$RELEASE_VERSION" == "$OLD_VERSION" ]]; then
   log_error "RELEASE_VERSION must differ from OLD_VERSION (latest tag: $OLD_VERSION)"
@@ -60,13 +69,6 @@ log_info "  Previous: $OLD_VERSION"
 log_info "  Current:  $CURRENT_VERSION"
 log_info "  Type:     $RELEASE_TYPE"
 log_info "  Versioned site: $CREATE_VERSIONED_SITE"
-
-# Skip the pom + git work for partial reruns that don't change versions.
-case "$RELEASE_TYPE" in
-  docker-only|post-maven)
-    log_info "Skipping pom bump + tag for RELEASE_TYPE=$RELEASE_TYPE"
-    exit 0 ;;
-esac
 
 log_info "Updating pom.xml versions from $CURRENT_VERSION to $RELEASE_VERSION"
 if is_dry_run; then

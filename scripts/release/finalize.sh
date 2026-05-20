@@ -24,7 +24,7 @@ require_cmd python3
 require_cmd jq
 require_cmd sed
 require_release_inputs
-skip_unless_release_type "finalize" full,maven-only
+skip_unless_release_type "finalize" full,maven-only,post-maven
 
 log_step "Finalize release $RELEASE_VERSION (dry-run=$DRY_RUN)"
 sync_to_origin_master
