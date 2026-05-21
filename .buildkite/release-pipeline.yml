@@ -110,6 +110,10 @@ steps:
 
       - label: ":swagger: SwaggerHub"
         command: ".buildkite/scripts/release-runner.sh swaggerhub"
+        # SwaggerHub is an optional mirror of the OpenAPI spec to a third-party
+        # catalogue. A failure here (e.g. SwaggerHub account / API access) must
+        # not block the release, so the step is allowed to soft-fail.
+        soft_fail: true
         timeout_in_minutes: 10
         agents: { queue: "release" }
 

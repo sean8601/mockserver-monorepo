@@ -108,8 +108,20 @@ Return a concise release-preparation report with these sections:
 
 ### Manual Follow-up
 
-- List only the steps still outside the automated pipeline
-- Today this should normally be just Homebrew
+Steps outside — or not guaranteed by — the automated pipeline:
+
+- **Homebrew** — always manual, after the GitHub Release is published:
+  `brew bump-formula-pr --strict --version=<release-version> mockserver`
+- **SwaggerHub** — the `swaggerhub` pipeline step is `soft_fail: true`, so a failure
+  never blocks the release. Publishing via the SwaggerHub Registry API needs
+  account / API-plan access the pipeline cannot guarantee — the write endpoint can
+  return `403`/`404` even with a valid key on an account without it. The step is kept
+  in the pipeline so it publishes automatically if that access is ever in place; but
+  if it soft-fails, upload the spec manually: open https://app.swaggerhub.com, go to
+  the `jamesdbloom/mock-server-openapi` API, and add the new version from
+  `mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml`
+  (the web UI needs no API key). This may become fully automatic if SwaggerHub
+  changes that API behaviour.
 
 ### Monitor & Verify
 
