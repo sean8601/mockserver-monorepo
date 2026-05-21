@@ -85,7 +85,19 @@ fi
 
 FULL_TAG="mockserver-$RELEASE_VERSION"
 SHORT_TAG="$RELEASE_VERSION"
-ECR_REPO="public.ecr.aws/mockserver/mockserver"
+# ECR Public repository URI. The registry alias is AWS-assigned (it is not the
+# repository name), so resolve it at run time rather than hard-coding. A real
+# run must fail loudly if the lookup fails; a local dry-run without AWS
+# credentials falls back to a placeholder — the ECR tags are built but never
+# pushed in dry-run.
+if is_dry_run; then
+  ECR_REPO=$(aws ecr-public describe-repositories --region us-east-1 \
+    --repository-names mockserver --query 'repositories[0].repositoryUri' \
+    --output text 2>/dev/null || echo "public.ecr.aws/dry-run/mockserver")
+else
+  ECR_REPO=$(aws ecr-public describe-repositories --region us-east-1 \
+    --repository-names mockserver --query 'repositories[0].repositoryUri' --output text)
+fi
 
 log_info "Build images"
 if is_dry_run; then

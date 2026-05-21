@@ -34,11 +34,15 @@ if is_dry_run; then
 else
   API_KEY=$(load_secret "mockserver-release/swaggerhub" "api_key")
   log_info "Uploading spec to SwaggerHub"
+  # SwaggerHub Registry API: the save-definition operation is POST on the
+  # un-versioned /apis/{owner}/{api} path with the version passed as a query
+  # parameter. POST to /apis/{owner}/{api}/{version} returns 405 — that path
+  # only supports GET and DELETE.
   curl -fsS -X POST \
     -H "Authorization: $API_KEY" \
     -H "Content-Type: application/yaml" \
     --data-binary "@$SPEC" \
-    "https://api.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/$RELEASE_VERSION?isPrivate=false&oas=3.0.0"
+    "https://api.swaggerhub.com/apis/jamesdbloom/mock-server-openapi?version=$RELEASE_VERSION&isPrivate=false&oas=3.0.0"
 fi
 
 log_info "SwaggerHub update complete"

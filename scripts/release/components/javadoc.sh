@@ -32,22 +32,24 @@ if ! is_dry_run; then
   trap 'git -C "$REPO_ROOT" checkout master 2>/dev/null || true' EXIT
 fi
 
-mkdir -p "$REPO_ROOT/.tmp/javadoc"
 log_info "Generate aggregate Javadoc"
 in_maven -w /build/mockserver \
-  -- mvn javadoc:aggregate -P release \
-       -DreportOutputDirectory="/build/.tmp/javadoc/$RELEASE_VERSION" \
-       -DskipTests
+  -- mvn javadoc:aggregate -P release -DskipTests
+
+# maven-javadoc-plugin writes the aggregate HTML to target/reports/apidocs.
+APIDOCS="$REPO_ROOT/mockserver/target/reports/apidocs"
+[[ -f "$APIDOCS/index.html" ]] \
+  || { log_error "Aggregate Javadoc not found at $APIDOCS"; exit 1; }
 
 if is_dry_run; then
   log_dry "skip: aws s3 sync of Javadoc"
-  log_info "Built: $REPO_ROOT/.tmp/javadoc/$RELEASE_VERSION/"
+  log_info "Built: $APIDOCS"
 else
   [[ -n "${WEBSITE_BUCKET:-}" ]] || { log_error "WEBSITE_BUCKET not set"; exit 1; }
   assume_website_role
   log_info "Upload to S3"
-  aws s3 sync "$REPO_ROOT/.tmp/javadoc/$RELEASE_VERSION" \
-    "s3://$WEBSITE_BUCKET/versions/$RELEASE_VERSION/" --delete
+  aws s3 sync "$APIDOCS" \
+    "s3://$WEBSITE_BUCKET/versions/$RELEASE_VERSION/apidocs/" --delete
 fi
 
 log_info "Javadoc publish complete"
