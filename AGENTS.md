@@ -105,6 +105,7 @@ Capacity, instance types, and agents-per-instance are defined in `terraform/buil
 
 ## Git Policy
 
+- This repository uses **trunk-based development**: commit directly to the default branch (`master`). Do NOT create feature/topic branches — there is no "branch first" step.
 - NEVER commit or push without explicit user request
 - NEVER run `git commit` without first completing the full pre-commit workflow in `.opencode/rules/commit-workflow.md` (classify → validate → adversarial review → commit). Use the `/commit` command to ensure the workflow is followed.
 - NEVER run destructive git commands without confirmation (see `.opencode/rules/git-safety.md`)
