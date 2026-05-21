@@ -69,7 +69,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
     public void shouldApplyResponseOverrideToUpstreamResponse() throws Exception {
         CompletableFuture<HttpResponse> responseFuture = new CompletableFuture<>();
         responseFuture.complete(response().withStatusCode(200).withBody("upstream"));
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpForwardActionResult result = handler.handle(
             forwardOverriddenRequest()
@@ -86,7 +86,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
     public void shouldApplyResponseTemplateWithVelocity() throws Exception {
         CompletableFuture<HttpResponse> responseFuture = new CompletableFuture<>();
         responseFuture.complete(response().withStatusCode(200).withBody("upstream_body"));
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpTemplate velocityTemplate = template(TemplateType.VELOCITY,
             "{" + NEW_LINE +
@@ -110,7 +110,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
         nashornAvailable();
         CompletableFuture<HttpResponse> responseFuture = new CompletableFuture<>();
         responseFuture.complete(response().withStatusCode(200).withBody("upstream_body"));
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpTemplate jsTemplate = template(TemplateType.JAVASCRIPT,
             "return {" + NEW_LINE +
@@ -135,7 +135,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
     public void shouldApplyResponseTemplateWithMustache() throws Exception {
         CompletableFuture<HttpResponse> responseFuture = new CompletableFuture<>();
         responseFuture.complete(response().withStatusCode(200).withBody("upstream_body"));
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpTemplate mustacheTemplate = template(TemplateType.MUSTACHE,
             "{" + NEW_LINE +
@@ -158,7 +158,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
     public void shouldApplyResponseTemplateAfterResponseOverride() throws Exception {
         CompletableFuture<HttpResponse> responseFuture = new CompletableFuture<>();
         responseFuture.complete(response().withStatusCode(200).withBody("upstream_body"));
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpTemplate velocityTemplate = template(TemplateType.VELOCITY,
             "{" + NEW_LINE +
@@ -183,7 +183,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
     public void shouldNotApplyResponseTemplateWhenUpstreamResponseIsNull() throws Exception {
         CompletableFuture<HttpResponse> responseFuture = new CompletableFuture<>();
         responseFuture.complete(null);
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpTemplate velocityTemplate = template(TemplateType.VELOCITY,
             "{ 'statusCode': 999 }"
@@ -219,7 +219,7 @@ public class HttpOverrideForwardedRequestActionHandlerTest {
         responseFuture.complete(response().withStatusCode(200).withBody("upstream").withHeaders(
             new Header("X-Original", "yes")
         ));
-        when(mockHttpClient.sendRequest(any(HttpRequest.class), any())).thenReturn(responseFuture);
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(), anyLong(), anyBoolean())).thenReturn(responseFuture);
 
         HttpTemplate velocityTemplate = template(TemplateType.VELOCITY,
             "{" + NEW_LINE +

@@ -1,0 +1,705 @@
+import { describe, it, expect } from 'vitest';
+import {
+  parseTraffic,
+  parseSseStream,
+  summarizeTraffic,
+  getModelLabel,
+  getTokenSummary,
+  extractBodyContent,
+} from '../lib/llmTraffic';
+
+// ---------------------------------------------------------------------------
+// Anthropic non-streaming
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — Anthropic non-streaming', () => {
+  it('parses a standard Anthropic Messages API request/response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        headers: [{ name: 'host', values: ['api.anthropic.com'] }],
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            stream: false,
+            messages: [{ role: 'user', content: 'Hello' }],
+            system: 'You are helpful.',
+            tools: [{ name: 'get_weather', description: 'Get weather' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            content: [{ type: 'text', text: 'Hi there!' }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+            stop_reason: 'end_turn',
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+
+    expect(parsed.model).toBe('claude-sonnet-4-20250514');
+    expect(parsed.stream).toBe(false);
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.system).toBe('You are helpful.');
+    expect(parsed.tools).toHaveLength(1);
+    expect(parsed.maxTokens).toBe(1024);
+    expect(parsed.responseContent).toHaveLength(1);
+    expect(parsed.responseContent[0]!.text).toBe('Hi there!');
+    expect(parsed.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(parsed.stopReason).toBe('end_turn');
+    expect(parsed.sseEvents).toBeNull();
+  });
+
+  it('handles already-parsed JSON body objects', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: {
+          model: 'claude-sonnet-4-20250514',
+          messages: [{ role: 'user', content: 'Test' }],
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          content: [{ type: 'text', text: 'Response' }],
+          usage: { input_tokens: 5, output_tokens: 3 },
+          stop_reason: 'end_turn',
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+
+    expect(parsed.model).toBe('claude-sonnet-4-20250514');
+    expect(parsed.responseContent).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic streaming (SSE)
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — Anthropic streaming SSE', () => {
+  const sseBody = [
+    'event: message_start',
+    'data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":25}}}',
+    '',
+    'event: content_block_start',
+    'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+    '',
+    'event: content_block_delta',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+    '',
+    'event: content_block_delta',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}',
+    '',
+    'event: content_block_stop',
+    'data: {"type":"content_block_stop","index":0}',
+    '',
+    'event: message_delta',
+    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}}',
+    '',
+    'event: message_stop',
+    'data: {"type":"message_stop"}',
+    '',
+  ].join('\n');
+
+  it('reassembles streamed Anthropic response from SSE events', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            stream: true,
+            messages: [{ role: 'user', content: 'Hi' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+
+    expect(parsed.stream).toBe(true);
+    expect(parsed.model).toBe('claude-sonnet-4-20250514');
+    expect(parsed.sseEvents).not.toBeNull();
+    expect(parsed.sseEvents!.length).toBeGreaterThan(0);
+    expect(parsed.responseContent).toHaveLength(1);
+    expect(parsed.responseContent[0]!.text).toBe('Hello world');
+    expect(parsed.usage).toEqual({ input_tokens: 25, output_tokens: 12 });
+    expect(parsed.stopReason).toBe('end_turn');
+  });
+
+  it('handles tool_use streaming blocks', () => {
+    const toolSse = [
+      'event: message_start',
+      'data: {"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":50}}}',
+      '',
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather"}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"city\\":"}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\\"London\\"}"}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+      'event: message_delta',
+      'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":30}}',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: { type: 'JSON', json: JSON.stringify({ model: 'claude-sonnet-4-20250514', stream: true, messages: [] }) },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: toolSse },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+
+    expect(parsed.responseContent).toHaveLength(1);
+    expect(parsed.responseContent[0]!.type).toBe('tool_use');
+    expect(parsed.responseContent[0]!.name).toBe('get_weather');
+    expect(parsed.responseContent[0]!.input).toEqual({ city: 'London' });
+    expect(parsed.stopReason).toBe('tool_use');
+  });
+
+  it('detects x-mockserver-streamed and x-mockserver-stream-truncated headers', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: { type: 'JSON', json: '{"model":"claude-sonnet-4-20250514","messages":[]}' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [
+          { name: 'content-type', values: ['text/event-stream'] },
+          { name: 'x-mockserver-streamed', values: ['true'] },
+          { name: 'x-mockserver-stream-truncated', values: ['true'] },
+        ],
+        body: { type: 'STRING', string: 'event: message_start\ndata: {"type":"message_start","message":{"model":"claude-sonnet-4-20250514","content":[],"usage":{"input_tokens":10}}}\n\n' },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+    expect(parsed.streamed).toBe(true);
+    expect(parsed.streamTruncated).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenAI non-streaming
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — OpenAI non-streaming', () => {
+  it('parses a standard OpenAI Chat Completions request/response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/chat/completions',
+        headers: [{ name: 'host', values: ['api.openai.com'] }],
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4',
+            messages: [{ role: 'user', content: 'Hello' }],
+            tools: [{ type: 'function', function: { name: 'search' } }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4',
+            choices: [
+              {
+                message: { role: 'assistant', content: 'Hi!' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+
+    expect(parsed.model).toBe('gpt-4');
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.tools).toHaveLength(1);
+    expect(parsed.choices).toHaveLength(1);
+    expect(parsed.choices[0]!.message?.content).toBe('Hi!');
+    expect(parsed.usage).toEqual({ prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenAI streaming
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — OpenAI streaming SSE', () => {
+  it('reassembles streamed OpenAI response from SSE events', () => {
+    const sseBody = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}',
+      '',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}',
+      '',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}',
+      '',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/chat/completions',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({ model: 'gpt-4', stream: true, messages: [{ role: 'user', content: 'Hi' }] }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+
+    expect(parsed.model).toBe('gpt-4');
+    expect(parsed.sseEvents).not.toBeNull();
+    expect(parsed.choices).toHaveLength(1);
+    expect(parsed.choices[0]!.message?.content).toBe('Hello world');
+    expect(parsed.choices[0]!.finish_reason).toBe('stop');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP JSON-RPC
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — MCP JSON-RPC', () => {
+  it('detects MCP request with method and params', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/mcp',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'tools/list',
+            id: 1,
+            params: {},
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: { tools: [{ name: 'read_file' }] },
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('mcp');
+    if (parsed.kind !== 'mcp') return;
+
+    expect(parsed.method).toBe('tools/list');
+    expect(parsed.id).toBe(1);
+    expect(parsed.params).toEqual({});
+    expect(parsed.result).toEqual({ tools: [{ name: 'read_file' }] });
+  });
+
+  it('detects MCP JSON-RPC even on generic path', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/api/rpc',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'resources/read',
+          id: 42,
+          params: { uri: 'file:///test.txt' },
+        }),
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 42,
+          result: { contents: [{ text: 'hello' }] },
+        }),
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('mcp');
+    if (parsed.kind !== 'mcp') return;
+    expect(parsed.method).toBe('resources/read');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Generic / fallback
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — generic fallback', () => {
+  it('returns generic for unrecognized requests', () => {
+    const value = {
+      httpRequest: {
+        method: 'GET',
+        path: '/api/health',
+      },
+      httpResponse: {
+        statusCode: 200,
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('generic');
+    if (parsed.kind !== 'generic') return;
+    expect(parsed.method).toBe('GET');
+    expect(parsed.path).toBe('/api/health');
+    expect(parsed.statusCode).toBe(200);
+  });
+
+  it('handles completely empty value gracefully', () => {
+    const parsed = parseTraffic({});
+    expect(parsed.kind).toBe('generic');
+  });
+
+  it('handles null-ish bodies without throwing', () => {
+    const value = {
+      httpRequest: { method: 'POST', path: '/v1/messages', body: null },
+      httpResponse: { statusCode: 500, body: null },
+    };
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+    expect(parsed.model).toBeNull();
+    expect(parsed.messages).toEqual([]);
+  });
+
+  it('handles malformed JSON string bodies without throwing', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: { type: 'STRING', string: 'this is not json {{{' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'STRING', string: 'also not json' },
+      },
+    };
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+    expect(parsed.model).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseSseStream
+// ---------------------------------------------------------------------------
+
+describe('parseSseStream', () => {
+  it('parses well-formed SSE with event and data lines', () => {
+    const text = 'event: ping\ndata: {"type":"ping"}\n\nevent: message\ndata: {"text":"hi"}\n\n';
+    const events = parseSseStream(text);
+    expect(events).toHaveLength(2);
+    expect(events[0]!.event).toBe('ping');
+    expect(events[0]!.data).toBe('{"type":"ping"}');
+    expect(events[1]!.event).toBe('message');
+  });
+
+  it('handles data-only events (no event: line)', () => {
+    const text = 'data: {"chunk":1}\n\ndata: {"chunk":2}\n\n';
+    const events = parseSseStream(text);
+    expect(events).toHaveLength(2);
+    expect(events[0]!.event).toBeUndefined();
+    expect(events[0]!.data).toBe('{"chunk":1}');
+  });
+
+  it('handles multiline data', () => {
+    const text = 'data: line1\ndata: line2\n\n';
+    const events = parseSseStream(text);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toBe('line1\nline2');
+  });
+
+  it('handles trailing data without final blank line', () => {
+    const text = 'data: final';
+    const events = parseSseStream(text);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toBe('final');
+  });
+
+  it('returns empty array for empty string', () => {
+    expect(parseSseStream('')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// summarizeTraffic
+// ---------------------------------------------------------------------------
+
+describe('summarizeTraffic', () => {
+  it('extracts host, method, path, status, and parsed kind', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        headers: [{ name: 'host', values: ['api.anthropic.com'] }],
+        body: { type: 'JSON', json: '{"model":"claude-sonnet-4-20250514","messages":[]}' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'JSON', json: '{"content":[],"usage":{"input_tokens":1,"output_tokens":1}}' },
+      },
+    };
+
+    const summary = summarizeTraffic(value);
+    expect(summary.host).toBe('api.anthropic.com');
+    expect(summary.method).toBe('POST');
+    expect(summary.path).toBe('/v1/messages');
+    expect(summary.statusCode).toBe(200);
+    expect(summary.parsed.kind).toBe('anthropic');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getModelLabel / getTokenSummary
+// ---------------------------------------------------------------------------
+
+describe('getModelLabel', () => {
+  it('returns model for anthropic', () => {
+    const parsed = parseTraffic({
+      httpRequest: { method: 'POST', path: '/v1/messages', body: { type: 'JSON', json: '{"model":"claude-sonnet-4-20250514","messages":[]}' } },
+      httpResponse: { statusCode: 200, body: { type: 'JSON', json: '{"content":[],"usage":{}}' } },
+    });
+    expect(getModelLabel(parsed)).toBe('claude-sonnet-4-20250514');
+  });
+
+  it('returns null for generic', () => {
+    const parsed = parseTraffic({ httpRequest: { method: 'GET', path: '/health' }, httpResponse: { statusCode: 200 } });
+    expect(getModelLabel(parsed)).toBeNull();
+  });
+});
+
+describe('getTokenSummary', () => {
+  it('formats Anthropic token usage', () => {
+    const parsed = parseTraffic({
+      httpRequest: { method: 'POST', path: '/v1/messages', body: { type: 'JSON', json: '{"model":"x","messages":[]}' } },
+      httpResponse: { statusCode: 200, body: { type: 'JSON', json: '{"content":[],"usage":{"input_tokens":100,"output_tokens":50}}' } },
+    });
+    expect(getTokenSummary(parsed)).toBe('100 in / 50 out');
+  });
+
+  it('formats OpenAI token usage', () => {
+    const parsed = parseTraffic({
+      httpRequest: { method: 'POST', path: '/v1/chat/completions', body: { type: 'JSON', json: '{"model":"gpt-4","messages":[]}' } },
+      httpResponse: { statusCode: 200, body: { type: 'JSON', json: '{"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":10}}' } },
+    });
+    expect(getTokenSummary(parsed)).toBe('20 in / 10 out');
+  });
+
+  it('returns null for generic', () => {
+    const parsed = parseTraffic({ httpRequest: { method: 'GET', path: '/health' }, httpResponse: { statusCode: 200 } });
+    expect(getTokenSummary(parsed)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Headers in object format (not array)
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — headers as object map', () => {
+  it('detects streaming from content-type header in object format', () => {
+    const sseBody = 'event: ping\ndata: {"type":"ping"}\n\n';
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: { type: 'JSON', json: '{"model":"claude-sonnet-4-20250514","stream":true,"messages":[]}' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: { 'content-type': ['text/event-stream'] },
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+    expect(parsed.sseEvents).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractBodyContent — BINARY body decoding
+// ---------------------------------------------------------------------------
+
+describe('extractBodyContent', () => {
+  it('decodes a BINARY body with base64Bytes to a UTF-8 string', () => {
+    // "Hello, world!" base64-encoded
+    const base64 = btoa('Hello, world!');
+    const body = { type: 'BINARY', base64Bytes: base64 };
+    const result = extractBodyContent(body);
+    expect(result).toBe('Hello, world!');
+  });
+
+  it('decodes a BINARY body containing JSON to a parseable string', () => {
+    const jsonStr = '{"model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Hi"}]}';
+    const base64 = btoa(jsonStr);
+    const body = { type: 'BINARY', base64Bytes: base64 };
+    const result = extractBodyContent(body);
+    expect(result).toBe(jsonStr);
+    expect(JSON.parse(result as string)).toEqual({
+      model: 'claude-sonnet-4-20250514',
+      content: [{ type: 'text', text: 'Hi' }],
+    });
+  });
+
+  it('decodes a BINARY body containing SSE event stream text', () => {
+    const sseText = 'event: message_start\ndata: {"type":"message_start"}\n\n';
+    const base64 = btoa(sseText);
+    const body = { type: 'BINARY', base64Bytes: base64 };
+    const result = extractBodyContent(body);
+    expect(result).toBe(sseText);
+  });
+
+  it('returns the original object if base64 decoding fails', () => {
+    const body = { type: 'BINARY', base64Bytes: '!!!invalid-base64!!!' };
+    const result = extractBodyContent(body);
+    // Should fall back to returning the original object
+    expect(result).toBe(body);
+  });
+
+  it('returns the original object for BINARY without base64Bytes', () => {
+    const body = { type: 'BINARY' };
+    const result = extractBodyContent(body);
+    expect(result).toBe(body);
+  });
+
+  it('still handles STRING bodies correctly', () => {
+    const body = { type: 'STRING', string: 'hello' };
+    expect(extractBodyContent(body)).toBe('hello');
+  });
+
+  it('still handles JSON bodies correctly', () => {
+    const body = { type: 'JSON', json: '{"key":"value"}' };
+    expect(extractBodyContent(body)).toBe('{"key":"value"}');
+  });
+
+  it('passes through plain strings', () => {
+    expect(extractBodyContent('plain text')).toBe('plain text');
+  });
+
+  it('passes through null and undefined', () => {
+    expect(extractBodyContent(null)).toBeNull();
+    expect(extractBodyContent(undefined)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseTraffic — BINARY response body integration
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — BINARY response body', () => {
+  it('parses an Anthropic response with BINARY body type', () => {
+    const responseJson = JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      content: [{ type: 'text', text: 'Hello from binary!' }],
+      usage: { input_tokens: 5, output_tokens: 4 },
+      stop_reason: 'end_turn',
+    });
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/messages',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            messages: [{ role: 'user', content: 'Hi' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'BINARY',
+          base64Bytes: btoa(responseJson),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+    expect(parsed.responseContent).toHaveLength(1);
+    expect(parsed.responseContent[0]!.text).toBe('Hello from binary!');
+    expect(parsed.usage).toEqual({ input_tokens: 5, output_tokens: 4 });
+    expect(parsed.stopReason).toBe('end_turn');
+  });
+});

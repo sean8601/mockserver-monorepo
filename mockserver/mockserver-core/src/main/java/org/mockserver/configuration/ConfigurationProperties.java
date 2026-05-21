@@ -97,6 +97,11 @@ public class ConfigurationProperties {
     // non http proxying
     private static final String MOCKSERVER_FORWARD_BINARY_REQUESTS_WITHOUT_WAITING_FOR_RESPONSE = "mockserver.forwardBinaryRequestsWithoutWaitingForResponse";
 
+    // streaming proxy
+    private static final String MOCKSERVER_STREAMING_RESPONSES_ENABLED = "mockserver.streamingResponsesEnabled";
+    private static final String MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES = "mockserver.maxStreamingCaptureBytes";
+    private static final String MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS = "mockserver.streamIdleTimeoutSeconds";
+
     // CORS
     private static final String MOCKSERVER_ENABLE_CORS_FOR_API = "mockserver.enableCORSForAPI";
     private static final String MOCKSERVER_ENABLE_CORS_FOR_ALL_RESPONSES = "mockserver.enableCORSForAllResponses";
@@ -746,6 +751,59 @@ public class ConfigurationProperties {
 
     public static boolean alwaysCloseSocketConnections() {
         return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_ALWAYS_CLOSE_SOCKET_CONNECTIONS, "MOCKSERVER_ALWAYS_CLOSE_SOCKET_CONNECTIONS", "false"));
+    }
+
+    // streaming proxy
+
+    public static boolean streamingResponsesEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_STREAMING_RESPONSES_ENABLED, "MOCKSERVER_STREAMING_RESPONSES_ENABLED", "true"));
+    }
+
+    /**
+     * If true (the default) streaming responses (Server-Sent Events, or chunked responses with no Content-Length)
+     * received while proxying are relayed to the client incrementally as they arrive, instead of being fully
+     * buffered before being forwarded. This keeps streaming APIs (such as LLM APIs) responsive when proxied.
+     * <p>
+     * Default is true
+     *
+     * @param enable enable incremental relay of streaming responses while proxying
+     */
+    public static void streamingResponsesEnabled(boolean enable) {
+        setProperty(MOCKSERVER_STREAMING_RESPONSES_ENABLED, "" + enable);
+    }
+
+    public static int maxStreamingCaptureBytes() {
+        return Math.max(0, readIntegerProperty(MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES, "MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES", 262144));
+    }
+
+    /**
+     * The maximum number of bytes of a streaming response body captured into the event log while relaying it.
+     * The full stream is always relayed to the client; this only bounds how much is retained for the dashboard
+     * and retrieve API. Once exceeded the logged body is truncated and flagged.
+     * <p>
+     * Default is 262144 (256 KB)
+     *
+     * @param bytes maximum number of streaming response body bytes captured into the event log
+     */
+    public static void maxStreamingCaptureBytes(int bytes) {
+        setProperty(MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES, "" + bytes);
+    }
+
+    public static int streamIdleTimeoutSeconds() {
+        return Math.max(0, readIntegerProperty(MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS, "MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS", 60));
+    }
+
+    /**
+     * The maximum time in seconds a streaming response connection may be idle (no chunk received) before it is
+     * considered dead and closed. This replaces the fixed socket timeout for streaming responses, which would
+     * otherwise terminate long-lived streams.
+     * <p>
+     * Default is 60 seconds
+     *
+     * @param seconds maximum idle time in seconds between streaming response chunks
+     */
+    public static void streamIdleTimeoutSeconds(int seconds) {
+        setProperty(MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS, "" + seconds);
     }
 
     public static String localBoundIP() {

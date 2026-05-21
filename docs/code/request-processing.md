@@ -343,6 +343,46 @@ sequenceDiagram
     MS->>C: Response (with hop-by-hop headers stripped)
 ```
 
+### Streaming Forward Path
+
+When the upstream response is a streaming response (detected from `Content-Type: text/event-stream`, or `Transfer-Encoding: chunked` with no `Content-Length`), and `streamingResponsesEnabled` is `true` (default), MockServer relays chunks incrementally rather than buffering the entire body.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant AH as HttpActionHandler
+    participant NH as NettyHttpClient
+    participant SR as StreamingResponseRelayHandler
+    participant SB as StreamingBody
+    participant T as Target Server
+
+    AH->>NH: sendRequest(request, targetAddress)
+    NH->>T: Forward request
+    T->>SR: HTTP response head (streaming detected)
+    SR->>SR: Build head-only HttpResponse with StreamingBody
+    SR->>AH: Complete RESPONSE_FUTURE immediately
+    AH->>C: Write response head to client
+
+    loop For each SSE / chunked data chunk
+        T->>SR: HttpContent chunk
+        SR->>C: Forward chunk to client immediately
+        SR->>SB: Append to bounded capture buffer
+    end
+
+    T->>SR: LastHttpContent
+    SR->>AH: Signal stream complete
+    AH->>AH: Log FORWARDED_REQUEST (captured bytes as body)
+    SR->>C: Write LastHttpContent
+```
+
+Key behavioural points:
+
+- The `CompletableFuture<HttpResponse>` completes at **response-head time** (not after the full body is received), so the global socket timeout (`maxSocketTimeoutInMillis`) no longer applies to the streamed portion. A per-stream `IdleStateHandler` enforces `streamIdleTimeoutSeconds` between chunks instead.
+- The full stream always reaches the client. The capture buffer is bounded to `maxStreamingCaptureBytes` (default 256 KB). When exceeded, the logged body is truncated and the `FORWARDED_REQUEST` log entry carries `x-mockserver-stream-truncated: true`.
+- Non-streaming responses are unaffected — `StreamingAwareHttpObjectAggregator` detects the response type and delegates to the standard `HttpObjectAggregator` path for non-streaming responses.
+- `FORWARD_REPLACE` (`overrideHttpResponse`) is incompatible with streaming because the response override/modifier/template needs the full response body. When a response override, response modifier, or response template is present, `HttpOverrideForwardedRequestActionHandler` passes `disableStreaming=true` through `HttpForwardAction.sendRequest` to `NettyHttpClient.sendRequest`, which sets the `DISABLE_RESPONSE_STREAMING` channel attribute. `StreamingAwareHttpObjectAggregator.channelRead` checks this attribute and always delegates to the standard `HttpObjectAggregator` path when it is set, ensuring the response is fully aggregated regardless of `streamingResponsesEnabled`.
+- WAR deployments (`ctx == null`) always use the buffered path.
+
 ### ProxyPass (Reverse Proxy)
 
 The `proxyPass` configuration property allows MockServer to act as a reverse proxy, mapping incoming path prefixes to upstream servers with automatic path rewriting. This is evaluated in `HttpActionHandler.handleProxyPass()` after expectation matching and CORS, but before the speculative proxy attempt.

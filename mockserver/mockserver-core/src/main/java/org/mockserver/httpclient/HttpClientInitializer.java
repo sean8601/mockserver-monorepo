@@ -6,13 +6,14 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpContentDecompressor;
-import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http2.*;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.proxy.HttpProxyHandler;
 import io.netty.handler.proxy.Socks5ProxyHandler;
 import org.mockserver.codec.MockServerBinaryClientCodec;
 import org.mockserver.codec.MockServerHttpClientCodec;
+import org.mockserver.codec.StreamingAwareHttpObjectAggregator;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.LoggingHandler;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Protocol;
@@ -32,6 +33,7 @@ import static org.slf4j.event.Level.TRACE;
 @ChannelHandler.Sharable
 public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
 
+    private final Configuration configuration;
     private final MockServerLogger mockServerLogger;
     private final boolean forwardProxyClient;
     private final Protocol httpProtocol;
@@ -42,7 +44,12 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
     private final NettySslContextFactory nettySslContextFactory;
 
     HttpClientInitializer(Map<ProxyConfiguration.Type, ProxyConfiguration> proxyConfigurations, MockServerLogger mockServerLogger, boolean forwardProxyClient, NettySslContextFactory nettySslContextFactory, Protocol httpProtocol) {
+        this(proxyConfigurations, mockServerLogger, forwardProxyClient, nettySslContextFactory, httpProtocol, null);
+    }
+
+    HttpClientInitializer(Map<ProxyConfiguration.Type, ProxyConfiguration> proxyConfigurations, MockServerLogger mockServerLogger, boolean forwardProxyClient, NettySslContextFactory nettySslContextFactory, Protocol httpProtocol, Configuration configuration) {
         this.proxyConfigurations = proxyConfigurations;
+        this.configuration = configuration;
         this.mockServerLogger = mockServerLogger;
         this.forwardProxyClient = forwardProxyClient;
         this.httpProtocol = httpProtocol;
@@ -104,7 +111,11 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
     private void configureHttp1Pipeline(ChannelPipeline pipeline) {
         pipeline.addLast(new HttpClientCodec());
         pipeline.addLast(new HttpContentDecompressor());
-        pipeline.addLast(new HttpObjectAggregator(Integer.MAX_VALUE));
+        if (configuration != null) {
+            pipeline.addLast(new StreamingAwareHttpObjectAggregator(Integer.MAX_VALUE, configuration, mockServerLogger));
+        } else {
+            pipeline.addLast(new StreamingAwareHttpObjectAggregator(Integer.MAX_VALUE));
+        }
         pipeline.addLast(new MockServerHttpClientCodec(mockServerLogger, proxyConfigurations));
         pipeline.addLast(httpClientHandler);
         protocolFuture.complete(Protocol.HTTP_1_1);

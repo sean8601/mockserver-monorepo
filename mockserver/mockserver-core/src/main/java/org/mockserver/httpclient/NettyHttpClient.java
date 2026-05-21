@@ -44,6 +44,7 @@ public class NettyHttpClient {
     static final AttributeKey<InetSocketAddress> REMOTE_SOCKET = AttributeKey.valueOf("REMOTE_SOCKET");
     static final AttributeKey<CompletableFuture<Message>> RESPONSE_FUTURE = AttributeKey.valueOf("RESPONSE_FUTURE");
     static final AttributeKey<Boolean> ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE = AttributeKey.valueOf("ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE");
+    static final AttributeKey<Boolean> DISABLE_RESPONSE_STREAMING = AttributeKey.valueOf("DISABLE_RESPONSE_STREAMING");
     private static final HopByHopHeaderFilter hopByHopHeaderFilter = new HopByHopHeaderFilter();
     private final Configuration configuration;
     private final MockServerLogger mockServerLogger;
@@ -74,6 +75,10 @@ public class NettyHttpClient {
     }
 
     public CompletableFuture<HttpResponse> sendRequest(final HttpRequest httpRequest, @Nullable InetSocketAddress remoteAddress, Long connectionTimeoutMillis) throws SocketConnectionException {
+        return sendRequest(httpRequest, remoteAddress, connectionTimeoutMillis, false);
+    }
+
+    public CompletableFuture<HttpResponse> sendRequest(final HttpRequest httpRequest, @Nullable InetSocketAddress remoteAddress, Long connectionTimeoutMillis, boolean disableStreaming) throws SocketConnectionException {
         if (!eventLoopGroup.isShuttingDown()) {
             if (proxyConfigurations != null && !Boolean.TRUE.equals(httpRequest.isSecure())
                 && proxyConfigurations.containsKey(ProxyConfiguration.Type.HTTP)
@@ -97,12 +102,12 @@ public class NettyHttpClient {
             final CompletableFuture<Message> responseFuture = new CompletableFuture<>();
             final Protocol httpProtocol = httpRequest.getProtocol() != null ? httpRequest.getProtocol() : Protocol.HTTP_1_1;
 
-            final HttpClientInitializer clientInitializer = new HttpClientInitializer(proxyConfigurations, mockServerLogger, forwardProxyClient, nettySslContextFactory, httpProtocol);
+            final HttpClientInitializer clientInitializer = new HttpClientInitializer(proxyConfigurations, mockServerLogger, forwardProxyClient, nettySslContextFactory, httpProtocol, configuration);
 
             final long requestStartedMillis = System.currentTimeMillis();
             final AtomicLong connectionEstablishedMillis = new AtomicLong();
 
-            new Bootstrap()
+            Bootstrap bootstrap = new Bootstrap()
                 .group(eventLoopGroup)
                 .channel(NioSocketChannel.class)
                 .option(ChannelOption.AUTO_READ, true)
@@ -113,8 +118,11 @@ public class NettyHttpClient {
                 .attr(REMOTE_SOCKET, remoteAddress)
                 .attr(RESPONSE_FUTURE, responseFuture)
                 .attr(ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE, true)
-                .handler(clientInitializer)
-                .connect(remoteAddress)
+                .handler(clientInitializer);
+            if (disableStreaming) {
+                bootstrap.attr(DISABLE_RESPONSE_STREAMING, true);
+            }
+            bootstrap.connect(remoteAddress)
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
                         connectionEstablishedMillis.set(System.currentTimeMillis());

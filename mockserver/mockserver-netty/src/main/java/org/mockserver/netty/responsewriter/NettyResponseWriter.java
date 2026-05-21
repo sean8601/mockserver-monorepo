@@ -1,9 +1,10 @@
 package org.mockserver.netty.responsewriter;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http.DefaultHttpObject;
+import io.netty.handler.codec.http.*;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
@@ -13,6 +14,7 @@ import org.mockserver.model.ConnectionOptions;
 import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.StreamingBody;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 
@@ -38,7 +40,81 @@ public class NettyResponseWriter extends ResponseWriter {
 
     @Override
     public void sendResponse(HttpRequest request, HttpResponse response) {
-        writeAndCloseSocket(ctx, request, response);
+        if (response.getStreamingBody() != null) {
+            writeStreamingResponse(ctx, request, response);
+        } else {
+            writeAndCloseSocket(ctx, request, response);
+        }
+    }
+
+    private void writeStreamingResponse(ChannelHandlerContext ctx, HttpRequest request, HttpResponse response) {
+        StreamingBody streamingBody = response.getStreamingBody();
+
+        // Build a Netty DefaultHttpResponse head (not Full)
+        int statusCode = response.getStatusCode() != null ? response.getStatusCode() : 200;
+        HttpResponseStatus status;
+        if (response.getReasonPhrase() != null && !response.getReasonPhrase().isEmpty()) {
+            status = new HttpResponseStatus(statusCode, response.getReasonPhrase());
+        } else {
+            status = HttpResponseStatus.valueOf(statusCode);
+        }
+        DefaultHttpResponse nettyResponse = new DefaultHttpResponse(HttpVersion.HTTP_1_1, status);
+
+        // Copy headers from the MockServer response
+        if (response.getHeaderMultimap() != null) {
+            response.getHeaderMultimap().entries().forEach(entry ->
+                nettyResponse.headers().add(entry.getKey().getValue(), entry.getValue().getValue())
+            );
+        }
+
+        // Ensure chunked transfer encoding
+        if (!nettyResponse.headers().contains(HttpHeaderNames.TRANSFER_ENCODING)) {
+            HttpUtil.setTransferEncodingChunked(nettyResponse, true);
+        }
+
+        // Send the response head
+        ctx.writeAndFlush(nettyResponse);
+
+        // Subscribe to the streaming body to forward chunks as they arrive.
+        // After each chunk write completes, call streamingBody.requestMore() to trigger
+        // the next upstream read — this implements backpressure so a slow client does not
+        // cause unbounded buffering on the server channel.
+        streamingBody.subscribe(
+            // onChunk
+            chunk -> {
+                if (ctx.channel().isActive()) {
+                    DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
+                    ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                } else {
+                    // Channel is no longer active; still request more so the upstream can
+                    // detect the closed channel on the next read and clean up.
+                    streamingBody.requestMore();
+                }
+            },
+            // onComplete
+            () -> {
+                if (ctx.channel().isActive()) {
+                    ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> {
+                        boolean closeChannel;
+                        ConnectionOptions connectionOptions = response.getConnectionOptions();
+                        if (connectionOptions != null && connectionOptions.getCloseSocket() != null) {
+                            closeChannel = connectionOptions.getCloseSocket();
+                        } else {
+                            closeChannel = !(request.isKeepAlive() != null && request.isKeepAlive());
+                        }
+                        if (closeChannel || configuration.alwaysCloseSocketConnections()) {
+                            ctx.close();
+                        }
+                    });
+                }
+            },
+            // onError
+            error -> {
+                if (ctx.channel().isActive()) {
+                    ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> ctx.close());
+                }
+            }
+        );
     }
 
     private void writeAndCloseSocket(final ChannelHandlerContext ctx, final HttpRequest request, HttpResponse response) {

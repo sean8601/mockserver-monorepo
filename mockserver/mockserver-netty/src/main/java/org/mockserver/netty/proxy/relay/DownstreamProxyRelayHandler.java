@@ -2,7 +2,7 @@ package org.mockserver.netty.proxy.relay;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
-import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpObject;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.slf4j.event.Level;
@@ -13,7 +13,7 @@ import java.nio.channels.ClosedSelectorException;
 import static org.mockserver.exception.ExceptionHandling.closeOnFlush;
 import static org.mockserver.exception.ExceptionHandling.connectionClosedException;
 
-public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<FullHttpResponse> {
+public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     private final MockServerLogger mockServerLogger;
     private final Channel upstreamChannel;
@@ -31,8 +31,8 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Ful
     }
 
     @Override
-    public void channelRead0(final ChannelHandlerContext ctx, final FullHttpResponse response) {
-        upstreamChannel.writeAndFlush(response).addListener((ChannelFutureListener) future -> {
+    public void channelRead0(final ChannelHandlerContext ctx, final HttpObject msg) {
+        upstreamChannel.writeAndFlush(msg).addListener((ChannelFutureListener) future -> {
             if (future.isSuccess()) {
                 ctx.read();
             } else {
@@ -40,7 +40,7 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Ful
                     mockServerLogger.logEvent(
                         new LogEntry()
                             .setLogLevel(Level.ERROR)
-                            .setMessageFormat("exception while returning writing " + response)
+                            .setMessageFormat("exception while returning writing " + msg)
                             .setThrowable(future.cause())
                     );
                 }

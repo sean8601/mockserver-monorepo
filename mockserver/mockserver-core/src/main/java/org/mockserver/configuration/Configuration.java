@@ -78,6 +78,11 @@ public class Configuration {
     private Boolean assumeAllRequestsAreHttp;
     private Boolean http2Enabled;
 
+    // streaming proxy
+    private Boolean streamingResponsesEnabled;
+    private Integer maxStreamingCaptureBytes;
+    private Integer streamIdleTimeoutSeconds;
+
     // non http proxying
     private Boolean forwardBinaryRequestsWithoutWaitingForResponse;
     private BinaryProxyListener binaryProxyListener;
@@ -837,6 +842,69 @@ public class Configuration {
      */
     public Configuration http2Enabled(Boolean http2Enabled) {
         this.http2Enabled = http2Enabled;
+        return this;
+    }
+
+    public Boolean streamingResponsesEnabled() {
+        if (streamingResponsesEnabled == null) {
+            return ConfigurationProperties.streamingResponsesEnabled();
+        }
+        return streamingResponsesEnabled;
+    }
+
+    /**
+     * If true (the default) streaming responses (Server-Sent Events, or chunked responses with no Content-Length)
+     * received while proxying are relayed to the client incrementally as they arrive, instead of being fully
+     * buffered before being forwarded. This keeps streaming APIs (such as LLM APIs) responsive when proxied.
+     * <p>
+     * Default is true
+     *
+     * @param streamingResponsesEnabled enable incremental relay of streaming responses while proxying
+     */
+    public Configuration streamingResponsesEnabled(Boolean streamingResponsesEnabled) {
+        this.streamingResponsesEnabled = streamingResponsesEnabled;
+        return this;
+    }
+
+    public Integer maxStreamingCaptureBytes() {
+        if (maxStreamingCaptureBytes == null) {
+            return ConfigurationProperties.maxStreamingCaptureBytes();
+        }
+        return Math.max(0, maxStreamingCaptureBytes);
+    }
+
+    /**
+     * The maximum number of bytes of a streaming response body captured into the event log while relaying it.
+     * The full stream is always relayed to the client; this only bounds how much is retained for the dashboard
+     * and retrieve API. Once exceeded the logged body is truncated and flagged.
+     * <p>
+     * Default is 262144 (256 KB)
+     *
+     * @param maxStreamingCaptureBytes maximum number of streaming response body bytes captured into the event log
+     */
+    public Configuration maxStreamingCaptureBytes(Integer maxStreamingCaptureBytes) {
+        this.maxStreamingCaptureBytes = maxStreamingCaptureBytes;
+        return this;
+    }
+
+    public Integer streamIdleTimeoutSeconds() {
+        if (streamIdleTimeoutSeconds == null) {
+            return ConfigurationProperties.streamIdleTimeoutSeconds();
+        }
+        return Math.max(0, streamIdleTimeoutSeconds);
+    }
+
+    /**
+     * The maximum time in seconds a streaming response connection may be idle (no chunk received) before it is
+     * considered dead and closed. This replaces the fixed socket timeout for streaming responses, which would
+     * otherwise terminate long-lived streams.
+     * <p>
+     * Default is 60 seconds
+     *
+     * @param streamIdleTimeoutSeconds maximum idle time in seconds between streaming response chunks
+     */
+    public Configuration streamIdleTimeoutSeconds(Integer streamIdleTimeoutSeconds) {
+        this.streamIdleTimeoutSeconds = streamIdleTimeoutSeconds;
         return this;
     }
 

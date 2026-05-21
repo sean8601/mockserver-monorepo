@@ -8,6 +8,8 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import ToggleButton from '@mui/material/ToggleButton';
 import Box from '@mui/material/Box';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
@@ -16,9 +18,13 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { useState } from 'react';
-import { useDashboardStore } from '../store';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import TrafficIcon from '@mui/icons-material/Traffic';
+import DownloadIcon from '@mui/icons-material/Download';
+import { useState, useCallback } from 'react';
+import { useDashboardStore, type ViewMode } from '../store';
 import type { ConnectionStatus } from '../types';
+import type { ConnectionParams } from '../hooks/useConnectionParams';
 
 function statusColor(status: ConnectionStatus): 'success' | 'warning' | 'error' | 'default' {
   switch (status) {
@@ -37,15 +43,46 @@ interface AppBarProps {
   onClearServer: () => Promise<void>;
   onClearLogs: () => Promise<void>;
   onClearExpectations: () => Promise<void>;
+  connectionParams: ConnectionParams;
 }
 
-export default function AppBar({ onClearServer, onClearLogs, onClearExpectations }: AppBarProps) {
+export default function AppBar({ onClearServer, onClearLogs, onClearExpectations, connectionParams }: AppBarProps) {
   const connectionStatus = useDashboardStore((s) => s.connectionStatus);
   const themeMode = useDashboardStore((s) => s.themeMode);
   const toggleTheme = useDashboardStore((s) => s.toggleThemeMode);
   const autoScroll = useDashboardStore((s) => s.autoScroll);
   const toggleAutoScroll = useDashboardStore((s) => s.toggleAutoScroll);
+  const view = useDashboardStore((s) => s.view);
+  const setView = useDashboardStore((s) => s.setView);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadHar = useCallback(async () => {
+    setDownloading(true);
+    try {
+      const protocol = connectionParams.secure ? 'https' : 'http';
+      const base = `${protocol}://${connectionParams.host}:${connectionParams.port}`;
+      const url = `${base}/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR`;
+      const response = await fetch(url, { method: 'PUT' });
+      if (!response.ok) {
+        console.error(`HAR download failed: ${response.status} ${response.statusText}`);
+        return;
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = 'mockserver-traffic.har';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('HAR download failed:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }, [connectionParams]);
 
   return (
     <MuiAppBar position="static" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -60,10 +97,44 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           variant="outlined"
           sx={{ textTransform: 'capitalize' }}
         />
+        <ToggleButtonGroup
+          value={view}
+          exclusive
+          size="small"
+          onChange={(_, newView: ViewMode | null) => {
+            if (newView !== null) setView(newView);
+          }}
+          sx={{
+            ml: 1,
+            '& .MuiToggleButton-root': {
+              py: 0.25,
+              px: 1,
+              fontSize: '0.7rem',
+              textTransform: 'none',
+              lineHeight: 1.4,
+            },
+          }}
+        >
+          <ToggleButton value="dashboard" aria-label="Dashboard view">
+            <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Dashboard
+          </ToggleButton>
+          <ToggleButton value="traffic" aria-label="Traffic inspector view">
+            <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Traffic
+          </ToggleButton>
+        </ToggleButtonGroup>
         <Box sx={{ flex: 1 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           ⌘K search · ⌘L clear · Esc filter
         </Typography>
+        <Tooltip title={downloading ? 'Downloading HAR...' : 'Download HAR'}>
+          <span>
+            <IconButton size="small" color="inherit" onClick={() => void handleDownloadHar()} disabled={downloading}>
+              <DownloadIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title={autoScroll ? 'Pause auto-scroll' : 'Resume auto-scroll'}>
           <IconButton size="small" color="inherit" onClick={toggleAutoScroll}>
             {autoScroll ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}

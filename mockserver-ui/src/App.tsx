@@ -13,11 +13,13 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import AppBar from './components/AppBar';
 import FilterPanel from './components/FilterPanel';
 import DashboardGrid from './components/DashboardGrid';
+import TrafficInspector from './components/TrafficInspector';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import type { RequestFilter } from './types';
 
 export default function App() {
   const themeMode = useDashboardStore((s) => s.themeMode);
+  const view = useDashboardStore((s) => s.view);
   const error = useDashboardStore((s) => s.error);
   const theme = useMemo(() => buildTheme(themeMode), [themeMode]);
 
@@ -80,14 +82,15 @@ export default function App() {
             onClearServer={handleClearServer}
             onClearLogs={handleClearLogs}
             onClearExpectations={handleClearExpectations}
+            connectionParams={params}
           />
-          <FilterPanel onFilterChange={handleFilterChange} />
+          {view === 'dashboard' && <FilterPanel onFilterChange={handleFilterChange} />}
           {error && (
             <Alert severity="error" sx={{ mx: 1, mt: 1, flexShrink: 0 }}>
               {error}
             </Alert>
           )}
-          <DashboardGrid />
+          {view === 'dashboard' ? <DashboardGrid /> : <TrafficInspector />}
         </Box>
         <DebugMismatchDialog />
       </DebugMismatchContext.Provider>

@@ -32,6 +32,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     private ConnectionOptions connectionOptions;
     private Integer streamId = null;
     private Timing timing;
+    private transient StreamingBody streamingBody;
 
     /**
      * Static builder to create a response.
@@ -569,6 +570,25 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
         return timing;
     }
 
+    /**
+     * Attach a streaming body to this response. When set, the response head has been
+     * delivered but the body is still arriving incrementally via this sink.
+     *
+     * @param streamingBody the streaming body sink
+     */
+    public HttpResponse withStreamingBody(StreamingBody streamingBody) {
+        this.streamingBody = streamingBody;
+        return this;
+    }
+
+    /**
+     * @return the streaming body sink, or null if this is a regular fully-buffered response
+     */
+    @JsonIgnore
+    public StreamingBody getStreamingBody() {
+        return streamingBody;
+    }
+
     @Override
     @JsonIgnore
     public Type getType() {
@@ -600,7 +620,8 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withDelay(getDelay())
             .withConnectionOptions(connectionOptions)
             .withStreamId(streamId)
-            .withTiming(timing);
+            .withTiming(timing)
+            .withStreamingBody(streamingBody);
     }
 
     public HttpResponse update(HttpResponse responseOverride, HttpResponseModifier responseModifier) {

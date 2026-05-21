@@ -34,6 +34,11 @@ public class HttpOverrideForwardedRequestActionHandler extends HttpForwardAction
             if (!hasExplicitHostOverride) {
                 adjustHostHeader(requestToSend);
             }
+            // Disable streaming when a response override, response modifier, or response
+            // template is present — the override needs the full response body to apply correctly.
+            boolean hasResponseOverride = httpOverrideForwardedRequest.getResponseOverride() != null
+                || httpOverrideForwardedRequest.getResponseModifier() != null
+                || httpOverrideForwardedRequest.getResponseTemplate() != null;
             HttpTemplate responseTemplate = httpOverrideForwardedRequest.getResponseTemplate();
             return sendRequest(requestToSend, null, httpResponse -> {
                 HttpResponse result = httpResponse;
@@ -54,7 +59,7 @@ public class HttpOverrideForwardedRequestActionHandler extends HttpForwardAction
                     }
                 }
                 return result;
-            });
+            }, hasResponseOverride);
         } else {
             return sendRequest(request, null, httpResponse -> httpResponse);
         }

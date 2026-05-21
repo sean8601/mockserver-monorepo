@@ -9,12 +9,15 @@ import type {
   WebSocketMessage,
 } from '../types';
 
+export type ViewMode = 'dashboard' | 'traffic';
+
 interface DashboardState {
   logMessages: LogMessage[];
   activeExpectations: JsonListItem[];
   recordedRequests: JsonListItem[];
   proxiedRequests: JsonListItem[];
 
+  view: ViewMode;
   requestFilter: RequestFilter;
   filterEnabled: boolean;
   filterExpanded: boolean;
@@ -27,6 +30,7 @@ interface DashboardState {
   expectationSearch: string;
   receivedSearch: string;
   proxiedSearch: string;
+  trafficSearch: string;
 
   error: string | null;
 
@@ -35,8 +39,11 @@ interface DashboardState {
   debugMismatchResult: DebugMismatchResult | null;
   debugMismatchError: string | null;
 
+  selectedTrafficIndex: number | null;
+
   applyMessage: (message: WebSocketMessage) => void;
   clearUI: () => void;
+  setView: (view: ViewMode) => void;
   setRequestFilter: (filter: RequestFilter) => void;
   setFilterEnabled: (enabled: boolean) => void;
   setFilterExpanded: (expanded: boolean) => void;
@@ -50,6 +57,8 @@ interface DashboardState {
   setExpectationSearch: (term: string) => void;
   setReceivedSearch: (term: string) => void;
   setProxiedSearch: (term: string) => void;
+  setTrafficSearch: (term: string) => void;
+  setSelectedTrafficIndex: (index: number | null) => void;
   setError: (error: string | null) => void;
   openDebugMismatch: (result: DebugMismatchResult) => void;
   closeDebugMismatch: () => void;
@@ -73,6 +82,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   recordedRequests: [],
   proxiedRequests: [],
 
+  view: 'dashboard' as ViewMode,
   requestFilter: {},
   filterEnabled: false,
   filterExpanded: false,
@@ -85,6 +95,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   expectationSearch: '',
   receivedSearch: '',
   proxiedSearch: '',
+  trafficSearch: '',
 
   error: null,
 
@@ -92,6 +103,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   debugMismatchLoading: false,
   debugMismatchResult: null,
   debugMismatchError: null,
+
+  selectedTrafficIndex: null,
 
   applyMessage: (message) =>
     set({
@@ -116,6 +129,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       debugMismatchError: null,
     }),
 
+  setView: (view) => set({ view, selectedTrafficIndex: null }),
   setRequestFilter: (filter) => set({ requestFilter: filter }),
   setFilterEnabled: (enabled) => set({ filterEnabled: enabled }),
   setFilterExpanded: (expanded) => set({ filterExpanded: expanded }),
@@ -137,6 +151,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   setExpectationSearch: (term) => set({ expectationSearch: term }),
   setReceivedSearch: (term) => set({ receivedSearch: term }),
   setProxiedSearch: (term) => set({ proxiedSearch: term }),
+  setTrafficSearch: (term) => set({ trafficSearch: term }),
+  setSelectedTrafficIndex: (index) => set({ selectedTrafficIndex: index }),
   setError: (error) => set({ error }),
   openDebugMismatch: (result) =>
     set({ debugMismatchOpen: true, debugMismatchResult: result, debugMismatchLoading: false, debugMismatchError: null }),

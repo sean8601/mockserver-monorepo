@@ -1,0 +1,239 @@
+---
+title: Inspect AI Agent Traffic - LLM & MCP Proxy
+shortTitle: AI Traffic Inspection
+layout: page
+pageOrder: 6
+section: 'AI Integration'
+subsection: true
+sitemap:
+  priority: 0.8
+  changefreq: 'monthly'
+  lastmod: 2026-05-21T00:00:00+00:00
+---
+
+<p>When you use an AI coding agent such as Claude Code or OpenCode, or an AI library such as LangChain, you often have no visibility into the HTTPS traffic it sends to LLM APIs (Anthropic, OpenAI, etc.) and MCP servers. Running MockServer as an HTTPS proxy gives you a complete record of every request and response — including model selection, token counts, tool calls, and streamed completions — with no changes to application code.</p>
+
+<p>Because MockServer performs TLS man-in-the-middle (MITM) interception, it can decrypt and log HTTPS traffic while forwarding it transparently. Streaming responses (Server-Sent Events used by LLM APIs) are relayed incrementally so the agent remains fully responsive — there is no buffering delay.</p>
+
+<h2>How It Works</h2>
+
+<ol>
+    <li><a href="#start-mockserver">Start MockServer as a proxy</a> on a local port</li>
+    <li><a href="#trust-ca">Trust the MockServer CA certificate</a> so TLS connections succeed</li>
+    <li><a href="#configure-tools">Configure your AI tool</a> to send traffic through the proxy</li>
+    <li><a href="#view-traffic">View the captured traffic</a> in the dashboard or via the retrieve API</li>
+</ol>
+
+<a id="start-mockserver" class="anchor" href="#start-mockserver">&nbsp;</a>
+
+<h2>1. Start MockServer as a Proxy</h2>
+
+<p>Any MockServer instance acts as a transparent HTTPS proxy — no special mode is required. Start one using your preferred method:</p>
+
+{% include_subpage _includes/running_mock_server_summary.html %}
+
+<p>The quickest option for local use:</p>
+
+<pre class="prettyprint code"><code class="code">docker run -d --rm -p 1080:1080 mockserver/mockserver</code></pre>
+
+<p>Or download and run the executable JAR:</p>
+
+<pre class="prettyprint code"><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar -serverPort 1080</code></pre>
+
+<p>Once started, MockServer listens on port 1080. Any HTTPS request sent through it will be intercepted, logged, and forwarded to the real destination.</p>
+
+<a id="trust-ca" class="anchor" href="#trust-ca">&nbsp;</a>
+
+<h2>2. Trust the MockServer CA Certificate</h2>
+
+<p>MockServer intercepts TLS by dynamically generating certificates for each upstream hostname, signed by its own Certificate Authority (CA). Your AI tool must trust this CA, otherwise TLS handshakes will fail.</p>
+
+<p>The MockServer CA certificate (PEM format) is available at:</p>
+
+<ul>
+    <li><strong>From the running container or JAR:</strong> <code class="code inline">http://localhost:1080/mockserver/ca.pem</code> — download this once MockServer is running</li>
+    <li><strong>From the GitHub repository:</strong> <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/mockserver/mockserver-core/src/main/resources/org/mockserver/socket/CertificateAuthorityCertificate.pem">CertificateAuthorityCertificate.pem</a></li>
+    <li><strong>From the classpath</strong> (if using the Java API): <code class="code inline">/org/mockserver/socket/CertificateAuthorityCertificate.pem</code></li>
+</ul>
+
+<p>Download it to a local file:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s http://localhost:1080/mockserver/ca.pem -o mockserver-ca.pem</code></pre>
+
+<p>See <a href="/mock_server/HTTPS_TLS.html#verify_trust_chain">HTTPS &amp; TLS — Ensure MockServer Certificates Are Trusted</a> for full details on adding the CA to operating systems, JVMs, and HTTP clients.</p>
+
+<p><strong>Security note:</strong> The default CA private key is public knowledge (it is in the MockServer git repository), which means the default CA should only be used in isolated development environments. For shared or semi-permanent setups, enable <code class="code inline">dynamicallyCreateCertificateAuthorityCertificate</code> to generate a unique local CA whose private key is never published.</p>
+
+<a id="configure-tools" class="anchor" href="#configure-tools">&nbsp;</a>
+
+<h2>3. Configure Your AI Tool</h2>
+
+<p>Most AI tools and libraries route HTTPS traffic through the proxy and CA specified by standard environment variables. Set these before starting your tool:</p>
+
+<pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
+export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem   # Node.js tools (Claude Code, OpenCode)
+export SSL_CERT_FILE=/path/to/mockserver-ca.pem          # Python tools (LangChain, httpx)</code></pre>
+
+<p>Select your tool for specific instructions:</p>
+
+<button id="button_claude_code_proxy" class="accordion">Claude Code</button>
+<div class="panel">
+    <p>Claude Code is a Node.js process. It honours <code class="code inline">HTTPS_PROXY</code> for outbound traffic and <code class="code inline">NODE_EXTRA_CA_CERTS</code> to extend the Node.js CA trust store without replacing it.</p>
+    <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
+export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem</code></pre>
+    <p>Start Claude Code in a terminal where these variables are set:</p>
+    <pre class="prettyprint code"><code class="code">claude</code></pre>
+    <p>All HTTPS calls to <code class="code inline">api.anthropic.com</code> and any MCP servers using HTTP/streamable-HTTP transport will now flow through MockServer. Streaming completions are relayed incrementally — Claude Code remains fully responsive.</p>
+    <p>To make the configuration persistent for a shell session, add the exports to your shell profile (<code class="code inline">~/.zshrc</code>, <code class="code inline">~/.bashrc</code>, etc.).</p>
+</div>
+
+<button id="button_opencode_proxy" class="accordion">OpenCode</button>
+<div class="panel">
+    <p>OpenCode is also a Node.js process and uses the same standard variables:</p>
+    <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
+export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem</code></pre>
+    <p>Start OpenCode in a terminal where these variables are set:</p>
+    <pre class="prettyprint code"><code class="code">opencode</code></pre>
+    <p>Alternatively, set them in your OpenCode launch configuration or shell profile to apply them globally.</p>
+</div>
+
+<button id="button_langchain_proxy" class="accordion">LangChain / Python AI SDKs</button>
+<div class="panel">
+    <p>Python's <code class="code inline">httpx</code> and <code class="code inline">requests</code> libraries (used by the Anthropic and OpenAI Python SDKs) honour <code class="code inline">HTTPS_PROXY</code> and <code class="code inline">SSL_CERT_FILE</code>:</p>
+    <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
+export SSL_CERT_FILE=/path/to/mockserver-ca.pem</code></pre>
+    <p>If you instantiate an <code class="code inline">httpx</code> client directly, pass the proxy and CA bundle explicitly:</p>
+    <pre class="prettyprint lang-python code"><code class="code">import anthropic
+import httpx
+
+client = anthropic.Anthropic(
+    http_client=httpx.Client(
+        proxy="http://localhost:1080",
+        verify="/path/to/mockserver-ca.pem",
+    )
+)</code></pre>
+    <p>For the OpenAI Python SDK:</p>
+    <pre class="prettyprint lang-python code"><code class="code">import openai
+import httpx
+
+client = openai.OpenAI(
+    http_client=httpx.Client(
+        proxy="http://localhost:1080",
+        verify="/path/to/mockserver-ca.pem",
+    )
+)</code></pre>
+    <p>LangChain uses whatever HTTP client the underlying SDK uses, so setting <code class="code inline">HTTPS_PROXY</code> and <code class="code inline">SSL_CERT_FILE</code> at the process level is normally sufficient.</p>
+</div>
+
+<a id="view-traffic" class="anchor" href="#view-traffic">&nbsp;</a>
+
+<h2>4. View the Captured Traffic</h2>
+
+<h3>Dashboard Traffic Inspector</h3>
+
+<p>Open the MockServer dashboard in a browser:</p>
+
+<pre class="prettyprint code"><code class="code">http://localhost:1080/mockserver/dashboard</code></pre>
+
+<p>The dashboard has two views, switched by the <strong>Dashboard / Traffic</strong> toggle in the top navigation bar. Click <strong>Traffic</strong> to open the Traffic Inspector.</p>
+
+<img class="ui_image" src="/images/MockServerTrafficInspector.png" alt="MockServer Traffic Inspector">
+
+<p>The Traffic Inspector shows a master list of every proxied request/response pair. Click any row to open a detail pane on the right. The detail pane adapts to the type of traffic detected:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Traffic kind</th><th>Detail tabs</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Anthropic Messages API</strong> (<code class="code inline">/v1/messages</code>) or <strong>OpenAI Chat Completions</strong> (<code class="code inline">/v1/chat/completions</code>)</td>
+            <td>
+                <strong>Messages</strong> — the request body: system prompt, messages array, and tools definition<br>
+                <strong>Conversation</strong> — a chat-transcript view (see below)<br>
+                <strong>SSE Timeline</strong> — decoded Server-Sent Events for streamed responses, one event per row with elapsed time<br>
+                <strong>Raw JSON</strong> — the raw request and response JSON
+            </td>
+        </tr>
+        <tr>
+            <td><strong>MCP JSON-RPC</strong> (<code class="code inline">Content-Type: application/json</code> with a <code class="code inline">jsonrpc</code> field)</td>
+            <td>
+                <strong>MCP</strong> — decoded JSON-RPC: method, id, params, and result or error<br>
+                <strong>Raw JSON</strong> — the raw request and response JSON
+            </td>
+        </tr>
+        <tr>
+            <td>Any other HTTP traffic</td>
+            <td><strong>Raw JSON</strong> only</td>
+        </tr>
+    </tbody>
+</table>
+
+<h4>Conversation View</h4>
+
+<p>The <strong>Conversation</strong> tab renders LLM exchanges as a chat transcript, making it easy to read multi-turn interactions at a glance:</p>
+
+<ul>
+    <li>User messages appear left-aligned; assistant messages appear right-aligned, styled as WhatsApp-style chat bubbles</li>
+    <li>System prompts appear as a distinct banner above the conversation</li>
+    <li>Tool calls (requests to use a tool) and tool results (the tool's output) each appear as their own labelled bubbles</li>
+    <li>A strip at the bottom of the pane shows the model name, token counts (input and output), and the stop reason</li>
+</ul>
+
+<h4>SSE Timeline</h4>
+
+<p>The <strong>SSE Timeline</strong> tab is shown for streamed LLM responses. It displays each decoded Server-Sent Event as a separate row with the elapsed time since the first chunk arrived, making it easy to spot latency spikes mid-stream. The final reassembled message is also shown.</p>
+
+<p>The Proxied Requests panel in the standard Dashboard view also shows all forwarded request/response pairs with full JSON body inspection.</p>
+
+<h3>Download HAR</h3>
+
+<p>Click the <strong>Download HAR</strong> button in the top navigation bar of the dashboard to export all captured traffic as a HAR (HTTP Archive) file. The HAR file can be opened in browser DevTools, Charles Proxy, or any HAR analysis tool. Streamed LLM responses are included as readable text in the exported file.</p>
+
+<h3>Retrieve API</h3>
+
+<p>Retrieve all proxied request-response pairs as JSON:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES</code></pre>
+
+<p>Export as HAR (HTTP Archive) for use with browser DevTools or HAR analysis tools:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&amp;format=HAR" -o traffic.har</code></pre>
+
+<p>Filter to a specific host (e.g. the Anthropic API):</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES \
+  -d '{"headers": {"host": [{"value": "api.anthropic.com"}]}}'</code></pre>
+
+<h2>Streamed Response Capture</h2>
+
+<p>LLM APIs stream completions as Server-Sent Events. MockServer relays each chunk immediately to the client (so the agent sees live output) and simultaneously captures up to <a href="/mock_server/configuration_properties.html#button_configuration_streaming_responses_enabled">256 KB</a> of the stream body in the event log. When a streamed response body exceeds this limit, the logged body is truncated and marked with the response header <code class="code inline">x-mockserver-stream-truncated: true</code>; the full stream still reaches the client.</p>
+
+<p>The streaming relay applies to HTTP/1.1 proxied responses only. Streaming is auto-detected from response headers (<code class="code inline">Content-Type: text/event-stream</code>, or <code class="code inline">Transfer-Encoding: chunked</code> with no <code class="code inline">Content-Length</code>). Non-streaming responses are handled identically to before — this feature adds no overhead for ordinary JSON responses.</p>
+
+<p>Relevant configuration properties:</p>
+
+<ul>
+    <li><a href="/mock_server/configuration_properties.html#button_configuration_streaming_responses_enabled"><code class="code inline">streamingResponsesEnabled</code></a> — enable or disable streaming relay (default: <code class="code inline">true</code>)</li>
+    <li><a href="/mock_server/configuration_properties.html#button_configuration_max_streaming_capture_bytes"><code class="code inline">maxStreamingCaptureBytes</code></a> — maximum bytes captured per stream (default: 262144)</li>
+    <li><a href="/mock_server/configuration_properties.html#button_configuration_stream_idle_timeout_seconds"><code class="code inline">streamIdleTimeoutSeconds</code></a> — idle timeout between chunks (default: 60s)</li>
+</ul>
+
+<a id="mcp-caveat" class="anchor" href="#mcp-caveat">&nbsp;</a>
+
+<h2>MCP Transport Caveat</h2>
+
+<div class="alert" style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; margin: 16px 0;">
+    <p><strong>stdio MCP servers cannot be proxied.</strong> MCP servers running over the <strong>stdio</strong> transport communicate through local process pipes, not over the network. There is no HTTP traffic to intercept.</p>
+    <p>MCP servers using the <strong>HTTP</strong> or <strong>streamable-HTTP</strong> transport communicate over HTTPS and will be captured by MockServer exactly like any other HTTPS call. If you want to inspect MCP traffic, choose an MCP server that supports HTTP or streamable-HTTP transport, or connect to a remote MCP server over HTTPS.</p>
+</div>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/HTTPS_TLS.html"><strong>HTTPS &amp; TLS</strong></a> — full details on trusting the MockServer CA certificate</li>
+    <li><a href="/proxy/getting_started.html"><strong>Getting Started Proxying</strong></a> — general proxy setup and client configuration</li>
+    <li><a href="/mock_server/ai_debugging.html"><strong>Debugging with AI</strong></a> — using AI assistants to analyse captured traffic via MCP</li>
+    <li><a href="/mock_server/configuration_properties.html#proxy_configuration"><strong>Proxying Configuration</strong></a> — all proxy-related configuration properties</li>
+    <li><a href="/mock_server/mockserver_ui.html"><strong>MockServer UI</strong></a> — dashboard overview</li>
+</ul>

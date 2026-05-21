@@ -645,6 +645,61 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.proxyRemotePort="443"</code></pre>
 </div>
 
+<a id="streaming_proxy_configuration" class="anchor" href="#streaming_proxy_configuration">&nbsp;</a>
+
+<h2>Streaming Proxy Configuration:</h2>
+
+<p>These properties control how MockServer handles streaming responses (Server-Sent Events and chunked responses with no <span class="inline_code">Content-Length</span>) when acting as a proxy. This is particularly relevant when proxying LLM API traffic from AI coding agents. See <a href="/mock_server/ai_traffic_inspection.html">Inspect AI Agent Traffic</a> for a full usage guide.</p>
+
+<button id="button_configuration_streaming_responses_enabled" class="accordion title"><strong>Streaming Responses Enabled</strong></button>
+<div class="panel title">
+    <p>If true (the default) streaming responses (Server-Sent Events, or chunked responses with no <span class="inline_code">Content-Length</span>) received while proxying are relayed to the client incrementally as they arrive, instead of being fully buffered before being forwarded. This keeps streaming APIs such as LLM APIs (Anthropic, OpenAI) responsive when proxied. Streaming is auto-detected from response headers and does not affect non-streaming responses.</p>
+    <p>Set to false to revert to the previous behaviour of fully buffering every proxied response before forwarding it. The <span class="inline_code">ctx == null</span> (WAR deployment) path always uses buffering regardless of this setting.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.streamingResponsesEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.streamingResponsesEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_STREAMING_RESPONSES_ENABLED=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.streamingResponsesEnabled=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.streamingResponsesEnabled="false"</code></pre>
+</div>
+
+<button id="button_configuration_max_streaming_capture_bytes" class="accordion title"><strong>Maximum Streaming Response Body Capture</strong></button>
+<div class="panel title">
+    <p>The maximum number of bytes of a streaming response body captured into the event log while relaying it. The full stream is always relayed to the client; this only bounds how much is retained for the dashboard Traffic Inspector and the retrieve API. Once this limit is exceeded, the logged body is truncated and the response is flagged with <span class="inline_code">x-mockserver-stream-truncated: true</span>. Increase this value if you need to capture full LLM completions longer than 256 KB.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">262144</span> (256 KB)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.maxStreamingCaptureBytes(int bytes)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.maxStreamingCaptureBytes=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.maxStreamingCaptureBytes=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.maxStreamingCaptureBytes="524288"</code></pre>
+</div>
+
+<button id="button_configuration_stream_idle_timeout_seconds" class="accordion title"><strong>Streaming Response Idle Timeout</strong></button>
+<div class="panel title">
+    <p>The maximum time in seconds a streaming response connection may be idle (no chunk received from the upstream server) before MockServer closes it and logs the captured portion as truncated. This replaces the fixed global socket timeout for streaming responses, which would otherwise terminate long-lived LLM completions. The timeout resets on every chunk received, so a slow-but-active stream is never cut off prematurely.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">60</span> (seconds)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.streamIdleTimeoutSeconds(int seconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.streamIdleTimeoutSeconds=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.streamIdleTimeoutSeconds=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.streamIdleTimeoutSeconds="120"</code></pre>
+</div>
+
 <button id="button_configuration_global_response_delay_millis" class="accordion title"><strong>Global Response Delay</strong></button>
 <div class="panel title">
     <p>Adds a fixed delay (in milliseconds) to all matched expectation responses. This delay is <strong>additive</strong> — it combines with any per-action delay configured on individual expectations. For example, if an expectation has a 100ms delay and the global delay is 200ms, the total delay is 300ms.</p>

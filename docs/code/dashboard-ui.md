@@ -90,6 +90,99 @@ The `DashboardWebSocketHandler` implements both `MockServerLogListener` and `Moc
 
 **Throttling**: A `Semaphore(1)` with a scheduled release every 1 second limits updates to at most one per second per client, preventing UI flooding during high-traffic scenarios.
 
+## Traffic Inspector
+
+The dashboard has a second view — the **Traffic Inspector** — toggled via a **Dashboard / Traffic** button in `AppBar.tsx`. It replaces the standard 2×2 `DashboardGrid` when the `view` Zustand store state is `'traffic'`.
+
+```mermaid
+graph TB
+    APP["App.tsx"]
+    AB["AppBar.tsx
+View toggle + Download HAR button"]
+    DG["DashboardGrid.tsx
+(view = 'dashboard')"]
+    TI["TrafficInspector.tsx
+(view = 'traffic')"]
+    CV["ConversationView.tsx
+Chat-transcript renderer"]
+    LL["src/lib/llmTraffic.ts
+LLM/MCP parser + SSE reassembly"]
+
+    APP --> AB
+    AB -->|setView| APP
+    APP -->|view = dashboard| DG
+    APP -->|view = traffic| TI
+    TI --> CV
+    TI --> LL
+```
+
+### View State
+
+`mockserver-ui/src/store/index.ts` holds a `view: 'dashboard' | 'traffic'` field alongside the existing fields. `AppBar.tsx` renders a toggle button that calls `setView('dashboard')` or `setView('traffic')`. `App.tsx` renders either `DashboardGrid` or `TrafficInspector` based on the current value.
+
+`AppBar.tsx` also renders a **Download HAR** button (visible in both views). Clicking it calls `GET /mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR`, then triggers a browser file download of the returned HAR JSON. Streamed response bodies are included as captured text in the HAR entries.
+
+### TrafficInspector Component
+
+`TrafficInspector.tsx` is a full-width layout that consumes the existing `proxiedRequests` feed from the Zustand store — no server-side changes are needed for data plumbing, because `FORWARDED_REQUEST` log entries already carry `httpRequest` and `httpResponse`. The streaming relay ensures streamed LLM responses are captured there too.
+
+**Master list** — one row per proxied call:
+
+| Column | Source |
+|--------|--------|
+| Timestamp | `LogEntry.epochTime` |
+| Host | `httpRequest.headers.host` |
+| Method + path | `httpRequest.method` + `httpRequest.path` |
+| Status | `httpResponse.statusCode` |
+| Latency | Derived from paired log entry timestamps |
+| Model + tokens | Parsed by `llmTraffic.ts` from request/response bodies |
+
+**Detail pane** — shown on row selection. A single adaptive tab row is rendered; which tabs appear depends on the traffic kind detected by `llmTraffic.ts`:
+
+| Traffic kind | Tabs rendered |
+|-------------|---------------|
+| Anthropic (`/v1/messages`) or OpenAI (`/v1/chat/completions`) | **Messages**, **Conversation**, **SSE Timeline**, **Raw JSON** |
+| MCP JSON-RPC (`jsonrpc` field present) | **MCP**, **Raw JSON** |
+| All other traffic | **Raw JSON** only |
+
+- **Messages** — request body: system prompt, messages array, and tools definition (formatted JSON)
+- **Conversation** — delegates to `ConversationView.tsx` (see below)
+- **SSE Timeline** — decoded SSE event list from `llmTraffic.ts` reassembly; one row per `data:` line with elapsed time. If `x-mockserver-stream-truncated: true` is present in the response headers, a banner notes that the captured body was truncated.
+- **MCP** — decoded JSON-RPC fields: method, id, params, result/error
+- **Raw JSON** — raw request and response JSON via `JsonViewer`
+
+### ConversationView Component
+
+`ConversationView.tsx` renders an LLM exchange as a chat transcript:
+
+- **System prompt** — rendered as a distinct banner above the message list
+- **User messages** — left-aligned chat bubbles
+- **Assistant messages** — right-aligned chat bubbles (WhatsApp-style layout)
+- **Tool-call bubbles** — one bubble per tool call in the assistant turn, labelled with the tool name
+- **Tool-result bubbles** — one bubble per tool result in a user turn, labelled with the tool use ID
+- **Model strip** — a summary line at the bottom of the pane showing model name, input tokens, output tokens, and stop reason
+
+The component is a pure renderer — it receives a parsed `LLMTraffic` object from `llmTraffic.ts` and has no direct store or network dependencies.
+
+### LLM/MCP Parser (`llmTraffic.ts`)
+
+`src/lib/llmTraffic.ts` is a pure client-side parser — no server changes are needed. It detects traffic kind and extracts structured data for the detail pane.
+
+**Traffic detection:**
+
+| Pattern | Detection logic |
+|---------|----------------|
+| Anthropic Messages API | Path ends with `/v1/messages`; extracts `model`, `usage.input_tokens`, `usage.output_tokens`, `stop_reason`, messages array, tool-use blocks |
+| OpenAI Chat Completions | Path ends with `/v1/chat/completions`; extracts `model`, `usage.prompt_tokens`, `usage.completion_tokens`, `finish_reason`, messages array, `tool_calls` |
+| MCP JSON-RPC | `Content-Type: application/json` body with a `jsonrpc` field; extracts `method`, `id`, `params`, `result`, `error` |
+| Fallback | Generic display — `Raw JSON` tab only |
+
+**SSE reassembly:** For streamed responses (body contains `data:` lines), `llmTraffic.ts` splits the captured body on `\n\n`, parses each `data:` chunk as JSON, and merges incremental delta fields (`delta.text`, `delta.content`, `index`-keyed tool call arguments) to reconstruct the final message content. The per-chunk elapsed timestamps are preserved for the SSE Timeline tab.
+
+**Base64 body decoding:** a response body may be recorded with a `BINARY` body type, in which case the content is base64-encoded. `llmTraffic.ts` detects the `BINARY` type and base64-decodes the body to text before parsing. This is a defensive fallback — the backend now records textual streaming responses (SSE, JSON) as `STRING` bodies (see [event-system.md](event-system.md)), so streamed LLM/MCP bodies normally arrive as readable text; the decode handles any body still delivered as `BINARY`.
+
+Existing components — `Panel.tsx`, `JsonViewer.tsx`, search/filter, and the dark/light theme — are reused inside `TrafficInspector.tsx`.
+
 ## Frontend Application
 
 ### Technology Stack
@@ -120,6 +213,7 @@ The `DashboardWebSocketHandler` implements both `MockServerLogListener` and `Moc
   expectationSearch: '',
   receivedSearch: '',
   proxiedSearch: '',
+  view: 'dashboard',        // 'dashboard' | 'traffic' — controls which top-level view is rendered
 }
 ```
 
@@ -144,11 +238,16 @@ graph TB
     APP["App.tsx
 Orchestrator: theme, WebSocket, shortcuts"]
     AB["AppBar.tsx
-Title bar: status, theme, clear menu"]
+Title bar: status, theme, clear menu
+view toggle, Download HAR"]
     FP["FilterPanel.tsx
 Collapsible request filter form"]
     DG["DashboardGrid.tsx
 2x2 CSS grid layout"]
+    TI["TrafficInspector.tsx
+Master list + adaptive detail tabs"]
+    CV["ConversationView.tsx
+Chat-transcript renderer"]
     LP["LogPanel.tsx
 Log messages panel"]
     EP["ExpectationPanel.tsx
@@ -176,7 +275,10 @@ Expandable match failure reasons"]
 
     APP --> AB
     APP --> FP
-    APP --> DG
+    APP -->|view = dashboard| DG
+    APP -->|view = traffic| TI
+    TI --> CV
+    TI --> JV
     DG --> LP
     DG --> EP
     DG --> RP1
@@ -215,7 +317,7 @@ Supporting components:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu, Dashboard/Traffic view toggle, Download HAR button |
 | `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send |
 | `Panel` | `Panel.tsx` | Shared panel wrapper with title, count chip, search box, auto-scroll content area |
 | `LogEntry` | `LogEntry.tsx` | Renders a single log entry; supports `collapsible` mode (collapsed by default with summary) and `divider` mode |
@@ -226,6 +328,8 @@ Supporting components:
 | `DescriptionDisplay` | `DescriptionDisplay.tsx` | Renders description variants: plain string, structured `{first, second}`, or JSON object with embedded viewer |
 | `BecauseSection` | `BecauseSection.tsx` | Expandable list of match failure reasons for `EXPECTATION_NOT_MATCHED` entries |
 | `DashboardGrid` | `DashboardGrid.tsx` | CSS grid layout for the four panels |
+| `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for LLM/MCP traffic inspection |
+| `ConversationView` | `ConversationView.tsx` | Chat-transcript renderer for LLM exchanges: system banner, user/assistant bubbles, tool-call/tool-result bubbles, model strip |
 
 ### Collapsible Items
 

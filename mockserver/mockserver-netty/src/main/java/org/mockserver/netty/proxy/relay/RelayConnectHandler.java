@@ -14,6 +14,7 @@ import io.netty.handler.codec.http2.*;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.SslHandler;
+import org.mockserver.codec.StreamingAwareHttpObjectAggregator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.log.model.LogEntry;
@@ -234,7 +235,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
     private void configureHttp1LoopbackPipeline(ChannelPipeline pipelineToMockServer, ChannelHandlerContext proxyClientCtx) {
         pipelineToMockServer.addLast(new HttpClientCodec(configuration.maxInitialLineLength(), configuration.maxHeaderSize(), configuration.maxChunkSize()));
         pipelineToMockServer.addLast(new HttpContentDecompressor());
-        pipelineToMockServer.addLast(new HttpObjectAggregator(Integer.MAX_VALUE));
+        pipelineToMockServer.addLast(new StreamingAwareHttpObjectAggregator(Integer.MAX_VALUE, configuration, mockServerLogger, true));
         pipelineToMockServer.addLast(new DownstreamProxyRelayHandler(mockServerLogger, proxyClientCtx.channel()));
     }
 

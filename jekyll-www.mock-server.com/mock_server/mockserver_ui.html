@@ -25,6 +25,8 @@ sitemap:
 
 <img class="ui_image" src="/images/MockServerDashboard.png" alt="MockServer Dashboard">
 
+<p>The top navigation bar also contains a <strong>Dashboard / Traffic</strong> toggle that switches between the 4-panel Dashboard view and the <a href="#ui_traffic_inspector_section">Traffic Inspector</a> — a dedicated view for inspecting LLM and MCP traffic.</p>
+
 <a id="launch_ui" class="anchor" href="#launch_ui">&nbsp;</a>
 
 <h2>Launch UI</h2>
@@ -185,6 +187,63 @@ sitemap:
 </ul>
 
 <p>This is useful when using MockServer as a proxy to debug connectivity issues, inspect request/response pairs, or create expectations based on real traffic.</p>
+
+<a id="ui_traffic_inspector_section" class="anchor" href="#ui_traffic_inspector_section">&nbsp;</a>
+
+<h2>Traffic Inspector</h2>
+
+<p>The Traffic Inspector is a second dashboard view purpose-built for inspecting LLM and MCP traffic when MockServer is used as an <a href="/mock_server/ai_traffic_inspection.html">HTTPS observability proxy</a> in front of AI coding agents or AI libraries. Switch to it using the <strong>Dashboard / Traffic</strong> toggle in the top navigation bar.</p>
+
+<img class="ui_image" src="/images/MockServerTrafficInspector.png" alt="MockServer Traffic Inspector">
+
+<p>The Traffic Inspector has two areas:</p>
+
+<ul>
+    <li><strong>Master list</strong> (left) — one row per proxied request/response pair, showing timestamp, host, HTTP method and path, status code, and latency. For recognised LLM calls, the row also shows the model name and token counts.</li>
+    <li><strong>Detail pane</strong> (right) — shown when you click a row in the master list. The tabs available depend on the type of traffic detected.</li>
+</ul>
+
+<h3>Detail Tabs by Traffic Kind</h3>
+
+<table class="table">
+    <thead>
+        <tr><th>Traffic kind</th><th>Available tabs</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Anthropic Messages API</strong> or <strong>OpenAI Chat Completions</strong></td>
+            <td>
+                <strong>Messages</strong> — request body: system prompt, messages array, and tools definition<br>
+                <strong>Conversation</strong> — chat-transcript view (see below)<br>
+                <strong>SSE Timeline</strong> — decoded Server-Sent Events for streamed responses<br>
+                <strong>Raw JSON</strong> — raw request and response JSON
+            </td>
+        </tr>
+        <tr>
+            <td><strong>MCP JSON-RPC</strong></td>
+            <td>
+                <strong>MCP</strong> — decoded JSON-RPC: method, id, params, and result or error<br>
+                <strong>Raw JSON</strong> — raw request and response JSON
+            </td>
+        </tr>
+        <tr>
+            <td>Other HTTP traffic</td>
+            <td><strong>Raw JSON</strong> only</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Conversation View</h3>
+
+<p>The <strong>Conversation</strong> tab renders LLM exchanges as a chat transcript. User messages are left-aligned and assistant messages are right-aligned, styled as WhatsApp-style chat bubbles. System prompts appear as a distinct banner above the conversation. Tool calls and tool results each appear as their own labelled bubbles. A strip at the bottom of the pane shows the model name, token counts, and stop reason.</p>
+
+<h3>SSE Timeline</h3>
+
+<p>The <strong>SSE Timeline</strong> tab shows each Server-Sent Event from a streamed LLM response as a separate row with the elapsed time since the first chunk arrived. This makes it easy to spot latency spikes within a single response. The final reassembled message is also shown. If the captured body was truncated (because it exceeded <a href="/mock_server/configuration_properties.html#button_configuration_max_streaming_capture_bytes"><code class="code inline">maxStreamingCaptureBytes</code></a>), a banner indicates this.</p>
+
+<h3>Download HAR</h3>
+
+<p>The <strong>Download HAR</strong> button in the top navigation bar exports all captured proxied traffic as a HAR (HTTP Archive) file. The file can be opened in browser DevTools, Charles Proxy, or any HAR analysis tool. Streamed LLM responses are included as readable text. The same export is also available via the <a href="/mock_server/mockserver_clients.html">retrieve API</a>.</p>
 
 <a id="ui_real_time_updates" class="anchor" href="#ui_real_time_updates">&nbsp;</a>
 

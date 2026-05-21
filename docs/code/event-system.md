@@ -149,6 +149,21 @@ The `compactLogFormat` configuration property (default `false`) controls log out
 | `arguments` | Object[] | Arguments for formatting |
 | `deleted` | boolean | Soft-delete flag |
 
+### Streamed Response Capture in FORWARDED_REQUEST
+
+When MockServer proxies a streaming response (Server-Sent Events or chunked with no `Content-Length`) and `streamingResponsesEnabled` is `true`, the `FORWARDED_REQUEST` log entry is written **after the stream completes** rather than synchronously after `CompletableFuture.get()`. The entry is written from the stream-completion callback in `HttpActionHandler` once `LastHttpContent` arrives.
+
+The `httpResponse` body in the log entry contains the bytes captured by `StreamingBody` (bounded to `maxStreamingCaptureBytes`, default 256 KB). Two additional headers may appear on the logged `httpResponse`:
+
+| Header | Meaning |
+|--------|---------|
+| `x-mockserver-streamed: true` | Response was relayed incrementally (not buffered) |
+| `x-mockserver-stream-truncated: true` | Captured body was truncated at `maxStreamingCaptureBytes`; the client received the full stream |
+
+These headers are present only in the log entry — they are not sent to the client. The full stream always reaches the client regardless of the capture limit.
+
+If the upstream connection closes mid-stream (`channelInactive`), the relay handler still emits a `FORWARDED_REQUEST` entry with the bytes captured so far, flagged with `x-mockserver-stream-truncated: true`.
+
 ## Event Log Storage
 
 `CircularConcurrentLinkedDeque<LogEntry>` is a bounded, thread-safe deque. When capacity (`maxLogEntries`) is reached, the oldest entries are evicted and their `clear()` method is called (releasing references for GC).

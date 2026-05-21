@@ -18,6 +18,7 @@ import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.crud.CrudDispatcher;
 import org.mockserver.model.*;
+import org.mockserver.model.StreamingBody;
 import org.mockserver.openapi.OpenAPIResponseValidator;
 import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
@@ -493,6 +494,32 @@ public class HttpActionHandler {
                                                 .setArguments(request, response)
                                         );
                                     }
+                                    responseWriter.writeResponse(request, response, false);
+                                } else if (response.getStreamingBody() != null) {
+                                    // Streaming response: write the head immediately and log
+                                    // the FORWARDED_REQUEST entry after the stream completes
+                                    final HttpResponse streamingResponse = response;
+                                    responseWriter.writeResponse(request, streamingResponse, false);
+                                    streamingResponse.getStreamingBody().addCompletionListener(() -> {
+                                        HttpResponse logResponse = streamingResponse.clone();
+                                        byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
+                                        setCapturedStreamingBody(logResponse, captured);
+                                        logResponse.withHeader("x-mockserver-streamed", "true");
+                                        if (streamingResponse.getStreamingBody().isTruncated()) {
+                                            logResponse.withHeader("x-mockserver-stream-truncated", "true");
+                                        }
+                                        mockServerLogger.logEvent(
+                                            new LogEntry()
+                                                .setType(FORWARDED_REQUEST)
+                                                .setLogLevel(Level.INFO)
+                                                .setCorrelationId(request.getLogCorrelationId())
+                                                .setHttpRequest(request)
+                                                .setHttpResponse(logResponse)
+                                                .setExpectation(request, logResponse)
+                                                .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
+                                                .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
+                                        );
+                                    });
                                 } else {
                                     mockServerLogger.logEvent(
                                         new LogEntry()
@@ -505,8 +532,8 @@ public class HttpActionHandler {
                                             .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
                                             .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
                                     );
+                                    responseWriter.writeResponse(request, response, false);
                                 }
-                                responseWriter.writeResponse(request, response, false);
                             } catch (SocketCommunicationException sce) {
                                 returnBadGateway(responseWriter, request, sce.getMessage());
                             } catch (Throwable throwable) {
@@ -603,18 +630,43 @@ public class HttpActionHandler {
                         if (response == null) {
                             response = badGatewayResponse();
                         }
-                        mockServerLogger.logEvent(
-                            new LogEntry()
-                                .setType(FORWARDED_REQUEST)
-                                .setLogLevel(Level.INFO)
-                                .setCorrelationId(request.getLogCorrelationId())
-                                .setHttpRequest(request)
-                                .setHttpResponse(response)
-                                .setExpectation(request, response)
-                                .setMessageFormat("returning response:{}for proxy pass forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, targetAddress))
-                        );
-                        responseWriter.writeResponse(request, response, false);
+                        if (response.getStreamingBody() != null) {
+                            final HttpResponse streamingResponse = response;
+                            responseWriter.writeResponse(request, streamingResponse, false);
+                            streamingResponse.getStreamingBody().addCompletionListener(() -> {
+                                HttpResponse logResponse = streamingResponse.clone();
+                                byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
+                                setCapturedStreamingBody(logResponse, captured);
+                                logResponse.withHeader("x-mockserver-streamed", "true");
+                                if (streamingResponse.getStreamingBody().isTruncated()) {
+                                    logResponse.withHeader("x-mockserver-stream-truncated", "true");
+                                }
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(FORWARDED_REQUEST)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setHttpResponse(logResponse)
+                                        .setExpectation(request, logResponse)
+                                        .setMessageFormat("returning response:{}for proxy pass forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
+                                        .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, targetAddress))
+                                );
+                            });
+                        } else {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(FORWARDED_REQUEST)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setHttpResponse(response)
+                                    .setExpectation(request, response)
+                                    .setMessageFormat("returning response:{}for proxy pass forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
+                                    .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, targetAddress))
+                            );
+                            responseWriter.writeResponse(request, response, false);
+                        }
                     } catch (Throwable throwable) {
                         returnBadGateway(responseWriter, request, "proxy pass forwarding failed for " + mapping.getTargetUri() + ": " + throwable.getMessage());
                     }
@@ -882,27 +934,87 @@ public class HttpActionHandler {
         scheduler.submit(responseFuture, () -> {
             try {
                 HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-                responseWriter.writeResponse(request, response, false);
+                if (response != null && response.getStreamingBody() != null) {
+                    writeStreamingForwardActionResponse(response, responseWriter, request, action, responseFuture, postProcessor);
+                } else {
+                    responseWriter.writeResponse(request, response, false);
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(FORWARDED_REQUEST)
+                            .setLogLevel(Level.INFO)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setHttpResponse(response)
+                            .setExpectation(request, response)
+                            .setExpectationId(action.getExpectationId())
+                            .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
+                            .setArguments(response, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId())
+                    );
+                    if (postProcessor != null) {
+                        postProcessor.run();
+                    }
+                }
+            } catch (Throwable throwable) {
+                handleExceptionDuringForwardingRequest(action, request, responseWriter, throwable);
+                if (postProcessor != null) {
+                    postProcessor.run();
+                }
+            }
+        }, synchronous, throwable -> true);
+    }
+
+    private void writeStreamingForwardActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, final HttpForwardActionResult responseFuture, final Runnable postProcessor) {
+        final StreamingBody streamingBody = response.getStreamingBody();
+
+        // Write the response head through the response writer (which will subscribe to the streaming body)
+        responseWriter.writeResponse(request, response, false);
+
+        // Register a completion callback on the streaming body to write the log entry
+        // We wrap the existing subscriber's onComplete/onError to add logging after the stream finishes
+        final Runnable logAndPostProcess = () -> {
+            try {
+                HttpResponse logResponse = response.clone();
+                byte[] captured = streamingBody.capturedBytes();
+                setCapturedStreamingBody(logResponse, captured);
+                logResponse.withHeader("x-mockserver-streamed", "true");
+                if (streamingBody.isTruncated()) {
+                    logResponse.withHeader("x-mockserver-stream-truncated", "true");
+                }
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(FORWARDED_REQUEST)
                         .setLogLevel(Level.INFO)
                         .setCorrelationId(request.getLogCorrelationId())
                         .setHttpRequest(request)
-                        .setHttpResponse(response)
-                        .setExpectation(request, response)
-                        .setExpectationId(action.getExpectationId())
-                        .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
-                        .setArguments(response, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId())
+                        .setHttpResponse(logResponse)
+                        .setExpectation(request, logResponse)
+                        .setExpectationId(action != null ? action.getExpectationId() : null)
+                        .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}" + (action != null ? "for action:{}from expectation:{}" : ""))
+                        .setArguments(action != null
+                            ? new Object[]{logResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId()}
+                            : new Object[]{logResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress())}
+                        )
                 );
             } catch (Throwable throwable) {
-                handleExceptionDuringForwardingRequest(action, request, responseWriter, throwable);
+                if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(WARN)
+                            .setLogLevel(Level.WARN)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setMessageFormat("exception logging streaming forward response - " + throwable.getMessage())
+                            .setThrowable(throwable)
+                    );
+                }
             } finally {
                 if (postProcessor != null) {
                     postProcessor.run();
                 }
             }
-        }, synchronous, throwable -> true);
+        };
+
+        streamingBody.addCompletionListener(logAndPostProcess);
     }
 
     void writeForwardActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action) {
@@ -1072,6 +1184,30 @@ public class HttpActionHandler {
             }
         }
         responseWriter.writeResponse(request, response, false);
+    }
+
+    /**
+     * Set the captured streaming body on a log response. Textual content types
+     * (Server-Sent Events, JSON, XML, ...) are stored as a plain {@link StringBody}
+     * so the body is human-readable in the dashboard, the retrieve API and the HAR
+     * export; other content is stored as binary. The captured body may be truncated
+     * (see {@code maxStreamingCaptureBytes}), so it is stored verbatim as text rather
+     * than re-parsed into a structured JsonBody/XmlBody - re-parsing would fail to
+     * serialize when the captured JSON is incomplete.
+     */
+    private static void setCapturedStreamingBody(HttpResponse logResponse, byte[] captured) {
+        if (captured.length == 0) {
+            return;
+        }
+        String contentTypeHeader = logResponse.getFirstHeader(CONTENT_TYPE.toString());
+        if (contentTypeHeader != null && !contentTypeHeader.isEmpty()) {
+            MediaType mediaType = MediaType.parse(contentTypeHeader);
+            if (mediaType != null && mediaType.isString()) {
+                logResponse.withBody(new String(captured, mediaType.getCharsetOrDefault()));
+                return;
+            }
+        }
+        logResponse.withBody(captured);
     }
 
     private HttpResponseActionHandler getHttpResponseActionHandler() {

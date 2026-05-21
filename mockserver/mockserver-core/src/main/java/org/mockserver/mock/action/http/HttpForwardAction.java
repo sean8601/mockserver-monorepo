@@ -37,9 +37,17 @@ public abstract class HttpForwardAction {
     }
 
     protected HttpForwardActionResult sendRequest(HttpRequest request, @Nullable InetSocketAddress remoteAddress, Function<HttpResponse, HttpResponse> overrideHttpResponse) {
+        return sendRequest(request, remoteAddress, overrideHttpResponse, false);
+    }
+
+    protected HttpForwardActionResult sendRequest(HttpRequest request, @Nullable InetSocketAddress remoteAddress, Function<HttpResponse, HttpResponse> overrideHttpResponse, boolean disableStreaming) {
         try {
             // TODO(jamesdbloom) support proxying via HTTP2, for now always force into HTTP1
-            return new HttpForwardActionResult(request, httpClient.sendRequest(hopByHopHeaderFilter.onRequest(request).withProtocol(null), remoteAddress), overrideHttpResponse, remoteAddress);
+            HttpRequest toSend = hopByHopHeaderFilter.onRequest(request).withProtocol(null);
+            CompletableFuture<HttpResponse> responseFuture = disableStreaming
+                ? httpClient.sendRequest(toSend, remoteAddress, configuration.socketConnectionTimeoutInMillis(), true)
+                : httpClient.sendRequest(toSend, remoteAddress);
+            return new HttpForwardActionResult(request, responseFuture, overrideHttpResponse, remoteAddress);
         } catch (Exception e) {
             mockServerLogger.logEvent(
                 new LogEntry()
