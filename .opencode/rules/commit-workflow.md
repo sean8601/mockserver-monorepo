@@ -6,7 +6,7 @@ When the user asks to commit changes, you MUST follow this workflow before creat
 
 Multiple opencode sessions may be running concurrently on the same repository. To avoid conflicts:
 
-1. **Use commit lock for all git operations.** Acquire the lock once after validation/review passes and before staging files (see Step 4). Release after commit completes (success or failure). Never hold the lock during validation or review as this blocks other sessions unnecessarily.
+1. **Use commit lock for all git operations.** Acquire the lock once after validation/review passes and before staging files (see Step 5). Release after commit completes (success or failure). Never hold the lock during validation or review as this blocks other sessions unnecessarily.
 2. **Always release lock.** After commit completes (success or failure), run `.opencode/scripts/release-commit-lock.sh`. Use this pattern:
    ```bash
    .opencode/scripts/acquire-commit-lock.sh && {
@@ -110,9 +110,30 @@ Validation principle: prefer executable verification over static inspection. Whe
 2. If tests fail, fix before committing
 3. If tests already passed earlier in this conversation for the exact same changes, skip re-running
 
-## Step 3: Adversarial Code Review (MANDATORY for all commits)
+## Step 3: Changelog Review (MANDATORY for all commits)
 
-After all validations pass, launch an adversarial review using a subagent on a **different model** with a **fresh context**. This catches issues the implementing agent may have blind spots for.
+Every commit must be checked against `changelog.md`. Decide whether the change is **user-facing** — anything a MockServer user could observe or rely on:
+
+- new features, configuration properties, or API / client methods
+- bug fixes that change observable behaviour
+- changed defaults or behaviour
+- breaking changes
+- dependency upgrades or packaging changes that affect consumers
+- changes to published artifacts, Docker images, or Helm charts
+
+If the change is user-facing, `changelog.md` MUST carry a matching entry under `## [Unreleased]`, in the correct subsection (`### Added`, `### Changed`, or `### Fixed`):
+
+- Keep entries concise and user-focused — *what* changed and *why it matters*, not implementation detail.
+- Reference the GitHub issue when one exists, e.g. `(fixes #1234)`.
+- Prefix the entry with `BREAKING:` for a breaking change.
+- If an entry already covers the issue, correct it rather than adding a duplicate.
+- Stage the changelog edit with the rest of the commit so it is part of the Step 4 review diff.
+
+If the change is **not** user-facing (tests, CI, internal refactors with no behaviour change, build scripts, internal docs), no entry is required — state explicitly that the changelog was reviewed and why no entry is needed.
+
+## Step 4: Adversarial Code Review (MANDATORY for all commits)
+
+After validations and the changelog review pass, launch an adversarial review using a subagent on a **different model** with a **fresh context**. This catches issues the implementing agent may have blind spots for.
 
 Spawn a `review-cheap` subagent (use the Agent tool in Claude Code; the Task tool in opencode) and provide:
 - The diff of files being committed: stage them first with `git add`, then capture `git diff --cached`
@@ -144,9 +165,9 @@ Provide PASS or BLOCK verdict with severity-ranked findings.
 If the review returns **BLOCK**, fix the issues, re-run any affected validations (Step 2), and re-run the review before committing.
 If the review returns **PASS**, proceed to commit.
 
-## Step 4: Acquire Lock and Commit
+## Step 5: Acquire Lock and Commit
 
-Only after all validations and the adversarial review pass:
+Only after all validations, the changelog review, and the adversarial review pass:
 
 1. **Acquire commit lock**: Run `.opencode/scripts/acquire-commit-lock.sh`
    - If lock is held by another session, this will wait (up to 5 minutes)
@@ -172,9 +193,10 @@ The `OPENCODE_SESSION_PID` environment variable tracks the parent shell PID to h
 
 ## Skip Conditions
 
-- If the user says "skip tests" or "skip validation" — skip Step 2 but still run Step 3 (adversarial review)
-- If the user says "skip review" — skip Step 3 but still run Step 2 (validations)
-- If the user says "just commit" or "skip everything" — skip Steps 2 and 3
+- If the user says "skip tests" or "skip validation" — skip Step 2 but still run Steps 3 and 4 (changelog and adversarial review)
+- If the user says "skip changelog" — skip Step 3 but still run Steps 2 and 4
+- If the user says "skip review" — skip Step 4 but still run Steps 2 and 3 (validations and changelog)
+- If the user says "just commit" or "skip everything" — skip Steps 2, 3 and 4
 - Always warn the user what is being skipped
 
 ## Quick Reference
@@ -186,7 +208,9 @@ flowchart TD
     java/tf/bash/docs/docker/helm/config"]
     B -->|No / unsure| STOP["Stop — ask user"]
     C --> D["Run validations per category"]
-    D --> E["Adversarial review
+    D --> CL["Changelog review
+    update changelog.md if user-facing"]
+    CL --> E["Adversarial review
     review-cheap agent via Task tool
     fresh context, different model"]
     E --> F{PASS?}
