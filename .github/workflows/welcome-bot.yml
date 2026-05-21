@@ -20,3 +20,10 @@ jobs:
             A maintainer will review this shortly. In the meantime:
             - Check the [documentation](https://www.mock-server.com) for guides and configuration
             - Review the [project board](https://github.com/orgs/mock-server/projects/1) for related issues
+          # actions/first-interaction@v3 requires pr_message even though this
+          # workflow only triggers on issues; without it the action fails with
+          # "Input required and not supplied: pr_message".
+          pr_message: |
+            Thanks for opening your first pull request! We appreciate your contribution to MockServer.
+
+            A maintainer will review it shortly. In the meantime, please make sure the build passes and that any behaviour change is covered by tests.

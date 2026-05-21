@@ -19,11 +19,18 @@
              self-contained jar, so consumers of this no-dependencies artifact
              must not also receive the unshaded source module (and its
              transitive dependencies) on their classpath. Shade still bundles a
-             module's own optional dependencies. -->
+             module's own optional dependencies.
+             compile (explicit): the parent pom's dependencyManagement declares
+             mockserver-integration-testing with test scope, since it is a
+             test-only base-class library for the other modules. Without an
+             explicit scope here that managed test scope would apply, the shade
+             plugin would skip the test-scoped dependency, and this module would
+             produce an empty jar. -->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-integration-testing</artifactId>
             <optional>true</optional>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 
