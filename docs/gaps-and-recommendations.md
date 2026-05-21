@@ -60,8 +60,8 @@ This document identifies missing documentation, undocumented areas, and recommen
 | Location | Example |
 |----------|---------|
 | `pom.xml` | `5.16.0-SNAPSHOT` |
-| `_config.yml` | `5.15.0` |
-| `Chart.yaml` | `5.15.0` |
+| `_config.yml` | `6.0.0` |
+| `Chart.yaml` | `6.0.0` |
 | `values.yaml` | image tag defaults |
 | `Dockerfiles` | `VERSION=RELEASE` or `5.16.0-SNAPSHOT` |
 | `release_steps.md` | `5.16.0`, `5.16.0-SNAPSHOT` |

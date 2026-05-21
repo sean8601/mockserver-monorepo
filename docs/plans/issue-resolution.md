@@ -153,7 +153,7 @@ These are confirmed thread-safety bugs in the current codebase. All involve shar
 ### #1473: Invalid `content-encoding: .*` added to request header
 
 **Status**: Fixed in 5.15 — **CLOSE**
-**Root cause**: The `Accept-Encoding` header was unconditionally replaced with `gzip,deflate` on all forwarded requests. Confirmed fixed by commenter ThaDaVos in 5.15.0.
+**Root cause**: The `Accept-Encoding` header was unconditionally replaced with `gzip,deflate` on all forwarded requests. Confirmed fixed by commenter ThaDaVos in 6.0.0.
 
 ### #1733: Content-Length added to requests that didn't have it
 
@@ -574,7 +574,7 @@ These are confirmed thread-safety bugs in the current codebase. All involve shar
 ### #1771: Docker JS template error (JDK17 nashorn removed) (NEW)
 
 **Status**: Fixed on master — needs release
-**Root cause**: JDK17 removed `jdk.nashorn`. The codebase now uses `org.openjdk.nashorn` (standalone dependency) but the published Docker image (5.15.0) doesn't include it.
+**Root cause**: JDK17 removed `jdk.nashorn`. The codebase now uses `org.openjdk.nashorn` (standalone dependency) but the published Docker image (6.0.0) doesn't include it.
 **Fix**: Already fixed on master. Needs release.
 
 ---
@@ -644,10 +644,10 @@ These are confirmed thread-safety bugs in the current codebase. All involve shar
 **Files**: `mockserver-core/.../mock/action/http/HttpResponseClassCallbackActionHandler.java:40`, `mockserver-core/.../mock/action/http/HttpForwardClassCallbackActionHandler.java:32`
 **Fix**: Try `Thread.currentThread().getContextClassLoader()` first, then fall back to system classloader. Condition the Helm chart `/libs` mount on `mountedLibsConfigMapName` being set.
 
-### #1636: mockWithCallback doesn't work on 5.15.0
+### #1636: mockWithCallback doesn't work on 6.0.0
 
 **Status**: Confirmed bug — P2
-**Root cause**: The Node.js client `mockWithCallback` function establishes a WebSocket connection for callbacks. Something broke between 5.5.1 and 5.15.0 in the WebSocket callback handling. Multiple users confirm the issue.
+**Root cause**: The Node.js client `mockWithCallback` function establishes a WebSocket connection for callbacks. Something broke between 5.5.1 and 6.0.0 in the WebSocket callback handling. Multiple users confirm the issue.
 **Fix**: Debug the WebSocket callback registration in `mockserver-client-node`. Compare 5.5.1 and current versions.
 
 ### #1634: Can't load log handler StandardOutConsoleHandler
@@ -662,10 +662,10 @@ These are confirmed thread-safety bugs in the current codebase. All involve shar
 **Root cause**: SLF4J is deliberately not relocated in the shaded JAR. The `slf4j-jdk14` binding classes in `org.slf4j.impl` should be excluded by the shade filter, but SLF4J version differences may place classes in different packages.
 **Fix**: Verify the shade filter correctly excludes all SLF4J binding classes. Ensure no SLF4J binding is shipped in the no-dependencies JAR.
 
-### #1659: StackOverflow with @JsonTest and 5.15.0
+### #1659: StackOverflow with @JsonTest and 6.0.0
 
 **Status**: Confirmed bug — P2
-**Root cause**: Circular SLF4J/JUL logging bridge. When `SLF4J-over-JUL` is used alongside `JUL-to-SLF4J` bridge, logging calls loop infinitely. Introduced in 5.15.0.
+**Root cause**: Circular SLF4J/JUL logging bridge. When `SLF4J-over-JUL` is used alongside `JUL-to-SLF4J` bridge, logging calls loop infinitely. Introduced in 6.0.0.
 **Fix**: Remove the circular SLF4J bridge configuration. Add a check to prevent circular bridge installation.
 
 ### #1693: UI websocket returns 404 with path prefix
@@ -740,7 +740,7 @@ The following issues were closed because the referenced dependencies have been u
 | Issue | CVE / Dependency | Old Version | Current Version | Status |
 |-------|-----------------|-------------|-----------------|--------|
 | ~~#1981~~ | Multiple (Netty, BouncyCastle, etc.) | Various | See below | **Closed** |
-| ~~#1915~~ | Generic security scan findings | 5.15.0 deps | All updated | **Closed** |
+| ~~#1915~~ | Generic security scan findings | 6.0.0 deps | All updated | **Closed** |
 | ~~#1894~~ | SnakeYAML CVE-2022-1471 | 1.33 | 2.0 | **Closed** |
 | ~~#1873~~ | Netty CVE-2023-44487 | 4.1.86.Final | 4.1.132.Final | **Closed** |
 | ~~#1857~~ | glibc CVE-2023-4911 | Docker tag 0.15.0 | distroless base | **Closed** |
@@ -1072,7 +1072,7 @@ These issues should be closed with an explanatory comment. They fall into three 
 
 | Issue | Title | Reason |
 |-------|-------|--------|
-| #1473 | Invalid content-encoding: .* added to header | Fixed in 5.15.0 (confirmed by commenter) |
+| #1473 | Invalid content-encoding: .* added to header | Fixed in 6.0.0 (confirmed by commenter) |
 | #1645 | How to subscribe to Slack channel? | Broken community links — stale since Jan 2023 |
 | #2119 | Add progress indication for JAR download in mockserver-node | Trello migration, no demand |
 | #2120 | Delete corrupted JAR file in mockserver-node | Trello migration, no demand |

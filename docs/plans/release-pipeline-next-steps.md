@@ -262,7 +262,7 @@ These tests validate script logic without needing any credentials.
 
 ```bash
 # Should pass — validates version formats, branch, clean tree
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
   scripts/ci/release/validate.sh
 ```
 
@@ -274,13 +274,13 @@ Test the version replacement logic on a throwaway branch:
 
 ```bash
 git checkout -b test-version-update
-RELEASE_VERSION=5.16.0 NEXT_VERSION=5.16.1-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=5.16.0 NEXT_VERSION=5.16.1-SNAPSHOT OLD_VERSION=6.0.0 \
   bash -c '
     source scripts/ci/release/common.sh
     cd "$REPO_ROOT"
     # Just test the sed replacements — dont commit
-    sed -n "s/5.15.0/5.16.0/p" jekyll-www.mock-server.com/_config.yml
-    sed -n "s/5.15.x/5.16.x/p" jekyll-www.mock-server.com/_config.yml
+    sed -n "s/6.0.0/5.16.0/p" jekyll-www.mock-server.com/_config.yml
+    sed -n "s/6.0.x/5.16.x/p" jekyll-www.mock-server.com/_config.yml
   '
 # Inspect output, then discard the branch
 git checkout master
@@ -318,7 +318,7 @@ These tests verify credential access without making any changes.
 
 ```bash
 # Get a code from your authenticator app, then:
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
 TOTP_CODE=123456 \
   scripts/ci/release/verify-totp.sh
 ```
@@ -326,7 +326,7 @@ TOTP_CODE=123456 \
 #### GPG key import
 
 ```bash
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
   bash -c '
     source scripts/ci/release/common.sh
     GPG_KEY_B64=$(load_secret "mockserver-release/gpg-key" "key")
@@ -338,7 +338,7 @@ RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
 #### Central Portal API access
 
 ```bash
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
   bash -c '
     source scripts/ci/release/common.sh
     AUTH=$(central_portal_auth_header)
@@ -352,7 +352,7 @@ RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
 #### Cross-account role assumption
 
 ```bash
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
   bash -c '
     source scripts/ci/release/common.sh
     assume_website_role
@@ -372,7 +372,7 @@ docker logout  # Clean up
 
 ```bash
 # Verify PyPI token works
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
   bash -c '
     source scripts/ci/release/common.sh
     TOKEN=$(load_secret "mockserver-build/pypi" "token")
@@ -380,7 +380,7 @@ RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
   '
 
 # Verify RubyGems key works
-RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=5.15.0 \
+RELEASE_VERSION=99.99.99 NEXT_VERSION=99.99.100-SNAPSHOT OLD_VERSION=6.0.0 \
   bash -c '
     source scripts/ci/release/common.sh
     KEY=$(load_secret "mockserver-build/rubygems" "api_key")
@@ -477,7 +477,7 @@ Use this checklist to track your testing progress:
 [x] Tier 1: validate.sh works with test version numbers (correctly rejects dirty tree)
 [x] Tier 1: Full Maven build passes (1773/1774 tests — 1 pre-existing flaky timeout in ExpectationInitializerIntegrationTest)
 [x] Tier 1: Jekyll site builds
-[x] Tier 1: Helm chart packages (mockserver-5.15.0.tgz)
+[x] Tier 1: Helm chart packages (mockserver-6.0.0.tgz)
 [x] Tier 1: Docker image builds and smoke test passes (status 200, expectation 201, mock 200)
 ---
 [ ] Secrets: All 6 secrets stored in AWS SM
@@ -509,7 +509,7 @@ Use this checklist to track your testing progress:
 | validate.sh | **PASS** | Correctly rejects dirty tree, validates version formats |
 | Maven build (1774 integration tests) | **PASS** (1 flake) | 1773/1774 passed. `ExpectationInitializerIntegrationTest.shouldLoadOpenAPIExpectationsFromJson` timed out — pre-existing flaky test (socket timeout on resource-constrained local machine), not related to release pipeline changes |
 | Jekyll site build | **PASS** | Requires Homebrew Ruby (`/opt/homebrew/opt/ruby/bin/bundle`) — system Ruby 2.6 too old |
-| Helm chart package | **PASS** | Produced `mockserver-5.15.0.tgz` |
+| Helm chart package | **PASS** | Produced `mockserver-6.0.0.tgz` |
 | Docker image build | **PASS** | Built from shaded JAR |
 | Docker smoke test | **PASS** | Status endpoint: 200, Create expectation: 201, Mock response: 200 |
 

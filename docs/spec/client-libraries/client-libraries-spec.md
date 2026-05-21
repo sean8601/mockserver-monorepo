@@ -14,7 +14,7 @@ MockServer's Python and Ruby clients are stale, auto-generated REST-only wrapper
 
 ## Problem Statement
 
-Developers using Python, Ruby, or JavaScript to test with MockServer currently lack feature parity with the Java client. The Python and Ruby clients are stale auto-generated REST wrappers (v5.3.0 vs current v5.15.x) with no WebSocket callback support, and the JavaScript client only supports response callbacks (not forward or forward+response). This forces polyglot teams to either use the Java client directly or lose the ability to dynamically generate responses and modify forwarded requests at test time — one of MockServer's most powerful features.
+Developers using Python, Ruby, or JavaScript to test with MockServer currently lack feature parity with the Java client. The Python and Ruby clients are stale auto-generated REST wrappers (v5.3.0 vs current v6.0.x) with no WebSocket callback support, and the JavaScript client only supports response callbacks (not forward or forward+response). This forces polyglot teams to either use the Java client directly or lose the ability to dynamically generate responses and modify forwarded requests at test time — one of MockServer's most powerful features.
 
 The desired outcome is fully hand-written, idiomatic client libraries for Python, Ruby, and JavaScript that support all three callback types (response, forward, forward+response) with a fluent API plus shorthand methods, matching the Java client's feature set.
 
@@ -125,8 +125,8 @@ flowchart LR
 |--------|----------|-------------------|-----------------|--------------------------|
 | Java | Full | Yes | Yes | Yes |
 | JavaScript | Full | Yes | Yes | Yes |
-| Python | Full (v5.15.x) | Yes | Yes | Yes |
-| Ruby | Full (v5.15.x) | Yes | Yes | Yes |
+| Python | Full (v6.0.x) | Yes | Yes | Yes |
+| Ruby | Full (v6.0.x) | Yes | Yes | Yes |
 
 ---
 

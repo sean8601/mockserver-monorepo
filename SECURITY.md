@@ -6,7 +6,7 @@ MockServer maintains support for Java 11 as the minimum supported version to ens
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 5.15.x  | :white_check_mark: |
+| 6.0.x  | :white_check_mark: |
 | < 5.15  | :x:                |
 
 ## Security Posture
@@ -249,7 +249,7 @@ MockServer **will fix** actual security issues such as:
 - ✅ **Correctness bugs** (e.g., logic errors in matchers)
 - ✅ **Memory leaks** (e.g., ByteBuf leaks)
 - ✅ **Unintended information disclosure** (e.g., logging secrets)
-- ✅ **Weak cryptography in certs** (e.g., predictable serial numbers) — **Fixed in 5.15.x**
+- ✅ **Weak cryptography in certs** (e.g., predictable serial numbers) — **Fixed in 6.0.x**
 
 MockServer **will not restrict** intentional features that enable testing.
 

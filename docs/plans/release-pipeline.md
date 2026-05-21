@@ -45,7 +45,7 @@ The previous plan (preserved in git history) had 15 issues identified during adv
 | 5 | SCM URL listed as prerequisite — already fixed | Removed from prerequisites |
 | 6 | Plan assumed cloning external repos for maven-plugin, node, client-node | All scripts work in-tree (monorepo paths) |
 | 7 | maven-release-plugin version stated as 2.5.3 — actually 3.3.1 | Corrected in pain points |
-| 8 | Node packages at 5.15.0 vs Java at 5.16.0-SNAPSHOT | Version sync handled in `update-versions.sh` including `package.json` file references |
+| 8 | Node packages at 6.0.0 vs Java at 5.16.0-SNAPSHOT | Version sync handled in `update-versions.sh` including `package.json` file references |
 | 9 | IAM policy referenced undefined `dockerhub` resource | References existing resource from `build-secrets.tf` |
 | 10 | Docker tagging convention didn't match existing practice | Tags now follow existing convention: `mockserver-X.Y.Z` + `X.Y.Z` + `latest` |
 
@@ -589,7 +589,7 @@ steps:
         required: true
       - text: "Previous Version"
         key: "old-version"
-        hint: "e.g., 5.15.0 (for find-and-replace)"
+        hint: "e.g., 6.0.0 (for find-and-replace)"
         required: true
       - select: "Release Type"
         key: "release-type"
@@ -810,7 +810,7 @@ Replaces `maven-release-plugin` with transparent, scriptable operations:
 3. `git tag mockserver-$RELEASE_VERSION`
 4. `git push origin master && git push origin mockserver-$RELEASE_VERSION`
 
-The tag format `mockserver-X.Y.Z` matches the existing convention (e.g., `mockserver-5.15.0`).
+The tag format `mockserver-X.Y.Z` matches the existing convention (e.g., `mockserver-6.0.0`).
 
 ### Step 1b: Build & Test — `build-and-test.sh`
 
@@ -941,8 +941,8 @@ Automates the manual find-and-replace, with a validation step:
 5. **Python package** — update `mockserver-client-python/pyproject.toml` version
 6. **Ruby package** — update `mockserver-client-ruby/lib/mockserver/version.rb` and `README.md`
 7. **General find-and-replace** across `*.html`, `*.md`, `*.yaml`, `*.yml`, `*.json`:
-   - `$OLD_VERSION` to `$RELEASE_VERSION` (e.g., `5.15.0` to `5.16.0`)
-   - Old API version to new API version (e.g., `5.15.x` to `5.16.x`)
+   - `$OLD_VERSION` to `$RELEASE_VERSION` (e.g., `6.0.0` to `5.16.0`)
+   - Old API version to new API version (e.g., `6.0.x` to `5.16.x`)
    - Old SNAPSHOT to new SNAPSHOT (e.g., `5.15.1-SNAPSHOT` to `5.16.1-SNAPSHOT`)
    - Excludes: `changelog.md`, `node_modules/`, `.git/`, `target/`, `helm/charts/`
 8. **Validation gate**: `git diff --stat` output displayed for review; in CI this is annotated in Buildkite, locally it's an interactive prompt

@@ -106,7 +106,7 @@ Docker Hub contains the following artifacts:
 
 ##### Helm Chart
 
-* [MockServer Helm Chart](helm/mockserver/README.md) - a Helm Chart that installs MockServer to a Kubernetes cluster (latest: [5.15.0](https://www.mock-server.com/mockserver-5.15.0.tgz)). See the [Install MockServer Helm Chart](helm/mockserver/README.md) guide for all available versions and configuration options.
+* [MockServer Helm Chart](helm/mockserver/README.md) - a Helm Chart that installs MockServer to a Kubernetes cluster (latest: [6.0.0](https://www.mock-server.com/mockserver-6.0.0.tgz)). See the [Install MockServer Helm Chart](helm/mockserver/README.md) guide for all available versions and configuration options.
 
 ##### MockServer Clients
 
@@ -122,7 +122,7 @@ Docker Hub contains the following artifacts:
 ##### Previous Versions
 | Version         | Date        | Git & Docker Tag / Git Hash                                                                                                                                                                                     | Documentation                                  | Java API                                                                | REST API                                                                                  |
 |:----------------|:------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------|:------------------------------------------------------------------------|:------------------------------------------------------------------------------------------|
- | 5.15.0 (latest) | 11 Jan 2023 | [mockserver-5.15.0](https://github.com/mock-server/mockserver-monorepo/tree/mockserver-5.15.0) / [7c071b](https://github.com/mock-server/mockserver-monorepo/commit/7c071b8be3608036f2a2ea45eee6970d2f2b8d02) | [Documentation](https://mock-server.com)       | [Java API](https://mock-server.com/versions/5.15.0/apidocs/index.html)  | [5.15.x REST API](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/5.15.x) |
+ | 6.0.0 (latest) | 11 Jan 2023 | [mockserver-6.0.0](https://github.com/mock-server/mockserver-monorepo/tree/mockserver-6.0.0) / [7c071b](https://github.com/mock-server/mockserver-monorepo/commit/7c071b8be3608036f2a2ea45eee6970d2f2b8d02) | [Documentation](https://mock-server.com)       | [Java API](https://mock-server.com/versions/6.0.0/apidocs/index.html)  | [6.0.x REST API](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/6.0.x) |
  | 5.14.0          | 22 Aug 2022 | [mockserver-5.14.0](https://github.com/mock-server/mockserver-monorepo/tree/mockserver-5.14.0) / [808eba](https://github.com/mock-server/mockserver-monorepo/commit/808ebaa44a88b630ca181e62712aa47d4c9c7ff4) | [Documentation](https://5-14.mock-server.com)  | [Java API](https://mock-server.com/versions/5.14.0/apidocs/index.html)  | [5.14.x REST API](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/5.14.x) |
  | 5.13.2          | 05 Apr 2022 | [mockserver-5.13.2](https://github.com/mock-server/mockserver-monorepo/tree/mockserver-5.13.2) / [81105b](https://github.com/mock-server/mockserver-monorepo/commit/81105b3153674bbe66df612ad1b3a09a34a520cf) | [Documentation](https://5-13.mock-server.com)  | [Java API](https://mock-server.com/versions/5.13.2/apidocs/index.html)  | [5.13.x REST API](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/5.13.x) |
  | 5.13.1          | 02 Apr 2022 | [mockserver-5.13.1](https://github.com/mock-server/mockserver-monorepo/tree/mockserver-5.13.1) / [39d1cc](https://github.com/mock-server/mockserver-monorepo/commit/39d1cc6251e6dbd00ab8012dbe39def6d8bb7312) | [Documentation](https://5-13.mock-server.com)  | [Java API](https://mock-server.com/versions/5.13.1/apidocs/index.html)  | [5.13.x REST API](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/5.13.x) |
@@ -147,7 +147,7 @@ Docker Hub contains the following artifacts:
 ### Issues
 
 If you have any problems, please [check the project issues](https://github.com/mock-server/mockserver-monorepo/issues?state=open) and avoid opening issues that have already been fixed.  When you open an issue please provide the following information:
-- MockServer version (i.e. 5.15.0)
+- MockServer version (i.e. 6.0.0)
 - How your running the MockServer (i.e maven plugin, docker, etc)
 - MockServer log output, at INFO level (or higher)
 - What the error is

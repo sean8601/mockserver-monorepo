@@ -12,7 +12,7 @@ Run the `/prepare-release` slash command from this repo. It inspects `changelog.
 
 - `release-version` (e.g. `6.0.0`)
 - `next-version` (e.g. `6.0.1-SNAPSHOT`)
-- `old-version` (e.g. `5.15.0` — auto-derived, you don't need to type it on the form)
+- `old-version` (e.g. `6.0.0` — auto-derived, you don't need to type it on the form)
 - `release-type` (almost always `full`)
 - `create-versioned-site` (`yes` for major/minor, `no` for patch)
 

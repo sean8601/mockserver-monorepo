@@ -1,59 +1,59 @@
 {
-    "name": "mockserver-node",
-    "description": "Node.js module and Grunt plugin to start and stop MockServer",
-    "version": "6.0.0",
-    "homepage": "http://mock-server.com",
-    "types": "index.d.ts",
-    "author": {
-        "name": "James Bloom",
-        "email": "jamesdbloom@gmail.com",
-        "url": "http://mock-server.com"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/mock-server/mockserver-monorepo.git",
-        "directory": "mockserver-node"
-    },
-    "bugs": {
-        "url": "https://github.com/mock-server/mockserver-monorepo/issues"
-    },
-    "license": "Apache-2.0",
-    "engines": {
-        "node": ">= 14.17.0"
-    },
-    "scripts": {
-        "test": "grunt"
-    },
-    "files": [
-        "README.md",
-        "LICENSE.md",
-        "tasks",
-        "index.js",
-        "downloadJar.js",
-        "mockserver-netty-6.0.0-jar-with-dependencies.jar",
-        "stop_MockServer.sh"
-    ],
-    "devDependencies": {
-        "grunt": "~1.6.2",
-        "grunt-contrib-jshint": "~3.2.0",
-        "grunt-contrib-nodeunit": "~5.0.0",
-        "grunt-exec": "~3.0.0",
-        "nodeunit": "~0.11.3"
-    },
-    "keywords": [
-        "mockserver",
-        "mock",
-        "HTTP",
-        "HTTPS",
-        "testing",
-        "proxy",
-        "api",
-        "mcp",
-        "ai"
-    ],
-    "dependencies": {
-        "follow-redirects": "~1.16.0",
-        "glob": "~13.0.6",
-        "q": "~2.0.3"
-    }
+  "name": "mockserver-node",
+  "description": "Node.js module and Grunt plugin to start and stop MockServer",
+  "version": "6.0.0",
+  "homepage": "http://mock-server.com",
+  "types": "index.d.ts",
+  "author": {
+    "name": "James Bloom",
+    "email": "jamesdbloom@gmail.com",
+    "url": "http://mock-server.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mock-server/mockserver-monorepo.git",
+    "directory": "mockserver-node"
+  },
+  "bugs": {
+    "url": "https://github.com/mock-server/mockserver-monorepo/issues"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">= 14.17.0"
+  },
+  "scripts": {
+    "test": "grunt"
+  },
+  "files": [
+    "README.md",
+    "LICENSE.md",
+    "tasks",
+    "index.js",
+    "downloadJar.js",
+    "mockserver-netty-6.0.0-jar-with-dependencies.jar",
+    "stop_MockServer.sh"
+  ],
+  "devDependencies": {
+    "grunt": "~1.6.2",
+    "grunt-contrib-jshint": "~3.2.0",
+    "grunt-contrib-nodeunit": "~5.0.0",
+    "grunt-exec": "~3.0.0",
+    "nodeunit": "~0.11.3"
+  },
+  "keywords": [
+    "mockserver",
+    "mock",
+    "HTTP",
+    "HTTPS",
+    "testing",
+    "proxy",
+    "api",
+    "mcp",
+    "ai"
+  ],
+  "dependencies": {
+    "follow-redirects": "~1.16.0",
+    "glob": "~13.0.6",
+    "q": "~2.0.3"
+  }
 }
