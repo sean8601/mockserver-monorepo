@@ -19,9 +19,33 @@
     </properties>
 
     <dependencies>
+        <!-- optional: shade bundles the source module's classes into this
+             self-contained jar, so consumers of this no-dependencies artifact
+             must not also receive the unshaded source module (and its
+             transitive dependencies) on their classpath. Shade still bundles a
+             module's own optional dependencies. -->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-netty</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- This shaded jar is a standalone runnable artifact — the CLI and the
+             Docker image both run it directly — so unlike the mockserver-netty
+             library it must bundle an SLF4J logging backend. mockserver-netty
+             declares slf4j-jdk14 optional, and optional dependencies are not
+             transitive, so the binding never reached this module's shade
+             classpath and the jar shipped with no SLF4J provider — logging
+             silently fell back to a no-op logger (issue #2097). Declaring it
+             directly here puts it on the shade classpath so the provider is
+             bundled into the uber jar. It stays optional: the shade plugin
+             bundles a module's own optional dependencies anyway, and optional
+             keeps slf4j-jdk14 from leaking onto the classpath of anything that
+             consumes this artifact as a Maven dependency. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-jdk14</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- test scope only: junit drives ExtendedNoDependenciesJarMockingIntegrationTest.

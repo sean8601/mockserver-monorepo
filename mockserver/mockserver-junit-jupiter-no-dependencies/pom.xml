@@ -15,9 +15,15 @@
     <url>https://www.mock-server.com</url>
 
     <dependencies>
+        <!-- optional: shade bundles the source module's classes into this
+             self-contained jar, so consumers of this no-dependencies artifact
+             must not also receive the unshaded source module (and its
+             transitive dependencies) on their classpath. Shade still bundles a
+             module's own optional dependencies. -->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-junit-jupiter</artifactId>
+            <optional>true</optional>
         </dependency>
     </dependencies>
 

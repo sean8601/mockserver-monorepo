@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -31,6 +32,8 @@ import static org.junit.Assert.assertTrue;
  *   <li>{@code Main-Class} manifest entry missing or wrong (jar would fail to launch)
  *   <li>CLI argument parser regression (the {@code -serverPort} arg is rejected)
  *   <li>Shaded jar missing classes needed for boot (e.g. shade-plugin filter mistake)
+ *   <li>Shaded jar missing an SLF4J logging backend — the server runs but logs
+ *       nothing because SLF4J falls back to a no-op logger (issue #2097)
  *   <li>Port binding / Netty pipeline regression in the shaded build
  *   <li>REST API regression on expectation create or mocked GET
  * </ul>
@@ -102,6 +105,36 @@ public class ExtendedNoDependenciesJarMockingIntegrationTest {
         // Body is JSON like {"ports":[<port>]} — assert it mentions the port we bound to.
         assertTrue("status body did not contain port: " + response.body(),
             response.body().contains(Integer.toString(port)));
+    }
+
+    /**
+     * Regression test for issue #2097: the shaded no-dependencies jar must
+     * bundle an SLF4J logging backend. Without one, SLF4J silently falls back
+     * to a no-op logger — the server runs but produces no logs at all, which
+     * is exactly the broken behaviour the Docker image shipped.
+     *
+     * <p>This asserts the observable behaviour — the forked jar boots and
+     * actually logs — rather than the jar's internal structure, so it stays
+     * valid regardless of which SLF4J binding or discovery mechanism is used.
+     */
+    @Test
+    public void shouldBootAndLogWithoutSlf4jProviderFailure() {
+        // The startup banner is logged at INFO; on a correctly built jar it
+        // appears within milliseconds of the server becoming ready. On a jar
+        // with no SLF4J backend it never appears, because logging is a no-op.
+        boolean loggedStartupBanner = runner.awaitOutputContaining("started on port", Duration.ofSeconds(20));
+        String output = runner.getOutput();
+
+        assertFalse(
+            "SLF4J reported a provider failure while booting the no-dependencies jar — "
+                + "the shaded jar is missing a logging backend (issue #2097):\n" + output,
+            output.contains("SLF4J(W)") || output.contains("SLF4J(E)"));
+
+        assertTrue(
+            "The no-dependencies jar logged no startup banner — expected an INFO "
+                + "'started on port' line; its SLF4J logging backend is not working "
+                + "(issue #2097):\n" + output,
+            loggedStartupBanner);
     }
 
     /**

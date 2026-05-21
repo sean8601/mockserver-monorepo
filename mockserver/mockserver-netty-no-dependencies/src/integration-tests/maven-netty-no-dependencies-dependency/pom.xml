@@ -35,6 +35,17 @@
             <version>${mockserver.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Provides org.mockserver.test.PrintOutCurrentTestRunListener for the
+             surefire <listener> configured below. Declared explicitly because
+             the *-no-dependencies artifacts above are now truly dependency-free
+             and no longer leak mockserver-testing transitively; it pulls in
+             only junit + hamcrest, so it does not re-pollute the classpath. -->
+        <dependency>
+            <groupId>org.mock-server</groupId>
+            <artifactId>mockserver-testing</artifactId>
+            <version>${mockserver.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

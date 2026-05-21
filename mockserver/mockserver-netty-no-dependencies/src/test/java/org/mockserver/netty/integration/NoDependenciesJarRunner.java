@@ -1,11 +1,14 @@
 package org.mockserver.netty.integration;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,6 +26,11 @@ import java.util.List;
  * NettyHttpClient}: one unshaded from {@code mockserver-core}, one shaded
  * from this module's own jar — and binary-incompatible signatures on the
  * Netty types in the constructor cause a runtime {@code NoSuchMethodError}.
+ *
+ * <p>The forked JVM's merged stdout/stderr is drained on a background thread
+ * into a buffer (and echoed to the test JVM's stdout so it still lands in the
+ * surefire/failsafe log), so tests can assert on what the jar actually printed
+ * while booting — see {@link #getOutput()} and {@link #awaitOutputContaining}.
  */
 public class NoDependenciesJarRunner {
 
@@ -33,6 +41,8 @@ public class NoDependenciesJarRunner {
 
     private final Process process;
     private final int port;
+    /** Captured merged stdout/stderr of the forked JVM. Guarded by itself. */
+    private final StringBuilder output = new StringBuilder();
 
     private NoDependenciesJarRunner(Process process, int port) {
         this.process = process;
@@ -65,11 +75,9 @@ public class NoDependenciesJarRunner {
         arguments.add(Integer.toString(mockServerPort));
 
         ProcessBuilder processBuilder = new ProcessBuilder(arguments);
+        // Merge stderr into stdout so a single reader captures everything the
+        // jar prints — including the SLF4J diagnostics, which go to stderr.
         processBuilder.redirectErrorStream(true);
-        // Stream the child's stdout/stderr to the test JVM's stdout so any
-        // CLI parsing errors or boot failures land in the surefire/failsafe
-        // log instead of being silently swallowed.
-        processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
 
         Process process;
         try {
@@ -78,8 +86,10 @@ public class NoDependenciesJarRunner {
             throw new RuntimeException("Failed to start " + jarFile.getAbsolutePath(), ioe);
         }
 
-        waitUntilReady(mockServerPort, process);
-        return new NoDependenciesJarRunner(process, mockServerPort);
+        NoDependenciesJarRunner runner = new NoDependenciesJarRunner(process, mockServerPort);
+        runner.startOutputGobbler();
+        runner.waitUntilReady();
+        return runner;
     }
 
     /** Stop the forked JVM. Idempotent. */
@@ -96,6 +106,106 @@ public class NoDependenciesJarRunner {
             Thread.currentThread().interrupt();
             process.destroyForcibly();
         }
+    }
+
+    /**
+     * The forked JVM's merged stdout/stderr captured so far. The stream is
+     * drained continuously on a background thread, so this reflects everything
+     * the jar has printed up to the moment of the call.
+     */
+    public String getOutput() {
+        synchronized (output) {
+            return output.toString();
+        }
+    }
+
+    /**
+     * Block until the captured output contains {@code token}, returning
+     * {@code true} as soon as it does, or {@code false} if {@code timeout}
+     * elapses first.
+     */
+    public boolean awaitOutputContaining(String token, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (true) {
+            if (getOutput().contains(token)) {
+                return true;
+            }
+            if (System.nanoTime() >= deadline) {
+                return false;
+            }
+            try {
+                Thread.sleep(READY_POLL_INTERVAL.toMillis());
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return getOutput().contains(token);
+            }
+        }
+    }
+
+    /**
+     * Drain the forked JVM's output on a daemon thread: append every line to
+     * {@link #output} and echo it to the test JVM's stdout. Draining is also
+     * required for correctness — if the pipe buffer fills because nobody reads
+     * it, the forked JVM blocks on its next write.
+     */
+    private void startOutputGobbler() {
+        Thread gobbler = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (output) {
+                        output.append(line).append(System.lineSeparator());
+                    }
+                    System.out.println(line);
+                }
+            } catch (IOException streamClosed) {
+                // forked JVM exited and closed the stream — nothing more to read
+            }
+        }, "no-dependencies-jar-output");
+        gobbler.setDaemon(true);
+        gobbler.start();
+    }
+
+    private void waitUntilReady() {
+        HttpClient client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(2))
+            .build();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/mockserver/status"))
+            .timeout(Duration.ofSeconds(2))
+            .PUT(HttpRequest.BodyPublishers.noBody())
+            .build();
+
+        long deadline = System.nanoTime() + READY_TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (!process.isAlive()) {
+                throw new RuntimeException("MockServer process exited before becoming ready (exit code "
+                    + process.exitValue() + "). Forked jar output:\n" + getOutput());
+            }
+            try {
+                HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+                if (response.statusCode() == 200) {
+                    return;
+                }
+            } catch (IOException notListeningYet) {
+                // server not yet listening — keep polling
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                process.destroyForcibly();
+                throw new RuntimeException("Interrupted while waiting for MockServer to start", ie);
+            }
+            try {
+                Thread.sleep(READY_POLL_INTERVAL.toMillis());
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                process.destroyForcibly();
+                throw new RuntimeException("Interrupted while waiting for MockServer to start", ie);
+            }
+        }
+        process.destroyForcibly();
+        throw new RuntimeException("MockServer did not respond on port " + port + " within "
+            + READY_TIMEOUT + ". Forked jar output:\n" + getOutput());
     }
 
     private static File locateShadedJar() {
@@ -121,46 +231,6 @@ public class NoDependenciesJarRunner {
         }
         throw new RuntimeException("Can't find jar file in the following locations: " +
             Arrays.asList(jarFile.getAbsolutePath(), alt.getAbsolutePath()));
-    }
-
-    private static void waitUntilReady(int port, Process process) {
-        HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(2))
-            .build();
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create("http://localhost:" + port + "/mockserver/status"))
-            .timeout(Duration.ofSeconds(2))
-            .PUT(HttpRequest.BodyPublishers.noBody())
-            .build();
-
-        long deadline = System.nanoTime() + READY_TIMEOUT.toNanos();
-        while (System.nanoTime() < deadline) {
-            if (!process.isAlive()) {
-                throw new RuntimeException("MockServer process exited before becoming ready (exit code "
-                    + process.exitValue() + "). Check the test log for the jar's stdout.");
-            }
-            try {
-                HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
-                if (response.statusCode() == 200) {
-                    return;
-                }
-            } catch (IOException notListeningYet) {
-                // server not yet listening — keep polling
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                process.destroyForcibly();
-                throw new RuntimeException("Interrupted while waiting for MockServer to start", ie);
-            }
-            try {
-                Thread.sleep(READY_POLL_INTERVAL.toMillis());
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                process.destroyForcibly();
-                throw new RuntimeException("Interrupted while waiting for MockServer to start", ie);
-            }
-        }
-        process.destroyForcibly();
-        throw new RuntimeException("MockServer did not respond on port " + port + " within " + READY_TIMEOUT);
     }
 
     private static String getJavaBin() {
