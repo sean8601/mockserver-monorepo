@@ -134,6 +134,19 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- apache commons: used directly by the example classes. These
+             previously arrived transitively through the no-dependencies
+             modules, which now correctly suppress that dependency leakage,
+             so the example module must declare them itself. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+        </dependency>
+
         <!-- http -->
         <dependency>
             <groupId>javax.servlet</groupId>
