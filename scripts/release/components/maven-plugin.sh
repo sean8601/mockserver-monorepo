@@ -25,6 +25,7 @@ done
 require_cmd docker
 require_cmd git
 require_cmd curl
+require_cmd jq
 require_release_inputs
 skip_unless_release_type "maven-plugin" full,post-maven
 
@@ -65,7 +66,7 @@ GPG_PASSPHRASE=$(load_secret "mockserver-release/gpg-key" "passphrase")
 SONATYPE_USERNAME=$(load_secret "mockserver-build/sonatype" "username")
 SONATYPE_PASSWORD=$(load_secret "mockserver-build/sonatype" "password")
 
-in_docker "$MAVEN_IMAGE" \
+deploy_log=$(in_docker "$MAVEN_IMAGE" \
   -w /build/mockserver/mockserver-maven-plugin \
   -v mockserver-m2-cache:/root/.m2 \
   -e "GPG_KEY_B64=$GPG_KEY_B64" \
@@ -96,18 +97,51 @@ in_docker "$MAVEN_IMAGE" \
   </servers>
 </settings>
 SETTINGS
-    # The parent pom configures central-publishing-maven-plugin with
-    # autoPublish=false / waitUntil=validated, so a plain `mvn deploy` only
-    # uploads and validates the deployment — it never promotes it, leaving the
-    # plugin stuck in VALIDATED and never reaching Maven Central. Override both
-    # here: autoPublish=true promotes once validation passes, waitUntil=published
-    # blocks until the Portal confirms PUBLISHED so a non-zero exit is a real
-    # publish failure. The maven-plugin has no need for the manual publish gate
-    # the core release deliberately keeps.
-    mvn deploy -P release -DskipTests -DautoPublish=true -DwaitUntil=published \
+    # central-publishing-maven-plugin is configured in the parent pom with
+    # autoPublish=false / waitUntil=validated. Those are explicit <configuration>
+    # values, which Maven gives precedence over -D user properties, so they
+    # cannot be flipped from the command line. `mvn deploy` therefore only
+    # uploads and validates the deployment and prints its deploymentId; the
+    # promote-to-published step is done via the Central Portal API below.
+    mvn deploy -P release -DskipTests \
       -Dgpg.passphraseServerId=gpg.passphrase \
       -Dgpg.useagent=false \
       --settings /tmp/settings.xml
-  '
+  ' 2>&1 | tee /dev/stderr)
 
-log_info "maven-plugin release complete"
+# Promote the validated deployment to PUBLISHED. central-publishing-maven-plugin
+# logs "deploymentId: <uuid>" on upload — extract it, POST it to the Central
+# Portal publish endpoint, then poll until the deployment leaves VALIDATED.
+DEPLOYMENT_ID=$(printf '%s\n' "$deploy_log" \
+  | grep -oE 'deploymentId: [0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' \
+  | head -1 | awk '{print $2}')
+[[ -n "$DEPLOYMENT_ID" ]] || { log_error "Could not find deploymentId in mvn deploy output"; exit 1; }
+log_info "Central Portal deployment: $DEPLOYMENT_ID"
+
+CP_AUTH=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 | tr -d '\n')
+
+log_info "Publishing deployment $DEPLOYMENT_ID"
+curl -fsS --connect-timeout 10 --max-time 30 -X POST -H "Authorization: Basic $CP_AUTH" \
+  -o /dev/null -w 'publish request: HTTP %{http_code}\n' \
+  "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+
+log_info "Waiting for the deployment to leave VALIDATED"
+state=""
+published=false
+for i in $(seq 1 20); do   # 20 × 15s = 5 min
+  state=$(curl -fsS --connect-timeout 10 --max-time 30 -X POST -H "Authorization: Basic $CP_AUTH" \
+    "https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID" \
+    2>/dev/null | jq -r '.deploymentState' 2>/dev/null || true)
+  log_info "  attempt $i: state=${state:-<empty>}"
+  case "$state" in
+    PUBLISHING|PUBLISHED) published=true; break ;;
+    FAILED)               log_error "Central Portal deployment FAILED"; exit 1 ;;
+  esac
+  sleep 15
+done
+if ! $published; then
+  log_error "Deployment $DEPLOYMENT_ID did not start publishing within 5 minutes"
+  exit 1
+fi
+
+log_info "maven-plugin release complete (deployment $DEPLOYMENT_ID is $state)"
