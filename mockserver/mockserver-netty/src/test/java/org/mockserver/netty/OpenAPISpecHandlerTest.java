@@ -1,5 +1,6 @@
 package org.mockserver.netty;
 
+import com.google.common.io.ByteStreams;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import org.junit.Test;
@@ -7,7 +8,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 
+import java.io.InputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.mockito.ArgumentMatchers.any;
@@ -33,6 +40,27 @@ public class OpenAPISpecHandlerTest {
         return captor.getValue();
     }
 
+    /**
+     * The OpenAPI spec version is stamped by the release process, so the
+     * expected value is read from the spec resource itself rather than pinned
+     * to a literal. The assertion then tracks the version automatically and
+     * never needs a manual update when a release bumps it.
+     *
+     * The {@code ^  version: } pattern mirrors the sed expression that
+     * scripts/release/finalize.sh uses to stamp this same line, so the test
+     * and the release tooling stay in agreement on the spec's layout.
+     */
+    private static String expectedSpecVersion() throws Exception {
+        try (InputStream inputStream = OpenAPISpecHandler.class
+                .getResourceAsStream("/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml")) {
+            assertThat("OpenAPI spec resource must be on the classpath", inputStream, is(notNullValue()));
+            String spec = new String(ByteStreams.toByteArray(inputStream), UTF_8);
+            Matcher matcher = Pattern.compile("(?m)^  version: (.+)$").matcher(spec);
+            assertThat("OpenAPI spec resource must declare an info.version", matcher.find(), is(true));
+            return matcher.group(1).trim();
+        }
+    }
+
     @Test
     public void shouldReturnOpenAPISpecWithCorrectContentType() throws Exception {
         // given
@@ -49,7 +77,7 @@ public class OpenAPISpecHandlerTest {
         assertThat(response.getFirstHeader("content-type"), is("application/yaml; charset=utf-8"));
         assertThat(response.getBodyAsString(), containsString("openapi: 3.0.0"));
         assertThat(response.getBodyAsString(), containsString("title: MockServer API"));
-        assertThat(response.getBodyAsString(), containsString("version: 5.16.0"));
+        assertThat(response.getBodyAsString(), containsString("version: " + expectedSpecVersion()));
         assertThat(response.getBodyAsString(), containsString("/mockserver/expectation"));
         assertThat(response.getBodyAsString(), containsString("/mockserver/openapi.yaml"));
     }
