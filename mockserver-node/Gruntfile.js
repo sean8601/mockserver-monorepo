@@ -35,7 +35,7 @@ module.exports = function (grunt) {
                     '-Dmockserver.corsAllowHeaders="Allow, Content-Encoding, Content-Length, Content-Type, ETag, Expires, Last-Modified, Location, Server, Vary, Authorization"',
                     '-Dmockserver.corsAllowCredentials=true -Dmockserver.corsMaxAgeInSeconds=300'
                 ],
-                mockServerVersion: "5.15.0"
+                mockServerVersion: "6.0.0"
             }
         },
         stop_mockserver: {
@@ -72,7 +72,7 @@ module.exports = function (grunt) {
         var done = this.async();
         var artifactoryHost = 'repo1.maven.org';
         var artifactoryPath = '/maven2/org/mock-server/mockserver-netty/';
-        require('./downloadJar').downloadJar('5.15.0', artifactoryHost, artifactoryPath).then(function () {
+        require('./downloadJar').downloadJar('6.0.0', artifactoryHost, artifactoryPath).then(function () {
             done(true);
         }, function () {
             done(false);
