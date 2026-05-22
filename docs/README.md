@@ -98,7 +98,7 @@ mockserver-monorepo/
 └── docs/                           # This documentation (you are here)
     ├── code/                       #   Code architecture (11 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm (4 docs)
-    ├── operations/                 #   Build, release, deps, security, website (6 docs)
+    ├── operations/                 #   Build, release, deps, security, website (10 docs)
     └── testing.md                  #   Test frameworks, architecture, config, coverage, CI
 ```
 
