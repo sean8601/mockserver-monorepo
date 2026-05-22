@@ -42,6 +42,7 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/operations/security.md](docs/operations/security.md) | Before adding, removing, or upgrading dependencies (Java 11 constraints, version ceilings, CodeQL, Dependabot, Snyk) |
 | [docs/operations/release-process.md](docs/operations/release-process.md) | When performing or automating releases |
 | [docs/operations/release-principles.md](docs/operations/release-principles.md) | Before changing anything under `scripts/release/` or `.buildkite/release-*` |
+| [docs/operations/ai-native-sdlc-principles.md](docs/operations/ai-native-sdlc-principles.md) | For the principles behind working with AI across the SDLC |
 | [docs/operations/ai-assisted-development.md](docs/operations/ai-assisted-development.md) | For understanding the AI development approach, adversarial review, and testing backstop |
 | [docs/operations/opencode-configuration.md](docs/operations/opencode-configuration.md) | Before modifying opencode config, agents, rules, skills, or commands |
 | [docs/gaps-and-recommendations.md](docs/gaps-and-recommendations.md) | For improvement opportunities and known gaps |

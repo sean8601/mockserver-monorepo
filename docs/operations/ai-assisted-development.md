@@ -170,6 +170,7 @@ Multiple AI sessions can operate on the repository concurrently. Safety is maint
 
 ## Further Reading
 
+- [AI-Native SDLC Principles](ai-native-sdlc-principles.md) -- the conceptual principles this approach is built on
 - [OpenCode Configuration](opencode-configuration.md) -- full technical details of the AI harness, all 12 agents, model strategy, rules, skills, and commands
 - [OpenCode Building Blocks](opencode-building-blocks.md) -- generic guide to the configuration patterns used
 - [Testing](../testing.md) -- complete test framework documentation, module inventory, and coverage analysis

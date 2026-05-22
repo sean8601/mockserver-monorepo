@@ -45,6 +45,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [Snyk Security](operations/snyk-security.md) | Vulnerability scanning, CLI usage, Java 11 constraints, triage workflow |
 | [Website](operations/website.md) | Jekyll documentation site structure and publishing |
 | [Testing](testing.md) | Test frameworks, module inventory, architecture, configuration, coverage gaps, CI execution |
+| [AI-Native SDLC Principles](operations/ai-native-sdlc-principles.md) | Principles for working with AI across the SDLC: spec-first, verification, context, guardrails, the lethal trifecta |
 | [AI-Assisted Development](operations/ai-assisted-development.md) | AI development approach, adversarial review, testing backstop, structural safety |
 | [OpenCode Configuration](operations/opencode-configuration.md) | AI harness: config, agents, rules, skills, commands, plugins |
 | [OpenCode Building Blocks](operations/opencode-building-blocks.md) | Generic guide to the 9 building blocks: what each controls, when to use which, and how they fit together |
