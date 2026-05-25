@@ -1,7 +1,6 @@
-version: "2.4"
 services:
   mockserver:
-    image: mockserver/mockserver:integration_testing
+    image: mockserver/mockserver:latest
     ports:
       - "1080:1080"
     environment:

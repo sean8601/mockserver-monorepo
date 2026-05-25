@@ -1,20 +1,8 @@
-version: "2.4"
 services:
-  client:
-    image: mockserver/mockserver:integration_testing_client
-    networks:
-      - test-network
-    command:
-      - "sleep"
-      - "86400"
   mockserver:
-    image: mockserver/mockserver:integration_testing
-    networks:
-      - test-network
+    image: mockserver/mockserver:latest
+    ports:
+      - "1234:1234"
     environment:
       MOCKSERVER_LOG_LEVEL: DEBUG
       SERVER_PORT: 1234
-
-networks:
-  test-network:
-    driver: bridge

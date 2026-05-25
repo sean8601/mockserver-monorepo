@@ -105,9 +105,9 @@ This document identifies missing documentation, undocumented areas, and recommen
 
 ## Minor Gaps
 
-### 11. Docker Compose Examples Not Cross-Referenced
+### ~~11. Docker Compose Examples Not Cross-Referenced~~ (Resolved)
 
-The 10 Docker Compose examples in `mockserver-examples/docker_compose_examples/` duplicate the integration test configurations in `container_integration_tests/`. Changes in one are not automatically reflected in the other.
+**Resolution:** The two trees now share a single source of truth. Each `mockserver/mockserver-examples/docker_compose_examples/<case>/docker-compose.yml` is the canonical, user-runnable example (public `mockserver/mockserver:latest` image, no CI sidecar). Each `container_integration_tests/<case>/` carries only an `integration_test.sh` and a tiny `docker-compose.override.yml` that adds the `client:` test sidecar and swaps in the locally-built `:integration_testing` image. The harness invokes `docker-compose -f <base> -f <overlay>`, so any change to a configuration is visible to both audiences on the same line. The previously example-only `docker_compose_with_mtls` is now exercised end-to-end in CI.
 
 ### ~~12. Deprecated Packaging Formats~~ (Resolved)
 

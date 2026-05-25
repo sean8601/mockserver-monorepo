@@ -1,29 +1,17 @@
-version: "2.4"
 services:
-  client:
-    image: mockserver/mockserver:integration_testing_client
-    networks:
-      - test-network
-    command:
-      - "sleep"
-      - "86400"
   mockserver-target:
-    image: mockserver/mockserver:integration_testing
-    networks:
-      - test-network
+    image: mockserver/mockserver:latest
+    ports:
+      - "4567:4567"
     environment:
-      MOCKSERVER_LOG_LEVEL: DEBUG
+      MOCKSERVER_LOG_LEVEL: INFO
       MOCKSERVER_SERVER_PORT: 4567
   mockserver:
-    image: mockserver/mockserver:integration_testing
-    networks:
-      - test-network
+    image: mockserver/mockserver:latest
+    ports:
+      - "1234:1234"
     environment:
-      MOCKSERVER_LOG_LEVEL: DEBUG
+      MOCKSERVER_LOG_LEVEL: INFO
       MOCKSERVER_SERVER_PORT: 1234
       PROXY_REMOTE_HOST: mockserver-target
       PROXY_REMOTE_PORT: 4567
-
-networks:
-  test-network:
-    driver: bridge

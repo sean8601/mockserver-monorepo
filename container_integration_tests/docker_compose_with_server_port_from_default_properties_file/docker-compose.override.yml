@@ -1,0 +1,11 @@
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    ports: !reset []
+    environment:
+      MOCKSERVER_LOG_LEVEL: TRACE
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command:
+      - "sleep"
+      - "86400"

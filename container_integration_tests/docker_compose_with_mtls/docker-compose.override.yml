@@ -1,0 +1,19 @@
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    ports: !reset []
+    environment:
+      MOCKSERVER_LOG_LEVEL: DEBUG
+    # Mount certs/config generated under the test directory so the example's
+    # checked-in dirs stay clean. ${OVERRIDE_DIR} is exported by
+    # container_integration_tests/docker-compose.sh.
+    volumes: !override
+      - ${OVERRIDE_DIR}/certs:/certs:ro
+      - ${OVERRIDE_DIR}/config:/config:ro
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command:
+      - "sleep"
+      - "86400"
+    volumes:
+      - ${OVERRIDE_DIR}/certs:/certs:ro

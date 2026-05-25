@@ -1,0 +1,11 @@
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    # CI scope: drop host port-publishing to avoid clashes when many tests
+    # run on the same agent; tests reach mockserver via the docker network.
+    ports: !reset []
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command:
+      - "sleep"
+      - "86400"

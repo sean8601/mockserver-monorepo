@@ -52,6 +52,7 @@ function run_all_tests() {
       test "docker_compose_with_persisted_expectations"
       test "docker_compose_with_server_port_from_default_properties_file"
       test "docker_compose_with_server_port_from_custom_properties_file"
+      test "docker_compose_with_mtls"
       clean-up-docker-containers
     fi
     if [[ "${SKIP_HELM_TESTS:-}" != "true" ]]; then

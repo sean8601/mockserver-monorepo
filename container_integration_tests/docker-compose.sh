@@ -2,6 +2,54 @@
 
 set -euo pipefail
 
+INTEGRATION_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+EXAMPLES_DIR="${INTEGRATION_TESTS_DIR}/../mockserver/mockserver-examples/docker_compose_examples"
+
+# Overlays use the `!reset` / `!override` YAML merge tags introduced in Docker
+# Compose v2.22 (August 2023). Without these, host port-publishing from the
+# base example would leak into CI and cause port clashes between tests, and
+# volume overrides would append instead of replacing.
+function check-compose-version() {
+  local raw
+  raw="$(docker-compose version --short 2>/dev/null || true)"
+  if [[ -z "${raw}" ]]; then
+    echo "docker-compose not found in PATH" >&2
+    return 1
+  fi
+  local v="${raw#v}"
+  local major="${v%%.*}"
+  local rest="${v#*.}"
+  local minor="${rest%%.*}"
+  if [[ "${major}" -lt 2 ]] || { [[ "${major}" -eq 2 ]] && [[ "${minor}" -lt 22 ]]; }; then
+    echo "docker-compose >= 2.22 required for !reset/!override merge tags; found ${raw}" >&2
+    return 1
+  fi
+}
+check-compose-version
+
+# Build the -f arguments for a test case: the canonical example compose
+# file is the base; if an overlay (docker-compose.override.yml) exists in
+# the test directory it is layered on top. Falls back to a single in-place
+# docker-compose.yml in the test directory for any test that has not yet
+# been migrated to the overlay pattern.
+function compose-files() {
+  local case="${1}"
+  local base="${EXAMPLES_DIR}/${case}/docker-compose.yml"
+  local overlay="${INTEGRATION_TESTS_DIR}/${case}/docker-compose.override.yml"
+  local legacy="${INTEGRATION_TESTS_DIR}/${case}/docker-compose.yml"
+
+  if [[ -f "${base}" && -f "${overlay}" ]]; then
+    echo "-f ${base} -f ${overlay}"
+  elif [[ -f "${legacy}" ]]; then
+    echo "-f ${legacy}"
+  elif [[ -f "${base}" ]]; then
+    echo "-f ${base}"
+  else
+    echo "no docker-compose.yml found for test case '${case}' (looked in ${base} and ${legacy})" >&2
+    return 1
+  fi
+}
+
 function docker-exec() {
   if [[ -z "${TEST_CASE:-}" ]]; then
     runCommand "docker-compose exec -T ${1} /bin/bash -c \"${2}\""
@@ -15,11 +63,20 @@ function docker-exec-client() {
 }
 
 function tear-down() {
-  runCommand "docker-compose -p ${TEST_CASE} down --remove-orphans || true"
+  local files
+  files="$(compose-files "${TEST_CASE}")"
+  export OVERRIDE_DIR="${INTEGRATION_TESTS_DIR}/${TEST_CASE}"
+  runCommand "docker-compose ${files} -p ${TEST_CASE} down --remove-orphans || true"
 }
 
 function start-up() {
-  runCommand "docker-compose -p ${TEST_CASE} up --build -d"
+  local files
+  files="$(compose-files "${TEST_CASE}")"
+  # Exported so overlay files can reference the test directory in volume
+  # paths via ${OVERRIDE_DIR} — relative paths in an overlay otherwise
+  # resolve against the project directory (the base example's directory).
+  export OVERRIDE_DIR="${INTEGRATION_TESTS_DIR}/${TEST_CASE}"
+  runCommand "docker-compose ${files} -p ${TEST_CASE} up --build -d"
 }
 
 function container-logs() {

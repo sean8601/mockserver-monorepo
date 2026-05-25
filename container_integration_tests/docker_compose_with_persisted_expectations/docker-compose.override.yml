@@ -1,0 +1,14 @@
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    ports: !reset []
+    # Mount the test directory's own config so the test can assert on the
+    # persisted file without dirtying the example fixtures. ${OVERRIDE_DIR}
+    # is exported by container_integration_tests/docker-compose.sh.
+    volumes: !override
+      - ${OVERRIDE_DIR}/config:/config
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command:
+      - "sleep"
+      - "86400"
