@@ -46,7 +46,6 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/operations/ai-native-sdlc-principles.md](docs/operations/ai-native-sdlc-principles.md) | For the principles behind working with AI across the SDLC |
 | [docs/operations/ai-assisted-development.md](docs/operations/ai-assisted-development.md) | For understanding the AI development approach, adversarial review, and testing backstop |
 | [docs/operations/opencode-configuration.md](docs/operations/opencode-configuration.md) | Before modifying opencode config, agents, rules, skills, or commands |
-| [docs/gaps-and-recommendations.md](docs/gaps-and-recommendations.md) | For improvement opportunities and known gaps |
 
 When making changes to the project, **update the relevant docs/ file** if the change affects architecture, dependencies, build process, CI/CD, infrastructure, or deployment.
 

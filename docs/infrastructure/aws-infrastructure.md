@@ -387,6 +387,8 @@ authenticated?"}
 
 ## Website Account
 
+S3, CloudFront, Route 53 records, and the cross-account IAM role used by the release pipeline are **managed by Terraform in [`terraform/website/`](../../terraform/website/README.md)**. The IaC pieces below are summarised here; see the module README for the canonical reference, variables, and outputs.
+
 ### Architecture
 
 ```mermaid
@@ -399,19 +401,27 @@ www.mock-server.com"] -->|A record alias| CF
 
 ### AWS Organization and SSO
 
-The website account runs its own AWS Organization with a separate IAM Identity Center instance. This is independent from the build account's organization. Access is managed via SSO — no IAM users or long-lived credentials exist.
+The website account runs its own AWS Organization with a separate IAM Identity Center instance. This is independent from the build account's organization. Access is managed via SSO — no IAM users or long-lived credentials exist. **Manual (one-time)** — predates Terraform.
 
 ### S3 Buckets
 
-19 S3 buckets — 1 for the current website, plus versioned archives for each MockServer major/minor release and a personal site. See `~/mockserver-aws-ids.md` for bucket names.
+19 S3 buckets — 1 for the current website, plus versioned archives for each MockServer major/minor release and a personal site. See `~/mockserver-aws-ids.md` for bucket names. **Managed by `terraform/website/sites.tf`** (`aws_s3_bucket.site`, `aws_s3_bucket_website_configuration.site`, `aws_s3_bucket_public_access_block.site`, `aws_s3_bucket_policy.site` — one of each per `sites` map entry). Bucket *contents* are uploaded by the release pipeline (`scripts/release/components/website.sh`, `…/javadoc.sh`, `…/helm.sh`), not by Terraform.
 
 ### CloudFront Distributions
 
-19 distributions — one per S3 bucket, each mapped to a domain alias. The main site serves `mock-server.com`, with versioned subdomains (`4-0` through `5-14`) for archived documentation.
+19 distributions — one per S3 bucket, each mapped to a domain alias. The main site serves `mock-server.com`, with versioned subdomains (`4-0` through `5-14`) for archived documentation. **Managed by `terraform/website/sites.tf`** (`aws_cloudfront_distribution.site` per version + `aws_cloudfront_distribution.main` for the apex).
 
-All distributions use Origin Access Control (OAC) to authenticate requests to S3. S3 buckets are not publicly accessible — only CloudFront can read objects.
+All distributions use Origin Access Identity (OAI) to authenticate requests to S3. S3 buckets are not publicly accessible — only CloudFront can read objects.
 
-Main distribution config: `PriceClass_All`, HTTP/2+3, TLSv1.2_2021 minimum, redirect HTTP→HTTPS, custom 403 error page.
+Main distribution config: `PriceClass_All`, HTTP/2+3, TLSv1.2_2021 minimum, redirect HTTP→HTTPS, custom 403→200 mapping to `/error403.html` so deep-link refreshes render correctly. The main distribution `depends_on` the per-version distributions so promoting a new `latest_version` doesn't trip the CloudFront "CNAME already associated" error.
+
+### Cross-account IAM Role
+
+The build-account Buildkite agents push releases into the website account by assuming `mockserver-release-website` via `sts:AssumeRole`. **Managed by `terraform/website/cross-account-role.tf`.** Permissions are scoped:
+
+- `s3:*` on bucket names matching `aws-website-mockserver-*` only
+- `cloudfront:*` (account-wide — CloudFront lacks resource-level permissions for distribution-list/create)
+- `route53:ChangeResourceRecordSets` on the `mock-server.com` hosted zone only
 
 ### Route53 Hosted Zones
 
@@ -425,6 +435,8 @@ Main distribution config: `PriceClass_All`, HTTP/2+3, TLSv1.2_2021 minimum, redi
 
 `mock-server.com` DNS records: apex → CloudFront (main), `www` → alias to apex, `org` → alias to apex, plus 15 versioned subdomain A records (`4-0` through `5-14`) each pointing to their respective CloudFront distribution. ACM validation CNAME records for certificate renewal.
 
+The hosted zone itself is **manual (one-time)** — it predates Terraform. **All A-alias records** inside it (`aws_route53_record.site` per version, `aws_route53_record.main` for apex, `aws_route53_record.www`) **are managed by `terraform/website/sites.tf`**. ACM validation CNAMEs are managed by AWS as part of the cert lifecycle.
+
 SES email forwarding DNS records (managed by `terraform/ses-email-forwarding/`): apex MX record routing to `inbound-smtp.us-east-1.amazonaws.com`, `_amazonses` TXT for domain verification, 3 DKIM CNAME records (`<token>._domainkey`), and `_dmarc` TXT. See [AWS SES Email Forwarding](aws-ses-email-forwarding.md) for full details.
 
 ### ACM Certificates (us-east-1)
@@ -434,6 +446,8 @@ SES email forwarding DNS records (managed by `terraform/ses-email-forwarding/`):
 | `mock-server.com` (+ `*.mock-server.com`, `org.`, `www.`) | 2026-09-17 | Eligible (auto-renew) |
 | `*.mock-server.com` | 2026-09-29 | Eligible (auto-renew) |
 | `blog.jamesdbloom.com` | — | Eligible |
+
+Certificates are **not** managed by Terraform — issuance was a one-time manual request with DNS validation, and renewals are automatic. The ARN is passed into the `terraform/website/` module as `acm_certificate_arn`.
 
 ### S3 Bucket Contents
 
@@ -456,7 +470,7 @@ SES email forwarding DNS records (managed by `terraform/ses-email-forwarding/`):
 |---------|--------|
 | Account-level S3 public access block | Enabled (all 4 flags) |
 | Bucket-level S3 public access blocks | Enabled on all 19 buckets |
-| CloudFront OAC | All 19 distributions use OAC — S3 not directly accessible |
+| CloudFront OAI | All 19 distributions use Origin Access Identity — S3 not directly accessible |
 | CloudTrail | `mockserver-website-trail` — multi-region, log file validation, 90-day retention |
 | Root MFA | Enabled |
 | IAM users | None (SSO-only access) |

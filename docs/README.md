@@ -67,7 +67,6 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | Document | Description |
 |----------|-------------|
 | [Architecture](architecture.md) | Original high-level architecture overview (see also [Code Overview](code/overview.md)) |
-| [Gaps & Recommendations](gaps-and-recommendations.md) | Review of missing documentation and improvement areas |
 
 ## Quick Reference
 
