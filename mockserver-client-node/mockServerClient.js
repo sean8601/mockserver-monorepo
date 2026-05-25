@@ -815,6 +815,12 @@ var mockServerClient;
             };
         };
         /**
+         * Verify that no requests have been received by the MockServer
+         */
+        var verifyZeroInteractions = function () {
+            return verify({}, 0, 0);
+        };
+        /**
          * Reset by clearing all recorded requests
          */
         var reset = function () {
@@ -1004,6 +1010,7 @@ var mockServerClient;
             verifyById: verifyById,
             verifySequence: verifySequence,
             verifySequenceById: verifySequenceById,
+            verifyZeroInteractions: verifyZeroInteractions,
             reset: reset,
             clear: clear,
             clearById: clearById,

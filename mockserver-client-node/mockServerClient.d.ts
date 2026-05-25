@@ -52,6 +52,8 @@ export interface MockServerClient {
 
     verifySequenceById(...expectationIds: ExpectationId[]): Promise<void | string>;
 
+    verifyZeroInteractions(): Promise<void | string>;
+
     reset(): Promise<RequestResponse>;
 
     clear(pathOrRequestDefinition: PathOrRequestDefinition, type: ClearType): Promise<RequestResponse>;

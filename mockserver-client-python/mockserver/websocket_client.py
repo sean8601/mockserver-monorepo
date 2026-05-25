@@ -197,7 +197,7 @@ class MockServerWebSocketClient:
                     reconnect_attempts = 0
                 except Exception:
                     logger.exception("Reconnection failed")
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(min(2 ** reconnect_attempts, 8))
             except Exception:
                 if self._stopped:
                     break

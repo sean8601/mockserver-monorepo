@@ -66,6 +66,8 @@
             }
         };
 
+        var MAX_RECONNECT_ATTEMPTS = 3;
+
         var webSocketClient = function (tls, caCertPath) {
             return function (host, port, contextPath) {
                 var deferred = defer();
@@ -75,6 +77,8 @@
                     var clientIdHandler;
                     var requestHandler;
                     var requestAndResponseHandler;
+                    var hasConnectedOnce = false;
+                    var reconnectAttempts = 0;
                     var webSocketLocation = (tls ? "wss" : "ws") + "://" + host + ":" + port + contextPath + "/_mockserver_callback_websocket";
 
                     var client = new WebSocketClient({
@@ -87,21 +91,43 @@
                         }
                     });
 
+                    var scheduleReconnect = function () {
+                        reconnectAttempts += 1;
+                        if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+                            console.error('Max reconnect attempts reached, giving up');
+                            return;
+                        }
+                        var delayMs = Math.min(Math.pow(2, reconnectAttempts), 8) * 1000;
+                        console.warn('WebSocket disconnected, reconnecting (attempt ' + reconnectAttempts + '/' + MAX_RECONNECT_ATTEMPTS + ') in ' + (delayMs / 1000) + 's');
+                        setTimeout(function () {
+                            client.connect(webSocketLocation, []);
+                        }, delayMs);
+                    };
+
                     client.on('connectFailed', function (error) {
-                        if (error.code && error.code === "ECONNREFUSED") {
-                            deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
+                        if (!hasConnectedOnce) {
+                            if (error.code && error.code === "ECONNREFUSED") {
+                                deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
+                            } else {
+                                deferred.reject(JSON.stringify(error));
+                            }
                         } else {
-                            deferred.reject(JSON.stringify(error));
+                            scheduleReconnect();
                         }
                     });
 
                     client.on('connect', function (connection) {
+                        hasConnectedOnce = true;
+                        reconnectAttempts = 0;
                         connection.on('error', function (error) {
                             if (error.code && error.code === "ECONNREFUSED") {
                                 deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
                             } else {
                                 deferred.reject(JSON.stringify(error));
                             }
+                        });
+                        connection.on('close', function () {
+                            scheduleReconnect();
                         });
                         connection.on('message', function (message) {
                             if (message.type === 'utf8') {
