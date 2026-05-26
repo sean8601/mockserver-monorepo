@@ -1,13 +1,24 @@
 package org.mockserver.llm;
 
+import org.mockserver.llm.codec.AnthropicCodec;
+import org.mockserver.llm.codec.OpenAiChatCompletionsCodec;
 import org.mockserver.model.Provider;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ProviderCodecRegistry {
 
     private static final ProviderCodecRegistry INSTANCE = new ProviderCodecRegistry();
+
+    // codecs are registered here at boot
+    static {
+        INSTANCE.register(new AnthropicCodec());
+        INSTANCE.register(new OpenAiChatCompletionsCodec());
+    }
 
     private final ConcurrentHashMap<Provider, ProviderCodec> codecs = new ConcurrentHashMap<>();
 
@@ -21,5 +32,14 @@ public class ProviderCodecRegistry {
 
     public Optional<ProviderCodec> lookup(Provider provider) {
         return Optional.ofNullable(codecs.get(provider));
+    }
+
+    public List<String> supportedProviderNames() {
+        List<String> names = new ArrayList<>();
+        for (Provider p : codecs.keySet()) {
+            names.add(p.name());
+        }
+        Collections.sort(names);
+        return names;
     }
 }

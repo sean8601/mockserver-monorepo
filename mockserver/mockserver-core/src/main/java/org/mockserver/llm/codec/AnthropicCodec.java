@@ -1,0 +1,212 @@
+package org.mockserver.llm.codec;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.mockserver.llm.JsonEscape;
+import org.mockserver.llm.ProviderCodec;
+import org.mockserver.llm.StreamingPhysicsExpander;
+import org.mockserver.model.*;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import static org.mockserver.model.HttpResponse.response;
+import static org.mockserver.model.SseEvent.sseEvent;
+
+/**
+ * Codec for Anthropic Messages API (version 2024-10-22).
+ * Encodes MockServer Completion objects into Anthropic-format HTTP responses
+ * for both non-streaming and streaming (SSE) paths.
+ */
+public class AnthropicCodec implements ProviderCodec {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    @Override
+    public Provider provider() {
+        return Provider.ANTHROPIC;
+    }
+
+    @Override
+    public String apiVersion() {
+        return "2024-10-22";
+    }
+
+    @Override
+    public HttpResponse encode(Completion completion, String model) {
+        ObjectNode root = OBJECT_MAPPER.createObjectNode();
+        root.put("id", "msg_" + randomBase62(24));
+        root.put("type", "message");
+        root.put("role", "assistant");
+        root.put("model", model != null ? model : "unknown");
+
+        ArrayNode content = root.putArray("content");
+
+        // Text block (if text is non-null and non-empty)
+        String text = completion.getText();
+        boolean hasText = text != null && !text.isEmpty();
+        if (hasText) {
+            ObjectNode textBlock = content.addObject();
+            textBlock.put("type", "text");
+            textBlock.put("text", text);
+        }
+
+        // Tool use blocks
+        List<ToolUse> toolCalls = completion.getToolCalls();
+        boolean hasToolCalls = toolCalls != null && !toolCalls.isEmpty();
+        if (hasToolCalls) {
+            for (ToolUse toolCall : toolCalls) {
+                ObjectNode toolBlock = content.addObject();
+                toolBlock.put("type", "tool_use");
+                toolBlock.put("id", "toolu_" + randomBase62(24));
+                toolBlock.put("name", toolCall.getName());
+                // Try to parse arguments as JSON; otherwise emit as raw string
+                String args = toolCall.getArguments();
+                if (args != null) {
+                    try {
+                        JsonNode parsed = OBJECT_MAPPER.readTree(args);
+                        toolBlock.set("input", parsed);
+                    } catch (Exception e) {
+                        toolBlock.put("input", args);
+                    }
+                } else {
+                    toolBlock.putObject("input");
+                }
+            }
+        }
+
+        // stop_reason
+        String stopReason = completion.getStopReason();
+        if (stopReason != null) {
+            root.put("stop_reason", stopReason);
+        } else if (hasToolCalls) {
+            root.put("stop_reason", "tool_use");
+        } else {
+            root.put("stop_reason", "end_turn");
+        }
+        root.putNull("stop_sequence");
+
+        // usage
+        ObjectNode usage = root.putObject("usage");
+        Usage completionUsage = completion.getUsage();
+        int inputTokens = completionUsage != null && completionUsage.getInputTokens() != null ? completionUsage.getInputTokens() : 0;
+        int outputTokens = completionUsage != null && completionUsage.getOutputTokens() != null ? completionUsage.getOutputTokens() : 0;
+        usage.put("input_tokens", inputTokens);
+        usage.put("output_tokens", outputTokens);
+
+        try {
+            String json = OBJECT_MAPPER.writeValueAsString(root);
+            return response()
+                .withStatusCode(200)
+                .withHeader("content-type", "application/json")
+                .withBody(json);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to encode Anthropic response", e);
+        }
+    }
+
+    @Override
+    public List<SseEvent> encodeStreaming(Completion completion, String model, StreamingPhysics physics) {
+        List<SseEvent> events = new ArrayList<>();
+        String messageId = "msg_" + randomBase62(24);
+        String modelName = model != null ? model : "unknown";
+
+        Usage completionUsage = completion.getUsage();
+        int inputTokens = completionUsage != null && completionUsage.getInputTokens() != null ? completionUsage.getInputTokens() : 0;
+        int outputTokens = completionUsage != null && completionUsage.getOutputTokens() != null ? completionUsage.getOutputTokens() : 0;
+
+        // 1. message_start
+        String messageStartData = "{\"type\":\"message_start\",\"message\":{\"id\":\"" + messageId +
+            "\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"" + escapeJson(modelName) +
+            "\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":" + inputTokens + ",\"output_tokens\":1}}}";
+        events.add(sseEvent().withEvent("message_start").withData(messageStartData));
+
+        int contentIndex = 0;
+
+        // 2. Text content (if present)
+        String text = completion.getText();
+        if (text != null && !text.isEmpty()) {
+            // content_block_start
+            String blockStartData = "{\"type\":\"content_block_start\",\"index\":" + contentIndex +
+                ",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}";
+            events.add(sseEvent().withEvent("content_block_start").withData(blockStartData));
+
+            // Split text into tokens (naive: split on whitespace boundaries preserving spaces)
+            String[] tokens = text.split("(?<=\\s)|(?=\\s)");
+            for (String token : tokens) {
+                if (!token.isEmpty()) {
+                    String deltaData = "{\"type\":\"content_block_delta\",\"index\":" + contentIndex +
+                        ",\"delta\":{\"type\":\"text_delta\",\"text\":\"" + escapeJson(token) + "\"}}";
+                    events.add(sseEvent().withEvent("content_block_delta").withData(deltaData));
+                }
+            }
+
+            // content_block_stop
+            String blockStopData = "{\"type\":\"content_block_stop\",\"index\":" + contentIndex + "}";
+            events.add(sseEvent().withEvent("content_block_stop").withData(blockStopData));
+            contentIndex++;
+        }
+
+        // 3. Tool calls
+        List<ToolUse> toolCalls = completion.getToolCalls();
+        boolean hasToolCalls = toolCalls != null && !toolCalls.isEmpty();
+        if (hasToolCalls) {
+            for (ToolUse toolCall : toolCalls) {
+                String toolId = "toolu_" + randomBase62(24);
+
+                // content_block_start for tool_use
+                String toolStartData = "{\"type\":\"content_block_start\",\"index\":" + contentIndex +
+                    ",\"content_block\":{\"type\":\"tool_use\",\"id\":\"" + toolId +
+                    "\",\"name\":\"" + escapeJson(toolCall.getName()) + "\",\"input\":{}}}";
+                events.add(sseEvent().withEvent("content_block_start").withData(toolStartData));
+
+                // content_block_delta for tool arguments
+                String args = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
+                String toolDeltaData = "{\"type\":\"content_block_delta\",\"index\":" + contentIndex +
+                    ",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"" + escapeJson(args) + "\"}}";
+                events.add(sseEvent().withEvent("content_block_delta").withData(toolDeltaData));
+
+                // content_block_stop
+                String toolStopData = "{\"type\":\"content_block_stop\",\"index\":" + contentIndex + "}";
+                events.add(sseEvent().withEvent("content_block_stop").withData(toolStopData));
+                contentIndex++;
+            }
+        }
+
+        // 4. message_delta
+        String stopReason = completion.getStopReason();
+        if (stopReason == null) {
+            stopReason = hasToolCalls ? "tool_use" : "end_turn";
+        }
+        String messageDeltaData = "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"" + escapeJson(stopReason) +
+            "\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":" + outputTokens + "}}";
+        events.add(sseEvent().withEvent("message_delta").withData(messageDeltaData));
+
+        // 5. message_stop
+        events.add(sseEvent().withEvent("message_stop").withData("{\"type\":\"message_stop\"}"));
+
+        // Apply streaming physics
+        return StreamingPhysicsExpander.applyPhysics(events, physics);
+    }
+
+    @Override
+    public HttpResponse encodeEmbedding(EmbeddingResponse embedding, String input) {
+        throw new UnsupportedOperationException("Anthropic does not expose an embeddings endpoint");
+    }
+
+    private static String randomBase62(int length) {
+        String uuid = UUID.randomUUID().toString().replace("-", "");
+        // Pad if needed by appending another UUID
+        while (uuid.length() < length) {
+            uuid = uuid + UUID.randomUUID().toString().replace("-", "");
+        }
+        return uuid.substring(0, length);
+    }
+
+    private static String escapeJson(String value) {
+        return JsonEscape.escape(value);
+    }
+}

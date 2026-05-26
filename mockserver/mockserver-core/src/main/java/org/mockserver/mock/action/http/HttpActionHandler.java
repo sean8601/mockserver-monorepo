@@ -307,35 +307,83 @@ public class HttpActionHandler {
                     break;
                 }
                 case LLM_RESPONSE: {
-                    scheduler.schedule(() -> {
-                        try {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setType(EXPECTATION_RESPONSE)
-                                    .setLogLevel(Level.INFO)
-                                    .setCorrelationId(request.getLogCorrelationId())
-                                    .setHttpRequest(request)
-                                    .setExpectationId(action.getExpectationId())
-                                    .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
-                                    .setArguments(request, action, action.getExpectationId())
+                    HttpLlmResponse llmAction = (HttpLlmResponse) action;
+                    boolean isStreaming = llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
+                    if (isStreaming) {
+                        if (ctx == null) {
+                            writeResponseActionResponse(
+                                response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
+                                responseWriter, request, action, synchronous, null, expectationPostProcessor
                             );
-                            HttpResponse llmResponse = getHttpLlmResponseActionHandler().handle((HttpLlmResponse) action, request);
-                            writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
-                        } catch (Throwable throwable) {
-                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                            break;
+                        }
+                        scheduler.schedule(() -> {
+                            try {
                                 mockServerLogger.logEvent(
                                     new LogEntry()
-                                        .setType(WARN)
+                                        .setType(EXPECTATION_RESPONSE)
                                         .setLogLevel(Level.INFO)
                                         .setCorrelationId(request.getLogCorrelationId())
                                         .setHttpRequest(request)
-                                        .setMessageFormat(throwable.getMessage())
-                                        .setThrowable(throwable)
+                                        .setExpectationId(action.getExpectationId())
+                                        .setMessageFormat("returning streaming LLM response for request:{}for action:{}from expectation:{}")
+                                        .setArguments(request, action, action.getExpectationId())
                                 );
+                                java.util.List<SseEvent> sseEvents = getHttpLlmResponseActionHandler().handleStreaming(llmAction, request);
+                                HttpSseResponse sseResponse = HttpSseResponse.sseResponse()
+                                    .withStatusCode(200)
+                                    .withHeader("content-type", "text/event-stream")
+                                    .withHeader("cache-control", "no-cache")
+                                    .withEvents(sseEvents);
+                                getHttpSseResponseActionHandler().handle(sseResponse, ctx, request);
+                            } catch (Throwable throwable) {
+                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setType(WARN)
+                                            .setLogLevel(Level.INFO)
+                                            .setCorrelationId(request.getLogCorrelationId())
+                                            .setHttpRequest(request)
+                                            .setMessageFormat(throwable.getMessage())
+                                            .setThrowable(throwable)
+                                    );
+                                }
+                                ctx.close();
+                            } finally {
+                                expectationPostProcessor.run();
                             }
-                            expectationPostProcessor.run();
-                        }
-                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    } else {
+                        scheduler.schedule(() -> {
+                            try {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(EXPECTATION_RESPONSE)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setExpectationId(action.getExpectationId())
+                                        .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
+                                        .setArguments(request, action, action.getExpectationId())
+                                );
+                                HttpResponse llmResponse = getHttpLlmResponseActionHandler().handle(llmAction, request);
+                                writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
+                            } catch (Throwable throwable) {
+                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setType(WARN)
+                                            .setLogLevel(Level.INFO)
+                                            .setCorrelationId(request.getLogCorrelationId())
+                                            .setHttpRequest(request)
+                                            .setMessageFormat(throwable.getMessage())
+                                            .setThrowable(throwable)
+                                    );
+                                }
+                                expectationPostProcessor.run();
+                            }
+                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }
                     break;
                 }
                 case WEBSOCKET_RESPONSE: {

@@ -14,8 +14,8 @@ import static org.mockserver.model.HttpRequest.request;
 public class HttpLlmResponseActionHandlerTest {
 
     @Test
-    public void shouldReturn501WhenNoCodecRegistered() {
-        // given
+    public void shouldReturn200ForRegisteredCodec() {
+        // given — ANTHROPIC codec is registered
         HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
         HttpLlmResponse llmResponse = llmResponse()
             .withProvider(Provider.ANTHROPIC)
@@ -26,27 +26,60 @@ public class HttpLlmResponseActionHandlerTest {
         // when
         HttpResponse response = handler.handle(llmResponse, request);
 
-        // then
-        assertThat(response.getStatusCode(), is(501));
-        assertThat(response.getBodyAsString(), containsString("LLM codec not implemented for provider: ANTHROPIC"));
+        // then — registered codecs return 200
+        assertThat(response.getStatusCode(), is(200));
     }
 
     @Test
-    public void shouldReturn501ForEachProviderWithoutCodec() {
+    public void shouldReturn400ForUnregisteredProvider() {
+        // given — GEMINI codec is not registered
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.GEMINI)
+            .withCompletion(completion().withText("test"));
+        HttpRequest request = request().withPath("/test");
+
+        // when
+        HttpResponse response = handler.handle(llmResponse, request);
+
+        // then
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(response.getBodyAsString(), containsString("GEMINI"));
+    }
+
+    @Test
+    public void shouldReturn200ForRegisteredProviders() {
         HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
         HttpRequest request = request().withPath("/test");
 
-        for (Provider provider : Provider.values()) {
-            // given
+        // ANTHROPIC and OPENAI have registered codecs and should return 200
+        for (Provider provider : new Provider[]{Provider.ANTHROPIC, Provider.OPENAI}) {
             HttpLlmResponse llmResponse = llmResponse()
                 .withProvider(provider)
                 .withCompletion(completion().withText("test"));
 
-            // when
             HttpResponse response = handler.handle(llmResponse, request);
 
-            // then
-            assertThat("expected 501 for provider " + provider, response.getStatusCode(), is(501));
+            assertThat("expected 200 for registered provider " + provider,
+                response.getStatusCode(), is(200));
+        }
+    }
+
+    @Test
+    public void shouldReturn400ForUnregisteredProviders() {
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpRequest request = request().withPath("/test");
+
+        // Unregistered providers should return 400
+        for (Provider provider : new Provider[]{Provider.GEMINI, Provider.BEDROCK, Provider.OLLAMA, Provider.OPENAI_RESPONSES, Provider.AZURE_OPENAI}) {
+            HttpLlmResponse llmResponse = llmResponse()
+                .withProvider(provider)
+                .withCompletion(completion().withText("test"));
+
+            HttpResponse response = handler.handle(llmResponse, request);
+
+            assertThat("expected 400 for unregistered provider " + provider,
+                response.getStatusCode(), is(400));
             assertThat(
                 "expected error message for provider " + provider,
                 response.getBodyAsString(),
@@ -56,7 +89,7 @@ public class HttpLlmResponseActionHandlerTest {
     }
 
     @Test
-    public void shouldReturn501WhenProviderIsNull() {
+    public void shouldReturn400WhenProviderIsNull() {
         // given
         HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
         HttpLlmResponse llmResponse = llmResponse()
@@ -67,7 +100,7 @@ public class HttpLlmResponseActionHandlerTest {
         HttpResponse response = handler.handle(llmResponse, request);
 
         // then
-        assertThat(response.getStatusCode(), is(501));
+        assertThat(response.getStatusCode(), is(400));
         assertThat(response.getBodyAsString(), containsString("null"));
     }
 }

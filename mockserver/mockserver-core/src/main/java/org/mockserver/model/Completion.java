@@ -79,12 +79,58 @@ public class Completion extends ObjectWithJsonToString {
         return this;
     }
 
+    public Completion streaming() {
+        return withStreaming(Boolean.TRUE);
+    }
+
     public Boolean getStreaming() {
         return streaming;
     }
 
     public Completion withStreamingPhysics(StreamingPhysics streamingPhysics) {
         this.streamingPhysics = streamingPhysics;
+        this.hashCode = 0;
+        return this;
+    }
+
+    /**
+     * Compose streaming physics from independent values. Accepts any combination of
+     * {@link org.mockserver.model.Delay} (interpreted as time-to-first-token) and
+     * {@link StreamingPhysics} fragments (each typically carrying a single field —
+     * e.g. {@code tokensPerSecond(50)} or {@code jitter(0.2)}). Non-null fields from
+     * the fragments are merged left-to-right onto a single {@link StreamingPhysics}
+     * instance which is then assigned to this completion. Calling implicitly enables
+     * streaming.
+     */
+    public Completion withStreamingPhysics(Object... parts) {
+        StreamingPhysics merged = StreamingPhysics.streamingPhysics();
+        for (Object part : parts) {
+            if (part == null) {
+                continue;
+            }
+            if (part instanceof Delay) {
+                merged.withTimeToFirstToken((Delay) part);
+            } else if (part instanceof StreamingPhysics) {
+                StreamingPhysics fragment = (StreamingPhysics) part;
+                if (fragment.getTimeToFirstToken() != null) {
+                    merged.withTimeToFirstToken(fragment.getTimeToFirstToken());
+                }
+                if (fragment.getTokensPerSecond() != null) {
+                    merged.withTokensPerSecond(fragment.getTokensPerSecond());
+                }
+                if (fragment.getJitter() != null) {
+                    merged.withJitter(fragment.getJitter());
+                }
+                if (fragment.getSeed() != null) {
+                    merged.withSeed(fragment.getSeed());
+                }
+            } else {
+                throw new IllegalArgumentException(
+                    "withStreamingPhysics accepts Delay or StreamingPhysics fragments; got: "
+                        + part.getClass().getName());
+            }
+        }
+        this.streamingPhysics = merged;
         this.hashCode = 0;
         return this;
     }
