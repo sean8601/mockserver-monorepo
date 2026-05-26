@@ -1,10 +1,8 @@
 import Box from '@mui/material/Box';
-import Paper from '@mui/material/Paper';
 import { useDashboardStore } from '../store';
 import LogPanel from './LogPanel';
 import ExpectationPanel from './ExpectationPanel';
 import RequestPanel from './RequestPanel';
-import LlmUsageTile from './LlmUsageTile';
 
 export default function DashboardGrid() {
   const recordedRequests = useDashboardStore((s) => s.recordedRequests);
@@ -20,7 +18,7 @@ export default function DashboardGrid() {
         flex: 1,
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: '1fr 1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
         gap: 1,
         p: 1,
         overflow: 'hidden',
@@ -48,11 +46,6 @@ export default function DashboardGrid() {
           searchValue={proxiedSearch}
           onSearchChange={setProxiedSearch}
         />
-      </Box>
-      <Box sx={{ minHeight: 0, overflow: 'hidden', gridColumn: '1 / -1' }}>
-        <Paper variant="outlined" sx={{ height: '100%', overflow: 'hidden' }}>
-          <LlmUsageTile />
-        </Paper>
       </Box>
     </Box>
   );

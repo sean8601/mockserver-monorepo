@@ -213,12 +213,13 @@ export function groupBySession(
   proxiedRequests: JsonListItem[],
   activeExpectations: JsonListItem[],
 ): Session[] {
-  // 1. Collect isolation sources from expectations
+  // 1. Collect isolation sources from expectations.
+  // `scenarioName` lives at the top level of the expectation payload
+  // (see HttpLlmResponse builder + ExpectationDTO serialisation),
+  // not nested under httpLlmResponse.
   const isolationSources: IsolationSource[] = [];
   for (const exp of activeExpectations) {
-    const llm = exp.value['httpLlmResponse'] as Record<string, unknown> | undefined;
-    if (!llm) continue;
-    const scenarioName = llm['scenarioName'] as string | undefined;
+    const scenarioName = exp.value['scenarioName'] as string | undefined;
     if (!scenarioName) continue;
     const source = parseIsolationSource(scenarioName);
     if (source) {

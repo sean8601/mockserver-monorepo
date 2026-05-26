@@ -44,12 +44,14 @@ function makeExpectation(scenarioName: string): JsonListItem {
   return {
     key: `exp-${scenarioName}`,
     value: {
+      // scenarioName lives at the top level of the expectation payload,
+      // matching the real MockServer active-expectation shape.
+      scenarioName,
+      scenarioState: 'Started',
+      newScenarioState: 'turn_1',
       httpLlmResponse: {
         provider: 'ANTHROPIC',
         model: 'claude-sonnet-4-20250514',
-        scenarioName,
-        scenarioState: 'Started',
-        newScenarioState: 'turn_1',
         conversationPredicates: { turnIndex: 0 },
         completion: { text: 'Hello!', stopReason: 'end_turn' },
       },

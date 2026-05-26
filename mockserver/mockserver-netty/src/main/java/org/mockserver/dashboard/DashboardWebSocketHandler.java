@@ -386,6 +386,14 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
                     List<Map<String, Object>> recordedRequests = new LinkedList<>();
                     List<Object> logMessages = new LinkedList<>();
                     Map<String, DashboardLogEntryDTOGroup> logEntryGroups = new HashMap<>();
+                    // The dashboard Traffic/Sessions/Cost panels render each
+                    // mock-matched request alongside the response that was
+                    // returned. The reverse-chronological stream surfaces the
+                    // response (EXPECTATION_RESPONSE / NO_MATCH_RESPONSE)
+                    // before its corresponding RECEIVED_REQUEST, so we stash
+                    // responses by correlationId and look them up when the
+                    // matching request is processed.
+                    Map<String, Object> responsesByCorrelationId = new HashMap<>();
                     reverseLogEventsStream
                         .forEach(logEntryDTO -> {
                             if (logEntryDTO != null) {
@@ -403,15 +411,28 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
                                         logMessages.add(dashboardLogEntryDTO);
                                     }
                                 }
+                                if ((logEntryDTO.getType() == EXPECTATION_RESPONSE || logEntryDTO.getType() == NO_MATCH_RESPONSE)
+                                    && isNotBlank(logEntryDTO.getCorrelationId())
+                                    && logEntryDTO.getHttpResponse() != null) {
+                                    responsesByCorrelationId.putIfAbsent(logEntryDTO.getCorrelationId(), logEntryDTO.getHttpResponse());
+                                }
                                 if (recordedRequestsPredicate.test(logEntryDTO) && recordedRequests.size() < UI_UPDATE_ITEM_LIMIT) {
                                     for (RequestDefinition request : logEntryDTO.getHttpRequests()) {
                                         if (request != null) {
+                                            Map<String, Object> value = new LinkedHashMap<>();
+                                            value.put("httpRequest", request);
+                                            Object response = isNotBlank(logEntryDTO.getCorrelationId())
+                                                ? responsesByCorrelationId.get(logEntryDTO.getCorrelationId())
+                                                : null;
+                                            if (response != null) {
+                                                value.put("httpResponse", response);
+                                            }
                                             Map<String, Object> entry = new LinkedHashMap<>();
                                             Description description = recordedRequestsDescriptionProcessor.description(request);
                                             if (description != null) {
                                                 entry.put("description", description);
                                             }
-                                            entry.put("value", request);
+                                            entry.put("value", value);
                                             entry.put("key", logEntryDTO.getId() + "_request");
                                             recordedRequests.add(entry);
                                         }

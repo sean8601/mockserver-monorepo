@@ -208,13 +208,21 @@ function SessionLane({ session }: SessionLaneProps) {
 // ---------------------------------------------------------------------------
 
 export default function SessionInspector() {
+  // Mirror TrafficInspector: combine both proxied + mocked traffic. Sessions are
+  // grouped by isolation key extracted from a matching conversation expectation,
+  // regardless of which capture pipeline the request travelled through.
   const proxiedRequests = useDashboardStore((s) => s.proxiedRequests);
+  const recordedRequests = useDashboardStore((s) => s.recordedRequests);
   const activeExpectations = useDashboardStore((s) => s.activeExpectations);
   const [search, setSearch] = useState('');
 
+  const allRequests = useMemo(
+    () => [...proxiedRequests, ...recordedRequests],
+    [proxiedRequests, recordedRequests],
+  );
   const sessions = useMemo(
-    () => groupBySession(proxiedRequests, activeExpectations),
-    [proxiedRequests, activeExpectations],
+    () => groupBySession(allRequests, activeExpectations),
+    [allRequests, activeExpectations],
   );
 
   const filteredSessions = useMemo(() => {

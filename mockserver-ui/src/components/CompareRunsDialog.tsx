@@ -180,12 +180,21 @@ function TokenTable({ report }: { report: DiffReport }) {
 // ---------------------------------------------------------------------------
 
 export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogProps) {
+  // Compare Runs needs to see both upstream-proxied traffic and mock-matched
+  // traffic, since users typically iterate on captured mocks rather than
+  // running through a real upstream.
   const proxiedRequests = useDashboardStore((s) => s.proxiedRequests);
+  const recordedRequests = useDashboardStore((s) => s.recordedRequests);
   const activeExpectations = useDashboardStore((s) => s.activeExpectations);
 
+  const allRequests = useMemo(
+    () => [...proxiedRequests, ...recordedRequests],
+    [proxiedRequests, recordedRequests],
+  );
+
   const sessions = useMemo(
-    () => groupBySession(proxiedRequests, activeExpectations),
-    [proxiedRequests, activeExpectations],
+    () => groupBySession(allRequests, activeExpectations),
+    [allRequests, activeExpectations],
   );
 
   const [runAKey, setRunAKey] = useState('');
@@ -246,9 +255,12 @@ export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogPr
             fullWidth
             value={runAKey}
             onChange={(e) => setRunAKey(e.target.value)}
-            slotProps={{ select: { native: true } }}
+            slotProps={{
+              select: { native: true, displayEmpty: true },
+              inputLabel: { shrink: true },
+            }}
           >
-            <option value="">-- Select Run A --</option>
+            <option value="">— select a session —</option>
             {sessions.map((s) => (
               <option key={sessionKey(s)} value={sessionKey(s)}>
                 {sessionLabel(s)}
@@ -262,9 +274,12 @@ export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogPr
             fullWidth
             value={runBKey}
             onChange={(e) => setRunBKey(e.target.value)}
-            slotProps={{ select: { native: true } }}
+            slotProps={{
+              select: { native: true, displayEmpty: true },
+              inputLabel: { shrink: true },
+            }}
           >
-            <option value="">-- Select Run B --</option>
+            <option value="">— select a session —</option>
             {sessions.map((s) => (
               <option key={sessionKey(s)} value={sessionKey(s)}>
                 {sessionLabel(s)}

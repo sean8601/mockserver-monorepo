@@ -11,6 +11,9 @@ import type {
   AnthropicContentBlock,
   OpenAiParsed,
   OpenAiChoice,
+  GeminiParsed,
+  OllamaParsed,
+  OpenAiResponsesParsed,
 } from '../lib/llmTraffic';
 
 // ---------------------------------------------------------------------------
@@ -531,6 +534,443 @@ export function OpenAiConversationView({ parsed }: { parsed: OpenAiParsed }) {
 
       {/* Empty state */}
       {parsed.messages.length === 0 && parsed.choices.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+          No conversation content
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gemini helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Gemini messages are { role: 'user'|'model', parts: [{text}|{functionCall}|{functionResponse}|...] }
+ * Render the parts list as chat-bubble content with tool boxes for function calls/responses.
+ */
+function renderGeminiParts(parts: unknown, side: 'left' | 'right') {
+  if (!Array.isArray(parts)) {
+    if (parts != null && typeof parts === 'object') {
+      return <JsonViewer data={parts as Record<string, unknown>} collapsed={2} />;
+    }
+    return null;
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      {parts.map((p, i) => {
+        const part = p as Record<string, unknown>;
+        if (typeof part['text'] === 'string') {
+          return (
+            <Typography
+              key={i}
+              variant="body2"
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: MONO_FONT_SIZE,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: side === 'right' ? 'primary.contrastText' : 'text.primary',
+              }}
+            >
+              {part['text']}
+            </Typography>
+          );
+        }
+        if (part['functionCall'] && typeof part['functionCall'] === 'object') {
+          const fc = part['functionCall'] as Record<string, unknown>;
+          return (
+            <Box key={i} sx={{ ...toolBubbleSx, alignSelf: side === 'left' ? 'flex-start' : 'flex-end', mt: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                <BuildIcon sx={{ fontSize: '0.85rem', color: 'secondary.main' }} />
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: LABEL_FONT_SIZE, color: 'secondary.main' }}>
+                  {String(fc['name'] ?? 'functionCall')}
+                </Typography>
+              </Box>
+              {fc['args'] != null && (
+                <JsonViewer data={fc['args'] as Record<string, unknown>} collapsed={1} />
+              )}
+            </Box>
+          );
+        }
+        if (part['functionResponse'] && typeof part['functionResponse'] === 'object') {
+          const fr = part['functionResponse'] as Record<string, unknown>;
+          return (
+            <Box key={i} sx={{ ...toolBubbleSx, alignSelf: 'flex-start', borderColor: 'info.main', mt: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                <BuildIcon sx={{ fontSize: '0.85rem', color: 'info.main' }} />
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: LABEL_FONT_SIZE, color: 'info.main' }}>
+                  {String(fr['name'] ?? 'functionResponse')}
+                </Typography>
+              </Box>
+              {fr['response'] != null && (
+                <JsonViewer data={fr['response'] as Record<string, unknown>} collapsed={1} />
+              )}
+            </Box>
+          );
+        }
+        if (part['inlineData'] && typeof part['inlineData'] === 'object') {
+          return (
+            <Typography key={i} variant="body2" sx={{ fontFamily: 'monospace', fontSize: MONO_FONT_SIZE, color: 'text.secondary' }}>
+              [inlineData]
+            </Typography>
+          );
+        }
+        return (
+          <Box key={i} sx={{ mt: 0.5 }}>
+            <JsonViewer data={part} collapsed={1} />
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gemini ConversationView
+// ---------------------------------------------------------------------------
+
+export function GeminiConversationView({ parsed }: { parsed: GeminiParsed }) {
+  const inputTokens = parsed.usage?.promptTokenCount;
+  const outputTokens = parsed.usage?.candidatesTokenCount;
+
+  // Pull the first candidate's finishReason (if any) for the metadata strip.
+  const firstCandidate = parsed.candidates[0] as Record<string, unknown> | undefined;
+  const stopReason = firstCandidate
+    ? (typeof firstCandidate['finishReason'] === 'string' ? firstCandidate['finishReason'] : null)
+    : null;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
+      <MetadataStrip
+        model={parsed.model}
+        inputTokens={inputTokens}
+        outputTokens={outputTokens}
+        stopReason={stopReason}
+        streamed={parsed.streamed}
+        streamTruncated={parsed.streamTruncated}
+      />
+
+      {/* Request side: contents */}
+      {parsed.contents.map((entry, i) => {
+        const e = entry as Record<string, unknown>;
+        // Gemini wire role is 'user' or 'model'; treat 'user' on the left,
+        // 'model' on the right to match Anthropic/OpenAI orientation.
+        const role = String(e['role'] ?? 'unknown');
+        const isLeft = role === 'user';
+        const side: 'left' | 'right' = isLeft ? 'left' : 'right';
+        const bubbleSx = isLeft ? leftBubbleSx : rightBubbleSx;
+        return (
+          <Box key={`req-${i}`} sx={{ display: 'flex', flexDirection: 'column' }}>
+            <RoleLabel role={role} align={side} />
+            <Box sx={bubbleSx}>
+              {renderGeminiParts(e['parts'], side)}
+            </Box>
+          </Box>
+        );
+      })}
+
+      {/* Response side: candidates */}
+      {parsed.candidates.map((cand, i) => {
+        const c = cand as Record<string, unknown>;
+        const content = c['content'] as Record<string, unknown> | undefined;
+        if (!content) return null;
+        return (
+          <Box key={`cand-${i}`} sx={{ display: 'flex', flexDirection: 'column' }}>
+            <RoleLabel role={typeof content['role'] === 'string' ? String(content['role']) : 'model'} align="right" />
+            <Box sx={rightBubbleSx}>
+              {renderGeminiParts(content['parts'], 'right')}
+            </Box>
+          </Box>
+        );
+      })}
+
+      {/* Empty state */}
+      {parsed.contents.length === 0 && parsed.candidates.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+          No conversation content
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ollama helpers — Ollama message shape mirrors OpenAI's chat.completions
+// closely enough that we render strings directly and reuse the tool-call
+// renderer with a small adapter for the differently-shaped tool calls.
+// ---------------------------------------------------------------------------
+
+function renderOllamaMessageContent(content: unknown, side: 'left' | 'right') {
+  if (typeof content === 'string') {
+    return (
+      <Typography
+        variant="body2"
+        sx={{
+          fontFamily: 'monospace',
+          fontSize: MONO_FONT_SIZE,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          color: side === 'right' ? 'primary.contrastText' : 'text.primary',
+        }}
+      >
+        {content}
+      </Typography>
+    );
+  }
+  if (content != null && typeof content === 'object') {
+    return <JsonViewer data={content as Record<string, unknown>} collapsed={2} />;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Ollama ConversationView
+// ---------------------------------------------------------------------------
+
+export function OllamaConversationView({ parsed }: { parsed: OllamaParsed }) {
+  const inputTokens = parsed.usage?.prompt_eval_count;
+  const outputTokens = parsed.usage?.eval_count;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
+      <MetadataStrip
+        model={parsed.model}
+        inputTokens={inputTokens}
+        outputTokens={outputTokens}
+        stopReason={null}
+        streamed={parsed.streamed}
+        streamTruncated={parsed.streamTruncated}
+      />
+
+      {/* Request side: messages */}
+      {parsed.messages.map((msg, i) => {
+        const m = msg as Record<string, unknown>;
+        const role = String(m['role'] ?? 'unknown');
+
+        if (role === 'system') {
+          return <SystemBanner key={`msg-${i}`} content={m['content']} />;
+        }
+
+        const isLeft = role === 'user' || role === 'tool';
+        const side: 'left' | 'right' = isLeft ? 'left' : 'right';
+        const bubbleSx = isLeft ? leftBubbleSx : rightBubbleSx;
+        const toolCalls = m['tool_calls'] as unknown[] | undefined;
+
+        return (
+          <Box key={`msg-${i}`} sx={{ display: 'flex', flexDirection: 'column' }}>
+            <RoleLabel role={role} align={side} />
+            {m['content'] != null && (
+              <Box sx={bubbleSx}>
+                {renderOllamaMessageContent(m['content'], side)}
+              </Box>
+            )}
+            {toolCalls && toolCalls.length > 0 && renderOpenAiToolCalls(toolCalls, side)}
+          </Box>
+        );
+      })}
+
+      {/* Response side: responseMessage */}
+      {parsed.responseMessage != null && (() => {
+        const r = parsed.responseMessage as Record<string, unknown>;
+        const role = typeof r['role'] === 'string' ? String(r['role']) : 'assistant';
+        const toolCalls = r['tool_calls'] as unknown[] | undefined;
+        return (
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <RoleLabel role={role} align="right" />
+            {r['content'] != null && (
+              <Box sx={rightBubbleSx}>
+                {renderOllamaMessageContent(r['content'], 'right')}
+              </Box>
+            )}
+            {toolCalls && toolCalls.length > 0 && renderOpenAiToolCalls(toolCalls, 'right')}
+          </Box>
+        );
+      })()}
+
+      {/* Empty state */}
+      {parsed.messages.length === 0 && parsed.responseMessage == null && (
+        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+          No conversation content
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI Responses helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * OpenAI Responses API items are typed: `message`, `function_call`,
+ * `function_call_output`, `reasoning`, `image_generation_call`, etc.
+ * For each type we pick the most useful visual representation.
+ */
+function renderResponsesItem(item: unknown, index: number, side: 'left' | 'right') {
+  const it = item as Record<string, unknown>;
+  const type = String(it['type'] ?? 'message');
+
+  if (type === 'message') {
+    const role = String(it['role'] ?? 'assistant');
+    const isLeft = role === 'user' || role === 'tool' || role === 'developer';
+    const renderSide: 'left' | 'right' = isLeft ? 'left' : 'right';
+    const bubbleSx = isLeft ? leftBubbleSx : rightBubbleSx;
+    const content = it['content'];
+
+    return (
+      <Box key={index} sx={{ display: 'flex', flexDirection: 'column' }}>
+        <RoleLabel role={role} align={renderSide} />
+        <Box sx={bubbleSx}>
+          {typeof content === 'string' ? (
+            <Typography
+              variant="body2"
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: MONO_FONT_SIZE,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: renderSide === 'right' ? 'primary.contrastText' : 'text.primary',
+              }}
+            >
+              {content}
+            </Typography>
+          ) : Array.isArray(content) ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {content.map((part, j) => {
+                const p = part as Record<string, unknown>;
+                const t = String(p['type'] ?? '');
+                if ((t === 'input_text' || t === 'output_text') && typeof p['text'] === 'string') {
+                  return (
+                    <Typography
+                      key={j}
+                      variant="body2"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: MONO_FONT_SIZE,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        color: renderSide === 'right' ? 'primary.contrastText' : 'text.primary',
+                      }}
+                    >
+                      {p['text']}
+                    </Typography>
+                  );
+                }
+                if (t === 'input_image') {
+                  return (
+                    <Typography key={j} variant="body2" sx={{ fontFamily: 'monospace', fontSize: MONO_FONT_SIZE, color: 'text.secondary' }}>
+                      [input_image]
+                    </Typography>
+                  );
+                }
+                return (
+                  <Typography key={j} variant="body2" sx={{ fontFamily: 'monospace', fontSize: MONO_FONT_SIZE, color: 'text.secondary' }}>
+                    [{t || 'unknown'}]
+                  </Typography>
+                );
+              })}
+            </Box>
+          ) : content != null ? (
+            <JsonViewer data={content as Record<string, unknown>} collapsed={2} />
+          ) : null}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (type === 'function_call') {
+    let args: unknown = it['arguments'];
+    if (typeof args === 'string') {
+      try { args = JSON.parse(args); } catch { /* leave as string */ }
+    }
+    return (
+      <Box key={index} sx={{ display: 'flex', flexDirection: 'column' }}>
+        <RoleLabel role="function_call" align={side} />
+        <Box sx={{ ...toolBubbleSx, alignSelf: side === 'left' ? 'flex-start' : 'flex-end' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+            <BuildIcon sx={{ fontSize: '0.85rem', color: 'secondary.main' }} />
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: LABEL_FONT_SIZE, color: 'secondary.main' }}>
+              {String(it['name'] ?? 'function_call')}
+            </Typography>
+          </Box>
+          {args != null && (
+            typeof args === 'object' ? (
+              <JsonViewer data={args as Record<string, unknown>} collapsed={1} />
+            ) : (
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: MONO_FONT_SIZE, whiteSpace: 'pre-wrap' }}>
+                {String(args)}
+              </Typography>
+            )
+          )}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (type === 'function_call_output') {
+    return (
+      <Box key={index} sx={{ display: 'flex', flexDirection: 'column' }}>
+        <RoleLabel role="function_call_output" align="left" />
+        <Box sx={{ ...toolBubbleSx, alignSelf: 'flex-start', borderColor: 'info.main' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+            <BuildIcon sx={{ fontSize: '0.85rem', color: 'info.main' }} />
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: LABEL_FONT_SIZE, color: 'info.main' }}>
+              output
+            </Typography>
+          </Box>
+          {typeof it['output'] === 'string' ? (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: MONO_FONT_SIZE, whiteSpace: 'pre-wrap' }}>
+              {it['output']}
+            </Typography>
+          ) : it['output'] != null ? (
+            <JsonViewer data={it['output'] as Record<string, unknown>} collapsed={1} />
+          ) : null}
+        </Box>
+      </Box>
+    );
+  }
+
+  // Unknown type — show JSON
+  return (
+    <Box key={index} sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: LABEL_FONT_SIZE, color: 'text.secondary' }}>
+        [{type}]
+      </Typography>
+      <JsonViewer data={it} collapsed={1} />
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI Responses ConversationView
+// ---------------------------------------------------------------------------
+
+export function OpenAiResponsesConversationView({ parsed }: { parsed: OpenAiResponsesParsed }) {
+  const inputTokens = parsed.usage?.prompt_tokens;
+  const outputTokens = parsed.usage?.completion_tokens;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
+      <MetadataStrip
+        model={parsed.model}
+        inputTokens={inputTokens}
+        outputTokens={outputTokens}
+        stopReason={null}
+        streamed={parsed.streamed}
+        streamTruncated={parsed.streamTruncated}
+      />
+
+      {/* Request side: input */}
+      {parsed.input.map((item, i) => renderResponsesItem(item, i, 'left'))}
+
+      {/* Response side: output */}
+      {parsed.output.map((item, i) => renderResponsesItem(item, parsed.input.length + i, 'right'))}
+
+      {/* Empty state */}
+      {parsed.input.length === 0 && parsed.output.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
           No conversation content
         </Typography>

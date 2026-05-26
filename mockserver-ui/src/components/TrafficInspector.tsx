@@ -15,7 +15,15 @@ import { useDashboardStore } from '../store';
 import { useConnectionParams } from '../hooks/useConnectionParams';
 import JsonViewer from './JsonViewer';
 import CaptureAsMockDialog from './CaptureAsMockDialog';
-import { AnthropicConversationView, OpenAiConversationView, ScriptedTurnsPanel } from './ConversationView';
+import LlmUsageDetail from './LlmUsageDetail';
+import {
+  AnthropicConversationView,
+  OpenAiConversationView,
+  GeminiConversationView,
+  OllamaConversationView,
+  OpenAiResponsesConversationView,
+  ScriptedTurnsPanel,
+} from './ConversationView';
 import type { ScriptedTurn } from './ConversationView';
 import type { JsonListItem } from '../types';
 import { isLlmTraffic } from '../lib/expectationFromCapture';
@@ -566,17 +574,11 @@ interface DetailPaneProps {
 function buildTabs(parsed: ParsedTraffic, hasScriptedTurns: boolean): string[] {
   switch (parsed.kind) {
     case 'anthropic':
-    case 'openai': {
-      const tabs = ['Messages', 'Conversation'];
-      if (hasScriptedTurns) tabs.push('Scripted Turns');
-      if (parsed.sseEvents) tabs.push('SSE Timeline');
-      tabs.push('Raw JSON');
-      return tabs;
-    }
+    case 'openai':
     case 'openai_responses':
     case 'gemini':
     case 'ollama': {
-      const tabs = ['Messages'];
+      const tabs = ['Messages', 'Conversation'];
       if (hasScriptedTurns) tabs.push('Scripted Turns');
       if (parsed.sseEvents) tabs.push('SSE Timeline');
       tabs.push('Raw JSON');
@@ -598,6 +600,7 @@ function DetailPane({ item, summary, scriptedTurns, onCaptureAsMock }: DetailPan
   if (tabs.length === 0) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <LlmUsageDetail parsed={summary.parsed} />
         <Box sx={{ px: 1, py: 0.5, flexShrink: 0 }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
             Raw JSON
@@ -617,6 +620,7 @@ function DetailPane({ item, summary, scriptedTurns, onCaptureAsMock }: DetailPan
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <LlmUsageDetail parsed={summary.parsed} />
       <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <Tabs
           value={safeTab}
@@ -663,6 +667,15 @@ function DetailPane({ item, summary, scriptedTurns, onCaptureAsMock }: DetailPan
         {activeLabel === 'Conversation' && summary.parsed.kind === 'openai' && (
           <OpenAiConversationView parsed={summary.parsed} />
         )}
+        {activeLabel === 'Conversation' && summary.parsed.kind === 'openai_responses' && (
+          <OpenAiResponsesConversationView parsed={summary.parsed} />
+        )}
+        {activeLabel === 'Conversation' && summary.parsed.kind === 'gemini' && (
+          <GeminiConversationView parsed={summary.parsed} />
+        )}
+        {activeLabel === 'Conversation' && summary.parsed.kind === 'ollama' && (
+          <OllamaConversationView parsed={summary.parsed} />
+        )}
         {activeLabel === 'Scripted Turns' && scriptedTurns.length > 0 && (
           <ScriptedTurnsPanel turns={scriptedTurns} />
         )}
@@ -685,7 +698,12 @@ function DetailPane({ item, summary, scriptedTurns, onCaptureAsMock }: DetailPan
 // ---------------------------------------------------------------------------
 
 export default function TrafficInspector() {
+  // Show every captured request, regardless of whether it was proxied through to
+  // a real upstream or matched a registered mock expectation. The MockServer
+  // backend logs the two cases into separate arrays (proxiedRequests vs
+  // recordedRequests); the user thinks of them both as "traffic".
   const proxiedRequests = useDashboardStore((s) => s.proxiedRequests);
+  const recordedRequests = useDashboardStore((s) => s.recordedRequests);
   const activeExpectations = useDashboardStore((s) => s.activeExpectations);
   const trafficSearch = useDashboardStore((s) => s.trafficSearch);
   const setTrafficSearch = useDashboardStore((s) => s.setTrafficSearch);
@@ -700,10 +718,14 @@ export default function TrafficInspector() {
     [activeExpectations],
   );
 
-  // Build summaries for all proxied requests
+  // Build summaries for every captured request (proxied + mocked).
+  const allRequests = useMemo(
+    () => [...proxiedRequests, ...recordedRequests],
+    [proxiedRequests, recordedRequests],
+  );
   const summaries = useMemo(
-    () => proxiedRequests.map((item) => ({ item, summary: summarizeTraffic(item.value) })),
-    [proxiedRequests],
+    () => allRequests.map((item) => ({ item, summary: summarizeTraffic(item.value) })),
+    [allRequests],
   );
 
   // Filter by search
@@ -765,9 +787,9 @@ export default function TrafficInspector() {
           <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.79rem' }}>
             Traffic
           </Typography>
-          {proxiedRequests.length > 0 && (
+          {allRequests.length > 0 && (
             <Chip
-              label={proxiedRequests.length > 999 ? '999+' : proxiedRequests.length}
+              label={allRequests.length > 999 ? '999+' : allRequests.length}
               color="primary"
               size="small"
               sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
@@ -799,7 +821,7 @@ export default function TrafficInspector() {
         <Box sx={{ flex: 1, overflowY: 'auto', bgcolor: 'background.default' }}>
           {filtered.length === 0 ? (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-              {proxiedRequests.length === 0 ? 'No proxied requests' : 'No matching requests'}
+              {allRequests.length === 0 ? 'No captured requests yet' : 'No matching requests'}
             </Typography>
           ) : (
             filtered.map(({ item, summary }, index) => (

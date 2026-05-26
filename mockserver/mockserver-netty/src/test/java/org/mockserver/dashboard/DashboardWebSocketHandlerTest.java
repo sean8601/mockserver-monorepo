@@ -33,7 +33,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.log.model.LogEntry.LogMessageType.EXPECTATION_RESPONSE;
 import static org.mockserver.log.model.LogEntry.LogMessageType.FORWARDED_REQUEST;
+import static org.mockserver.log.model.LogEntry.LogMessageType.NO_MATCH_RESPONSE;
 import static org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
@@ -213,19 +215,25 @@ public class DashboardWebSocketHandlerTest {
             "  \"recordedRequests\" : [ {\n" +
             "    \"description\" : \"  /somePathTwo\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathTwo\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathTwo\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(10).id() + "_request\"\n" +
             "  }, {\n" +
             "    \"description\" : \"  /somePathOne\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathOne\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathOne\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(8).id() + "_request\"\n" +
             "  }, {\n" +
             "    \"description\" : \"  /somePathOne\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathOne\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathOne\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(6).id() + "_request\"\n" +
             "  } ]\n" +
@@ -379,19 +387,25 @@ public class DashboardWebSocketHandlerTest {
             "  \"recordedRequests\" : [ {\n" +
             "    \"description\" : \"  /somePathTwo\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathTwo\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathTwo\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(5).id() + "_request\"\n" +
             "  }, {\n" +
             "    \"description\" : \"  /somePathOne\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathOne\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathOne\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(4).id() + "_request\"\n" +
             "  }, {\n" +
             "    \"description\" : \"  /somePathOne\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathOne\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathOne\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(3).id() + "_request\"\n" +
             "  } ]\n" +
@@ -466,7 +480,9 @@ public class DashboardWebSocketHandlerTest {
             "  \"recordedRequests\" : [ {\n" +
             "    \"description\" : \"  /somePathTwo\",\n" +
             "    \"value\" : {\n" +
-            "      \"path\" : \"/somePathTwo\"\n" +
+            "      \"httpRequest\" : {\n" +
+            "        \"path\" : \"/somePathTwo\"\n" +
+            "      }\n" +
             "    },\n" +
             "    \"key\" : \"" + logEntries.get(5).id() + "_request\"\n" +
             "  } ]\n" +
@@ -1047,25 +1063,33 @@ public class DashboardWebSocketHandlerTest {
             "  \"recordedRequests\" : [ {" + NEW_LINE +
             "    \"description\" : \"   four\"," + NEW_LINE +
             "    \"value\" : {" + NEW_LINE +
-            "      \"path\" : \"four\"" + NEW_LINE +
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"four\"" + NEW_LINE +
+            "      }" + NEW_LINE +
             "    }," + NEW_LINE +
             "    \"key\" : \"" + logEntries.get(3).id() + "_request\"" + NEW_LINE +
             "  }, {" + NEW_LINE +
             "    \"description\" : \"  three\"," + NEW_LINE +
             "    \"value\" : {" + NEW_LINE +
-            "      \"path\" : \"three\"" + NEW_LINE +
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"three\"" + NEW_LINE +
+            "      }" + NEW_LINE +
             "    }," + NEW_LINE +
             "    \"key\" : \"" + logEntries.get(2).id() + "_request\"" + NEW_LINE +
             "  }, {" + NEW_LINE +
             "    \"description\" : \"    two\"," + NEW_LINE +
             "    \"value\" : {" + NEW_LINE +
-            "      \"path\" : \"two\"" + NEW_LINE +
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"two\"" + NEW_LINE +
+            "      }" + NEW_LINE +
             "    }," + NEW_LINE +
             "    \"key\" : \"" + logEntries.get(1).id() + "_request\"" + NEW_LINE +
             "  }, {" + NEW_LINE +
             "    \"description\" : \"    one\"," + NEW_LINE +
             "    \"value\" : {" + NEW_LINE +
-            "      \"path\" : \"one\"" + NEW_LINE +
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"one\"" + NEW_LINE +
+            "      }" + NEW_LINE +
             "    }," + NEW_LINE +
             "    \"key\" : \"" + logEntries.get(0).id() + "_request\"" + NEW_LINE +
             "  } ]" + NEW_LINE +
@@ -1133,7 +1157,9 @@ public class DashboardWebSocketHandlerTest {
             "  \"recordedRequests\" : [ {" + NEW_LINE +
             "    \"description\" : \"  two\"," + NEW_LINE +
             "    \"value\" : {" + NEW_LINE +
-            "      \"path\" : \"two\"" + NEW_LINE +
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"two\"" + NEW_LINE +
+            "      }" + NEW_LINE +
             "    }," + NEW_LINE +
             "    \"key\" : \"" + logEntries.get(1).id() + "_request\"" + NEW_LINE +
             "  } ]" + NEW_LINE +
@@ -1141,6 +1167,74 @@ public class DashboardWebSocketHandlerTest {
 
         // then
         shouldRenderFilteredLogEntriesCorrectly(false, request(), logEntries, Collections.emptyList(), renderedList);
+    }
+
+    @Test
+    public void shouldPairRecordedRequestWithMatchingResponseByCorrelationId() throws InterruptedException {
+        // given — three lifecycles, all distinguished by correlationId:
+        //   corr-A: RECEIVED_REQUEST paired with EXPECTATION_RESPONSE (mock match)
+        //   corr-B: RECEIVED_REQUEST paired with NO_MATCH_RESPONSE (404 path)
+        //   corr-C: RECEIVED_REQUEST with no matching response (response not yet logged)
+        // The reverse-chronological stream surfaces each response BEFORE its
+        // own request, so DashboardWebSocketHandler can stash responses by
+        // correlationId in a single pass and look them up when the matching
+        // request is processed.
+        List<LogEntry> logEntries = Arrays.asList(
+            new LogEntry()
+                .setType(RECEIVED_REQUEST)
+                .setHttpRequest(request("/matched"))
+                .setCorrelationId("corr-A"),
+            new LogEntry()
+                .setType(EXPECTATION_RESPONSE)
+                .setHttpResponse(response().withStatusCode(200).withBody("matched-body"))
+                .setCorrelationId("corr-A"),
+            new LogEntry()
+                .setType(RECEIVED_REQUEST)
+                .setHttpRequest(request("/unmatched"))
+                .setCorrelationId("corr-B"),
+            new LogEntry()
+                .setType(NO_MATCH_RESPONSE)
+                .setHttpResponse(response().withStatusCode(404).withBody("not-found-body"))
+                .setCorrelationId("corr-B"),
+            new LogEntry()
+                .setType(RECEIVED_REQUEST)
+                .setHttpRequest(request("/orphan"))
+                .setCorrelationId("corr-C")
+        );
+
+        // The matched request must carry the paired EXPECTATION_RESPONSE body.
+        String matchedFragment =
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"/matched\"" + NEW_LINE +
+            "      }," + NEW_LINE +
+            "      \"httpResponse\" : {" + NEW_LINE +
+            "        \"statusCode\" : 200," + NEW_LINE +
+            "        \"body\" : \"matched-body\"" + NEW_LINE +
+            "      }";
+
+        // The unmatched request must carry the paired NO_MATCH_RESPONSE body.
+        String unmatchedFragment =
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"/unmatched\"" + NEW_LINE +
+            "      }," + NEW_LINE +
+            "      \"httpResponse\" : {" + NEW_LINE +
+            "        \"statusCode\" : 404," + NEW_LINE +
+            "        \"body\" : \"not-found-body\"" + NEW_LINE +
+            "      }";
+
+        // The orphan request must emit { httpRequest } only — no httpResponse
+        // key — proving the pairing degrades gracefully when the response log
+        // entry is missing.
+        String orphanFragment =
+            "    \"value\" : {" + NEW_LINE +
+            "      \"httpRequest\" : {" + NEW_LINE +
+            "        \"path\" : \"/orphan\"" + NEW_LINE +
+            "      }" + NEW_LINE +
+            "    }";
+
+        // then
+        shouldRenderFilteredLogEntriesCorrectly(true, request(), logEntries, Collections.emptyList(),
+            matchedFragment, unmatchedFragment, orphanFragment);
     }
 
     @Test
