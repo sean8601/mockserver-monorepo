@@ -14,6 +14,7 @@ import AppBar from './components/AppBar';
 import FilterPanel from './components/FilterPanel';
 import DashboardGrid from './components/DashboardGrid';
 import TrafficInspector from './components/TrafficInspector';
+import SessionInspector from './components/SessionInspector';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import type { RequestFilter } from './types';
 
@@ -90,7 +91,9 @@ export default function App() {
               {error}
             </Alert>
           )}
-          {view === 'dashboard' ? <DashboardGrid /> : <TrafficInspector />}
+          {view === 'dashboard' && <DashboardGrid />}
+          {view === 'traffic' && <TrafficInspector />}
+          {view === 'sessions' && <SessionInspector />}
         </Box>
         <DebugMismatchDialog />
       </DebugMismatchContext.Provider>

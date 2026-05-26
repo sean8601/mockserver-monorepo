@@ -21,6 +21,7 @@ import LayersClearIcon from '@mui/icons-material/LayersClear';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import TrafficIcon from '@mui/icons-material/Traffic';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import DownloadIcon from '@mui/icons-material/Download';
 import ChatIcon from '@mui/icons-material/Chat';
 import { useState, useCallback } from 'react';
@@ -126,6 +127,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           <ToggleButton value="traffic" aria-label="Traffic inspector view">
             <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Traffic
+          </ToggleButton>
+          <ToggleButton value="sessions" aria-label="Session inspector view">
+            <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Sessions
           </ToggleButton>
         </ToggleButtonGroup>
         <Button
