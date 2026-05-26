@@ -73,6 +73,7 @@ public class HttpActionHandler {
     private HttpOverrideForwardedRequestActionHandler httpOverrideForwardedRequestCallbackActionHandler;
     private HttpForwardValidateActionHandler httpForwardValidateActionHandler;
     private HttpSseResponseActionHandler httpSseResponseActionHandler;
+    private HttpLlmResponseActionHandler httpLlmResponseActionHandler;
     private HttpWebSocketResponseActionHandler httpWebSocketResponseActionHandler;
     private GrpcStreamResponseActionHandler grpcStreamResponseActionHandler;
     private HttpErrorActionHandler httpErrorActionHandler;
@@ -300,6 +301,38 @@ public class HttpActionHandler {
                             }
                             ctx.close();
                         } finally {
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    break;
+                }
+                case LLM_RESPONSE: {
+                    scheduler.schedule(() -> {
+                        try {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(EXPECTATION_RESPONSE)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setExpectationId(action.getExpectationId())
+                                    .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
+                                    .setArguments(request, action, action.getExpectationId())
+                            );
+                            HttpResponse llmResponse = getHttpLlmResponseActionHandler().handle((HttpLlmResponse) action, request);
+                            writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
+                        } catch (Throwable throwable) {
+                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
                             expectationPostProcessor.run();
                         }
                     }, synchronous, combineWithGlobalDelay(action.getDelay()));
@@ -1285,6 +1318,13 @@ public class HttpActionHandler {
             httpSseResponseActionHandler = new HttpSseResponseActionHandler(mockServerLogger, scheduler);
         }
         return httpSseResponseActionHandler;
+    }
+
+    private HttpLlmResponseActionHandler getHttpLlmResponseActionHandler() {
+        if (httpLlmResponseActionHandler == null) {
+            httpLlmResponseActionHandler = new HttpLlmResponseActionHandler(mockServerLogger);
+        }
+        return httpLlmResponseActionHandler;
     }
 
     private HttpWebSocketResponseActionHandler getHttpWebSocketResponseActionHandler() {

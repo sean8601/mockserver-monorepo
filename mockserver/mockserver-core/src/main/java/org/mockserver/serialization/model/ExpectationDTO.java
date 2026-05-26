@@ -33,6 +33,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private HttpOverrideForwardedRequestDTO httpOverrideForwardedRequest;
     private HttpForwardValidateActionDTO httpForwardValidateAction;
     private HttpSseResponseDTO httpSseResponse;
+    private HttpLlmResponseDTO httpLlmResponse;
     private HttpWebSocketResponseDTO httpWebSocketResponse;
     private GrpcStreamResponseDTO grpcStreamResponse;
     private BinaryResponseDTO binaryResponse;
@@ -111,6 +112,10 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             if (httpSseResponse != null) {
                 this.httpSseResponse = new HttpSseResponseDTO(httpSseResponse);
             }
+            HttpLlmResponse httpLlmResponse = expectation.getHttpLlmResponse();
+            if (httpLlmResponse != null) {
+                this.httpLlmResponse = new HttpLlmResponseDTO(httpLlmResponse);
+            }
             HttpWebSocketResponse httpWebSocketResponse = expectation.getHttpWebSocketResponse();
             if (httpWebSocketResponse != null) {
                 this.httpWebSocketResponse = new HttpWebSocketResponseDTO(httpWebSocketResponse);
@@ -176,6 +181,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
         HttpOverrideForwardedRequest httpOverrideForwardedRequest = null;
         HttpForwardValidateAction httpForwardValidateAction = null;
         HttpSseResponse httpSseResponse = null;
+        HttpLlmResponse httpLlmResponse = null;
         HttpWebSocketResponse httpWebSocketResponse = null;
         GrpcStreamResponse grpcStreamResponse = null;
         BinaryResponse binaryResponse = null;
@@ -219,6 +225,9 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
         }
         if (this.httpSseResponse != null) {
             httpSseResponse = this.httpSseResponse.buildObject();
+        }
+        if (this.httpLlmResponse != null) {
+            httpLlmResponse = this.httpLlmResponse.buildObject();
         }
         if (this.httpWebSocketResponse != null) {
             httpWebSocketResponse = this.httpWebSocketResponse.buildObject();
@@ -271,6 +280,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .thenForward(httpOverrideForwardedRequest)
             .thenForwardValidate(httpForwardValidateAction)
             .thenRespondWithSse(httpSseResponse)
+            .thenRespondWithLlm(httpLlmResponse)
             .thenRespondWithWebSocket(httpWebSocketResponse)
             .thenRespondWithGrpcStream(grpcStreamResponse)
             .thenRespondWithBinary(binaryResponse)
@@ -413,6 +423,15 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
 
     public ExpectationDTO setHttpSseResponse(HttpSseResponseDTO httpSseResponse) {
         this.httpSseResponse = httpSseResponse;
+        return this;
+    }
+
+    public HttpLlmResponseDTO getHttpLlmResponse() {
+        return httpLlmResponse;
+    }
+
+    public ExpectationDTO setHttpLlmResponse(HttpLlmResponseDTO httpLlmResponse) {
+        this.httpLlmResponse = httpLlmResponse;
         return this;
     }
 

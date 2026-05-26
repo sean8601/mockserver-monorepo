@@ -84,6 +84,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_MAX_CHUNK_SIZE = "mockserver.maxChunkSize";
     private static final String MOCKSERVER_MAX_REQUEST_BODY_SIZE = "mockserver.maxRequestBodySize";
     private static final String MOCKSERVER_MAX_RESPONSE_BODY_SIZE = "mockserver.maxResponseBodySize";
+    private static final String MOCKSERVER_MAX_LLM_CONVERSATION_BODY_SIZE = "mockserver.maxLlmConversationBodySize";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
     private static final String MOCKSERVER_HTTP2_ENABLED = "mockserver.http2Enabled";
@@ -912,6 +913,47 @@ public class ConfigurationProperties {
      */
     public static void maxResponseBodySize(int size) {
         setProperty(MOCKSERVER_MAX_RESPONSE_BODY_SIZE, "" + size);
+    }
+
+    public static int maxLlmConversationBodySize() {
+        int value = readIntegerProperty(MOCKSERVER_MAX_LLM_CONVERSATION_BODY_SIZE, "MOCKSERVER_MAX_LLM_CONVERSATION_BODY_SIZE", 1048576);
+        if (value < 16384) {
+            if (MOCK_SERVER_LOGGER != null) {
+                MOCK_SERVER_LOGGER.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setMessageFormat("maxLlmConversationBodySize value {} is below minimum, clamping to 16384")
+                        .setArguments(value)
+                );
+            }
+            return 16384;
+        }
+        if (value > 67108864) {
+            if (MOCK_SERVER_LOGGER != null) {
+                MOCK_SERVER_LOGGER.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setMessageFormat("maxLlmConversationBodySize value {} is above maximum, clamping to 67108864")
+                        .setArguments(value)
+                );
+            }
+            return 67108864;
+        }
+        return value;
+    }
+
+    /**
+     * Maximum body size (in bytes) for LLM conversation request bodies.
+     * <p>
+     * The default is 1,048,576 bytes (1 MiB). Valid range is [16384, 67108864].
+     * Values outside this range are silently clamped.
+     *
+     * @param size maximum LLM conversation body size in bytes
+     */
+    public static void maxLlmConversationBodySize(int size) {
+        setProperty(MOCKSERVER_MAX_LLM_CONVERSATION_BODY_SIZE, "" + size);
     }
 
     public static long regexMatchingTimeoutMillis() {

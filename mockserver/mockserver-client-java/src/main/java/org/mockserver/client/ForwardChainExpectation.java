@@ -349,6 +349,11 @@ public class ForwardChainExpectation {
         return mockServerClient.upsert(expectation);
     }
 
+    public Expectation[] respondWithLlm(final HttpLlmResponse httpLlmResponse) {
+        expectation.thenRespondWithLlm(httpLlmResponse);
+        return mockServerClient.upsert(expectation);
+    }
+
     public Expectation[] respondWithWebSocket(final HttpWebSocketResponse httpWebSocketResponse) {
         expectation.thenRespondWithWebSocket(httpWebSocketResponse);
         return mockServerClient.upsert(expectation);

@@ -1,0 +1,111 @@
+{
+  "title": "LLM response to return",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "delay": {
+      "$ref": "#/definitions/delay"
+    },
+    "provider": {
+      "type": "string",
+      "enum": [
+        "ANTHROPIC",
+        "OPENAI",
+        "OPENAI_RESPONSES",
+        "GEMINI",
+        "BEDROCK",
+        "AZURE_OPENAI",
+        "OLLAMA"
+      ]
+    },
+    "model": {
+      "type": "string"
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "toolCalls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "stopReason": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "inputTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outputTokens": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "streamingPhysics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "timeToFirstToken": {
+              "$ref": "#/definitions/delay"
+            },
+            "tokensPerSecond": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "jitter": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "seed": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "embedding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "type": "integer"
+        },
+        "deterministicFromInput": {
+          "type": "boolean"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      }
+    },
+    "primary": {
+      "type": "boolean"
+    }
+  },
+  "definitions": {
+  }
+}

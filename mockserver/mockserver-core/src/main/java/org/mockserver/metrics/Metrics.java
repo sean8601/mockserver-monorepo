@@ -116,6 +116,7 @@ public class Metrics {
         clear(Name.RESPONSE_CLASS_CALLBACK_ACTIONS_COUNT);
         clear(Name.RESPONSE_OBJECT_CALLBACK_ACTIONS_COUNT);
         clear(Name.SSE_RESPONSE_ACTIONS_COUNT);
+        clear(Name.LLM_RESPONSE_ACTIONS_COUNT);
         clear(Name.WEBSOCKET_RESPONSE_ACTIONS_COUNT);
         clear(Name.GRPC_STREAM_RESPONSE_ACTIONS_COUNT);
         clear(Name.BINARY_RESPONSE_ACTIONS_COUNT);
@@ -144,6 +145,7 @@ public class Metrics {
         RESPONSE_CLASS_CALLBACK_ACTIONS_COUNT("Action response class callback count"),
         RESPONSE_OBJECT_CALLBACK_ACTIONS_COUNT("Action response object callback count"),
         SSE_RESPONSE_ACTIONS_COUNT("Action SSE response count"),
+        LLM_RESPONSE_ACTIONS_COUNT("Action LLM response count"),
         WEBSOCKET_RESPONSE_ACTIONS_COUNT("Action WebSocket response count"),
         GRPC_STREAM_RESPONSE_ACTIONS_COUNT("Action gRPC stream response count"),
         BINARY_RESPONSE_ACTIONS_COUNT("Action binary response count"),

@@ -256,6 +256,7 @@ public class ObjectMapperFactory {
             // response
             new HttpResponseSerializer(),
             new HttpResponseDTOSerializer(),
+            new HttpLlmResponseDTOSerializer(),
             // key and multivalue
             new HeadersSerializer(),
             new ParametersSerializer(),

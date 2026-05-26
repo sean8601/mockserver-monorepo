@@ -76,6 +76,7 @@ public class Configuration {
     private Integer maxChunkSize;
     private Integer maxRequestBodySize;
     private Integer maxResponseBodySize;
+    private Integer maxLlmConversationBodySize;
     private Boolean useSemicolonAsQueryParameterSeparator;
     private Boolean assumeAllRequestsAreHttp;
     private Boolean http2Enabled;
@@ -833,6 +834,25 @@ public class Configuration {
      */
     public Configuration maxResponseBodySize(Integer maxResponseBodySize) {
         this.maxResponseBodySize = maxResponseBodySize;
+        return this;
+    }
+
+    public Integer maxLlmConversationBodySize() {
+        if (maxLlmConversationBodySize == null) {
+            return ConfigurationProperties.maxLlmConversationBodySize();
+        }
+        return maxLlmConversationBodySize;
+    }
+
+    /**
+     * Maximum body size (in bytes) for LLM conversation request bodies.
+     * <p>
+     * The default is 1,048,576 bytes (1 MiB). Valid range is [16384, 67108864].
+     *
+     * @param maxLlmConversationBodySize maximum LLM conversation body size in bytes
+     */
+    public Configuration maxLlmConversationBodySize(Integer maxLlmConversationBodySize) {
+        this.maxLlmConversationBodySize = maxLlmConversationBodySize;
         return this;
     }
 

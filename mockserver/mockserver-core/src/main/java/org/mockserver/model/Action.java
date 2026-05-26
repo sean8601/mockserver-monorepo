@@ -83,6 +83,7 @@ public abstract class Action<T extends Action> extends ObjectWithJsonToString {
         GRPC_STREAM_RESPONSE(Direction.RESPONSE),
         BINARY_RESPONSE(Direction.RESPONSE),
         DNS_RESPONSE(Direction.RESPONSE),
+        LLM_RESPONSE(Direction.RESPONSE),
         ERROR(Direction.RESPONSE);
 
         public final Direction direction;

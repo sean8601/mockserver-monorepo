@@ -28,6 +28,7 @@ public class JsonSchemaExpectationValidator extends JsonSchemaValidator {
             "httpForwardValidateAction",
             "httpError",
             "httpSseResponse",
+            "httpLlmResponse",
             "httpWebSocketResponse",
             "grpcStreamResponse",
             "binaryResponse",
