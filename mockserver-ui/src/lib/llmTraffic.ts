@@ -94,6 +94,58 @@ export interface McpParsed {
 }
 
 // ---------------------------------------------------------------------------
+// OpenAI Responses API types
+// ---------------------------------------------------------------------------
+
+export interface OpenAiResponsesParsed {
+  kind: 'openai_responses';
+  model: string | null;
+  stream: boolean;
+  input: unknown[];
+  tools: unknown[] | null;
+  output: unknown[];
+  usage: OpenAiUsage | null;
+  sseEvents: SseEvent[] | null;
+  streamed: boolean;
+  streamTruncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Gemini types
+// ---------------------------------------------------------------------------
+
+export interface GeminiParsed {
+  kind: 'gemini';
+  model: string | null;
+  stream: boolean;
+  contents: unknown[];
+  tools: unknown[] | null;
+  candidates: unknown[];
+  usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null;
+  sseEvents: SseEvent[] | null;
+  streamed: boolean;
+  streamTruncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Ollama types
+// ---------------------------------------------------------------------------
+
+export interface OllamaParsed {
+  kind: 'ollama';
+  model: string | null;
+  stream: boolean;
+  messages: unknown[];
+  tools: unknown[] | null;
+  responseMessage: unknown | null;
+  done: boolean;
+  usage: { prompt_eval_count?: number; eval_count?: number } | null;
+  sseEvents: SseEvent[] | null;
+  streamed: boolean;
+  streamTruncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Generic fallback
 // ---------------------------------------------------------------------------
 
@@ -105,10 +157,29 @@ export interface GenericParsed {
 }
 
 // ---------------------------------------------------------------------------
+// ConversationPredicates — matches Java ConversationPredicates model
+// ---------------------------------------------------------------------------
+
+export interface ConversationPredicates {
+  turnIndex?: number;
+  latestMessageContains?: string;
+  latestMessageMatches?: string;
+  latestMessageRole?: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM';
+  containsToolResultFor?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Discriminated union
 // ---------------------------------------------------------------------------
 
-export type ParsedTraffic = AnthropicParsed | OpenAiParsed | McpParsed | GenericParsed;
+export type ParsedTraffic =
+  | AnthropicParsed
+  | OpenAiParsed
+  | OpenAiResponsesParsed
+  | GeminiParsed
+  | OllamaParsed
+  | McpParsed
+  | GenericParsed;
 
 // ---------------------------------------------------------------------------
 // Summary for master list display
@@ -362,6 +433,34 @@ function isOpenAiPath(path: string | null): boolean {
   return path !== null && path.includes('/chat/completions');
 }
 
+function isOpenAiResponsesPath(path: string | null): boolean {
+  return path !== null && /\/v1\/responses/.test(path);
+}
+
+function isGeminiPath(path: string | null): boolean {
+  // Gemini uses /v1beta/ (literal beta) or /v1/ followed by a model name that
+  // starts with "gemini-". The earlier `/v1(beta)?/` form misclassified generic
+  // /v1/models/* paths from other providers as Gemini.
+  if (path === null) return false;
+  return /\/v1beta\/models\/[^/]+:(generateContent|streamGenerateContent)/.test(path)
+    || /\/v1\/models\/gemini-[^/]+:(generateContent|streamGenerateContent)/.test(path);
+}
+
+function isBedrockPath(path: string | null): boolean {
+  return path !== null && /\/model\/anthropic\./.test(path) && path.includes('/invoke');
+}
+
+function isAzureOpenAiPath(path: string | null): boolean {
+  return path !== null && /\/openai\/deployments\//.test(path) && path.includes('/chat/completions');
+}
+
+function isOllamaPath(path: string | null): boolean {
+  // Anchor to `/api/chat` as a complete path segment so we don't misclassify
+  // `/api/chatbot`, `/api/chats`, or any generic chat endpoint.
+  if (path === null) return false;
+  return /(^|\/)api\/chat(?:\/?$|\?)/.test(path);
+}
+
 function isMcpJsonRpc(body: unknown): boolean {
   if (typeof body !== 'object' || body === null) return false;
   const obj = body as Record<string, unknown>;
@@ -570,6 +669,132 @@ function parseMcpRequest(requestBody: unknown, responseBody: unknown): McpParsed
 }
 
 // ---------------------------------------------------------------------------
+// OpenAI Responses API parser
+// ---------------------------------------------------------------------------
+
+function parseOpenAiResponsesRequest(
+  requestBody: unknown,
+  responseBody: unknown,
+  responseHeaders: unknown,
+): OpenAiResponsesParsed {
+  const req = safeParseJson(requestBody) as Record<string, unknown> | undefined;
+  const { streamed, truncated } = hasStreamingHeaders(responseHeaders);
+
+  const result: OpenAiResponsesParsed = {
+    kind: 'openai_responses',
+    model: req ? getString(req, 'model') : null,
+    stream: req ? (getBoolean(req, 'stream') ?? false) : false,
+    input: req ? (getArray(req, 'input') ?? []) : [],
+    tools: req ? (getArray(req, 'tools') ?? null) : null,
+    output: [],
+    usage: null,
+    sseEvents: null,
+    streamed,
+    streamTruncated: truncated,
+  };
+
+  const res = safeParseJson(responseBody) as Record<string, unknown> | undefined;
+  if (res) {
+    result.output = getArray(res, 'output') ?? [];
+    result.usage = getObject(res, 'usage') as OpenAiUsage | null;
+    if (!result.model) {
+      result.model = getString(res, 'model');
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Gemini parser
+// ---------------------------------------------------------------------------
+
+function parseGeminiRequest(
+  requestBody: unknown,
+  responseBody: unknown,
+  responseHeaders: unknown,
+): GeminiParsed {
+  const req = safeParseJson(requestBody) as Record<string, unknown> | undefined;
+  const { streamed, truncated } = hasStreamingHeaders(responseHeaders);
+
+  const result: GeminiParsed = {
+    kind: 'gemini',
+    model: null,
+    stream: false,
+    contents: req ? (getArray(req, 'contents') ?? []) : [],
+    tools: req ? (getArray(req, 'tools') ?? null) : null,
+    candidates: [],
+    usage: null,
+    sseEvents: null,
+    streamed,
+    streamTruncated: truncated,
+  };
+
+  const res = safeParseJson(responseBody) as Record<string, unknown> | undefined;
+  if (res) {
+    result.candidates = getArray(res, 'candidates') ?? [];
+    const usageMeta = getObject(res, 'usageMetadata');
+    if (usageMeta) {
+      result.usage = {
+        promptTokenCount: getNumber(usageMeta, 'promptTokenCount') ?? undefined,
+        candidatesTokenCount: getNumber(usageMeta, 'candidatesTokenCount') ?? undefined,
+      };
+    }
+    if (!result.model) {
+      result.model = getString(res, 'modelVersion') ?? getString(res, 'model');
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Ollama parser
+// ---------------------------------------------------------------------------
+
+function parseOllamaRequest(
+  requestBody: unknown,
+  responseBody: unknown,
+  responseHeaders: unknown,
+): OllamaParsed {
+  const req = safeParseJson(requestBody) as Record<string, unknown> | undefined;
+  const { streamed, truncated } = hasStreamingHeaders(responseHeaders);
+
+  const result: OllamaParsed = {
+    kind: 'ollama',
+    model: req ? getString(req, 'model') : null,
+    stream: req ? (getBoolean(req, 'stream') ?? false) : false,
+    messages: req ? (getArray(req, 'messages') ?? []) : [],
+    tools: req ? (getArray(req, 'tools') ?? null) : null,
+    responseMessage: null,
+    done: false,
+    usage: null,
+    sseEvents: null,
+    streamed,
+    streamTruncated: truncated,
+  };
+
+  const res = safeParseJson(responseBody) as Record<string, unknown> | undefined;
+  if (res) {
+    result.responseMessage = res['message'] ?? null;
+    result.done = getBoolean(res, 'done') ?? false;
+    if (!result.model) {
+      result.model = getString(res, 'model');
+    }
+    const promptEval = getNumber(res, 'prompt_eval_count');
+    const evalCount = getNumber(res, 'eval_count');
+    if (promptEval !== null || evalCount !== null) {
+      result.usage = {
+        prompt_eval_count: promptEval ?? undefined,
+        eval_count: evalCount ?? undefined,
+      };
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -597,8 +822,34 @@ export function parseTraffic(value: Record<string, unknown>): ParsedTraffic {
       return parseAnthropicRequest(reqBodyContent, resBodyContent, responseHeaders);
     }
 
+    // Azure OpenAI uses the same wire format as OpenAI Chat Completions but
+    // has a distinctive path (/openai/deployments/…/chat/completions).
+    // Check before generic OpenAI path to avoid ambiguity.
+    if (isAzureOpenAiPath(path)) {
+      return parseOpenAiRequest(reqBodyContent, resBodyContent, responseHeaders);
+    }
+
+    // Bedrock Anthropic uses the native Anthropic wire shape.
+    if (isBedrockPath(path)) {
+      return parseAnthropicRequest(reqBodyContent, resBodyContent, responseHeaders);
+    }
+
+    // OpenAI Responses API (/v1/responses) — must be checked before
+    // generic OpenAI chat completions path.
+    if (isOpenAiResponsesPath(path)) {
+      return parseOpenAiResponsesRequest(reqBodyContent, resBodyContent, responseHeaders);
+    }
+
     if (isOpenAiPath(path)) {
       return parseOpenAiRequest(reqBodyContent, resBodyContent, responseHeaders);
+    }
+
+    if (isGeminiPath(path)) {
+      return parseGeminiRequest(reqBodyContent, resBodyContent, responseHeaders);
+    }
+
+    if (isOllamaPath(path)) {
+      return parseOllamaRequest(reqBodyContent, resBodyContent, responseHeaders);
     }
 
     // Check MCP on request body
@@ -695,7 +946,13 @@ export function summarizeTraffic(value: Record<string, unknown>): TrafficSummary
  * Get a display label for the model from parsed traffic.
  */
 export function getModelLabel(parsed: ParsedTraffic): string | null {
-  if (parsed.kind === 'anthropic' || parsed.kind === 'openai') {
+  if (
+    parsed.kind === 'anthropic' ||
+    parsed.kind === 'openai' ||
+    parsed.kind === 'openai_responses' ||
+    parsed.kind === 'gemini' ||
+    parsed.kind === 'ollama'
+  ) {
     return parsed.model;
   }
   return null;
@@ -711,10 +968,22 @@ export function getTokenSummary(parsed: ParsedTraffic): string | null {
     if (parsed.usage.output_tokens != null) parts.push(`${parsed.usage.output_tokens} out`);
     return parts.length > 0 ? parts.join(' / ') : null;
   }
-  if (parsed.kind === 'openai' && parsed.usage) {
+  if ((parsed.kind === 'openai' || parsed.kind === 'openai_responses') && parsed.usage) {
     const parts: string[] = [];
     if (parsed.usage.prompt_tokens != null) parts.push(`${parsed.usage.prompt_tokens} in`);
     if (parsed.usage.completion_tokens != null) parts.push(`${parsed.usage.completion_tokens} out`);
+    return parts.length > 0 ? parts.join(' / ') : null;
+  }
+  if (parsed.kind === 'gemini' && parsed.usage) {
+    const parts: string[] = [];
+    if (parsed.usage.promptTokenCount != null) parts.push(`${parsed.usage.promptTokenCount} in`);
+    if (parsed.usage.candidatesTokenCount != null) parts.push(`${parsed.usage.candidatesTokenCount} out`);
+    return parts.length > 0 ? parts.join(' / ') : null;
+  }
+  if (parsed.kind === 'ollama' && parsed.usage) {
+    const parts: string[] = [];
+    if (parsed.usage.prompt_eval_count != null) parts.push(`${parsed.usage.prompt_eval_count} in`);
+    if (parsed.usage.eval_count != null) parts.push(`${parsed.usage.eval_count} out`);
     return parts.length > 0 ? parts.join(' / ') : null;
   }
   return null;

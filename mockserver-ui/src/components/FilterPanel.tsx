@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
@@ -16,8 +17,55 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import type { KeyToMultiValue, KeyToValue, RequestFilter } from '../types';
 import { useDashboardStore } from '../store';
+import { ACTION_TYPES, LLM_PROVIDERS, PROVIDER_DISPLAY } from '../lib/clientFilters';
 
 const HTTP_METHODS = ['', 'CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'];
+
+// ---------------------------------------------------------------------------
+// Multi-select chip cluster
+// ---------------------------------------------------------------------------
+
+interface ChipClusterProps {
+  label: string;
+  options: readonly string[];
+  selected: string[];
+  onChange: (selected: string[]) => void;
+  displayMap?: Record<string, string>;
+  disabled: boolean;
+}
+
+function ChipCluster({ label, options, selected, onChange, displayMap, disabled }: ChipClusterProps) {
+  const toggle = (option: string) => {
+    if (disabled) return;
+    if (selected.includes(option)) {
+      onChange(selected.filter((s) => s !== option));
+    } else {
+      onChange([...selected, option]);
+    }
+  };
+
+  return (
+    <Box sx={{ mb: 1 }}>
+      <Typography variant="caption" color="primary" sx={{ mb: 0.5, display: 'block' }}>
+        {label}
+      </Typography>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+        {options.map((option) => (
+          <Chip
+            key={option}
+            label={displayMap?.[option] ?? option}
+            size="small"
+            variant={selected.includes(option) ? 'filled' : 'outlined'}
+            color={selected.includes(option) ? 'primary' : 'default'}
+            onClick={() => toggle(option)}
+            disabled={disabled}
+            sx={{ height: 24, fontSize: '0.7rem' }}
+          />
+        ))}
+      </Box>
+    </Box>
+  );
+}
 
 interface MultiValueFieldProps {
   label: string;
@@ -156,6 +204,16 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
   const toggleExpanded = useDashboardStore((s) => s.toggleFilterExpanded);
   const filterEnabled = useDashboardStore((s) => s.filterEnabled);
   const setFilterEnabled = useDashboardStore((s) => s.setFilterEnabled);
+  const activeExpectations = useDashboardStore((s) => s.activeExpectations);
+  const actionTypeFilter = useDashboardStore((s) => s.actionTypeFilter);
+  const setActionTypeFilter = useDashboardStore((s) => s.setActionTypeFilter);
+  const llmProviderFilter = useDashboardStore((s) => s.llmProviderFilter);
+  const setLlmProviderFilter = useDashboardStore((s) => s.setLlmProviderFilter);
+
+  const hasLlmExpectations = useMemo(
+    () => activeExpectations.some((e) => 'httpLlmResponse' in e.value),
+    [activeExpectations],
+  );
 
   const [method, setMethod] = useState('');
   const [path, setPath] = useState('');
@@ -288,6 +346,25 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                 label="Keep-Alive"
               />
             </Box>
+          </Box>
+          <Box sx={{ mt: 2 }}>
+            <ChipCluster
+              label="Action Type"
+              options={ACTION_TYPES}
+              selected={actionTypeFilter}
+              onChange={setActionTypeFilter}
+              disabled={disabled}
+            />
+            {hasLlmExpectations && (
+              <ChipCluster
+                label="LLM Provider"
+                options={LLM_PROVIDERS}
+                selected={llmProviderFilter}
+                onChange={setLlmProviderFilter}
+                displayMap={PROVIDER_DISPLAY}
+                disabled={disabled}
+              />
+            )}
           </Box>
           <Box sx={{ mt: 2 }}>
             <MultiValueField label="Headers" items={headers} onChange={setHeaders} disabled={disabled} />

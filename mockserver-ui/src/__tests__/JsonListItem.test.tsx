@@ -130,6 +130,171 @@ describe('JsonListItem', () => {
     expect(screen.queryByText(/LLM Response/)).not.toBeInTheDocument();
   });
 
+  it('renders streaming chip when httpLlmResponse.streaming is true', () => {
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-stream',
+          value: {
+            httpLlmResponse: {
+              provider: 'ANTHROPIC',
+              model: 'claude-sonnet-4',
+              streaming: true,
+              completion: { text: 'Hello' },
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('stream')).toBeInTheDocument();
+  });
+
+  it('renders tool count chip when completion has toolCalls', () => {
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-tools',
+          value: {
+            httpLlmResponse: {
+              provider: 'OPENAI',
+              completion: {
+                text: 'Calling tools',
+                toolCalls: [
+                  { name: 'search', arguments: '{}' },
+                  { name: 'fetch', arguments: '{}' },
+                ],
+              },
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('2 tools')).toBeInTheDocument();
+  });
+
+  it('renders embedding chip when embedding field is present', () => {
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-embed',
+          value: {
+            httpLlmResponse: {
+              provider: 'OPENAI',
+              embedding: [0.1, 0.2, 0.3],
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('embedding')).toBeInTheDocument();
+  });
+
+  it('renders stateful chip with turn index when conversationPredicates is present', () => {
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-stateful',
+          value: {
+            httpLlmResponse: {
+              provider: 'ANTHROPIC',
+              model: 'claude-sonnet-4',
+              conversationPredicates: {
+                turnIndex: 1,
+                latestMessageContains: 'weather',
+              },
+              completion: { text: 'It is sunny.' },
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('turn 1')).toBeInTheDocument();
+  });
+
+  it('renders isolation chip when scenario name has __iso suffix', () => {
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-iso',
+          value: {
+            httpLlmResponse: {
+              provider: 'ANTHROPIC',
+              scenarioName: 'conversation_abc__iso=header:x-session-id',
+              completion: { text: 'Hello' },
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('iso=header:x-session-id')).toBeInTheDocument();
+  });
+
+  it('renders all badge chips together when all signals are present', () => {
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-all',
+          value: {
+            httpLlmResponse: {
+              provider: 'ANTHROPIC',
+              model: 'claude-sonnet-4',
+              streaming: true,
+              scenarioName: 'conv__iso=cookie:sid',
+              conversationPredicates: { turnIndex: 0 },
+              completion: {
+                text: 'Hello',
+                toolCalls: [{ name: 'search', arguments: '{}' }],
+              },
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    // Four optional signals exist (stream, 1 tool, turn 0, iso) plus the
+    // mandatory provider chip. With the 3-chip optional cap, three render
+    // directly and the surplus collapses into a "+1 more" chip whose tooltip
+    // lists the hidden signal.
+    expect(screen.getByText(/LLM Response/)).toBeInTheDocument();
+    expect(screen.getByText('stream')).toBeInTheDocument();
+    expect(screen.getByText('1 tool')).toBeInTheDocument();
+    expect(screen.getByText('turn 0')).toBeInTheDocument();
+    expect(screen.getByText('+1 more')).toBeInTheDocument();
+  });
+
+  it('renders all five optional chips inline when collapse cap is not exceeded', () => {
+    // Three optional chips (stream, 1 tool, embedding) fit within the cap and
+    // should all render directly without a "+N more" collapse.
+    render(
+      <JsonListItem
+        item={{
+          key: 'llm-three',
+          value: {
+            httpLlmResponse: {
+              provider: 'OPENAI',
+              model: 'gpt-4o',
+              streaming: true,
+              embedding: { dimensions: 1536 },
+              completion: {
+                toolCalls: [{ name: 'search', arguments: '{}' }],
+              },
+            },
+          },
+        }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('stream')).toBeInTheDocument();
+    expect(screen.getByText('1 tool')).toBeInTheDocument();
+    expect(screen.getByText('embedding')).toBeInTheDocument();
+    expect(screen.queryByText(/\+\d+ more/)).not.toBeInTheDocument();
+  });
+
   it('shows chevron right icon when collapsed and expand icon when expanded', async () => {
     const user = userEvent.setup();
     const { container } = render(

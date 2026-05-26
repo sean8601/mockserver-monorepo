@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
@@ -553,6 +554,10 @@ export interface ScriptedTurn {
   };
   scenarioState: string;
   newScenarioState: string;
+  // The conversation this turn belongs to. Multiple conversations are flattened
+  // into a single `turns` array; the panel renders a separator chip whenever
+  // this changes between adjacent turns.
+  scenarioName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -584,10 +589,23 @@ export function ScriptedTurnsPanel({ turns }: { turns: ScriptedTurn[] }) {
           ([, v]) => v !== undefined && v !== null,
         );
         const hasPredicates = predicateEntries.length > 0;
+        const previousScenario = i > 0 ? turns[i - 1].scenarioName : undefined;
+        const isFirstOfConversation = i === 0 || turn.scenarioName !== previousScenario;
+        const conversationHeader = isFirstOfConversation && turn.scenarioName
+          ? turn.scenarioName.replace(/^__llm_conv_/, 'conv ').replace(/__iso=.*/, '')
+          : null;
 
         return (
+          <Fragment key={`scripted-turn-${i}`}>
+            {conversationHeader && i > 0 && (
+              <Typography
+                variant="overline"
+                sx={{ fontSize: '0.6rem', color: 'text.secondary', textAlign: 'center', mt: 1 }}
+              >
+                {conversationHeader}
+              </Typography>
+            )}
           <Box
-            key={`scripted-turn-${i}`}
             sx={{
               border: 1,
               borderColor: 'divider',
@@ -705,6 +723,7 @@ export function ScriptedTurnsPanel({ turns }: { turns: ScriptedTurn[] }) {
               )}
             </Box>
           </Box>
+          </Fragment>
         );
       })}
     </Box>

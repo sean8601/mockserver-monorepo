@@ -8,6 +8,7 @@ import type {
   ThemeMode,
   WebSocketMessage,
 } from '../types';
+import { ACTION_TYPES, LLM_PROVIDERS } from '../lib/clientFilters';
 
 export type ViewMode = 'dashboard' | 'traffic';
 
@@ -40,6 +41,12 @@ interface DashboardState {
   debugMismatchError: string | null;
 
   selectedTrafficIndex: number | null;
+
+  actionTypeFilter: string[];
+  llmProviderFilter: string[];
+
+  setActionTypeFilter: (types: string[]) => void;
+  setLlmProviderFilter: (providers: string[]) => void;
 
   applyMessage: (message: WebSocketMessage) => void;
   clearUI: () => void;
@@ -105,6 +112,18 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   debugMismatchError: null,
 
   selectedTrafficIndex: null,
+
+  actionTypeFilter: [],
+  llmProviderFilter: [],
+
+  // Whitelist incoming filter values so a stale URL or serialised state cannot
+  // poison the store with a value that silently matches nothing.
+  setActionTypeFilter: (types) => set({
+    actionTypeFilter: types.filter((t) => (ACTION_TYPES as readonly string[]).includes(t)),
+  }),
+  setLlmProviderFilter: (providers) => set({
+    llmProviderFilter: providers.filter((p) => (LLM_PROVIDERS as readonly string[]).includes(p)),
+  }),
 
   applyMessage: (message) =>
     set({

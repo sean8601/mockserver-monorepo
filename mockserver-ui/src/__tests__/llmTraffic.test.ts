@@ -703,3 +703,430 @@ describe('parseTraffic — BINARY response body', () => {
     expect(parsed.stopReason).toBe('end_turn');
   });
 });
+
+// ---------------------------------------------------------------------------
+// OpenAI Responses API (/v1/responses)
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — OpenAI Responses API', () => {
+  it('parses a standard /v1/responses request/response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/responses',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4.1',
+            input: [
+              { role: 'user', content: 'What is 2+2?' },
+            ],
+            tools: [{ type: 'function', name: 'calculator' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4.1',
+            output: [
+              { type: 'message', content: [{ type: 'output_text', text: '4' }] },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 1 },
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai_responses');
+    if (parsed.kind !== 'openai_responses') return;
+
+    expect(parsed.model).toBe('gpt-4.1');
+    expect(parsed.input).toHaveLength(1);
+    expect(parsed.tools).toHaveLength(1);
+    expect(parsed.output).toHaveLength(1);
+    expect(parsed.usage).toEqual({ prompt_tokens: 10, completion_tokens: 1 });
+  });
+
+  it('parses a response with function_call output items', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/responses',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4.1',
+            input: [{ role: 'user', content: 'Search for cats' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4.1',
+            output: [
+              { type: 'function_call', name: 'search', arguments: '{"q":"cats"}' },
+            ],
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai_responses');
+    if (parsed.kind !== 'openai_responses') return;
+    expect(parsed.output).toHaveLength(1);
+    const outputItem = parsed.output[0] as Record<string, unknown>;
+    expect(outputItem['type']).toBe('function_call');
+    expect(outputItem['name']).toBe('search');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gemini (generateContent)
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — Gemini', () => {
+  it('parses a standard Gemini generateContent request/response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1beta/models/gemini-2.5-pro:generateContent',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: 'Hello' }],
+              },
+            ],
+            tools: [{ functionDeclarations: [{ name: 'search' }] }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  role: 'model',
+                  parts: [{ text: 'Hi there!' }],
+                },
+                finishReason: 'STOP',
+              },
+            ],
+            usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 3 },
+            modelVersion: 'gemini-2.5-pro',
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('gemini');
+    if (parsed.kind !== 'gemini') return;
+
+    expect(parsed.model).toBe('gemini-2.5-pro');
+    expect(parsed.contents).toHaveLength(1);
+    expect(parsed.tools).toHaveLength(1);
+    expect(parsed.candidates).toHaveLength(1);
+    expect(parsed.usage).toEqual({ promptTokenCount: 5, candidatesTokenCount: 3 });
+  });
+
+  it('handles v1 (non-beta) path', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/models/gemini-2.5-flash:generateContent',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'JSON', json: '{"candidates":[]}' },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('gemini');
+  });
+
+  it('handles functionCall and functionResponse parts', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1beta/models/gemini-2.5-pro:generateContent',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            contents: [
+              { role: 'user', parts: [{ text: 'Weather?' }] },
+              {
+                role: 'model',
+                parts: [{ functionCall: { name: 'get_weather', args: { city: 'London' } } }],
+              },
+              {
+                role: 'function',
+                parts: [{ functionResponse: { name: 'get_weather', response: { temp: '20C' } } }],
+              },
+            ],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'It is 20C in London.' }] } }],
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('gemini');
+    if (parsed.kind !== 'gemini') return;
+    expect(parsed.contents).toHaveLength(3);
+    expect(parsed.candidates).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bedrock (Anthropic-on-Bedrock)
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — Bedrock', () => {
+  it('parses a Bedrock Anthropic invoke request using the Anthropic wire format', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/model/anthropic.claude-3-5-sonnet-20241022-v2:0/invoke',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: 'Hello from Bedrock' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            content: [{ type: 'text', text: 'Hello from Claude on Bedrock!' }],
+            usage: { input_tokens: 12, output_tokens: 8 },
+            stop_reason: 'end_turn',
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    // Bedrock uses the Anthropic parser, so kind is 'anthropic'
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+    expect(parsed.responseContent).toHaveLength(1);
+    expect(parsed.responseContent[0]!.text).toBe('Hello from Claude on Bedrock!');
+    expect(parsed.usage).toEqual({ input_tokens: 12, output_tokens: 8 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Azure OpenAI
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — Azure OpenAI', () => {
+  it('parses an Azure OpenAI Chat Completions request using the OpenAI wire format', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/openai/deployments/gpt-4/chat/completions',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4',
+            messages: [{ role: 'user', content: 'Hello from Azure' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4',
+            choices: [{ message: { role: 'assistant', content: 'Hello from Azure OpenAI!' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 8, completion_tokens: 5 },
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    // Azure OpenAI uses the OpenAI parser, so kind is 'openai'
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+    expect(parsed.model).toBe('gpt-4');
+    expect(parsed.choices).toHaveLength(1);
+    expect(parsed.choices[0]!.message?.content).toBe('Hello from Azure OpenAI!');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ollama (/api/chat)
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — Ollama', () => {
+  it('parses a standard Ollama /api/chat request/response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/api/chat',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'llama3',
+            stream: false,
+            messages: [
+              { role: 'user', content: 'Hello' },
+            ],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'llama3',
+            message: { role: 'assistant', content: 'Hi there!' },
+            done: true,
+            prompt_eval_count: 15,
+            eval_count: 8,
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('ollama');
+    if (parsed.kind !== 'ollama') return;
+
+    expect(parsed.model).toBe('llama3');
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.done).toBe(true);
+    expect(parsed.responseMessage).toEqual({ role: 'assistant', content: 'Hi there!' });
+    expect(parsed.usage).toEqual({ prompt_eval_count: 15, eval_count: 8 });
+  });
+
+  it('handles tool_calls in Ollama messages', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/api/chat',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'llama3',
+            messages: [
+              { role: 'user', content: 'What is the weather?' },
+            ],
+            tools: [{ type: 'function', function: { name: 'get_weather' } }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'llama3',
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{ function: { name: 'get_weather', arguments: { city: 'London' } } }],
+            },
+            done: true,
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('ollama');
+    if (parsed.kind !== 'ollama') return;
+    expect(parsed.tools).toHaveLength(1);
+    const respMsg = parsed.responseMessage as Record<string, unknown>;
+    const toolCalls = respMsg['tool_calls'] as unknown[];
+    expect(toolCalls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTokenSummary — new providers
+// ---------------------------------------------------------------------------
+
+describe('getTokenSummary — new providers', () => {
+  it('formats Gemini token usage', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1beta/models/gemini-2.5-pro:generateContent',
+        body: { type: 'JSON', json: '{"contents":[]}' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'JSON', json: '{"candidates":[],"usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":10}}' },
+      },
+    };
+    const parsed = parseTraffic(value);
+    expect(getTokenSummary(parsed)).toBe('20 in / 10 out');
+  });
+
+  it('formats Ollama token usage', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/api/chat',
+        body: { type: 'JSON', json: '{"model":"llama3","messages":[]}' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'JSON', json: '{"model":"llama3","done":true,"prompt_eval_count":50,"eval_count":25}' },
+      },
+    };
+    const parsed = parseTraffic(value);
+    expect(getTokenSummary(parsed)).toBe('50 in / 25 out');
+  });
+
+  it('formats OpenAI Responses token usage', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/responses',
+        body: { type: 'JSON', json: '{"model":"gpt-4.1","input":[]}' },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'JSON', json: '{"model":"gpt-4.1","output":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}' },
+      },
+    };
+    const parsed = parseTraffic(value);
+    expect(getTokenSummary(parsed)).toBe('10 in / 5 out');
+  });
+});

@@ -11,7 +11,8 @@ import Divider from '@mui/material/Divider';
 import SearchIcon from '@mui/icons-material/Search';
 import { useDashboardStore } from '../store';
 import JsonViewer from './JsonViewer';
-import { AnthropicConversationView, OpenAiConversationView } from './ConversationView';
+import { AnthropicConversationView, OpenAiConversationView, ScriptedTurnsPanel } from './ConversationView';
+import type { ScriptedTurn } from './ConversationView';
 import type { JsonListItem } from '../types';
 import {
   summarizeTraffic,
@@ -21,6 +22,9 @@ import {
   type ParsedTraffic,
   type AnthropicParsed,
   type OpenAiParsed,
+  type OpenAiResponsesParsed,
+  type GeminiParsed,
+  type OllamaParsed,
   type McpParsed,
   type SseEvent,
 } from '../lib/llmTraffic';
@@ -41,6 +45,9 @@ function kindLabel(parsed: ParsedTraffic): string {
   switch (parsed.kind) {
     case 'anthropic': return 'Anthropic';
     case 'openai': return 'OpenAI';
+    case 'openai_responses': return 'OpenAI Resp';
+    case 'gemini': return 'Gemini';
+    case 'ollama': return 'Ollama';
     case 'mcp': return 'MCP';
     case 'generic': return 'HTTP';
   }
@@ -50,9 +57,97 @@ function kindColor(parsed: ParsedTraffic): 'primary' | 'secondary' | 'info' | 'd
   switch (parsed.kind) {
     case 'anthropic': return 'primary';
     case 'openai': return 'secondary';
+    case 'openai_responses': return 'secondary';
+    case 'gemini': return 'info';
+    case 'ollama': return 'info';
     case 'mcp': return 'info';
     case 'generic': return 'default';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Scripted turns extraction from active expectations
+// ---------------------------------------------------------------------------
+
+const SCENARIO_STATE_ORDER: Record<string, number> = { Started: 0 };
+
+function scenarioStateSortKey(state: string): number {
+  if (state in SCENARIO_STATE_ORDER) return SCENARIO_STATE_ORDER[state]!;
+  const match = /turn_(\d+)/.exec(state);
+  if (match) return parseInt(match[1]!, 10) + 1;
+  if (state === '__done') return 999999;
+  return 500000; // unknown states sort near the end
+}
+
+/**
+ * Gather scripted turns from expectations sharing the same scenarioName.
+ * Each expectation with httpLlmResponse + conversationPredicates within the
+ * same scenario constitutes one turn.
+ */
+function gatherScriptedTurns(expectations: JsonListItem[]): ScriptedTurn[] {
+  // Group expectations by scenarioName. Only LLM expectations are considered;
+  // a single shared scenarioName forms one conversation.
+  const scenarioGroups = new Map<string, JsonListItem[]>();
+  for (const exp of expectations) {
+    const llm = exp.value['httpLlmResponse'] as Record<string, unknown> | undefined;
+    if (!llm) continue;
+    const scenarioName = llm['scenarioName'] as string | undefined;
+    if (!scenarioName) continue;
+    if (!scenarioGroups.has(scenarioName)) {
+      scenarioGroups.set(scenarioName, []);
+    }
+    scenarioGroups.get(scenarioName)!.push(exp);
+  }
+
+  // Collect turns from EVERY eligible scenario group. The previous version
+  // returned the first matching group and silently dropped the rest, which
+  // produced incorrect output when multiple conversations were loaded
+  // simultaneously. We now flatten across groups; the ScriptedTurnsPanel
+  // displays a separator between conversations via the scenarioName field.
+  const allTurns: ScriptedTurn[] = [];
+  for (const [scenarioName, group] of scenarioGroups) {
+    const hasPredicates = group.some((e) => {
+      const llm = e.value['httpLlmResponse'] as Record<string, unknown> | undefined;
+      return llm && 'conversationPredicates' in llm;
+    });
+    if (!hasPredicates && group.length < 2) continue;
+
+    // Sort by scenario state transition order
+    const sorted = [...group].sort((a, b) => {
+      const aLlm = a.value['httpLlmResponse'] as Record<string, unknown>;
+      const bLlm = b.value['httpLlmResponse'] as Record<string, unknown>;
+      const aState = (aLlm['scenarioState'] as string | undefined) ?? 'Started';
+      const bState = (bLlm['scenarioState'] as string | undefined) ?? 'Started';
+      return scenarioStateSortKey(aState) - scenarioStateSortKey(bState);
+    });
+
+    const turns: ScriptedTurn[] = sorted.map((exp, i) => {
+      const llm = exp.value['httpLlmResponse'] as Record<string, unknown>;
+      const predicates = (llm['conversationPredicates'] as Record<string, unknown>) ?? {};
+      const completion = (llm['completion'] as Record<string, unknown>) ?? {};
+      const toolCalls = (completion['toolCalls'] as Array<{ name: string; arguments?: string }>) ?? [];
+
+      return {
+        turnIndex: (predicates['turnIndex'] as number | undefined) ?? i,
+        predicates: Object.fromEntries(
+          Object.entries(predicates).filter(([, v]) => v != null),
+        ),
+        response: {
+          text: (completion['text'] as string | undefined),
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          stopReason: (completion['stopReason'] as string | undefined)
+            ?? (llm['stopReason'] as string | undefined),
+          streaming: (llm['streaming'] as boolean | undefined),
+        },
+        scenarioState: (llm['scenarioState'] as string | undefined) ?? 'Started',
+        newScenarioState: (llm['newScenarioState'] as string | undefined) ?? '__done',
+        scenarioName,
+      };
+    });
+
+    allTurns.push(...turns);
+  }
+  return allTurns;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +375,109 @@ function McpDetailPanel({ parsed }: { parsed: McpParsed }) {
 }
 
 // ---------------------------------------------------------------------------
+// Messages panel: OpenAI Responses API
+// ---------------------------------------------------------------------------
+
+function OpenAiResponsesMessagesPanel({ parsed }: { parsed: OpenAiResponsesParsed }) {
+  return (
+    <Box>
+      {parsed.input.length > 0 && (
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Input ({parsed.input.length})</Typography>
+          {parsed.input.map((item, i) => (
+            <Box key={i} sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+              <JsonViewer data={item as Record<string, unknown>} collapsed={1} />
+            </Box>
+          ))}
+        </Box>
+      )}
+      {parsed.output.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Output ({parsed.output.length})</Typography>
+          {parsed.output.map((item, i) => (
+            <Box key={i} sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+              <JsonViewer data={item as Record<string, unknown>} collapsed={1} />
+            </Box>
+          ))}
+        </Box>
+      )}
+      <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {parsed.model && <Chip label={`Model: ${parsed.model}`} size="small" variant="outlined" />}
+        {parsed.stream && <Chip label="Streaming" size="small" color="info" variant="outlined" />}
+      </Box>
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Messages panel: Gemini
+// ---------------------------------------------------------------------------
+
+function GeminiMessagesPanel({ parsed }: { parsed: GeminiParsed }) {
+  return (
+    <Box>
+      {parsed.contents.length > 0 && (
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Contents ({parsed.contents.length})</Typography>
+          {parsed.contents.map((item, i) => (
+            <Box key={i} sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+              <JsonViewer data={item as Record<string, unknown>} collapsed={1} />
+            </Box>
+          ))}
+        </Box>
+      )}
+      {parsed.candidates.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Candidates ({parsed.candidates.length})</Typography>
+          {parsed.candidates.map((item, i) => (
+            <Box key={i} sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+              <JsonViewer data={item as Record<string, unknown>} collapsed={1} />
+            </Box>
+          ))}
+        </Box>
+      )}
+      <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {parsed.model && <Chip label={`Model: ${parsed.model}`} size="small" variant="outlined" />}
+      </Box>
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Messages panel: Ollama
+// ---------------------------------------------------------------------------
+
+function OllamaMessagesPanel({ parsed }: { parsed: OllamaParsed }) {
+  return (
+    <Box>
+      {parsed.messages.length > 0 && (
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Messages ({parsed.messages.length})</Typography>
+          {parsed.messages.map((msg, i) => (
+            <Box key={i} sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+              <JsonViewer data={msg as Record<string, unknown>} collapsed={1} />
+            </Box>
+          ))}
+        </Box>
+      )}
+      {parsed.responseMessage != null && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Response</Typography>
+          <Box sx={{ mt: 0.5, pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+            <JsonViewer data={parsed.responseMessage as Record<string, unknown>} collapsed={1} />
+          </Box>
+        </Box>
+      )}
+      <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {parsed.model && <Chip label={`Model: ${parsed.model}`} size="small" variant="outlined" />}
+        {parsed.stream && <Chip label="Streaming" size="small" color="info" variant="outlined" />}
+        {parsed.done && <Chip label="Done" size="small" color="success" variant="outlined" />}
+      </Box>
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SSE Timeline
 // ---------------------------------------------------------------------------
 
@@ -355,14 +553,25 @@ function SseTimeline({ events }: { events: SseEvent[] }) {
 interface DetailPaneProps {
   item: JsonListItem;
   summary: TrafficSummary;
+  scriptedTurns: ScriptedTurn[];
 }
 
 /** Build the tab list dynamically from the traffic kind. */
-function buildTabs(parsed: ParsedTraffic): string[] {
+function buildTabs(parsed: ParsedTraffic, hasScriptedTurns: boolean): string[] {
   switch (parsed.kind) {
     case 'anthropic':
     case 'openai': {
       const tabs = ['Messages', 'Conversation'];
+      if (hasScriptedTurns) tabs.push('Scripted Turns');
+      if (parsed.sseEvents) tabs.push('SSE Timeline');
+      tabs.push('Raw JSON');
+      return tabs;
+    }
+    case 'openai_responses':
+    case 'gemini':
+    case 'ollama': {
+      const tabs = ['Messages'];
+      if (hasScriptedTurns) tabs.push('Scripted Turns');
       if (parsed.sseEvents) tabs.push('SSE Timeline');
       tabs.push('Raw JSON');
       return tabs;
@@ -374,8 +583,8 @@ function buildTabs(parsed: ParsedTraffic): string[] {
   }
 }
 
-function DetailPane({ item, summary }: DetailPaneProps) {
-  const tabs = buildTabs(summary.parsed);
+function DetailPane({ item, summary, scriptedTurns }: DetailPaneProps) {
+  const tabs = buildTabs(summary.parsed, scriptedTurns.length > 0);
   const [detailTab, setDetailTab] = useState(0);
 
   // For generic traffic, render Raw JSON directly — no tab bar needed
@@ -420,13 +629,25 @@ function DetailPane({ item, summary }: DetailPaneProps) {
         {activeLabel === 'Messages' && summary.parsed.kind === 'openai' && (
           <OpenAiMessagesPanel parsed={summary.parsed} />
         )}
+        {activeLabel === 'Messages' && summary.parsed.kind === 'openai_responses' && (
+          <OpenAiResponsesMessagesPanel parsed={summary.parsed} />
+        )}
+        {activeLabel === 'Messages' && summary.parsed.kind === 'gemini' && (
+          <GeminiMessagesPanel parsed={summary.parsed} />
+        )}
+        {activeLabel === 'Messages' && summary.parsed.kind === 'ollama' && (
+          <OllamaMessagesPanel parsed={summary.parsed} />
+        )}
         {activeLabel === 'Conversation' && summary.parsed.kind === 'anthropic' && (
           <AnthropicConversationView parsed={summary.parsed} />
         )}
         {activeLabel === 'Conversation' && summary.parsed.kind === 'openai' && (
           <OpenAiConversationView parsed={summary.parsed} />
         )}
-        {activeLabel === 'SSE Timeline' && (summary.parsed.kind === 'anthropic' || summary.parsed.kind === 'openai') && summary.parsed.sseEvents && (
+        {activeLabel === 'Scripted Turns' && scriptedTurns.length > 0 && (
+          <ScriptedTurnsPanel turns={scriptedTurns} />
+        )}
+        {activeLabel === 'SSE Timeline' && 'sseEvents' in summary.parsed && summary.parsed.sseEvents && (
           <SseTimeline events={summary.parsed.sseEvents} />
         )}
         {activeLabel === 'MCP' && summary.parsed.kind === 'mcp' && (
@@ -446,10 +667,17 @@ function DetailPane({ item, summary }: DetailPaneProps) {
 
 export default function TrafficInspector() {
   const proxiedRequests = useDashboardStore((s) => s.proxiedRequests);
+  const activeExpectations = useDashboardStore((s) => s.activeExpectations);
   const trafficSearch = useDashboardStore((s) => s.trafficSearch);
   const setTrafficSearch = useDashboardStore((s) => s.setTrafficSearch);
   const selectedIndex = useDashboardStore((s) => s.selectedTrafficIndex);
   const setSelectedIndex = useDashboardStore((s) => s.setSelectedTrafficIndex);
+
+  // Gather scripted turns from active expectations
+  const scriptedTurns = useMemo(
+    () => gatherScriptedTurns(activeExpectations),
+    [activeExpectations],
+  );
 
   // Build summaries for all proxied requests
   const summaries = useMemo(
@@ -578,7 +806,7 @@ export default function TrafficInspector() {
             minWidth: 0,
           }}
         >
-          <DetailPane key={selectedEntry.item.key} item={selectedEntry.item} summary={selectedEntry.summary} />
+          <DetailPane key={selectedEntry.item.key} item={selectedEntry.item} summary={selectedEntry.summary} scriptedTurns={scriptedTurns} />
         </Paper>
       )}
     </Box>

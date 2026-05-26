@@ -4,6 +4,7 @@ import { useDashboardStore } from '../store';
 import type { JsonListItem } from '../types';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
+import { applyClientFilters } from '../lib/clientFilters';
 
 function matchesSearch(item: JsonListItem, term: string): boolean {
   return JSON.stringify(item).toLowerCase().includes(term.toLowerCase());
@@ -13,10 +14,18 @@ export default function ExpectationPanel() {
   const expectations = useDashboardStore((s) => s.activeExpectations);
   const search = useDashboardStore((s) => s.expectationSearch);
   const setSearch = useDashboardStore((s) => s.setExpectationSearch);
+  const filterEnabled = useDashboardStore((s) => s.filterEnabled);
+  const actionTypeFilter = useDashboardStore((s) => s.actionTypeFilter);
+  const llmProviderFilter = useDashboardStore((s) => s.llmProviderFilter);
+
+  const clientFiltered = useMemo(
+    () => filterEnabled ? applyClientFilters(expectations, actionTypeFilter, llmProviderFilter) : expectations,
+    [expectations, filterEnabled, actionTypeFilter, llmProviderFilter],
+  );
 
   const filtered = useMemo(
-    () => (search ? expectations.filter((e) => matchesSearch(e, search)) : expectations),
-    [expectations, search],
+    () => (search ? clientFiltered.filter((e) => matchesSearch(e, search)) : clientFiltered),
+    [clientFiltered, search],
   );
 
   return (
