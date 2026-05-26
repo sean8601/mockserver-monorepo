@@ -59,7 +59,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 |----------|-------------|
 | [Build Optimisation](plans/build-optimisation.md) | Maven build speed improvements (Phase 1 mostly done; Phase 3 pending) |
 | [Testing Improvements](plans/testing-improvements.md) | Test coverage and quality improvements (Phase 5 container/Helm largely done) |
-| [Security Remediation](plans/security-remediation.md) | Vulnerability fixes and security hardening (3 of 12 done) |
+| [Security Defaults](plans/security-defaults.md) | Insecure default flips planned for the next major release |
 | [RFC: LLM & Agent Mocking](plans/mockserver-llm-mocking.md) | First-class LLM response builder + LLM-aware conversation layer |
 
 ### Other
