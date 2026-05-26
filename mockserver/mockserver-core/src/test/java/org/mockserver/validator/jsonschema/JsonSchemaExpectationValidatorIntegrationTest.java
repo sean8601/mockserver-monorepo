@@ -1152,7 +1152,7 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                 "  }" + NEW_LINE +
                 "}"),
             is(
-                "18 errors:" + NEW_LINE +
+                "19 errors:" + NEW_LINE +
                     " - $.binaryResponse: is missing but it is required" + NEW_LINE +
                     " - $.dnsResponse: is missing but it is required" + NEW_LINE +
                     " - $.grpcStreamResponse: is missing, but is required, if specifying action of type GrpcStreamResponse" + NEW_LINE +
@@ -1162,6 +1162,7 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                     " - $.httpForwardObjectCallback: is missing, but is required, if specifying action of type ForwardObjectCallback" + NEW_LINE +
                     " - $.httpForwardTemplate: is missing, but is required, if specifying action of type ForwardTemplate" + NEW_LINE +
                     " - $.httpForwardValidateAction: is missing, but is required, if specifying action of type ForwardValidateAction" + NEW_LINE +
+                    " - $.httpLlmResponse: is missing, but is required, if specifying action of type LlmResponse" + NEW_LINE +
                     " - $.httpOverrideForwardedRequest: is missing, but is required, if specifying action of type OverrideForwardedRequest" + NEW_LINE +
                     " - $.httpResponse: is missing, but is required, if specifying action of type Response" + NEW_LINE +
                     " - $.httpResponseClassCallback: is missing, but is required, if specifying action of type ResponseClassCallback" + NEW_LINE +
@@ -1196,7 +1197,7 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                 "    \"invalidField\" : \"randomValue\"" + NEW_LINE +
                 "  }"),
             is(
-                "19 errors:" + NEW_LINE +
+                "20 errors:" + NEW_LINE +
                     " - $.binaryResponse: is missing but it is required" + NEW_LINE +
                     " - $.dnsResponse: is missing but it is required" + NEW_LINE +
                     " - $.grpcStreamResponse: is missing, but is required, if specifying action of type GrpcStreamResponse" + NEW_LINE +
@@ -1206,6 +1207,7 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                     " - $.httpForwardObjectCallback: is missing, but is required, if specifying action of type ForwardObjectCallback" + NEW_LINE +
                     " - $.httpForwardTemplate: is missing, but is required, if specifying action of type ForwardTemplate" + NEW_LINE +
                     " - $.httpForwardValidateAction: is missing, but is required, if specifying action of type ForwardValidateAction" + NEW_LINE +
+                    " - $.httpLlmResponse: is missing, but is required, if specifying action of type LlmResponse" + NEW_LINE +
                     " - $.httpOverrideForwardedRequest: is missing, but is required, if specifying action of type OverrideForwardedRequest" + NEW_LINE +
                     " - $.httpResponse: is missing, but is required, if specifying action of type Response" + NEW_LINE +
                     " - $.httpResponseClassCallback: is missing, but is required, if specifying action of type ResponseClassCallback" + NEW_LINE +
