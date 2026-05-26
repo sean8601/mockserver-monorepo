@@ -2185,11 +2185,16 @@ public class Configuration {
     /**
      * File system path or classpath location of custom Private Key for Certificate Authority for TLS, the private key must be a PKCS#8 or PKCS#1 PEM file and must match the certificateAuthorityCertificate
      * To convert a PKCS#1 (i.e. default for Bouncy Castle) to a PKCS#8 the following command can be used: openssl pkcs8 -topk8 -inform PEM -in private_key_PKCS_1.pem -out private_key_PKCS_8.pem -nocrypt
+     * <p>
+     * The path is not file-existence-checked here because dynamic CA generation
+     * ({@link #dynamicallyCreateCertificateAuthorityCertificate}) sets this to the
+     * destination path before the file is written. Typos in user-supplied paths are
+     * surfaced by {@link org.mockserver.socket.tls.CertificateConfigurationValidator}
+     * at TLS-init time.
      *
      * @param certificateAuthorityPrivateKey location of the PEM file containing the certificate authority private key
      */
     public Configuration certificateAuthorityPrivateKey(String certificateAuthorityPrivateKey) {
-        fileExists(certificateAuthorityPrivateKey);
         this.certificateAuthorityPrivateKey = certificateAuthorityPrivateKey;
         return this;
     }
@@ -2203,11 +2208,16 @@ public class Configuration {
 
     /**
      * File system path or classpath location of custom X.509 Certificate for Certificate Authority for TLS, the certificate must be a X509 PEM file and must match the certificateAuthorityPrivateKey
+     * <p>
+     * The path is not file-existence-checked here because dynamic CA generation
+     * ({@link #dynamicallyCreateCertificateAuthorityCertificate}) sets this to the
+     * destination path before the file is written. Typos in user-supplied paths are
+     * surfaced by {@link org.mockserver.socket.tls.CertificateConfigurationValidator}
+     * at TLS-init time.
      *
      * @param certificateAuthorityCertificate location of the PEM file containing the certificate authority X509 certificate
      */
     public Configuration certificateAuthorityCertificate(String certificateAuthorityCertificate) {
-        fileExists(certificateAuthorityCertificate);
         this.certificateAuthorityCertificate = certificateAuthorityCertificate;
         return this;
     }
@@ -2228,11 +2238,15 @@ public class Configuration {
      * To convert a PKCS#1 (i.e. default for Bouncy Castle) to a PKCS#8 the following command can be used: openssl pkcs8 -topk8 -inform PEM -in private_key_PKCS_1.pem -out private_key_PKCS_8.pem -nocrypt
      * <p>
      * This configuration will be ignored unless x509CertificatePath is also set.
+     * <p>
+     * The path is not file-existence-checked here because dynamic SSL certificate
+     * generation sets this to the destination path before the file is written. Typos
+     * in user-supplied paths are surfaced by
+     * {@link org.mockserver.socket.tls.CertificateConfigurationValidator} at TLS-init time.
      *
      * @param privateKeyPath location of the PKCS#8 PEM file containing the private key
      */
     public Configuration privateKeyPath(String privateKeyPath) {
-        fileExists(privateKeyPath);
         this.privateKeyPath = privateKeyPath;
         return this;
     }
@@ -2251,11 +2265,15 @@ public class Configuration {
      * The certificateAuthorityCertificate configuration must be the Certificate Authority for this certificate (i.e. able to valid its signature).
      * <p>
      * This configuration will be ignored unless privateKeyPath is also set.
+     * <p>
+     * The path is not file-existence-checked here because dynamic SSL certificate
+     * generation sets this to the destination path before the file is written. Typos
+     * in user-supplied paths are surfaced by
+     * {@link org.mockserver.socket.tls.CertificateConfigurationValidator} at TLS-init time.
      *
      * @param x509CertificatePath location of the PEM file containing the X509 certificate
      */
     public Configuration x509CertificatePath(String x509CertificatePath) {
-        fileExists(x509CertificatePath);
         this.x509CertificatePath = x509CertificatePath;
         return this;
     }

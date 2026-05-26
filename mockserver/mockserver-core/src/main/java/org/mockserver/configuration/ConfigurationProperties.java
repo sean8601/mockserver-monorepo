@@ -2052,6 +2052,11 @@ public class ConfigurationProperties {
      * @param certificateAuthorityPrivateKey location of the PEM file containing the certificate authority private key
      */
     public static void certificateAuthorityPrivateKey(String certificateAuthorityPrivateKey) {
+        // Static setter validates eagerly because the value is expected to come from
+        // user-supplied configuration (system property, env var, or programmatic call).
+        // The instance setter on Configuration intentionally does NOT validate, since
+        // BCKeyAndCertificateFactory uses it to store the destination path before the
+        // dynamic CA file is written.
         fileExists(certificateAuthorityPrivateKey);
         setProperty(MOCKSERVER_CERTIFICATE_AUTHORITY_PRIVATE_KEY, certificateAuthorityPrivateKey);
     }
@@ -2066,6 +2071,8 @@ public class ConfigurationProperties {
      * @param certificateAuthorityCertificate location of the PEM file containing the certificate authority X509 certificate
      */
     public static void certificateAuthorityCertificate(String certificateAuthorityCertificate) {
+        // See the comment on certificateAuthorityPrivateKey above for the rationale on
+        // why the static setter validates and the matching instance setter does not.
         fileExists(certificateAuthorityCertificate);
         setProperty(MOCKSERVER_CERTIFICATE_AUTHORITY_X509_CERTIFICATE, certificateAuthorityCertificate);
     }
@@ -2087,6 +2094,8 @@ public class ConfigurationProperties {
      * @param privateKeyPath location of the PKCS#8 PEM file containing the private key
      */
     public static void privateKeyPath(String privateKeyPath) {
+        // See the comment on certificateAuthorityPrivateKey above — instance setter is
+        // intentionally lenient because dynamic SSL generation pre-stores the destination.
         fileExists(privateKeyPath);
         setProperty(MOCKSERVER_TLS_PRIVATE_KEY_PATH, privateKeyPath);
     }
@@ -2107,6 +2116,8 @@ public class ConfigurationProperties {
      * @param x509CertificatePath location of the PEM file containing the X509 certificate
      */
     public static void x509CertificatePath(String x509CertificatePath) {
+        // See the comment on certificateAuthorityPrivateKey above — instance setter is
+        // intentionally lenient because dynamic SSL generation pre-stores the destination.
         fileExists(x509CertificatePath);
         setProperty(MOCKSERVER_TLS_X509_CERTIFICATE_PATH, x509CertificatePath);
     }

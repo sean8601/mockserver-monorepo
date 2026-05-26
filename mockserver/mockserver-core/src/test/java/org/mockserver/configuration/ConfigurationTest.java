@@ -22,7 +22,6 @@ import java.util.Set;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.anyOf;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertThrows;
 import static org.mockserver.configuration.ConfigurationProperties.logLevel;
@@ -2519,13 +2518,20 @@ public class ConfigurationTest {
         }
     }
 
-    @Test
-    public void certificateAuthorityPrivateKeySetterValidatesFileExists() {
-        String missing = "/does/not/exist/ca-key.pem";
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> configuration.certificateAuthorityPrivateKey(missing));
-        assertThat(ex.getMessage(), containsString(missing));
-        assertThat(ex.getMessage(), containsString("does not exist or is not accessible"));
+    // Note: the 4 TLS-path fluent setters (certificateAuthorityPrivateKey,
+    // certificateAuthorityCertificate, privateKeyPath, x509CertificatePath) intentionally
+    // do NOT file-existence-check at setter time, because BCKeyAndCertificateFactory
+    // sets these to the destination path BEFORE the dynamic CA / SSL files are written.
+    // User typos are caught by CertificateConfigurationValidator at TLS-init time.
 
+    @Test
+    public void certificateAuthorityPrivateKeySetterStoresAnyValue() {
+        // dynamic-generation paths may not exist yet — must be accepted without throwing
+        String pending = "/does/not/exist/yet/ca-key.pem";
+        configuration.certificateAuthorityPrivateKey(pending);
+        assertThat(configuration.certificateAuthorityPrivateKey(), equalTo(pending));
+
+        // null and "" must also be tolerated (matches the static-setter contract)
         configuration.certificateAuthorityPrivateKey(null);
         configuration.certificateAuthorityPrivateKey("");
 
@@ -2535,11 +2541,10 @@ public class ConfigurationTest {
     }
 
     @Test
-    public void certificateAuthorityCertificateSetterValidatesFileExists() {
-        String missing = "/does/not/exist/ca.pem";
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> configuration.certificateAuthorityCertificate(missing));
-        assertThat(ex.getMessage(), containsString(missing));
-        assertThat(ex.getMessage(), containsString("does not exist or is not accessible"));
+    public void certificateAuthorityCertificateSetterStoresAnyValue() {
+        String pending = "/does/not/exist/yet/ca.pem";
+        configuration.certificateAuthorityCertificate(pending);
+        assertThat(configuration.certificateAuthorityCertificate(), equalTo(pending));
 
         configuration.certificateAuthorityCertificate(null);
         configuration.certificateAuthorityCertificate("");
@@ -2550,11 +2555,10 @@ public class ConfigurationTest {
     }
 
     @Test
-    public void privateKeyPathSetterValidatesFileExists() {
-        String missing = "/does/not/exist/private-key.pem";
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> configuration.privateKeyPath(missing));
-        assertThat(ex.getMessage(), containsString(missing));
-        assertThat(ex.getMessage(), containsString("does not exist or is not accessible"));
+    public void privateKeyPathSetterStoresAnyValue() {
+        String pending = "/does/not/exist/yet/private-key.pem";
+        configuration.privateKeyPath(pending);
+        assertThat(configuration.privateKeyPath(), equalTo(pending));
 
         configuration.privateKeyPath(null);
         configuration.privateKeyPath("");
@@ -2565,11 +2569,10 @@ public class ConfigurationTest {
     }
 
     @Test
-    public void x509CertificatePathSetterValidatesFileExists() {
-        String missing = "/does/not/exist/cert.pem";
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> configuration.x509CertificatePath(missing));
-        assertThat(ex.getMessage(), containsString(missing));
-        assertThat(ex.getMessage(), containsString("does not exist or is not accessible"));
+    public void x509CertificatePathSetterStoresAnyValue() {
+        String pending = "/does/not/exist/yet/cert.pem";
+        configuration.x509CertificatePath(pending);
+        assertThat(configuration.x509CertificatePath(), equalTo(pending));
 
         configuration.x509CertificatePath(null);
         configuration.x509CertificatePath("");
