@@ -5,12 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.llm.JsonEscape;
+import org.mockserver.llm.ParsedConversation;
+import org.mockserver.llm.ParsedMessage;
 import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.StreamingPhysicsExpander;
 import org.mockserver.model.*;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockserver.model.HttpResponse.response;
@@ -190,6 +195,124 @@ public class AnthropicCodec implements ProviderCodec {
 
         // Apply streaming physics
         return StreamingPhysicsExpander.applyPhysics(events, physics);
+    }
+
+    @Override
+    public ParsedConversation decode(HttpRequest request) {
+        try {
+            String body = request != null ? request.getBodyAsString() : null;
+            if (body == null || body.isEmpty()) {
+                return ParsedConversation.empty();
+            }
+            JsonNode root = OBJECT_MAPPER.readTree(body);
+            if (root == null || !root.isObject()) {
+                return ParsedConversation.empty();
+            }
+            JsonNode messagesNode = root.get("messages");
+            if (messagesNode == null || !messagesNode.isArray()) {
+                return ParsedConversation.empty();
+            }
+
+            List<ParsedMessage> parsed = new ArrayList<>();
+            for (JsonNode msgNode : messagesNode) {
+                String rawRole = msgNode.has("role") ? msgNode.get("role").asText("") : "";
+                JsonNode contentNode = msgNode.get("content");
+
+                String textContent = "";
+                List<ToolUse> toolCalls = new ArrayList<>();
+                Map<String, String> toolResults = new LinkedHashMap<>();
+                boolean hasToolResult = false;
+
+                if (contentNode != null) {
+                    if (contentNode.isTextual()) {
+                        textContent = contentNode.asText("");
+                    } else if (contentNode.isArray()) {
+                        StringBuilder textBuilder = new StringBuilder();
+                        for (JsonNode block : contentNode) {
+                            String blockType = block.has("type") ? block.get("type").asText("") : "";
+                            if ("text".equals(blockType)) {
+                                String text = block.has("text") ? block.get("text").asText("") : "";
+                                textBuilder.append(text);
+                            } else if ("tool_use".equals(blockType)) {
+                                String toolId = block.has("id") ? block.get("id").asText("") : null;
+                                String name = block.has("name") ? block.get("name").asText("") : "";
+                                String inputStr = "";
+                                if (block.has("input")) {
+                                    JsonNode inputNode = block.get("input");
+                                    if (inputNode.isTextual()) {
+                                        inputStr = inputNode.asText("");
+                                    } else {
+                                        inputStr = inputNode.toString();
+                                    }
+                                }
+                                ToolUse tu = ToolUse.toolUse(name).withArguments(inputStr);
+                                if (toolId != null && !toolId.isEmpty()) {
+                                    tu.withId(toolId);
+                                }
+                                toolCalls.add(tu);
+                            } else if ("tool_result".equals(blockType)) {
+                                hasToolResult = true;
+                                String toolUseId = block.has("tool_use_id") ? block.get("tool_use_id").asText("") : "";
+                                String resultContent = "";
+                                if (block.has("content")) {
+                                    JsonNode resultContentNode = block.get("content");
+                                    if (resultContentNode.isTextual()) {
+                                        resultContent = resultContentNode.asText("");
+                                    } else if (resultContentNode.isArray()) {
+                                        StringBuilder resultBuilder = new StringBuilder();
+                                        for (JsonNode part : resultContentNode) {
+                                            if ("text".equals(part.path("type").asText(""))) {
+                                                resultBuilder.append(part.path("text").asText(""));
+                                            }
+                                        }
+                                        resultContent = resultBuilder.toString();
+                                    } else {
+                                        resultContent = resultContentNode.toString();
+                                    }
+                                }
+                                toolResults.put(toolUseId, resultContent);
+                            }
+                        }
+                        textContent = textBuilder.toString();
+                    }
+                }
+
+                // Determine role: if content has tool_result blocks, role is TOOL for matcher purposes
+                ParsedMessage.Role role;
+                if (hasToolResult) {
+                    role = ParsedMessage.Role.TOOL;
+                } else {
+                    role = mapRole(rawRole);
+                }
+
+                parsed.add(new ParsedMessage(
+                    role,
+                    textContent,
+                    toolCalls.isEmpty() ? null : toolCalls,
+                    toolResults.isEmpty() ? null : toolResults
+                ));
+            }
+
+            return ParsedConversation.of(parsed);
+        } catch (Exception e) {
+            return ParsedConversation.empty();
+        }
+    }
+
+    private static ParsedMessage.Role mapRole(String rawRole) {
+        if (rawRole == null) {
+            return ParsedMessage.Role.USER;
+        }
+        switch (rawRole.toLowerCase()) {
+            case "assistant":
+                return ParsedMessage.Role.ASSISTANT;
+            case "user":
+                return ParsedMessage.Role.USER;
+            case "tool":
+                return ParsedMessage.Role.TOOL;
+            default:
+                return ParsedMessage.Role.USER;
+        }
     }
 
     @Override

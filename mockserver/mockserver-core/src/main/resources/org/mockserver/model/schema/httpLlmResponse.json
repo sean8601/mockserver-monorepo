@@ -34,6 +34,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "id": {
+                "type": "string"
+              },
               "name": {
                 "type": "string"
               },
@@ -99,6 +102,34 @@
         },
         "seed": {
           "type": "integer"
+        }
+      }
+    },
+    "conversationPredicates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "turnIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latestMessageContains": {
+          "type": "string"
+        },
+        "latestMessageMatches": {
+          "type": "string"
+        },
+        "latestMessageRole": {
+          "type": "string",
+          "enum": [
+            "USER",
+            "ASSISTANT",
+            "TOOL",
+            "SYSTEM"
+          ]
+        },
+        "containsToolResultFor": {
+          "type": "string"
         }
       }
     },

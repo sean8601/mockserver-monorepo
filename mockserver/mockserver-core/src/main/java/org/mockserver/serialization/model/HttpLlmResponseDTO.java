@@ -2,6 +2,7 @@ package org.mockserver.serialization.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.mockserver.model.*;
+import org.mockserver.model.ConversationPredicates;
 
 public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString implements DTO<HttpLlmResponse> {
     private DelayDTO delay;
@@ -9,6 +10,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
     private String model;
     private Completion completion;
     private EmbeddingResponse embedding;
+    private ConversationPredicates conversationPredicates;
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean primary;
 
@@ -21,6 +23,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             model = httpLlmResponse.getModel();
             completion = httpLlmResponse.getCompletion();
             embedding = httpLlmResponse.getEmbedding();
+            conversationPredicates = httpLlmResponse.getConversationPredicates();
             primary = httpLlmResponse.isPrimary();
         }
     }
@@ -35,6 +38,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             .withModel(model)
             .withCompletion(completion)
             .withEmbedding(embedding)
+            .withConversationPredicates(conversationPredicates)
             .withPrimary(primary);
     }
 
@@ -80,6 +84,15 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
 
     public HttpLlmResponseDTO setEmbedding(EmbeddingResponse embedding) {
         this.embedding = embedding;
+        return this;
+    }
+
+    public ConversationPredicates getConversationPredicates() {
+        return conversationPredicates;
+    }
+
+    public HttpLlmResponseDTO setConversationPredicates(ConversationPredicates conversationPredicates) {
+        this.conversationPredicates = conversationPredicates;
         return this;
     }
 

@@ -1,9 +1,12 @@
 package org.mockserver.llm.codec;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.llm.JsonEscape;
+import org.mockserver.llm.ParsedConversation;
+import org.mockserver.llm.ParsedMessage;
 import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.StreamingPhysicsExpander;
 import org.mockserver.model.*;
@@ -13,7 +16,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
@@ -149,6 +155,112 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
         events.add(sseEvent().withData("[DONE]"));
 
         return StreamingPhysicsExpander.applyPhysics(events, physics);
+    }
+
+    @Override
+    public ParsedConversation decode(HttpRequest request) {
+        try {
+            String body = request != null ? request.getBodyAsString() : null;
+            if (body == null || body.isEmpty()) {
+                return ParsedConversation.empty();
+            }
+            JsonNode root = OBJECT_MAPPER.readTree(body);
+            if (root == null || !root.isObject()) {
+                return ParsedConversation.empty();
+            }
+            JsonNode messagesNode = root.get("messages");
+            if (messagesNode == null || !messagesNode.isArray()) {
+                return ParsedConversation.empty();
+            }
+
+            List<ParsedMessage> parsed = new ArrayList<>();
+            for (JsonNode msgNode : messagesNode) {
+                String rawRole = msgNode.has("role") ? msgNode.get("role").asText("") : "";
+                JsonNode contentNode = msgNode.get("content");
+
+                String textContent = "";
+                List<ToolUse> toolCalls = new ArrayList<>();
+                Map<String, String> toolResults = new LinkedHashMap<>();
+
+                // Parse text content
+                if (contentNode != null) {
+                    if (contentNode.isTextual()) {
+                        textContent = contentNode.asText("");
+                    } else if (contentNode.isArray()) {
+                        StringBuilder textBuilder = new StringBuilder();
+                        for (JsonNode part : contentNode) {
+                            String partType = part.has("type") ? part.get("type").asText("") : "";
+                            if ("text".equals(partType)) {
+                                String text = part.has("text") ? part.get("text").asText("") : "";
+                                textBuilder.append(text);
+                            }
+                        }
+                        textContent = textBuilder.toString();
+                    } else if (contentNode.isNull()) {
+                        textContent = "";
+                    }
+                }
+
+                // Parse tool_calls on assistant messages
+                JsonNode toolCallsNode = msgNode.get("tool_calls");
+                if (toolCallsNode != null && toolCallsNode.isArray()) {
+                    for (JsonNode tcNode : toolCallsNode) {
+                        String callId = tcNode.has("id") ? tcNode.get("id").asText("") : null;
+                        JsonNode functionNode = tcNode.get("function");
+                        if (functionNode != null) {
+                            String name = functionNode.has("name") ? functionNode.get("name").asText("") : "";
+                            String arguments = functionNode.has("arguments") ? functionNode.get("arguments").asText("") : "{}";
+                            ToolUse tu = ToolUse.toolUse(name).withArguments(arguments);
+                            if (callId != null && !callId.isEmpty()) {
+                                tu.withId(callId);
+                            }
+                            toolCalls.add(tu);
+                        }
+                    }
+                }
+
+                // Parse tool role messages with tool_call_id
+                if ("tool".equalsIgnoreCase(rawRole)) {
+                    String toolCallId = msgNode.has("tool_call_id") ? msgNode.get("tool_call_id").asText("") : "";
+                    String toolContent = textContent;
+                    if (!toolCallId.isEmpty()) {
+                        toolResults.put(toolCallId, toolContent);
+                    }
+                }
+
+                // Map role
+                ParsedMessage.Role role = mapOpenAiRole(rawRole);
+
+                parsed.add(new ParsedMessage(
+                    role,
+                    textContent,
+                    toolCalls.isEmpty() ? null : toolCalls,
+                    toolResults.isEmpty() ? null : toolResults
+                ));
+            }
+
+            return ParsedConversation.of(parsed);
+        } catch (Exception e) {
+            return ParsedConversation.empty();
+        }
+    }
+
+    private static ParsedMessage.Role mapOpenAiRole(String rawRole) {
+        if (rawRole == null) {
+            return ParsedMessage.Role.USER;
+        }
+        switch (rawRole.toLowerCase()) {
+            case "assistant":
+                return ParsedMessage.Role.ASSISTANT;
+            case "user":
+                return ParsedMessage.Role.USER;
+            case "tool":
+                return ParsedMessage.Role.TOOL;
+            case "system":
+                return ParsedMessage.Role.SYSTEM;
+            default:
+                return ParsedMessage.Role.USER;
+        }
     }
 
     @Override

@@ -29,6 +29,9 @@ public class HttpLlmResponseDTOSerializer extends StdSerializer<HttpLlmResponseD
         if (httpLlmResponseDTO.getEmbedding() != null) {
             jgen.writeObjectField("embedding", httpLlmResponseDTO.getEmbedding());
         }
+        if (httpLlmResponseDTO.getConversationPredicates() != null) {
+            jgen.writeObjectField("conversationPredicates", httpLlmResponseDTO.getConversationPredicates());
+        }
         if (httpLlmResponseDTO.getDelay() != null) {
             jgen.writeObjectField("delay", httpLlmResponseDTO.getDelay());
         }

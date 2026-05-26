@@ -11,7 +11,8 @@ public class ParsedMessage {
     public enum Role {
         USER,
         ASSISTANT,
-        TOOL
+        TOOL,
+        SYSTEM
     }
 
     private final Role role;

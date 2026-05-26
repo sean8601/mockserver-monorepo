@@ -1,5 +1,6 @@
 package org.mockserver.client;
 
+import org.mockserver.llm.IsolationSource;
 import org.mockserver.model.*;
 
 import java.util.concurrent.TimeUnit;
@@ -79,5 +80,33 @@ public final class Llm {
      */
     public static EmbeddingResponse embedding() {
         return EmbeddingResponse.embedding();
+    }
+
+    /**
+     * Creates an IsolationSource that reads the isolation key from an HTTP header.
+     */
+    public static IsolationSource header(String name) {
+        return IsolationSource.header(name);
+    }
+
+    /**
+     * Creates an IsolationSource that reads the isolation key from a query parameter.
+     */
+    public static IsolationSource queryParameter(String name) {
+        return IsolationSource.queryParameter(name);
+    }
+
+    /**
+     * Creates an IsolationSource that reads the isolation key from a cookie.
+     */
+    public static IsolationSource cookie(String name) {
+        return IsolationSource.cookie(name);
+    }
+
+    /**
+     * Creates a new LlmConversationBuilder.
+     */
+    public static LlmConversationBuilder conversation() {
+        return LlmConversationBuilder.conversation();
     }
 }

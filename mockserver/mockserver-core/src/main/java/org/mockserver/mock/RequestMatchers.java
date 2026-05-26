@@ -6,7 +6,10 @@ import org.mockserver.collections.CircularPriorityQueue;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.llm.IsolationSource;
+import org.mockserver.llm.LlmScenarioNames;
 import org.mockserver.matchers.HttpRequestMatcher;
+import org.mockserver.matchers.LlmConversationMatcher;
 import org.mockserver.matchers.MatchDifference;
 import org.mockserver.matchers.MatcherBuilder;
 import org.mockserver.metrics.Metrics;
@@ -252,8 +255,25 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             MatchDifference matchDifference = new MatchDifference(configuration.detailedMatchFailures(), requestDefinition);
             if (httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                 Expectation expectation = httpRequestMatcher.getExpectation();
+
+                // Check LLM conversation matcher if present
+                HttpLlmResponse llmResponse = expectation.getHttpLlmResponse();
+                if (llmResponse != null) {
+                    LlmConversationMatcher convMatcher = llmResponse.getConversationMatcher();
+                    if (convMatcher != null && convMatcher.hasPredicates()) {
+                        if (requestDefinition instanceof HttpRequest) {
+                            if (!convMatcher.matches((HttpRequest) requestDefinition)) {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                // Extract isolation key for scenario state management
+                String isolationKey = extractIsolationKey(expectation, requestDefinition);
+
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() != null) {
-                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), isolationKey, expectation.getScenarioState(), expectation.getNewScenarioState())) {
                         continue;
                     }
                 }
@@ -266,7 +286,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     continue;
                 }
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
-                    scenarioManager.transitionState(expectation.getScenarioName(), expectation.getNewScenarioState());
+                    scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
                 boolean remainingMatchesDecremented = expectation.getTimes() != null && !expectation.getTimes().isUnlimited();
                 if (remainingMatchesDecremented) {
@@ -327,8 +347,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 continue;
             }
             if (httpRequestMatcher.matches(null, headersOnlyRequest)) {
+                String isolationKey = extractIsolationKey(expectation, headersOnlyRequest);
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() != null) {
-                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), isolationKey, expectation.getScenarioState(), expectation.getNewScenarioState())) {
                         continue;
                     }
                 }
@@ -341,7 +362,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     continue;
                 }
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
-                    scenarioManager.transitionState(expectation.getScenarioName(), expectation.getNewScenarioState());
+                    scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
                 if (expectation.getTimes() != null && !expectation.getTimes().isUnlimited()) {
                     notifyListeners(this, Cause.API);
@@ -567,5 +588,48 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
     private Stream<HttpRequestMatcher> getHttpRequestMatchersCopy() {
         return httpRequestMatchers.stream();
+    }
+
+    /**
+     * Extract the isolation key from the request based on the expectation's scenario name.
+     * Returns null if no isolation is configured (legacy single-key behaviour).
+     */
+    private String extractIsolationKey(Expectation expectation, RequestDefinition requestDefinition) {
+        String scenarioName = expectation.getScenarioName();
+        if (scenarioName == null) {
+            return null;
+        }
+        IsolationSource isoSource = LlmScenarioNames.decodeIsolationSource(scenarioName);
+        if (isoSource == null) {
+            return null;
+        }
+        if (!(requestDefinition instanceof HttpRequest)) {
+            return null;
+        }
+        HttpRequest request = (HttpRequest) requestDefinition;
+        String value = "";
+        switch (isoSource.getKind()) {
+            case HEADER:
+                value = request.getFirstHeader(isoSource.getName());
+                break;
+            case QUERY_PARAMETER:
+                value = request.getFirstQueryStringParameter(isoSource.getName());
+                break;
+            case COOKIE:
+                if (request.getCookies() != null) {
+                    for (Cookie cookie : request.getCookieList()) {
+                        if (isoSource.getName().equals(cookie.getName().getValue())) {
+                            value = cookie.getValue().getValue();
+                            break;
+                        }
+                    }
+                }
+                break;
+        }
+        // When the configured attribute is absent, fall back to shared key (null)
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        return value;
     }
 }

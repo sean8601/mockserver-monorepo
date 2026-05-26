@@ -9,8 +9,12 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsNull.notNullValue;
 import static org.mockserver.character.Character.NEW_LINE;
+import org.mockserver.llm.ParsedMessage;
+import org.mockserver.model.ConversationPredicates;
+
 import static org.mockserver.mock.Expectation.when;
 import static org.mockserver.model.Completion.completion;
+import static org.mockserver.model.ConversationPredicates.conversationPredicates;
 import static org.mockserver.model.EmbeddingResponse.embedding;
 import static org.mockserver.model.HttpLlmResponse.llmResponse;
 import static org.mockserver.model.HttpRequest.request;
@@ -141,6 +145,75 @@ public class ExpectationLlmRoundTripTest {
         assertThat(result.getHttpLlmResponse().getModel(), is("claude-sonnet-4-20250514"));
         assertThat(result.getHttpLlmResponse().getCompletion().getText(), is("Hello"));
         assertThat(result.getHttpLlmResponse().getCompletion().getStopReason(), is("end_turn"));
+    }
+
+    @Test
+    public void shouldRoundTripConversationPredicates() {
+        // given
+        Expectation original = when(request().withPath("/v1/messages"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.ANTHROPIC)
+                    .withModel("claude-sonnet-4-20250514")
+                    .withCompletion(completion().withText("Matched").withStopReason("end_turn"))
+                    .withConversationPredicates(
+                        conversationPredicates()
+                            .withTurnIndex(1)
+                            .withLatestMessageContains("hello")
+                            .withLatestMessageMatches("\\d+")
+                            .withLatestMessageRole(ParsedMessage.Role.USER)
+                            .withContainsToolResultFor("search")
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then
+        assertThat(deserialized, is(notNullValue()));
+        assertThat(deserialized.length, is(1));
+        Expectation result = deserialized[0];
+        assertThat(result.getHttpLlmResponse(), is(notNullValue()));
+
+        ConversationPredicates preds = result.getHttpLlmResponse().getConversationPredicates();
+        assertThat(preds, is(notNullValue()));
+        assertThat(preds.getTurnIndex(), is(1));
+        assertThat(preds.getLatestMessageContains(), is("hello"));
+        assertThat(preds.getLatestMessageMatches(), is("\\d+"));
+        assertThat(preds.getLatestMessageRole(), is(ParsedMessage.Role.USER));
+        assertThat(preds.getContainsToolResultFor(), is("search"));
+
+        // Verify the lazy-reconstructed matcher works
+        assertThat(result.getHttpLlmResponse().getConversationMatcher(), is(notNullValue()));
+        assertThat(result.getHttpLlmResponse().getConversationMatcher().getTurnIndex(), is(1));
+        assertThat(result.getHttpLlmResponse().getConversationMatcher().getProvider(), is(Provider.ANTHROPIC));
+    }
+
+    @Test
+    public void shouldRoundTripConversationPredicatesPartial() {
+        // given - only some predicates set
+        Expectation original = when(request().withPath("/v1/messages"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withCompletion(completion().withText("Result"))
+                    .withConversationPredicates(
+                        conversationPredicates()
+                            .withContainsToolResultFor("get_weather")
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then
+        assertThat(deserialized.length, is(1));
+        ConversationPredicates preds = deserialized[0].getHttpLlmResponse().getConversationPredicates();
+        assertThat(preds, is(notNullValue()));
+        assertThat(preds.getContainsToolResultFor(), is("get_weather"));
+        assertThat(preds.getTurnIndex(), is(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
