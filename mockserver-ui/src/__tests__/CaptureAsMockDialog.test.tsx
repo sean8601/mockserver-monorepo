@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
 import CaptureAsMockDialog from '../components/CaptureAsMockDialog';
+import { _clearMcpSessionCache } from '../lib/mcpClient';
 import type { AnthropicParsed, OpenAiParsed } from '../lib/llmTraffic';
 
 function renderDialog(overrides: Partial<Parameters<typeof CaptureAsMockDialog>[0]> = {}) {
@@ -39,6 +40,7 @@ function renderDialog(overrides: Partial<Parameters<typeof CaptureAsMockDialog>[
 describe('CaptureAsMockDialog', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    _clearMcpSessionCache();
   });
 
   it('renders dialog title', () => {
@@ -143,9 +145,12 @@ describe('CaptureAsMockDialog', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
 
-    // Mock successful MCP response
+    // Same mock response for initialize + notifications/initialized + tools/call.
+    // The MCP client now performs a 3-call handshake; the test cares only about
+    // the final tools/call envelope.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'test-session' },
       json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
@@ -159,12 +164,11 @@ describe('CaptureAsMockDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
-    // Wait for the async operation
-    expect(fetch).toHaveBeenCalledOnce();
-    const fetchCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    expect(fetchCall[0]).toBe('http://localhost:1080/mockserver/mcp');
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const toolCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[2]!;
+    expect(toolCall[0]).toBe('http://localhost:1080/mockserver/mcp');
 
-    const body = JSON.parse(fetchCall[1].body);
+    const body = JSON.parse(toolCall[1].body);
     expect(body.params.name).toBe('mock_llm_completion');
     expect(body.params.arguments.provider).toBe('ANTHROPIC');
   });

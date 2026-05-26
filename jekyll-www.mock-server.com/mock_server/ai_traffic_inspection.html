@@ -8,7 +8,7 @@ subsection: true
 sitemap:
   priority: 0.8
   changefreq: 'monthly'
-  lastmod: 2026-05-21T00:00:00+00:00
+  lastmod: 2026-05-27T00:00:00+00:00
 ---
 
 <p>When you use an AI coding agent such as Claude Code or OpenCode, or an AI library such as LangChain or LangGraph, you often have no visibility into the HTTPS traffic it sends to LLM APIs (Anthropic, OpenAI, etc.) and MCP servers. Running MockServer as an HTTPS proxy gives you a complete record of every request and response — including model selection, token counts, tool calls, and streamed completions — with no changes to application code.</p>
@@ -129,17 +129,25 @@ client = openai.OpenAI(
 
 <h2>4. View the Captured Traffic</h2>
 
-<h3>Dashboard Traffic Inspector</h3>
+<h3>Dashboard Traffic View</h3>
 
 <p>Open the MockServer dashboard in a browser:</p>
 
 <pre class="prettyprint code"><code class="code">http://localhost:1080/mockserver/dashboard</code></pre>
 
-<p>The dashboard has two views, switched by the <strong>Dashboard / Traffic</strong> toggle in the top navigation bar. Click <strong>Traffic</strong> to open the Traffic Inspector.</p>
+<p>Click <strong>Traffic</strong> in the navigation bar to open the Traffic view. Unlike the standard Dashboard panels, the Traffic view shows <em>all</em> captured requests in one list — both requests that matched a mock expectation and requests that were forwarded to a real upstream.</p>
 
 <img class="ui_image" src="/images/MockServerTrafficInspector.png" alt="MockServer Traffic Inspector">
 
-<p>The Traffic Inspector shows a master list of every proxied request/response pair. Click any row to open a detail pane on the right. The detail pane adapts to the type of traffic detected:</p>
+<p>The Traffic view shows a master list of every captured request/response pair. Click any row to open a detail pane on the right.</p>
+
+<h4>LLM Usage Strip</h4>
+
+<p>For any LLM request, a thin strip appears above the detail tabs showing the LLM provider, model name, token counts (input and output), estimated cost, and stop reason. This lets you check usage figures without switching to a different tab.</p>
+
+<h4>Detail Tabs by Traffic Kind</h4>
+
+<p>The detail pane adapts to the type of traffic detected:</p>
 
 <table class="table">
     <thead>
@@ -147,11 +155,12 @@ client = openai.OpenAI(
     </thead>
     <tbody>
         <tr>
-            <td><strong>Anthropic Messages API</strong> (<code class="code inline">/v1/messages</code>) or <strong>OpenAI Chat Completions</strong> (<code class="code inline">/v1/chat/completions</code>)</td>
+            <td><strong>Anthropic, OpenAI, OpenAI Responses, Gemini, or Ollama</strong></td>
             <td>
-                <strong>Messages</strong> — the request body: system prompt, messages array, and tools definition<br>
+                <strong>Messages</strong> — the request body: system prompt, messages/contents, and tools definition<br>
                 <strong>Conversation</strong> — a chat-transcript view (see below)<br>
-                <strong>SSE Timeline</strong> — decoded Server-Sent Events for streamed responses, one event per row with elapsed time<br>
+                <strong>Scripted Turns</strong> — shown when scripted conversation expectations are active<br>
+                <strong>SSE Timeline</strong> — decoded Server-Sent Events for streamed responses (shown when stream data is present)<br>
                 <strong>Raw JSON</strong> — the raw request and response JSON
             </td>
         </tr>
@@ -171,13 +180,12 @@ client = openai.OpenAI(
 
 <h4>Conversation View</h4>
 
-<p>The <strong>Conversation</strong> tab renders LLM exchanges as a chat transcript, making it easy to read multi-turn interactions at a glance:</p>
+<p>The <strong>Conversation</strong> tab renders LLM exchanges as a chat transcript, making it easy to read multi-turn interactions at a glance. The Conversation tab is available for all five supported LLM providers: Anthropic, OpenAI, OpenAI Responses API, Gemini, and Ollama.</p>
 
 <ul>
     <li>User messages appear left-aligned; assistant messages appear right-aligned, styled as WhatsApp-style chat bubbles</li>
     <li>System prompts appear as a distinct banner above the conversation</li>
     <li>Tool calls (requests to use a tool) and tool results (the tool's output) each appear as their own labelled bubbles</li>
-    <li>A strip at the bottom of the pane shows the model name, token counts (input and output), and the stop reason</li>
 </ul>
 
 <h4>SSE Timeline</h4>
@@ -186,9 +194,17 @@ client = openai.OpenAI(
 
 <p>The Proxied Requests panel in the standard Dashboard view also shows all forwarded request/response pairs with full JSON body inspection.</p>
 
-<h3>Download HAR</h3>
+<h3>Sessions View</h3>
 
-<p>Click the <strong>Download HAR</strong> button in the top navigation bar of the dashboard to export all captured traffic as a HAR (HTTP Archive) file. The HAR file can be opened in browser DevTools, Charles Proxy, or any HAR analysis tool. Streamed LLM responses are included as readable text in the exported file.</p>
+<p>Click <strong>Sessions</strong> in the navigation bar to see captured LLM traffic grouped into conversation swim-lanes. Each swim-lane is labelled with the scenario name and isolation value (for example, <code>weather-agent / agent-A</code>) and shows chips for each captured turn. Click a chip to open the Conversation view for that turn.</p>
+
+<p>An <strong>Unscoped requests</strong> strip at the bottom collects requests that did not match any isolated session. The Sessions view requires that LLM conversation expectations were set up with a per-session isolation key — see <a href="/mock_server/ai_mocking.html">LLM Conversation Mocking</a> for details.</p>
+
+<h3>Download HAR and Export</h3>
+
+<p>To export captured traffic, open the <strong>Library</strong> view and click the <strong>Export</strong> sub-tab. Choose a format (HAR, active expectations JSON, or recorded requests JSON) and click <strong>Download</strong>. The HAR format is compatible with browser DevTools and HAR analysis tools. Streamed LLM responses are included as readable text in the exported file.</p>
+
+<p>The same export is also available via the <a href="/mock_server/mockserver_clients.html">retrieve API</a>.</p>
 
 <h3>Retrieve API</h3>
 

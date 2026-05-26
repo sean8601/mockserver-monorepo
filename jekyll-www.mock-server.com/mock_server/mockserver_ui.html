@@ -7,25 +7,24 @@ subsection: true
 sitemap:
   priority: 0.7
   changefreq: 'monthly'
-  lastmod: 2026-05-05T12:00:00+01:00
+  lastmod: 2026-05-27T00:00:00+01:00
 ---
 
-<p>MockServer has a real-time dashboard that displays the internal state of MockServer, including:</p>
+<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Five views are available from the navigation bar at the top of the page:</p>
 
 <ul>
-    <li><strong><a href="#ui_logs_section">log messages</a></strong> — all events recorded by MockServer, grouped by request</li>
-    <li><strong><a href="#ui_active_expectations_section">active expectations</a></strong> — currently registered expectations with matchers and actions</li>
-    <li><strong><a href="#ui_requests_received_section">received requests</a></strong> — all HTTP requests received by MockServer</li>
-    <li><strong><a href="#ui_proxied_requests_section">proxied requests</a></strong> — forwarded requests and the responses returned from destination servers</li>
+    <li><strong><a href="#ui_dashboard_section">Dashboard</a></strong> — four panels showing log messages, active expectations, received requests, and proxied requests</li>
+    <li><strong><a href="#ui_traffic_section">Traffic</a></strong> — every captured request in a master list, with a rich detail pane on the right for LLM and MCP traffic</li>
+    <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes</li>
+    <li><strong><a href="#ui_composer_section">Composer</a></strong> — create or edit expectations without writing any code</li>
+    <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files, compare captured runs, and export traffic</li>
 </ul>
 
-<p>The dashboard updates in real time via WebSocket — any changes to expectations, new requests, or log events appear automatically without refreshing the page.</p>
+<p>The dashboard connects to MockServer via WebSocket and updates in real time — any changes to expectations, new requests, or log events appear automatically without refreshing the page.</p>
 
 <p>The UI is available for all <a href="/mock_server/getting_started.html#start_mockserver">versions of MockServer</a> except the deployable WAR.</p>
 
 <img class="ui_image" src="/images/MockServerDashboard.png" alt="MockServer Dashboard">
-
-<p>The top navigation bar also contains a <strong>Dashboard / Traffic</strong> toggle that switches between the 4-panel Dashboard view and the <a href="#ui_traffic_inspector_section">Traffic Inspector</a> — a dedicated view for inspecting LLM and MCP traffic.</p>
 
 <a id="launch_ui" class="anchor" href="#launch_ui">&nbsp;</a>
 
@@ -47,11 +46,11 @@ sitemap:
 
 <p>To simplify debugging when multiple MockServer instances are created, if the <a href="/mock_server/debugging_issues.html#logging-levels">logLevel</a> is set to <span class="string_literal">DEBUG</span> and the <strong><a href="/mock_server/configuration_properties.html#button_configuration_launch_ui__debug">launchUIForLogLevelDebug</a></strong> configuration property is enabled (default: false), the <span class="this_value">ClientAndServer</span> constructor will automatically launch the UI.</p>
 
-<a id="ui_overview_section" class="anchor" href="#ui_overview_section">&nbsp;</a>
+<a id="ui_dashboard_section" class="anchor" href="#ui_dashboard_section">&nbsp;</a>
 
-<h2>Dashboard Overview</h2>
+<h2>Dashboard</h2>
 
-<p>The dashboard is a four-panel layout with a title bar at the top:</p>
+<p>The Dashboard view shows four panels in a 2&times;2 grid:</p>
 
 <table class="table">
     <thead>
@@ -62,10 +61,12 @@ sitemap:
         <tr><td><strong>Request Filter</strong></td><td>Collapsible filter panel — filter all panels by HTTP method, path, headers, query parameters, or cookies</td></tr>
         <tr><td><strong>Log Messages</strong> (top-left)</td><td>All log events, grouped by request correlation ID, with color-coded types</td></tr>
         <tr><td><strong>Active Expectations</strong> (top-right)</td><td>Currently registered expectations in priority order</td></tr>
-        <tr><td><strong>Received Requests</strong> (bottom-left)</td><td>All HTTP requests received, most recent first</td></tr>
+        <tr><td><strong>Received Requests</strong> (bottom-left)</td><td>All HTTP requests received, most recent first, with their matched responses</td></tr>
         <tr><td><strong>Proxied Requests</strong> (bottom-right)</td><td>Forwarded requests with their actual responses from destination servers</td></tr>
     </tbody>
 </table>
+
+<p>For LLM expectations and requests, a second row of chips shows the LLM provider, model name, turn position (e.g. "turn 2 of 3"), and isolation key. Expanding any row shows the full JSON, aligned with the expectation ID column.</p>
 
 <a id="ui_features_section" class="anchor" href="#ui_features_section">&nbsp;</a>
 
@@ -106,7 +107,7 @@ sitemap:
 
 <h3>Clear and Reset</h3>
 
-<p>Click the clear icon (broom) in the title bar to access three options:</p>
+<p>Click the clear icon in the title bar to access three options:</p>
 
 <ul>
     <li><strong>Clear server logs</strong> — removes all log messages while keeping expectations and request history</li>
@@ -118,7 +119,7 @@ sitemap:
 
 <h2>Request Filter</h2>
 
-<p>The Request Filter panel (toggled with <code>Esc</code> or by clicking the filter icon) lets you filter all four panels by request properties:</p>
+<p>The Request Filter panel (toggled with <code>Esc</code> or by clicking the filter icon) appears on the Dashboard, Traffic, and Sessions views. It filters all panels by request properties:</p>
 
 <ul>
     <li><strong>Method</strong> — HTTP method (GET, POST, PUT, DELETE, etc.)</li>
@@ -157,8 +158,6 @@ sitemap:
 
 <p>Related log events (e.g. request received → expectation matched → response sent) are grouped together by correlation ID and displayed with an orange left border. Click the expand button to see all related events within a group.</p>
 
-<p>Standalone log entries (e.g. INFO messages like certificate loading) are also collapsible — click to expand and see the full message. A grey summary is shown on the header line when collapsed.</p>
-
 <p>The <strong>because</strong> section in <code>EXPECTATION_NOT_MATCHED</code> entries can be expanded to show which properties matched and which did not, making it easy to debug why a request was not matched.</p>
 
 <a id="ui_active_expectations_section" class="anchor" href="#ui_active_expectations_section">&nbsp;</a>
@@ -171,9 +170,7 @@ sitemap:
 
 <h2>Received Requests</h2>
 
-<p>The Received Requests panel shows all HTTP requests received by MockServer in reverse chronological order (most recent first). Each request shows its method and path. Click to expand and see the full request details including headers, query parameters, and body.</p>
-
-<p>This includes requests that matched an expectation, requests that were proxied, and requests that received a default 404 response.</p>
+<p>The Received Requests panel shows all HTTP requests received by MockServer in reverse chronological order (most recent first). This includes requests that matched a mock expectation, requests that were proxied, and requests that received a default 404 response. Each item shows the method and path. Click to expand and see the full request details including headers, query parameters, and body, together with the response that MockServer returned.</p>
 
 <a id="ui_proxied_requests_section" class="anchor" href="#ui_proxied_requests_section">&nbsp;</a>
 
@@ -188,20 +185,24 @@ sitemap:
 
 <p>This is useful when using MockServer as a proxy to debug connectivity issues, inspect request/response pairs, or create expectations based on real traffic.</p>
 
-<a id="ui_traffic_inspector_section" class="anchor" href="#ui_traffic_inspector_section">&nbsp;</a>
+<a id="ui_traffic_section" class="anchor" href="#ui_traffic_section">&nbsp;</a>
 
-<h2>Traffic Inspector</h2>
+<h2>Traffic</h2>
 
-<p>The Traffic Inspector is a second dashboard view purpose-built for inspecting LLM and MCP traffic when MockServer is used as an <a href="/mock_server/ai_traffic_inspection.html">HTTPS observability proxy</a> in front of AI coding agents or AI libraries. Switch to it using the <strong>Dashboard / Traffic</strong> toggle in the top navigation bar.</p>
+<p>The Traffic view is purpose-built for inspecting captured request/response pairs. It covers <em>all</em> captured traffic in one place — both requests that matched a mock expectation and requests that were forwarded to a real upstream. Switch to it using the <strong>Traffic</strong> button in the navigation bar.</p>
 
 <img class="ui_image" src="/images/MockServerTrafficInspector.png" alt="MockServer Traffic Inspector">
 
-<p>The Traffic Inspector has two areas:</p>
+<p>The Traffic view has two areas:</p>
 
 <ul>
-    <li><strong>Master list</strong> (left) — one row per proxied request/response pair, showing timestamp, host, HTTP method and path, status code, and latency. For recognised LLM calls, the row also shows the model name and token counts.</li>
-    <li><strong>Detail pane</strong> (right) — shown when you click a row in the master list. The tabs available depend on the type of traffic detected.</li>
+    <li><strong>Master list</strong> (left) — one row per request, showing the provider kind (Anthropic, OpenAI, Gemini, Ollama, MCP, HTTP), HTTP method and path, status code, and — for LLM calls — the model name and token counts.</li>
+    <li><strong>Detail pane</strong> (right) — shown when you click a row in the master list.</li>
 </ul>
+
+<h3>LLM Usage Strip</h3>
+
+<p>For any LLM request, a thin strip appears above the detail tabs showing the provider, model name, token counts (input and output), estimated cost, and stop reason. This lets you see the key usage metrics at a glance without switching tabs.</p>
 
 <h3>Detail Tabs by Traffic Kind</h3>
 
@@ -211,23 +212,24 @@ sitemap:
     </thead>
     <tbody>
         <tr>
-            <td><strong>Anthropic Messages API</strong> or <strong>OpenAI Chat Completions</strong></td>
+            <td><strong>Anthropic, OpenAI, OpenAI Responses, Gemini, or Ollama</strong></td>
             <td>
-                <strong>Messages</strong> — request body: system prompt, messages array, and tools definition<br>
+                <strong>Messages</strong> — the request body: system prompt, messages/contents, and tools definition<br>
                 <strong>Conversation</strong> — chat-transcript view (see below)<br>
-                <strong>SSE Timeline</strong> — decoded Server-Sent Events for streamed responses<br>
-                <strong>Raw JSON</strong> — raw request and response JSON
+                <strong>Scripted Turns</strong> — shown when scripted conversation expectations are active; shows the turn predicate and scripted response for each turn<br>
+                <strong>SSE Timeline</strong> — decoded Server-Sent Events for streamed responses (shown when stream data is present)<br>
+                <strong>Raw JSON</strong> — the raw request and response JSON
             </td>
         </tr>
         <tr>
             <td><strong>MCP JSON-RPC</strong></td>
             <td>
                 <strong>MCP</strong> — decoded JSON-RPC: method, id, params, and result or error<br>
-                <strong>Raw JSON</strong> — raw request and response JSON
+                <strong>Raw JSON</strong> — the raw request and response JSON
             </td>
         </tr>
         <tr>
-            <td>Other HTTP traffic</td>
+            <td>Any other HTTP traffic</td>
             <td><strong>Raw JSON</strong> only</td>
         </tr>
     </tbody>
@@ -235,15 +237,104 @@ sitemap:
 
 <h3>Conversation View</h3>
 
-<p>The <strong>Conversation</strong> tab renders LLM exchanges as a chat transcript. User messages are left-aligned and assistant messages are right-aligned, styled as WhatsApp-style chat bubbles. System prompts appear as a distinct banner above the conversation. Tool calls and tool results each appear as their own labelled bubbles. A strip at the bottom of the pane shows the model name, token counts, and stop reason.</p>
+<p>The <strong>Conversation</strong> tab renders LLM exchanges as a chat transcript. It is available for all five supported LLM providers: Anthropic, OpenAI, OpenAI Responses API, Gemini, and Ollama. User messages are left-aligned and assistant messages are right-aligned, styled as WhatsApp-style chat bubbles. System prompts appear as a distinct banner above the conversation. Tool calls and tool results each appear as their own labelled bubbles.</p>
 
 <h3>SSE Timeline</h3>
 
-<p>The <strong>SSE Timeline</strong> tab shows each Server-Sent Event from a streamed LLM response as a separate row with the elapsed time since the first chunk arrived. This makes it easy to spot latency spikes within a single response. The final reassembled message is also shown. If the captured body was truncated (because it exceeded <a href="/mock_server/configuration_properties.html#button_configuration_max_streaming_capture_bytes"><code class="code inline">maxStreamingCaptureBytes</code></a>), a banner indicates this.</p>
+<p>The <strong>SSE Timeline</strong> tab shows each Server-Sent Event from a streamed LLM response as a separate row. This makes it easy to spot latency spikes within a single response. The final reassembled message is also shown. If the captured body was truncated (because it exceeded <a href="/mock_server/configuration_properties.html#button_configuration_max_streaming_capture_bytes"><code class="code inline">maxStreamingCaptureBytes</code></a>), a banner indicates this.</p>
 
-<h3>Download HAR</h3>
+<h3>Capture as Mock</h3>
 
-<p>The <strong>Download HAR</strong> button in the top navigation bar exports all captured proxied traffic as a HAR (HTTP Archive) file. The file can be opened in browser DevTools, Charles Proxy, or any HAR analysis tool. Streamed LLM responses are included as readable text. The same export is also available via the <a href="/mock_server/mockserver_clients.html">retrieve API</a>.</p>
+<p>A <strong>Capture as mock</strong> button appears in the top-right of the detail pane for any LLM-kind request. Clicking it creates a mock expectation directly from the captured traffic — the next matching request will receive the same response without hitting the real API.</p>
+
+<a id="ui_sessions_section" class="anchor" href="#ui_sessions_section">&nbsp;</a>
+
+<h2>Sessions</h2>
+
+<img class="ui_image" src="/images/MockServerSessions.png" alt="MockServer Sessions">
+
+<p>The Sessions view organises captured LLM traffic into swim-lanes grouped by isolated conversation session. Each swim-lane is labelled <code>&lt;scenarioName&gt; / &lt;isolation-value&gt;</code> (for example, <code>weather-agent / agent-A</code>) and shows chips for each captured turn. Click a chip to open the conversation view for that turn directly below the swim-lane.</p>
+
+<p>The scenario name is the conversation name you supplied (or that MockServer auto-generated) when you registered the LLM conversation mock. The isolation value is the specific header, query parameter, or cookie value that identifies this session within the scenario — for example, the value of the <code>x-session-id</code> request header.</p>
+
+<p>An <strong>Unscoped requests</strong> strip at the bottom holds requests that did not match any isolated scenario — for example, requests made outside a scripted conversation or without an isolation header.</p>
+
+<p>Sessions are most useful when you have set up <a href="/mock_server/ai_mocking.html">LLM conversation mocks with per-session isolation</a>. Each unique session identifier (header, query parameter, or cookie value) gets its own swim-lane, so you can trace multiple concurrent test sessions independently.</p>
+
+<a id="ui_composer_section" class="anchor" href="#ui_composer_section">&nbsp;</a>
+
+<h2>Composer</h2>
+
+<p>The Composer view lets you create or edit mock expectations without writing any code. Open it using the <strong>Composer</strong> button in the navigation bar.</p>
+
+<img class="ui_image" src="/images/MockServerComposer.png" alt="MockServer Composer">
+
+<p>At the top, choose an <strong>Expectation kind</strong>:</p>
+
+<ul>
+    <li><strong>Standard HTTP expectation</strong> — for any HTTP mock or proxy rule</li>
+    <li><strong>LLM Conversation</strong> — for multi-turn scripted LLM conversations</li>
+</ul>
+
+<h3>Standard HTTP Expectation</h3>
+
+<p>The <strong>Edit existing or add new</strong> dropdown lists every active non-LLM expectation. Picking one prefills all fields so you can edit it in place; the Reset button clears the selection to start fresh.</p>
+
+<p>The form is split into four steps:</p>
+
+<ol>
+    <li><strong>Match a request</strong> — Expectation ID (optional — used to update an existing expectation), Method, Path, Headers, Query string parameters, Cookies, Path parameters, Body matcher, "Body is binary (base64)" toggle, HTTPS-only toggle, Priority (higher wins when multiple expectations match), Times (how many times the expectation can be used; 0 means unlimited). Prefix any string field or any entry line with <code>!</code> to negate it — for example, <code>!GET</code> matches any method except GET.</li>
+    <li><strong>Respond with</strong> — choose a response action: Static HTTP response, Forward to upstream, Forward with override, Class callback, Response template, or Error / fault injection.</li>
+    <li><strong>Action details</strong> — fields specific to the chosen action (status code and body for a static response; host and port for forwarding; template text for a template response; etc.).</li>
+    <li><strong>Review &amp; register</strong> — a read-only preview of the generated expectation in Java, JSON, or curl format. Click <strong>Register expectation</strong> to activate it on the server. If the Expectation ID field is filled, this updates the existing expectation in place.</li>
+</ol>
+
+<h3>LLM Conversation</h3>
+
+<p>The <strong>Edit existing or add new</strong> dropdown lists active scripted LLM conversation scenarios by name (for example, <code>weather-agent (2 turns)</code>). Picking one prefills the form with the existing scenario's configuration.</p>
+
+<p>The form is split into three steps:</p>
+
+<ol>
+    <li><strong>Conversation basics</strong> — provider (Anthropic, OpenAI, Gemini, etc.), path to match (e.g. <code>/v1/messages</code>), optional model name, and optional per-session isolation (header, query parameter, or cookie name whose value is used to keep concurrent sessions independent).</li>
+    <li><strong>Turns</strong> — an ordered list of conversation turns. Each turn has an optional match predicate (turn index, message content substring, message role, or tool result presence) and an optional response (text, tool calls, stop reason, token usage, streaming flag).</li>
+    <li><strong>Review &amp; register</strong> — preview in Java, JSON, or MCP format, then click <strong>Register on server</strong> (or <strong>Update N expectations</strong> when editing). When editing an existing scenario, the expectation IDs are reused so the update happens in place.</li>
+</ol>
+
+<p>See <a href="/mock_server/ai_mocking.html">LLM Conversation Mocking</a> for full details on conversation predicates and isolation options.</p>
+
+<a id="ui_library_section" class="anchor" href="#ui_library_section">&nbsp;</a>
+
+<h2>Library</h2>
+
+<p>The Library view consolidates fixture file management and traffic export. It has three sub-tabs: <strong>Cassettes</strong>, <strong>Runs</strong>, and <strong>Export</strong>.</p>
+
+<img class="ui_image" src="/images/MockServerLibrary.png" alt="MockServer Library">
+
+<h3>Cassettes</h3>
+
+<p>The Cassettes sub-tab lets you record the current MockServer state into a JSON cassette file and load one back. A recorded cassette file contains all captured LLM/MCP traffic as mock expectations, with sensitive headers (API keys, auth tokens, cookies) automatically redacted. The file can be committed to version control and loaded in tests for deterministic, offline replay.</p>
+
+<p>To record: set the output file path and click <strong>Record</strong>. To load a cassette for replay: enter the file path and click <strong>Load</strong>. These operations call the <code>record_llm_fixtures</code> and <code>load_expectations_from_file</code> <a href="/mock_server/ai_mcp_tools.html">MCP tools</a> on your behalf.</p>
+
+<h3>Runs</h3>
+
+<p>The Runs sub-tab lets you compare two captured conversation sessions side-by-side. Pick <strong>Run A</strong> and <strong>Run B</strong> from the available sessions and the view shows a structural trajectory diff: the tool-call chain for each run and a per-turn token usage table. This makes it easy to spot regressions in agent behaviour between test runs.</p>
+
+<h3>Export</h3>
+
+<p>The Export sub-tab lets you download captured content from the running MockServer instance. Choose a format and click <strong>Download</strong>:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Format</th><th>Contents</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>HAR (HTTP Archive)</strong></td><td>Every request/response pair MockServer has logged, in a format compatible with browser DevTools, and HAR analysis tools. Streamed LLM responses are included as readable text.</td></tr>
+        <tr><td><strong>Active expectations (JSON)</strong></td><td>Every currently registered expectation as a JSON array. Can be re-imported via <code>PUT /mockserver/expectation</code> or <code>load_expectations_from_file</code>.</td></tr>
+        <tr><td><strong>Recorded requests (JSON)</strong></td><td>Every received request as a JSON array, useful for replay and debugging.</td></tr>
+    </tbody>
+</table>
 
 <a id="ui_real_time_updates" class="anchor" href="#ui_real_time_updates">&nbsp;</a>
 

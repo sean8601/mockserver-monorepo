@@ -2150,6 +2150,7 @@ public class McpToolRegistry {
         ObjectNode matchProps = matchProp.putObject("properties");
         matchProps.putObject("turnIndex").put("type", "integer").put("description", "Match when conversation has this many assistant turns (0-based)");
         matchProps.putObject("latestMessageContains").put("type", "string").put("description", "Match when latest message contains this substring");
+        matchProps.putObject("latestMessageMatches").put("type", "string").put("description", "Match when latest message matches this Java regex pattern");
         matchProps.putObject("latestMessageRole").put("type", "string").put("description", "Match when latest message has this role");
         matchProps.putObject("containsToolResultFor").put("type", "string").put("description", "Match when conversation contains a tool result for this tool name");
 
@@ -2176,6 +2177,14 @@ public class McpToolRegistry {
         respUsageProps.putObject("inputTokens").put("type", "integer");
         respUsageProps.putObject("outputTokens").put("type", "integer");
         responseProps.putObject("streaming").put("type", "boolean").put("description", "Whether to stream");
+
+        // Optional ids: array of expectation IDs to assign to the generated
+        // expectations in turn order. When an id matches an existing
+        // expectation the registration upserts in place — used by the
+        // dashboard's "edit existing conversation" flow to keep IDs stable.
+        ObjectNode idsProp = properties.putObject("ids");
+        idsProp.put("type", "array").put("description", "Optional expectation IDs to assign per turn. Reusing the existing IDs updates the conversation in place.");
+        idsProp.putObject("items").put("type", "string");
 
         ArrayNode required = schema.putArray("required");
         required.add("provider");
@@ -2274,6 +2283,15 @@ public class McpToolRegistry {
                     if (!latestMsgContains.isMissingNode() && !latestMsgContains.isNull()) {
                         turnBuilder.whenLatestMessageContains(latestMsgContains.asText());
                     }
+                    JsonNode latestMsgMatches = matchNode.path("latestMessageMatches");
+                    if (!latestMsgMatches.isMissingNode() && !latestMsgMatches.isNull()) {
+                        try {
+                            turnBuilder.whenLatestMessageContains(
+                                java.util.regex.Pattern.compile(latestMsgMatches.asText()));
+                        } catch (java.util.regex.PatternSyntaxException e) {
+                            return errorResult("turns[" + i + "].match.latestMessageMatches is not a valid regex: " + e.getMessage());
+                        }
+                    }
                     JsonNode latestMsgRole = matchNode.path("latestMessageRole");
                     if (!latestMsgRole.isMissingNode() && !latestMsgRole.isNull()) {
                         try {
@@ -2348,6 +2366,22 @@ public class McpToolRegistry {
 
             // Build expectations
             Expectation[] expectations = conversationBuilder.build();
+
+            // Optional per-turn IDs — when supplied (and matching the turn
+            // count), apply them so the registration upserts existing
+            // expectations rather than allocating fresh UUIDs.
+            JsonNode idsNode = params.path("ids");
+            if (idsNode.isArray()) {
+                for (int i = 0; i < expectations.length && i < idsNode.size(); i++) {
+                    JsonNode idNode = idsNode.get(i);
+                    if (idNode.isTextual()) {
+                        String idVal = idNode.asText();
+                        if (idVal != null && !idVal.isEmpty()) {
+                            expectations[i].withId(idVal);
+                        }
+                    }
+                }
+            }
 
             // Register each expectation
             List<Expectation> allResults = new ArrayList<>();

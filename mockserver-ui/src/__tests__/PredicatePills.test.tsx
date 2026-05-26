@@ -4,10 +4,12 @@ import PredicatePills from '../components/PredicatePills';
 import type { ConversationPredicates } from '../lib/llmTraffic';
 
 describe('PredicatePills', () => {
-  it('renders turnIndex pill', () => {
+  it('does not render a turnIndex pill — the parent already shows turn N of M', () => {
     const predicates: ConversationPredicates = { turnIndex: 2 };
-    render(<PredicatePills predicates={predicates} />);
-    expect(screen.getByText('turn = 2')).toBeInTheDocument();
+    const { container } = render(<PredicatePills predicates={predicates} />);
+    // Pills container is hidden entirely when no other predicates are set.
+    expect(container.innerHTML).toBe('');
+    expect(screen.queryByText(/turn = 2/)).not.toBeInTheDocument();
   });
 
   it('renders latestMessageContains pill', () => {
@@ -34,16 +36,16 @@ describe('PredicatePills', () => {
     expect(screen.getByText('has tool_result for search')).toBeInTheDocument();
   });
 
-  it('renders all pills when all predicates are set', () => {
+  it('renders all non-turnIndex pills when those predicates are set', () => {
     const predicates: ConversationPredicates = {
-      turnIndex: 1,
+      turnIndex: 1, // intentionally suppressed — see the dedicated test above
       latestMessageContains: 'hello',
       latestMessageMatches: '\\w+',
       latestMessageRole: 'ASSISTANT',
       containsToolResultFor: 'calculator',
     };
     render(<PredicatePills predicates={predicates} />);
-    expect(screen.getByText('turn = 1')).toBeInTheDocument();
+    expect(screen.queryByText(/turn = 1/)).not.toBeInTheDocument();
     expect(screen.getByText(/latest msg ⊃ "hello"/)).toBeInTheDocument();
     expect(screen.getByText(/latest msg ~ \/\\w\+\//)).toBeInTheDocument();
     expect(screen.getByText('latest role = ASSISTANT')).toBeInTheDocument();

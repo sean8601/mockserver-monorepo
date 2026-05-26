@@ -29,15 +29,18 @@ describe('ExpectationPanel', () => {
     });
 
     render(<ExpectationPanel />);
-    expect(screen.getByText('GET /api/users')).toBeInTheDocument();
+    // After the layout refactor the method and path render in separate
+    // elements so the path can be right-aligned while the method stays left.
+    expect(screen.getByText('GET')).toBeInTheDocument();
+    expect(screen.getByText('/api/users')).toBeInTheDocument();
   });
 
   it('filters expectations by search', async () => {
     const user = userEvent.setup();
     useDashboardStore.setState({
       activeExpectations: [
-        { key: 'exp1', description: 'GET /users', value: { httpRequest: { path: '/users' } } },
-        { key: 'exp2', description: 'POST /orders', value: { httpRequest: { path: '/orders' } } },
+        { key: 'exp1', description: 'GET /users', value: { httpRequest: { method: 'GET', path: '/users' } } },
+        { key: 'exp2', description: 'POST /orders', value: { httpRequest: { method: 'POST', path: '/orders' } } },
       ],
     });
 
@@ -45,8 +48,8 @@ describe('ExpectationPanel', () => {
     const searchInput = screen.getByPlaceholderText('Search...');
     await user.type(searchInput, 'orders');
 
-    expect(screen.queryByText('GET /users')).not.toBeInTheDocument();
-    expect(screen.getByText('POST /orders')).toBeInTheDocument();
+    expect(screen.queryByText('/users')).not.toBeInTheDocument();
+    expect(screen.getByText('/orders')).toBeInTheDocument();
   });
 
   it('shows count badge with correct number', () => {

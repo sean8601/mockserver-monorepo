@@ -981,6 +981,7 @@ sitemap:
         <tr><td><code>model</code></td><td>string</td><td>No</td><td>Model name to include in each response</td></tr>
         <tr><td><code>isolateBy</code></td><td>object</td><td>No</td><td>Per-session isolation configuration. Requires <code>source</code> (<code>header</code>, <code>queryParameter</code>, or <code>cookie</code>) and <code>name</code> (the header/parameter/cookie name to read the session key from).</td></tr>
         <tr><td><code>turns</code></td><td>array</td><td>Yes</td><td>Ordered list of conversation turns. Each turn is an object with an optional <code>match</code> predicate block and an optional <code>response</code> block (see below).</td></tr>
+        <tr><td><code>ids</code></td><td>array of strings</td><td>No</td><td>Expectation IDs to assign to each generated turn expectation, one ID per turn in order. When supplied, each expectation is registered with the given ID. Because MockServer's <code>PUT /mockserver/expectation</code> performs an upsert when an ID already exists, supplying the same IDs as a previously created conversation replaces that conversation in place. This is how the Composer view's "edit existing" flow updates a conversation without creating duplicates.</td></tr>
     </tbody>
 </table>
 

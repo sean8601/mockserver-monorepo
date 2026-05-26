@@ -179,7 +179,11 @@ function TokenTable({ report }: { report: DiffReport }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogProps) {
+/**
+ * Body component — usable inline (inside the Library/Runs tab) without
+ * the Dialog chrome.
+ */
+export function CompareRunsBody() {
   // Compare Runs needs to see both upstream-proxied traffic and mock-matched
   // traffic, since users typically iterate on captured mocks rather than
   // running through a real upstream.
@@ -237,6 +241,84 @@ export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogPr
   const trajB = useMemo(() => (runB ? extractTrajectory(runB) : null), [runB]);
 
   return (
+    <Box>
+      {/* Session selectors */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <TextField
+          label="Run A"
+          size="small"
+          select
+          fullWidth
+          value={runAKey}
+          onChange={(e) => setRunAKey(e.target.value)}
+          slotProps={{
+            select: { native: true, displayEmpty: true },
+            inputLabel: { shrink: true },
+          }}
+        >
+          <option value="">— select a session —</option>
+          {sessions.map((s) => (
+            <option key={sessionKey(s)} value={sessionKey(s)}>
+              {sessionLabel(s)}
+            </option>
+          ))}
+        </TextField>
+        <TextField
+          label="Run B"
+          size="small"
+          select
+          fullWidth
+          value={runBKey}
+          onChange={(e) => setRunBKey(e.target.value)}
+          slotProps={{
+            select: { native: true, displayEmpty: true },
+            inputLabel: { shrink: true },
+          }}
+        >
+          <option value="">— select a session —</option>
+          {sessions.map((s) => (
+            <option key={sessionKey(s)} value={sessionKey(s)}>
+              {sessionLabel(s)}
+            </option>
+          ))}
+        </TextField>
+      </Box>
+
+      {/* Empty / partial-selection state */}
+      {(!runA || !runB) && (
+        <Box sx={{ textAlign: 'center', py: 4 }}>
+          <Typography variant="body2" color="text.secondary">
+            {!runA && !runB && 'Choose two captured sessions to compare.'}
+            {runA && !runB && 'Run A selected — choose Run B to compare.'}
+            {!runA && runB && 'Run B selected — choose Run A to compare.'}
+          </Typography>
+        </Box>
+      )}
+
+      {/* Comparison results */}
+      {report && trajA && trajB && (
+        <>
+          <VerdictBanner report={report} />
+
+          {/* Side-by-side tool call chains */}
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+            <ToolCallChain label="Run A" turns={trajA.turns} />
+            <ToolCallChain label="Run B" turns={trajB.turns} />
+          </Box>
+
+          {/* Token trajectory table */}
+          <Typography variant="subtitle2" sx={{ fontSize: '0.8rem', fontWeight: 600, mt: 2 }}>
+            Token Usage per Turn
+          </Typography>
+          <TokenTable report={report} />
+        </>
+      )}
+    </Box>
+  );
+}
+
+export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogProps) {
+  return (
     <Dialog
       open={open}
       onClose={onClose}
@@ -246,77 +328,7 @@ export default function CompareRunsDialog({ open, onClose }: CompareRunsDialogPr
     >
       <DialogTitle id="compare-runs-title">Compare Runs</DialogTitle>
       <DialogContent dividers>
-        {/* Session selectors */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-          <TextField
-            label="Run A"
-            size="small"
-            select
-            fullWidth
-            value={runAKey}
-            onChange={(e) => setRunAKey(e.target.value)}
-            slotProps={{
-              select: { native: true, displayEmpty: true },
-              inputLabel: { shrink: true },
-            }}
-          >
-            <option value="">— select a session —</option>
-            {sessions.map((s) => (
-              <option key={sessionKey(s)} value={sessionKey(s)}>
-                {sessionLabel(s)}
-              </option>
-            ))}
-          </TextField>
-          <TextField
-            label="Run B"
-            size="small"
-            select
-            fullWidth
-            value={runBKey}
-            onChange={(e) => setRunBKey(e.target.value)}
-            slotProps={{
-              select: { native: true, displayEmpty: true },
-              inputLabel: { shrink: true },
-            }}
-          >
-            <option value="">— select a session —</option>
-            {sessions.map((s) => (
-              <option key={sessionKey(s)} value={sessionKey(s)}>
-                {sessionLabel(s)}
-              </option>
-            ))}
-          </TextField>
-        </Box>
-
-        {/* Empty / partial-selection state */}
-        {(!runA || !runB) && (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography variant="body2" color="text.secondary">
-              {!runA && !runB && 'Choose two captured sessions to compare.'}
-              {runA && !runB && 'Run A selected — choose Run B to compare.'}
-              {!runA && runB && 'Run B selected — choose Run A to compare.'}
-            </Typography>
-          </Box>
-        )}
-
-        {/* Comparison results */}
-        {report && trajA && trajB && (
-          <>
-            <VerdictBanner report={report} />
-
-            {/* Side-by-side tool call chains */}
-            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-              <ToolCallChain label="Run A" turns={trajA.turns} />
-              <ToolCallChain label="Run B" turns={trajB.turns} />
-            </Box>
-
-            {/* Token trajectory table */}
-            <Typography variant="subtitle2" sx={{ fontSize: '0.8rem', fontWeight: 600, mt: 2 }}>
-              Token Usage per Turn
-            </Typography>
-            <TokenTable report={report} />
-          </>
-        )}
+        <CompareRunsBody />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>

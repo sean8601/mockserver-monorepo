@@ -1,5 +1,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
+import { callMcpTool, buildBaseUrl, _clearMcpSessionCache } from '../lib/mcpClient';
+
+// ---------------------------------------------------------------------------
+// Test helpers — mock the MCP handshake (initialize + notifications) so the
+// test responses can focus on what the tool call returns.
+// ---------------------------------------------------------------------------
+
+interface MockResponse {
+  ok: boolean;
+  status?: number;
+  statusText?: string;
+  headers?: { get: (name: string) => string | null };
+  json?: () => Promise<unknown>;
+}
+
+function initResponse(sessionId = 'test-session-id'): MockResponse {
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'mcp-session-id' ? sessionId : null),
+    },
+    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: {} }),
+  };
+}
+
+function notificationAck(): MockResponse {
+  return {
+    ok: true,
+    status: 202,
+    statusText: 'Accepted',
+    headers: { get: () => null },
+    json: () => Promise.resolve({}),
+  };
+}
+
+function sequenceFetch(responses: MockResponse[]) {
+  const fn = vi.fn();
+  responses.forEach((r) => fn.mockResolvedValueOnce(r));
+  vi.stubGlobal('fetch', fn);
+  return fn;
+}
 
 describe('buildBaseUrl', () => {
   it('builds http URL', () => {
@@ -18,12 +59,14 @@ describe('buildBaseUrl', () => {
 describe('callMcpTool', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    _clearMcpSessionCache();
   });
 
-  it('sends correct JSON-RPC envelope and returns success', async () => {
-    const mockResponse = {
+  it('performs initialize handshake then sends tools/call envelope', async () => {
+    const toolResponse: MockResponse = {
       ok: true,
-      json: vi.fn().mockResolvedValue({
+      headers: { get: () => null },
+      json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
         result: {
@@ -33,7 +76,7 @@ describe('callMcpTool', () => {
         },
       }),
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+    const fetchMock = sequenceFetch([initResponse(), notificationAck(), toolResponse]);
 
     const result = await callMcpTool(
       'http://localhost:1080',
@@ -44,21 +87,84 @@ describe('callMcpTool', () => {
     expect(result.ok).toBe(true);
     expect(result.result).toEqual({ status: 'created', count: 1 });
 
-    const fetchCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    expect(fetchCall[0]).toBe('http://localhost:1080/mockserver/mcp');
-    const body = JSON.parse(fetchCall[1].body);
-    expect(body.method).toBe('tools/call');
-    expect(body.params.name).toBe('mock_llm_completion');
-    expect(body.params.arguments.provider).toBe('ANTHROPIC');
+    // 3 calls total: initialize, notifications/initialized, tools/call
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const initCall = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(initCall[1].body).method).toBe('initialize');
+
+    const notifyCall = fetchMock.mock.calls[1]!;
+    expect(JSON.parse(notifyCall[1].body).method).toBe('notifications/initialized');
+    expect(notifyCall[1].headers['Mcp-Session-Id']).toBe('test-session-id');
+
+    const toolCall = fetchMock.mock.calls[2]!;
+    expect(toolCall[0]).toBe('http://localhost:1080/mockserver/mcp');
+    const toolBody = JSON.parse(toolCall[1].body);
+    expect(toolBody.method).toBe('tools/call');
+    expect(toolBody.params.name).toBe('mock_llm_completion');
+    expect(toolBody.params.arguments.provider).toBe('ANTHROPIC');
+    expect(toolCall[1].headers['Mcp-Session-Id']).toBe('test-session-id');
   });
 
-  it('returns error on HTTP failure', async () => {
-    const mockResponse = {
+  it('reuses cached session across calls to the same baseUrl', async () => {
+    const firstTool: MockResponse = {
+      ok: true,
+      headers: { get: () => null },
+      json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '{"a":1}' }] } }),
+    };
+    const secondTool: MockResponse = {
+      ok: true,
+      headers: { get: () => null },
+      json: () => Promise.resolve({ jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '{"b":2}' }] } }),
+    };
+    const fetchMock = sequenceFetch([initResponse(), notificationAck(), firstTool, secondTool]);
+
+    await callMcpTool('http://localhost:1080', 'tool_a', {});
+    await callMcpTool('http://localhost:1080', 'tool_b', {});
+
+    // 4 calls: initialize + notifications + 2 tool calls (no re-init).
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('reinitializes once if the cached session is rejected', async () => {
+    const rejected: MockResponse = {
+      ok: true,
+      headers: { get: () => null },
+      json: () => Promise.resolve({
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32600, message: "Missing or invalid Mcp-Session-Id header. Call 'initialize' first." },
+      }),
+    };
+    const successful: MockResponse = {
+      ok: true,
+      headers: { get: () => null },
+      json: () => Promise.resolve({ jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '{"ok":true}' }] } }),
+    };
+    const fetchMock = sequenceFetch([
+      initResponse('expired-session'),
+      notificationAck(),
+      rejected,
+      initResponse('fresh-session'),
+      notificationAck(),
+      successful,
+    ]);
+
+    const result = await callMcpTool('http://localhost:1080', 'tool_x', {});
+
+    expect(result.ok).toBe(true);
+    expect(result.result).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('returns error on HTTP failure of the tool call', async () => {
+    const failedTool: MockResponse = {
       ok: false,
       status: 500,
       statusText: 'Internal Server Error',
+      headers: { get: () => null },
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+    sequenceFetch([initResponse(), notificationAck(), failedTool]);
 
     const result = await callMcpTool('http://localhost:1080', 'mock_llm_completion', {});
 
@@ -66,16 +172,17 @@ describe('callMcpTool', () => {
     expect(result.error).toContain('500');
   });
 
-  it('returns error on JSON-RPC error response', async () => {
-    const mockResponse = {
+  it('returns error on JSON-RPC error response that is not a session error', async () => {
+    const errResponse: MockResponse = {
       ok: true,
-      json: vi.fn().mockResolvedValue({
+      headers: { get: () => null },
+      json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
         error: { code: -32600, message: 'Invalid Request' },
       }),
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+    sequenceFetch([initResponse(), notificationAck(), errResponse]);
 
     const result = await callMcpTool('http://localhost:1080', 'mock_llm_completion', {});
 
@@ -84,9 +191,10 @@ describe('callMcpTool', () => {
   });
 
   it('handles error in tool result content', async () => {
-    const mockResponse = {
+    const toolResponse: MockResponse = {
       ok: true,
-      json: vi.fn().mockResolvedValue({
+      headers: { get: () => null },
+      json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
         result: {
@@ -96,7 +204,7 @@ describe('callMcpTool', () => {
         },
       }),
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+    sequenceFetch([initResponse(), notificationAck(), toolResponse]);
 
     const result = await callMcpTool('http://localhost:1080', 'mock_llm_completion', {});
 
@@ -105,9 +213,10 @@ describe('callMcpTool', () => {
   });
 
   it('handles non-JSON text in result content', async () => {
-    const mockResponse = {
+    const toolResponse: MockResponse = {
       ok: true,
-      json: vi.fn().mockResolvedValue({
+      headers: { get: () => null },
+      json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
         result: {
@@ -117,7 +226,7 @@ describe('callMcpTool', () => {
         },
       }),
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+    sequenceFetch([initResponse(), notificationAck(), toolResponse]);
 
     const result = await callMcpTool('http://localhost:1080', 'mock_llm_completion', {});
 
@@ -126,15 +235,12 @@ describe('callMcpTool', () => {
   });
 
   it('handles result without content array', async () => {
-    const mockResponse = {
+    const toolResponse: MockResponse = {
       ok: true,
-      json: vi.fn().mockResolvedValue({
-        jsonrpc: '2.0',
-        id: 1,
-        result: { status: 'created' },
-      }),
+      headers: { get: () => null },
+      json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: { status: 'created' } }),
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+    sequenceFetch([initResponse(), notificationAck(), toolResponse]);
 
     const result = await callMcpTool('http://localhost:1080', 'mock_llm_completion', {});
 

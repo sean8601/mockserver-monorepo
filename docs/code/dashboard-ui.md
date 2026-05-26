@@ -90,98 +90,197 @@ The `DashboardWebSocketHandler` implements both `MockServerLogListener` and `Moc
 
 **Throttling**: A `Semaphore(1)` with a scheduled release every 1 second limits updates to at most one per second per client, preventing UI flooding during high-traffic scenarios.
 
-## Traffic Inspector
+## Top-Level Views
 
-The dashboard has a second view — the **Traffic Inspector** — toggled via a **Dashboard / Traffic** button in `AppBar.tsx`. It replaces the standard 2×2 `DashboardGrid` when the `view` Zustand store state is `'traffic'`.
+The dashboard has **five top-level views** controlled by a toggle strip in the AppBar: **Dashboard**, **Traffic**, **Sessions**, **Composer**, and **Library**. The view state is stored in Zustand as `view: ViewMode` where `ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'`.
+
+The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on Composer and Library.
 
 ```mermaid
 graph TB
     APP["App.tsx"]
     AB["AppBar.tsx
-View toggle + Download HAR button"]
+5-button toggle strip"]
+    FP["FilterPanel.tsx
+(dashboard, traffic, sessions only)"]
     DG["DashboardGrid.tsx
 (view = 'dashboard')"]
     TI["TrafficInspector.tsx
 (view = 'traffic')"]
-    CV["ConversationView.tsx
-Chat-transcript renderer"]
-    LL["src/lib/llmTraffic.ts
-LLM/MCP parser + SSE reassembly"]
+    SI["SessionInspector.tsx
+(view = 'sessions')"]
+    CV["ComposerView.tsx
+(view = 'composer')"]
+    LV["LibraryView.tsx
+(view = 'library')"]
 
     APP --> AB
+    APP --> FP
     AB -->|setView| APP
     APP -->|view = dashboard| DG
     APP -->|view = traffic| TI
-    TI --> CV
-    TI --> LL
+    APP -->|view = sessions| SI
+    APP -->|view = composer| CV
+    APP -->|view = library| LV
 ```
 
-### View State
+## Dashboard View
 
-`mockserver-ui/src/store/index.ts` holds a `view: 'dashboard' | 'traffic'` field alongside the existing fields. `AppBar.tsx` renders a toggle button that calls `setView('dashboard')` or `setView('traffic')`. `App.tsx` renders either `DashboardGrid` or `TrafficInspector` based on the current value.
+`DashboardGrid.tsx` renders a 2×2 CSS grid with four data panels:
 
-`AppBar.tsx` also renders a **Download HAR** button (visible in both views). Clicking it calls `GET /mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR`, then triggers a browser file download of the returned HAR JSON. Streamed response bodies are included as captured text in the HAR entries.
+| Panel | Component | Data Source | Content |
+|-------|-----------|------------|---------|
+| Log Messages | `LogPanel` → `LogEntry` / `LogGroup` | `logMessages` | Grouped log entries with color-coded types |
+| Active Expectations | `ExpectationPanel` → `JsonListItem` | `activeExpectations` | Currently registered expectations |
+| Received Requests | `RequestPanel` → `JsonListItem` | `recordedRequests` | All received HTTP requests with paired responses |
+| Proxied Requests | `RequestPanel` → `JsonListItem` | `proxiedRequests` | Forwarded requests with upstream responses |
 
-### TrafficInspector Component
+### Row Layout in Requests and Expectations
 
-`TrafficInspector.tsx` is a full-width layout that consumes the existing `proxiedRequests` feed from the Zustand store — no server-side changes are needed for data plumbing, because `FORWARDED_REQUEST` log entries already carry `httpRequest` and `httpResponse`. The streaming relay ensures streamed LLM responses are captured there too.
+Each collapsed item row has two lines:
 
-**Master list** — one row per proxied call:
+1. `[expand-chevron] [#] [expectationId-if-present]: METHOD …/right-aligned/path`
+2. LLM badge chips (provider / model / `turn N of M` / stream / tool count / isolation key), indented to align with the expectation id column
+
+The expanded JSON tree also aligns with the id column. The `turn N of M` chip is computed from `scenarioName` + `scenarioState` ordering and is always present for LLM expectations, regardless of which predicate type the turn uses.
+
+## Traffic Inspector
+
+`TrafficInspector.tsx` is a full-width master/detail layout. It shows **all captured traffic** — both mock-matched requests (from `recordedRequests`) and upstream-proxied requests (from `proxiedRequests`) — in a single unified list, because the user thinks of both as "traffic". No server-side changes are needed beyond the request/response pairing described below.
+
+```mermaid
+graph TB
+    TI["TrafficInspector.tsx"]
+    LL["src/lib/llmTraffic.ts
+LLM/MCP parser + SSE reassembly"]
+    LUD["LlmUsageDetail.tsx
+Provider/model/tokens strip"]
+    CV["ConversationView.tsx
+Provider-specific chat renderers"]
+    ST["ScriptedTurnsPanel
+(inside ConversationView.tsx)"]
+    JV["JsonViewer.tsx"]
+
+    TI --> LL
+    TI --> LUD
+    TI --> CV
+    TI --> ST
+    TI --> JV
+```
+
+**Master list** — one row per captured call:
 
 | Column | Source |
 |--------|--------|
-| Timestamp | `LogEntry.epochTime` |
-| Host | `httpRequest.headers.host` |
-| Method + path | `httpRequest.method` + `httpRequest.path` |
-| Status | `httpResponse.statusCode` |
-| Latency | Derived from paired log entry timestamps |
-| Model + tokens | Parsed by `llmTraffic.ts` from request/response bodies |
+| Index | Row number |
+| Provider chip | Detected kind: Anthropic / OpenAI / OpenAI Resp / Gemini / Ollama / MCP / HTTP |
+| Method | `httpRequest.method` |
+| Host + path | `httpRequest.headers.host` + `httpRequest.path` |
+| Status chip | `httpResponse.statusCode` |
+| Model chip | Parsed by `llmTraffic.ts` from request/response bodies |
+| Token summary | Input/output tokens from response body |
 
-**Detail pane** — shown on row selection. A single adaptive tab row is rendered; which tabs appear depends on the traffic kind detected by `llmTraffic.ts`:
+**Detail pane** — shown on row selection. A thin **LLM Usage** strip appears above the tab row for any LLM-kind row, showing: provider chip, model name, tokens (`<in> in / <out> out`), estimated USD cost, and stop reason. This strip is rendered by `LlmUsageDetail.tsx`.
+
+Below the strip, the adaptive tab row:
 
 | Traffic kind | Tabs rendered |
 |-------------|---------------|
-| Anthropic (`/v1/messages`) or OpenAI (`/v1/chat/completions`) | **Messages**, **Conversation**, **SSE Timeline**, **Raw JSON** |
+| Anthropic, OpenAI, OpenAI Responses, Gemini, Ollama | **Messages**, **Conversation**, optionally **Scripted Turns** (when active scripted expectations exist), optionally **SSE Timeline** (when stream events present), **Raw JSON** |
 | MCP JSON-RPC (`jsonrpc` field present) | **MCP**, **Raw JSON** |
-| All other traffic | **Raw JSON** only |
+| All other traffic | Raw JSON rendered directly (no tab bar) |
 
-- **Messages** — request body: system prompt, messages array, and tools definition (formatted JSON)
-- **Conversation** — delegates to `ConversationView.tsx` (see below)
-- **SSE Timeline** — decoded SSE event list from `llmTraffic.ts` reassembly; one row per `data:` line with elapsed time. If `x-mockserver-stream-truncated: true` is present in the response headers, a banner notes that the captured body was truncated.
-- **MCP** — decoded JSON-RPC fields: method, id, params, result/error
-- **Raw JSON** — raw request and response JSON via `JsonViewer`
+A **Capture as mock** button appears top-right of the detail pane for LLM-kind rows. Clicking it opens `CaptureAsMockDialog.tsx`, which calls the MCP `mock_llm_completion` tool to register a mock expectation from the captured traffic.
 
 ### ConversationView Component
 
-`ConversationView.tsx` renders an LLM exchange as a chat transcript:
+`ConversationView.tsx` exports five provider-specific conversation views:
 
-- **System prompt** — rendered as a distinct banner above the message list
-- **User messages** — left-aligned chat bubbles
-- **Assistant messages** — right-aligned chat bubbles (WhatsApp-style layout)
-- **Tool-call bubbles** — one bubble per tool call in the assistant turn, labelled with the tool name
-- **Tool-result bubbles** — one bubble per tool result in a user turn, labelled with the tool use ID
-- **Model strip** — a summary line at the bottom of the pane showing model name, input tokens, output tokens, and stop reason
+| Export | Provider | Format |
+|--------|----------|--------|
+| `AnthropicConversationView` | Anthropic Messages API | System banner + user/assistant bubbles + tool-call/tool-result bubbles |
+| `OpenAiConversationView` | OpenAI Chat Completions | Same layout, OpenAI message structure |
+| `OpenAiResponsesConversationView` | OpenAI Responses API | Input/output item rendering |
+| `GeminiConversationView` | Gemini | Contents/candidates rendering |
+| `OllamaConversationView` | Ollama | Messages + response rendering |
 
-The component is a pure renderer — it receives a parsed `LLMTraffic` object from `llmTraffic.ts` and has no direct store or network dependencies.
+All five use a chat-transcript layout: user messages left-aligned, assistant messages right-aligned (WhatsApp-style bubbles), system prompts as a distinct banner.
+
+The component is a pure renderer — it receives a parsed object from `llmTraffic.ts` and has no direct store or network dependencies.
 
 ### LLM/MCP Parser (`llmTraffic.ts`)
 
-`src/lib/llmTraffic.ts` is a pure client-side parser — no server changes are needed. It detects traffic kind and extracts structured data for the detail pane.
+`src/lib/llmTraffic.ts` is a pure client-side parser. It detects traffic kind and extracts structured data for the detail pane.
 
 **Traffic detection:**
 
 | Pattern | Detection logic |
 |---------|----------------|
-| Anthropic Messages API | Path ends with `/v1/messages`; extracts `model`, `usage.input_tokens`, `usage.output_tokens`, `stop_reason`, messages array, tool-use blocks |
+| Anthropic Messages API | Path ends with `/v1/messages`; extracts `model`, `usage.input_tokens`, `usage.output_tokens`, `stop_reason`, messages array, tool-use blocks, SSE events |
 | OpenAI Chat Completions | Path ends with `/v1/chat/completions`; extracts `model`, `usage.prompt_tokens`, `usage.completion_tokens`, `finish_reason`, messages array, `tool_calls` |
+| OpenAI Responses API | Path ends with `/v1/responses`; extracts `model`, input/output items |
+| Gemini | Path contains `/models/` and `/generateContent`; extracts `model`, contents, candidates |
+| Ollama | Path ends with `/api/chat` or `/api/generate`; extracts `model`, messages, response message |
 | MCP JSON-RPC | `Content-Type: application/json` body with a `jsonrpc` field; extracts `method`, `id`, `params`, `result`, `error` |
-| Fallback | Generic display — `Raw JSON` tab only |
+| Fallback | Generic display — Raw JSON only |
 
-**SSE reassembly:** For streamed responses (body contains `data:` lines), `llmTraffic.ts` splits the captured body on `\n\n`, parses each `data:` chunk as JSON, and merges incremental delta fields (`delta.text`, `delta.content`, `index`-keyed tool call arguments) to reconstruct the final message content. The per-chunk elapsed timestamps are preserved for the SSE Timeline tab.
+**SSE reassembly:** For streamed responses (body contains `data:` lines), `llmTraffic.ts` splits the captured body on `\n\n`, parses each `data:` chunk as JSON, and merges incremental delta fields to reconstruct the final message content. The per-chunk elapsed timestamps are preserved for the SSE Timeline tab.
 
-**Base64 body decoding:** a response body may be recorded with a `BINARY` body type, in which case the content is base64-encoded. `llmTraffic.ts` detects the `BINARY` type and base64-decodes the body to text before parsing. This is a defensive fallback — the backend now records textual streaming responses (SSE, JSON) as `STRING` bodies (see [event-system.md](event-system.md)), so streamed LLM/MCP bodies normally arrive as readable text; the decode handles any body still delivered as `BINARY`.
+**Base64 body decoding:** When a response body has a `BINARY` body type, the content is base64-encoded. `llmTraffic.ts` detects the `BINARY` type and decodes before parsing. Textual streaming responses are normally delivered as `STRING` bodies; this is a defensive fallback.
 
-Existing components — `Panel.tsx`, `JsonViewer.tsx`, search/filter, and the dark/light theme — are reused inside `TrafficInspector.tsx`.
+## Sessions Inspector
+
+`SessionInspector.tsx` groups all captured requests into swim-lanes by `<scenarioName> / <isolation-value>`. Each swim-lane displays chips for the captured turns, where each chip shows the turn index, method, path, and status code. Clicking a chip opens a per-request detail panel directly below the swim-lane, showing the Conversation view for the selected turn.
+
+A separate **Unscoped requests** strip at the bottom holds requests that did not match any isolated scenario.
+
+The grouping logic lives in `src/lib/sessionGrouping.ts`. It uses `scenarioName` and `scenarioState` from the request data to identify which requests belong to which conversation session.
+
+## Composer View
+
+`ComposerView.tsx` is a unified expectation creator and editor — a single inline form covering standard HTTP expectations of every action type plus multi-turn LLM conversations.
+
+At the top is an **Expectation kind** radio: **Standard HTTP expectation** or **LLM Conversation**.
+
+### Standard HTTP Expectation
+
+- An **Edit existing or add new** dropdown lists every active non-LLM expectation by `<id-short>… · METHOD path`. Picking one prefills the matcher + response-action panel. A Reset button clears the selection.
+- **Step 1 · Match a request**: Expectation ID (optional), Method, Path, Headers (Name: value lines), Query string parameters (key=value lines), Cookies (name=value lines), Path parameters (name=value lines), Body matcher, "Body is binary (base64)" toggle, HTTPS-only toggle, Priority (higher = wins), Times (0 = unlimited). All string fields and per-line entries accept a leading `!` to negate via MockServer's NottableString convention.
+- **Step 2 · Respond with**: radio for the response action — Static HTTP response / Forward to upstream / Forward with override / Class callback / Response template / Error / fault injection.
+- **Step 3 · {action name}**: per-action panel with fields specific to that action.
+- **Step 4 · Review & register**: Java / JSON / curl tabs (read-only preview generated from the current form state), then the Register expectation button. Helper text next to the button changes based on whether the Expectation ID field is filled (editing existing in place vs. creating new).
+
+### LLM Conversation
+
+- Same **Edit existing or add new** dropdown, but listing scenario names (e.g. `weather-agent (2 turns)`).
+- The LLM Conversation wizard content is rendered inline on the same page — no modal. It uses the same "1 · / 2 · / 3 ·" step structure: **Conversation basics** (provider, path, model, isolateBy), **Turns**, **Review & register** (Java / JSON / MCP tabs + Register button).
+- Picking an existing scenario from the dropdown remounts the form via React `key` and prefills all fields. The Register button reads "Update N expectations" instead of "Register on server" when editing. A green note confirms "Editing — the existing expectation IDs will be reused so this updates in place."
+
+The edit-existing flow works because `ComposerView.tsx` collects the current expectation IDs and passes them as `ids: string[]` to the `create_llm_conversation` MCP tool call. The server then calls `Expectation.withId(...)` on each generated expectation before `httpState.add(...)`, which performs an upsert.
+
+## Library View
+
+`LibraryView.tsx` consolidates fixture management and export. Three sub-tabs:
+
+| Sub-tab | Content |
+|---------|---------|
+| **Cassettes** | List / Record / Load / Export sub-tabs for cassette files. Recording writes the current MockServer state to a JSON cassette file on the server filesystem via the `record_llm_fixtures` MCP tool. Loading reads one back via `load_expectations_from_file`. |
+| **Runs** | Pick two captured sessions (Run A / Run B) and see a side-by-side structural trajectory diff (tool-call chain + per-turn token usage table). |
+| **Export** | Format dropdown (HAR / Active expectations JSON / Recorded requests JSON) + Download button. Triggers `PUT /mockserver/retrieve?type=...&format=...` and downloads the result as a file. |
+
+## MCP Session Handshake
+
+`mockserver-ui/src/lib/mcpClient.ts` manages all MCP tool calls from the UI (capture-as-mock, conversation registration, cassette record/load). It performs the MCP `initialize` + `notifications/initialized` handshake lazily on first use and caches the resulting `Mcp-Session-Id` per base URL in a module-level `Map`. If a call fails with a "Missing or invalid Mcp-Session-Id" error, the client reinitializes automatically before retrying.
+
+Prior to this, any UI feature that called an MCP tool was broken with a session-not-initialized error.
+
+## AppBar Styling
+
+The AppBar renders the five toggle buttons (Dashboard / Traffic / Sessions / Composer / Library) as a `ToggleButtonGroup`. The HAR download lives in Library → Export rather than as a top-bar icon.
+
+**Light mode**: toggle buttons use `primary.contrastText` (white) text with a translucent white border (`rgba(255,255,255,0.3)`) and a translucent-white selected state. The status chip uses pale colour tints (`#7fffa0` connected, `#ffd180` connecting, `#ff8a80` error) so colour semantics remain readable against the blue AppBar background.
+
+**Dark mode**: MUI defaults are kept; no overrides applied.
 
 ## Frontend Application
 
@@ -202,7 +301,7 @@ Existing components — `Panel.tsx`, `JsonViewer.tsx`, search/filter, and the da
 {
   logMessages: [],           // Log entries (grouped by correlationId)
   activeExpectations: [],    // Currently active expectations
-  recordedRequests: [],      // All received requests
+  recordedRequests: [],      // All received requests (with paired responses)
   proxiedRequests: [],       // Forwarded request+response pairs
   connectionStatus: 'disconnected',
   error: null,
@@ -213,7 +312,11 @@ Existing components — `Panel.tsx`, `JsonViewer.tsx`, search/filter, and the da
   expectationSearch: '',
   receivedSearch: '',
   proxiedSearch: '',
-  view: 'dashboard',        // 'dashboard' | 'traffic' — controls which top-level view is rendered
+  trafficSearch: '',
+  view: 'dashboard',        // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'
+  selectedTrafficIndex: null,
+  actionTypeFilter: [],
+  llmProviderFilter: [],
 }
 ```
 
@@ -239,15 +342,23 @@ graph TB
 Orchestrator: theme, WebSocket, shortcuts"]
     AB["AppBar.tsx
 Title bar: status, theme, clear menu
-view toggle, Download HAR"]
+5-button view toggle"]
     FP["FilterPanel.tsx
 Collapsible request filter form"]
     DG["DashboardGrid.tsx
 2x2 CSS grid layout"]
     TI["TrafficInspector.tsx
 Master list + adaptive detail tabs"]
-    CV["ConversationView.tsx
-Chat-transcript renderer"]
+    SI["SessionInspector.tsx
+Swim-lane grouped sessions"]
+    CV["ComposerView.tsx
+Unified expectation creator/editor"]
+    LV["LibraryView.tsx
+Cassettes / Runs / Export sub-tabs"]
+    CVW["ConversationView.tsx
+5 provider-specific chat renderers"]
+    LUD["LlmUsageDetail.tsx
+Provider/model/tokens strip"]
     LP["LogPanel.tsx
 Log messages panel"]
     EP["ExpectationPanel.tsx
@@ -277,8 +388,13 @@ Expandable match failure reasons"]
     APP --> FP
     APP -->|view = dashboard| DG
     APP -->|view = traffic| TI
-    TI --> CV
+    APP -->|view = sessions| SI
+    APP -->|view = composer| CV
+    APP -->|view = library| LV
+    TI --> CVW
+    TI --> LUD
     TI --> JV
+    SI --> CVW
     DG --> LP
     DG --> EP
     DG --> RP1
@@ -304,50 +420,41 @@ Expandable match failure reasons"]
 
 ### UI Components
 
-The dashboard displays four data panels in a 2x2 grid:
-
-| Panel | Component | Data Source | Content |
-|-------|-----------|------------|---------|
-| Log Messages | `LogPanel` → `LogEntry` / `LogGroup` | `logMessages` | Grouped log entries with color-coded types |
-| Active Expectations | `ExpectationPanel` → `JsonListItem` | `activeExpectations` | Currently registered expectations |
-| Received Requests | `RequestPanel` → `JsonListItem` | `recordedRequests` | All received HTTP requests |
-| Proxied Requests | `RequestPanel` → `JsonListItem` | `proxiedRequests` | Forwarded requests with responses |
-
-Supporting components:
-
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu, Dashboard/Traffic view toggle, Download HAR button |
-| `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu, 5-button view toggle |
+| `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send; shown on dashboard/traffic/sessions |
+| `DashboardGrid` | `DashboardGrid.tsx` | 2×2 CSS grid layout for the four panels |
+| `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for all captured traffic (mock-matched + proxied) |
+| `SessionInspector` | `SessionInspector.tsx` | Swim-lane grouped view of isolated LLM conversation sessions |
+| `ComposerView` | `ComposerView.tsx` | Unified expectation creator/editor; inline Standard HTTP and LLM Conversation forms |
+| `LibraryView` | `LibraryView.tsx` | Cassettes / Runs / Export sub-tabs |
+| `ConversationView` | `ConversationView.tsx` | Five provider-specific chat-transcript renderers: Anthropic, OpenAI, OpenAI Responses, Gemini, Ollama |
+| `LlmUsageDetail` | `LlmUsageDetail.tsx` | Thin strip shown above the detail pane tab row for LLM traffic: provider chip, model, tokens, cost, stop reason |
 | `Panel` | `Panel.tsx` | Shared panel wrapper with title, count chip, search box, auto-scroll content area |
-| `LogEntry` | `LogEntry.tsx` | Renders a single log entry; supports `collapsible` mode (collapsed by default with summary) and `divider` mode |
-| `LogGroup` | `LogGroup.tsx` | Groups related log entries (same correlation ID) with orange left border, expand/collapse, and group-level copy button |
-| `JsonListItem` | `JsonListItem.tsx` | Renders request/expectation items with chevron toggle (collapsed by default), index number, and description |
-| `JsonViewer` | `JsonViewer.tsx` | Thin wrapper around `@uiw/react-json-view` with theme-aware styling and hover-reveal copy button |
-| `CopyButton` | `CopyButton.tsx` | Small hover-reveal icon button that copies text to clipboard via `navigator.clipboard.writeText` |
-| `DescriptionDisplay` | `DescriptionDisplay.tsx` | Renders description variants: plain string, structured `{first, second}`, or JSON object with embedded viewer |
+| `LogEntry` | `LogEntry.tsx` | Renders a single log entry; supports `collapsible` mode and `divider` mode |
+| `LogGroup` | `LogGroup.tsx` | Groups related log entries (same correlation ID) with orange left border, expand/collapse |
+| `JsonListItem` | `JsonListItem.tsx` | Renders request/expectation items with chevron toggle, index number, and description |
+| `JsonViewer` | `JsonViewer.tsx` | Thin wrapper around `@uiw/react-json-view` with theme-aware styling |
+| `CopyButton` | `CopyButton.tsx` | Hover-reveal icon button that copies text to clipboard |
+| `DescriptionDisplay` | `DescriptionDisplay.tsx` | Renders description variants: plain string, structured `{first, second}`, or JSON object |
 | `BecauseSection` | `BecauseSection.tsx` | Expandable list of match failure reasons for `EXPECTATION_NOT_MATCHED` entries |
-| `DashboardGrid` | `DashboardGrid.tsx` | CSS grid layout for the four panels |
-| `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for LLM/MCP traffic inspection |
-| `ConversationView` | `ConversationView.tsx` | Chat-transcript renderer for LLM exchanges: system banner, user/assistant bubbles, tool-call/tool-result bubbles, model strip |
 
 ### Collapsible Items
 
-All data items are **collapsed by default** across all four panels:
+All data items are **collapsed by default** across all four dashboard panels:
 
 - **Requests and expectations** (`JsonListItem`): Show a chevron (`▸`), index number, and method+path description. Click to expand and reveal the full JSON body rendered by `JsonViewer`.
 - **Standalone log entries** (`LogEntry` with `collapsible=true`): Show a chevron, description (timestamp + type), and a grey summary (first 80 chars of message text, truncated with `…`). Click to expand and see the full message parts.
-- **Grouped log entries** (`LogGroup`): Show an expand button with the group header entry. Click to expand and reveal all child entries. Each child entry is itself a full `LogEntry`.
-- Entries without a `description` show "SYSTEM_MESSAGE" as the label when in collapsible mode.
+- **Grouped log entries** (`LogGroup`): Show an expand button with the group header entry. Click to expand and reveal all child entries.
 
 ### Copy to Clipboard
 
 Copy buttons appear on hover (CSS `opacity: 0` → `opacity: 1` on parent `:hover .copy-btn`):
 
 - `JsonViewer`: Copy button in top-right copies the full JSON as formatted text
-- `LogEntry`: Copy button copies description + all message parts as text (via exported `entryToText()`)
+- `LogEntry`: Copy button copies description + all message parts as text
 - `LogGroup`: Separate `.group-copy-btn` copies the full group (header + all child entries joined by `\n\n`)
-- Built-in clipboard in `@uiw/react-json-view` is disabled (`enableClipboard={false}`) to avoid duplicate copy UIs
 
 ### Theme System
 
@@ -377,11 +484,6 @@ The AppBar clear menu provides three server-side operations:
 | Clear server expectations | `PUT /mockserver/clear?type=expectations` | Calls `clearUI()` after success |
 | Reset server (all) | `PUT /mockserver/reset` | Calls `clearUI()` + reconnects WebSocket (server closes it on reset) |
 
-The `clearServer()` function in `useWebSocket.ts`:
-1. Sends HTTP `PUT` to the appropriate endpoint
-2. On success, calls `useDashboardStore.getState().clearUI()` to immediately clear the UI (server throttles WebSocket updates to 1/sec, so waiting for the next push would feel laggy)
-3. For `type === 'all'`, also calls `connect(lastFilterRef.current)` to re-establish the WebSocket (server-side reset closes the connection)
-
 ### Filtering
 
 Users can filter all panels by sending an `HttpRequest` JSON object as a text WebSocket frame. The server stores the filter per client and uses it when assembling data:
@@ -402,28 +504,17 @@ The `connect()` function in `useWebSocket.ts` handles reconnection safely:
 
 ### Test Coverage
 
-107 tests across 18 test files (Vitest + React Testing Library + jsdom):
+Vitest + React Testing Library + jsdom — see `mockserver-ui/src/__tests__/` for the full set. The suite is grouped roughly as follows:
 
-| Test File | Tests | Coverage |
-|-----------|-------|----------|
-| `store.test.ts` | 12 | Zustand store actions and state updates |
-| `types.test.ts` | 2 | Type guard functions |
-| `theme.test.ts` | 7 | Theme building and initial theme detection |
-| `useConnectionParams.test.ts` | 5 | URL parameter parsing for host/port/protocol |
-| `useKeyboardShortcuts.test.ts` | 5 | Shortcut registration and handler dispatch |
-| `useWebSocket.test.ts` | 8 | WebSocket lifecycle, message parsing, reconnection |
-| `AppBar.test.tsx` | 6 | Status chip, theme toggle, clear menu actions |
-| `BecauseSection.test.tsx` | 6 | Expandable reason list rendering |
-| `CopyButton.test.tsx` | 2 | Clipboard API integration |
-| `Panel.test.tsx` | 4 | Panel header, search, scroll behavior |
-| `LogEntry.test.tsx` | 18 | Rendering, collapsible mode, summary, `entryToText()` |
-| `LogGroup.test.tsx` | 5 | Group expand/collapse, group copy button |
-| `LogPanel.test.tsx` | 5 | Panel integration with log messages |
-| `RequestPanel.test.tsx` | 4 | Request filtering, count display |
-| `ExpectationPanel.test.tsx` | 4 | Expectation rendering and search |
-| `FilterPanel.test.tsx` | 5 | Filter form toggling and debounced submission |
-| `JsonListItem.test.tsx` | 6 | Collapsible items, chevron icons, expand/collapse toggle |
-| `DescriptionDisplay.test.tsx` | 3 | String, structured, and JSON description rendering |
+| Area | Example test files |
+|------|--------------------|
+| Store + hooks | `store.test.ts`, `useConnectionParams.test.ts`, `useKeyboardShortcuts.test.ts`, `useWebSocket.test.ts` |
+| App-chrome components | `AppBar.test.tsx`, `Panel.test.tsx`, `BecauseSection.test.tsx`, `CopyButton.test.tsx`, `DescriptionDisplay.test.tsx` |
+| Log and request panels | `LogEntry.test.tsx`, `LogGroup.test.tsx`, `LogPanel.test.tsx`, `RequestPanel.test.tsx`, `ExpectationPanel.test.tsx`, `FilterPanel.test.tsx`, `JsonListItem.test.tsx` |
+| Traffic / Sessions inspectors | `TrafficInspector.test.tsx`, `SessionInspector.test.tsx`, `PredicatePills.test.tsx` |
+| LLM mocking flows | `CaptureAsMockDialog.test.tsx`, `ConversationWizard.test.tsx`, `CassetteManager.test.tsx`, `CompareRunsDialog.test.tsx`, `cassetteRegistry.test.ts`, `conversationCodegen.test.ts`, `expectationFromCapture.test.ts`, `llmExpectationCodegen.test.ts`, `llmPricing.test.ts`, `llmTraffic.test.ts`, `trajectoryDiff.test.ts`, `sessionGrouping.test.ts`, `mcpClient.test.ts` |
+
+Run `npm test` from `mockserver-ui/` to execute the full suite; the JUnit report is written to `mockserver-ui/test-reports/junit.xml`.
 
 ## Server-Side Data Assembly
 
@@ -439,7 +530,9 @@ From RequestMatchers"]
 From EventLog, reverse order,
 grouped by correlationId"]
     SU --> RR["Recorded Requests
-RECEIVED_REQUEST entries"]
+RECEIVED_REQUEST entries
+paired with EXPECTATION_RESPONSE
+or NO_MATCH_RESPONSE by correlationId"]
     SU --> PR["Proxied Requests
 FORWARDED_REQUEST entries
 with request + response"]
@@ -454,12 +547,18 @@ Custom dashboard ObjectMapper"]
 Throttled: max 1/sec"]
 ```
 
+### Request/Response Pairing for Recorded Requests
+
+`DashboardWebSocketHandler` (lines 385–450) performs a single reverse-chronological pass over the log stream to pair `RECEIVED_REQUEST` entries with their matching `EXPECTATION_RESPONSE` or `NO_MATCH_RESPONSE` entries. Because the log is iterated in reverse order, responses appear before their corresponding requests. The handler stashes each response by `correlationId` in a temporary map, then when it encounters the `RECEIVED_REQUEST` with the matching `correlationId`, it attaches the stashed response as `httpResponse` in the emitted `recordedRequests` item.
+
+This means `recordedRequests` items are now `{ httpRequest, httpResponse }` objects — the same shape as `proxiedRequests` — allowing the Traffic, Sessions, and LLM Usage detail views to see mock-matched traffic with full request/response pairs, not just upstream-proxied traffic.
+
 ### Dashboard Model Classes
 
 | Class | Package | Purpose |
 |-------|---------|---------|
 | `DashboardLogEntryDTO` | `o.m.dashboard.model` | Simplified log entry for UI display with description, style, and HTTP request/response data |
-| `DashboardLogEntryDTOGroup` | `o.m.dashboard.model` | Groups related log entries by correlation ID (e.g., a request and its matching response) |
+| `DashboardLogEntryDTOGroup` | `o.m.dashboard.model` | Groups related log entries by correlation ID |
 | `Description` | `o.m.dashboard.serializers` | Truncated request description (method + path) for UI column display |
 
 ### Custom Serializers

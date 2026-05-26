@@ -15,6 +15,8 @@ import FilterPanel from './components/FilterPanel';
 import DashboardGrid from './components/DashboardGrid';
 import TrafficInspector from './components/TrafficInspector';
 import SessionInspector from './components/SessionInspector';
+import ComposerView from './components/ComposerView';
+import LibraryView from './components/LibraryView';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import type { RequestFilter } from './types';
 
@@ -83,9 +85,10 @@ export default function App() {
             onClearServer={handleClearServer}
             onClearLogs={handleClearLogs}
             onClearExpectations={handleClearExpectations}
-            connectionParams={params}
           />
-          {view === 'dashboard' && <FilterPanel onFilterChange={handleFilterChange} />}
+          {(view === 'dashboard' || view === 'traffic' || view === 'sessions') && (
+            <FilterPanel onFilterChange={handleFilterChange} />
+          )}
           {error && (
             <Alert severity="error" sx={{ mx: 1, mt: 1, flexShrink: 0 }}>
               {error}
@@ -94,6 +97,8 @@ export default function App() {
           {view === 'dashboard' && <DashboardGrid />}
           {view === 'traffic' && <TrafficInspector />}
           {view === 'sessions' && <SessionInspector />}
+          {view === 'composer' && <ComposerView connectionParams={params} />}
+          {view === 'library' && <LibraryView connectionParams={params} />}
         </Box>
         <DebugMismatchDialog />
       </DebugMismatchContext.Provider>

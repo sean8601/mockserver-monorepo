@@ -45,7 +45,15 @@ const rightBubbleSx = {
 } as const;
 
 const toolBubbleSx = {
-  maxWidth: BUBBLE_MAX_WIDTH,
+  // Tool bubbles nest inside an already-narrow chat bubble (`maxWidth: 75%`),
+  // so capping them at another 75% (= 56% of the panel) made long JSON values
+  // like the get_weather argument get visually clipped. Let them fill the
+  // parent bubble width and add overflow:auto + word-break so anything still
+  // too wide can scroll instead of being silently truncated.
+  maxWidth: '100%',
+  minWidth: 0,
+  overflow: 'auto',
+  wordBreak: 'break-word',
   bgcolor: 'background.paper',
   border: 1,
   borderColor: 'secondary.main',

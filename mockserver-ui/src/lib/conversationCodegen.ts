@@ -224,12 +224,23 @@ export function conversationToJson(draft: ConversationDraft): string {
 
 /**
  * Produce the MCP `tools/call` arguments for `create_llm_conversation`.
+ *
+ * Optional `existingIds` lets callers upsert an existing conversation in
+ * place rather than allocating fresh expectation IDs — used by the
+ * dashboard's "edit existing conversation" flow. The IDs are passed
+ * positionally (ids[i] is applied to the i-th generated expectation).
  */
-export function conversationToMcpArgs(draft: ConversationDraft): Record<string, unknown> {
+export function conversationToMcpArgs(
+  draft: ConversationDraft,
+  existingIds?: string[],
+): Record<string, unknown> {
   const args: Record<string, unknown> = {
     provider: draft.provider,
     path: draft.path,
   };
+  if (existingIds && existingIds.length > 0) {
+    args['ids'] = existingIds;
+  }
   if (draft.model) {
     args['model'] = draft.model;
   }
@@ -288,6 +299,153 @@ export function conversationToMcpArgs(draft: ConversationDraft): Record<string, 
   });
 
   return args;
+}
+
+// ---------------------------------------------------------------------------
+// Reverse direction: rebuild a ConversationDraft from the active expectations
+// belonging to a conversation scenarioName. Used by the wizard's "load
+// existing" picker so the user can edit a previously-registered conversation
+// instead of starting fresh.
+// ---------------------------------------------------------------------------
+
+const SCENARIO_STATE_ORDER = (state: string): number => {
+  if (state === 'Started') return -1;
+  const m = /^turn_(\d+)$/.exec(state);
+  if (m) return parseInt(m[1]!, 10);
+  return 1_000_000;
+};
+
+interface ScenarioExpectationLike {
+  key: string;
+  value: Record<string, unknown>;
+}
+
+export interface DraftFromScenarioResult {
+  draft: ConversationDraft;
+  ids: string[];
+}
+
+const PROVIDER_NAMES: readonly ProviderName[] = [
+  'ANTHROPIC',
+  'OPENAI',
+  'OPENAI_RESPONSES',
+  'GEMINI',
+  'BEDROCK',
+  'AZURE_OPENAI',
+  'OLLAMA',
+];
+
+function parseIsolationFromScenarioName(scenarioName: string): IsolationConfig | undefined {
+  // Wire format: `<base>__iso=<source>:<name>` where source is one of
+  // header / query_parameter / cookie. The MCP tool expects the camelCase
+  // queryParameter variant.
+  const m = /__iso=(header|query_parameter|cookie):(.+)$/.exec(scenarioName);
+  if (!m) return undefined;
+  const wireSource = m[1]!;
+  const source: IsolationConfig['source'] = wireSource === 'query_parameter' ? 'queryParameter' : (wireSource as IsolationConfig['source']);
+  return { source, name: m[2]! };
+}
+
+/**
+ * Group active expectations by scenarioName and return distinct LLM
+ * conversation scenarios (≥ 1 expectation with httpLlmResponse +
+ * scenarioName) along with the underlying items, ordered by scenario
+ * state.
+ */
+export function listConversationScenarios(items: ScenarioExpectationLike[]): Array<{
+  scenarioName: string;
+  shortName: string;
+  expectations: ScenarioExpectationLike[];
+}> {
+  const groups = new Map<string, ScenarioExpectationLike[]>();
+  for (const item of items) {
+    const scenarioName = item.value['scenarioName'];
+    if (typeof scenarioName !== 'string') continue;
+    const llm = item.value['httpLlmResponse'];
+    if (!llm) continue;
+    const arr = groups.get(scenarioName) ?? [];
+    arr.push(item);
+    groups.set(scenarioName, arr);
+  }
+  return Array.from(groups.entries()).map(([scenarioName, expectations]) => {
+    const sorted = [...expectations].sort((a, b) => {
+      const aState = (a.value['scenarioState'] as string | undefined) ?? '';
+      const bState = (b.value['scenarioState'] as string | undefined) ?? '';
+      return SCENARIO_STATE_ORDER(aState) - SCENARIO_STATE_ORDER(bState);
+    });
+    const shortName = scenarioName.replace(/^__llm_conv_/, '').replace(/__iso=.*$/, '');
+    return { scenarioName, shortName, expectations: sorted };
+  });
+}
+
+function pickProvider(raw: unknown): ProviderName {
+  if (typeof raw === 'string') {
+    const upper = raw.toUpperCase() as ProviderName;
+    if (PROVIDER_NAMES.includes(upper)) return upper;
+  }
+  return 'ANTHROPIC';
+}
+
+/**
+ * Convert a group of expectations sharing a scenarioName back into a
+ * ConversationDraft plus the ordered list of expectation IDs. Lossy by
+ * design — predicates beyond turnIndex / latestMessageContains /
+ * latestMessageRole / containsToolResultFor are dropped, since the wizard
+ * only exposes those four match predicates.
+ */
+export function draftFromScenarioExpectations(
+  expectations: ScenarioExpectationLike[],
+): DraftFromScenarioResult {
+  if (expectations.length === 0) {
+    throw new Error('draftFromScenarioExpectations requires at least one expectation');
+  }
+  const first = expectations[0]!;
+  const firstReq = (first.value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
+  const firstLlm = (first.value['httpLlmResponse'] as Record<string, unknown> | undefined) ?? {};
+  const scenarioName = (first.value['scenarioName'] as string | undefined) ?? '';
+
+  const path = typeof firstReq['path'] === 'string'
+    ? (firstReq['path'] as string)
+    : '';
+  const model = typeof firstLlm['model'] === 'string' ? (firstLlm['model'] as string) : '';
+  const provider = pickProvider(firstLlm['provider']);
+  const isolateBy = parseIsolationFromScenarioName(scenarioName);
+
+  const turns: TurnDraft[] = expectations.map((exp) => {
+    const llm = (exp.value['httpLlmResponse'] as Record<string, unknown> | undefined) ?? {};
+    const predicates = (llm['conversationPredicates'] as Record<string, unknown> | undefined) ?? {};
+    const completion = (llm['completion'] as Record<string, unknown> | undefined) ?? {};
+    const toolCalls = Array.isArray(completion['toolCalls'])
+      ? (completion['toolCalls'] as Array<Record<string, unknown>>).map((tc) => ({
+          name: typeof tc['name'] === 'string' ? (tc['name'] as string) : '',
+          arguments: typeof tc['arguments'] === 'string'
+            ? (tc['arguments'] as string)
+            : tc['arguments'] != null ? JSON.stringify(tc['arguments']) : '',
+        }))
+      : [];
+    return {
+      predicates: {
+        turnIndex: typeof predicates['turnIndex'] === 'number' ? (predicates['turnIndex'] as number) : undefined,
+        latestMessageContains: typeof predicates['latestMessageContains'] === 'string'
+          ? (predicates['latestMessageContains'] as string) : undefined,
+        latestMessageRole: typeof predicates['latestMessageRole'] === 'string'
+          ? (predicates['latestMessageRole'] as 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM') : undefined,
+        containsToolResultFor: typeof predicates['containsToolResultFor'] === 'string'
+          ? (predicates['containsToolResultFor'] as string) : undefined,
+      },
+      response: {
+        text: typeof completion['text'] === 'string' ? (completion['text'] as string) : '',
+        toolCalls,
+        stopReason: typeof completion['stopReason'] === 'string' ? (completion['stopReason'] as string) : '',
+        streaming: llm['streaming'] === true,
+      },
+    };
+  });
+
+  return {
+    draft: { provider, path, model, isolateBy, turns },
+    ids: expectations.map((e) => (typeof e.value['id'] === 'string' ? (e.value['id'] as string) : e.key)),
+  };
 }
 
 /**

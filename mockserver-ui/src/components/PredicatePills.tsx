@@ -25,9 +25,11 @@ function truncate(value: string): string {
 function buildPills(predicates: ConversationPredicates): PillDef[] {
   const pills: PillDef[] = [];
 
-  if (predicates.turnIndex != null) {
-    pills.push({ key: 'turnIndex', label: `turn = ${predicates.turnIndex}` });
-  }
+  // The turnIndex predicate is intentionally NOT rendered as a pill here —
+  // the parent JsonListItem already shows a `turn N of M` ordering chip
+  // derived from scenario state, which is more useful (it's always present
+  // even when the turn matches via other predicates) and would be a
+  // duplicate with this pill.
   if (predicates.latestMessageContains != null) {
     pills.push({
       key: 'latestMessageContains',

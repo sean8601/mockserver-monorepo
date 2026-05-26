@@ -5,6 +5,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
 import CassetteManager from '../components/CassetteManager';
 import { clearCassettes, addCassette } from '../lib/cassetteRegistry';
+import { _clearMcpSessionCache } from '../lib/mcpClient';
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -23,6 +24,7 @@ beforeEach(() => {
   });
   clearCassettes();
   vi.restoreAllMocks();
+  _clearMcpSessionCache();
 });
 
 function renderDialog(overrides: Partial<Parameters<typeof CassetteManager>[0]> = {}) {
@@ -130,8 +132,12 @@ describe('CassetteManager', () => {
   it('calls MCP endpoint on Record with correct tool name and args', async () => {
     const user = userEvent.setup();
 
+    // The MCP client now performs initialize + notifications/initialized
+    // before tools/call. Same mock response works for all three since only
+    // headers (init) / ok (notify) / body (tool) are consumed in turn.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'test-session' },
       json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
@@ -151,11 +157,11 @@ describe('CassetteManager', () => {
     const recordBtn = screen.getByRole('button', { name: 'Record' });
     await user.click(recordBtn);
 
-    expect(fetch).toHaveBeenCalledOnce();
-    const fetchCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    expect(fetchCall[0]).toBe('http://localhost:1080/mockserver/mcp');
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const toolCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[2]!;
+    expect(toolCall[0]).toBe('http://localhost:1080/mockserver/mcp');
 
-    const body = JSON.parse(fetchCall[1].body as string) as Record<string, unknown>;
+    const body = JSON.parse(toolCall[1].body as string) as Record<string, unknown>;
     const params = body['params'] as Record<string, unknown>;
     expect(params['name']).toBe('record_llm_fixtures');
     const args = params['arguments'] as Record<string, unknown>;
@@ -167,6 +173,7 @@ describe('CassetteManager', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'test-session' },
       json: () => Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
@@ -186,10 +193,10 @@ describe('CassetteManager', () => {
     const loadBtn = screen.getByRole('button', { name: 'Load Expectations' });
     await user.click(loadBtn);
 
-    expect(fetch).toHaveBeenCalledOnce();
-    const fetchCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const toolCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[2]!;
 
-    const body = JSON.parse(fetchCall[1].body as string) as Record<string, unknown>;
+    const body = JSON.parse(toolCall[1].body as string) as Record<string, unknown>;
     const params = body['params'] as Record<string, unknown>;
     expect(params['name']).toBe('load_expectations_from_file');
     const args = params['arguments'] as Record<string, unknown>;

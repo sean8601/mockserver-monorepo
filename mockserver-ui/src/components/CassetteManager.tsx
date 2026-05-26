@@ -378,17 +378,56 @@ function ExportTab({ cassettes }: { cassettes: CassetteEntry[] }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function CassetteManager({ open, onClose, connectionParams }: CassetteManagerProps) {
+/**
+ * Body component — usable inline (inside the Library tab) without the
+ * Dialog chrome. Accepts `refreshTrigger` so the parent can force a
+ * re-read of cassettes after external mutations.
+ */
+export function CassetteManagerBody({
+  connectionParams,
+  refreshTrigger = 0,
+}: {
+  connectionParams: { host: string; port: string; secure: boolean };
+  refreshTrigger?: number;
+}) {
   const [tab, setTab] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Re-read cassettes when dialog opens or after mutations.
-  // `open` is included so the list is refreshed each time the dialog is shown.
-  const cassettes = useMemo(() => listCassettes(), [refreshKey, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // `listCassettes()` reads from localStorage on each call; the deps array
+  // is used purely as a cache-buster (refreshKey for internal mutations,
+  // refreshTrigger for parent-driven reopens), not as input to the call.
+  const cassettes = useMemo(
+    () => listCassettes(),
+    [refreshKey, refreshTrigger], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const tabLabels = ['List', 'Record', 'Load', 'Export'];
+
+  return (
+    <Box>
+      <Tabs
+        value={tab}
+        onChange={(_, v: number) => setTab(v)}
+        sx={{ mb: 2, minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5, fontSize: '0.8rem' } }}
+      >
+        {tabLabels.map((label) => (
+          <Tab key={label} label={label} />
+        ))}
+      </Tabs>
+
+      {tab === 0 && <ListTab cassettes={cassettes} onRefresh={refresh} />}
+      {tab === 1 && <RecordTab connectionParams={connectionParams} onRecorded={refresh} />}
+      {tab === 2 && <LoadTab connectionParams={connectionParams} onLoaded={refresh} />}
+      {tab === 3 && <ExportTab cassettes={cassettes} />}
+    </Box>
+  );
+}
+
+export default function CassetteManager({ open, onClose, connectionParams }: CassetteManagerProps) {
+  // Force the body to refresh whenever the dialog is reopened.
+  const refreshTrigger = open ? 1 : 0;
 
   return (
     <Dialog
@@ -400,20 +439,10 @@ export default function CassetteManager({ open, onClose, connectionParams }: Cas
     >
       <DialogTitle id="cassette-manager-title">Cassette Manager</DialogTitle>
       <DialogContent dividers>
-        <Tabs
-          value={tab}
-          onChange={(_, v: number) => setTab(v)}
-          sx={{ mb: 2, minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5, fontSize: '0.8rem' } }}
-        >
-          {tabLabels.map((label) => (
-            <Tab key={label} label={label} />
-          ))}
-        </Tabs>
-
-        {tab === 0 && <ListTab cassettes={cassettes} onRefresh={refresh} />}
-        {tab === 1 && <RecordTab connectionParams={connectionParams} onRecorded={refresh} />}
-        {tab === 2 && <LoadTab connectionParams={connectionParams} onLoaded={refresh} />}
-        {tab === 3 && <ExportTab cassettes={cassettes} />}
+        <CassetteManagerBody
+          connectionParams={connectionParams}
+          refreshTrigger={refreshTrigger}
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>

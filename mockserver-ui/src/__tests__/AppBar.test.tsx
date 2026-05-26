@@ -11,7 +11,6 @@ function renderAppBar(overrides = {}) {
     onClearServer: vi.fn().mockResolvedValue(undefined),
     onClearLogs: vi.fn().mockResolvedValue(undefined),
     onClearExpectations: vi.fn().mockResolvedValue(undefined),
-    connectionParams: { host: '127.0.0.1', port: '1080', secure: false },
   };
   const props = { ...defaults, ...overrides };
   return {

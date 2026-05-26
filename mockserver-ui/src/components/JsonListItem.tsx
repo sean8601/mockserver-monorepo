@@ -17,6 +17,13 @@ import PredicatePills from './PredicatePills';
 interface JsonListItemProps {
   item: JsonListItemType;
   index: number;
+  /**
+   * Optional turn-position info for LLM scenario expectations. When present a
+   * `[Turn N of M]` chip is rendered alongside the predicate pills so the user
+   * sees the canonical sequence even when the turn lacks an explicit
+   * `turnIndex` predicate (e.g. matches via `containsToolResultFor`).
+   */
+  turnPosition?: { position: number; total: number };
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -40,6 +47,34 @@ interface LlmBadgeInfo {
   turnIndex: number | null;
   isolationLabel: string | null;
   predicates: ConversationPredicates | null;
+}
+
+/**
+ * Pull the request method + path out of the item value. Works for all three
+ * panels: Active Expectations (httpRequest is the matcher), Received Requests
+ * (the bare request was wrapped under httpRequest by DashboardWebSocketHandler),
+ * and Proxied Requests (same wrapping). Returns null when the value has no
+ * recognisable request shape (e.g. raw OpenAPI matchers) so the caller can
+ * fall back to the opaque DescriptionDisplay.
+ */
+function extractRequestParts(value: Record<string, unknown>): { method: string | null; path: string | null } | null {
+  const req = value['httpRequest'];
+  if (!req || typeof req !== 'object') return null;
+  const r = req as Record<string, unknown>;
+  // method/path can be plain strings OR NottableString objects { value, not }
+  const readField = (field: string): string | null => {
+    const raw = r[field];
+    if (typeof raw === 'string') return raw;
+    if (raw && typeof raw === 'object' && 'value' in (raw as Record<string, unknown>)) {
+      const v = (raw as Record<string, unknown>)['value'];
+      return typeof v === 'string' ? v : null;
+    }
+    return null;
+  };
+  const method = readField('method');
+  const path = readField('path');
+  if (!method && !path) return null;
+  return { method, path };
 }
 
 function extractIsolationLabel(scenarioName: string | undefined): string | null {
@@ -100,9 +135,10 @@ function extractLlmBadge(value: Record<string, unknown>): LlmBadgeInfo | null {
   };
 }
 
-export default function JsonListItem({ item, index }: JsonListItemProps) {
+export default function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
   const [expanded, setExpanded] = useState(false);
   const llmBadge = useMemo(() => extractLlmBadge(item.value), [item.value]);
+  const requestParts = useMemo(() => extractRequestParts(item.value), [item.value]);
 
   return (
     <Box
@@ -119,23 +155,73 @@ export default function JsonListItem({ item, index }: JsonListItemProps) {
       <Box
         sx={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
+          flexDirection: 'column',
+          gap: 0.25,
           cursor: 'pointer',
           userSelect: 'none',
         }}
         onClick={() => setExpanded((prev) => !prev)}
       >
-        <IconButton size="small" sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}>
-          {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
-        </IconButton>
-        <Box
-          component="span"
-          sx={{ fontFamily: 'monospace', fontSize: '0.8em', color: 'text.secondary', minWidth: 24 }}
-        >
-          {index}
+        {/* First row: expand toggle + position + (optional) expectation id +
+            method on the left, path on the right. The expectation id is only
+            present for Active Expectations entries (Received / Proxied request
+            items have synthetic keys like "<id>_request" / "<id>_proxied" and
+            no value.id field). */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+          <IconButton size="small" sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}>
+            {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+          </IconButton>
+          <Box
+            component="span"
+            sx={{ fontFamily: 'monospace', fontSize: '0.8em', color: 'text.secondary', minWidth: 24 }}
+          >
+            {index}
+          </Box>
+          {typeof item.value['id'] === 'string' && (
+            <Box
+              component="span"
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: '0.85em',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {item.value['id'] as string}:
+            </Box>
+          )}
+          {requestParts ? (
+            <>
+              <Box
+                component="span"
+                sx={{ fontFamily: 'monospace', fontSize: '0.85em', fontWeight: 600, minWidth: 50 }}
+              >
+                {requestParts.method ?? '·'}
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }} />
+              <Box
+                component="span"
+                sx={{
+                  fontFamily: 'monospace',
+                  fontSize: '0.85em',
+                  color: 'text.secondary',
+                  textAlign: 'right',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '70%',
+                }}
+                title={requestParts.path ?? undefined}
+              >
+                {requestParts.path ?? '·'}
+              </Box>
+            </>
+          ) : (
+            item.description && <DescriptionDisplay description={item.description} />
+          )}
         </Box>
-        {item.description && <DescriptionDisplay description={item.description} />}
+        {/* Second row: LLM badge chips below the matcher so wide chip sets wrap
+            cleanly inside the panel instead of forcing horizontal scroll. */}
         {llmBadge && (() => {
           // Build optional signal chips (provider chip is mandatory and renders separately).
           const optionalChips: Array<{ key: string; element: React.ReactElement; tooltipLabel: string }> = [];
@@ -184,7 +270,15 @@ export default function JsonListItem({ item, index }: JsonListItemProps) {
             });
           }
           if (llmBadge.isStateful) {
-            const lbl = llmBadge.turnIndex != null ? `turn ${llmBadge.turnIndex}` : 'stateful';
+            // Prefer the canonical "Turn N of M" position computed from
+            // scenario state ordering over the predicate-derived turnIndex,
+            // since the latter is absent on turns that match via other
+            // predicates (e.g. containsToolResultFor).
+            const lbl = turnPosition
+              ? `turn ${turnPosition.position} of ${turnPosition.total}`
+              : llmBadge.turnIndex != null
+                ? `turn ${llmBadge.turnIndex}`
+                : 'stateful';
             optionalChips.push({
               key: 'stateful',
               tooltipLabel: lbl,
@@ -222,7 +316,10 @@ export default function JsonListItem({ item, index }: JsonListItemProps) {
           const hiddenChips = optionalChips.slice(MAX_OPTIONAL);
 
           return (
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, ml: 0.5, flexWrap: 'wrap' }}>
+          // pl matches the cumulative width of [expand icon] + gap + [index]
+          // + gap so the chips visually start at the same x-coordinate as the
+          // expectation id (when present) or the method (when not).
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pl: 6, flexWrap: 'wrap' }}>
             <Chip
               icon={<SmartToyIcon sx={{ fontSize: '0.85rem' }} />}
               label={`LLM Response – ${llmBadge.provider}${llmBadge.model ? ' / ' + llmBadge.model : ''}`}
@@ -263,7 +360,10 @@ export default function JsonListItem({ item, index }: JsonListItemProps) {
         })()}
       </Box>
       {expanded && (
-        <Box sx={{ pl: 3.5, pt: 0.5 }}>
+        // pl: 6 matches the second-row chip indent so the expanded JSON
+        // body lines up with the expectation id (Active Expectations) or
+        // the method (Received / Proxied requests, where no id is shown).
+        <Box sx={{ pl: 6, pt: 0.5 }}>
           {llmBadge?.predicates && (
             <Box sx={{ mb: 1 }}>
               <PredicatePills predicates={llmBadge.predicates} />

@@ -10,7 +10,6 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
-import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
@@ -22,17 +21,11 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import TrafficIcon from '@mui/icons-material/Traffic';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import DownloadIcon from '@mui/icons-material/Download';
-import ChatIcon from '@mui/icons-material/Chat';
-import AlbumIcon from '@mui/icons-material/Album';
-import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import { useState, useCallback } from 'react';
+import PostAddIcon from '@mui/icons-material/PostAdd';
+import Inventory2Icon from '@mui/icons-material/Inventory2';
+import { useState } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
-import ConversationWizard from './ConversationWizard';
-import CassetteManager from './CassetteManager';
-import CompareRunsDialog from './CompareRunsDialog';
 import type { ConnectionStatus } from '../types';
-import type { ConnectionParams } from '../hooks/useConnectionParams';
 
 function statusColor(status: ConnectionStatus): 'success' | 'warning' | 'error' | 'default' {
   switch (status) {
@@ -47,14 +40,36 @@ function statusColor(status: ConnectionStatus): 'success' | 'warning' | 'error' 
   }
 }
 
+/**
+ * MUI's default outlined-chip colours (`success.main`, `error.main`, …) are
+ * dark enough to disappear against the primary-coloured AppBar background in
+ * light mode. Override with pale tints of the same hue in light mode only;
+ * in dark mode the defaults already contrast against the deep-blue bar so we
+ * leave them alone.
+ */
+function statusChipPaletteSx(themeMode: 'light' | 'dark', status: ConnectionStatus): Record<string, unknown> {
+  if (themeMode === 'dark') return {};
+  const tints: Record<ConnectionStatus, string> = {
+    connected: '#7fffa0',    // pale green
+    connecting: '#ffd180',   // pale amber
+    error: '#ff8a80',        // pale red
+    disconnected: 'rgba(255,255,255,0.85)',
+  };
+  const tint = tints[status] ?? 'rgba(255,255,255,0.85)';
+  return {
+    color: tint,
+    borderColor: tint,
+    '& .MuiChip-label': { color: tint },
+  };
+}
+
 interface AppBarProps {
   onClearServer: () => Promise<void>;
   onClearLogs: () => Promise<void>;
   onClearExpectations: () => Promise<void>;
-  connectionParams: ConnectionParams;
 }
 
-export default function AppBar({ onClearServer, onClearLogs, onClearExpectations, connectionParams }: AppBarProps) {
+export default function AppBar({ onClearServer, onClearLogs, onClearExpectations }: AppBarProps) {
   const connectionStatus = useDashboardStore((s) => s.connectionStatus);
   const themeMode = useDashboardStore((s) => s.themeMode);
   const toggleTheme = useDashboardStore((s) => s.toggleThemeMode);
@@ -63,37 +78,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const view = useDashboardStore((s) => s.view);
   const setView = useDashboardStore((s) => s.setView);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [cassetteOpen, setCassetteOpen] = useState(false);
-  const [compareOpen, setCompareOpen] = useState(false);
-
-  const handleDownloadHar = useCallback(async () => {
-    setDownloading(true);
-    try {
-      const protocol = connectionParams.secure ? 'https' : 'http';
-      const base = `${protocol}://${connectionParams.host}:${connectionParams.port}`;
-      const url = `${base}/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR`;
-      const response = await fetch(url, { method: 'PUT' });
-      if (!response.ok) {
-        console.error(`HAR download failed: ${response.status} ${response.statusText}`);
-        return;
-      }
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = 'mockserver-traffic.har';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(objectUrl);
-    } catch (err) {
-      console.error('HAR download failed:', err);
-    } finally {
-      setDownloading(false);
-    }
-  }, [connectionParams]);
 
   return (
     <MuiAppBar position="static" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -106,7 +90,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           size="small"
           color={statusColor(connectionStatus)}
           variant="outlined"
-          sx={{ textTransform: 'capitalize' }}
+          sx={{
+            textTransform: 'capitalize',
+            ...statusChipPaletteSx(themeMode, connectionStatus),
+          }}
         />
         <ToggleButtonGroup
           value={view}
@@ -123,6 +110,23 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
               fontSize: '0.7rem',
               textTransform: 'none',
               lineHeight: 1.4,
+              // Light-mode-only: force white text + translucent border so the
+              // buttons read against the primary-coloured AppBar. Dark mode
+              // keeps MUI's defaults which already contrast against the bar.
+              ...(themeMode === 'light' ? {
+                color: 'primary.contrastText',
+                borderColor: 'rgba(255, 255, 255, 0.3)',
+                '&:hover': {
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                },
+                '&.Mui-selected': {
+                  color: 'primary.contrastText',
+                  backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+                  },
+                },
+              } : {}),
             },
           }}
         >
@@ -138,45 +142,19 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Sessions
           </ToggleButton>
+          <ToggleButton value="composer" aria-label="Compose new expectations">
+            <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Composer
+          </ToggleButton>
+          <ToggleButton value="library" aria-label="Library of captured content">
+            <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Library
+          </ToggleButton>
         </ToggleButtonGroup>
-        <Button
-          size="small"
-          color="inherit"
-          startIcon={<ChatIcon sx={{ fontSize: '0.875rem' }} />}
-          onClick={() => setWizardOpen(true)}
-          sx={{ ml: 1, fontSize: '0.7rem', textTransform: 'none', whiteSpace: 'nowrap' }}
-        >
-          New LLM Conversation Mock
-        </Button>
-        <Button
-          size="small"
-          color="inherit"
-          startIcon={<AlbumIcon sx={{ fontSize: '0.875rem' }} />}
-          onClick={() => setCassetteOpen(true)}
-          sx={{ fontSize: '0.7rem', textTransform: 'none', whiteSpace: 'nowrap' }}
-        >
-          Cassettes
-        </Button>
-        <Button
-          size="small"
-          color="inherit"
-          startIcon={<CompareArrowsIcon sx={{ fontSize: '0.875rem' }} />}
-          onClick={() => setCompareOpen(true)}
-          sx={{ fontSize: '0.7rem', textTransform: 'none', whiteSpace: 'nowrap' }}
-        >
-          Compare Runs
-        </Button>
         <Box sx={{ flex: 1 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           ⌘K search · ⌘L clear · Esc filter
         </Typography>
-        <Tooltip title={downloading ? 'Downloading HAR...' : 'Download HAR'}>
-          <span>
-            <IconButton size="small" color="inherit" onClick={() => void handleDownloadHar()} disabled={downloading}>
-              <DownloadIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
         <Tooltip title={autoScroll ? 'Pause auto-scroll' : 'Resume auto-scroll'}>
           <IconButton size="small" color="inherit" onClick={toggleAutoScroll}>
             {autoScroll ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
@@ -230,20 +208,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           </MenuItem>
         </Menu>
       </Toolbar>
-      <ConversationWizard
-        open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
-        connectionParams={connectionParams}
-      />
-      <CassetteManager
-        open={cassetteOpen}
-        onClose={() => setCassetteOpen(false)}
-        connectionParams={connectionParams}
-      />
-      <CompareRunsDialog
-        open={compareOpen}
-        onClose={() => setCompareOpen(false)}
-      />
     </MuiAppBar>
   );
 }
