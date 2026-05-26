@@ -1,199 +1,240 @@
 # Testing Improvements Plan
 
-**Status:** Active — Phase 1.1, 3.4 (MockServerClientTest), 3.5, 4.4, 4.6 DONE; Phase 5 container/Helm work largely DONE; remainder PENDING.
+> **Status (2026-05-26):** Plan trimmed after adversarial review. Several items have been dropped because they would add flakiness or maintenance churn for limited coverage gain; some "DONE" markers from earlier revisions have been corrected. See [Dropped Items](#dropped-items-and-why) for the items rejected and why.
 
-Maximise test coverage within reason, without excessive complexity or build delay.
+Maximise test coverage within reason, without adding build flakiness or per-build minutes that aren't paid back by real signal.
 
-See [docs/testing.md](../testing.md) for comprehensive documentation of the current testing approach.
+See [docs/testing.md](../testing.md) for documentation of the current testing approach.
 
-## Status Snapshot (2026-05-25)
+## Guiding Principles
 
-| Phase | DONE | PARTIAL | PENDING |
-|-------|------|---------|---------|
-| 1 Measure | 1.1 JaCoCo (`jacoco-maven-plugin.version=0.8.14`) | 1.3 Test Analytics (XML collected but `<disableXmlReport>true</disableXmlReport>` still set) | 1.2 enable XML reports |
-| 2 Quick Wins | — | — | 2.1–2.4 schema serializer, ClientConfiguration, WebSocketClient, WebSocketClientRegistry unit tests |
-| 3 Structural | 3.4 MockServerClient mocking reduced, 3.5 ignored tests re-enabled | 3.3 mega-method splits ongoing | 3.1 Surefire parallel mode, 3.2 test categories/tags |
-| 4 Coverage | 4.4 listeners, 4.6 file persistence | 4.1 TLS, 4.2 JSON schema validators, 4.3 mappers, 4.5 JWT | — |
-| 5a Container CI | 5a.1 Docker Compose tests, 5a.2 helm lint, 5a.3 helm test | — | — |
-| 5b K3d | 5b.1–5b.3 all DONE | — | — |
-| 5c Docker Coverage | — | — | 5c.1–5c.4 graceful shutdown, JVM_OPTIONS, /libs/, variants |
-| 5d Helm Coverage | — | — | 5d.1–5d.5 ingress, ConfigMap, LoadBalancer, mockserver-config chart, multi-replica |
+1. **Determinism beats coverage.** A test that flakes 1% of the time on CI poisons the pipeline far more than the marginal coverage it adds. Prefer JSON-round-trip and pure-logic tests to integration tests that wait for Traefik or a Netty server to come up. K3d/Traefik ingress tests, LoadBalancer assignment tests, and multi-replica tests are explicitly excluded for this reason.
+2. **Don't pay overhead for artifacts nobody consumes.** JaCoCo costs ~5–10% of every build. Worth it only if a CI step publishes the report or a quality gate reads it. If no one looks at the coverage number, drop the overhead.
+3. **One TODO, one owner.** When two plans both list the same item (e.g., Buildkite Test Analytics token), consolidate to one plan. Avoids drift.
+4. **Tests should outlive the code they cover.** Splitting a 2,000-line test method that already passes risks dropping edge-case coverage. Do that work opportunistically when the file is being touched anyway, not as a planned phase.
 
-**Highest-leverage remaining work:** flip `<disableXmlReport>` to `false`, add the Phase 2 quick-win unit tests, and close Phase 5c/5d Docker + Helm coverage gaps.
+## Status Snapshot (2026-05-26)
 
-## Phase 1: Measure (Foundation) — ~1 day
+| Phase | Status |
+|-------|--------|
+| 1 Measure | 1.1 JaCoCo plugin shipped (decision pending — see below). 1.2 XML reports effectively shipped via CI flag override. 1.3 partial, duplicates [build-optimisation 2.3](./build-optimisation.md#23-buildkite-test-analytics-token-was-34-partial). |
+| 2 Quick Wins | 2.1 schema serializer tests, 2.2 ClientConfiguration tests still PENDING. 2.3/2.4 WebSocket tests DROPPED (see below). |
+| 3 Structural | 3.4 mocking-reduction work DONE (`MockServerClientTest` from 130 → 6 mocks; `HttpActionHandlerTest` from 109 → 23). 3.5 `@Ignore` removal DONE (zero remaining). 3.1/3.2/3.3 DROPPED or de-prioritised. |
+| 4 Coverage | 4.1 TLS error paths PENDING. 4.4 listeners **mislabelled DONE in earlier revisions — not actually done.** 4.6 file persistence partial. 4.2 validator and 4.3 mapper tests PENDING; 4.5 JWT DROPPED. |
+| 5a Container CI | 5a.1 Docker Compose tests in CI DONE. 5a.2 `helm lint` runs via `pipeline-infra.yml` DONE. 5a.3 `helm test` DONE. |
+| 5b K3d | 5b.1–5b.3 DONE. |
+| 5c Docker Coverage | PENDING. |
+| 5d Helm Coverage | 5d.2 ConfigMap + 5d.4 `mockserver-config` chart KEPT. 5d.1 ingress, 5d.3 LoadBalancer, 5d.5 multi-replica DROPPED. |
 
-| # | Task | Impact | Effort | Details |
-|---|------|--------|--------|---------|
-| 1.1 | Add JaCoCo coverage plugin to root `pom.xml` | Enables coverage measurement across all modules | Low | Add `jacoco-maven-plugin` with `prepare-agent` and `report` goals. Bind to `test` and `verify` phases. Aggregate report in a new `report-aggregate` profile. |
-| 1.2 | Enable XML test reports | Enables CI test result dashboards | Trivial | Remove `<disableXmlReport>true</disableXmlReport>` from both Surefire and Failsafe configurations in root `pom.xml` |
-| 1.3 | Add Buildkite Test Analytics or JUnit XML artifact collection | Test result visibility, failure trends, flaky test detection | Low | Collect `**/target/surefire-reports/*.xml` and `**/target/failsafe-reports/*.xml` as Buildkite artifacts, or configure Buildkite Test Analytics |
+**Highest-leverage remaining work:** flip XML report default for parity, add Phase 2.1/2.2 unit tests, deliver the genuinely-missing Phase 4.1 TLS error path tests + 4.4 listener unit tests, and decide whether JaCoCo stays.
 
-**Build time impact:** +5-10% (JaCoCo instrumentation overhead)
+---
 
-## Phase 2: Quick Coverage Wins — ~2-3 days
+## Phase 1: Measure
 
-Genuinely untested classes with zero direct or meaningful transitive coverage.
+### 1.1 JaCoCo coverage plugin — DONE, but consumer decision required
 
-| # | Task | Coverage Impact | Effort | Details |
-|---|------|----------------|--------|---------|
-| 2.1 | Add unit tests for `serialization/serializers/schema/` | Medium — 18 classes, 0 tests, 0 transitive coverage | Medium | JSON schema serializers for all model types. No test file imports any of these classes. Test serialization round-trips for each schema type. |
-| 2.2 | Add unit tests for `ClientConfiguration` | Medium — 243 lines, 0 tests | Low | Test property reading, default values, builder pattern. Similar to `ConfigurationTest` but for the client-side configuration. |
-| 2.3 | Add unit tests for `WebSocketClient` | Medium — 254 lines, only mocked in tests, never actually tested | Medium | Core callback feature. Currently only referenced as `@Mock` in `ForwardChainExpectationTest`. Need to test connection lifecycle, message handling, reconnection. |
-| 2.4 | Add unit tests for `WebSocketClientRegistry` | Medium — 244 lines, only mocked in tests | Medium | Core callback feature. Referenced in 11 test files but mocked in 9 of them. Need to test client registration, message routing, cleanup. |
+Shipped as `jacoco-maven-plugin:0.8.14` in root `mockserver/pom.xml`, bound to `prepare-agent` (test) and `prepare-agent-integration` (verify) plus `report` and `report-integration` goals. Not in `<pluginManagement>`, so it runs on every build with ~5–10% overhead.
 
-**Build time impact:** +1-2%
+**Open decision:** no CI step currently publishes the JaCoCo report or fails on coverage thresholds. Either:
+- **Option A (keep):** add a Buildkite artifact upload for `**/target/site/jacoco/**` and document where to find the aggregate report. Optionally wire `jacoco:check` with thresholds (e.g. `mockserver-core` ≥60%, `mockserver-netty` ≥50%) so a regression actually fails the build.
+- **Option B (drop):** remove the plugin until there's a consumer. Saves 5–10% of every build for an artifact nobody reads.
 
-## Phase 3: Structural Improvements — ~2-3 days
+Pick one before any further coverage work is done — otherwise the "+5–10%" tax is paid forever for zero feedback signal.
 
-| # | Task | Benefit | Effort | Details |
-|---|------|---------|--------|---------|
-| 3.1 | Add Surefire `parallel=classes` + `threadCount=4` | 30-50% faster unit test phase | Low | Add to Surefire config. Requires verifying no shared mutable state between test classes. Start with `mockserver-core`. |
-| 3.2 | Add test categories | Fast feedback loops locally | Medium | Introduce `@Category(SlowTest.class)` for tests >5s. Configure a Maven profile `fast-tests` that excludes slow tests. |
-| 3.3 | Split mega-test methods | Better failure diagnostics | Medium | Break down the 6 methods >200 lines. Priority targets: `shouldHandleInvalidOpenAPIJsonRequest()` (1994 lines in `HttpStateTest`), `shouldVerifyNotEnoughRequestsReceived()` (1706 lines), `shouldRetrieveRecordedLogMessages()` (1391 lines). |
-| 3.4 | Reduce excessive mocking | Better test reliability | Medium | `MockServerClientTest` (130 mocks) and `HttpActionHandlerTest` (109 mocks). Extract collaborator interfaces or use real lightweight implementations where feasible. |
-| 3.5 | Re-enable 3 `@Ignore`d tests | Small coverage gain | Low | Replace network-dependent external URL tests with local resource equivalents. For the HTTP/2 test, either implement or remove. |
+### 1.2 Make XML reports the default — cosmetic cleanup
 
-**Build time impact:** -20-30% (parallelism gains)
+XML reports already work in CI (`scripts/buildkite_quick_build.sh` passes `-DdisableXmlReport=false`; `pipeline-java.yml` uploads `**/target/{surefire,failsafe}-reports/TEST-*.xml`; `junit-annotate` posts annotations on failures). The root `pom.xml` still defaults to `<disableXmlReport>true</disableXmlReport>`.
 
-## Phase 4: Coverage Expansion — ~5-8 days
+**Change:** flip the default to `false` and drop the CI flag. Removes one row from the local-vs-CI divergence table in [build-optimisation.md](./build-optimisation.md#local-vs-ci-divergence-audit). Trivial.
+
+### 1.3 Buildkite Test Analytics token — see build-optimisation plan
+
+Tracked as [build-optimisation 2.3](./build-optimisation.md#23-buildkite-test-analytics-token-was-34-partial). Removed from this plan to avoid duplicate ownership.
+
+---
+
+## Phase 2: Quick Coverage Wins
+
+### 2.1 Unit tests for `serialization/serializers/schema/` — PENDING
+
+18 classes, zero direct test coverage. JSON schema serializers for OpenAPI model types. Test approach: round-trip each schema type (object → JSON → object), assert equality. Deterministic, contained scope, no infrastructure dependencies.
+
+### 2.2 Unit tests for `ClientConfiguration` — PENDING
+
+243-line class, zero tests. Test property reading, default values, builder pattern. Mirror the existing `ConfigurationTest` pattern.
+
+---
+
+## Phase 3: Structural Improvements
+
+### 3.4 Reduce excessive mocking — DONE
+
+`MockServerClientTest` from 130 → 6 `@Mock`/`mock(` references. `HttpActionHandlerTest` from 109 → 23. Both via either replacing mocks with lightweight real collaborators or extracting smaller collaborator interfaces.
+
+### 3.5 Re-enable `@Ignore`d tests — DONE
+
+Zero `@Ignore` annotations remain across `mockserver-core` and `mockserver-netty` test trees.
+
+### 3.3 Split long test methods — opportunistic, not planned
+
+Earlier revisions of this plan claimed `HttpStateTest.java` contained methods of ~1,994 lines. That figure was fabricated — verified maximum is ~162 lines. The actual long-method offenders are the six `validator/jsonschema/*IntegrationTest.java` files, each containing methods of 334–340 lines. Splitting them is correct in principle but the realistic risk is dropping edge-case coverage when one long method exercises behaviour A → B → C in sequence and the split tests only re-assert A and B. **Do this opportunistically when next touching one of those files, not as a planned phase.**
+
+---
+
+## Phase 4: Coverage Expansion
 
 Remaining gaps in critical modules, ordered by risk.
 
-| # | Target Package | Gap | Priority | Rationale |
-|---|---------------|-----|----------|-----------|
-| 4.1 | `socket/tls/` | ~6/9 classes lack isolated unit tests | High | `NettySslContextFactory` and `KeyStoreFactory` have partial transitive coverage but lack error path tests. `PEMToFile`, `SniHandler`, `ForwardProxyTLSX509CertificatesTrustManager` have no coverage. |
-| 4.2 | `validator/jsonschema/` | 9/10 | Medium | Input validation — malformed requests could bypass matching |
-| 4.3 | `mappers/` | 6/7 | Medium | WAR deployment — request/response mapping between Servlet and MockServer models |
-| 4.4 | `mock/listeners/` | 4/4 | Medium | Event listeners for mock lifecycle |
-| 4.5 | `authentication/jwt/` | 2/6 (exception classes only) | Low | `JWTAuthenticationHandler` has a direct test. `JWKGenerator`, `JWTGenerator`, `JWTValidator` tested transitively. Only exception classes lack tests (low risk). |
-| 4.6 | `file/` | 3/3 | Low | File-based persistence utilities |
+### 4.1 `socket/tls/` — HIGH PRIORITY
 
-**Explicitly out of scope** (not worth the complexity):
-- `openapi/examples/models/` — 12 simple model classes, tested transitively through `ExampleBuilder`
-- `memory/` and `metrics/` — 6 low-risk utility classes
-- `mockserver-examples/` — 48 example classes, not production code
-- `mockserver-integration-testing/` — 12 classes that ARE the test infrastructure
-- `echo/http/` — 6 test infrastructure classes (EchoServer)
+~6 of 9 classes lack isolated unit tests. `NettySslContextFactory` and `KeyStoreFactory` have partial transitive coverage but no error-path tests. `PEMToFile`, `SniHandler`, `ForwardProxyTLSX509CertificatesTrustManager` have no coverage at all. Particularly relevant given the recent TLS work on this branch.
 
-**Build time impact:** +5-8%
+### 4.4 `mock/listeners/` — PENDING (was mislabelled DONE)
 
-## Phase 5: Container and Helm Test Coverage — ~3-5 days
+4 classes: `MockServerEventLogNotifier`, `MockServerLogListener`, `MockServerMatcherListener`, `MockServerMatcherNotifier`. They are referenced transitively from 12 test files (including `MockServerMatcher*Test`, `ExpectationFileWatcherTest`, and `MockServerEventLogCorrelationIdTest`) but no isolated unit tests exist for the listener classes themselves. Earlier revisions of this plan marked this DONE — verified against the test tree, no listener-specific test file exists. Easy unit-level tests: register a listener, fire an event, assert the listener was called.
 
-The 14 existing container integration tests (10 Docker Compose + 4 Helm/Kind) are **local-only** and cover only basic functionality. This phase brings them into CI and expands coverage of Docker images, Helm chart features, and Kubernetes-specific behaviour.
+### 4.2 `validator/jsonschema/` — MEDIUM, narrower than earlier claims
 
-### 5a. Bring Existing Tests into CI — ~1 day
+10 source classes; 3 have no test file at all (`JsonSchemaExpectationIdValidator`, `JsonSchemaOpenAPIExpectationValidator`, `JsonSchemaRequestDefinitionValidator`). The other 7 are covered by 6 `*IntegrationTest.java` files plus `JsonSchemaValidatorTest.java`. Earlier revisions of this plan claimed "9 of 10 classes lack direct tests" — that was wrong by a factor of 3. Real gap is the 3 untested classes; integration test depth on the other 7 is debatable but not zero.
 
-| # | Task | Impact | Effort | Details |
-|---|------|--------|--------|---------|
-| 5a.1 | Add Docker Compose tests to Buildkite pipeline | 10 existing tests run on every build | Low | Add a new pipeline step after the Maven build that runs `SKIP_JAVA_BUILD=true SKIP_HELM_TESTS=true container_integration_tests/integration_tests.sh`. Only requires Docker + Docker Compose (already available on CI agents). ~3 min runtime. |
-| 5a.2 | Add `helm lint` and `helm template` to CI | Catches chart syntax errors | Trivial | Add `helm lint helm/mockserver/` and `helm lint helm/mockserver-config/` to CI. Can run without a cluster. |
-| 5a.3 | Invoke `helm test` in existing Helm tests | The chart defines a test pod (`service-test.yaml`) that is never executed | Trivial | Add `helm test <release>` after each `helm upgrade --install --wait` in the Helm integration test scripts. |
+### 4.3 `mappers/` — MEDIUM, gated on WAR support decision
 
-**Build time impact:** +3-5 minutes
+7 source classes; 5 lack direct tests (only `HttpServletRequestToMockServerHttpRequestDecoder` and `MockServerHttpResponseToHttpServletResponseEncoder` are tested). Tests are valuable *if* WAR deployment remains a supported configuration. Confirm before investing — if WAR is being phased out, drop.
 
-### 5b. Replace Kind with K3d — ~1 day
+### 4.6 `file/` — PARTIAL
 
-| # | Task | Impact | Effort | Details |
-|---|------|--------|--------|---------|
-| 5b.1 | Migrate `helm-deploy.sh` from Kind to K3d | Faster cluster startup (10-20s vs 30-60s), built-in Traefik ingress controller and ServiceLB | Medium | Replace `kind create cluster` with `k3d cluster create`, `kind load docker-image` with `k3d image import`, `kind delete cluster` with `k3d cluster delete`. K3d wraps K3s in Docker containers, same as Kind but lighter. |
-| 5b.2 | Add K3d to CI Docker image or install step | K3d available for Helm tests in CI | Low | Either add K3d to the `mockserver/mockserver:maven` Docker image, or install it as a CI step (`curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \| bash`). |
-| 5b.3 | Add Helm tests to CI pipeline | 4 existing + new tests run on every build | Low | Add a pipeline step that runs K3d-based Helm tests after Docker Compose tests. ~5 min runtime. |
+4 source classes (`FileCreator`, `FilePath`, `FileReader`, `FileStore`); only `FileStoreTest.java` exists. Earlier revisions claimed 3/3 done — actual state is 1/4. Low priority utilities, but a small test pass adding `FileCreatorTest`, `FilePathTest`, and `FileReaderTest` is straightforward.
 
-**Build time impact:** +5-7 minutes (but faster per-test than Kind)
+**Explicitly out of scope:**
+- `openapi/examples/models/` — 12 simple model classes, tested transitively through `ExampleBuilder`.
+- `memory/` and `metrics/` — 6 low-risk utility classes.
+- `mockserver-examples/` — example code, not production.
+- `mockserver-integration-testing/`, `echo/http/` — test infrastructure.
+
+---
+
+## Phase 5: Container and Helm Test Coverage
+
+### 5a / 5b — DONE
+
+- Docker Compose tests in CI via `:docker: container integration tests` step in `.buildkite/pipeline-java.yml`.
+- `helm lint` runs from `.buildkite/pipeline-infra.yml` → `helm-validate.sh` (lints both `helm/mockserver` and `helm/mockserver-config`).
+- `helm test` invoked by `run-helm-test` in `container_integration_tests/helm-deploy.sh`.
+- Kind → K3d migration complete: `k3d cluster create/import/delete` throughout `helm-deploy.sh`, k3d install logic in `.buildkite/scripts/steps/helm-integration-test.sh`, `k3d-config.yaml` checked in.
 
 ### 5c. Expand Docker Test Coverage — ~1-2 days
 
 | # | Task | Impact | Effort | Details |
 |---|------|--------|--------|---------|
-| 5c.1 | Test graceful shutdown | Verifies connections drain and expectations persist on `docker stop` | Medium | Create test: start container with persisted expectations, create expectations, send `docker stop`, verify expectations file was written before container exited. |
-| 5c.2 | Test `JVM_OPTIONS` env var | Verifies custom JVM flags are passed through | Low | Create Docker Compose test with `JVM_OPTIONS=-Xmx256m` and verify the container starts successfully and responds. |
-| 5c.3 | Test `/libs/*` classpath extension | Verifies custom JARs are loaded | Medium | Create test that mounts a custom JAR into `/libs/` containing an expectation initialiser class, then verify the initialiser ran. |
-| 5c.4 | Test additional Docker image variants | Verifies root, snapshot, and local variants work | Low | Extend `integration_tests.sh` to optionally build and smoke-test the `root` and `snapshot` Dockerfiles. Not all 5 variants need full test suites — a basic startup + HTTP response test per variant is sufficient. |
+| 5c.1 | Test graceful shutdown | Verifies connections drain and expectations persist on `docker stop` | Medium | Start container with persisted expectations, create expectations, send `docker stop`, verify expectations file was written before container exited. |
+| 5c.2 | Test `JVM_OPTIONS` env var | Verifies custom JVM flags pass through | Low | Docker Compose test with `JVM_OPTIONS=-Xmx256m`; verify container starts and responds. |
+| 5c.3 | Test `/libs/*` classpath extension | Verifies custom JARs are loaded | Medium | Mount a JAR containing an expectation initialiser class into `/libs/`; verify the initialiser ran. |
+| 5c.4 | Smoke-test additional image variants | Verifies `root`, `snapshot`, `local` variants build and respond | Low | Per-variant: build + start + HTTP `GET /mockserver/status`. No full test suite per variant. |
 
-### 5d. Expand Helm Test Coverage (Leveraging K3d) — ~1-2 days
+Docker tests are deterministic on a single host — no Kubernetes scheduling, no ingress, no service IP allocation. Low flake surface.
 
-K3d ships with Traefik (ingress controller) and ServiceLB (LoadBalancer implementation), enabling tests that are impractical with Kind.
+### 5d. Expand Helm Test Coverage — narrowed scope
+
+Limited to deterministic chart features. K3d Traefik/ServiceLB tests are excluded because they introduce non-deterministic readiness behaviour that historically becomes the flakiest part of any pipeline.
 
 | # | Task | Impact | Effort | Details |
 |---|------|--------|--------|---------|
-| 5d.1 | Test ingress template | Validates the 52-line `ingress.yaml` template with TLS and path routing | Medium | Deploy with `--set ingress.enabled=true --set ingress.hosts[0].host=mockserver.local --set ingress.hosts[0].paths[0].path=/`. K3d's Traefik ingress processes the resource. Verify access via the ingress hostname. |
-| 5d.2 | Test ConfigMap injection | Validates `app.config.enabled=true` with properties and initialiser JSON | Low | Deploy with `--set app.config.enabled=true` + properties content. Verify config is applied. |
-| 5d.3 | Test LoadBalancer service type | Validates `service.type: LoadBalancer` | Low | Deploy with `--set service.type=LoadBalancer`. K3d's ServiceLB assigns an external IP. Verify access via the LoadBalancer IP. |
-| 5d.4 | Test `mockserver-config` chart | The entire config chart has zero tests | Low | Deploy `mockserver-config` chart with custom values, then deploy `mockserver` chart referencing it. Verify config is loaded. |
-| 5d.5 | Test multi-replica deployment | Validates `replicaCount > 1` | Low | Deploy with `--set replicaCount=2 --wait`. Verify both pods are running and the service load-balances between them. |
+| 5d.2 | Test ConfigMap injection | Validates `app.config.enabled=true` with properties and initialiser JSON | Low | Deploy with `--set app.config.enabled=true` and properties content; verify config is applied via `/mockserver/status` or expectation list. |
+| 5d.4 | Test `mockserver-config` chart | The chart has zero tests today | Low | Deploy `mockserver-config` with custom values, then deploy `mockserver` chart referencing it; verify config is loaded. |
 
-### Phase 5 Summary
+### Phase 5 cost (remaining work only)
 
-| Sub-phase | Effort | New Tests | CI Time Added |
-|-----------|--------|-----------|---------------|
-| 5a. Existing tests in CI | ~1 day | 0 (14 existing) | +3-5 min |
-| 5b. Kind → K3d migration | ~1 day | 0 (migration) | +5-7 min |
-| 5c. Docker coverage expansion | ~1-2 days | 4 new | +2-3 min |
-| 5d. Helm coverage expansion | ~1-2 days | 5 new | +3-5 min |
-| **Total** | **~3-5 days** | **9 new tests** | **+13-20 min** |
+| Sub-phase | Already in CI? | Added CI time |
+|-----------|---------------|---------------|
+| 5a, 5b | Yes | Already counted in baseline |
+| 5c (Docker coverage expansion) | No | +2-3 min |
+| 5d (narrowed: ConfigMap + mockserver-config chart only) | No | +1-2 min |
+| **Remaining work total** | — | **+3-5 min** |
 
-## Cost/Complexity Budget
+Earlier revisions of this plan projected "+13-20 min" — that double-counted the 5a/5b work that's already shipped.
 
-| Phase | Build Time Impact | Coverage Improvement | Complexity | Timeline |
-|-------|------------------|---------------------|------------|----------|
-| Phase 1: Measure | +5-10% | Measurement only | Trivial | ~1 day |
-| Phase 2: Quick Wins | +1-2% | +5-8% estimated | Medium | ~2-3 days |
-| Phase 3: Structural | -20-30% | Neutral (structural) | Medium | ~2-3 days |
-| Phase 4: Expansion | +5-8% | +15-20% estimated | Medium | ~5-8 days |
-| Phase 5: Container/Helm | +13-20 min | Docker + Helm coverage | Medium | ~3-5 days |
-| **Net** | **~-10% faster + 15 min** | **+20-28% Java + Docker/Helm** | **Moderate** | **~13-20 days** |
+---
 
-Phase 3's parallelism savings more than offset the additional Java test execution time from Phases 2 and 4. Phase 5 adds ~15 minutes for container/Helm tests but these run in a separate CI step after the Maven build.
+## Dropped Items and Why
 
-## Execution Order
+Items considered and rejected. Recorded so they don't get re-proposed.
 
-```mermaid
-gantt
-    title Testing Improvement Phases
-    dateFormat  X
-    axisFormat %s days
+### ❌ Phase 3.1 — Surefire `parallel=classes` + `threadCount=4`
 
-    section Phase 1
-    Add JaCoCo           :p1a, 0, 1
-    Enable XML reports   :p1b, 0, 1
-    CI test analytics    :p1c, 0, 1
+Directly conflicts with [build-optimisation.md → Dropped Items](./build-optimisation.md#-parallel-surefire-parallelclasses-threadcount4). Attempted previously; caused 48 test failures in `mockserver-core` due to shared static state in `ConfigurationProperties` and `MockServerLogger`. The fix path is a multi-week test rework with serious flake risk. Listed in earlier revisions of this plan as "Low effort" — that was wrong.
 
-    section Phase 2
-    Schema serializer tests      :p2a, 1, 3
-    ClientConfiguration tests    :p2b, 1, 2
-    WebSocketClient tests        :p2c, 2, 4
-    WebSocketClientRegistry tests:p2d, 3, 4
+### ❌ Phase 3.2 — Test categories (`@Category(SlowTest.class)` + `fast-tests` profile)
 
-    section Phase 3
-    Surefire parallel    :p3a, 4, 5
-    Test categories      :p3b, 4, 6
-    Split mega-methods   :p3c, 5, 7
-    Reduce mocking       :p3d, 6, 7
+Adding the annotation across hundreds of test classes is permanent maintenance burden. The payoff (developers running `./mvnw test -Pfast-tests` locally) depends on adoption that isn't guaranteed. Reconsider only if there's an explicit team commitment to use the profile.
 
-    section Phase 4
-    TLS tests            :p4a, 7, 9
-    Validator tests      :p4b, 7, 8
-    Mapper tests         :p4c, 8, 10
-    Listener tests       :p4d, 9, 10
-    Remaining packages   :p4e, 10, 15
+### ❌ Phase 2.3 — `WebSocketClient` isolated unit tests
+### ❌ Phase 2.4 — `WebSocketClientRegistry` isolated unit tests
 
-    section Phase 5
-    Docker Compose tests in CI   :p5a, 7, 8
-    helm lint in CI              :p5b, 7, 8
-    Kind to K3d migration        :p5c, 8, 9
-    Helm tests in CI             :p5d, 9, 10
-    Docker coverage expansion    :p5e, 10, 12
-    Helm coverage expansion      :p5f, 10, 12
-```
+These are Netty-heavy callback infrastructure. Isolated unit testing requires either a fake Netty server (mostly tests the fake) or an embedded Netty server (which makes them integration tests, with real network and async timing — flake surface). The reason these are mocked in `ForwardChainExpectationTest` and 9 other test files today is that they're awkward to unit-test honestly. Realistic coverage path: confirm they're exercised by the callback integration tests in `mockserver-netty`; if so, that's the right testing layer.
+
+### ❌ Phase 4.5 — JWT exception classes
+
+Plan's own assessment was "low priority, low risk." `JWTAuthenticationHandler` is directly tested; the generators and validator are tested transitively. Only exception classes lack direct tests. Drop.
+
+### ❌ Phase 5d.1 — Ingress test (Traefik)
+
+K3d bundles Traefik but ingress attachment to a Service is non-deterministic in timing. Tests that wait for the ingress to be "ready" tend to retry-with-sleep, which becomes the flake. Trade-off is worse than the value of validating the 52-line ingress template — `helm lint` already catches syntax errors, and ingress is a thin wrapper users typically customise per environment anyway.
+
+### ❌ Phase 5d.3 — LoadBalancer service type test
+
+K3d ServiceLB allocates external IPs via host-network shenanigans inside the K3d container. Works on a fresh box, intermittent on a CI agent that has hosted other K3d clusters. Same flake-vs-value calculus as ingress.
+
+### ❌ Phase 5d.5 — Multi-replica deployment test
+
+MockServer's expectations are in-memory per JVM. Two replicas serving traffic round-robin will give inconsistent matching results unless the test wires up the `mockserver-config` chart (already covered by 5d.4) and turns off expectation routing — at which point the test is exercising K8s Service round-robin, not MockServer. Low signal, high coordination cost.
+
+---
+
+## Cost/Complexity Budget (remaining work)
+
+| Item | Build Time Impact | Coverage / Value | Complexity |
+|------|------------------|------------------|------------|
+| 1.1 JaCoCo consumer decision (A or B) | -5–10% (Option B) or 0% (Option A + artifact) | Coverage reports become useful or overhead drops | Trivial |
+| 1.2 Flip XML report default | 0% | Parity cleanup | Trivial |
+| 2.1 Schema serializer tests | +<1% | +Real gap (18 classes) | Low |
+| 2.2 ClientConfiguration tests | +<1% | +Real gap | Low |
+| 4.1 TLS error-path tests | +1% | +High value (recent TLS work) | Low |
+| 4.4 Listener unit tests | +<1% | +Real gap (was mislabelled DONE) | Low |
+| 4.2 jsonschema validator tests | +1% | +Medium value | Low |
+| 4.3 Mapper tests (gated on WAR support) | +1% | +Medium-if-WAR-supported | Low |
+| 5c Docker coverage (5c.1–5c.4) | +2-3 min CI | +Docker variants and operations | Low |
+| 5d.2 + 5d.4 (narrowed) | +1-2 min CI | +Chart features that have zero tests | Low |
+| **Net** | **Roughly flat** | **+15% on the modules that matter** | **Low** |
+
+The Phase 3 parallelism gain from earlier revisions is gone (3.1 dropped). The Phase 1 JaCoCo overhead is the main cost, and the consumer decision dictates whether that cost is paid back at all.
 
 ## Success Criteria
 
-1. **JaCoCo coverage report** shows >=60% line coverage on `mockserver-core` and >=50% on `mockserver-netty`
-2. **No test method exceeds 200 lines**
-3. **CI build time stays under 60 minutes** (current timeout) for Java tests; container/Helm tests run as a separate step
-4. **XML test reports and coverage reports** are published as CI artifacts
-5. **Test categories** enable running `./mvnw test -Pfast-tests` in <5 minutes locally
-6. **Container integration tests run in CI** — all 14 existing + new tests execute on every build
-7. **`helm lint`** runs in CI for both charts (`mockserver` and `mockserver-config`)
-8. **Helm ingress, ConfigMap, and LoadBalancer** templates are validated by K3d-based tests
+1. **JaCoCo decision shipped** — either a Buildkite artifact + threshold, or the plugin removed. No "plugin runs but nobody reads the output" steady state.
+2. **`<disableXmlReport>` default flipped to `false`** in root `pom.xml`; CI flag override removed.
+3. **No new test method added by this plan exceeds 200 lines.** Pre-existing long methods (the validator integration tests at 334–340 lines) are out of scope and tracked under Phase 3.3 as opportunistic work.
+4. **CI build time stays under 60 minutes** for Java tests; container/Helm tests run in a separate step.
+5. **All Phase 2 and Phase 4 unit tests written and passing on master for 7 consecutive days** (no flakes).
+6. **Container integration tests run in CI** — already true; verify the 5c additions don't introduce flakes.
+7. **`helm lint` runs for both charts** — already true via `pipeline-infra.yml`.
+
+## Files Touched by Remaining Work
+
+| File | Change |
+|------|--------|
+| `mockserver/pom.xml` | Flip `disableXmlReport` default (1.2); JaCoCo decision (1.1 — either add `jacoco:check` or remove plugin) |
+| `scripts/buildkite_quick_build.sh` | Remove `-DdisableXmlReport=false` flag once pom default flipped |
+| `.buildkite/pipeline-java.yml` | Optional: add JaCoCo artifact upload glob if Option A |
+| `mockserver/mockserver-core/src/test/java/org/mockserver/serialization/serializers/schema/**` | New: per-class round-trip tests (2.1) |
+| `mockserver/mockserver-core/src/test/java/org/mockserver/configuration/ClientConfigurationTest.java` | New, alongside existing `ConfigurationTest` (2.2) |
+| `mockserver/mockserver-core/src/test/.../socket/tls/**` | New: error-path tests for `NettySslContextFactory`, `KeyStoreFactory`, `PEMToFile`, `SniHandler`, `ForwardProxyTLSX509CertificatesTrustManager` (4.1) |
+| `mockserver/mockserver-core/src/test/.../mock/listeners/**` | New: unit tests for the 4 listener classes (4.4) |
+| `mockserver/mockserver-core/src/test/.../validator/jsonschema/**` | New (4.2) |
+| `mockserver/mockserver-core/src/test/.../mappers/**` | New, gated on WAR support decision (4.3) |
+| `container_integration_tests/docker_compose_graceful_shutdown/**` | New (5c.1) |
+| `container_integration_tests/docker_compose_jvm_options/**` | New (5c.2) |
+| `container_integration_tests/docker_compose_libs_classpath/**` | New (5c.3) |
+| `container_integration_tests/integration_tests.sh` | Extend to smoke-test `root`/`snapshot`/`local` variants (5c.4) |
+| `container_integration_tests/helm_configmap_injection/**` | New (5d.2) |
+| `container_integration_tests/helm_mockserver_config_chart/**` | New (5d.4) |
