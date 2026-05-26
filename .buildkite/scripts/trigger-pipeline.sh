@@ -203,6 +203,15 @@ while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
       rm -f "$RESPONSE_FILE"
       exit 1
       ;;
+    skipped)
+      # Buildkite emits 'skipped' when skip_queued_branch_builds supersedes this build
+      # with a newer queued build for the same branch — intentional, treat as success.
+      echo ":fast_forward: ${LABEL} build #${BUILD_NUMBER} was skipped (superseded by a newer build for this branch)"
+      echo "    ${BUILD_URL}"
+      BUILD_NUMBER=""
+      rm -f "$RESPONSE_FILE"
+      exit 0
+      ;;
     *)
       MINS=$((ELAPSED / 60))
       echo "    ${LABEL} build #${BUILD_NUMBER}: ${BUILD_STATE} (${MINS}m elapsed)"
