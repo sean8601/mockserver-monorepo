@@ -589,7 +589,9 @@ export function ScriptedTurnsPanel({ turns }: { turns: ScriptedTurn[] }) {
           ([, v]) => v !== undefined && v !== null,
         );
         const hasPredicates = predicateEntries.length > 0;
-        const previousScenario = i > 0 ? turns[i - 1].scenarioName : undefined;
+        // tsconfig has noUncheckedIndexedAccess, so the array index returns T | undefined;
+        // the i > 0 guard is enough at runtime but TypeScript needs an explicit narrowing.
+        const previousScenario = i > 0 ? turns[i - 1]?.scenarioName : undefined;
         const isFirstOfConversation = i === 0 || turn.scenarioName !== previousScenario;
         const conversationHeader = isFirstOfConversation && turn.scenarioName
           ? turn.scenarioName.replace(/^__llm_conv_/, 'conv ').replace(/__iso=.*/, '')
