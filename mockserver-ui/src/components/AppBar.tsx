@@ -24,9 +24,13 @@ import TrafficIcon from '@mui/icons-material/Traffic';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import DownloadIcon from '@mui/icons-material/Download';
 import ChatIcon from '@mui/icons-material/Chat';
+import AlbumIcon from '@mui/icons-material/Album';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import { useState, useCallback } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
 import ConversationWizard from './ConversationWizard';
+import CassetteManager from './CassetteManager';
+import CompareRunsDialog from './CompareRunsDialog';
 import type { ConnectionStatus } from '../types';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 
@@ -61,6 +65,8 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [cassetteOpen, setCassetteOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const handleDownloadHar = useCallback(async () => {
     setDownloading(true);
@@ -142,6 +148,24 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
         >
           New LLM Conversation Mock
         </Button>
+        <Button
+          size="small"
+          color="inherit"
+          startIcon={<AlbumIcon sx={{ fontSize: '0.875rem' }} />}
+          onClick={() => setCassetteOpen(true)}
+          sx={{ fontSize: '0.7rem', textTransform: 'none', whiteSpace: 'nowrap' }}
+        >
+          Cassettes
+        </Button>
+        <Button
+          size="small"
+          color="inherit"
+          startIcon={<CompareArrowsIcon sx={{ fontSize: '0.875rem' }} />}
+          onClick={() => setCompareOpen(true)}
+          sx={{ fontSize: '0.7rem', textTransform: 'none', whiteSpace: 'nowrap' }}
+        >
+          Compare Runs
+        </Button>
         <Box sx={{ flex: 1 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           ⌘K search · ⌘L clear · Esc filter
@@ -210,6 +234,15 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
         connectionParams={connectionParams}
+      />
+      <CassetteManager
+        open={cassetteOpen}
+        onClose={() => setCassetteOpen(false)}
+        connectionParams={connectionParams}
+      />
+      <CompareRunsDialog
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
       />
     </MuiAppBar>
   );
