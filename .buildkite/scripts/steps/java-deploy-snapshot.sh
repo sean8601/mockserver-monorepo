@@ -32,12 +32,31 @@ if [ -z "$SONATYPE_USERNAME" ] || [ "$SONATYPE_USERNAME" = "null" ]; then
 fi
 
 echo "--- :nexus: Deploying snapshot to Central Portal"
+# Snapshot-deploy specific flags (the release path activates -P release separately
+# and intentionally re-enables javadoc / sources / GPG / central-publishing):
+#   -T 1C                       run module compile + package + upload in parallel,
+#                                using 1 thread per available core. Sonatype Central
+#                                Portal's snapshot endpoint handles concurrent uploads
+#                                from the same authenticated session, and Maven 3.9
+#                                serialises shared-state phases internally.
+#   -Dmaven.javadoc.skip=true   release profile is not active here so the javadoc
+#                                plugin does not run anyway, but make it explicit so
+#                                no future profile-activation flag accidentally turns
+#                                on the slow doclet for snapshot builds.
+#   -Dmaven.source.skip=true    same rationale as javadoc — defensive, snapshots do
+#                                not need a -sources.jar artifact.
+#   -Dgpg.skip=true             snapshots are not signature-checked by Central Portal;
+#                                skipping GPG removes signing latency if the release
+#                                profile were ever auto-activated.
 exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i mockserver/mockserver:maven \
   -m 7g \
   -w /build/mockserver \
   -e "SONATYPE_USERNAME=$SONATYPE_USERNAME" \
   -e "SONATYPE_PASSWORD=$SONATYPE_PASSWORD" \
-  -- ./mvnw deploy -DskipTests \
+  -- ./mvnw -T 1C deploy -DskipTests \
+    -Dmaven.javadoc.skip=true \
+    -Dmaven.source.skip=true \
+    -Dgpg.skip=true \
     -Djava.security.egd=file:/dev/./urandom \
     --settings .buildkite-settings.xml
