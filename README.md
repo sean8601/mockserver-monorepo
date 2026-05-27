@@ -56,7 +56,9 @@ Please see: [Change Log](https://github.com/mock-server/mockserver-monorepo/blob
 
 ### Requirements
 
-MockServer requires **Java 11+**. Java 11 is the minimum supported version to maximise compatibility — approximately 23% of Java projects still run on Java 11.
+**Runtime:** MockServer requires **Java 11+**. Java 11 is the minimum supported version to maximise compatibility — approximately 23% of Java projects still run on Java 11.
+
+**Building from source:** requires **JDK 17+** (frontend-maven-plugin 2.x is used during the build to compile the dashboard UI). The produced bytecode still targets Java 11.
 
 **Security Note:** MockServer is a **development and testing tool only**. See [SECURITY.md](SECURITY.md) for important security considerations.
 

@@ -21,7 +21,7 @@ CI builds are orchestrated by `.buildkite/scripts/generate-pipeline.sh` which se
 
 ### Maven Configuration
 
-MockServer uses Maven 3.9.0 via the Maven Wrapper (`mvnw`). The project targets Java 11 source/target compatibility.
+MockServer uses Maven 3.9.0 via the Maven Wrapper (`mvnw`). The project targets Java 11 source/target compatibility (produced bytecode runs on Java 11+). However, **building from source requires JDK 17+** because `frontend-maven-plugin` 2.x (used to compile the dashboard UI in the `build-ui` profile of `mockserver-netty`) requires Java 17 to execute the plugin itself.
 
 ### Modules
 
