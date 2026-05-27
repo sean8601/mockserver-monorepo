@@ -243,8 +243,7 @@ classDiagram
 
 ## Related Documents
 
-- [RFC: LLM & Agent Mocking](../plans/mockserver-llm-mocking.md) -- authoritative design spec
-- [Implementation Plan](../plans/mockserver-llm-mocking-impl-plan.md) -- work items and milestones
+- [Roadmap](../plans/mockserver-llm-mocking.md) -- status of remaining work items after M0–M5 + U1–U4 delivery
 - [Security Audit](llm-security-audit.md) -- M5 security review including known codec limitations
 - [Codec Golden-File Testing](llm-codec-fixtures.md) -- how to refresh provider fixtures
 - [Request Processing](request-processing.md) -- action dispatch pipeline (LLM dispatch flow)

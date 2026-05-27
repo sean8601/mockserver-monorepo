@@ -667,7 +667,6 @@ mockserver/
     │   ├── buildkite-status.ts
     │   └── session-notification.ts
     └── plans/                               # Plan documents
-        ├── ai-developer-experience-spec.md
         ├── fix-control-plane-tls-1766.md
         ├── fix-verify-false-positive-1757.md
         └── python-ruby-release-infrastructure.md
