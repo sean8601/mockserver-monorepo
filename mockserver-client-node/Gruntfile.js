@@ -12,7 +12,8 @@ module.exports = function (grunt) {
 
     grunt.initConfig({
         exec: {
-            stop_existing_mockservers: './stop_MockServer.sh'
+            stop_existing_mockservers: './stop_MockServer.sh',
+            typecheck: 'npx tsc'
         },
         jshint: {
             options: {
@@ -72,16 +73,6 @@ module.exports = function (grunt) {
                 browsers: ['Chrome']
             }
         },
-        ts: {
-            options: {
-                noEmit: true
-            },
-            default: {
-                src: [
-                    'test/mockServerClient.ts'
-                ]
-            }
-        }
     });
 
     grunt.loadNpmTasks('grunt-exec');
@@ -89,8 +80,8 @@ module.exports = function (grunt) {
     grunt.loadNpmTasks('grunt-contrib-jshint');
     grunt.loadNpmTasks('grunt-contrib-nodeunit');
     grunt.loadNpmTasks('grunt-karma');
-    grunt.loadNpmTasks("grunt-ts");
 
+    grunt.registerTask('ts', ['exec:typecheck']);
     grunt.registerTask('test_node', ['ts', 'start_mockserver', 'nodeunit', 'stop_mockserver']);
     grunt.registerTask('test_browser', ['start_mockserver', 'karma:chrome', 'stop_mockserver']);
     grunt.registerTask('test', ['start_mockserver', 'nodeunit', 'karma:chrome', 'stop_mockserver']);
