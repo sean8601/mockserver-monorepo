@@ -29,13 +29,27 @@ resource "aws_s3_bucket_public_access_block" "site" {
   restrict_public_buckets = true
 }
 
+# Audit finding F-WEB-14: migrate from legacy Origin Access Identity (OAI) to
+# the newer Origin Access Control (OAC). One OAC instance serves every
+# distribution. OAI resources are kept for now so bucket policies grant BOTH
+# principals during the cutover — eliminates any 403 window. The OAIs will be
+# removed in a follow-up apply once OAC traffic is verified stable.
+
 resource "aws_cloudfront_origin_access_identity" "site" {
   for_each = var.sites
-  comment  = "OAI for ${each.key}.${var.domain}"
+  comment  = "OAI for ${each.key}.${var.domain} (legacy — kept for transition; remove after OAC cutover)"
 }
 
 resource "aws_cloudfront_origin_access_identity" "main" {
-  comment = "OAI for ${var.domain} (main distribution)"
+  comment = "OAI for ${var.domain} main distribution (legacy — kept for transition; remove after OAC cutover)"
+}
+
+resource "aws_cloudfront_origin_access_control" "s3" {
+  name                              = "mockserver-website-s3"
+  description                       = "OAC for all mockserver website S3 origins"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
 }
 
 resource "aws_s3_bucket_policy" "site" {
@@ -46,6 +60,8 @@ resource "aws_s3_bucket_policy" "site" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Legacy OAI principal — kept during OAC transition, removed after.
+        Sid    = "AllowLegacyOAIRead"
         Effect = "Allow"
         Principal = {
           AWS = concat(
@@ -55,6 +71,25 @@ resource "aws_s3_bucket_policy" "site" {
         }
         Action   = "s3:GetObject"
         Resource = "${aws_s3_bucket.site[each.key].arn}/*"
+      },
+      {
+        # Audit finding F-WEB-14: OAC principal — CloudFront service identity,
+        # scoped by SourceArn condition to only the distributions that should
+        # read from this bucket (the per-version distro plus, for the latest
+        # version's bucket, the main distro).
+        Sid       = "AllowOACRead"
+        Effect    = "Allow"
+        Principal = { Service = "cloudfront.amazonaws.com" }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.site[each.key].arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = concat(
+              [aws_cloudfront_distribution.site[each.key].arn],
+              each.key == var.latest_version ? [aws_cloudfront_distribution.main.arn] : []
+            )
+          }
+        }
       },
       {
         # Audit finding F-WEB-09: deny any non-TLS access to the bucket.
@@ -89,12 +124,9 @@ resource "aws_cloudfront_distribution" "site" {
   web_acl_id = aws_wafv2_web_acl.cloudfront.arn
 
   origin {
-    domain_name = aws_s3_bucket.site[each.key].bucket_regional_domain_name
-    origin_id   = "S3-${each.value.bucket_name}"
-
-    s3_origin_config {
-      origin_access_identity = aws_cloudfront_origin_access_identity.site[each.key].cloudfront_access_identity_path
-    }
+    domain_name              = aws_s3_bucket.site[each.key].bucket_regional_domain_name
+    origin_id                = "S3-${each.value.bucket_name}"
+    origin_access_control_id = aws_cloudfront_origin_access_control.s3.id
   }
 
   # Audit finding F-WEB-08: enable standard access logging.
@@ -146,12 +178,9 @@ resource "aws_cloudfront_distribution" "main" {
   web_acl_id = aws_wafv2_web_acl.cloudfront.arn
 
   origin {
-    domain_name = aws_s3_bucket.site[var.latest_version].bucket_regional_domain_name
-    origin_id   = "S3-${var.sites[var.latest_version].bucket_name}"
-
-    s3_origin_config {
-      origin_access_identity = aws_cloudfront_origin_access_identity.main.cloudfront_access_identity_path
-    }
+    domain_name              = aws_s3_bucket.site[var.latest_version].bucket_regional_domain_name
+    origin_id                = "S3-${var.sites[var.latest_version].bucket_name}"
+    origin_access_control_id = aws_cloudfront_origin_access_control.s3.id
   }
 
   # Audit finding F-WEB-08: enable standard access logging.
