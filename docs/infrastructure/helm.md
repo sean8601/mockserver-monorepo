@@ -174,7 +174,13 @@ When `app.persistence.enabled=true`, the chart:
 ### Installation
 
 ```bash
-# Add the chart repo (hosted on S3)
+# --- Option A: OCI (recommended, Helm 3.8+) ------------------------------
+helm install mockserver oci://ghcr.io/mock-server/charts/mockserver
+
+# Pin a version
+helm install mockserver oci://ghcr.io/mock-server/charts/mockserver --version 6.1.0
+
+# --- Option B: Legacy HTTP repo ------------------------------------------
 helm repo add mockserver https://www.mock-server.com
 helm repo update
 
@@ -252,30 +258,76 @@ Rules:
 
 Helm chart changes made between releases are published as part of the next MockServer release, not independently.
 
-## Chart Repository
+## Chart Distribution
 
-The Helm chart repository is hosted on S3 alongside the website:
+The chart is published to two locations on every release. Both are kept in lock-step by `scripts/release/components/helm.sh`.
+
+| Channel | URL | Underlying storage | Why both |
+|---------|-----|-------------------|----------|
+| **OCI (recommended)** | `oci://ghcr.io/mock-server/charts/mockserver` | GitHub Container Registry, public | Native format for modern toolchains (Argo CD, Flux, Renovate); immutable digests; cosign-signable; same auth path consumers already use for `ghcr.io` container images |
+| **Legacy HTTP** | `https://www.mock-server.com` (index.yaml) | S3 bucket fronting the website | Back-compat for `helm repo add` users and direct `.tgz` downloads — kept indefinitely |
+
+### OCI registry (GHCR)
+
+- **Registry:** `ghcr.io`
+- **Namespace:** `mock-server/charts`
+- **Package:** `mockserver` (chart name from `Chart.yaml`)
+- **Pull URL:** `oci://ghcr.io/mock-server/charts/mockserver`
+- **Visibility:** public (no auth required for `helm pull` / `helm install`)
+- **Push auth:** Fine-scoped GitHub PAT with `write:packages` scope, stored in AWS Secrets Manager as `mockserver-release/ghcr-token` (`{username, token}`)
+
+### Legacy HTTP repo
 
 - **Bucket:** Main website S3 bucket (see `~/mockserver-aws-ids.md`)
 - **Index:** `helm/charts/index.yaml`
-- **Charts:** `helm/charts/mockserver-*.tgz` (versions 5.3.0 through 6.1.0)
+- **Charts:** `helm/charts/mockserver-*.tgz` (every released version)
 
-### Publishing a New Chart Version
+### Release pipeline (automated)
+
+`scripts/release/components/helm.sh` runs on the `release` agent queue and:
+
+1. Bumps `Chart.yaml` `version` + `appVersion` to `$RELEASE_VERSION`
+2. `helm lint` + `helm package`
+3. `helm registry login ghcr.io` + `helm push <tgz> oci://ghcr.io/mock-server/charts`
+4. Sync historical `.tgz` + `index.yaml` from S3, regenerate index, upload back
+5. Commit + push `Chart.yaml`, the new `.tgz`, and the rebuilt `index.yaml`
+
+GHCR is pushed first so a registry outage aborts the step before any S3 mutation. Re-running the step after a mid-publish failure is safe — `helm push` overwrites the existing OCI tag with identical bytes, and the S3 sync rebuilds the index from scratch. **Caveat:** this assumes the GHCR package is *not* configured with immutable tags. If you ever turn on immutability in the GHCR package settings, re-publishing the same version will fail with `403`; either bump the version or temporarily disable immutability before retry.
+
+### Backfilling the OCI registry
+
+To populate GHCR with historical chart versions (one-time, after first turning the OCI publishing flow on):
 
 ```bash
-# Package the chart
-cd helm
-helm package ./mockserver/
+# Authenticate to AWS to load the PAT from Secrets Manager
+aws sso login --profile mockserver-build
 
-# Move to charts directory
-mv mockserver-X.Y.Z.tgz charts/
-cd charts
+# Dry-run to see which versions will push
+AWS_PROFILE=mockserver-build scripts/release/backfill-helm-oci.sh --dry-run
 
-# Regenerate index
-helm repo index .
+# Push every .tgz under helm/charts/ to ghcr.io/mock-server/charts
+AWS_PROFILE=mockserver-build scripts/release/backfill-helm-oci.sh --execute
+```
 
-# Upload to S3
-# (manual upload via AWS Console or aws s3 cp)
+The script enumerates `helm/charts/mockserver-*.tgz` in version order and pushes each one. Safe to re-run — `helm push` against an existing OCI tag overwrites it with the same bytes.
+
+### Publishing a chart manually (rare)
+
+Almost never needed — the release pipeline does this. Useful for emergency republishes:
+
+```bash
+# Package
+cd helm && helm package ./mockserver/ --destination charts/ && cd ..
+
+# OCI (GHCR) — printf avoids the trailing newline that echo would append
+printf "%s" "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+helm push helm/charts/mockserver-X.Y.Z.tgz oci://ghcr.io/mock-server/charts
+
+# Legacy HTTP (S3)
+aws s3 sync s3://<website-bucket>/ helm/charts/ --exclude '*' --include 'mockserver-*.tgz' --include 'index.yaml'
+helm repo index helm/charts/ --url https://www.mock-server.com
+aws s3 cp helm/charts/mockserver-X.Y.Z.tgz s3://<website-bucket>/
+aws s3 cp helm/charts/index.yaml s3://<website-bucket>/
 ```
 
 ## Testing

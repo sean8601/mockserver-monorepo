@@ -141,7 +141,7 @@ scripts/release/
     ├── npm.sh                    # mockserver-node + mockserver-client-node
     ├── pypi.sh                   # mockserver-client-python
     ├── rubygems.sh               # mockserver-client (Ruby)
-    ├── helm.sh                   # Helm chart
+    ├── helm.sh                   # Helm chart (OCI: GHCR + legacy HTTP: S3)
     ├── javadoc.sh                # Javadoc to S3
     ├── website.sh                # Jekyll site
     ├── schema.sh                 # JSON Schema
@@ -274,7 +274,7 @@ The release pipeline writes every version-bearing file in the repo, so contribut
 | `npm` | `npm install`, grunt build | `git push tag`, `npm publish` (uses `--dry-run`) |
 | `pypi` | `python -m build`, `twine check` | `twine upload` |
 | `rubygems` | `gem build` | `gem push` |
-| `helm` | `helm lint`, `helm package` | S3 upload, commit/push |
+| `helm` | `helm lint`, `helm package` | `helm push` to `oci://ghcr.io/mock-server/charts`, S3 upload, commit/push |
 | `javadoc` | `mvn javadoc:aggregate` | S3 sync |
 | `website` | `bundle install`, `jekyll build` | S3 sync, CloudFront invalidation |
 | `schema` | jq-generate self-contained schemas | S3 sync |

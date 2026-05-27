@@ -56,9 +56,27 @@ else
 fi
 
 if is_dry_run; then
+  log_dry "skip: helm registry login + helm push to oci://ghcr.io/mock-server/charts"
   log_dry "skip: aws s3 download index, repack, upload, commit/push"
   log_info "Built chart: .tmp/helm-charts/mockserver-$RELEASE_VERSION.tgz"
 else
+  # Push to GHCR (OCI) before touching S3 so a transient GHCR failure aborts
+  # the step before any S3 mutation. helm push is idempotent against the same
+  # version tag, so a step retry after a mid-publish failure is safe.
+  log_info "Push chart to GHCR (oci://ghcr.io/mock-server/charts)"
+  GHCR_USERNAME=$(load_secret "mockserver-release/ghcr-token" "username")
+  GHCR_TOKEN=$(load_secret "mockserver-release/ghcr-token" "token")
+  in_docker "$HELM_IMAGE" --entrypoint sh -w /build \
+    -e "GHCR_USERNAME=$GHCR_USERNAME" \
+    -e "GHCR_TOKEN=$GHCR_TOKEN" \
+    -- -ec '
+      set +x
+      printf "%s" "$GHCR_TOKEN" | helm registry login ghcr.io \
+        --username "$GHCR_USERNAME" --password-stdin
+      helm push "helm/charts/mockserver-'"$RELEASE_VERSION"'.tgz" \
+        oci://ghcr.io/mock-server/charts
+    '
+
   log_info "Sync existing charts from S3"
   if [[ -z "${WEBSITE_BUCKET:-}" ]]; then
     log_error "WEBSITE_BUCKET not set"; exit 1

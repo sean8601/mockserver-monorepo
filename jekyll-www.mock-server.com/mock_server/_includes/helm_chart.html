@@ -1,18 +1,40 @@
 <h2>Deploying MockServer Helm Chart</h2>
 
-<p>There are three ways to deploy the MockServer helm chart:</p>
+<p>There are four ways to deploy the MockServer helm chart:</p>
 
 <ol>
+    <li><a href="#deploy_via_oci_registry">via OCI registry</a> (recommended, Helm 3.8+)</li>
     <li><a href="#deploy_via_chart_repository">via chart repository</a></li>
     <li><a href="#deploy_via_package">via package</a></li>
     <li><a href="#deploy_via_local_source">via local source</a></li>
 </ol>
 
+<a id="deploy_via_oci_registry" class="anchor" href="#deploy_via_oci_registry">&nbsp</a>
+
+<h3>Deploy Via OCI Registry</h3>
+
+<p>The chart is published to the GitHub Container Registry as an OCI artifact. No <span class="keyword">helm repo add</span> is needed &mdash; <span class="keyword">helm install</span> can pull straight from <span class="keyword">oci://</span>:</p>
+
+<pre class="prettyprint code"><code class="code">helm upgrade --install --kube-context &lt;your kube context&gt; --namespace mockserver --create-namespace --version {{ site.mockserver_version }} mockserver oci://ghcr.io/mock-server/charts/mockserver</code></pre>
+
+<p>To inspect chart metadata for a specific version without installing:</p>
+
+<pre class="prettyprint code"><code class="code">helm show chart oci://ghcr.io/mock-server/charts/mockserver --version {{ site.mockserver_version }}</code></pre>
+
+<p>To browse the full list of published versions, open the package page on GHCR: <a target="_blank" href="https://github.com/orgs/mock-server/packages/container/package/charts%2Fmockserver">github.com/orgs/mock-server/packages/container/package/charts%2Fmockserver</a></p>
+
+<p>The OCI artifact is public &mdash; no authentication is required for <span class="keyword">helm pull</span> or <span class="keyword">helm install</span>. Every released chart version (5.3.0 onward) is available at the same path.</p>
+
+<p>To mirror the chart into a private OCI registry (Harbor, Artifactory, ECR, GAR, ACR, etc.):</p>
+
+<pre class="prettyprint code"><code class="code">helm pull oci://ghcr.io/mock-server/charts/mockserver --version {{ site.mockserver_version }}
+helm push mockserver-{{ site.mockserver_version }}.tgz oci://&lt;your-private-registry&gt;/&lt;namespace&gt;</code></pre>
+
 <a id="deploy_via_chart_repository" class="anchor" href="#helm_extend_classpath">&nbsp</a>
 
 <h3>Deploy Via Chart Repository</h3>
 
-<p>You can add the MockServer chart repository as follows:</p>
+<p>The legacy HTTP-based Helm repository remains available at <strong>www.mock-server.com</strong>:</p>
 
 <pre class="prettyprint code"><code class="code">helm repo add mockserver https://www.mock-server.com
 helm repo update</code></pre>
