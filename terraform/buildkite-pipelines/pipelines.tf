@@ -125,6 +125,23 @@ resource "buildkite_pipeline_schedule" "cleanup_daily" {
   message     = "Scheduled: clean up closed PR builds"
 }
 
+locals {
+  # Audit finding F-BK-CLOUD-02: pipelines that load secrets via AWS Secrets
+  # Manager must be PRIVATE so their build logs are not world-readable. The
+  # auto-redaction Buildkite applies is pattern-based and not infallible.
+  #
+  # Pipelines that DON'T load secrets (mockserver master, ui, node, python,
+  # ruby, maven-plugin) can remain PUBLIC — useful for OSS build transparency.
+  public_pipelines = toset([
+    "pipeline",     # mockserver — top-level dispatcher, no secrets
+    "ui",           # mockserver-ui — lint/test only
+    "node",         # mockserver-node — lint/test only
+    "python",       # mockserver-python — lint/test only
+    "ruby",         # mockserver-ruby — lint/test only
+    "maven-plugin", # mockserver-maven-plugin — build/test only
+  ])
+}
+
 resource "buildkite_pipeline" "pipeline" {
   for_each = local.pipelines
 
@@ -133,6 +150,7 @@ resource "buildkite_pipeline" "pipeline" {
   repository     = local.repository
   default_branch = "master"
   emoji          = each.value.emoji
+  visibility     = contains(local.public_pipelines, each.key) ? "PUBLIC" : "PRIVATE"
 
   cancel_intermediate_builds = true
   skip_intermediate_builds   = true

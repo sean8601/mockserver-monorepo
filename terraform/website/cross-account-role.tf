@@ -17,20 +17,77 @@ resource "aws_iam_role_policy" "release_website" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Full management of the versioned-site S3 buckets — terraform creates,
-        # configures and content-syncs them. Scoped to the website bucket
-        # name prefix so the role cannot touch unrelated buckets.
-        Sid      = "WebsiteBuckets"
-        Effect   = "Allow"
-        Action   = "s3:*"
+        # Audit finding F-WEB-02: previously `s3:*` — tightened to the specific
+        # verbs the release pipeline needs.
+        #
+        # Routine release (website.sh, javadoc.sh, schema.sh, helm.sh) uses
+        # object-level reads/writes against the active site bucket.
+        # Major / minor release (versioned-site.sh) creates a NEW versioned
+        # bucket via Terraform and so additionally needs bucket-create verbs.
+        Sid    = "WebsiteBuckets"
+        Effect = "Allow"
+        Action = [
+          # Object-level (routine release)
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:GetObjectAcl",
+          "s3:PutObjectAcl",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketTagging",
+          "s3:GetBucketAcl",
+          "s3:GetBucketPolicy",
+          "s3:GetBucketWebsite",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketOwnershipControls",
+          # Bucket-level (versioned-site.sh creates new buckets)
+          "s3:CreateBucket",
+          "s3:PutBucketPolicy",
+          "s3:PutBucketWebsite",
+          "s3:PutPublicAccessBlock",
+          "s3:PutBucketPublicAccessBlock",
+          "s3:PutBucketOwnershipControls",
+          "s3:PutBucketTagging",
+        ]
         Resource = ["arn:aws:s3:::aws-website-mockserver-*", "arn:aws:s3:::aws-website-mockserver-*/*"]
       },
       {
-        # CloudFront has no resource-level permissions for distribution and
-        # origin-access-identity create/list operations, so this is account-wide.
-        Sid      = "CloudFront"
-        Effect   = "Allow"
-        Action   = "cloudfront:*"
+        # Audit finding F-WEB-02: previously `cloudfront:*` — tightened to the
+        # specific actions used by `scripts/release/components/website.sh`,
+        # `versioned-site.sh`, `javadoc.sh`, and `schema.sh`. Removes account-
+        # wide actions never used by the release pipeline (e.g. cloudfront
+        # functions, key groups, public keys, realtime log configs).
+        # Create/Delete are needed because versioned-site.sh provisions a new
+        # distribution and OAI for every new major/minor release.
+        Sid    = "CloudFront"
+        Effect = "Allow"
+        Action = [
+          # Cache invalidation (routine release)
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetInvalidation",
+          "cloudfront:ListInvalidations",
+          # Distribution read + update (routine release)
+          "cloudfront:GetDistribution",
+          "cloudfront:GetDistributionConfig",
+          "cloudfront:ListDistributions",
+          "cloudfront:UpdateDistribution",
+          # Distribution create/delete (versioned-site.sh)
+          "cloudfront:CreateDistribution",
+          "cloudfront:DeleteDistribution",
+          # OAI create/read/delete (versioned-site.sh)
+          "cloudfront:CreateCloudFrontOriginAccessIdentity",
+          "cloudfront:GetCloudFrontOriginAccessIdentity",
+          "cloudfront:GetCloudFrontOriginAccessIdentityConfig",
+          "cloudfront:ListCloudFrontOriginAccessIdentities",
+          "cloudfront:DeleteCloudFrontOriginAccessIdentity",
+          "cloudfront:UpdateCloudFrontOriginAccessIdentity",
+          # Tagging (routine + versioned-site)
+          "cloudfront:TagResource",
+          "cloudfront:UntagResource",
+          "cloudfront:ListTagsForResource",
+        ]
         Resource = "*"
       },
       {

@@ -15,6 +15,7 @@ if [[ "$POM_VERSION" != *-SNAPSHOT ]]; then
 fi
 
 echo "--- :aws: Fetching Sonatype Central Portal credentials from Secrets Manager"
+{ set +x; } 2>/dev/null  # F-BK-04: suppress xtrace before secret fetch
 SECRET_JSON=$(aws secretsmanager get-secret-value \
   --secret-id "mockserver-build/sonatype" \
   --region eu-west-2 \

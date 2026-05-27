@@ -1,0 +1,27 @@
+# CODEOWNERS — required reviewers for high-stakes paths.
+#
+# This file is only enforced when branch protection has
+# `required_pull_request_reviews.require_code_owner_reviews: true`.
+#
+# Owner: @jamesdbloom
+
+# Release and CI/CD orchestration
+/scripts/release/**            @jamesdbloom
+/.buildkite/**                 @jamesdbloom
+/.github/workflows/**          @jamesdbloom
+/.github/dependabot.yml        @jamesdbloom
+/.github/CODEOWNERS            @jamesdbloom
+
+# Infrastructure as Code
+/terraform/**                  @jamesdbloom
+
+# Container build and runtime images
+/docker/**                     @jamesdbloom
+/docker_build/**               @jamesdbloom
+
+# Helm chart
+/helm/**                       @jamesdbloom
+
+# Maven release coordinates
+/mockserver/pom.xml            @jamesdbloom
+/pom.xml                       @jamesdbloom

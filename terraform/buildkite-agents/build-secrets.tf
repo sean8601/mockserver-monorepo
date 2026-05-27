@@ -93,9 +93,13 @@ resource "aws_iam_policy" "read_release_secrets" {
         ]
       },
       {
+        # Cross-account assume of the website-release role.
+        # Account ID is the mockserver-website account (014848309742). The
+        # target role's trust policy is already scoped to a specific build-account
+        # role ARN, so this is defence-in-depth on the source side.
         Effect   = "Allow"
         Action   = "sts:AssumeRole"
-        Resource = "arn:aws:iam::*:role/mockserver-release-website"
+        Resource = "arn:aws:iam::014848309742:role/mockserver-release-website"
       }
     ]
   })

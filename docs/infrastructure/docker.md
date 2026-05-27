@@ -31,9 +31,6 @@ gcr.io/distroless/java17:nonroot"]
         MVN["docker_build/maven/Dockerfile
 Maven CI
 Ubuntu 24.04 + JDK 21 + Maven 3.9"]
-        GRUNT["docker_build/grunt/Dockerfile
-Grunt/Frontend
-Ubuntu 20.04 + Chrome + Node"]
         PERF["docker_build/performance/Dockerfile
 Performance
 locustio/locust"]
@@ -112,8 +109,7 @@ Both modes download `netty-tcnative-boringssl-static` from Maven Central (`repo1
 
 | Image | Dockerfile | Base | Purpose |
 |-------|-----------|------|---------|
-| `mockserver/mockserver:maven` | `docker_build/maven/Dockerfile` | Ubuntu 24.04 | CI builds — JDK 21, Maven 3.9.15, pre-fetched deps |
-| `mockserver/mockserver:grunt` | `docker_build/grunt/Dockerfile` | Ubuntu 20.04 | Frontend tests — JDK 8, Chrome, Node 16, Grunt |
+| `mockserver/mockserver:maven` | `docker_build/maven/Dockerfile` | Ubuntu 24.04 | CI builds — JDK 21, Maven 3.9.15 |
 | Performance | `docker_build/performance/Dockerfile` | `locustio/locust` | Load testing with Locust |
 
 ## Docker Compose Examples

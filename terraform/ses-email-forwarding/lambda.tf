@@ -63,10 +63,13 @@ resource "aws_iam_role_policy" "forwarder" {
         Resource = "${aws_s3_bucket.mail.arn}/*"
       },
       {
+        # Audit finding F-WEB-12: previously `Resource: "*"`. Scoped to the
+        # specific SES identity so a compromised Lambda cannot send as any
+        # other verified identity in the account.
         Sid      = "SendForwardedEmail"
         Effect   = "Allow"
         Action   = "ses:SendRawEmail"
-        Resource = "*"
+        Resource = "arn:aws:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain}"
       },
       {
         Sid    = "CloudWatchLogs"

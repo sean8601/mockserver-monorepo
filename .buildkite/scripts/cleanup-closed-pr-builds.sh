@@ -36,6 +36,7 @@ PIPELINES=(
 )
 
 echo "--- :aws: Fetching Buildkite API token from Secrets Manager"
+{ set +x; } 2>/dev/null  # F-BK-04: suppress xtrace before secret fetch
 BUILDKITE_API_TOKEN=$(aws secretsmanager get-secret-value \
   --secret-id "$SECRET_ID" --region "$REGION" --query SecretString --output text)
 

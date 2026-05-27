@@ -16,6 +16,7 @@ last_successful_commit() {
   local current_build="${BUILDKITE_BUILD_NUMBER:-}"
 
   local token
+  { set +x; } 2>/dev/null  # F-BK-04: suppress xtrace before secret fetch
   token=$(aws secretsmanager get-secret-value \
     --secret-id "$secret_id" --region "$region" \
     --query SecretString --output text 2>/dev/null) || { echo "    reason: secrets manager unavailable" >&2; return 1; }

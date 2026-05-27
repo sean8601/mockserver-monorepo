@@ -5,7 +5,9 @@
 # http://www.mock-server.com
 #
 
-FROM ubuntu:24.04
+# Audit finding F-DKR-07: base image pinned by digest for reproducibility.
+# Refresh via Dependabot (ecosystem: docker).
+FROM ubuntu:24.04@sha256:cdb5fd928fced577cfecf12c8966e830fcdf42ee481fb0b91904eeddc2fe5eff
 
 LABEL maintainer="James Bloom <jamesdbloom@gmail.com>"
 
@@ -13,10 +15,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/London
 
 ARG MAVEN_VERSION=3.9.15
+# Audit finding F-DKR-05: pin gh CLI version + verify SHA256.
+# Update both values together when bumping. Source:
+# https://github.com/cli/cli/releases/download/v2.83.0/gh_2.83.0_checksums.txt
+ARG GH_VERSION=2.83.0
+ARG GH_SHA256_AMD64=a5cf6cdb40fc67751adf561126b3314044779cea81ba4f254fbe8e9a69f1676f
+ARG GH_SHA256_ARM64=12311e320d4cfdb54d7fa2d58cd1e3a2ccb4c12e1c3abb32b0a2e48bd0f991bf
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && apt-get update \
-    && apt-get -y upgrade \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -63,14 +70,21 @@ RUN ARCH=$(dpkg --print-architecture) \
     && mv /tmp/linux-${ARCH}/helm /usr/local/bin/helm \
     && rm -rf /tmp/linux-${ARCH}
 
+# Audit finding F-DKR-05: pinned gh version + SHA256-verified download.
 RUN ARCH=$(dpkg --print-architecture) \
-    && curl -fsSL "https://github.com/cli/cli/releases/latest/download/gh_$(curl -sfL https://api.github.com/repos/cli/cli/releases/latest | grep -oP '"tag_name": "v\K[^"]+')_linux_${ARCH}.tar.gz" \
-    | tar xz -C /tmp --strip-components=1 \
+    && case "$ARCH" in \
+         amd64) EXPECTED_SHA="$GH_SHA256_AMD64" ;; \
+         arm64) EXPECTED_SHA="$GH_SHA256_ARM64" ;; \
+         *)     echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" -o /tmp/gh.tar.gz \
+    && echo "${EXPECTED_SHA}  /tmp/gh.tar.gz" | sha256sum -c - \
+    && tar xz -f /tmp/gh.tar.gz -C /tmp --strip-components=1 \
     && mv /tmp/bin/gh /usr/local/bin/gh \
-    && rm -rf /tmp/bin /tmp/share
+    && rm -rf /tmp/bin /tmp/share /tmp/gh.tar.gz
 
-RUN git clone https://github.com/mock-server/mockserver.git \
-    && cd mockserver \
-    && ./mvnw install -DskipTests \
-    && cd .. \
-    && rm -rf mockserver
+# Audit finding F-DKR-04: the previous build cloned mock-server/mockserver and
+# ran `mvn install -DskipTests` to warm the local Maven cache. This made the
+# CI image depend on the public repo's HEAD, expanding the supply-chain attack
+# surface. Removed — the long-running Buildkite agent's persistent `~/.m2`
+# cache covers the same use case.

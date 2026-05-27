@@ -55,10 +55,27 @@ echo "--- :k8s: Installing k3d (if needed)"
 K3D_VERSION="v5.7.5"
 K3D_DIR="${PWD}/.tmp/bin"
 export PATH="${K3D_DIR}:${PATH}"
+
+# F-BK-05: pin and verify the k3d binary by SHA256. Update these values when
+# bumping K3D_VERSION — published at
+# https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/checksums.txt
+declare -A K3D_SHA256=(
+  [amd64]="5d3f22817d9e163ab6ed43572189dd49fe724d7a6948075b570067747eca8d3f" # k3d-linux-amd64
+  [arm64]="ac12fcf8e35481769e173c96d3fa70dc581826482d927b94a560a3375df2621e" # k3d-linux-arm64
+)
+
 if ! command -v k3d &>/dev/null || [[ "$(k3d version 2>/dev/null | head -1)" != *"${K3D_VERSION#v}"* ]]; then
   mkdir -p "$K3D_DIR"
   ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
   curl -fsSL "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-${ARCH}" -o "$K3D_DIR/k3d"
+
+  EXPECTED_SHA="${K3D_SHA256[$ARCH]:-}"
+  if [[ -z "$EXPECTED_SHA" ]]; then
+    echo "ERROR: no SHA256 pin for k3d on $ARCH — refusing to install untrusted binary" >&2
+    exit 1
+  fi
+  echo "${EXPECTED_SHA}  ${K3D_DIR}/k3d" | sha256sum -c -
+
   chmod +x "$K3D_DIR/k3d"
   k3d version
 fi

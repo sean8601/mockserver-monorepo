@@ -78,7 +78,7 @@ To investigate or manage AWS infrastructure:
    - Build: `aws configure sso --profile mockserver-build` (SSO region: `eu-west-2`, default region: `eu-west-2`)
    - Website: `aws configure sso --profile mockserver-website` (SSO region: `eu-west-2`, default region: `us-east-1`)
 3. **Authenticate**: `aws sso login --profile mockserver-build` and/or `aws sso login --profile mockserver-website`
-4. **Corporate TLS proxy**: if behind a TLS inspection proxy, set `AWS_CA_BUNDLE` to your corporate root CA PEM file (e.g. `export AWS_CA_BUNDLE=$NODE_EXTRA_CA_CERTS`)
+4. **Corporate TLS proxy**: if behind a TLS inspection proxy, set `AWS_CA_BUNDLE` to a **combined bundle** containing both the system root CAs AND your corporate root CA. Pointing it at the corporate root alone (e.g. `tesco_root_ca.pem`) is **not enough** — AWS endpoints whose certificates don't chain through the corporate proxy (e.g. SNS in us-east-1) will fail TLS validation and the AWS SDK / Terraform's AWS provider will retry silently, appearing to hang. Typical fix: build a combined `ca-bundle-with-tesco.pem` (system roots + corporate CA), then `export AWS_CA_BUNDLE=/path/to/ca-bundle-with-tesco.pem` (the same file commonly used for `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE`).
 5. **macOS + Python 3.14 + Homebrew**: if you get `pyexpat` symbol errors, set `export DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib`
 
 ### Buildkite Agent Infrastructure

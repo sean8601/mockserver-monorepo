@@ -52,7 +52,10 @@ resource "aws_route53_record" "dmarc" {
   name    = "_dmarc.${var.domain}"
   type    = "TXT"
   ttl     = 600
-  records = ["v=DMARC1; p=none;"]
+  # Audit finding F-WEB-11: was `p=none` (report-only). Moving to `p=quarantine`
+  # instructs receivers to send unaligned mail to spam. Add `rua=` to receive
+  # aggregate reports — monitor for a week before considering `p=reject`.
+  records = ["v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@${var.domain}; ruf=mailto:dmarc-reports@${var.domain}; fo=1;"]
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -82,6 +85,10 @@ resource "aws_ses_receipt_rule" "forward" {
   recipients    = [var.domain]
   enabled       = true
   scan_enabled  = true
+  # Audit finding F-WEB-10: previously "Optional" (default). Setting to
+  # "Require" enforces TLS for inbound SMTP connections; senders that don't
+  # support STARTTLS will be rejected at the gateway.
+  tls_policy = "Require"
 
   s3_action {
     position          = 1

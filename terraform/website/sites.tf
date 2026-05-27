@@ -44,17 +44,34 @@ resource "aws_s3_bucket_policy" "site" {
   bucket   = aws_s3_bucket.site[each.key].id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        AWS = concat(
-          [aws_cloudfront_origin_access_identity.site[each.key].iam_arn],
-          each.key == var.latest_version ? [aws_cloudfront_origin_access_identity.main.iam_arn] : []
-        )
-      }
-      Action   = "s3:GetObject"
-      Resource = "${aws_s3_bucket.site[each.key].arn}/*"
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = concat(
+            [aws_cloudfront_origin_access_identity.site[each.key].iam_arn],
+            each.key == var.latest_version ? [aws_cloudfront_origin_access_identity.main.iam_arn] : []
+          )
+        }
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.site[each.key].arn}/*"
+      },
+      {
+        # Audit finding F-WEB-09: deny any non-TLS access to the bucket.
+        # CloudFront and SDK callers already use HTTPS; this is defence-in-depth.
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.site[each.key].arn,
+          "${aws_s3_bucket.site[each.key].arn}/*",
+        ]
+        Condition = {
+          Bool = { "aws:SecureTransport" = "false" }
+        }
+      },
+    ]
   })
 }
 
@@ -68,6 +85,9 @@ resource "aws_cloudfront_distribution" "site" {
   http_version        = "http2and3"
   comment             = "${each.key}.${var.domain}"
 
+  # Audit finding F-WEB-04: WAF web ACL attached to every distribution.
+  web_acl_id = aws_wafv2_web_acl.cloudfront.arn
+
   origin {
     domain_name = aws_s3_bucket.site[each.key].bucket_regional_domain_name
     origin_id   = "S3-${each.value.bucket_name}"
@@ -75,6 +95,16 @@ resource "aws_cloudfront_distribution" "site" {
     s3_origin_config {
       origin_access_identity = aws_cloudfront_origin_access_identity.site[each.key].cloudfront_access_identity_path
     }
+  }
+
+  # Audit finding F-WEB-08: enable standard access logging.
+  # `bucket_regional_domain_name` is required when the logs bucket is outside
+  # us-east-1 (this bucket is in eu-west-2); the global `bucket_domain_name`
+  # silently breaks log delivery.
+  logging_config {
+    bucket          = aws_s3_bucket.cloudfront_logs.bucket_regional_domain_name
+    prefix          = "${each.key}/"
+    include_cookies = false
   }
 
   default_cache_behavior {
@@ -112,6 +142,9 @@ resource "aws_cloudfront_distribution" "main" {
   http_version        = "http2and3"
   comment             = var.domain
 
+  # Audit finding F-WEB-04: WAF web ACL attached.
+  web_acl_id = aws_wafv2_web_acl.cloudfront.arn
+
   origin {
     domain_name = aws_s3_bucket.site[var.latest_version].bucket_regional_domain_name
     origin_id   = "S3-${var.sites[var.latest_version].bucket_name}"
@@ -119,6 +152,16 @@ resource "aws_cloudfront_distribution" "main" {
     s3_origin_config {
       origin_access_identity = aws_cloudfront_origin_access_identity.main.cloudfront_access_identity_path
     }
+  }
+
+  # Audit finding F-WEB-08: enable standard access logging.
+  # `bucket_regional_domain_name` is required when the logs bucket is outside
+  # us-east-1 (this bucket is in eu-west-2); the global `bucket_domain_name`
+  # silently breaks log delivery.
+  logging_config {
+    bucket          = aws_s3_bucket.cloudfront_logs.bucket_regional_domain_name
+    prefix          = "main/"
+    include_cookies = false
   }
 
   custom_error_response {
