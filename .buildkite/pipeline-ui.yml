@@ -14,7 +14,7 @@ steps:
 
   - label: ":junit: annotate test results"
     plugins:
-      - junit-annotate#v2.4.1:
+      - junit-annotate#v2.7.0:
           artifacts: "mockserver-ui/test-reports/*.xml"
           always-annotate: true
 

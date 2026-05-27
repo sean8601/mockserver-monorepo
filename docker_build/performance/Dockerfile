@@ -6,7 +6,7 @@
 #
 
 # pull base image.
-FROM locustio/locust
+FROM locustio/locust:2.44.0
 
 # maintainer details
 MAINTAINER James Bloom "jamesdbloom@gmail.com"
