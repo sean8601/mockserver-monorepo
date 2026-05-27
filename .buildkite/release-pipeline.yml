@@ -68,9 +68,27 @@ steps:
 
   - wait
 
+  # F-BK-02: a second TOTP check before downstream artifact publishing
+  # bounds the blast radius if the build context is compromised between
+  # Maven Central publish and downstream artifact deploys (npm, PyPI,
+  # RubyGems, Helm, Docker, SwaggerHub, GitHub).
   - block: ":rocket: Approve downstream publish"
-    prompt: "Maven Central published. Approve to publish downstream artifacts."
+    prompt: "Maven Central published. Re-authenticate with a fresh TOTP to authorize downstream artifact publishing."
     allowed_teams: ["release-managers"]
+    fields:
+      - text: "TOTP Code"
+        key: "totp-code-downstream"
+        hint: "6-digit code from your authenticator app"
+        required: true
+        format: "[0-9]{6}"
+
+  - label: ":shield: Verify TOTP (downstream)"
+    command: |
+      TOTP_CODE="$(buildkite-agent meta-data get totp-code-downstream)" \
+        .buildkite/scripts/release-verify-totp.sh
+    agents: { queue: "release" }
+
+  - wait
 
   - label: ":globe_with_meridians: Versioned Site"
     command: ".buildkite/scripts/release-runner.sh versioned-site"
@@ -152,4 +170,17 @@ steps:
   - label: ":sparkles: Finalize"
     command: ".buildkite/scripts/release-runner.sh finalize"
     timeout_in_minutes: 30
+    agents: { queue: "release" }
+
+  - wait
+
+  - label: ":mag: Verify"
+    # Post-release safety net: hit every public URL we publish to and confirm
+    # $RELEASE_VERSION is actually live. Catches silent-skip / silent-success
+    # failure modes that the individual component scripts may not surface
+    # (e.g. SwaggerHub leaving versions as unpublished drafts before the
+    # publish/set-default endpoints were wired in, or Javadoc's `aws s3 sync`
+    # being skipped because mvn javadoc:aggregate timed out).
+    command: ".buildkite/scripts/release-runner.sh verify"
+    timeout_in_minutes: 10
     agents: { queue: "release" }

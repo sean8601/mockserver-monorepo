@@ -83,8 +83,9 @@ else
   sed_i "s/^mockserver_api_version: .*/mockserver_api_version: $API_VERSION/" "$JEKYLL_CONFIG"
   sed_i "s/^mockserver_snapshot_version: .*/mockserver_snapshot_version: $NEXT_VERSION/" "$JEKYLL_CONFIG"
 
-  OPENAPI_SPEC="$REPO_ROOT/mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml"
-  sed_i "s/^  version: .*/  version: $RELEASE_VERSION/" "$OPENAPI_SPEC"
+  # OpenAPI spec version is bumped by prepare.sh (audit F-SH-01) so that
+  # swaggerhub.sh in the parallel publish group uploads a spec whose body
+  # matches its registry version label. No bump needed here.
 
   for PKG_DIR in mockserver-node mockserver-client-node; do
     PKG_FILE="$REPO_ROOT/$PKG_DIR/package.json"
@@ -157,9 +158,12 @@ else
   declare -a UPDATED_PATHS=(
     changelog.md
     jekyll-www.mock-server.com/_config.yml
-    mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml
     mockserver/
   )
+  # NOTE: the OpenAPI spec used to be listed here, but prepare.sh now bumps
+  # it as part of the non-Maven manifest pass and commits it in the prepare
+  # commit (audit F-SH-01) so swaggerhub.sh uploads a spec with the correct
+  # internal version. Don't add it back here.
   [[ -f mockserver-node/package.json ]]            && UPDATED_PATHS+=(mockserver-node/package.json)
   [[ -f mockserver-client-node/package.json ]]     && UPDATED_PATHS+=(mockserver-client-node/package.json)
   [[ -f mockserver-client-python/pyproject.toml ]] && UPDATED_PATHS+=(mockserver-client-python/pyproject.toml)

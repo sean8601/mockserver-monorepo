@@ -27,7 +27,18 @@ sync_to_origin_master
 SPEC="$REPO_ROOT/mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml"
 [[ -f "$SPEC" ]] || { log_error "OpenAPI spec not found: $SPEC"; exit 1; }
 log_info "Spec: $SPEC"
-log_info "Spec version: $(grep -E '^  version:' "$SPEC" | head -1 || echo unknown)"
+# Extract the info.version field — the indented `  version:` form so we don't
+# match the top-level openapi: version line. prepare.sh bumps this to
+# $RELEASE_VERSION as part of the same commit that bumps Maven poms (audit
+# F-SH-01); if it doesn't match here, the spec body would lie about its
+# version even though SwaggerHub labels the entry correctly via the URL
+# query param. Fail-fast — better than silently uploading a wrong-version spec.
+SPEC_VERSION=$(grep -E '^[[:space:]]+version:' "$SPEC" | head -1 | sed -E 's/^[[:space:]]+version:[[:space:]]*//; s/[[:space:]]*$//')
+log_info "Spec version: $SPEC_VERSION"
+if [[ "$SPEC_VERSION" != "$RELEASE_VERSION" ]]; then
+  log_error "OpenAPI spec info.version ($SPEC_VERSION) does not match RELEASE_VERSION ($RELEASE_VERSION) — refusing to upload a spec whose body claims the wrong version"
+  exit 1
+fi
 
 SWAGGERHUB_OWNER="jamesdbloom"
 SWAGGERHUB_API="mock-server-openapi"

@@ -66,7 +66,21 @@ GPG_PASSPHRASE=$(load_secret "mockserver-release/gpg-key" "passphrase")
 SONATYPE_USERNAME=$(load_secret "mockserver-build/sonatype" "username")
 SONATYPE_PASSWORD=$(load_secret "mockserver-build/sonatype" "password")
 
-deploy_log=$(in_docker "$MAVEN_IMAGE" \
+# Write the mvn output to a tmpfile under .tmp/ (per AGENTS.md policy) so we
+# can both stream it to the agent's stdout AND extract the deploymentId
+# afterwards. Capturing in `$(...)` would obscure mvn's exit code: under
+# `set -o pipefail` the pipeline's exit status is the rightmost non-zero,
+# so a `$(cmd | tee /dev/stderr)` returns tee's exit code (always 0) — a
+# failed `mvn deploy` would be silently swallowed (same class of bug as
+# F-MC-01 in maven-central.sh). Explicit PIPESTATUS[0] check after the
+# pipe makes the failure surface immediately. tmpfile is rm'd as soon as
+# DEPLOYMENT_ID is captured because it can contain GPG/Sonatype output if
+# any subprocess accidentally enables `set -x`.
+mkdir -p "$REPO_ROOT/.tmp"
+DEPLOY_LOG=$(mktemp "$REPO_ROOT/.tmp/mockserver-maven-plugin-deploy.XXXXXX")
+trap 'rm -f "$DEPLOY_LOG"' EXIT
+
+in_docker "$MAVEN_IMAGE" \
   -w /build/mockserver/mockserver-maven-plugin \
   -v mockserver-m2-cache:/root/.m2 \
   -e "GPG_KEY_B64=$GPG_KEY_B64" \
@@ -107,23 +121,45 @@ SETTINGS
       -Dgpg.passphraseServerId=gpg.passphrase \
       -Dgpg.useagent=false \
       --settings /tmp/settings.xml
-  ' 2>&1 | tee /dev/stderr)
+  ' 2>&1 | tee "$DEPLOY_LOG"
+mvn_exit=${PIPESTATUS[0]}
+if [[ $mvn_exit -ne 0 ]]; then
+  log_error "mvn deploy failed (in_docker exit $mvn_exit)"
+  exit "$mvn_exit"
+fi
 
 # Promote the validated deployment to PUBLISHED. central-publishing-maven-plugin
 # logs "deploymentId: <uuid>" on upload — extract it, POST it to the Central
 # Portal publish endpoint, then poll until the deployment leaves VALIDATED.
-DEPLOYMENT_ID=$(printf '%s\n' "$deploy_log" \
-  | grep -oE 'deploymentId: [0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' \
+# Strict UUID shape: 8-4-4-4-12 hex (java.util.UUID.randomUUID() is lowercase
+# but accept both cases defensively); validate the captured value before any
+# API call.
+DEPLOYMENT_ID=$(grep -oE 'deploymentId: [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b' "$DEPLOY_LOG" \
   | head -1 | awk '{print $2}')
-[[ -n "$DEPLOYMENT_ID" ]] || { log_error "Could not find deploymentId in mvn deploy output"; exit 1; }
+rm -f "$DEPLOY_LOG"
+trap - EXIT
+if [[ ! "$DEPLOYMENT_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+  log_error "Could not extract a well-formed deploymentId from mvn deploy output (got: '${DEPLOYMENT_ID:-<empty>}')"
+  exit 1
+fi
 log_info "Central Portal deployment: $DEPLOYMENT_ID"
 
 CP_AUTH=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 | tr -d '\n')
 
 log_info "Publishing deployment $DEPLOYMENT_ID"
-curl -fsS --connect-timeout 10 --max-time 30 -X POST -H "Authorization: Basic $CP_AUTH" \
-  -o /dev/null -w 'publish request: HTTP %{http_code}\n' \
-  "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+mkdir -p "$REPO_ROOT/.tmp"
+publish_response_file=$(mktemp "$REPO_ROOT/.tmp/mockserver-maven-plugin-publish.XXXXXX")
+publish_http=$(curl -sS --connect-timeout 10 --max-time 30 -X POST -H "Authorization: Basic $CP_AUTH" \
+  -o "$publish_response_file" -w '%{http_code}' \
+  "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID" 2>/dev/null || echo "000")
+if [[ "$publish_http" != "204" && "$publish_http" != "200" ]]; then
+  log_error "Failed to publish deployment $DEPLOYMENT_ID (HTTP $publish_http)"
+  cat "$publish_response_file" || true
+  rm -f "$publish_response_file"
+  exit 1
+fi
+rm -f "$publish_response_file"
+log_info "  publish acknowledged (HTTP $publish_http)"
 
 log_info "Waiting for the deployment to leave VALIDATED"
 state=""

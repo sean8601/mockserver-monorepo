@@ -88,6 +88,7 @@ NON_MAVEN_VERSION_PATHS=(
   mockserver-client-node/package.json
   mockserver-client-python/pyproject.toml
   mockserver-client-ruby/lib/mockserver/version.rb
+  mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml
 )
 log_info "Updating non-Maven version manifests to $RELEASE_VERSION"
 if is_dry_run; then
@@ -126,6 +127,15 @@ sub_once("mockserver-client-python/pyproject.toml",
 sub_once("mockserver-client-ruby/lib/mockserver/version.rb",
          r"VERSION\s*=\s*'[^']+'", f"VERSION = '{new_v}'",
          "VERSION = '...'")
+
+# OpenAPI spec — the info.version field in the embedded YAML. Must be bumped
+# in prepare (before the parallel publish group runs), not in finalize, so
+# that swaggerhub.sh uploads a spec whose body matches its registry version
+# label. Pattern is anchored to the indented `  version:` form to avoid
+# false-matching other YAML keys.
+sub_once("mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml",
+         r'(?m)^(\s+)version:\s*[0-9][^\s]*', f'\\g<1>version: {new_v}',
+         "  version: X.Y.Z under info:")
 PYEOF
 fi
 

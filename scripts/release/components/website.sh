@@ -57,12 +57,18 @@ else
     --exclude "index.yaml" \
     --exclude "*.tgz"
 
-  if [[ -n "${DISTRIBUTION_ID:-}" ]]; then
-    log_info "Invalidate CloudFront"
-    aws cloudfront create-invalidation \
-      --distribution-id "$DISTRIBUTION_ID" \
-      --paths "/*"
-  fi
+  # Hard requirement: a successful S3 sync without a CloudFront invalidation
+  # would leave CDN edges serving the previous release's content for up to
+  # 24 hours, while the pipeline reports success. versioned-site.sh now
+  # populates DISTRIBUTION_ID on every release type (audit F-VS-01); a
+  # missing value here means an upstream step broke and must surface, not
+  # silently skip.
+  [[ -n "${DISTRIBUTION_ID:-}" ]] || { log_error "DISTRIBUTION_ID not set — versioned-site.sh should have populated it via set_release_output (or the Buildkite adapter should have seeded it from meta-data)"; exit 1; }
+
+  log_info "Invalidate CloudFront"
+  aws cloudfront create-invalidation \
+    --distribution-id "$DISTRIBUTION_ID" \
+    --paths "/*"
 fi
 
 log_info "Website publish complete"
