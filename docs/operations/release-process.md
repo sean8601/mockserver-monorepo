@@ -91,8 +91,9 @@ Everything downstream now runs in parallel: Versioned Site, Maven Plugin, Docker
 | RubyGems | https://rubygems.org/gems/mockserver-client |
 | GitHub Release | https://github.com/mock-server/mockserver/releases |
 | Helm chart | https://www.mock-server.com/index.yaml — should list the new version |
-| Versioned docs site (major/minor only) | `https://<release-version-with-dash>.mock-server.com` — e.g. `6-0.mock-server.com` |
+| Versioned docs site (major/minor only) | `https://<release-version-with-dash>.mock-server.com` — e.g. `6-1.mock-server.com` |
 | Website | https://www.mock-server.com — version pin in the footer should match |
+| Homebrew (a few hours later — bumped by BrewTestBot) | https://formulae.brew.sh/api/formula/mockserver.json → `.versions.stable` should equal `<release-version>` |
 
 ### 9. Homebrew — fully automated, no action required
 

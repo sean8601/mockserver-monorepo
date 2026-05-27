@@ -196,14 +196,19 @@ helm install mockserver mockserver/mockserver \
 # Or using a values.yaml file for complex config
 helm install mockserver mockserver/mockserver -f my-values.yaml
 
-# Legacy: install external config chart first, then main chart
-helm install mockserver-config mockserver/mockserver-config
+# Legacy: external config chart + main chart. The mockserver-config chart is
+# NOT published in the Helm repo (see "mockserver-config Chart" section
+# below) — to use it, clone the source repo and install from the local path.
+git clone https://github.com/mock-server/mockserver-monorepo
+helm install mockserver-config ./mockserver-monorepo/helm/mockserver-config
 helm install mockserver mockserver/mockserver
 ```
 
 ## mockserver-config Chart (Legacy / Example)
 
-The separate `mockserver-config` chart is retained as a reference example. For new deployments, use the inline `app.config` values in the main chart instead (see above).
+The separate `mockserver-config` chart is retained as a **reference example only**. It is not published to the Helm repository at `https://www.mock-server.com/index.yaml` — consumers wanting to use it must copy the chart from `helm/mockserver-config/` in the source repo. For new deployments, use the inline `app.config` values in the main chart instead (see above).
+
+Its `Chart.yaml` is bumped automatically by the release scripts (`finalize.sh`'s find-and-replace pass) to keep it in lock-step with the main `mockserver` chart, but only the `mockserver` chart is packaged and pushed to S3 by `helm.sh`.
 
 This chart provides a ConfigMap containing:
 
@@ -234,12 +239,16 @@ Static defaults are in `helm/mockserver-config/static/`:
 
 All MockServer components — Java modules, client libraries, Docker images, and Helm charts — share a single version number. This keeps things simple and transparent for users.
 
-The Helm chart `version` and `appVersion` in `Chart.yaml` **MUST always match the MockServer application version**. Both charts (`mockserver` and `mockserver-config`) follow this rule.
+The Helm chart `version` and `appVersion` in `Chart.yaml` **MUST always match the MockServer application version**. Both charts (`mockserver` and `mockserver-config`) follow this rule, but the enforcement path differs:
+
+- **`mockserver` (published)**: `scripts/release/components/helm.sh` sets both fields to `$RELEASE_VERSION` via an explicit `sed` pass before packaging, then publishes the `.tgz` to S3.
+- **`mockserver-config` (reference-only, NOT published)**: bumped passively by `finalize.sh`'s general find-and-replace across `*.yaml` files. Not packaged or pushed anywhere.
+
+Rules:
 
 - **NEVER** bump the chart version independently of the MockServer version
 - **NEVER** change `version` without also changing `appVersion` to the same value
-- The release script `scripts/release/components/helm.sh` enforces this by setting both fields to `$RELEASE_VERSION`
-- Both charts must be kept at the same version
+- Both charts must be kept at the same version (the release scripts handle this automatically)
 
 Helm chart changes made between releases are published as part of the next MockServer release, not independently.
 
