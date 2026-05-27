@@ -61,6 +61,7 @@ in_maven -w /build/mockserver \
 # <passphrase> element in the generated settings.xml, NOT via the
 # -Dgpg.passphrase command-line property — that would expose the passphrase
 # in the container's process list and in any tracing output.
+DEPLOYMENT_ID=""
 if is_dry_run; then
   log_dry "skip: deploy to Sonatype Central Portal"
   log_dry "skip: GPG-sign and upload artifacts"
@@ -70,6 +71,12 @@ else
   GPG_PASSPHRASE=$(load_secret "mockserver-release/gpg-key" "passphrase")
   SONATYPE_USERNAME=$(load_secret "mockserver-build/sonatype" "username")
   SONATYPE_PASSWORD=$(load_secret "mockserver-build/sonatype" "password")
+
+  # tee the deploy output so we can extract the deploymentId the
+  # central-publishing plugin prints after upload. We need it to poll the
+  # Sonatype status API by ID — the namespace-listing endpoint is unreliable.
+  DEPLOY_LOG=$(mktemp -t mockserver-deploy.XXXXXX)
+  trap 'rm -f "$DEPLOY_LOG"' EXIT
 
   in_docker "$MAVEN_IMAGE" \
     -w /build/mockserver \
@@ -106,7 +113,14 @@ SETTINGS
         -Dgpg.passphraseServerId=gpg.passphrase \
         -Dgpg.useagent=false \
         --settings /tmp/settings.xml
-    '
+    ' 2>&1 | tee "$DEPLOY_LOG"
+
+  DEPLOYMENT_ID=$(grep -oE 'deploymentId: [a-f0-9-]{36}' "$DEPLOY_LOG" | head -1 | awk '{print $2}')
+  if [[ -z "$DEPLOYMENT_ID" ]]; then
+    log_error "Could not extract deploymentId from mvn deploy output (expected line: 'Uploaded bundle successfully, deployment name: ..., deploymentId: <uuid>')"
+    exit 1
+  fi
+  log_info "Captured Central Portal deploymentId: $DEPLOYMENT_ID"
 fi
 
 # ---- Helpers for the Central Portal API -----------------------------------
@@ -124,28 +138,45 @@ if ! is_dry_run; then
 fi
 
 # ---- Poll for validation ---------------------------------------------------
+# We poll the per-deployment status endpoint (POST /publisher/status?id=...)
+# rather than the namespace-listing endpoint (/publisher/deployment/list),
+# because the listing endpoint has returned HTTP 500 from Sonatype since the
+# Central Portal API refactor — silently swallowed by the previous polling
+# loop, which then timed out after 30 min of <empty> states.
 if is_dry_run; then
   log_dry "skip: poll Central Portal validation"
 else
-  log_info "Polling Central Portal for validation result"
+  log_info "Polling Central Portal for validation result (deployment $DEPLOYMENT_ID)"
   TIMEOUT_ITERATIONS=60   # 60 × 30s = 30 minutes
+  MAX_CONSECUTIVE_ERRORS=5
+  status_response_file=$(mktemp -t mockserver-status.XXXXXX)
+  trap 'rm -f "$DEPLOY_LOG" "$status_response_file"' EXIT
+  consecutive_errors=0
   validation_status=""
   for i in $(seq 1 "$TIMEOUT_ITERATIONS"); do
-    response=$(curl -sf \
-      -H "Authorization: Basic $CP_AUTH" \
-      "https://central.sonatype.com/api/v1/publisher/deployment/list?namespace=org.mock-server" \
-      2>/dev/null || true)
-    # Most recent deployment for this version (head -1 in case of retries).
-    validation_status=$(echo "$response" \
-      | jq -r ".deployments[] | select(.version == \"$RELEASE_VERSION\") | .deploymentState" 2>/dev/null \
-      | head -1 || true)
+    http_code=$(curl -sS --max-time 30 -o "$status_response_file" -w '%{http_code}' \
+      -X POST -H "Authorization: Basic $CP_AUTH" \
+      "https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID" 2>/dev/null || echo "000")
+    if [[ "$http_code" != "200" ]]; then
+      consecutive_errors=$((consecutive_errors + 1))
+      log_info "  attempt $i: HTTP $http_code (consecutive errors: $consecutive_errors/$MAX_CONSECUTIVE_ERRORS)"
+      if [[ "$consecutive_errors" -ge "$MAX_CONSECUTIVE_ERRORS" ]]; then
+        log_error "$MAX_CONSECUTIVE_ERRORS consecutive Central Portal API errors polling deployment $DEPLOYMENT_ID; last HTTP $http_code"
+        cat "$status_response_file" || true
+        exit 1
+      fi
+      sleep 30
+      continue
+    fi
+    consecutive_errors=0
+    validation_status=$(jq -r '.deploymentState // empty' "$status_response_file" 2>/dev/null || true)
     log_info "  attempt $i: state=${validation_status:-<empty>}"
     case "$validation_status" in
       VALIDATED|PUBLISHING|PUBLISHED)
         log_info "Validation passed: $validation_status"
         break ;;
       FAILED)
-        log_error "Validation FAILED"; echo "$response"; exit 1 ;;
+        log_error "Validation FAILED"; jq . "$status_response_file" 2>/dev/null || cat "$status_response_file"; exit 1 ;;
     esac
     sleep 30
   done
@@ -166,20 +197,18 @@ else
   # PUBLISHED if the Portal auto-published. Only call POST publish if we're
   # still at VALIDATED.
   if [[ "$validation_status" == "VALIDATED" ]]; then
-    log_info "Publishing to Maven Central"
-    DEPLOYMENT_ID=$(curl -sf \
-      -H "Authorization: Basic $CP_AUTH" \
-      "https://central.sonatype.com/api/v1/publisher/deployment/list?namespace=org.mock-server" \
-      | jq -r ".deployments[] | select(.version == \"$RELEASE_VERSION\" and .deploymentState == \"VALIDATED\") | .deploymentId" \
-      | head -1)
-    if [[ -z "$DEPLOYMENT_ID" ]]; then
-      log_error "Could not find VALIDATED deployment for $RELEASE_VERSION"
+    log_info "Publishing deployment $DEPLOYMENT_ID to Maven Central"
+    publish_response_file=$(mktemp -t mockserver-publish.XXXXXX)
+    publish_http=$(curl -sS --max-time 30 -o "$publish_response_file" -w '%{http_code}' \
+      -X POST -H "Authorization: Basic $CP_AUTH" \
+      "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID" 2>/dev/null || echo "000")
+    if [[ "$publish_http" != "204" && "$publish_http" != "200" ]]; then
+      log_error "Failed to publish deployment $DEPLOYMENT_ID (HTTP $publish_http)"
+      cat "$publish_response_file" || true
+      rm -f "$publish_response_file"
       exit 1
     fi
-    log_info "Publishing deployment $DEPLOYMENT_ID"
-    curl -fS -X POST \
-      -H "Authorization: Basic $CP_AUTH" \
-      "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+    rm -f "$publish_response_file"
   else
     log_info "Skipping publish — Portal state already $validation_status"
   fi

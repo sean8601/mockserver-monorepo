@@ -72,12 +72,66 @@ log_info "  Versioned site: $CREATE_VERSIONED_SITE"
 
 log_info "Updating pom.xml versions from $CURRENT_VERSION to $RELEASE_VERSION"
 if is_dry_run; then
-  log_dry "would: update 12 module pom.xml files"
+  log_dry "would: update Maven pom.xml files"
 else
   update_pom_versions "$REPO_ROOT/mockserver" "$CURRENT_VERSION" "$RELEASE_VERSION"
 fi
 
-git_commit_and_push "release: set version $RELEASE_VERSION" mockserver/
+# Non-Maven version manifests. The npm/pypi/rubygems component scripts read
+# the published version from per-package source files (package.json,
+# pyproject.toml, version.rb) rather than $RELEASE_VERSION. If we don't bump
+# them here, those publishers either republish-and-fail-403 (npm) or silently
+# skip the publish because they think the version is already live (pypi,
+# rubygems). The Helm chart's Chart.yaml is bumped by helm.sh itself.
+NON_MAVEN_VERSION_PATHS=(
+  mockserver-node/package.json
+  mockserver-client-node/package.json
+  mockserver-client-python/pyproject.toml
+  mockserver-client-ruby/lib/mockserver/version.rb
+)
+log_info "Updating non-Maven version manifests to $RELEASE_VERSION"
+if is_dry_run; then
+  log_dry "would: bump ${NON_MAVEN_VERSION_PATHS[*]} to $RELEASE_VERSION"
+else
+  python3 - "$RELEASE_VERSION" "$REPO_ROOT" << 'PYEOF'
+import re, sys, pathlib
+new_v, repo_root = sys.argv[1], pathlib.Path(sys.argv[2])
+
+def sub_once(path_rel, pattern, replacement, label):
+    p = repo_root / path_rel
+    text = p.read_text()
+    new_text, n = re.subn(pattern, replacement, text, count=1)
+    if n != 1:
+        raise SystemExit(f"ERROR: could not find {label} in {path_rel}")
+    p.write_text(new_text)
+    print(f"  updated: {path_rel}")
+
+# package.json — match the first top-level "version": "..." entry. Nested
+# dependency entries are keyed by package name, not literal "version", so
+# they won't false-match.
+sub_once("mockserver-node/package.json",
+         r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{new_v}"',
+         '"version": "..."')
+sub_once("mockserver-client-node/package.json",
+         r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{new_v}"',
+         '"version": "..."')
+
+# pyproject.toml — line-anchored to avoid matching e.g. `requires-python`.
+sub_once("mockserver-client-python/pyproject.toml",
+         r'(?m)^version\s*=\s*"[^"]+"', f'version = "{new_v}"',
+         '^version = "..."')
+
+# version.rb — Ruby uses single quotes here; mockserver-client.gemspec reads
+# MockServer::VERSION from this file, so the gemspec needs no separate bump.
+sub_once("mockserver-client-ruby/lib/mockserver/version.rb",
+         r"VERSION\s*=\s*'[^']+'", f"VERSION = '{new_v}'",
+         "VERSION = '...'")
+PYEOF
+fi
+
+git_commit_and_push "release: set version $RELEASE_VERSION" \
+  mockserver/ \
+  "${NON_MAVEN_VERSION_PATHS[@]}"
 git_tag_and_push "mockserver-$RELEASE_VERSION"
 
 log_info "Prepare complete"
