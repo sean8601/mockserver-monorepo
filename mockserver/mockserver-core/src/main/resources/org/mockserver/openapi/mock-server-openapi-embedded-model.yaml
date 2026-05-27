@@ -685,7 +685,7 @@ components:
         delay:
           $ref: "#/components/schemas/Delay"
         headers:
-          $ref: "#/components/schemas/Headers"
+          $ref: "#/components/schemas/KeyToMultiValue"
         statusCode:
           type: integer
         events:
