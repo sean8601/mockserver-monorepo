@@ -91,6 +91,7 @@ public class HttpState {
     private ExpectationSerializer expectationSerializerThatSerializesBodyDefault;
     private OpenAPIExpectationSerializer openAPIExpectationSerializer;
     private ExpectationToJavaSerializer expectationToJavaSerializer;
+    private org.mockserver.serialization.ExpectationExportSerializer expectationExportSerializer;
     private VerificationSerializer verificationSerializer;
     private VerificationSequenceSerializer verificationSequenceSerializer;
     private LogEntrySerializer logEntrySerializer;
@@ -785,6 +786,50 @@ public class HttpState {
                                         }
                                     );
                                 break;
+                            case OPENAPI:
+                                mockServerLog.retrieveRequests(requestDefinition, requests -> {
+                                    response.withBody(
+                                        getExpectationExportSerializer().serializeRequestsAsOpenApi(requests),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case POSTMAN:
+                                mockServerLog.retrieveRequests(requestDefinition, requests -> {
+                                    response.withBody(
+                                        getExpectationExportSerializer().serializeRequestsAsPostman(requests),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case BRUNO:
+                                mockServerLog.retrieveRequests(requestDefinition, requests -> {
+                                    response
+                                        .withBody(getExpectationExportSerializer().serializeRequestsAsBruno(requests))
+                                        .withHeader(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE.toString(), "application/zip")
+                                        .withHeader("content-disposition", "attachment; filename=\"mockserver-requests.bruno.zip\"");
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case HAR:
+                                mockServerLog.retrieveRequests(requestDefinition, requests -> {
+                                    java.util.List<org.mockserver.model.LogEventRequestAndResponse> pairs = new java.util.ArrayList<>(requests.size());
+                                    for (org.mockserver.model.RequestDefinition r : requests) {
+                                        if (r instanceof org.mockserver.model.HttpRequest) {
+                                            pairs.add(new org.mockserver.model.LogEventRequestAndResponse()
+                                                .withHttpRequest((org.mockserver.model.HttpRequest) r));
+                                        }
+                                    }
+                                    response.withBody(getHarConverter().serialize(pairs), MediaType.JSON_UTF_8);
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
                         }
                         break;
                     }
@@ -844,6 +889,36 @@ public class HttpState {
                                         }
                                     );
                                 break;
+                            case OPENAPI:
+                                mockServerLog.retrieveRequestResponses(requestDefinition, pairs -> {
+                                    response.withBody(
+                                        getExpectationExportSerializer().serializeRequestResponsesAsOpenApi(pairs),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case POSTMAN:
+                                mockServerLog.retrieveRequestResponses(requestDefinition, pairs -> {
+                                    response.withBody(
+                                        getExpectationExportSerializer().serializeRequestResponsesAsPostman(pairs),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case BRUNO:
+                                mockServerLog.retrieveRequestResponses(requestDefinition, pairs -> {
+                                    response
+                                        .withBody(getExpectationExportSerializer().serializeRequestResponsesAsBruno(pairs))
+                                        .withHeader(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE.toString(), "application/zip")
+                                        .withHeader("content-disposition", "attachment; filename=\"mockserver-traffic.bruno.zip\"");
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
                         }
                         break;
                     }
@@ -898,6 +973,46 @@ public class HttpState {
                                         }
                                     );
                                 break;
+                            case OPENAPI:
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                    response.withBody(
+                                        getExpectationExportSerializer().serializeAsOpenApi(expectations),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case POSTMAN:
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                    response.withBody(
+                                        getExpectationExportSerializer().serializeAsPostmanCollection(expectations),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case BRUNO:
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                    response
+                                        .withBody(getExpectationExportSerializer().serializeAsBrunoCollection(expectations))
+                                        .withHeader(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE.toString(), "application/zip")
+                                        .withHeader("content-disposition", "attachment; filename=\"mockserver-recorded.bruno.zip\"");
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
+                            case HAR:
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                    response.withBody(
+                                        getHarConverter().serialize(expectationsToLogEvents(expectations)),
+                                        MediaType.JSON_UTF_8
+                                    );
+                                    mockServerLogger.logEvent(logEntry);
+                                    httpResponseFuture.complete(response);
+                                });
+                                break;
                         }
                         break;
                     }
@@ -912,6 +1027,30 @@ public class HttpState {
                                 break;
                             case LOG_ENTRIES:
                                 response.withBody("LOG_ENTRIES not supported for ACTIVE_EXPECTATIONS", MediaType.create("text", "plain").withCharset(UTF_8));
+                                break;
+                            case OPENAPI:
+                                response.withBody(
+                                    getExpectationExportSerializer().serializeAsOpenApi(expectations),
+                                    MediaType.JSON_UTF_8
+                                );
+                                break;
+                            case POSTMAN:
+                                response.withBody(
+                                    getExpectationExportSerializer().serializeAsPostmanCollection(expectations),
+                                    MediaType.JSON_UTF_8
+                                );
+                                break;
+                            case BRUNO:
+                                response
+                                    .withBody(getExpectationExportSerializer().serializeAsBrunoCollection(expectations))
+                                    .withHeader(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE.toString(), "application/zip")
+                                    .withHeader("content-disposition", "attachment; filename=\"mockserver-expectations.bruno.zip\"");
+                                break;
+                            case HAR:
+                                response.withBody(
+                                    getHarConverter().serialize(expectationsToLogEvents(expectations)),
+                                    MediaType.JSON_UTF_8
+                                );
                                 break;
                         }
                         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -1491,6 +1630,38 @@ public class HttpState {
             this.expectationToJavaSerializer = new ExpectationToJavaSerializer();
         }
         return expectationToJavaSerializer;
+    }
+
+    private org.mockserver.serialization.ExpectationExportSerializer getExpectationExportSerializer() {
+        if (this.expectationExportSerializer == null) {
+            this.expectationExportSerializer = new org.mockserver.serialization.ExpectationExportSerializer(mockServerLogger);
+        }
+        return expectationExportSerializer;
+    }
+
+    /**
+     * Build a HAR-shaped request/response list from a list of expectations.
+     * Used by the OpenAPI/Postman/Bruno/HAR export branches on the
+     * ACTIVE_EXPECTATIONS and RECORDED_EXPECTATIONS paths so all formats
+     * share one conversion path. Expectations without an httpResponse
+     * (forward / template / callback / error / LLM) are still included so
+     * that the request side is exported.
+     */
+    private java.util.List<org.mockserver.model.LogEventRequestAndResponse> expectationsToLogEvents(java.util.List<Expectation> expectations) {
+        java.util.List<org.mockserver.model.LogEventRequestAndResponse> result = new java.util.ArrayList<>(expectations.size());
+        for (Expectation expectation : expectations) {
+            org.mockserver.model.RequestDefinition req = expectation.getHttpRequest();
+            if (!(req instanceof org.mockserver.model.HttpRequest)) {
+                continue;
+            }
+            org.mockserver.model.LogEventRequestAndResponse pair = new org.mockserver.model.LogEventRequestAndResponse()
+                .withHttpRequest((org.mockserver.model.HttpRequest) req);
+            if (expectation.getHttpResponse() != null) {
+                pair.withHttpResponse(expectation.getHttpResponse());
+            }
+            result.add(pair);
+        }
+        return result;
     }
 
     private VerificationSerializer getVerificationSerializer() {

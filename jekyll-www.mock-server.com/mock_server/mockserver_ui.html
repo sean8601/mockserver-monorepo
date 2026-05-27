@@ -323,18 +323,22 @@ sitemap:
 
 <h3>Export</h3>
 
-<p>The Export sub-tab lets you download captured content from the running MockServer instance. Choose a format and click <strong>Download</strong>:</p>
+<p>The Export sub-tab lets you download captured content from the running MockServer instance. Pick the export to perform from the dropdown and click <strong>Download</strong>. Each option crosses one of two scopes &mdash; the currently <strong>registered expectations</strong> or the <strong>recorded requests</strong> MockServer has handled &mdash; with one of five file formats:</p>
 
 <table class="table">
     <thead>
-        <tr><th>Format</th><th>Contents</th></tr>
+        <tr><th>Format</th><th>Contents</th><th>Re-importable into</th></tr>
     </thead>
     <tbody>
-        <tr><td><strong>HAR (HTTP Archive)</strong></td><td>Every request/response pair MockServer has logged, in a format compatible with browser DevTools, and HAR analysis tools. Streamed LLM responses are included as readable text.</td></tr>
-        <tr><td><strong>Active expectations (JSON)</strong></td><td>Every currently registered expectation as a JSON array. Can be re-imported via <code>PUT /mockserver/expectation</code> or <code>load_expectations_from_file</code>.</td></tr>
-        <tr><td><strong>Recorded requests (JSON)</strong></td><td>Every received request as a JSON array, useful for replay and debugging.</td></tr>
+        <tr><td><strong>MockServer JSON</strong></td><td>Round-trippable JSON in MockServer's own expectation format.</td><td>MockServer (<code>PUT /mockserver/expectation</code> or <code>load_expectations_from_file</code>).</td></tr>
+        <tr><td><strong>HAR (HTTP Archive)</strong></td><td>Each item as a request/response pair, in the standard HAR format.</td><td>Browser DevTools, HAR analysis tools, performance analysers.</td></tr>
+        <tr><td><strong>OpenAPI 3 spec</strong></td><td>One operation per (method, path) with the response body as an example.</td><td>Swagger UI, Redoc, code generators, API gateways.</td></tr>
+        <tr><td><strong>Postman collection v2.1</strong></td><td>Each item as a Postman request with its example response.</td><td>Postman, Newman, Insomnia (via import).</td></tr>
+        <tr><td><strong>Bruno collection (.zip)</strong></td><td>One <code>.bru</code> file per request, plus a <code>bruno.json</code> manifest, packaged as a zip.</td><td><a href="https://www.usebruno.com/">Bruno</a> &mdash; unzip and open the folder as a collection.</td></tr>
     </tbody>
 </table>
+
+<p>OpenAPI, Postman, and Bruno exports are <em>best-effort</em>: positive-string matchers round-trip cleanly, but MockServer's NottableString negation, regex bodies, and dynamic actions (forward / template / callback / error / LLM) appear as placeholder text since those formats describe client requests + example responses rather than full mock-server expectation graphs. Use MockServer JSON when you need a lossless round-trip.</p>
 
 <a id="ui_real_time_updates" class="anchor" href="#ui_real_time_updates">&nbsp;</a>
 

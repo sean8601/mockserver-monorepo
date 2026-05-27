@@ -1,0 +1,509 @@
+package org.mockserver.serialization;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.Expectation;
+import org.mockserver.model.Header;
+import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
+import org.mockserver.model.LogEventRequestAndResponse;
+import org.mockserver.model.NottableString;
+import org.mockserver.model.Parameter;
+import org.mockserver.model.RequestDefinition;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+/**
+ * Exports a list of {@link Expectation}s into third-party tooling formats —
+ * OpenAPI 3 spec, Postman v2.1 collection, or a Bruno collection ZIP. Used
+ * by the dashboard's Library / Export sub-tab and by direct API consumers
+ * of {@code PUT /mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=...}.
+ *
+ * <p>The conversions are deliberately pragmatic: positive-string matchers
+ * round-trip cleanly, while NottableString negation, regex bodies, callbacks,
+ * forwards, templates, and errors are exported as best-effort placeholders.
+ * Importers will not see the full MockServer matcher semantics — these
+ * formats are designed for client requests + response examples, not full
+ * mock-server expectation graphs.
+ */
+public class ExpectationExportSerializer {
+
+    private static final String OPENAPI_VERSION = "3.0.3";
+    private static final String POSTMAN_SCHEMA =
+        "https://schema.getpostman.com/json/collection/v2.1.0/collection.json";
+    private static final String COLLECTION_NAME = "MockServer Exported Expectations";
+    private static final String COLLECTION_DESCRIPTION =
+        "Generated from MockServer's active expectations via the /mockserver/retrieve endpoint. " +
+            "Matcher semantics (NottableString.not, regex bodies, etc.) are not exported.";
+
+    private final MockServerLogger mockServerLogger;
+    private final ObjectMapper objectMapper;
+
+    public ExpectationExportSerializer(MockServerLogger mockServerLogger) {
+        this.mockServerLogger = mockServerLogger;
+        this.objectMapper = ObjectMapperFactory.createObjectMapper();
+    }
+
+    // -----------------------------------------------------------------------
+    // OpenAPI 3
+    // -----------------------------------------------------------------------
+
+    public String serializeAsOpenApi(List<Expectation> expectations) {
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("openapi", OPENAPI_VERSION);
+            ObjectNode info = root.putObject("info");
+            info.put("title", COLLECTION_NAME);
+            info.put("version", "1.0.0");
+            info.put("description", COLLECTION_DESCRIPTION);
+
+            ObjectNode paths = root.putObject("paths");
+            for (Expectation expectation : expectations) {
+                addOpenApiOperation(paths, expectation);
+            }
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        } catch (JsonProcessingException e) {
+            mockServerLogger.logEvent(new org.mockserver.log.model.LogEntry()
+                .setType(org.mockserver.log.model.LogEntry.LogMessageType.EXCEPTION)
+                .setMessageFormat("exception while serialising expectations as OpenAPI: " + e.getMessage()));
+            return "{}";
+        }
+    }
+
+    private void addOpenApiOperation(ObjectNode paths, Expectation expectation) {
+        if (!(expectation.getHttpRequest() instanceof HttpRequest)) {
+            return;
+        }
+        HttpRequest req = (HttpRequest) expectation.getHttpRequest();
+        String path = stringValue(req.getPath(), "/");
+        String method = stringValue(req.getMethod(), "get").toLowerCase();
+        if (method.isEmpty()) {
+            method = "get";
+        }
+
+        ObjectNode pathItem = paths.has(path)
+            ? (ObjectNode) paths.get(path)
+            : paths.putObject(path);
+        ObjectNode operation = pathItem.putObject(method);
+        operation.put("summary", method.toUpperCase() + " " + path);
+        operation.put("operationId", expectation.getId());
+
+        // Parameters: query + path + headers
+        ArrayNode parameters = operation.putArray("parameters");
+        addOpenApiParameters(parameters, req.getQueryStringParameters(), "query");
+        addOpenApiParameters(parameters, req.getPathParameters(), "path");
+        if (req.getHeaders() != null) {
+            for (Header header : req.getHeaders().getEntries()) {
+                ObjectNode p = parameters.addObject();
+                p.put("name", header.getName().getValue());
+                p.put("in", "header");
+                p.put("required", false);
+                ObjectNode schema = p.putObject("schema");
+                schema.put("type", "string");
+            }
+        }
+        if (parameters.isEmpty()) {
+            operation.remove("parameters");
+        }
+
+        // Response: take the first httpResponse on the expectation as the
+        // canonical example. Other action types (forward / template / etc.)
+        // export an empty 200 response since they're dynamic.
+        ObjectNode responses = operation.putObject("responses");
+        HttpResponse response = expectation.getHttpResponse();
+        if (response != null) {
+            int code = response.getStatusCode() != null ? response.getStatusCode() : 200;
+            ObjectNode respNode = responses.putObject(String.valueOf(code));
+            respNode.put("description",
+                response.getReasonPhrase() != null ? response.getReasonPhrase() : "OK");
+            String bodyString = response.getBodyAsString();
+            if (bodyString != null && !bodyString.isEmpty()) {
+                ObjectNode content = respNode.putObject("content");
+                ObjectNode mediaTypeNode = content.putObject(detectContentType(bodyString));
+                mediaTypeNode.put("example", bodyString);
+            }
+        } else {
+            ObjectNode okNode = responses.putObject("200");
+            okNode.put("description", "Dynamic response (forward / callback / template / error / LLM)");
+        }
+    }
+
+    private void addOpenApiParameters(ArrayNode parameters,
+                                      org.mockserver.model.Parameters params,
+                                      String location) {
+        if (params == null) {
+            return;
+        }
+        for (Parameter parameter : params.getEntries()) {
+            ObjectNode p = parameters.addObject();
+            p.put("name", parameter.getName().getValue());
+            p.put("in", location);
+            p.put("required", "path".equals(location));
+            ObjectNode schema = p.putObject("schema");
+            schema.put("type", "string");
+            if (parameter.getValues() != null && !parameter.getValues().isEmpty()) {
+                schema.put("example", parameter.getValues().get(0).getValue());
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Postman Collection v2.1
+    // -----------------------------------------------------------------------
+
+    public String serializeAsPostmanCollection(List<Expectation> expectations) {
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            ObjectNode info = root.putObject("info");
+            info.put("name", COLLECTION_NAME);
+            info.put("description", COLLECTION_DESCRIPTION);
+            info.put("schema", POSTMAN_SCHEMA);
+
+            ArrayNode items = root.putArray("item");
+            for (Expectation expectation : expectations) {
+                ObjectNode item = items.addObject();
+                addPostmanItem(item, expectation);
+            }
+
+            // Suggest a baseUrl variable so the collection isn't pinned to localhost.
+            ArrayNode variables = root.putArray("variable");
+            ObjectNode baseUrlVar = variables.addObject();
+            baseUrlVar.put("key", "baseUrl");
+            baseUrlVar.put("value", "http://localhost:1080");
+
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        } catch (JsonProcessingException e) {
+            mockServerLogger.logEvent(new org.mockserver.log.model.LogEntry()
+                .setType(org.mockserver.log.model.LogEntry.LogMessageType.EXCEPTION)
+                .setMessageFormat("exception while serialising expectations as Postman: " + e.getMessage()));
+            return "{}";
+        }
+    }
+
+    private void addPostmanItem(ObjectNode item, Expectation expectation) {
+        HttpRequest req = expectation.getHttpRequest() instanceof HttpRequest
+            ? (HttpRequest) expectation.getHttpRequest()
+            : new HttpRequest();
+        String method = stringValue(req.getMethod(), "GET");
+        String path = stringValue(req.getPath(), "/");
+        item.put("name", method.toUpperCase() + " " + path);
+
+        ObjectNode request = item.putObject("request");
+        request.put("method", method.toUpperCase());
+
+        // Headers
+        ArrayNode headerArr = request.putArray("header");
+        if (req.getHeaders() != null) {
+            for (Header header : req.getHeaders().getEntries()) {
+                String name = header.getName().getValue();
+                String value = header.getValues() != null && !header.getValues().isEmpty()
+                    ? header.getValues().get(0).getValue() : "";
+                ObjectNode h = headerArr.addObject();
+                h.put("key", name);
+                h.put("value", value);
+            }
+        }
+
+        // URL
+        ObjectNode url = request.putObject("url");
+        String pathSlash = path.startsWith("/") ? path : "/" + path;
+        url.put("raw", "{{baseUrl}}" + pathSlash);
+        ArrayNode hostArr = url.putArray("host");
+        hostArr.add("{{baseUrl}}");
+        ArrayNode pathSegments = url.putArray("path");
+        for (String segment : pathSlash.split("/")) {
+            if (!segment.isEmpty()) {
+                pathSegments.add(segment);
+            }
+        }
+        if (req.getQueryStringParameters() != null
+            && !req.getQueryStringParameters().getEntries().isEmpty()) {
+            ArrayNode queryArr = url.putArray("query");
+            for (Parameter p : req.getQueryStringParameters().getEntries()) {
+                ObjectNode q = queryArr.addObject();
+                q.put("key", p.getName().getValue());
+                q.put("value", p.getValues() != null && !p.getValues().isEmpty()
+                    ? p.getValues().get(0).getValue() : "");
+            }
+        }
+
+        // Body
+        String requestBody = req.getBodyAsString();
+        if (requestBody != null && !requestBody.isEmpty()) {
+            ObjectNode body = request.putObject("body");
+            body.put("mode", "raw");
+            body.put("raw", requestBody);
+            ObjectNode options = body.putObject("options");
+            ObjectNode raw = options.putObject("raw");
+            raw.put("language", "json");
+        }
+
+        // Response example
+        HttpResponse response = expectation.getHttpResponse();
+        ArrayNode responseArr = item.putArray("response");
+        if (response != null) {
+            ObjectNode resp = responseArr.addObject();
+            resp.put("name", "Example response");
+            resp.put("status", response.getReasonPhrase() != null ? response.getReasonPhrase() : "OK");
+            resp.put("code", response.getStatusCode() != null ? response.getStatusCode() : 200);
+            String bodyString = response.getBodyAsString();
+            if (bodyString != null) {
+                resp.put("body", bodyString);
+            }
+            ArrayNode respHeaders = resp.putArray("header");
+            if (response.getHeaders() != null) {
+                for (Header h : response.getHeaders().getEntries()) {
+                    ObjectNode hn = respHeaders.addObject();
+                    hn.put("key", h.getName().getValue());
+                    hn.put("value", h.getValues() != null && !h.getValues().isEmpty()
+                        ? h.getValues().get(0).getValue() : "");
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bruno (collection ZIP — multiple .bru files + bruno.json)
+    // -----------------------------------------------------------------------
+
+    public byte[] serializeAsBrunoCollection(List<Expectation> expectations) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ZipOutputStream zip = new ZipOutputStream(baos)) {
+
+            // Manifest
+            writeZipEntry(zip, "bruno.json", brunoManifest());
+            // Environment with baseUrl
+            writeZipEntry(zip, "environments/local.bru", brunoEnvironment());
+
+            // One .bru file per expectation
+            Map<String, Integer> nameCounts = new LinkedHashMap<>();
+            int seq = 1;
+            for (Expectation expectation : expectations) {
+                String filename = brunoFilename(expectation, nameCounts);
+                writeZipEntry(zip, filename, brunoRequestFile(expectation, seq++));
+            }
+
+            zip.finish();
+            return baos.toByteArray();
+        } catch (IOException e) {
+            mockServerLogger.logEvent(new org.mockserver.log.model.LogEntry()
+                .setType(org.mockserver.log.model.LogEntry.LogMessageType.EXCEPTION)
+                .setMessageFormat("exception while serialising expectations as Bruno: " + e.getMessage()));
+            return new byte[0];
+        }
+    }
+
+    private String brunoManifest() {
+        try {
+            ObjectNode manifest = objectMapper.createObjectNode();
+            manifest.put("version", "1");
+            manifest.put("name", COLLECTION_NAME);
+            manifest.put("type", "collection");
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(manifest);
+        } catch (JsonProcessingException e) {
+            return "{\"version\":\"1\",\"type\":\"collection\"}";
+        }
+    }
+
+    private String brunoEnvironment() {
+        return "vars {\n  baseUrl: http://localhost:1080\n}\n";
+    }
+
+    private String brunoFilename(Expectation expectation, Map<String, Integer> nameCounts) {
+        HttpRequest req = expectation.getHttpRequest() instanceof HttpRequest
+            ? (HttpRequest) expectation.getHttpRequest()
+            : new HttpRequest();
+        String method = stringValue(req.getMethod(), "GET").toLowerCase();
+        String path = stringValue(req.getPath(), "root");
+        String base = sanitiseFilename(method + path);
+        int count = nameCounts.merge(base, 1, Integer::sum);
+        return count == 1 ? base + ".bru" : base + "-" + count + ".bru";
+    }
+
+    private String sanitiseFilename(String name) {
+        // Bruno filenames map onto disk; strip non-alphanumeric to dashes.
+        String sanitised = name.replaceAll("[^a-zA-Z0-9]+", "-").replaceAll("^-|-$", "");
+        if (sanitised.isEmpty()) {
+            sanitised = "request";
+        }
+        if (sanitised.length() > 80) {
+            sanitised = sanitised.substring(0, 80);
+        }
+        return sanitised;
+    }
+
+    private String brunoRequestFile(Expectation expectation, int seq) {
+        HttpRequest req = expectation.getHttpRequest() instanceof HttpRequest
+            ? (HttpRequest) expectation.getHttpRequest()
+            : new HttpRequest();
+        String method = stringValue(req.getMethod(), "GET").toLowerCase();
+        if (method.isEmpty()) {
+            method = "get";
+        }
+        String path = stringValue(req.getPath(), "/");
+        String pathSlash = path.startsWith("/") ? path : "/" + path;
+
+        StringBuilder out = new StringBuilder();
+        out.append("meta {\n");
+        out.append("  name: ").append(method.toUpperCase()).append(' ').append(path).append('\n');
+        out.append("  type: http\n");
+        out.append("  seq: ").append(seq).append('\n');
+        out.append("}\n\n");
+
+        out.append(method).append(" {\n");
+        out.append("  url: {{baseUrl}}").append(pathSlash);
+        if (req.getQueryStringParameters() != null
+            && !req.getQueryStringParameters().getEntries().isEmpty()) {
+            out.append('?');
+            boolean first = true;
+            for (Parameter p : req.getQueryStringParameters().getEntries()) {
+                if (!first) {
+                    out.append('&');
+                }
+                first = false;
+                out.append(p.getName().getValue()).append('=');
+                if (p.getValues() != null && !p.getValues().isEmpty()) {
+                    out.append(p.getValues().get(0).getValue());
+                }
+            }
+        }
+        out.append('\n');
+        out.append("}\n");
+
+        if (req.getHeaders() != null && !req.getHeaders().getEntries().isEmpty()) {
+            out.append("\nheaders {\n");
+            for (Header h : req.getHeaders().getEntries()) {
+                String name = h.getName().getValue();
+                String value = h.getValues() != null && !h.getValues().isEmpty()
+                    ? h.getValues().get(0).getValue() : "";
+                out.append("  ").append(name).append(": ").append(value).append('\n');
+            }
+            out.append("}\n");
+        }
+
+        String requestBody = req.getBodyAsString();
+        if (requestBody != null && !requestBody.isEmpty()) {
+            String mode = detectContentType(requestBody).contains("json") ? "json" : "text";
+            out.append("\nbody:").append(mode).append(" {\n");
+            for (String line : requestBody.split("\n", -1)) {
+                out.append("  ").append(line).append('\n');
+            }
+            out.append("}\n");
+        }
+
+        // Documentation block — captures the response example so the user has
+        // it next to the request even though Bruno doesn't surface examples
+        // as a first-class concept in the .bru format.
+        HttpResponse response = expectation.getHttpResponse();
+        if (response != null) {
+            out.append("\ndocs {\n  Expected response: ")
+                .append(response.getStatusCode() != null ? response.getStatusCode() : 200)
+                .append('\n');
+            String bodyString = response.getBodyAsString();
+            if (bodyString != null && !bodyString.isEmpty()) {
+                out.append("  Body: ").append(bodyString.replace("\n", " ")).append('\n');
+            }
+            out.append("}\n");
+        }
+
+        return out.toString();
+    }
+
+    private void writeZipEntry(ZipOutputStream zip, String name, String content) throws IOException {
+        ZipEntry entry = new ZipEntry(name);
+        zip.putNextEntry(entry);
+        zip.write(content.getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
+    }
+
+    // -----------------------------------------------------------------------
+    // Shared helpers
+    // -----------------------------------------------------------------------
+
+    private String stringValue(NottableString s, String fallback) {
+        if (s == null) {
+            return fallback;
+        }
+        String v = s.getValue();
+        return v != null ? v : fallback;
+    }
+
+    private String detectContentType(String body) {
+        String trimmed = body.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return "application/json";
+        }
+        if (trimmed.startsWith("<")) {
+            return "application/xml";
+        }
+        return "text/plain";
+    }
+
+    // -----------------------------------------------------------------------
+    // Convenience: support captured-traffic export (Recorded Requests panel
+    // in the dashboard's Library/Export sub-tab). Each captured request +
+    // response pair, or each request on its own, is wrapped into a synthetic
+    // Expectation so all three formats can share the same generation code.
+    // -----------------------------------------------------------------------
+
+    public String serializeRequestResponsesAsOpenApi(List<LogEventRequestAndResponse> pairs) {
+        return serializeAsOpenApi(toExpectationsFromPairs(pairs));
+    }
+
+    public String serializeRequestResponsesAsPostman(List<LogEventRequestAndResponse> pairs) {
+        return serializeAsPostmanCollection(toExpectationsFromPairs(pairs));
+    }
+
+    public byte[] serializeRequestResponsesAsBruno(List<LogEventRequestAndResponse> pairs) {
+        return serializeAsBrunoCollection(toExpectationsFromPairs(pairs));
+    }
+
+    public String serializeRequestsAsOpenApi(List<? extends RequestDefinition> requests) {
+        return serializeAsOpenApi(toExpectationsFromRequests(requests));
+    }
+
+    public String serializeRequestsAsPostman(List<? extends RequestDefinition> requests) {
+        return serializeAsPostmanCollection(toExpectationsFromRequests(requests));
+    }
+
+    public byte[] serializeRequestsAsBruno(List<? extends RequestDefinition> requests) {
+        return serializeAsBrunoCollection(toExpectationsFromRequests(requests));
+    }
+
+    private List<Expectation> toExpectationsFromPairs(List<LogEventRequestAndResponse> pairs) {
+        List<Expectation> result = new ArrayList<>(pairs.size());
+        for (LogEventRequestAndResponse pair : pairs) {
+            HttpRequest request = pair.getHttpRequest();
+            if (request == null) {
+                continue;
+            }
+            Expectation expectation = new Expectation(request);
+            if (pair.getHttpResponse() != null) {
+                expectation.thenRespond(pair.getHttpResponse());
+            }
+            result.add(expectation);
+        }
+        return result;
+    }
+
+    private List<Expectation> toExpectationsFromRequests(List<? extends RequestDefinition> requests) {
+        List<Expectation> result = new ArrayList<>(requests.size());
+        for (RequestDefinition definition : requests) {
+            if (definition instanceof HttpRequest) {
+                result.add(new Expectation((HttpRequest) definition));
+            }
+        }
+        return result;
+    }
+}

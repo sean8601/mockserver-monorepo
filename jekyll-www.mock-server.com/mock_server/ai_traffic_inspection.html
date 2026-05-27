@@ -202,9 +202,9 @@ client = openai.OpenAI(
 
 <h3>Download HAR and Export</h3>
 
-<p>To export captured traffic, open the <strong>Library</strong> view and click the <strong>Export</strong> sub-tab. Choose a format (HAR, active expectations JSON, or recorded requests JSON) and click <strong>Download</strong>. The HAR format is compatible with browser DevTools and HAR analysis tools. Streamed LLM responses are included as readable text in the exported file.</p>
+<p>To export captured traffic, open the <strong>Library</strong> view and click the <strong>Export</strong> sub-tab. Pick what to export from the dropdown &mdash; either the registered <strong>expectations</strong> or the captured <strong>requests</strong> &mdash; in one of five formats: MockServer JSON, HAR, OpenAPI 3, Postman v2.1 collection, or Bruno collection (.zip). Click <strong>Download</strong>. OpenAPI / Postman / Bruno round-trip into Swagger UI, Postman, and <a href="https://www.usebruno.com/">Bruno</a> respectively. Streamed LLM responses are included as readable text in every format.</p>
 
-<p>The same export is also available via the <a href="/mock_server/mockserver_clients.html">retrieve API</a>.</p>
+<p>The same exports are also available via the <a href="/mock_server/mockserver_clients.html">retrieve API</a>.</p>
 
 <h3>Retrieve API</h3>
 
@@ -212,9 +212,21 @@ client = openai.OpenAI(
 
 <pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES</code></pre>
 
-<p>Export as HAR (HTTP Archive) for use with browser DevTools or HAR analysis tools:</p>
+<p>Export in any of the supported formats by adding a <code>format=</code> query parameter (case-insensitive):</p>
 
-<pre class="prettyprint code"><code class="code">curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&amp;format=HAR" -o traffic.har</code></pre>
+<pre class="prettyprint code"><code class="code"># HAR (HTTP Archive) — for browser DevTools or HAR analysers
+curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&amp;format=HAR" -o traffic.har
+
+# OpenAPI 3 spec — derived from observed traffic
+curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&amp;format=OPENAPI" -o traffic.openapi.json
+
+# Postman collection v2.1 — each captured request as an item with example response
+curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&amp;format=POSTMAN" -o traffic.postman.json
+
+# Bruno collection — zip archive of .bru files + bruno.json manifest
+curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&amp;format=BRUNO" -o traffic.bruno.zip</code></pre>
+
+<p>The same five formats are available for <code>type=ACTIVE_EXPECTATIONS</code> too &mdash; substitute it in the URL to export the registered matchers instead of captured traffic.</p>
 
 <p>Filter to a specific host (e.g. the Anthropic API):</p>
 

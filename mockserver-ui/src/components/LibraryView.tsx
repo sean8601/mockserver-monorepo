@@ -17,46 +17,123 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 // Export sub-tab — download captured content in various formats
 // ---------------------------------------------------------------------------
 
-type ExportFormat = 'har' | 'expectations_json' | 'requests_json';
+// Two axes: what to export (scope) and the file format. Every combination
+// the server supports is enumerated explicitly so the dropdown order matches
+// the user's mental hierarchy ("first pick the scope, then the format").
 
-interface ExportFormatMeta {
-  value: ExportFormat;
+type ExportScope = 'expectations' | 'requests';
+type ExportFormat = 'json' | 'har' | 'openapi' | 'postman' | 'bruno';
+
+interface ExportOption {
+  value: string; // composite "<scope>:<format>"
+  scope: ExportScope;
+  format: ExportFormat;
   label: string;
   description: string;
   filename: string;
-  retrievePath: string;
 }
 
-const EXPORT_FORMATS: ExportFormatMeta[] = [
+const SCOPE_TO_TYPE: Record<ExportScope, string> = {
+  expectations: 'ACTIVE_EXPECTATIONS',
+  requests: 'REQUEST_RESPONSES',
+};
+
+const EXPORT_OPTIONS: ExportOption[] = [
+  // -------- Active expectations (matchers you've registered) --------
   {
-    value: 'har',
-    label: 'HAR (HTTP Archive)',
-    description: 'Browser-tooling-compatible archive of every request/response pair MockServer has logged.',
-    filename: 'mockserver-traffic.har',
-    retrievePath: '/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR',
-  },
-  {
-    value: 'expectations_json',
-    label: 'Active expectations (JSON)',
-    description: 'Every currently-registered expectation as a JSON array. Re-import via PUT /mockserver/expectation.',
+    value: 'expectations:json',
+    scope: 'expectations',
+    format: 'json',
+    label: 'Active expectations · MockServer JSON',
+    description: 'Round-trippable JSON of every registered expectation. Re-import via PUT /mockserver/expectation.',
     filename: 'mockserver-expectations.json',
-    retrievePath: '/mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=JSON',
   },
   {
-    value: 'requests_json',
-    label: 'Recorded requests (JSON)',
-    description: 'Every received request as a JSON array. Useful for replay / debugging.',
-    filename: 'mockserver-requests.json',
-    retrievePath: '/mockserver/retrieve?type=REQUESTS&format=JSON',
+    value: 'expectations:openapi',
+    scope: 'expectations',
+    format: 'openapi',
+    label: 'Active expectations · OpenAPI 3 spec',
+    description: 'One operation per (method, path) with the registered response body as an example.',
+    filename: 'mockserver-expectations.openapi.json',
+  },
+  {
+    value: 'expectations:postman',
+    scope: 'expectations',
+    format: 'postman',
+    label: 'Active expectations · Postman collection v2.1',
+    description: 'Postman collection of every expectation as a request item with example response.',
+    filename: 'mockserver-expectations.postman.json',
+  },
+  {
+    value: 'expectations:bruno',
+    scope: 'expectations',
+    format: 'bruno',
+    label: 'Active expectations · Bruno collection (.zip)',
+    description: 'Bruno collection — one .bru file per expectation, packaged as a zip archive.',
+    filename: 'mockserver-expectations.bruno.zip',
+  },
+  {
+    value: 'expectations:har',
+    scope: 'expectations',
+    format: 'har',
+    label: 'Active expectations · HAR archive',
+    description: 'HAR-formatted archive of each expectation as a synthetic request/response pair.',
+    filename: 'mockserver-expectations.har',
+  },
+  // -------- Recorded requests (traffic MockServer has handled) --------
+  {
+    value: 'requests:json',
+    scope: 'requests',
+    format: 'json',
+    label: 'Recorded requests · MockServer JSON',
+    description: 'Every request/response pair MockServer has logged, as a JSON array.',
+    filename: 'mockserver-traffic.json',
+  },
+  {
+    value: 'requests:har',
+    scope: 'requests',
+    format: 'har',
+    label: 'Recorded requests · HAR (HTTP Archive)',
+    description: 'Browser-tooling-compatible archive of every captured request/response pair.',
+    filename: 'mockserver-traffic.har',
+  },
+  {
+    value: 'requests:openapi',
+    scope: 'requests',
+    format: 'openapi',
+    label: 'Recorded requests · OpenAPI 3 spec',
+    description: 'OpenAPI spec derived from observed traffic; useful for capturing a real API shape.',
+    filename: 'mockserver-traffic.openapi.json',
+  },
+  {
+    value: 'requests:postman',
+    scope: 'requests',
+    format: 'postman',
+    label: 'Recorded requests · Postman collection v2.1',
+    description: 'Postman collection where each item is a captured request with its observed response.',
+    filename: 'mockserver-traffic.postman.json',
+  },
+  {
+    value: 'requests:bruno',
+    scope: 'requests',
+    format: 'bruno',
+    label: 'Recorded requests · Bruno collection (.zip)',
+    description: 'Bruno collection (one .bru per captured request) packaged as a zip archive.',
+    filename: 'mockserver-traffic.bruno.zip',
   },
 ];
 
+function retrievePath(option: ExportOption): string {
+  const type = SCOPE_TO_TYPE[option.scope];
+  return `/mockserver/retrieve?type=${type}&format=${option.format.toUpperCase()}`;
+}
+
 function ExportTab({ connectionParams }: { connectionParams: ConnectionParams }) {
-  const [format, setFormat] = useState<ExportFormat>('har');
+  const [selection, setSelection] = useState<string>('requests:har');
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const meta = EXPORT_FORMATS.find((f) => f.value === format)!;
+  const option = EXPORT_OPTIONS.find((o) => o.value === selection)!;
 
   const handleDownload = useCallback(async () => {
     setDownloading(true);
@@ -64,13 +141,13 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
     try {
       const protocol = connectionParams.secure ? 'https' : 'http';
       const base = `${protocol}://${connectionParams.host}:${connectionParams.port}`;
-      const res = await fetch(`${base}${meta.retrievePath}`, { method: 'PUT' });
+      const res = await fetch(`${base}${retrievePath(option)}`, { method: 'PUT' });
       if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = objectUrl;
-      anchor.download = meta.filename;
+      anchor.download = option.filename;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -80,7 +157,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
     } finally {
       setDownloading(false);
     }
-  }, [meta, connectionParams]);
+  }, [option, connectionParams]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
@@ -90,16 +167,16 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
         is what you get.
       </Typography>
       <TextField
-        label="Format"
+        label="Export"
         size="small"
         select
-        value={format}
-        onChange={(e) => setFormat(e.target.value as ExportFormat)}
-        helperText={meta.description}
+        value={selection}
+        onChange={(e) => setSelection(e.target.value)}
+        helperText={option.description}
       >
-        {EXPORT_FORMATS.map((f) => (
-          <MenuItem key={f.value} value={f.value}>
-            {f.label}
+        {EXPORT_OPTIONS.map((o) => (
+          <MenuItem key={o.value} value={o.value}>
+            {o.label}
           </MenuItem>
         ))}
       </TextField>
@@ -111,13 +188,16 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
           onClick={() => void handleDownload()}
           disabled={downloading}
         >
-          {downloading ? 'Downloading…' : `Download ${meta.filename}`}
+          {downloading ? 'Downloading…' : `Download ${option.filename}`}
         </Button>
       </Box>
       {error && <Alert severity="error" variant="outlined">{error}</Alert>}
       <Alert severity="info" variant="outlined" sx={{ fontSize: '0.8rem' }}>
-        OpenAPI and Postman exports are planned for a follow-up — they require additional
-        codecs that derive a schema or collection from the captured traffic.
+        OpenAPI / Postman / Bruno exports are best-effort. Positive-string matchers
+        round-trip cleanly; NottableString negation, regex bodies, and dynamic actions
+        (forward / template / callback / error / LLM) are exported as placeholders
+        because those formats describe client requests + example responses, not the
+        full MockServer expectation graph.
       </Alert>
     </Box>
   );
