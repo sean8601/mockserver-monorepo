@@ -75,7 +75,13 @@ else
   # tee the deploy output so we can extract the deploymentId the
   # central-publishing plugin prints after upload. We need it to poll the
   # Sonatype status API by ID — the namespace-listing endpoint is unreliable.
-  DEPLOY_LOG=$(mktemp -t mockserver-deploy.XXXXXX)
+  # Location is .tmp/ (per AGENTS.md temp-file policy), and we rm the file
+  # eagerly after extracting the id rather than relying on EXIT — the file
+  # holds the full container stdout/stderr, which could contain credentials
+  # if any subprocess accidentally enables `set -x`, and the polling phase
+  # below runs for up to 30 minutes.
+  mkdir -p "$REPO_ROOT/.tmp"
+  DEPLOY_LOG=$(mktemp "$REPO_ROOT/.tmp/mockserver-deploy.XXXXXX")
   trap 'rm -f "$DEPLOY_LOG"' EXIT
 
   in_docker "$MAVEN_IMAGE" \
@@ -114,10 +120,34 @@ SETTINGS
         -Dgpg.useagent=false \
         --settings /tmp/settings.xml
     ' 2>&1 | tee "$DEPLOY_LOG"
+  # Under `set -o pipefail` a pipeline exits with the rightmost non-zero
+  # status, which means `cmd | tee file` returns tee's exit code (almost
+  # always 0). We need the docker exit code instead — without this check,
+  # a failed mvn deploy would silently proceed to the deploymentId extract
+  # against an error log.
+  mvn_exit=${PIPESTATUS[0]}
+  if [[ $mvn_exit -ne 0 ]]; then
+    log_error "mvn deploy failed (in_docker exit $mvn_exit)"
+    exit "$mvn_exit"
+  fi
 
-  DEPLOYMENT_ID=$(grep -oE 'deploymentId: [a-f0-9-]{36}' "$DEPLOY_LOG" | head -1 | awk '{print $2}')
-  if [[ -z "$DEPLOYMENT_ID" ]]; then
-    log_error "Could not extract deploymentId from mvn deploy output (expected line: 'Uploaded bundle successfully, deployment name: ..., deploymentId: <uuid>')"
+  # The central-publishing-maven-plugin emits one line per deployment of the
+  # form `Uploaded bundle successfully, deployment name: ..., deploymentId:
+  # <uuid>. ...`. The UUID is lowercase hex per java.util.UUID.toString().
+  # Anchor the regex to a strict UUID shape (8-4-4-4-12 hex with hyphens),
+  # then validate the captured value matches the same shape before using it
+  # in API calls. A malformed or empty id is a hard failure.
+  DEPLOYMENT_ID=$(grep -oE 'deploymentId: [a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b' "$DEPLOY_LOG" \
+    | head -1 | awk '{print $2}')
+  # Drop the log file as soon as the id is captured — it may contain
+  # secrets and lives outside the EXIT trap window otherwise. After this
+  # point and before the polling block creates $status_response_file, no
+  # tmpfiles exist, so the EXIT trap can be safely disarmed (a signal in
+  # this gap would leak nothing).
+  rm -f "$DEPLOY_LOG"
+  trap - EXIT
+  if [[ ! "$DEPLOYMENT_ID" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
+    log_error "Could not extract a well-formed deploymentId from mvn deploy output (got: '${DEPLOYMENT_ID:-<empty>}'; expected line: 'Uploaded bundle successfully, deployment name: ..., deploymentId: <uuid>')"
     exit 1
   fi
   log_info "Captured Central Portal deploymentId: $DEPLOYMENT_ID"
@@ -149,8 +179,8 @@ else
   log_info "Polling Central Portal for validation result (deployment $DEPLOYMENT_ID)"
   TIMEOUT_ITERATIONS=60   # 60 × 30s = 30 minutes
   MAX_CONSECUTIVE_ERRORS=5
-  status_response_file=$(mktemp -t mockserver-status.XXXXXX)
-  trap 'rm -f "$DEPLOY_LOG" "$status_response_file"' EXIT
+  status_response_file=$(mktemp "$REPO_ROOT/.tmp/mockserver-status.XXXXXX")
+  trap 'rm -f "$status_response_file"' EXIT
   consecutive_errors=0
   validation_status=""
   for i in $(seq 1 "$TIMEOUT_ITERATIONS"); do
@@ -198,7 +228,7 @@ else
   # still at VALIDATED.
   if [[ "$validation_status" == "VALIDATED" ]]; then
     log_info "Publishing deployment $DEPLOYMENT_ID to Maven Central"
-    publish_response_file=$(mktemp -t mockserver-publish.XXXXXX)
+    publish_response_file=$(mktemp "$REPO_ROOT/.tmp/mockserver-publish.XXXXXX")
     publish_http=$(curl -sS --max-time 30 -o "$publish_response_file" -w '%{http_code}' \
       -X POST -H "Authorization: Basic $CP_AUTH" \
       "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID" 2>/dev/null || echo "000")

@@ -42,8 +42,15 @@ log_info "Generate aggregate Javadoc"
 # the whole aggregate aborts. Two-pass: install first to populate the local
 # repo at $RELEASE_VERSION, then aggregate javadoc with all dependencies
 # resolvable.
+#
+# IMPORTANT: the install pass MUST NOT use `-P release`. That profile activates
+# maven-gpg-plugin which signs every artifact, and the Javadoc job's container
+# never imports a GPG key (only maven-central.sh does that). With `-P release`
+# the install fails with `maven-gpg-plugin:sign: Exit code: 2` before anything
+# is installed. The release profile is still applied to the aggregate pass,
+# where it is needed for the javadoc artifact configuration.
 in_maven -w /build/mockserver \
-  -- mvn install -P release -DskipTests
+  -- mvn install -DskipTests
 in_maven -w /build/mockserver \
   -- mvn javadoc:aggregate -P release -DskipTests
 
