@@ -116,6 +116,19 @@ else
   # General find-and-replace across docs (excluding changelog, target, etc.)
   OLD_PAT=$(escape_sed "$OLD_VERSION"); NEW_REP=$(escape_sed "$RELEASE_VERSION")
   OLD_API_PAT=$(escape_sed "$OLD_API_VERSION"); NEW_API=$(escape_sed "$API_VERSION")
+  # Skip the substitution on lines that describe a HISTORICAL milestone
+  # (e.g. "Fixed in 6.0.x", "Before 6.0.0", "removed in 6.0.0", "switched
+  # to X in 6.0.0", "Since 5.15.0"). On those lines the version is a
+  # milestone marker, not a current-version reference; bumping it to the
+  # new release would falsify the statement. Trade-off: a line that mixes
+  # a historical milestone AND a current-version reference would be
+  # protected too, but that pattern is rare enough to be a tolerable false
+  # negative — the operator can always fix it by hand in the finalize
+  # commit. The list is intentionally broad (covers "Fixed in", "removed
+  # in", "switched ... in", etc.) because finalize runs unattended and we
+  # prefer false negatives (missed bump) over false positives (mangled
+  # documentation lie).
+  HISTORICAL_RE='([Bb]efore|[Uu]ntil|[Ss]ince|[Ff]ixed in|[Rr]emoved in|[Ii]ntroduced in|[Dd]eprecated in|[Aa]dded in|[Uu]pdated in|[Rr]eleased in|[Cc]hanged in|[Aa]s of|[Rr]equires|[Mm]inimum version[:]?|switched [^.]+ in|moved [^.]+ in|migrated [^.]+ in|renamed [^.]+ in|published [^.]+ in)[[:space:]]+[0-9]+\.[0-9]+'
   for ext in "*.html" "*.md" "*.yaml" "*.yml" "*.json" "*.txt"; do
     find "$REPO_ROOT" -name "$ext" \
       -not -path "*/node_modules/*" -not -path "*/.git/*" \
@@ -124,9 +137,9 @@ else
       -not -name "changelog.md" -not -name "CHANGELOG.md" \
       -not -name "package-lock.json" -print0 2>/dev/null \
     | while IFS= read -r -d '' file; do
-        sed_i "s/${OLD_PAT}/${NEW_REP}/g" "$file" 2>/dev/null || true
+        sed_i -E "/${HISTORICAL_RE}/!s/${OLD_PAT}/${NEW_REP}/g" "$file" 2>/dev/null || true
         if [[ "$OLD_API_VERSION" != "$API_VERSION" ]]; then
-          sed_i "s/${OLD_API_PAT}/${NEW_API}/g" "$file" 2>/dev/null || true
+          sed_i -E "/${HISTORICAL_RE}/!s/${OLD_API_PAT}/${NEW_API}/g" "$file" 2>/dev/null || true
         fi
       done
   done
