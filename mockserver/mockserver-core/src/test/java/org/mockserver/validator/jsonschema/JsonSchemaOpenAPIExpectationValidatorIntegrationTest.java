@@ -114,14 +114,14 @@ public class JsonSchemaOpenAPIExpectationValidatorIntegrationTest {
 
     @Test
     public void shouldValidateInvalidOpenAPIExpectationWithWrongSpecType() {
-        // when - specUrlOrPayload uses anyOf (string | object), so two individual errors are reported
+        // when - specUrlOrPayload uses anyOf (string | object); json-schema-validator
+        // 1.5+ reports a single type-mismatch line rather than one per anyOf branch.
         assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
                 "    \"specUrlOrPayload\" : 123" + NEW_LINE +
                 "  }"),
             is(
-                "2 errors:" + NEW_LINE +
-                    " - $.specUrlOrPayload: should be valid to any of the schemas object" + NEW_LINE +
-                    " - $.specUrlOrPayload: should be valid to any of the schemas string" + NEW_LINE +
+                "1 error:" + NEW_LINE +
+                    " - $.specUrlOrPayload: integer found, string expected" + NEW_LINE +
                     NEW_LINE +
                     OPEN_API_SPECIFICATION_URL
             ));
