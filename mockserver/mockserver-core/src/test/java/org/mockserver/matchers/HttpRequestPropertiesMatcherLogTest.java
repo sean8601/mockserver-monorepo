@@ -2126,7 +2126,7 @@ public class HttpRequestPropertiesMatcherLogTest {
                     "     failed because:" + NEW_LINE +
                     "  " + NEW_LINE +
                     "      1 error:" + NEW_LINE +
-                    "       - $.tags: there must be a minimum of 1 items in the array" + NEW_LINE +
+                    "       - $.tags: must have at least 1 items but found 0" + NEW_LINE +
                     NEW_LINE +
                     NEW_LINE
             ));

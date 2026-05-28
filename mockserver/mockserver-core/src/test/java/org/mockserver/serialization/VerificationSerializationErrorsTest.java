@@ -116,7 +116,7 @@ public class VerificationSerializationErrorsTest {
                 " schema validation errors:" + NEW_LINE +
                 "" + NEW_LINE +
                 "  1 error:" + NEW_LINE +
-                "   - $: should be valid to one and only one schema, but 2 are valid" + NEW_LINE +
+                "   - $: should be valid to one and only one schema, but 2 are valid with indexes '0, 1'" + NEW_LINE +
                 "  " + NEW_LINE +
                 "  " + OPEN_API_SPECIFICATION_URL.replaceAll(NEW_LINE, NEW_LINE + "  " )));
         }

@@ -180,6 +180,22 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
         return validationResult;
     }
 
+    // json-schema-validator 1.5.x reworded several validation messages; translate them back
+    // to the 1.0.x wording so consumer-visible error text and the downstream message massaging
+    // below stay unchanged. Pure rewording — no information gained or lost.
+    private static String normalizeValidationMessageFormat(String text) {
+        text = text.replaceFirst(
+            "(\\$[^:]*): property '([^']+)' is not defined in the schema and the schema does not allow additional properties",
+            "$1.$2: is not defined in the schema and the schema does not allow additional properties"
+        );
+        text = text.replaceFirst(
+            "(\\$[^:]*): required property '([^']+)' not found",
+            "$1.$2: is missing but it is required"
+        );
+        text = text.replace("must be valid to one and only one schema", "should be valid to one and only one schema");
+        return text;
+    }
+
     private String formatProcessingReport(Set<ValidationMessage> validationMessages, boolean addOpenAPISpecificationMessage) {
         if (validationMessages.isEmpty()) {
             return "";
@@ -188,7 +204,7 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
             Set<String> formattedMessages = validationMessages
                 .stream()
                 .map(validationMessage -> {
-                    String validationMessageText = String.valueOf(validationMessage);
+                    String validationMessageText = normalizeValidationMessageFormat(String.valueOf(validationMessage));
                     if (((validationMessageText.startsWith("$.httpRequest") && validationMessageText.contains(".body: ")) || validationMessageText.contains("$.body: "))
                     && !validationMessageText.contains("is not defined in the schema and the schema does not allow additional properties")) {
                         return StringUtils.substringBefore(validationMessageText, ":") + ": should match one of its valid types: " + FileReader.readFileFromClassPathOrPath("org/mockserver/model/schema/body.json")
