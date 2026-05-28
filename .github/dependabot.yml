@@ -3,12 +3,16 @@ updates:
   - package-ecosystem: "maven"
     directory: "/mockserver"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      interval: "daily"
+    open-pull-requests-limit: 20
     labels:
       - "dependencies"
       - "java"
+    groups:
+      maven-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # Java 11 / javax compatibility — block versions that require Java 17 or
       # the jakarta namespace. `versions:` ignores apply to security updates too
@@ -36,30 +40,23 @@ updates:
         versions: [">=2"]
       - dependency-name: "jakarta.validation:*"
         versions: [">=3"]
-      # Major-version bumps with non-Java-17 reasons to hold back (review individually)
-      - dependency-name: "io.prometheus:*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.networknt:json-schema-validator"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.puppycrawl.tools:checkstyle"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "net.javacrumbs.json-unit:json-unit-core"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "com.jayway.jsonpath:json-path"  # 3.x requires Java 17 (class file v61)
         versions: [">=3"]
-      - dependency-name: "com.fasterxml.uuid:java-uuid-generator"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "maven"
     directory: "/mockserver/mockserver-maven-plugin"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "java"
       - "maven-plugin"
+    groups:
+      maven-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # Java 11 / javax compatibility — mirror /mockserver ignore rules.
       # `versions:` form applies to security updates too.
@@ -67,83 +64,70 @@ updates:
         versions: [">=6"]
       - dependency-name: "org.springframework.boot:*"     # Spring Boot 3.x requires Java 17
         versions: [">=3"]
-      - dependency-name: "io.prometheus:*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.puppycrawl.tools:checkstyle"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.networknt:json-schema-validator"
-        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.jayway.jsonpath:json-path"  # 3.x requires Java 17 (class file v61)
+        versions: [">=3"]
 
   - package-ecosystem: "npm"
-    directory: "/mockserver-ui"
+    directories:
+      - "/mockserver-ui"
+      - "/mockserver-client-node"
+      - "/mockserver-node"
+      - "/.opencode"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "npm"
-      - "ui"
-
-  - package-ecosystem: "npm"
-    directory: "/mockserver-client-node"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "npm"
-
-  - package-ecosystem: "npm"
-    directory: "/mockserver-node"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "npm"
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "pip"
     directory: "/mockserver-client-python"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "python"
+    groups:
+      pip-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "bundler"
-    directory: "/mockserver-client-ruby"
+    directories:
+      - "/mockserver-client-ruby"
+      - "/jekyll-www.mock-server.com"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "ruby"
-
-  - package-ecosystem: "npm"
-    directory: "/.opencode"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "npm"
+    groups:
+      bundler-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      github-actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directories:
@@ -156,9 +140,31 @@ updates:
       - "/docker_build/maven"
       - "/docker_build/performance"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "docker"
+    groups:
+      docker-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "terraform"
+    directories:
+      - "/terraform/buildkite-agents"
+      - "/terraform/buildkite-pipelines"
+      - "/terraform/ses-email-forwarding"
+      - "/terraform/website"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "terraform"
+    groups:
+      terraform-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
