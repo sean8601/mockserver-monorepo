@@ -36,7 +36,7 @@ Use `.opencode/rules/review-constitution.md` as the foundation. For quick review
 - Client library mirroring server changes (CON-08)
 
 ### Infeasibility (Lens 4)
-- Java 11 compatibility maintained (FEA-06 - reject Java 17+ features or dependencies)
+- javax/jakarta compatibility maintained (FEA-06 - reject deps that force the jakarta namespace until the javax→jakarta migration is scheduled)
 - Module boundaries respected (COR-08)
 
 ### MockServer-Specific

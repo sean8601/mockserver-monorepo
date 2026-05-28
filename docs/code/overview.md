@@ -42,13 +42,13 @@ mockserver-monorepo/
 
 | Directory | Tech Stack | Build Tool |
 |-----------|-----------|------------|
-| `mockserver/` | Java 11+, Netty 4.1 | Maven (`./mvnw`) |
+| `mockserver/` | Java 17+, Netty 4.1 | Maven (`./mvnw`) |
 | `mockserver-ui/` | React, TypeScript | Vite (`npm`) |
 | `mockserver-node/` | Node.js | Grunt (`npm`) |
 | `mockserver-client-node/` | TypeScript | npm |
 | `mockserver-client-python/` | Python 3.9+ | pip/pytest |
 | `mockserver-client-ruby/` | Ruby 3.0+ | Bundler/RSpec |
-| `mockserver/mockserver-maven-plugin/` | Java 11+ | Maven |
+| `mockserver/mockserver-maven-plugin/` | Java 17+ | Maven |
 | `mockserver-performance-test/` | Python (Locust) | pip |
 
 The rest of this document focuses on the Java server architecture within `mockserver/`.
@@ -200,19 +200,19 @@ Usage examples"]
 
 ## Java Compatibility
 
-MockServer targets **Java 11** as the minimum supported version. This is a deliberate decision to maximise compatibility — approximately 23% of Java projects still run on Java 11 ([New Relic State of the Java Ecosystem](https://newrelic.com/resources/report/2024-state-of-the-java-ecosystem)).
+MockServer targets **Java 17** as the minimum supported version.
 
-The Maven compiler source and target are set to `11` in the root `pom.xml`. All dependencies must be compatible with Java 11:
+The Maven compiler source and target are set to `17` in the root `pom.xml`. The `javax`→`jakarta` namespace migration is a separate planned step — until it lands, dependencies still need to stay on the `javax` side of the namespace split:
 
 | Constraint | Maximum Version | Reason |
 |-----------|----------------|--------|
-| Spring Framework | 5.x | Spring 6 requires Java 17+ and Jakarta EE 9+ |
+| Spring Framework | 5.x | Spring 6 uses the `jakarta` namespace |
 | Spring Boot | 2.x | Spring Boot 3 requires Spring 6 |
 | Tomcat Embed | 9.x | Tomcat 10+ uses `jakarta` namespace |
-| Jetty | 9.x | Jetty 10+ requires Java 11+ minimum, Jetty 12+ requires Jakarta |
+| Jetty | 9.x | Jetty 10+ uses `jakarta` namespace |
 | Servlet API | `javax.servlet` | `jakarta.servlet` requires Jakarta EE 9+ |
 
-When evaluating dependency upgrade PRs (Snyk, Dependabot, or community), reject any that transitively require Java 17+ or migrate from `javax` to `jakarta` namespace.
+When evaluating dependency upgrade PRs (Snyk, Dependabot, or community), reject any that migrate from `javax` to `jakarta` namespace until the broader migration is scheduled.
 
 ## Key Architectural Principles
 

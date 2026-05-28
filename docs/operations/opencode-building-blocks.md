@@ -393,12 +393,12 @@ Domain knowledge, tool integration guides, review lenses, and factual reference 
 |---------------|---------|
 | Factual reference | "Dependabot supports these commands: `@dependabot rebase`, `@dependabot merge`..." |
 | Tool integration | "To use Chrome DevTools MCP: navigate with `navigate_page`, extract data with `evaluate_script`..." |
-| Review lenses | "Check for: Java 11 compatibility, Netty ByteBuf leaks, ring buffer invariants..." |
+| Review lenses | "Check for: javax/jakarta compatibility, Netty ByteBuf leaks, ring buffer invariants..." |
 | No strict ordering | Can be consulted in any order |
 
 Examples from MockServer:
 - `browser-auth` — How to use Chrome DevTools MCP for authenticated web UIs
-- `dependabot-snyk-pr-management` — Dependabot commands, Java 11 checks, merge procedures
+- `dependabot-snyk-pr-management` — Dependabot commands, javax/jakarta checks, merge procedures
 - `ideate` — Structured dialogue protocol for surfacing requirements
 
 ### When Should a Workflow Be a Skill vs Part of an Agent Prompt?

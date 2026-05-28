@@ -2,7 +2,7 @@
 name: pr-monitor
 description: >
   Monitors Dependabot and Snyk dependency upgrade PRs, automatically merging
-  them when builds pass. Handles Java 11 compatibility validation and provides
+  them when builds pass. Handles javax/jakarta compatibility validation and provides
   detailed status reporting. Use when the user says "monitor PRs", "watch builds",
   "auto-merge PRs", "merge passing PRs", or "watch dependency PRs".
 
@@ -12,7 +12,7 @@ description: >
 
 ## Purpose
 
-Monitors Dependabot and Snyk dependency upgrade PRs, automatically merging them when builds pass. Handles Java 11 compatibility validation and provides detailed status reporting.
+Monitors Dependabot and Snyk dependency upgrade PRs, automatically merging them when builds pass. Handles javax/jakarta compatibility validation and provides detailed status reporting.
 
 ## When to Use
 
@@ -124,10 +124,10 @@ Next check in 120s...
 - Verify branch protection rules
 - Check if PR requires reviews
 
-**Java 11 incompatibility:**
+**jakarta-namespace incompatibility:**
 - Do NOT merge
-- Report to user which dependency requires Java 17+
-- Suggest closing the PR
+- Report to user which dependency forces the jakarta namespace (e.g. Spring 6, Jetty 10+, Tomcat 10+)
+- Suggest closing the PR until the javax→jakarta migration is scheduled
 
 ## Integration with Dependabot
 

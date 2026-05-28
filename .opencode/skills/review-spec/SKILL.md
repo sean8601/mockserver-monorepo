@@ -79,7 +79,7 @@ Work through each lens from the constitution. For each lens:
 
 **Infeasibility (Lens 4):**
 - Requirements exceeding tech stack capabilities (FEA-01)
-- Java 11 compatibility violations (FEA-06)
+- javax/jakarta compatibility violations (FEA-06)
 - Unreproducible test scenarios (FEA-03)
 
 **Insecurity (Lens 5) — STRIDE analysis:**

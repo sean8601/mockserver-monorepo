@@ -3,7 +3,7 @@ name: review-code
 description: >
   Deep adversarial code review using the 8-lens review constitution. Examines
   diffs for correctness, security, completeness, and MockServer-specific concerns
-  (ByteBuf leaks, module boundaries, Java 11 compatibility, ring buffer sizing).
+  (ByteBuf leaks, module boundaries, javax/jakarta compatibility, ring buffer sizing).
   Use when performing pre-commit reviews, quality-loop iterations, or on-demand
   code audits. Loaded by review-cheap and review-final agents.
 
@@ -76,7 +76,7 @@ Focus effort on these high-impact areas:
 - Client library not mirroring server API changes (CON-08)
 
 **Infeasibility (Lens 4):**
-- Java 11 compatibility (FEA-06 — reject Java 17+ features, Spring 6, jakarta.*)
+- javax/jakarta compatibility (FEA-06 — reject Spring 6, Jetty 10+/12+, jakarta.* until the javax→jakarta migration is scheduled)
 - Module dependencies respect architecture (COR-08)
 
 **Overcomplexity (Lens 8):**
@@ -98,7 +98,7 @@ constitution's MockServer-Specific Review Triggers table:
 | `HttpState`, `HttpActionHandler` | Control plane vs data plane separation, concurrency |
 | `KeyAndCertificateFactory`, `NettySslContextFactory` | Certificate validation, expiry, CA chain |
 | `@JsonProperty`, `ObjectMapper`, serialization | Round-trip, client library update, backward compat |
-| `pom.xml` dependency version change | Java 11 compat (reject Spring 6+, Jetty 10+/12+, jakarta.*) |
+| `pom.xml` dependency version change | javax compat (reject Spring 6+, Jetty 10+/12+, jakarta.* until javax→jakarta migration is scheduled) |
 | Control plane endpoint (`/mockserver/*`) | JWT auth enforcement, audit logging, input validation |
 | Template evaluation (Velocity, JavaScript) | Input sanitization, sandbox, injection prevention |
 

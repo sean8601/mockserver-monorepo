@@ -37,7 +37,7 @@ Reviews are not free-form opinions. They follow a formal **Review Constitution**
 | Ambiguity | Vague or unclear requirements | Control plane vs data plane distinction |
 | Incompleteness | Missing edge cases or error handling | ByteBuf lifecycle, ring buffer sizing, pipeline handler order |
 | Inconsistency | Contradictions between components | Serialisation round-trip, client library mirroring |
-| Infeasibility | Technically impossible or impractical | Java 11 compatibility, Netty version constraints |
+| Infeasibility | Technically impossible or impractical | javax/jakarta compatibility, Netty version constraints |
 | Insecurity (STRIDE) | Security vulnerabilities | TLS certificate validation, template injection, CORS |
 | Inoperability | Operational issues | Config property documentation, Docker env vars |
 | Incorrectness | Logic errors and bugs | ByteBuf ref counting, ring buffer power-of-two, Jackson serialisation |

@@ -12,7 +12,7 @@
 
 MockServer is an open-source HTTP(S) mock server and proxy for testing, written in Java. It uses Netty as the HTTP server framework, Maven for builds, and is deployed as Docker containers, JARs, and WARs.
 
-**Tech stack:** Java 11+ (minimum supported), Netty 4.1, Jackson 2.14, Maven (multi-module), Node.js/TypeScript (UI + client), Python 3.9+ (client), Ruby 3.0+ (client), Docker, Helm, Jekyll (documentation site)
+**Tech stack:** Java 17+ (minimum supported), Netty 4.1, Jackson 2.14, Maven (multi-module), Node.js/TypeScript (UI + client), Python 3.9+ (client), Ruby 3.0+ (client), Docker, Helm, Jekyll (documentation site)
 **CI/CD:** Buildkite (primary CI), GitHub Actions (Docker image builds, CodeQL)
 **Infrastructure:** AWS (Buildkite build agents, documentation site hosting), Docker Hub (container images)
 **Repository:** GitHub (github.com)
@@ -40,7 +40,7 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/infrastructure/aws-ses-email-forwarding.md](docs/infrastructure/aws-ses-email-forwarding.md) | Before modifying SES email forwarding, DNS mail records, or the Lambda forwarder |
 | [docs/infrastructure/helm.md](docs/infrastructure/helm.md) | Before modifying Helm charts or Kubernetes deployment |
 | [docs/operations/website.md](docs/operations/website.md) | Before modifying the Jekyll documentation site |
-| [docs/operations/security.md](docs/operations/security.md) | Before adding, removing, or upgrading dependencies (Java 11 constraints, version ceilings, CodeQL, Dependabot, Snyk) |
+| [docs/operations/security.md](docs/operations/security.md) | Before adding, removing, or upgrading dependencies (Java 17 floor, javax/jakarta constraints, version ceilings, CodeQL, Dependabot, Snyk) |
 | [docs/operations/release-process.md](docs/operations/release-process.md) | When performing or automating releases |
 | [docs/operations/release-principles.md](docs/operations/release-principles.md) | Before changing anything under `scripts/release/` or `.buildkite/release-*` |
 | [docs/operations/ai-native-sdlc-principles.md](docs/operations/ai-native-sdlc-principles.md) | For the principles behind working with AI across the SDLC |
@@ -142,15 +142,13 @@ Use `/commit` for commits so the full workflow in `.opencode/rules/commit-workfl
 
 ## Java Compatibility Policy
 
-MockServer targets **Java 11** as the minimum supported version. This is a deliberate decision to maximise compatibility — approximately 23% of Java projects still run on Java 11.
+MockServer targets **Java 17** as the minimum supported version.
 
 **Rules:**
-- The Maven compiler source/target MUST remain at `11` (`mockserver/pom.xml` properties `maven.compiler.source` and `maven.compiler.target`)
-- NEVER accept dependency upgrades that require Java 17+ (e.g., Spring 6, Jakarta EE 9+, Jetty 10+/12+)
-- NEVER use Java language features or APIs introduced after Java 11
-- When evaluating Snyk/Dependabot PRs, reject any that pull in transitive dependencies requiring Java 17+
-- The `javax` namespace is used throughout — do NOT migrate to `jakarta` namespace
-- Spring 5.x, Tomcat 9.x, and Jetty 9.x are the highest major versions compatible with Java 11 + `javax`
+- The Maven compiler source/target MUST remain at `17` (`mockserver/pom.xml` properties `maven.compiler.source` and `maven.compiler.target`)
+- NEVER use Java language features or APIs introduced after Java 17
+- The `javax` namespace is used throughout — do NOT migrate to `jakarta` namespace. The full javax→jakarta migration is a separate planned step; until it lands, do NOT accept dependency upgrades that require the jakarta namespace (e.g., Spring 6.x, Spring Boot 3.x, Tomcat 10+, Jetty 10+, Jakarta EE 9+).
+- Spring 5.x, Tomcat 9.x, and Jetty 9.x are the highest major versions compatible with the current `javax` codebase.
 
 ## Helm Chart Versioning Policy
 

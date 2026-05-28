@@ -45,17 +45,17 @@ Dependabot monitors **8 package ecosystems** across the monorepo for outdated an
 
 Dependabot runs **weekly on Mondays** and opens pull requests for version updates and security patches.
 
-### Java 11 Compatibility Blocklist
+### javax → jakarta Compatibility Blocklist
 
-MockServer targets Java 11 as its minimum supported version. Many security fixes in the Java ecosystem require Java 17+. Dependabot is configured to **block major version upgrades** for dependencies that would break Java 11 compatibility:
+MockServer targets Java 17 as its minimum supported version, but the codebase still uses the `javax` namespace throughout. The `javax`→`jakarta` migration is a separate planned step. Until it lands, Dependabot is configured to **block major version upgrades** for dependencies that would force the `jakarta` namespace:
 
-- Spring Framework 6.x (requires Java 17+)
-- Spring Boot 3.x (requires Java 17+)
-- Tomcat 10+ (requires Jakarta EE 9+)
-- Jetty 10+/12+ (requires Java 17+)
-- Jakarta EE 9+ namespace (`javax` to `jakarta` migration)
+- Spring Framework 6.x (uses `jakarta` namespace)
+- Spring Boot 3.x (requires Spring 6)
+- Tomcat 10+ (uses `jakarta` namespace)
+- Jetty 10+/12+ (uses `jakarta` namespace)
+- Jakarta EE 9+ (`javax`→`jakarta` migration)
 
-The full list of version ceilings is maintained in the Dependabot configuration (`.github/dependabot.yml`) and Snyk policy (`.snyk`). See also the Java 11 compatibility policy in [AGENTS.md](../../AGENTS.md#java-compatibility-policy).
+The full list of version ceilings is maintained in the Dependabot configuration (`.github/dependabot.yml`) and Snyk policy (`.snyk`). See also the Java compatibility policy in [AGENTS.md](../../AGENTS.md#java-compatibility-policy).
 
 ### Maven Dependency Graph Submission
 
@@ -67,7 +67,7 @@ Snyk provides a second layer of vulnerability scanning, independent of Dependabo
 
 - **PR status checks:** Two Snyk integrations (`security/snyk (mockserver)` and `security/snyk (jamesdbloom)`) run on every pull request
 - **Dashboard:** [app.snyk.io/org/mockserver/projects](https://app.snyk.io/org/mockserver/projects)
-- **Policy file:** [`.snyk`](../../.snyk) documents 28 vulnerability IDs that cannot be fixed due to Java 11 constraints, with expiry dates that trigger periodic review
+- **Policy file:** [`.snyk`](../../.snyk) documents 28 vulnerability IDs that cannot be fixed due to the outstanding `javax`→`jakarta` namespace constraint, with expiry dates that trigger periodic review
 
 The `.snyk` policy file excludes `mockserver-examples` (sample code, not shipped) and documents the rationale for each ignored vulnerability. All ignores expire periodically (currently 2026-08-11) to force re-evaluation as the dependency landscape evolves.
 
@@ -129,12 +129,12 @@ In the Maven ecosystem, a `-SNAPSHOT` suffix (e.g., `5.16.0-SNAPSHOT`) indicates
 | Python package | Published only at release time | PyPI |
 | Ruby gem | Published only at release time | RubyGems |
 
-**At formal release time**, all known security issues are resolved to the extent technically possible given the Java 11 compatibility constraint. This means:
+**At formal release time**, all known security issues are resolved to the extent technically possible given the outstanding `javax`→`jakarta` namespace constraint. This means:
 
 1. All Dependabot and Snyk alerts with available patches are addressed
 2. Dependencies are updated to their latest compatible versions
 3. Any new CodeQL findings are reviewed and resolved
-4. The Snyk policy file's ignore expiry dates are reviewed and renewed only if the Java 11 constraint still prevents a fix
+4. The Snyk policy file's ignore expiry dates are reviewed and renewed only if the `javax`/`jakarta` constraint still prevents a fix
 
 **Between releases**, the `master` branch and SNAPSHOT artifacts may temporarily carry unresolved advisories -- for example, when a new CVE is published against a dependency but the fix has not yet been integrated.
 
@@ -145,18 +145,18 @@ In the Maven ecosystem, a `-SNAPSHOT` suffix (e.g., `5.16.0-SNAPSHOT`) indicates
 - **For Docker users:** Use versioned tags (e.g., `mockserver/mockserver:6.1.0`) rather than `latest`
 - **Subscribe to releases:** Watch the [GitHub releases page](https://github.com/mock-server/mockserver-monorepo/releases) for new versions with resolved security issues
 
-## Java 11 Compatibility Trade-Off
+## javax / jakarta Compatibility Trade-Off
 
-MockServer maintains Java 11 as its minimum supported version (approximately 23% of Java projects still run Java 11). This means certain dependency upgrades that would resolve security advisories are **not possible** without breaking compatibility:
+MockServer runs on Java 17+ but still uses the `javax` namespace throughout. Until the `javax`→`jakarta` migration is scheduled and completed, certain dependency upgrades that would resolve security advisories are **not possible** without breaking compatibility:
 
-- Spring Framework 5.3.x cannot be upgraded to 6.x (requires Java 17+)
-- Spring Boot 2.7.x cannot be upgraded to 3.x (requires Java 17+)
-- Jetty 9.4.x cannot be upgraded to 12.x (requires Java 17+)
+- Spring Framework 5.3.x cannot be upgraded to 6.x (uses `jakarta` namespace)
+- Spring Boot 2.7.x cannot be upgraded to 3.x (requires Spring 6)
+- Jetty 9.4.x cannot be upgraded to 10+ (uses `jakarta` namespace)
 
 These constraints are documented in detail in:
 - [SECURITY.md](../../SECURITY.md) -- full risk assessment and intentional behaviours
 - [`.snyk`](../../.snyk) -- specific CVE ignores with rationale
-- [AGENTS.md](../../AGENTS.md#java-compatibility-policy) -- Java 11 compatibility policy and version ceilings
+- [AGENTS.md](../../AGENTS.md#java-compatibility-policy) -- Java compatibility policy and version ceilings
 
 ## Vulnerability Reporting
 

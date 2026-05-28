@@ -64,12 +64,12 @@ These principles govern the adversarial review process for MockServer. The revie
 
 | ID | Principle | Anti-Pattern |
 |----|-----------|-------------|
-| FEA-01 | Requirements must be achievable with the stated tech stack | Requiring Java 17 features when MockServer targets Java 11 minimum |
+| FEA-01 | Requirements must be achievable with the stated tech stack | Requiring Java 21+ features when MockServer targets Java 17 minimum |
 | FEA-02 | Performance targets must be realistic for the architecture | Sub-millisecond response with templating engine evaluation |
 | FEA-03 | Test scenarios must be reproducible in CI/CD | Tests requiring manual certificate trust, specific network conditions, or time-of-day |
 | FEA-04 | Success criteria must be measurable with available tooling | Metrics requiring instrumentation that doesn't exist |
 | FEA-05 | Ordering guarantees must be achievable in distributed systems | Assuming global ordering without coordination mechanism |
-| FEA-06 | MockServer-specific: Dependency upgrades must maintain Java 11 compatibility | Accepting Spring 6.x, Jetty 10+, or jakarta.* namespace (all require Java 17+) |
+| FEA-06 | MockServer-specific: Dependency upgrades must not force the `jakarta` namespace until the javax→jakarta migration is scheduled | Accepting Spring 6.x, Jetty 10+, or jakarta.* namespace upgrades against the current `javax` codebase |
 | FEA-07 | MockServer-specific: Netty version changes must preserve protocol detection | Upgrading Netty without verifying PortUnificationHandler compatibility |
 
 ## Lens 5 Principles: Insecurity (STRIDE)
@@ -170,7 +170,7 @@ These patterns in code or specs MUST trigger deep inspection:
 | `HttpState`, `HttpActionHandler` | Verify control plane vs data plane separation, concurrency safety |
 | `KeyAndCertificateFactory`, `NettySslContextFactory` | Verify certificate validation, expiry checks, CA chain verification |
 | `@JsonProperty`, `ObjectMapper`, serialization | Verify round-trip serialization, client library update, backward compatibility |
-| `pom.xml` dependency version change | Verify Java 11 compatibility (reject Spring 6+, Jetty 10+/12+, jakarta.* namespace) |
+| `pom.xml` dependency version change | Verify javax-compatibility (reject Spring 6+, Jetty 10+/12+, jakarta.* namespace until javax→jakarta migration is scheduled) |
 | Control plane endpoint (`/mockserver/*`) | Verify JWT authentication enforcement, audit logging, input validation |
 | Template evaluation (Velocity, JavaScript) | Verify input sanitization, sandbox enforcement, injection prevention |
 

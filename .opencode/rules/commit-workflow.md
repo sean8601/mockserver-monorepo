@@ -151,7 +151,7 @@ Inoperability, Incorrectness, Overcomplexity). Pay special attention to:
 - Missing error handling or edge cases (INC-01, INC-07)
 - Security issues (SEC-06: secrets in logs, SEC-05: input validation, SEC-12: template injection)
 - Netty ByteBuf leaks (COR-10, INC-13)
-- Java 11 compatibility violations (FEA-06)
+- javax/jakarta compatibility violations (FEA-06)
 - Module boundary violations (COR-08)
 - Missing consumer documentation updates (OPS-09)
 

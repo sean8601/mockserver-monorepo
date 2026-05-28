@@ -1,6 +1,6 @@
 ---
 name: dependabot-snyk-pr-management
-description: Interact with Dependabot and Snyk pull requests for dependency upgrades and security fixes. Documents Dependabot commands, Java 11 compatibility checks, safe merge workflows, and troubleshooting. Use when managing dependency upgrade PRs or security fix PRs.
+description: Interact with Dependabot and Snyk pull requests for dependency upgrades and security fixes. Documents Dependabot commands, javax/jakarta compatibility checks, safe merge workflows, and troubleshooting. Use when managing dependency upgrade PRs or security fix PRs.
 
 ---
 
@@ -21,7 +21,7 @@ Use when:
 **IMPORTANT:** Before merging, rebasing, or closing any PR:
 1. Verify PR author is `app/dependabot` or a Snyk bot
 2. Check CI status (all checks must pass for merge)
-3. Verify Java 11 compatibility (see section below)
+3. Verify javax/jakarta compatibility (see section below)
 4. Review changed dependencies and scope
 5. Never use `git add .` — stage explicit files only
 6. Never force-push to bot-owned branches without explicit user approval
@@ -113,7 +113,7 @@ Snyk creates PRs to fix security vulnerabilities. These PRs are created by the S
    - Check the Snyk PR description for CVE details
    - Review the severity (critical, high, medium, low)
    - Check if the fix is a direct or transitive dependency upgrade
-   - **Check Java 11 compatibility** (see section below)
+   - **Check javax/jakarta compatibility** (see section below)
 
 2. **Test the fix:**
    - Snyk PRs trigger the same CI checks as any PR
@@ -121,8 +121,8 @@ Snyk creates PRs to fix security vulnerabilities. These PRs are created by the S
    - Run local tests if needed
 
 3. **Merge or close:**
-   - If tests pass and Java 11 compatible: `gh pr merge <PR_NUMBER> --squash`
-   - If Java 17+ required: close and document workaround (pin old version or accept vulnerability)
+   - If tests pass and javax-compatible: `gh pr merge <PR_NUMBER> --squash`
+   - If the upgrade forces the `jakarta` namespace: close and document workaround (pin old version or accept vulnerability)
    - If tests fail: investigate failure (may need code changes)
    - If false positive: close and mark as ignored in Snyk UI
 
@@ -161,15 +161,14 @@ Dependabot is configured in `.github/dependabot.yml`. **Always check that file f
 - **npm** (`/.opencode`) - OpenCode config dependencies, weekly schedule Monday, 5 PR limit  
 - **GitHub Actions** (`/`) - Workflow dependencies, weekly schedule Monday, 5 PR limit
 
-**Java 11 compatibility blocks:**
+**javax/jakarta compatibility blocks:**
 
-The configuration blocks major version upgrades for dependencies requiring Java 17+ or Jakarta namespace migration using `update-types: ["version-update:semver-major"]`. See the `ignore` section in `.github/dependabot.yml` for the complete list, which includes:
+The configuration blocks major-version upgrades for dependencies that would force the `jakarta` namespace before the javax→jakarta migration is scheduled. See the `ignore` section in `.github/dependabot.yml` for the authoritative list, which currently includes:
 
-- **Spring Framework/Boot** - Blocks 6.x+ (requires Java 17)
-- **Tomcat, Jetty** - Blocks 10.x+ (requires Java 17 or Jakarta namespace)
-- **Servlet** - Blocks major versions (Jakarta `javax.*` → `jakarta.*` migration)
-- **Prometheus** - Blocks major versions (API redesign from `simpleclient` to `prometheus-metrics`)
-- **json-schema-validator, Checkstyle, json-unit, json-path** - Blocks major versions (API breaks)
+- **Spring Framework/Boot** - Blocks 6.x+ / 3.x+ (uses `jakarta` namespace)
+- **Tomcat, Jetty** - Blocks 10.x+ (uses `jakarta` namespace)
+- **Servlet** - Defensive guard on `javax.servlet:*` ≥ 5
+- **Jakarta EE artifacts** - Blocks `jakarta.xml.bind` ≥ 3, `jakarta.activation` ≥ 2, `jakarta.validation` ≥ 3
 
 ## Common Scenarios
 
@@ -217,7 +216,7 @@ gh pr comment <PR_NUMBER> --body "@dependabot squash and merge"
 
 **WARNING:** Do NOT use a blind loop. Always verify:
 - All checks are passing
-- Java 11 compatibility
+- javax/jakarta compatibility
 - No breaking changes
 - PR scope is reasonable
 
@@ -255,31 +254,31 @@ ignore:
 **Problem:** Snyk creates PR to fix CVE-2024-12345 (critical severity).
 
 **Solution:**
-1. **Check Java 11 compatibility first**
+1. **Check javax/jakarta compatibility first**
 2. Review the CVE and verify severity
 3. Check if tests pass
 4. Merge immediately if safe:
    ```bash
    gh pr merge <PR_NUMBER> --squash --auto
    ```
-5. If tests fail or Java 17+ required, investigate before merging
+5. If tests fail or the PR forces the `jakarta` namespace, investigate before merging
 
-## Java 11 Compatibility Requirements
+## javax / jakarta Compatibility Requirements
 
-MockServer targets Java 11 as the minimum supported version. When reviewing Dependabot PRs, **always check for Java 17+ dependencies.**
+MockServer targets Java 17 as the minimum supported version but still uses the `javax` namespace throughout. When reviewing Dependabot PRs, **always check for upgrades that force the `jakarta` namespace.**
 
-See the Java 11 compatibility policy in `../../../AGENTS.md` and the Snyk policy in `../../../.snyk` for version ceilings.
+See the javax/jakarta compatibility policy in `../../../AGENTS.md` and the Snyk policy in `../../../.snyk` for version ceilings.
 
-### Quick Check: Is This PR Java 11 Compatible?
+### Quick Check: Does This PR Force jakarta?
 
 ```bash
 # Check the PR diff for blocked dependencies
-gh pr diff <PR_NUMBER> | grep -E "(springframework|jakarta|jetty|tomcat\.embed|prometheus|json-schema-validator|checkstyle|json-unit|jsonpath)"
+gh pr diff <PR_NUMBER> | grep -E "(springframework|jakarta|jetty|tomcat\.embed)"
 ```
 
-### How to Handle Java 17+ PRs
+### How to Handle jakarta-forcing PRs
 
-If Dependabot proposes a Java 17+ dependency:
+If Dependabot proposes a dependency that forces the `jakarta` namespace:
 
 1. **Close the PR:**
    ```bash
@@ -295,7 +294,7 @@ If Dependabot proposes a Java 17+ dependency:
    ```yaml
    ignore:
      - dependency-name: "<dependency-pattern>"
-       update-types: ["version-update:semver-major"]
+       versions: [">=<major>"]
    ```
 
 ## Troubleshooting
@@ -335,7 +334,7 @@ If recreate also fails, close the PR and wait for Dependabot to create a new one
 **Causes:**
 - Breaking change in upgraded dependency
 - Transitive dependency incompatibility
-- Java 17+ requirement
+- jakarta-namespace requirement
 - Test needs updating for new API
 
 **Solution:**
@@ -358,6 +357,6 @@ If recreate also fails, close the PR and wait for Dependabot to create a new one
 
 - [Dependabot commands documentation](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/managing-pull-requests-for-dependency-updates#managing-dependabot-pull-requests-with-comment-commands)
 - [Snyk GitHub integration](https://docs.snyk.io/integrate-with-snyk/git-repositories-scms-integrations-with-snyk/snyk-github-integration)
-- [MockServer Java 11 compatibility policy](../../../AGENTS.md#java-compatibility-policy)
+- [MockServer javax/jakarta compatibility policy](../../../AGENTS.md#java-compatibility-policy)
 - [Security and dependency constraints](../../../docs/operations/security.md)
 - [Dependabot configuration file](../../../.github/dependabot.yml)

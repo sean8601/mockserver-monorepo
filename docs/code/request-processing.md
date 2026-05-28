@@ -359,7 +359,7 @@ Three template engines are supported for `RESPONSE_TEMPLATE` and `FORWARD_TEMPLA
 |--------|-------|-------------------|
 | Velocity | `VelocityTemplateEngine` | `$request` |
 | Mustache | `MustacheTemplateEngine` | `request` (with `#jsonPath` and `#xPath` lambdas) |
-| JavaScript | `JavaScriptTemplateEngine` | `request` (Nashorn, Java 11+ only) |
+| JavaScript | `JavaScriptTemplateEngine` | `request` (Nashorn, Java 17+) |
 
 All engines receive built-in dynamic variables from `TemplateFunctions.BUILT_IN_FUNCTIONS` (`now`, `now_epoch`, `now_iso_8601`, `uuid`, `rand_int`, `rand_bytes`, etc.) and five helper objects from `TemplateFunctions.BUILT_IN_HELPERS`:
 

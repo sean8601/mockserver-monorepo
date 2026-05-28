@@ -45,7 +45,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [Build System](operations/build-system.md) | Maven configuration, profiles, plugins, and build scripts |
 | [Release Process](operations/release-process.md) | End-to-end release workflow with Mermaid diagrams |
 | [Security](operations/security.md) | Consolidated security overview: CodeQL, Dependabot, Snyk, AI security review, SNAPSHOT policy |
-| [Snyk Security](operations/snyk-security.md) | Vulnerability scanning, CLI usage, Java 11 constraints, triage workflow |
+| [Snyk Security](operations/snyk-security.md) | Vulnerability scanning, CLI usage, javax/jakarta constraints, triage workflow |
 | [Website](operations/website.md) | Jekyll documentation site structure and publishing |
 | [Testing](testing.md) | Test frameworks, module inventory, architecture, configuration, coverage gaps, CI execution |
 | [Performance Tuning](operations/performance-tuning.md) | Internal companion to the website performance page: where the budget goes, rules of thumb, JVM flags, measuring, regression triage |
