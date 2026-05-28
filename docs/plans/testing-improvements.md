@@ -33,15 +33,11 @@ All M1-M6 milestones from the [Execution Plan](#execution-plan) shipped on the `
 
 ## Phase 1: Measure
 
-### 1.1 JaCoCo coverage plugin — DONE, but consumer decision required
+### 1.1 JaCoCo coverage plugin — DONE (Option A+ shipped)
 
 Shipped as `jacoco-maven-plugin:0.8.14` in root `mockserver/pom.xml`, bound to `prepare-agent` (test) and `prepare-agent-integration` (verify) plus `report` and `report-integration` goals. Not in `<pluginManagement>`, so it runs on every build with ~5–10% overhead.
 
-**Open decision:** no CI step currently publishes the JaCoCo report or fails on coverage thresholds. Either:
-- **Option A (keep):** add a Buildkite artifact upload for `**/target/site/jacoco/**` and document where to find the aggregate report. Optionally wire `jacoco:check` with thresholds (e.g. `mockserver-core` ≥60%, `mockserver-netty` ≥50%) so a regression actually fails the build.
-- **Option B (drop):** remove the plugin until there's a consumer. Saves 5–10% of every build for an artifact nobody reads.
-
-Pick one before any further coverage work is done — otherwise the "+5–10%" tax is paid forever for zero feedback signal.
+**Decision (2026-05-28): Option A+ — keep plugin, publish reports, enforce thresholds.** M1 added artifact upload globs for `**/target/site/jacoco/**` and `**/target/site/jacoco-it/**` to `.buildkite/pipeline-java.yml`. M1 also wired `jacoco:check` with safe-low thresholds in `mockserver-core/pom.xml` and `mockserver-netty/pom.xml`. M6 ratcheted those thresholds to ~3-4 points below the measured unit-test floors (mockserver-core LINE ≥0.65, mockserver-netty LINE ≥0.55). The ~5-10% build cost is now paid back by a real coverage gate and downloadable per-build report artifacts.
 
 ### 1.2 Make XML reports the default — cosmetic cleanup
 
