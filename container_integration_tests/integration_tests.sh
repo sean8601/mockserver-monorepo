@@ -53,6 +53,9 @@ function run_all_tests() {
       test "docker_compose_with_server_port_from_default_properties_file"
       test "docker_compose_with_server_port_from_custom_properties_file"
       test "docker_compose_with_mtls"
+      test "docker_compose_jvm_options"
+      test "docker_compose_libs_classpath"
+      test "docker_compose_graceful_shutdown"
       clean-up-docker-containers
     fi
     if [[ "${SKIP_HELM_TESTS:-}" != "true" ]]; then
@@ -63,6 +66,8 @@ function run_all_tests() {
       test "helm_custom_server_port"
       test "helm_remote_host_and_port"
       test "helm_inline_config"
+      test "helm_configmap_injection"
+      test "helm_mockserver_config_chart"
       tear-down-k8s
     fi
     set -euo pipefail

@@ -1,0 +1,11 @@
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    environment:
+      MOCKSERVER_LOG_LEVEL: DEBUG
+      JAVA_TOOL_OPTIONS: "-Xmx256m"
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command:
+      - "sleep"
+      - "86400"

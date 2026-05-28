@@ -1,0 +1,20 @@
+FROM eclipse-temurin:17-jdk AS build
+
+WORKDIR /build
+
+# Copy the mockserver JAR to get the ExpectationInitializer interface on the classpath
+COPY mockserver-netty-jar-with-dependencies.jar /build/mockserver.jar
+
+# Copy the initialiser source
+COPY initialiser_src/LibsTestInitializer.java /build/src/org/mockserver/test/LibsTestInitializer.java
+
+# --release 11 matches MockServer's Java 11 minimum target so the produced
+# class file is loadable by the runtime JVM in the integration_testing image.
+RUN mkdir -p /build/classes \
+    && javac --release 11 -cp /build/mockserver.jar -d /build/classes /build/src/org/mockserver/test/LibsTestInitializer.java \
+    && cd /build/classes \
+    && jar cf /build/libs-test-initialiser.jar org/
+
+# Output stage: just the JAR
+FROM scratch
+COPY --from=build /build/libs-test-initialiser.jar /libs-test-initialiser.jar

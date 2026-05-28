@@ -1,0 +1,13 @@
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    environment:
+      MOCKSERVER_LOG_LEVEL: DEBUG
+      MOCKSERVER_INITIALIZATION_CLASS: org.mockserver.test.LibsTestInitializer
+    volumes:
+      - ${OVERRIDE_DIR}/libs:/libs
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command:
+      - "sleep"
+      - "86400"
