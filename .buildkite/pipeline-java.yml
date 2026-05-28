@@ -22,6 +22,9 @@ steps:
       # downstream coverage tooling consumes; jacoco:check enforces the gate.
       - "**/target/site/jacoco/jacoco.xml"
       - "**/target/site/jacoco-it/jacoco.xml"
+      # Bundled per-class jacoco HTML reports - one tarball for the whole reactor.
+      # Download + extract to browse the rich coverage UI.
+      - "mockserver/jacoco-html-reports.tar.gz"
       - "mockserver/mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-*.jar"
     timeout_in_minutes: 60
 
@@ -33,6 +36,11 @@ steps:
       - junit-annotate#8a549e5220869601737287b4d6a9293703dc5a6f:  # v2.7.0
           artifacts: "**/target/*-reports/TEST-*.xml"
           always-annotate: true
+
+  - label: ":chart_with_upwards_trend: test + coverage summary"
+    command: ".buildkite/scripts/steps/java-summarize.sh"
+    timeout_in_minutes: 5
+    soft_fail: true
 
   - wait
 
