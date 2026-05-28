@@ -6,8 +6,7 @@ import org.mockserver.mappers.MockServerHttpResponseToHttpServletResponseEncoder
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.responsewriter.ResponseWriter;
-
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * @author jamesdbloom

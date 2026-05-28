@@ -3,8 +3,8 @@ package org.mockserver.streams;
 import org.apache.commons.io.IOUtils;
 import org.junit.Test;
 import org.mockserver.logging.MockServerLogger;
+import jakarta.servlet.*;
 
-import javax.servlet.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;

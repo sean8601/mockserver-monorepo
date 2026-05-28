@@ -7,10 +7,9 @@ import org.mockserver.examples.proxy.model.Book;
 import org.mockserver.examples.proxy.service.BookService;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
-
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
-import javax.annotation.Resource;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import jakarta.annotation.Resource;
 
 import static org.mockserver.examples.proxy.json.ObjectMapperFactory.createObjectMapper;
 
@@ -38,7 +37,7 @@ public class BookServiceJettyHttpClient implements BookService {
     private HttpClient createHttpClient() {
         HttpClient httpClient = new HttpClient();
         try {
-            httpClient.getProxyConfiguration().getProxies().add(new HttpProxy(System.getProperty("http.proxyHost"), Integer.parseInt(System.getProperty("http.proxyPort"))));
+            httpClient.getProxyConfiguration().addProxy(new HttpProxy(System.getProperty("http.proxyHost"), Integer.parseInt(System.getProperty("http.proxyPort"))));
             httpClient.start();
         } catch (Exception e) {
             throw new RuntimeException("Exception creating HttpClient", e);

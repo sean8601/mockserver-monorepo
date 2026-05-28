@@ -1967,7 +1967,7 @@ public class HttpRequestPropertiesMatcherLogTest {
                     "  " + NEW_LINE +
                     "     failed because:" + NEW_LINE +
                     "  " + NEW_LINE +
-                    "      missing element at \"some_field\"" + NEW_LINE +
+                    "      missing element at \"null\"" + NEW_LINE +
                     NEW_LINE +
                     NEW_LINE
             ));

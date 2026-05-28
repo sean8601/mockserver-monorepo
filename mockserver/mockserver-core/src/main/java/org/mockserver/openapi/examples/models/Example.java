@@ -15,7 +15,6 @@
  */
 
 package org.mockserver.openapi.examples.models;
-
 import jakarta.xml.bind.annotation.XmlAttribute;
 
 /**

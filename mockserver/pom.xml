@@ -62,9 +62,8 @@
         <netty.version>4.2.14.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.84</bouncycastle.version>
-        <!-- highest Spring 5.x version (EOL); Spring 6 requires Jakarta EE 9+ (javax→jakarta namespace) -->
-        <spring.version>5.3.39</spring.version>
-        <spring-web.version>5.3.39</spring-web.version>
+        <spring.version>7.0.7</spring.version>
+        <spring-web.version>7.0.7</spring-web.version>
         <mockito.version>5.23.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
         <xmlunit.version>2.11.0</xmlunit.version>
@@ -79,7 +78,7 @@
         <deploy.plugin.repository.url>https://central.sonatype.com/repository/maven-releases/</deploy.plugin.repository.url>
         <release.arguments/>
         <javadoc.additional.parameters/>
-        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
+        <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
         <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
         <!-- also update NETTY_TCNATIVE in docker/*/Dockerfile download stages -->
         <netty-tcnative-boringssl-static.version>2.0.77.Final</netty-tcnative-boringssl-static.version>
@@ -222,17 +221,16 @@
 
             <!-- http -->
             <dependency>
-                <groupId>javax.servlet</groupId>
-                <artifactId>javax.servlet-api</artifactId>
-                <version>4.0.1</version>
+                <groupId>jakarta.servlet</groupId>
+                <artifactId>jakarta.servlet-api</artifactId>
+                <version>6.1.0</version>
             </dependency>
 
             <!-- Tomcat Server -->
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <!-- Tomcat 9.x = Servlet 4.0 (javax); Tomcat 10+ = Jakarta EE 9+ (jakarta namespace) -->
-                <version>9.0.118</version>
+                <version>11.0.22</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
@@ -265,6 +263,13 @@
             </dependency>
 
             <!-- Netty -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-buffer</artifactId>
@@ -499,7 +504,7 @@
             <dependency>
                 <groupId>net.javacrumbs.json-unit</groupId>
                 <artifactId>json-unit-core</artifactId>
-                <version>2.40.1</version>
+                <version>5.1.1</version>
             </dependency>
 
             <!-- json validation -->
@@ -511,7 +516,7 @@
             <dependency>
                 <groupId>com.jayway.jsonpath</groupId>
                 <artifactId>json-path</artifactId>
-                <version>2.10.0</version>
+                <version>3.0.0</version>
             </dependency>
 
             <!-- open api -->
@@ -541,7 +546,7 @@
             <dependency>
                 <groupId>jakarta.xml.bind</groupId>
                 <artifactId>jakarta.xml.bind-api</artifactId>
-                <version>3.0.1</version>
+                <version>4.0.5</version>
             </dependency>
             <dependency>
                 <groupId>com.sun.xml.bind</groupId>
@@ -659,7 +664,7 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
-                <version>5.14.4</version>
+                <version>6.1.0</version>
             </dependency>
             <dependency>
                 <groupId>org.mockito</groupId>
@@ -927,6 +932,7 @@
                     <fork>false</fork>
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
+                    <parameters>true</parameters>
                     <compilerArgs>
                         <arg>-XDignore.symbol.file</arg>
                         <arg>-Xlint:all</arg>
@@ -1123,7 +1129,7 @@
                     <dependency>
                         <groupId>com.puppycrawl.tools</groupId>
                         <artifactId>checkstyle</artifactId>
-                        <version>10.26.1</version>
+                        <version>12.3.1</version>
                     </dependency>
                 </dependencies>
                 <configuration>

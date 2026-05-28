@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.base.Joiner;
 import net.javacrumbs.jsonunit.core.Configuration;
 import net.javacrumbs.jsonunit.core.internal.Diff;
-import net.javacrumbs.jsonunit.core.internal.Options;
+import net.javacrumbs.jsonunit.core.Option;
 import net.javacrumbs.jsonunit.core.listener.DifferenceContext;
 import net.javacrumbs.jsonunit.core.listener.DifferenceListener;
 import org.apache.commons.lang3.StringUtils;
@@ -17,6 +17,7 @@ import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
@@ -53,16 +54,14 @@ public class JsonStringMatcher extends BodyMatcher<String> {
             if (StringUtils.isBlank(matcher)) {
                 result = true;
             } else {
-                Options options = Options.empty();
+                EnumSet<Option> options = EnumSet.noneOf(Option.class);
                 switch (matchType) {
                     case STRICT:
                         break;
                     case ONLY_MATCHING_FIELDS:
-                        options = options.with(
-                            IGNORING_ARRAY_ORDER,
-                            IGNORING_EXTRA_ARRAY_ITEMS,
-                            IGNORING_EXTRA_FIELDS
-                        );
+                        options.add(IGNORING_ARRAY_ORDER);
+                        options.add(IGNORING_EXTRA_ARRAY_ITEMS);
+                        options.add(IGNORING_EXTRA_FIELDS);
                         break;
                 }
                 final Difference diffListener = new Difference();

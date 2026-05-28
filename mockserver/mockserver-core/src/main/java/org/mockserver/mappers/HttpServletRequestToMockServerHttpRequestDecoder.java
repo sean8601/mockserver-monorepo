@@ -7,8 +7,8 @@ import org.mockserver.codec.ExpandedParameterDecoder;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.*;
+import jakarta.servlet.http.HttpServletRequest;
 
-import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -84,14 +84,26 @@ public class HttpServletRequestToMockServerHttpRequestDecoder {
     }
 
     private void setCookies(HttpRequest httpRequest, HttpServletRequest httpServletRequest) {
-        javax.servlet.http.Cookie[] httpServletRequestCookies = httpServletRequest.getCookies();
+        jakarta.servlet.http.Cookie[] httpServletRequestCookies = httpServletRequest.getCookies();
         if (httpServletRequestCookies != null && httpServletRequestCookies.length > 0) {
             Cookies cookies = new Cookies();
-            for (javax.servlet.http.Cookie cookie : httpServletRequestCookies) {
-                cookies.withEntry(new Cookie(cookie.getName(), cookie.getValue()));
+            for (jakarta.servlet.http.Cookie cookie : httpServletRequestCookies) {
+                cookies.withEntry(new Cookie(cookie.getName(), stripSurroundingQuotes(cookie.getValue())));
             }
             httpRequest.withCookies(cookies);
         }
+    }
+
+    /**
+     * Servlet 6 (Tomcat 11+) preserves RFC 6265 surrounding double quotes
+     * on cookie values (e.g. {@code "value"} instead of {@code value}).
+     * Strip them so MockServer stores the logical value.
+     */
+    private static String stripSurroundingQuotes(String value) {
+        if (value != null && value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
     }
 
     private void setSocketAddress(HttpRequest httpRequest, HttpServletRequest httpServletRequest) {

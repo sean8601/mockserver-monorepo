@@ -7,9 +7,8 @@ import org.mockserver.model.Body;
 import org.mockserver.model.BodyWithContentType;
 import org.mockserver.streams.IOStreamUtils;
 import org.slf4j.event.Level;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
 

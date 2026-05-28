@@ -3,18 +3,18 @@ package org.mockserver.examples.proxy.service.googleclient.http;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.client.http.*;
 import com.google.api.client.http.javanet.NetHttpTransport;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
 import org.mockserver.examples.proxy.model.Book;
 import org.mockserver.examples.proxy.service.BookService;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.Nullable;
-import javax.annotation.PostConstruct;
-import javax.annotation.Resource;
 import java.io.IOException;
 import java.net.*;
 import java.util.Collections;
 import java.util.List;
+import javax.annotation.Nullable;
 
 import static org.mockserver.examples.proxy.json.ObjectMapperFactory.createObjectMapper;
 

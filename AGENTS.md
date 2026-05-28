@@ -40,7 +40,7 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/infrastructure/aws-ses-email-forwarding.md](docs/infrastructure/aws-ses-email-forwarding.md) | Before modifying SES email forwarding, DNS mail records, or the Lambda forwarder |
 | [docs/infrastructure/helm.md](docs/infrastructure/helm.md) | Before modifying Helm charts or Kubernetes deployment |
 | [docs/operations/website.md](docs/operations/website.md) | Before modifying the Jekyll documentation site |
-| [docs/operations/security.md](docs/operations/security.md) | Before adding, removing, or upgrading dependencies (Java 17 floor, javax/jakarta constraints, version ceilings, CodeQL, Dependabot, Snyk) |
+| [docs/operations/security.md](docs/operations/security.md) | Before adding, removing, or upgrading dependencies (Java 17 floor, version ceilings, CodeQL, Dependabot, Snyk) |
 | [docs/operations/release-process.md](docs/operations/release-process.md) | When performing or automating releases |
 | [docs/operations/release-principles.md](docs/operations/release-principles.md) | Before changing anything under `scripts/release/` or `.buildkite/release-*` |
 | [docs/operations/ai-native-sdlc-principles.md](docs/operations/ai-native-sdlc-principles.md) | For the principles behind working with AI across the SDLC |
@@ -147,8 +147,7 @@ MockServer targets **Java 17** as the minimum supported version.
 **Rules:**
 - The Maven compiler source/target MUST remain at `17` (`mockserver/pom.xml` properties `maven.compiler.source` and `maven.compiler.target`)
 - NEVER use Java language features or APIs introduced after Java 17
-- The `javax` namespace is used throughout — do NOT migrate to `jakarta` namespace. The full javax→jakarta migration is a separate planned step; until it lands, do NOT accept dependency upgrades that require the jakarta namespace (e.g., Spring 6.x, Spring Boot 3.x, Tomcat 10+, Jetty 10+, Jakarta EE 9+).
-- Spring 5.x, Tomcat 9.x, and Jetty 9.x are the highest major versions compatible with the current `javax` codebase.
+- The codebase uses the `jakarta` namespace for what used to live under `javax.*` (servlet, annotation, validation, xml.bind, ws.rs). JDK-namespace `javax.*` classes (`javax.net.ssl`, `javax.xml.*`, `javax.script.*`, `javax.security.*`, `javax.annotation.Nullable` JSR-305) are unchanged — those are still part of the JDK and stay `javax`.
 
 ## Helm Chart Versioning Policy
 
@@ -161,6 +160,12 @@ Always fix bugs and add features at the architecturally correct layer. If a bug 
 ## Temporary Files
 
 Use `.tmp/` at the repo root for scratch files — never `/tmp/`. See `.opencode/rules/tmp-directory.md`.
+
+## IDE Integration — Prefer IntelliJ MCP When Available
+
+When the conversation has the IntelliJ MCP toolset (tools prefixed `mcp__idea__*`, indicating IntelliJ is open with the project loaded), **prefer the IDE tools over Bash / `Edit` / `Read`** so the user can watch progress live in tool windows. This applies to terminal commands (use `mcp__idea__execute_terminal_command`), Java builds (`mcp__idea__build_project`), file edits (`mcp__idea__replace_text_in_file`), search (`mcp__idea__search_in_files_by_*`), and per-file inspections (`mcp__idea__get_file_problems`).
+
+For long-running commands that exceed the MCP terminal timeout (`mvn install`, `mvn verify`, large test suites), background them in IntelliJ's shell (`./mvnw … > .tmp/log 2>&1 &` with a short tool `timeout`) and poll the log file. Even better when a saved Run Configuration exists, use `mcp__idea__execute_run_configuration` so output streams into the **Run** tool window with click-to-source navigation. See `.opencode/rules/intellij-mcp-preference.md` for the full rule, gotchas, and fallback cases.
 
 ## Code Review Routing
 

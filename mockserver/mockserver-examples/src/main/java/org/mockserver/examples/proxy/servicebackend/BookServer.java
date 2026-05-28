@@ -13,9 +13,9 @@ import org.mockserver.examples.proxy.model.Book;
 import org.mockserver.examples.proxy.service.ExampleNettySslContextFactory;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.scheduler.Scheduler;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

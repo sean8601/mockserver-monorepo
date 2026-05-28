@@ -8,8 +8,7 @@ import org.mockserver.model.Cookie;
 import org.mockserver.model.Header;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.NottableString;
-
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.*;
 
@@ -31,14 +30,11 @@ public class MockServerHttpResponseToHttpServletResponseEncoder {
         setBody(httpResponse, httpServletResponse);
     }
 
-    @SuppressWarnings("deprecation")
     private void setStatusCode(HttpResponse httpResponse, HttpServletResponse httpServletResponse) {
         int statusCode = httpResponse.getStatusCode() != null ? httpResponse.getStatusCode() : 200;
-        if (httpResponse.getReasonPhrase() != null) {
-            httpServletResponse.setStatus(statusCode, sanitizeHeaderValue(httpResponse.getReasonPhrase()));
-        } else {
-            httpServletResponse.setStatus(statusCode);
-        }
+        // Servlet 6 removed HttpServletResponse.setStatus(int, String); the reason phrase
+        // is dictated by the container based on the status code.
+        httpServletResponse.setStatus(statusCode);
     }
 
     private void setHeaders(HttpResponse httpResponse, HttpServletResponse httpServletResponse) {

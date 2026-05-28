@@ -1,7 +1,6 @@
 package org.mockserver.serialization;
 
 import org.junit.Test;
-
 import jakarta.xml.bind.DatatypeConverter;
 
 import static java.nio.charset.StandardCharsets.UTF_8;

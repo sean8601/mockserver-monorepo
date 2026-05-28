@@ -5,8 +5,8 @@ import org.junit.Test;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.*;
 import org.springframework.mock.web.MockHttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
-import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Enumeration;
@@ -37,7 +37,7 @@ public class HttpServletRequestToMockServerHttpRequestDecoderTest {
         httpServletRequest.addHeader("headerName1", "headerValue1_2");
         httpServletRequest.addHeader("headerName2", "headerValue2");
         httpServletRequest.addHeader("Content-Type", "multipart/form-data");
-        httpServletRequest.setCookies(new javax.servlet.http.Cookie("cookieName1", "cookieValue1"), new javax.servlet.http.Cookie("cookieName2", "cookieValue2"));
+        httpServletRequest.setCookies(new jakarta.servlet.http.Cookie("cookieName1", "cookieValue1"), new jakarta.servlet.http.Cookie("cookieName2", "cookieValue2"));
         httpServletRequest.setContent("bodyParameterNameOne=bodyParameterValueOne_One&bodyParameterNameOne=bodyParameterValueOne_Two&bodyParameterNameTwo=bodyParameterValueTwo_One".getBytes(UTF_8));
         httpServletRequest.setLocalAddr("local_addr");
         httpServletRequest.setLocalPort(1234);

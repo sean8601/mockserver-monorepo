@@ -14,31 +14,8 @@ updates:
           - "minor"
           - "patch"
     ignore:
-      # javax → jakarta namespace migration is not yet done — block versions
-      # that require the jakarta namespace. `versions:` ignores apply to
-      # security updates too (unlike `update-types`, which security updates
-      # bypass).
-      - dependency-name: "org.springframework:*"          # Spring 6.x = jakarta namespace
-        versions: [">=6"]
-      - dependency-name: "org.springframework.boot:*"     # Spring Boot 3.x = jakarta namespace
-        versions: [">=3"]
-      - dependency-name: "org.apache.tomcat.embed:*"      # Tomcat 10+ = jakarta namespace
-        versions: [">=10"]
-      - dependency-name: "org.eclipse.jetty:*"            # Jetty 10+ = jakarta namespace
-        versions: [">=10"]
-      # Defensive guard: javax.servlet:javax.servlet-api topped out at 4.0.1
-      # (the jakarta migration republished under jakarta.servlet:*), so a v5
-      # of this coordinate is not expected — block any future bump anyway.
-      - dependency-name: "javax.servlet:*"
-        versions: [">=5"]
-      # Block Jakarta EE 9+ namespace migration (javax → jakarta, incompatible
-      # with MockServer's javax codebase).
-      - dependency-name: "jakarta.xml.bind:*"
-        versions: [">=3"]
-      - dependency-name: "jakarta.activation:*"
-        versions: [">=2"]
-      - dependency-name: "jakarta.validation:*"
-        versions: [">=3"]
+      # Future Java floor or namespace migrations may add ignores here.
+      # The javax → jakarta block was removed when the codebase migrated.
 
   - package-ecosystem: "maven"
     directory: "/mockserver/mockserver-maven-plugin"
@@ -54,13 +31,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    ignore:
-      # javax → jakarta namespace migration — mirror /mockserver ignore rules.
-      # `versions:` form applies to security updates too.
-      - dependency-name: "org.springframework:*"          # Spring 6.x = jakarta namespace
-        versions: [">=6"]
-      - dependency-name: "org.springframework.boot:*"     # Spring Boot 3.x = jakarta namespace
-        versions: [">=3"]
 
   - package-ecosystem: "npm"
     directories:

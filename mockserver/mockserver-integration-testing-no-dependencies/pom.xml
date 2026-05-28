@@ -160,20 +160,20 @@
                                     <shadedPattern>shaded_package.jakarta.xml</shadedPattern>
                                 </relocation>
                                 <relocation>
-                                    <pattern>javax.annotation</pattern>
-                                    <shadedPattern>shaded_package.javax.annotation</shadedPattern>
+                                    <pattern>jakarta.annotation</pattern>
+                                    <shadedPattern>shaded_package.jakarta.annotation</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>javax.mail</pattern>
                                     <shadedPattern>shaded_package.javax.mail</shadedPattern>
                                 </relocation>
                                 <relocation>
-                                    <pattern>javax.servlet</pattern>
-                                    <shadedPattern>shaded_package.javax.servlet</shadedPattern>
+                                    <pattern>jakarta.servlet</pattern>
+                                    <shadedPattern>shaded_package.jakarta.servlet</shadedPattern>
                                 </relocation>
                                 <relocation>
-                                    <pattern>javax.validation</pattern>
-                                    <shadedPattern>shaded_package.javax.validation</shadedPattern>
+                                    <pattern>jakarta.validation</pattern>
+                                    <shadedPattern>shaded_package.jakarta.validation</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>joptsimple.internal</pattern>
