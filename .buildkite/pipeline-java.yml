@@ -16,8 +16,12 @@ steps:
       - "**/target/surefire-reports/*-output.txt"
       - "**/target/failsafe-reports/TEST-*.xml"
       - "**/target/failsafe-reports/*-output.txt"
-      - "**/target/site/jacoco/**"
-      - "**/target/site/jacoco-it/**"
+      # Upload only the machine-readable jacoco XML data files - per-class HTML
+      # reports under jacoco/**/* produce hundreds of artifacts per module and
+      # blow past Buildkite's 5000-artifact-per-job limit. The XML is what
+      # downstream coverage tooling consumes; jacoco:check enforces the gate.
+      - "**/target/site/jacoco/jacoco.xml"
+      - "**/target/site/jacoco-it/jacoco.xml"
       - "mockserver/mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-*.jar"
     timeout_in_minutes: 60
 
