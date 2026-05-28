@@ -67,7 +67,7 @@
     9. git add -A && git commit -m "added new heml chart release" && git pull --rebase && git push origin master
 9. add javaDoc
     1. git checkout mockserver-5.16.0
-    2. export JAVA_HOME=`/usr/libexec/java_home -v 1.8` or export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk1.8.0_201.jdk/Contents/Home
+    2. export JAVA_HOME=`/usr/libexec/java_home -v 17`
     3. cd mockserver && ./mvnw javadoc:aggregate -P release -DreportOutputDirectory='/Users/jamesbloom/git/mockserver/javadoc/5.16.0'
     4. open javadoc output dir && open S3 console for main website bucket /versions/ (see ~/mockserver-aws-ids.md)
     5. upload as public to main website S3 bucket /versions/

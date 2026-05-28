@@ -2,7 +2,7 @@
 
 # ./standalone_performance_test_memory_size.sh 2>&1 > standalone_performance_test_memory_size.log
 
-export JAVA_HOME=`/usr/libexec/java_home -v 13`
+export JAVA_HOME=`/usr/libexec/java_home -v 17`
 
 ulimit -S -n 49152
 

@@ -35,12 +35,12 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
         ruby-dev \
         ruby-bundler \
         unzip \
-        openjdk-21-jdk \
+        openjdk-17-jdk \
     && gem install jekyll --no-document \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ln -s /usr/lib/jvm/java-21-openjdk-$(dpkg --print-architecture) /usr/lib/jvm/java-21-openjdk
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+RUN ln -s /usr/lib/jvm/java-17-openjdk-$(dpkg --print-architecture) /usr/lib/jvm/java-17-openjdk
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 
 COPY corporate-root-ca.pem /tmp/corporate-root-ca.pem
 RUN CACERTS=$(find /usr/lib/jvm -name cacerts -path "*/security/cacerts" | head -1) \
