@@ -34,6 +34,48 @@ function test() {
   runCommand "cd ${SCRIPT_DIR}"
 }
 
+# 5c.4 - build each published variant Dockerfile and confirm it boots and
+# responds to /mockserver/status. Catches Dockerfile drift early without
+# running the whole test suite per variant.
+function smoke_test_variant() {
+  local variant="$1"
+  local tag="mockserver/mockserver:smoke-${variant}"
+  local container="smoke-${variant}"
+  export TEST_CASE="docker_variant_smoke_${variant}"
+  printMessage "Smoke test: variant \"${variant}\""
+
+  local exit_code=0
+  runCommand "docker build -t ${tag} ${SCRIPT_DIR}/../docker/${variant}" || exit_code=1
+  if [[ ${exit_code} -eq 0 ]]; then
+    runCommand "docker rm -f ${container} >/dev/null 2>&1 || true"
+    runCommand "docker run -d --name ${container} -p 0:1080 ${tag}"
+    local host_port
+    host_port=$(docker port "${container}" 1080 2>/dev/null | head -1 | awk -F: '{print $NF}')
+    if [[ -z "${host_port}" ]]; then
+      printFailureMessage "${variant}: could not resolve host port for container ${container}"
+      exit_code=1
+    else
+      # poll for readiness up to ~30s instead of a fixed sleep
+      local i status
+      status=000
+      for i in $(seq 1 15); do
+        status=$(curl -sf -o /dev/null -w '%{http_code}' -X PUT "http://localhost:${host_port}/mockserver/status" 2>/dev/null || echo "000")
+        [[ "${status}" == "200" ]] && break
+        sleep 2
+      done
+      if [[ "${status}" != "200" ]]; then
+        printFailureMessage "${variant}: /mockserver/status returned \"${status}\" (expected 200)"
+        runCommand "docker logs ${container} | tail -30 || true"
+        exit_code=1
+      fi
+    fi
+    runCommand "docker rm -f ${container} >/dev/null 2>&1 || true"
+  fi
+  runCommand "docker rmi -f ${tag} >/dev/null 2>&1 || true"
+  logTestResult "${exit_code}" "${TEST_CASE}"
+  return ${exit_code}
+}
+
 function run_all_tests() {
   export PASS_LOG_FILE=$(mktemp)
   export FAIL_LOG_FILE=$(mktemp)
@@ -56,6 +98,13 @@ function run_all_tests() {
       test "docker_compose_jvm_options"
       test "docker_compose_libs_classpath"
       test "docker_compose_graceful_shutdown"
+      clean-up-docker-containers
+    fi
+    if [[ "${SKIP_VARIANT_TESTS:-}" != "true" ]]; then
+      # 5c.4 - per-variant smoke tests (root/snapshot/local Dockerfiles)
+      smoke_test_variant "root" || true
+      smoke_test_variant "snapshot" || true
+      smoke_test_variant "local" || true
       clean-up-docker-containers
     fi
     if [[ "${SKIP_HELM_TESTS:-}" != "true" ]]; then

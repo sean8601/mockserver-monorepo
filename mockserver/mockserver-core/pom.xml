@@ -315,7 +315,7 @@
         </dependency>
     </dependencies>
 
-    <!-- No surefire override: tests run sequentially. parallel=classes deadlocks on shared static <clinit>. See docs/plans/testing-improvements.md Phase 3.1. -->
+    <!-- No surefire override: tests run sequentially. parallel=classes deadlocks on shared static <clinit> via ConfigurationProperties / EchoServer first-touch races. See docs/operations/performance-tuning.md. -->
     <build>
         <plugins>
             <!-- jacoco:check minimum set ~3 points below the measured unit-test floor of 0.6858 (M6 ratchet, 2026-05-28). Tighter threshold catches genuine coverage regressions without flaking on small natural variation. -->

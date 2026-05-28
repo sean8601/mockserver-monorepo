@@ -46,7 +46,7 @@ The repo has a Locust harness in `mockserver-performance-test/`. Use it as a sta
 These look like knobs but are not — changing them rarely helps and often hurts:
 
 - **Ring buffer size** — directly tied to `maxLogEntries` via `nextPowerOfTwo`; do not try to size them independently. The Disruptor needs the power-of-two for its index masking.
-- **Surefire parallel test forks in CI** — currently `parallel=classes, threadCount=4` for `mockserver-core` only. Other modules have shared static state that breaks with multiple forks; the testing-improvements plan tracks the gradual extension. Raising forkCount in CI without doing that work first will produce flakes.
+- **Surefire parallel test forks in CI** — explicitly disabled. `parallel=classes, threadCount=4` was attempted on `mockserver-core` but caused a JVM `<clinit>` deadlock when concurrent test threads first-touched shared static state in `ConfigurationProperties` / `EchoServer`. Sequential execution is the supported configuration. Do not re-enable.
 - **`matchersFailFast`** — defaults to `true` (early-exit on first non-matching field) and that is almost always right. Disable only when you specifically need every field's match status in the failure log.
 
 ## When perf regresses unexpectedly
