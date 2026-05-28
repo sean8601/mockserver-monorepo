@@ -16,6 +16,8 @@ steps:
       - "**/target/surefire-reports/*-output.txt"
       - "**/target/failsafe-reports/TEST-*.xml"
       - "**/target/failsafe-reports/*-output.txt"
+      - "**/target/site/jacoco/**"
+      - "**/target/site/jacoco-it/**"
       - "mockserver/mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-*.jar"
     timeout_in_minutes: 60
 

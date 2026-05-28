@@ -74,7 +74,7 @@
         <mockserver.testOutput>verbose</mockserver.testOutput>
         <mockserver.testLogLevel>ERROR</mockserver.testLogLevel>
         <mockserver.testArgLine/>
-        <disableXmlReport>true</disableXmlReport>
+        <disableXmlReport>false</disableXmlReport>
         <redirectTestOutputToFile>false</redirectTestOutputToFile>
         <deploy.plugin.repository.url>https://central.sonatype.com/repository/maven-releases/</deploy.plugin.repository.url>
         <release.arguments/>

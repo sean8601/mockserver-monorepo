@@ -315,51 +315,33 @@
         </dependency>
     </dependencies>
 
+    <!-- No surefire override: tests run sequentially. parallel=classes deadlocks on shared static <clinit>. See docs/plans/testing-improvements.md Phase 3.1. -->
     <build>
         <plugins>
+            <!-- jacoco:check minimum is set below the measured unit-test floor (LINE 0.0614 measured 2026-05-28). M6 ratchets to the post-improvement floor. -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <parallel>classes</parallel>
-                    <threadCount>4</threadCount>
-                    <excludes>
-                        <exclude>**/*IntegrationTest.java</exclude>
-                        <exclude>**/ConfigurationTest.java</exclude>
-                        <exclude>**/ProxyConfigurationTest.java</exclude>
-                        <exclude>**/ExceptionHandlingTest.java</exclude>
-                        <exclude>**/MockServerMatcherNotificationAndMetricsTest.java</exclude>
-                        <exclude>**/MockServerEventLogTest.java</exclude>
-                        <exclude>**/HttpRequestPropertiesMatcherLogTest.java</exclude>
-                        <exclude>**/HttpActionHandlerTest.java</exclude>
-                        <exclude>**/HttpStateTest.java</exclude>
-                        <exclude>**/JavaScriptTemplateEngineTest.java</exclude>
-                        <exclude>**/MustacheTemplateEngineTest.java</exclude>
-                        <exclude>**/VelocityTemplateEngineTest.java</exclude>
-                    </excludes>
-                </configuration>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>sequential-tests</id>
+                        <id>check</id>
+                        <phase>verify</phase>
                         <goals>
-                            <goal>test</goal>
+                            <goal>check</goal>
                         </goals>
                         <configuration>
-                            <parallel>none</parallel>
-                            <includes>
-                                <include>**/ConfigurationTest.java</include>
-                                <include>**/ProxyConfigurationTest.java</include>
-                                <include>**/ExceptionHandlingTest.java</include>
-                                <include>**/MockServerMatcherNotificationAndMetricsTest.java</include>
-                                <include>**/MockServerEventLogTest.java</include>
-                                <include>**/HttpRequestPropertiesMatcherLogTest.java</include>
-                                <include>**/HttpActionHandlerTest.java</include>
-                                <include>**/HttpStateTest.java</include>
-                                <include>**/JavaScriptTemplateEngineTest.java</include>
-                                <include>**/MustacheTemplateEngineTest.java</include>
-                                <include>**/VelocityTemplateEngineTest.java</include>
-                            </includes>
-                            <excludes combine.self="override" />
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.05</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
                         </configuration>
                     </execution>
                 </executions>

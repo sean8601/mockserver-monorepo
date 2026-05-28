@@ -164,6 +164,8 @@ Items considered and rejected. Recorded so they don't get re-proposed.
 
 Directly conflicts with [build-optimisation.md → Dropped Items](./build-optimisation.md#-parallel-surefire-parallelclasses-threadcount4). Attempted previously; caused 48 test failures in `mockserver-core` due to shared static state in `ConfigurationProperties` and `MockServerLogger`. The fix path is a multi-week test rework with serious flake risk. Listed in earlier revisions of this plan as "Low effort" — that was wrong.
 
+**Note (2026-05-28):** Despite being recorded as dropped, the parallel config was committed to `mockserver/mockserver-core/pom.xml` on 2026-05-09 (commit `7b2fa05aa5`) with a curated `<excludes>` list for the 12 then-known offenders. The 6.1.0 LLM work added new tests (`MaxLlmConversationBodySizeTest`, `llm/codec/*Test`, `NettyHttpClientTest`) that first-touch `ConfigurationProperties` / `EchoServer` static state without being added to the exclude list, reintroducing the JVM `<clinit>` deadlock and causing a 30-minute Surefire fork timeout. Reverted to sequential execution as part of M1. Do not re-enable.
+
 ### ❌ Phase 3.2 — Test categories (`@Category(SlowTest.class)` + `fast-tests` profile)
 
 Adding the annotation across hundreds of test classes is permanent maintenance burden. The payoff (developers running `./mvnw test -Pfast-tests` locally) depends on adoption that isn't guaranteed. Reconsider only if there's an explicit team commitment to use the profile.
