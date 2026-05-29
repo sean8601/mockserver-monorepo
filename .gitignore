@@ -146,6 +146,10 @@ terraform/**/*.tfplan
 /.tmp/*
 !/.tmp/.gitkeep
 
+# git worktrees for parallel agent sessions #
+##############################################
+.worktrees/
+
 # opencode commit lock (parallel session safety) #
 ###################################################
 /.tmp/.commit-lock
