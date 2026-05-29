@@ -12,8 +12,6 @@ import org.slf4j.event.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static org.mockserver.log.model.LogEntry.LogMessageType.EXPECTATION_RESPONSE;
 import static org.mockserver.model.HttpResponse.response;
@@ -166,19 +164,7 @@ public class HttpLlmResponseActionHandler {
         if (chaos == null || chaos.getErrorStatus() == null) {
             return null;
         }
-        Double probability = chaos.getErrorProbability();
-        boolean trigger;
-        if (probability == null || probability >= 1.0) {
-            trigger = true;
-        } else if (probability <= 0.0) {
-            trigger = false;
-        } else {
-            double draw = chaos.getSeed() != null
-                ? new Random(chaos.getSeed()).nextDouble()
-                : ThreadLocalRandom.current().nextDouble();
-            trigger = draw < probability;
-        }
-        if (!trigger) {
+        if (!ChaosProbability.shouldInject(chaos.getErrorProbability(), chaos.getSeed())) {
             return null;
         }
         HttpResponse errorResponse = response()
