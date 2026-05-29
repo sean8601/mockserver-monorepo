@@ -49,6 +49,7 @@ sitemap:
         <tr><td><a href="#verify_tool_call"><code>verify_tool_call</code></a></td><td>Assert an agent called a named tool, from recorded LLM requests</td><td>High</td></tr>
         <tr><td><a href="#explain_agent_run"><code>explain_agent_run</code></a></td><td>Summarise a recorded agent run (turns, tool-call sequence)</td><td>High</td></tr>
         <tr><td><a href="#detect_llm_drift"><code>detect_llm_drift</code></a></td><td>Replay a cassette against the live provider and report structural drift</td><td>High</td></tr>
+        <tr><td><a href="#mock_adversarial_llm_response"><code>mock_adversarial_llm_response</code></a></td><td>Mock a hostile/malformed LLM response to test agent resilience</td><td>High</td></tr>
         <tr><td><a href="#raw_expectation"><code>raw_expectation</code></a></td><td>Full expectation JSON passthrough</td><td>Low</td></tr>
         <tr><td><a href="#raw_retrieve"><code>raw_retrieve</code></a></td><td>Full retrieve with correlation ID filtering</td><td>Low</td></tr>
         <tr><td><a href="#raw_verify"><code>raw_verify</code></a></td><td>Full verification JSON</td><td>Low</td></tr>
@@ -1217,6 +1218,36 @@ sitemap:
   "params": {
     "name": "detect_llm_drift",
     "arguments": { "cassettePath": "fixtures/anthropic-chat.json", "provider": "ANTHROPIC" }
+  }
+}</code></pre>
+
+<a id="mock_adversarial_llm_response" class="anchor" href="#mock_adversarial_llm_response">&nbsp;</a>
+
+<h3>mock_adversarial_llm_response</h3>
+
+<p>Mock a curated <strong>adversarial</strong> payload as the LLM response, so you can test that your agent <em>resists</em> hostile or malformed model/tool output. A defensive testing aid &mdash; the payloads are short, benign test fixtures (not working exploits), and the response is deterministic.</p>
+
+<table>
+    <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>provider</code></td><td>string</td><td>Yes</td><td>LLM provider (the response is rendered in that provider's format)</td></tr>
+        <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Request path to match (e.g. <code>/v1/messages</code>)</td></tr>
+        <tr><td><code>payload</code></td><td>string</td><td>Yes</td><td>Payload id from the catalog (see below)</td></tr>
+        <tr><td><code>model</code></td><td>string</td><td>No</td><td>Model name to report in the response</td></tr>
+    </tbody>
+</table>
+
+<p>Catalog of payload ids: <code>prompt_injection_ignore_instructions</code>, <code>prompt_injection_tool_redirect</code>, <code>jailbreak_persona</code>, <code>data_exfiltration_request</code>, <code>malformed_json_payload</code>, <code>empty_response</code>, <code>overlong_repetition</code>. An unknown id returns an error listing the available ids.</p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 43,
+  "method": "tools/call",
+  "params": {
+    "name": "mock_adversarial_llm_response",
+    "arguments": { "provider": "ANTHROPIC", "path": "/v1/messages", "payload": "prompt_injection_ignore_instructions" }
   }
 }</code></pre>
 

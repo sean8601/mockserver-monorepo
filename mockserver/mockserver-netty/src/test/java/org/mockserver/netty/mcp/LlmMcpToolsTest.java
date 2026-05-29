@@ -553,6 +553,40 @@ public class LlmMcpToolsTest {
         }
     }
 
+    // --- mock_adversarial_llm_response ---
+
+    @Test
+    public void shouldMockAdversarialLlmResponse() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("payload", "prompt_injection_ignore_instructions");
+        JsonNode result = toolRegistry.callTool("mock_adversarial_llm_response", params);
+        assertThat(result.path("status").asText(), is("created"));
+        assertThat(result.path("count").asInt(), is(1));
+        assertThat(result.has("id"), is(true));
+        assertThat(result.path("category").asText(), is("prompt_injection"));
+    }
+
+    @Test
+    public void shouldErrorWhenAdversarialPayloadMissing() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        JsonNode result = toolRegistry.callTool("mock_adversarial_llm_response", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldErrorOnUnknownAdversarialPayload() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "OPENAI");
+        params.put("path", "/v1/chat/completions");
+        params.put("payload", "not_a_real_payload");
+        JsonNode result = toolRegistry.callTool("mock_adversarial_llm_response", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+    }
+
     // --- detect_llm_drift (validation wiring; live path covered by DriftDetectorTest) ---
 
     @Test

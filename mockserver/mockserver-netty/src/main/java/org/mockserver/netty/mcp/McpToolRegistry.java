@@ -130,6 +130,7 @@ public class McpToolRegistry {
         registerVerifyToolCall();
         registerExplainAgentRun();
         registerDetectLlmDrift();
+        registerMockAdversarialLlmResponse();
     }
 
     private void registerCreateExpectation() {
@@ -2872,6 +2873,91 @@ public class McpToolRegistry {
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to detect LLM drift", e);
+        }
+    }
+
+    // --- mock_adversarial_llm_response ---
+
+    private void registerMockAdversarialLlmResponse() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode providerProp = properties.putObject("provider");
+        providerProp.put("type", "string").put("description", "LLM provider with a registered codec");
+        ArrayNode providerEnum = providerProp.putArray("enum");
+        for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
+            providerEnum.add(name);
+        }
+        properties.putObject("path").put("type", "string").put("description", "Request path to match (e.g. /v1/messages)");
+        properties.putObject("model").put("type", "string").put("description", "Model name");
+        ObjectNode payloadProp = properties.putObject("payload");
+        payloadProp.put("type", "string").put("description", "Adversarial payload id — one of the enum values below");
+        ArrayNode payloadEnum = payloadProp.putArray("enum");
+        for (String id : org.mockserver.llm.adversarial.AdversarialResponseLibrary.ids()) {
+            payloadEnum.add(id);
+        }
+        ArrayNode required = schema.putArray("required");
+        required.add("provider");
+        required.add("path");
+        required.add("payload");
+
+        tools.put("mock_adversarial_llm_response", new ToolDefinition(
+            "mock_adversarial_llm_response",
+            "Creates a mock LLM completion whose response is a curated ADVERSARIAL payload "
+                + "(prompt injection, jailbreak, data-exfiltration request, malformed/oversized content) so you can "
+                + "test that your agent RESISTS hostile or malformed model/tool output. Defensive testing aid — the "
+                + "payloads are benign test fixtures, not working exploits. Deterministic.",
+            schema,
+            this::handleMockAdversarialLlmResponse
+        ));
+    }
+
+    private JsonNode handleMockAdversarialLlmResponse(JsonNode params) {
+        try {
+            String providerStr = params.path("provider").asText(null);
+            if (providerStr == null || providerStr.trim().isEmpty()) {
+                return errorResult("'provider' is required");
+            }
+            Provider provider = parseProviderParam(params);
+            if (provider == null) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+            String path = params.path("path").asText(null);
+            if (path == null || path.trim().isEmpty()) {
+                return errorResult("'path' is required and must not be blank");
+            }
+            String payloadId = params.path("payload").asText(null);
+            if (payloadId == null || payloadId.trim().isEmpty()) {
+                return errorResult("'payload' is required");
+            }
+            Optional<org.mockserver.llm.adversarial.AdversarialResponseLibrary.Payload> payload =
+                org.mockserver.llm.adversarial.AdversarialResponseLibrary.get(payloadId);
+            if (!payload.isPresent()) {
+                return errorResult("unknown adversarial payload '" + payloadId + "'; available: "
+                    + org.mockserver.llm.adversarial.AdversarialResponseLibrary.ids());
+            }
+
+            Completion completion = Completion.completion().withText(payload.get().getText());
+            HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+                .withProvider(provider)
+                .withModel(params.path("model").asText(null))
+                .withCompletion(completion);
+            Expectation expectation = Expectation.when(
+                HttpRequest.request().withMethod("POST").withPath(path)
+            ).thenRespondWithLlm(llmResponse);
+            List<Expectation> result = httpState.add(expectation);
+
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("status", "created");
+            resultNode.put("count", result.size());
+            if (!result.isEmpty()) {
+                resultNode.put("id", result.get(0).getId());
+            }
+            resultNode.put("payload", payloadId);
+            resultNode.put("category", payload.get().getCategory());
+            return resultNode;
+        } catch (Exception e) {
+            return errorResult("Failed to create adversarial LLM response", e);
         }
     }
 
