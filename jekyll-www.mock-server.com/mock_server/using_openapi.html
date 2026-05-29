@@ -1,5 +1,6 @@
 ---
 title: Using OpenAPI Specifications
+description: Generate expectations from an OpenAPI v3 spec, use OpenAPI request matchers for verification and clearing, and filter by operation and status code.
 shortTitle: Using OpenAPI
 layout: page
 pageOrder: 3
@@ -11,9 +12,9 @@ sitemap:
   lastmod: 2019-11-10T08:00:00+01:00
 ---
 
-<p>MockServer supports <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/"><strong>OpenAPI v3.0</strong></a> specifications in either JSON or YAML format.</p>
+<p>MockServer supports <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer"><strong>OpenAPI v3.0</strong></a> specifications in either JSON or YAML format.</p>
 
-<p><strong>Note:</strong> MockServer uses the <a target="_blank" href="https://github.com/swagger-api/swagger-parser">swagger-parser</a> library which supports <strong>OpenAPI 3.0.x</strong>. OpenAPI 3.1 specifications may not be fully supported &mdash; in particular, features introduced in 3.1 (such as <span class="inline_code">$ref</span> siblings, <span class="inline_code">type</span> as an array, and the <span class="inline_code">webhooks</span> top-level key) may cause parsing errors. If you encounter validation errors, ensure your specification conforms to OpenAPI 3.0.x.</p>
+<p><strong>Note:</strong> MockServer uses the <a target="_blank" href="https://github.com/swagger-api/swagger-parser" rel="noopener noreferrer">swagger-parser</a> library which supports <strong>OpenAPI 3.0.x</strong>. OpenAPI 3.1 specifications may not be fully supported &mdash; in particular, features introduced in 3.1 (such as <span class="inline_code">$ref</span> siblings, <span class="inline_code">type</span> as an array, and the <span class="inline_code">webhooks</span> top-level key) may cause parsing errors. If you encounter validation errors, ensure your specification conforms to OpenAPI 3.0.x.</p>
 
 <p>OpenAPI specifications can be used in <a href="/mock_server/getting_started.html#request_openapi_matchers"><strong>request matchers</strong></a> for</p>
 <ul>
@@ -31,7 +32,7 @@ sitemap:
 
 <p>MockServer supports <strong>open api expectations</strong> containing the follow fields:</p>
 <ul>
-    <li><strong>specUrlOrPayload</strong> - mandatory value containing an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/"><strong>OpenAPI v3</strong></a> specifications in either JSON or YAML format as an:
+    <li><strong>specUrlOrPayload</strong> - mandatory value containing an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer"><strong>OpenAPI v3</strong></a> specifications in either JSON or YAML format as an:
         <ul>
             <li><strong><a href="#button_open_api_remote_specification">HTTP/HTTPS URL</a></strong></li>
             <li><strong><a href="#button_open_api_filepath">File URL</a></strong></li>
@@ -58,7 +59,7 @@ sitemap:
         </ul></li>
     <li><strong>action</strong>
         <ul>
-            <li>a <a href="/mock_server/creating_expectations.html#response_action"><strong>response</strong></a> action is added to each expectation using <a target="_blank" href="https://swagger.io/docs/specification/adding-examples/">examples provided in the specification</a></li>
+            <li>a <a href="/mock_server/creating_expectations.html#response_action"><strong>response</strong></a> action is added to each expectation using <a target="_blank" href="https://swagger.io/docs/specification/adding-examples/" rel="noopener noreferrer">examples provided in the specification</a></li>
             <li>if no examples are provided in the specification then the <a href="/mock_server/creating_expectations.html#response_action"><strong>response</strong></a> is auto-generated from schema definitions for response body and headers of the operation</li>
             <li>if multiple response bodies are specified for an operation (i.e. different status codes) the first response body is used by default, however this can be controlled by using <strong>operationsAndResponses</strong></li>
         </ul>
@@ -72,7 +73,7 @@ sitemap:
 
 <a id="generate_expectation_from_openapi_example" class="anchor" href="#generate_expectation_from_openapi_example">&nbsp;</a>
 
-<p>If an <a target="_blank" href="https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json">OpenAPI specification</a> is submitted with operation filtering as follows:</p>
+<p>If an <a target="_blank" href="https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json" rel="noopener noreferrer">OpenAPI specification</a> is submitted with operation filtering as follows:</p>
 
 <pre class="prettyprint lang-java code"><code class="code">{
     "specUrlOrPayload": "https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json",
@@ -162,14 +163,14 @@ mockServerClient("localhost", 1080).openAPIExpectation({
         console.log(error);
     }
 );</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d '{
     "specUrlOrPayload": "https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json"
 }'</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
 <button id="button_open_api_remote_specification_with_filtering" class="accordion">create expectation from a remote specification filtering operations and controlling response bodies</button>
@@ -204,7 +205,7 @@ mockServerClient("localhost", 1080).openAPIExpectation({
         console.log(error);
     }
 );</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -215,7 +216,7 @@ mockServerClient("localhost", 1080).openAPIExpectation({
         "createPets": "500"
     }
 }'</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
 <button id="button_open_api_filepath" class="accordion">create expectation from file path</button>
@@ -242,14 +243,14 @@ mockServerClient("localhost", 1080).openAPIExpectation({
         console.log(error);
     }
 );</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d '{
     "specUrlOrPayload": "file:/Users/jamesbloom/git/mockserver/mockserver/mockserver-core/target/test-classes/org/mockserver/openapi/openapi_petstore_example.json"
 }'</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
 <button id="button_open_api_classpath" class="accordion">create expectation from classpath location</button>
@@ -274,14 +275,14 @@ mockServerClient("localhost", 1080).openAPIExpectation({
         console.log(error);
     }
 );</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d '{
     "specUrlOrPayload": "org/mockserver/openapi/openapi_petstore_example.json"
 }'</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
 <button id="button_open_api_inline_json_specification" class="accordion">create expectation from an inline json specification</button>
@@ -311,14 +312,14 @@ try {
 } catch (e) {
     console.log('Error:', e.stack);
 }</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d "{
     \"specUrlOrPayload\": `cat /Users/jamesbloom/git/mockserver/mockserver/mockserver-core/target/test-classes/org/mockserver/openapi/openapi_petstore_example.json`
 }"</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
 <button id="button_open_api_inline_yaml_specification" class="accordion">create expectation from an inline yaml specification</button>
@@ -700,7 +701,7 @@ mockServerClient("localhost", 1080).openAPIExpectation({
         console.log(error);
     }
 );</code></pre>
-        <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank">REST API</a> for full JSON specification</p>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
 
@@ -708,7 +709,7 @@ mockServerClient("localhost", 1080).openAPIExpectation({
 
 <h2>OpenAPI Callbacks (Webhooks)</h2>
 
-<p>When an OpenAPI specification includes <a target="_blank" href="https://swagger.io/docs/specification/callbacks/"><strong>callbacks</strong></a> on an operation, MockServer automatically generates webhook expectations that send HTTP requests to the callback URLs after the main response is returned. This allows you to simulate webhook-style interactions where an API notifies the client asynchronously after processing a request.</p>
+<p>When an OpenAPI specification includes <a target="_blank" href="https://swagger.io/docs/specification/callbacks/" rel="noopener noreferrer"><strong>callbacks</strong></a> on an operation, MockServer automatically generates webhook expectations that send HTTP requests to the callback URLs after the main response is returned. This allows you to simulate webhook-style interactions where an API notifies the client asynchronously after processing a request.</p>
 
 <p>The callback URL, method, and request body are derived from the OpenAPI callback definition. Runtime expression placeholders (such as <code class="inline code">{$request.body#/callbackUrl}</code>) are currently passed through as literal strings.</p>
 

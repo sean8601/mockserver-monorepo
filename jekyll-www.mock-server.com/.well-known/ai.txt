@@ -1,0 +1,10 @@
+# MockServer — AI Crawling and Training Policy (mirror of /ai.txt)
+# Canonical: https://www.mock-server.com/ai.txt
+
+User-agent: *
+Allow: /
+Disallow:
+
+# Policy: AI training, retrieval, citation, and commercial use are all permitted
+# under the project's Apache 2.0 licence. See /llms.txt for an LLM-friendly
+# entry point and /llms-full.txt for the full documentation in one file.

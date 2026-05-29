@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="MockServer — Mock any HTTP service. Record traffic. Now with MCP for AI assistants.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f1f4a"/>
+      <stop offset="55%" stop-color="#1a3a8c"/>
+      <stop offset="100%" stop-color="#5b2a8a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4ea3ff"/>
+      <stop offset="100%" stop-color="#a974ff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle grid -->
+  <g stroke="#ffffff" stroke-opacity="0.04">
+    <path d="M0 105 H1200 M0 210 H1200 M0 315 H1200 M0 420 H1200 M0 525 H1200" stroke-width="1"/>
+    <path d="M120 0 V630 M240 0 V630 M360 0 V630 M480 0 V630 M600 0 V630 M720 0 V630 M840 0 V630 M960 0 V630 M1080 0 V630" stroke-width="1"/>
+  </g>
+
+  <!-- Accent bar on left -->
+  <rect x="0" y="0" width="14" height="630" fill="url(#accent)"/>
+
+  <!-- Wordmark -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" fill="#ffffff">
+    <text x="80" y="170" font-size="44" font-weight="300" letter-spacing="6" fill-opacity="0.85">OPEN SOURCE · APACHE 2.0</text>
+    <text x="78" y="285" font-size="120" font-weight="800" letter-spacing="-3">MockServer</text>
+    <text x="80" y="370" font-size="48" font-weight="400" fill="#cfe0ff">Mock any HTTP service. Record traffic.</text>
+    <text x="80" y="425" font-size="48" font-weight="700" fill="#ffffff">Now with <tspan fill="url(#accent)">MCP for AI assistants</tspan>.</text>
+  </g>
+
+  <!-- Feature pills -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#ffffff">
+    <g transform="translate(80, 490)">
+      <rect width="180" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-opacity="0.25"/>
+      <text x="90" y="29" text-anchor="middle">HTTP · HTTPS · TLS</text>
+    </g>
+    <g transform="translate(280, 490)">
+      <rect width="180" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-opacity="0.25"/>
+      <text x="90" y="29" text-anchor="middle">REST · gRPC · SOAP</text>
+    </g>
+    <g transform="translate(480, 490)">
+      <rect width="150" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-opacity="0.25"/>
+      <text x="75" y="29" text-anchor="middle">OpenAPI</text>
+    </g>
+    <g transform="translate(650, 490)">
+      <rect width="280" height="44" rx="22" fill="url(#accent)" fill-opacity="0.9"/>
+      <text x="140" y="29" text-anchor="middle">MCP · Model Context Protocol</text>
+    </g>
+  </g>
+
+  <!-- URL -->
+  <text x="80" y="585" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="28" font-weight="500" fill="#ffffff" fill-opacity="0.85">www.mock-server.com</text>
+
+  <!-- Decorative request/response chevrons in top-right -->
+  <g transform="translate(870, 90)" font-family="'Menlo', 'Monaco', monospace" font-size="18" fill="#ffffff" fill-opacity="0.85">
+    <rect x="0" y="0" width="280" height="170" rx="10" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.18"/>
+    <circle cx="18" cy="18" r="5" fill="#ff5f56"/>
+    <circle cx="36" cy="18" r="5" fill="#ffbd2e"/>
+    <circle cx="54" cy="18" r="5" fill="#27c93f"/>
+    <text x="20" y="62" fill="#7fdcff">GET</text>
+    <text x="70" y="62">/api/orders</text>
+    <text x="20" y="92" fill="#b39bff">200</text>
+    <text x="70" y="92">application/json</text>
+    <text x="20" y="122" fill="#7fdcff">→ MCP</text>
+    <text x="100" y="122">create_expectation</text>
+    <text x="20" y="152" fill="#7fdcff">→ MCP</text>
+    <text x="100" y="152">verify_request</text>
+  </g>
+</svg>

@@ -1,5 +1,6 @@
 ---
 title: Response Templates
+description: Generate dynamic mock responses using Mustache, Velocity, or JavaScript templates with access to request data, UUIDs, timestamps, and helper objects.
 layout: page
 pageOrder: 4
 section: 'Mock Server'
@@ -747,7 +748,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <h3>JSON Transform Helper (<code>jsonTransform</code>)</h3>
 
-<p>Provides JSON manipulation functions for merging, sorting, and extracting data from JSON strings. Named <code class="inline_code">jsonTransform</code> to avoid collision with Velocity's built-in <code class="inline_code">$json</code> (<a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#JsonTool">JsonTool</a>).</p>
+<p>Provides JSON manipulation functions for merging, sorting, and extracting data from JSON strings. Named <code class="inline_code">jsonTransform</code> to avoid collision with Velocity's built-in <code class="inline_code">$json</code> (<a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#JsonTool" rel="noopener noreferrer">JsonTool</a>).</p>
 
 <table class="table">
     <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
@@ -804,7 +805,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <h3>Calc Helper (<code>calc</code>)</h3>
 
-<p>Provides mathematical functions for generating random numbers, rounding, and formatting. Named <code class="inline_code">calc</code> to avoid collision with Velocity's built-in <code class="inline_code">$math</code> (<a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#MathTool">MathTool</a>).</p>
+<p>Provides mathematical functions for generating random numbers, rounding, and formatting. Named <code class="inline_code">calc</code> to avoid collision with Velocity's built-in <code class="inline_code">$math</code> (<a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#MathTool" rel="noopener noreferrer">MathTool</a>).</p>
 
 <table class="table">
     <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
@@ -832,7 +833,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <h3>Faker Helper (<code>faker</code>)</h3>
 
-<p>Generates realistic fake data for names, addresses, emails, phone numbers, and 250+ other categories using <a target="_blank" href="https://www.datafaker.net/">DataFaker</a>. A single shared <code>Faker</code> instance is exposed as <code>faker</code> in all template engines. The instance is thread-safe and produces random values on each invocation.</p>
+<p>Generates realistic fake data for names, addresses, emails, phone numbers, and 250+ other categories using <a target="_blank" href="https://www.datafaker.net/" rel="noopener noreferrer">DataFaker</a>. A single shared <code>Faker</code> instance is exposed as <code>faker</code> in all template engines. The instance is thread-safe and produces random values on each invocation.</p>
 
 <table class="table">
     <thead><tr><th>Expression</th><th>Description</th><th>Example Output</th></tr></thead>
@@ -859,7 +860,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
     <li><strong>JavaScript:</strong> <code class="inline code">faker.name().firstName()</code> or <code class="inline code">faker.internet().emailAddress()</code></li>
 </ul>
 
-<p>The full list of available providers (name, address, internet, company, finance, medical, etc.) is documented in the <a target="_blank" href="https://www.datafaker.net/documentation/providers/">DataFaker providers reference</a>.</p>
+<p>The full list of available providers (name, address, internet, company, finance, medical, etc.) is documented in the <a target="_blank" href="https://www.datafaker.net/documentation/providers/" rel="noopener noreferrer">DataFaker providers reference</a>.</p>
 
 <a id="mustache_templates" class="anchor" href="#mustache_templates">&nbsp;</a>
 
@@ -1009,7 +1010,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <p>It is possible to use JsonPath expressions to extract values from request bodies containing JSON with a <code class="inline code">&lbrace;&lbrace;#jsonPath&rbrace;&rbrace;</code> section, follow by a <code class="inline code">&lbrace;&lbrace;#jsonPathResult&rbrace;&rbrace;</code> section</p>
 
-<p>For details of the full JsonPath syntax please see <a target="_blank" href="https://github.com/json-path/JsonPath">github.com/json-path</a></p>
+<p>For details of the full JsonPath syntax please see <a target="_blank" href="https://github.com/json-path/JsonPath" rel="noopener noreferrer">github.com/json-path</a></p>
 
 <p>The following example template demonstrates using <code class="inline code">&lbrace;&lbrace;#jsonPath&rbrace;&rbrace;</code> follow by <code class="inline code">&lbrace;&lbrace;#jsonPathResult&rbrace;&rbrace;</code> to extract a list and single value from a request body:</p>
 
@@ -1060,7 +1061,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 <p>It is possible to use XPath expressions to extract values from request bodies containing XML with a <code class="inline code">&lbrace;&lbrace;#xPath&rbrace;&rbrace;</code> section.</p>
 <p>The <code class="inline code">&lbrace;&lbrace;#xPath&rbrace;&rbrace;</code> section only supports outputting the result of the XPath expression as a string, if an XML fragment is matched the string content of all the elements is printed.</p>
 
-<p>For a quick summary the XPath syntax please see <a target="_blank" href="https://www.w3schools.com/xml/xpath_syntax.asp">w3schools</a>, for details of the full XPath syntax please see <a target="_blank" href="https://www.w3.org/TR/1999/REC-xpath-19991116/#path-abbrev">www.w3.org</a></p>
+<p>For a quick summary the XPath syntax please see <a target="_blank" href="https://www.w3schools.com/xml/xpath_syntax.asp" rel="noopener noreferrer">w3schools</a>, for details of the full XPath syntax please see <a target="_blank" href="https://www.w3.org/TR/1999/REC-xpath-19991116/#path-abbrev" rel="noopener noreferrer">www.w3.org</a></p>
 
 <p>The following example template demonstrates using <code class="inline code">&lbrace;&lbrace;#xPath&rbrace;&rbrace;</code> to multiple items from a request body:</p>
 
@@ -1126,7 +1127,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <h3>Velocity Syntax</h3>
 
-<p>For full Velocity syntax see: <a target="_blank" href="https://velocity.apache.org/engine/1.7/user-guide.html#velocity-template-language-vtl-an-introduction">Velocity User Guide</a> the following section provide a basic summary and examples of Velocity syntax.</p>
+<p>For full Velocity syntax see: <a target="_blank" href="https://velocity.apache.org/engine/1.7/user-guide.html#velocity-template-language-vtl-an-introduction" rel="noopener noreferrer">Velocity User Guide</a> the following section provide a basic summary and examples of Velocity syntax.</p>
 
 <h4>Variables</h4>
 
@@ -1195,14 +1196,14 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
     $item
 #end</code></pre>
 
-<p>For additional mathematical functionality it is also possible to use the <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#MathTool">MathTool</a> or <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#NumberTool">NumberTool</a> in velocity response templates.</p>
+<p>For additional mathematical functionality it is also possible to use the <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#MathTool" rel="noopener noreferrer">MathTool</a> or <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#NumberTool" rel="noopener noreferrer">NumberTool</a> in velocity response templates.</p>
 
 <pre class="prettyprint lang-java code"><code class="code">#set($power = $math.pow($number, 2))
 #set($max = $math.max($number, 10))</code></pre>
 
 <h4>Json Bodies</h4>
 
-<p>The <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#JsonTool">JsonTool</a> can be used to help parse JSON bodies, as follows:</p>
+<p>The <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#JsonTool" rel="noopener noreferrer">JsonTool</a> can be used to help parse JSON bodies, as follows:</p>
 
 <pre class="prettyprint lang-java code"><code class="code">#set($jsonBody = $json.parse($!request.body))
 
@@ -1250,9 +1251,9 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <h4>XML Bodies</h4>
 
-<p>The <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#XmlTool">XmlTool</a> can be used to help parse XML bodies, execute XPath and XML traversal.</p>
+<p>The <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#XmlTool" rel="noopener noreferrer">XmlTool</a> can be used to help parse XML bodies, execute XPath and XML traversal.</p>
 
-<p>The following example shows how to use <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#XmlTool">XmlTool</a> for XPath:</p>
+<p>The following example shows how to use <a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#XmlTool" rel="noopener noreferrer">XmlTool</a> for XPath:</p>
 
 <pre class="prettyprint lang-java code"><code class="code">#set($xmlBody = $xml.parse($!request.body))
 
@@ -1279,14 +1280,14 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <p>The following velocity tools are available for velocity response templates:</p>
 <ul>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#CollectionTool">CollectionTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#ComparisonDateTool">ComparisonDateTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#DisplayTool">DisplayTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#EscapeTool">EscapeTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#MathTool">MathTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#NumberTool">NumberTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#JsonTool">JsonTool</a></li>
-    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#XmlTool">XmlTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#CollectionTool" rel="noopener noreferrer">CollectionTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#ComparisonDateTool" rel="noopener noreferrer">ComparisonDateTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#DisplayTool" rel="noopener noreferrer">DisplayTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#EscapeTool" rel="noopener noreferrer">EscapeTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#MathTool" rel="noopener noreferrer">MathTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#NumberTool" rel="noopener noreferrer">NumberTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#JsonTool" rel="noopener noreferrer">JsonTool</a></li>
+    <li><a target="_blank" href="https://velocity.apache.org/tools/3.1/tools-summary.html#XmlTool" rel="noopener noreferrer">XmlTool</a></li>
 </ul>
 
 <a id="javascript_templates" class="anchor" href="#javascript_templates">&nbsp;</a>
@@ -1317,9 +1318,9 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <p>All javascript response templates should return the response as an object as shown in the example above.</p>
 
-<p>JavaScript response templates support ES6 syntax for Java 9 to 14, for a summary of ES6 syntax see <a target="_blank" href="https://www.w3schools.com/js/js_es6.asp">w3schools</a>.</p>
+<p>JavaScript response templates support ES6 syntax for Java 9 to 14, for a summary of ES6 syntax see <a target="_blank" href="https://www.w3schools.com/js/js_es6.asp" rel="noopener noreferrer">w3schools</a>.</p>
 
-<p>JavaScript response templates support ES5 syntax for Java 8, for a summary of ES5 syntax see <a target="_blank" href="https://www.w3schools.com/js/js_es5.asp">w3schools</a>.</p>
+<p>JavaScript response templates support ES5 syntax for Java 8, for a summary of ES5 syntax see <a target="_blank" href="https://www.w3schools.com/js/js_es5.asp" rel="noopener noreferrer">w3schools</a>.</p>
 
 <h4>JavaScript Engine Support</h4>
 

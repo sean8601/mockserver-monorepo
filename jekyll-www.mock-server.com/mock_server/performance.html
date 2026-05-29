@@ -1,5 +1,6 @@
 ---
 title: Scalability & Latency
+description: "MockServer performance benchmarks: sub-2ms average latency at 95k requests/sec, tuning guidance for memory, thread pools, and log entry limits."
 layout: default
 pageOrder: 6
 section: 'General'
@@ -11,9 +12,9 @@ lastmod: 2019-11-10T08:00:00+01:00
 ---
 
 <div class="header">
-    <h1>Scalability & Latency</h1>
+    <h2>Scalability &amp; Latency</h2>
 
-    <h2 itemprop="headline">average of 1.58ms and p99 of 4ms for 150 parallel clients sending 95,228 requests per second</h2>
+    <p itemprop="headline">Average of 1.58ms and p99 of 4ms for 150 parallel clients sending 95,228 requests per second.</p>
 </div>
 
 <p>MockServer is build to support massive scale from a single instance:</p>
@@ -27,9 +28,9 @@ lastmod: 2019-11-10T08:00:00+01:00
 
 <p>The following frameworks & techniques are used to maximise scalability:</p>
 <ul>
-    <li><a target="_blank" href="https://netty.io">Netty</a> an asynchronous event-driven network application framework to maximise the scalability of HTTP and TLS</li>
-    <li><a target="_blank" href="https://lmax-exchange.github.io/disruptor">LMAX Disruptor</a> a high performance inter-thread messaging library to maximise the scalability of recording events (i.e. state) and logging</li>
-    <li><a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ScheduledThreadPoolExecutor.html">ScheduledThreadPoolExecutor</a> a thread pool that can scheduled delayed tasks is used to execute delay response to avoid
+    <li><a target="_blank" href="https://netty.io" rel="noopener noreferrer">Netty</a> an asynchronous event-driven network application framework to maximise the scalability of HTTP and TLS</li>
+    <li><a target="_blank" href="https://lmax-exchange.github.io/disruptor" rel="noopener noreferrer">LMAX Disruptor</a> a high performance inter-thread messaging library to maximise the scalability of recording events (i.e. state) and logging</li>
+    <li><a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ScheduledThreadPoolExecutor.html" rel="noopener noreferrer">ScheduledThreadPoolExecutor</a> a thread pool that can scheduled delayed tasks is used to execute delay response to avoid
         blocking threads
     </li>
 </ul>
@@ -56,7 +57,7 @@ lastmod: 2019-11-10T08:00:00+01:00
 
 <h3>Apache Bench Performance Test Results</h3>
 
-<p><a target="_blank" href="https://httpd.apache.org/docs/2.4/programs/ab.html">Apache Benchmark</a> was executed as follows:</p>
+<p><a target="_blank" href="https://httpd.apache.org/docs/2.4/programs/ab.html" rel="noopener noreferrer">Apache Benchmark</a> was executed as follows:</p>
 
 <pre class="prettyprint lang-bash code"><code class="code">ab -k -n 10000000 -c &lt;parallel clients&gt; http://127.0.0.1:1080/simple</code></pre>
 
@@ -256,7 +257,7 @@ lastmod: 2019-11-10T08:00:00+01:00
 
 <h3>Locust Performance Test Results</h3>
 
-<p><a target="_blank" href="https://httpd.apache.org/docs/2.4/programs/ab.html">Apache Benchmark</a> was executed as follows:</p>
+<p><a target="_blank" href="https://httpd.apache.org/docs/2.4/programs/ab.html" rel="noopener noreferrer">Apache Benchmark</a> was executed as follows:</p>
 
 <pre class="prettyprint lang-bash code"><code class="code">locust --loglevel=WARNING --headless --only-summary -u &lt;parallel clients&gt; -r 100 -t 180 --host=http://127.0.0.1:1080</code></pre>
 

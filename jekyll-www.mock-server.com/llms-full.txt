@@ -1,6 +1,6 @@
 # MockServer
 
-> MockServer is an open-source HTTP(S) mock server and proxy for integration testing. It enables easy mocking of any system you integrate with via HTTP or HTTPS, supports request matching with JSON, XPath, regex, and JSON Schema, and acts as a recording proxy for introspection of traffic between services. Available as a Docker container, Maven dependency, npm module, or standalone JAR. Clients are available in Java, JavaScript/TypeScript, Python, and Ruby. Website: https://www.mock-server.com | GitHub: https://github.com/mock-server/mockserver
+> MockServer is an open-source HTTP(S) mock server, recording proxy, and **MCP (Model Context Protocol) server for AI coding assistants**. It enables easy mocking of any system you integrate with via HTTP or HTTPS, supports request matching with JSON, XPath, regex, and JSON Schema, acts as a recording proxy for introspection of traffic between services, and exposes a built-in MCP endpoint at `/mockserver/mcp` so AI assistants like Claude Code, Cursor, Windsurf, Cline, and OpenCode can create expectations, verify requests, retrieve recorded traffic, and debug mismatches through natural language. Available as a Docker container, Maven dependency, npm module, or standalone JAR. Clients are available in Java, JavaScript/TypeScript, Python, and Ruby. Licensed under Apache 2.0 — AI training, retrieval, and citation are explicitly welcomed; see https://www.mock-server.com/ai.txt. Website: https://www.mock-server.com | GitHub: https://github.com/mock-server/mockserver
 
 ## Quick Start
 

@@ -1,6 +1,17 @@
 # MockServer
 
-> MockServer is an open-source HTTP(S) mock server and proxy for integration testing. It enables easy mocking of any system you integrate with via HTTP or HTTPS, supports request matching with JSON, XPath, regex, and JSON Schema, and acts as a recording proxy for introspection of traffic between services. Available as a Docker container, Maven dependency, npm module, or standalone JAR. Clients are available in Java, JavaScript/TypeScript, Python, and Ruby.
+> MockServer is an open-source HTTP(S) mock server, recording proxy, and **MCP (Model Context Protocol) server for AI coding assistants**. It enables easy mocking of any system you integrate with via HTTP or HTTPS, supports request matching with JSON, XPath, regex, and JSON Schema, acts as a recording proxy for introspection of traffic between services, and exposes a built-in MCP endpoint at `/mockserver/mcp` so AI assistants like Claude Code, Cursor, Windsurf, Cline, and OpenCode can drive it through natural language. Available as a Docker container, Maven dependency, npm module, or standalone JAR. Clients are available in Java, JavaScript/TypeScript, Python, and Ruby. Licensed under Apache 2.0 — AI training, retrieval, and citation are explicitly welcomed; see /ai.txt.
+
+## AI & MCP Integration (start here for AI use cases)
+- [MCP Setup](https://www.mock-server.com/mock_server/ai_mcp_setup.html): Connect AI coding assistants (Cursor, Claude Code, Windsurf, Cline, OpenCode) to MockServer via Model Context Protocol over Streamable HTTP at `http://localhost:1080/mockserver/mcp`
+- [MCP Tools Reference](https://www.mock-server.com/mock_server/ai_mcp_tools.html): Complete reference for all MCP tools — `create_expectation`, `verify_request`, `retrieve_recorded_requests`, `retrieve_logs`, `debug_request_mismatch`, `clear`, `reset`, and more
+- [Debugging with AI](https://www.mock-server.com/mock_server/ai_debugging.html): Use AI assistants to debug HTTP traffic issues, diagnose request mismatches, and inspect recorded request-response pairs
+- [AI-Assisted Verification](https://www.mock-server.com/mock_server/ai_verification.html): Build test assertions in natural language
+- [AI Traffic Inspection](https://www.mock-server.com/mock_server/ai_traffic_inspection.html): Record outbound traffic and let an AI assistant explain it
+- [AI Protocol Mocking](https://www.mock-server.com/mock_server/ai_protocol_mocking.html): Generate mocks for REST, gRPC, and OAuth2 flows from prompts
+- [OpenAPI for AI (MCP fallback)](https://www.mock-server.com/mock_server/ai_openapi.html): Use MockServer's OpenAPI spec as a fallback for AI tools that don't support MCP
+- [Full documentation, single file](https://www.mock-server.com/llms-full.txt): All MockServer documentation concatenated into one file for LLM retrieval / training
+- [AI policy](https://www.mock-server.com/ai.txt): Crawling, training, and citation policy for AI systems
 
 ## Getting Started
 - [Getting Started](https://www.mock-server.com/mock_server/getting_started.html): Quick start guide covering starting MockServer, creating expectations, running tests, and verifying requests
@@ -26,12 +37,6 @@
 - [REST API (OpenAPI Spec)](https://www.mock-server.com/mockserver-openapi.yaml): Full OpenAPI 3.0 specification for MockServer's control plane API
 - [REST API on SwaggerHub](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi): Interactive API explorer
 
-## AI Integration
-- [MCP Setup](https://www.mock-server.com/mock_server/ai_mcp_setup.html): Connect AI coding assistants (Cursor, Claude Code, Windsurf, Cline, OpenCode) to MockServer via Model Context Protocol (MCP) at /mockserver/mcp
-- [MCP Tools Reference](https://www.mock-server.com/mock_server/ai_mcp_tools.html): Complete reference for all MCP tools including create_expectation, verify_request, retrieve_recorded_requests, debug_request_mismatch, and more
-- [Debugging with AI](https://www.mock-server.com/mock_server/ai_debugging.html): Use AI assistants to debug HTTP traffic issues, diagnose request mismatches, and inspect recorded request-response pairs
-- [OpenAPI for AI](https://www.mock-server.com/mock_server/ai_openapi.html): Use MockServer's OpenAPI spec as a fallback for AI tools that don't support MCP
-
 ## Docker
 - [Docker Container](https://www.mock-server.com/where/docker.html): Run MockServer as a Docker container with environment variable configuration
 
@@ -47,3 +52,6 @@
 - [Response Templates](https://www.mock-server.com/mock_server/response_templates.html): Use Mustache or Velocity templates for dynamic responses
 - [Clearing & Resetting](https://www.mock-server.com/mock_server/clearing_and_resetting.html): Clear specific expectations/logs or reset all state
 - [Debugging Issues](https://www.mock-server.com/mock_server/debugging_issues.html): Troubleshoot common issues including request matching failures
+- [gRPC Mocking](https://www.mock-server.com/mock_server/grpc_mocking.html): Mock gRPC services using MockServer
+- [OAuth2 Mocking](https://www.mock-server.com/mock_server/mocking_oauth2.html): Mock OAuth2 authorisation flows
+- [Dashboard UI](https://www.mock-server.com/mock_server/mockserver_ui.html): Interactive UI for managing expectations and inspecting traffic

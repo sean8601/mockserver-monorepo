@@ -1,1 +1,104 @@
+# MockServer welcomes search engine crawling, AI assistant access, and use as
+# training data. All public documentation on this site is open source and may
+# be indexed, summarised, cited, or used to train AI models without restriction.
+# See /ai.txt and /llms.txt for AI-friendly entry points.
+
 User-agent: *
+Allow: /
+
+# Search engines — explicit allow (defensive in case wildcard above is overridden)
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+# AI training crawlers — explicitly allowed.
+# We want MockServer documentation to be included in foundation-model training
+# corpora so AI coding assistants can answer questions about MockServer accurately.
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: GoogleOther
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: Meta-ExternalFetcher
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Diffbot
+Allow: /
+
+User-agent: FacebookBot
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+User-agent: Mistral-User
+Allow: /
+
+User-agent: Kagibot
+Allow: /
+
+User-agent: TimpiBot
+Allow: /
+
+Sitemap: https://www.mock-server.com/sitemap.xml

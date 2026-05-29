@@ -240,7 +240,7 @@
 
 <h2>MCP Server Mocking</h2>
 
-<p>The <code>McpMockBuilder</code> generates a complete set of expectations to make MockServer behave as a mock <a target="_blank" href="https://modelcontextprotocol.io">MCP (Model Context Protocol)</a> server. This enables testing MCP clients without running a real MCP server.</p>
+<p>The <code>McpMockBuilder</code> generates a complete set of expectations to make MockServer behave as a mock <a target="_blank" href="https://modelcontextprotocol.io" rel="noopener noreferrer">MCP (Model Context Protocol)</a> server. This enables testing MCP clients without running a real MCP server.</p>
 
 <p>The builder handles all protocol details: <code>initialize</code>, <code>ping</code>, <code>tools/list</code>, <code>tools/call</code>, <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>, <code>prompts/get</code>, and <code>notifications/initialized</code>. JSON-RPC response IDs are automatically echoed from the request.</p>
 
@@ -343,7 +343,7 @@ mcpMock("/mcp")
 
 <h2>A2A Agent Mocking</h2>
 
-<p>The <code>A2aMockBuilder</code> generates expectations to make MockServer behave as a mock <a target="_blank" href="https://google.github.io/A2A/">A2A (Agent-to-Agent Protocol)</a> agent. This enables testing A2A clients that discover and communicate with agents.</p>
+<p>The <code>A2aMockBuilder</code> generates expectations to make MockServer behave as a mock <a target="_blank" href="https://google.github.io/A2A/" rel="noopener noreferrer">A2A (Agent-to-Agent Protocol)</a> agent. This enables testing A2A clients that discover and communicate with agents.</p>
 
 <p>The builder handles: Agent Card discovery (<code>GET /.well-known/agent.json</code>), <code>tasks/send</code>, <code>tasks/get</code>, and <code>tasks/cancel</code>.</p>
 

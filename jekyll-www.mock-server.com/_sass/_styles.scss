@@ -493,3 +493,79 @@ Hides the menu at `767px`, but modify this based on your app's needs.
         padding-left: 4%;
     }
 }
+
+/* AI / MCP hero callout on the homepage */
+.ai_hero {
+    display: flex;
+    align-items: flex-start;
+    gap: 1em;
+    margin: 1.5em 0 2em 0;
+    padding: 1.25em 1.5em;
+    background: linear-gradient(135deg, #f0f7ff 0%, #f6f0ff 100%);
+    border: 1px solid #c8d6ec;
+    border-left: 5px solid #1e6bd6;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.ai_hero_badge {
+    flex: 0 0 auto;
+    display: inline-block;
+    background: #1e6bd6;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.75em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.35em 0.7em;
+    border-radius: 3px;
+    margin-top: 0.25em;
+}
+
+.ai_hero_body {
+    flex: 1 1 auto;
+}
+
+.ai_hero_body h2 {
+    margin: 0 0 0.5em 0;
+    font-size: 1.15em;
+    color: #1a1a1a;
+}
+
+.ai_hero_body p {
+    margin: 0 0 0.6em 0;
+    line-height: 1.5;
+}
+
+.ai_hero_body code {
+    background: rgba(30, 107, 214, 0.08);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.ai_hero_links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.25em;
+    font-size: 0.95em;
+}
+
+.ai_hero_links li {
+    margin: 0;
+    padding: 0;
+}
+
+@media (max-width: 700px) {
+    .ai_hero {
+        flex-direction: column;
+        padding: 1em 1.1em;
+    }
+    .ai_hero_links {
+        flex-direction: column;
+        gap: 0.4em;
+    }
+}

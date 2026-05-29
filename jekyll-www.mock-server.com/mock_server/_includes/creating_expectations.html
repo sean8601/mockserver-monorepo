@@ -80,7 +80,7 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     <li><strong><a href="#sequential_responses">httpResponses</a></strong> <em>(optional)</em> - an array of responses to cycle through sequentially or randomly on each match</li>
 </ul>
 
-<p><strong><a href="/mock_server/using_openapi.html#generate_expectation_from_openapi">open api expectations</a></strong> are also supported using an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/"><strong>OpenAPI
+<p><strong><a href="/mock_server/using_openapi.html#generate_expectation_from_openapi">open api expectations</a></strong> are also supported using an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer"><strong>OpenAPI
     v3</strong></a> specifications to generate <strong>request matcher expectations</strong> for each operation, see the section on <strong><a href="/mock_server/using_openapi.html#generate_expectation_from_openapi">open api
     expectations</a></strong> for details.</p>
 
@@ -446,7 +446,7 @@ new MockServerClient("localhost", 1080)
 <p>There are two types of <strong>request matcher</strong>:</p>
 <ul>
     <li><strong><a href="#request_properties_matchers">request properties matcher</a></strong> - that match requests using HTTP properties such as <strong>method</strong>, <strong>path</strong> or <strong>body</strong></li>
-    <li><strong><a href="#request_openapi_matchers">open api request matcher</a></strong> - that match requests using an <a target="_blank" href="https://swagger.io/docs/specification/about/"><strong>OpenAPI</strong></a> definition</li>
+    <li><strong><a href="#request_openapi_matchers">open api request matcher</a></strong> - that match requests using an <a target="_blank" href="https://swagger.io/docs/specification/about/" rel="noopener noreferrer"><strong>OpenAPI</strong></a> definition</li>
 </ul>
 
 <a id="request_properties_matchers" class="anchor" href="#request_properties_matchers">&nbsp;</a>
@@ -481,7 +481,7 @@ new MockServerClient("localhost", 1080)
             <li><strong>use for:</strong> method, path, path parameter keys, path parameters values, query parameter keys, query parameters values, header keys, header values, cookie keys, cookie values or bodies</li>
             <li><strong>examples:</strong> <a href="#button_match_request_by_method_regex">method</a>, <a href="#button_match_request_by_regex_path">path</a>, <a href="#button_match_request_by_path_parameter_regex_value">path parameters</a>, <a
                     href="#button_match_request_by_query_parameter_name_regex">query parameters</a>, <a href="#button_match_request_by_header_name_regex">headers</a></li>
-            <li>for syntax see <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html">Java regex syntax</a></li>
+            <li>for syntax see <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html" rel="noopener noreferrer">Java regex syntax</a></li>
         </ul>
     </li>
     <li><strong>json schema</strong>
@@ -489,7 +489,7 @@ new MockServerClient("localhost", 1080)
             <li><strong>use for:</strong> method, path, path parameters values, query parameters values, header values, cookie values or bodies</li>
             <li><strong>not supported for:</strong> path parameter keys, query parameter keys, header keys or cookie keys</li>
             <li><strong>examples:</strong> <a href="#button_match_request_by_path_parameter_json_schema_value">path parameters</a>, <a href="#button_match_request_by_query_parameter_value_json_schema">query parameters</a>, <a href="#button_match_request_by_header_value_json_schema">headers</a> , <a href="#button_match_request_by_cookies_value_json_schema">cookies</a></li>
-            <li>for syntax see <a target="_blank" href="https://json-schema.org">JSON Schema documentation</a></li>
+            <li>for syntax see <a target="_blank" href="https://json-schema.org" rel="noopener noreferrer">JSON Schema documentation</a></li>
         </ul>
     </li>
     <li><strong>optional value</strong>
@@ -572,7 +572,7 @@ new MockServerClient("localhost", 1080)
 
 <ul>
     <li><strong><a href="#button_match_request_by_body_in_utf16">plain text</a></strong> (i.e. exact match)</li>
-    <li><strong><a href="#button_match_request_by_regex_body">regular expression</a></strong> - see <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html">Java regex syntax</a></li>
+    <li><strong><a href="#button_match_request_by_regex_body">regular expression</a></strong> - see <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html" rel="noopener noreferrer">Java regex syntax</a></li>
     <li><strong><a href="#button_match_request_by_body_with_json_exactly">JSON</a></strong> - supports:
         <ul>
             <li><strong>matchType</strong> to control which fields get matched:
@@ -591,12 +591,12 @@ new MockServerClient("localhost", 1080)
                     <li><strong>${json-unit.regex}<em>pattern</em></strong> match a field by regex, e.g. <strong>${json-unit.regex}[a-z]+</strong></li>
                     <li><strong>${json-unit.matches:<em>name</em>}</strong> match a field with a user-registered custom matcher (e.g. <strong>${json-unit.matches:largerThan}</strong>); register the matcher by setting the <a href="/mock_server/configuration_properties.html#button_configuration_custom_json_unit_matchers_class"><strong>mockserver.customJsonUnitMatchersClass</strong></a> configuration property to a class implementing <strong>CustomJsonUnitMatcherProvider</strong></li>
                 </ul>
-                see <a target="_blank" href="https://github.com/lukas-krecan/JsonUnit">JSONUnit documentation</a> for full details
+                see <a target="_blank" href="https://github.com/lukas-krecan/JsonUnit" rel="noopener noreferrer">JSONUnit documentation</a> for full details
             </li>
         </ul>
     </li>
-    <li><strong><a href="#button_match_request_by_body_with_json_schema">JSON Schema</a></strong> - see <a target="_blank" href="https://json-schema.org/">JSON Schema documentation</a></li>
-    <li><strong><a href="#button_match_request_by_body_with_json_path">JsonPath</a></strong> - matches if at least one value is returned by the expression, see <a target="_blank" href="https://github.com/json-path/JsonPath">JsonPath documentation</a></li>
+    <li><strong><a href="#button_match_request_by_body_with_json_schema">JSON Schema</a></strong> - see <a target="_blank" href="https://json-schema.org/" rel="noopener noreferrer">JSON Schema documentation</a></li>
+    <li><strong><a href="#button_match_request_by_body_with_json_path">JsonPath</a></strong> - matches if at least one value is returned by the expression, see <a target="_blank" href="https://github.com/json-path/JsonPath" rel="noopener noreferrer">JsonPath documentation</a></li>
     <li><strong><a href="#button_match_request_by_body_with_xml">XML</a></strong> - supports:
         <ul>
             <li><strong><a href="#button_match_request_by_body_with_xml_placeholders">XMLUnit placeholders</a></strong> to allow fields or elements to be ignored or matched by type for example:
@@ -604,12 +604,12 @@ new MockServerClient("localhost", 1080)
                     <li><strong>${xmlunit.ignore}</strong> ignore an element</li>
                     <li><strong>${xmlunit.isNumber}</strong> match an element or attribute as a number</li>
                 </ul>
-                see <a target="_blank" href="https://github.com/xmlunit/user-guide/wiki/Placeholders">XMLUnit documentation</a> for full details
+                see <a target="_blank" href="https://github.com/xmlunit/user-guide/wiki/Placeholders" rel="noopener noreferrer">XMLUnit documentation</a> for full details
             </li>
         </ul>
     </li>
-    <li><strong><a href="#button_match_request_by_body_with_xml_schema">XML Schema</a></strong> - see <a target="_blank" href="https://www.w3.org/standards/xml/schema.html">XML Schema documentation</a></li>
-    <li><strong><a href="#button_match_request_by_body_with_xpath">XPath</a></strong> - matches if at least one value returned by expression, see <a target="_blank" href="https://www.w3.org/TR/2017/REC-xpath-31-20170321/">XPath specification</a></li>
+    <li><strong><a href="#button_match_request_by_body_with_xml_schema">XML Schema</a></strong> - see <a target="_blank" href="https://www.w3.org/standards/xml/schema.html" rel="noopener noreferrer">XML Schema documentation</a></li>
+    <li><strong><a href="#button_match_request_by_body_with_xpath">XPath</a></strong> - matches if at least one value returned by expression, see <a target="_blank" href="https://www.w3.org/TR/2017/REC-xpath-31-20170321/" rel="noopener noreferrer">XPath specification</a></li>
     <li><strong><a href="#button_match_request_by_form_submission_body">form fields</a></strong> (i.e. body parameters)</li>
     <li><strong><a href="#button_match_request_by_binary_body">binary</a></strong></li>
     <li><strong><a href="#graphql_body_matching">GraphQL</a></strong> - whitespace-insensitive matching of GraphQL queries, mutations, and subscriptions</li>
@@ -620,13 +620,13 @@ new MockServerClient("localhost", 1080)
 
 <h4>GraphQL Body Matching</h4>
 
-<p>MockServer supports whitespace-insensitive matching of <a target="_blank" href="https://graphql.org/learn/serving-over-http/">GraphQL over HTTP</a> JSON request bodies. This allows expectations to match GraphQL queries, mutations, and subscriptions regardless of whitespace, formatting, or comment differences. The request body must be a JSON object with a <span class="inline_code">query</span> field (the standard GraphQL over HTTP format).</p>
+<p>MockServer supports whitespace-insensitive matching of <a target="_blank" href="https://graphql.org/learn/serving-over-http/" rel="noopener noreferrer">GraphQL over HTTP</a> JSON request bodies. This allows expectations to match GraphQL queries, mutations, and subscriptions regardless of whitespace, formatting, or comment differences. The request body must be a JSON object with a <span class="inline_code">query</span> field (the standard GraphQL over HTTP format).</p>
 
 <p>A GraphQL body matcher can specify:</p>
 <ul>
     <li><strong>query</strong> (required) - the GraphQL query string. Whitespace is normalized before comparison, so <span class="inline_code">{ user { name } }</span> matches <span class="inline_code">{\n  user {\n    name\n  }\n}</span></li>
     <li><strong>operationName</strong> (optional) - match the operation name exactly, or using a regex pattern (e.g. <span class="inline_code">Get.*</span>)</li>
-    <li><strong>variablesSchema</strong> (optional) - a <a target="_blank" href="https://json-schema.org/">JSON Schema</a> to validate the <span class="inline_code">variables</span> field</li>
+    <li><strong>variablesSchema</strong> (optional) - a <a target="_blank" href="https://json-schema.org/" rel="noopener noreferrer">JSON Schema</a> to validate the <span class="inline_code">variables</span> field</li>
 </ul>
 
 <p><strong>Example - match a GraphQL query:</strong></p>
@@ -690,7 +690,7 @@ new MockServerClient("localhost", 1080)
 <p>An <strong>open api request matcher</strong> can contain any of the following fields:</p>
 
 <ul>
-    <li><strong>specUrlOrPayload</strong> - mandatory value containing an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/"><strong>OpenAPI v3</strong></a> specifications in either JSON or YAML format as an:
+    <li><strong>specUrlOrPayload</strong> - mandatory value containing an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer"><strong>OpenAPI v3</strong></a> specifications in either JSON or YAML format as an:
         <ul>
             <li><strong><a href="#button_match_by_openapi_url">HTTP/HTTPS URL</a></strong></li>
             <li><strong><a href="#button_match_by_openapi_filepath">File URL</a></strong></li>

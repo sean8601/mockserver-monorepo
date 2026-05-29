@@ -28,8 +28,8 @@
 				</li>
 				{% endif %}
 				{% endfor %}
-				<li><a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" target="_blank">REST API Reference</a></li><!-- <img src="/images/openapi.png" width="100px"/></a> -->
-				<li><a target="_blank"href="https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver/mockserver-examples" target="_blank">Example Code</a></li>
+				<li><a href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" target="_blank" rel="noopener noreferrer">REST API Reference</a></li><!-- <img src="/images/openapi.png" width="100px"/></a> -->
+				<li><a href="https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver/mockserver-examples" target="_blank" rel="noopener noreferrer">Example Code</a></li>
 			</ul>
 		</div>
 		<div class="pure-menu pure-menu-open">
@@ -50,10 +50,10 @@
 			</ul>
 		</div>
 		<div class="pure-menu pure-menu-open">
-			<span class="pure-menu-heading">Proxying</span>
+			<span class="pure-menu-heading">AI &amp; MCP</span>
 			<ul>
 				{% for page in sorted_pages %}
-					{% if page.section == 'Proxy' and page.subsection %}
+					{% if page.section == 'AI Integration' and page.subsection %}
 						{% if page.shortTitle %}
 							{% assign title = page.shortTitle %}
 						{% else %}
@@ -64,13 +64,14 @@
 				</li>
 					{% endif %}
 				{% endfor %}
+				<li><a href="/llms.txt">llms.txt</a></li>
 			</ul>
 		</div>
 		<div class="pure-menu pure-menu-open">
-			<span class="pure-menu-heading">AI Integration</span>
+			<span class="pure-menu-heading">Proxying</span>
 			<ul>
 				{% for page in sorted_pages %}
-					{% if page.section == 'AI Integration' and page.subsection %}
+					{% if page.section == 'Proxy' and page.subsection %}
 						{% if page.shortTitle %}
 							{% assign title = page.shortTitle %}
 						{% else %}
@@ -98,7 +99,7 @@
 				</li>
 					{% endif %}
 				{% endfor %}
-				<li><a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" target="_blank">Swagger Hub</a></li><!-- <img src="/images/openapi.png" width="100px"/></a> -->
+				<li><a href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" target="_blank" rel="noopener noreferrer">Swagger Hub</a></li><!-- <img src="/images/openapi.png" width="100px"/></a> -->
 			</ul>
 		</div>
 		<!--<div class="pure-menu pure-menu-open">-->

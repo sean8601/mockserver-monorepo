@@ -1,5 +1,6 @@
 ---
 title: Logging & Debugging
+description: Retrieve active expectations, recorded requests, logs, and metrics from MockServer to diagnose matching failures and integration issues.
 layout: page
 pageOrder: 5
 section: 'General'
@@ -70,12 +71,12 @@ mockServerClient("localhost", 1080)
             console.log(error);
         }
     );</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=ACTIVE_EXPECTATIONS"</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
     <button id="button_retrieve_active_expectations_using_request_matcher" class="accordion">retrieve active expectations using request matcher</button>
@@ -103,7 +104,7 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
         console.log(error);
     }
 );</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -111,7 +112,7 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
     "path": "/some/path",
     "method": "POST"
 }'</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
     <button id="button_retrieve_active_expectations_as_java" class="accordion">retrieve active expectations as java</button>
@@ -131,7 +132,7 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=JAVA" -d '{
     "path": "/some/path"
 }'</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
     <button id="button_retrieve_active_expectations_as_json" class="accordion">retrieve active expectations as json</button>
@@ -160,14 +161,14 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
         console.log(error);
     }
 );</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=JSON" -d '{
     "path": "/some/path"
 }'</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
 </div>
@@ -255,12 +256,12 @@ mockServerClient("localhost", 1080)
             console.log(error);
         }
     );</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=LOGS"</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
     <button id="button_retrieve_recorded_log_messages_using_request_matcher" class="accordion">retrieve recorded log messages using request matcher</button>
@@ -291,7 +292,7 @@ mockServerClient("localhost", 1080)
             console.log(error);
         }
     );</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -299,7 +300,7 @@ mockServerClient("localhost", 1080)
     "path": "/some/path",
     "method": "POST"
 }'</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
     <button id="button_retrieve_recorded_log_messages_as_array" class="accordion">retrieve recorded log messages as array</button>
@@ -328,7 +329,7 @@ mockServerClient("localhost", 1080)
             console.log(error);
         }
     );</code></pre>
-            <p>See <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank">REST API</a> for full JSON specification</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
 </div>
@@ -354,7 +355,7 @@ mockServerClient("localhost", 1080)
     </div>
 </div>
 
-<p>Metrics are also available in <a href="https://prometheus.io/" target="_blank">Prometheus</a> format via the <span class="inline_code"><strong>GET /mockserver/metrics</strong></span> endpoint when metrics are enabled.</p>
+<p>Metrics are also available in <a href="https://prometheus.io/" target="_blank" rel="noopener noreferrer">Prometheus</a> format via the <span class="inline_code"><strong>GET /mockserver/metrics</strong></span> endpoint when metrics are enabled.</p>
 
 <a id="retrieving_configuration" class="anchor" href="#retrieving_configuration">&nbsp;</a>
 
@@ -426,7 +427,7 @@ new MockServerClient("localhost", 1080)
 
 <p>MockServer uses SL4J for logging so if MockSever is being launched using the <a href="/mock_server/running_mock_server.html#junit_rule">JUnit 4 @Rule</a>, the <a href="/mock_server/running_mock_server.html#junit_test_extension">JUnit 5
     Test Extension</a>, <a href="/mock_server/running_mock_server.html#client_api">ClientAndServer</a> or directly using the <strong>org.mockserver.netty.MockServer</strong> the project launching MockServer needs to configure the logging
-    output by configuring <a target="_blank" href="https://www.slf4j.org/faq.html">SLF4J</a>. MockServer relies on a SLF4J binding being on the classpath for logs to be output. The simplest approach is to use the Java Logger SLF4J binding.</p>
+    output by configuring <a target="_blank" href="https://www.slf4j.org/faq.html" rel="noopener noreferrer">SLF4J</a>. MockServer relies on a SLF4J binding being on the classpath for logs to be output. The simplest approach is to use the Java Logger SLF4J binding.</p>
 
 <p>In MockServer the Java Logger SLF4J binding is only an optional dependency. Therefore, when MockServer is added as a dependency to a Maven or Gradle project it does not pull in the Java Logger binding transitively.</p>
 
@@ -477,9 +478,9 @@ LogManager.getLogManager().readConfiguration(new ByteArrayInputStream(loggingCon
 
 <p>When running MockServer from the command line it relies on the Java Logger <span class="inline_code">java.util.logging.Logger</span> in addition to controlling the log level of MockServer using <span class="inline_code">-logLevel</span>
     the underlying logging framework can be configured (overriding the default configuration) by specifying the System Property <span class="inline_code">java.util.logging.config.file</span> or <span class="inline_code">java.util.logging.config.class</span>
-    as detailed in the <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/logging/LogManager.html">LogManager JavaDoc</a>.</p>
+    as detailed in the <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/logging/LogManager.html" rel="noopener noreferrer">LogManager JavaDoc</a>.</p>
 
-<p>The MockServer github repository contains an example <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/mockserver/mockserver-netty/src/main/resources/example_logging_configuration.properties">Java Logger configuration file</a> (which
+<p>The MockServer github repository contains an example <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/mockserver/mockserver-netty/src/main/resources/example_logging_configuration.properties" rel="noopener noreferrer">Java Logger configuration file</a> (which
     would be configured using <span class="inline_code">java.util.logging.config.file</span>).</p>
 
 <p>The default logging configuration can be overridden as follows:</p>

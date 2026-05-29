@@ -1,5 +1,6 @@
 ---
 title: MCP Setup - Connect AI Assistants
+description: Connect Claude Code, Cursor, Windsurf, Cline, or OpenCode to MockServer via the built-in MCP endpoint at /mockserver/mcp -- no glue code required.
 shortTitle: MCP Setup
 layout: page
 pageOrder: 1
@@ -27,7 +28,7 @@ sitemap:
 
 <pre class="prettyprint code"><code class="code">http://localhost:1080/mockserver/mcp</code></pre>
 
-<p>The endpoint supports the <strong>Streamable HTTP</strong> transport as defined by the <a target="_blank" href="https://modelcontextprotocol.io/specification">MCP specification</a>. If your MockServer is running on a different host or port, adjust the URL accordingly.</p>
+<p>The endpoint supports the <strong>Streamable HTTP</strong> transport as defined by the <a target="_blank" href="https://modelcontextprotocol.io/specification" rel="noopener noreferrer">MCP specification</a>. If your MockServer is running on a different host or port, adjust the URL accordingly.</p>
 
 <h2>Configuring Your AI Assistant</h2>
 
@@ -123,7 +124,7 @@ url = "http://localhost:1080/mockserver/mcp"</code></pre>
 
 <h3>Programmatic clients (LangChain, LangGraph, ...)</h3>
 
-<p>The assistants above are IDE and CLI tools configured through a file or command. You can also connect to the MCP endpoint programmatically — for example from an agent built with LangChain or LangGraph using the <a target="_blank" href="https://github.com/langchain-ai/langchain-mcp-adapters"><code class="code inline">langchain-mcp-adapters</code></a> library. The same approach applies to any MCP client library:</p>
+<p>The assistants above are IDE and CLI tools configured through a file or command. You can also connect to the MCP endpoint programmatically — for example from an agent built with LangChain or LangGraph using the <a target="_blank" href="https://github.com/langchain-ai/langchain-mcp-adapters" rel="noopener noreferrer"><code class="code inline">langchain-mcp-adapters</code></a> library. The same approach applies to any MCP client library:</p>
 
 <pre class="prettyprint lang-python code"><code class="code">from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent

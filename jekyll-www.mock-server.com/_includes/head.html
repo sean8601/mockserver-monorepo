@@ -7,42 +7,234 @@
 	<meta name="google-site-verification" content="QIzvnb0rY1MnkLjIDI217X0RjxZCX2tWdUp1CvejoVw"/>
 	<meta name="msvalidate.01" content="9DBA7A5F05A6179123259382E10FB4A7"/>
 
-    <title>{% if page.title %}{{ page.title }}{% else %}{{ site.title }}{% endif %}</title>
-    <meta name="description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
-	<meta name="keywords" content="{{ site.keywords }}"/>
+	<!-- Title: append brand suffix on inner pages so SERP snippets show the brand -->
+	{% if page.title and page.url != "/" %}
+	<title>{{ page.title }} | {{ site.title }}</title>
+	{% else %}
+	<title>{{ site.title }} — {{ site.tagline | default: site.short_description | default: site.description | strip_html | strip_newlines | truncate: 90 }}</title>
+	{% endif %}
+
+	<!-- Per-page description: page.description > page.excerpt > site.description -->
+	{% if page.description %}
+		{% assign page_description = page.description %}
+	{% elsif page.excerpt %}
+		{% assign page_description = page.excerpt | strip_html | strip_newlines | truncate: 160 %}
+	{% else %}
+		{% assign page_description = site.description %}
+	{% endif %}
+	<meta name="description" content="{{ page_description }}">
+	<meta name="keywords" content="{% if page.keywords %}{{ page.keywords }}, {% endif %}{{ site.keywords }}"/>
 	<meta name="author" content="{{ site.author.name.full }}" />
-	<meta name="title" content="{{ site.title }}">
+	<meta name="title" content="{% if page.title and page.url != '/' %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+
+	<!-- AI crawling / training policy: explicitly open. Mirrors /robots.txt + /ai.txt + /llms.txt -->
+	<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+	<meta name="ai-content-declaration" content="ai-training-allowed">
+	<link rel="alternate" type="text/plain" title="LLM-friendly overview" href="/llms.txt">
+	<link rel="alternate" type="text/plain" title="Full documentation for LLMs (single file)" href="/llms-full.txt">
+	<link rel="alternate" type="text/plain" title="AI crawling and training policy" href="/ai.txt">
+
+	<!-- Open Graph -->
 	<meta property="og:locale" content="en_GB">
-	<meta property="og:type" content="website">
-	<meta property="og:image" content="/apple-touch-icon.png">
-	<meta property="og:url" content="{{ site.url }}">
+	<meta property="og:type" content="{% if page.url == '/' %}website{% else %}article{% endif %}">
 	<meta property="og:site_name" content="{{ site.title }}">
-	<meta property="og:title" content="{{ site.title }}">
-	<meta property="og:description" content="{{ site.description }}">
+	<meta property="og:url" content="{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}">
+	<meta property="og:title" content="{% if page.title and page.url != '/' %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+	<meta property="og:description" content="{{ page_description }}">
+	<meta property="og:image" content="{{ site.url }}{{ site.social_card | default: '/apple-touch-icon.png' }}">
+	<meta property="og:image:width" content="1200">
+	<meta property="og:image:height" content="630">
+	<meta property="og:image:alt" content="MockServer — mock HTTP APIs, record traffic, MCP for AI assistants">
 	<meta property="article:author" content="{{ site.author.name.full }}">
+
+	<!-- Twitter Card -->
+	<meta name="twitter:card" content="summary_large_image">
+	{% if site.twitter_handle and site.twitter_handle != "" %}
+	<meta name="twitter:site" content="{{ site.twitter_handle }}">
+	<meta name="twitter:creator" content="{{ site.twitter_handle }}">
+	{% endif %}
+	<meta name="twitter:title" content="{% if page.title and page.url != '/' %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+	<meta name="twitter:description" content="{{ page_description }}">
+	<meta name="twitter:image" content="{{ site.url }}{{ site.social_card | default: '/apple-touch-icon.png' }}">
+	<meta name="twitter:image:alt" content="MockServer — mock HTTP APIs, record traffic, MCP for AI assistants">
 
 	<!-- icons -->
 	<link rel="shortcut icon" href="/favicon.ico">
 	<link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png">
 
 	<!-- styles -->
-    <link  rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Indie+Flower|Gloria+Hallelujah|Lato|Averia+Sans+Libre:300normal,300italic,400normal,400italic,700normal,700italic|Amatic+SC:400normal|Belleza:400normal|Belgrano:400normal|Open+Sans:400normal|Dosis:400normal|Codystar:400normal|Concert+One:400normal|Oswald:400normal|Economica:400normal|Duru+Sans:400normal&amp;subset=all">
-    <link rel="stylesheet" href="{{ '/css/main.css' | prepend: site.baseurl }}">
-    <link rel="stylesheet" href="{{ '/css/yahoo-pure-min-0.3.0.css' | prepend: site.baseurl }}">
-    <link rel="canonical" href="{{ page.url | prepend: site.baseurl | prepend: site.url }}">
-    <link rel="alternate" type="application/atom+xml" title="{{ site.title }}" href="{{ "/feed.xml" | prepend: site.baseurl | prepend: site.url }}" />
+	<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Averia+Sans+Libre:400,400i,700&amp;display=swap">
+	<link rel="stylesheet" href="{{ '/css/main.css' | prepend: site.baseurl }}">
+	<link rel="stylesheet" href="{{ '/css/yahoo-pure-min-0.3.0.css' | prepend: site.baseurl }}">
+	<link rel="canonical" href="{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}">
+	<link rel="alternate" type="application/atom+xml" title="{{ site.title }}" href="{{ '/feed.xml' | prepend: site.baseurl | prepend: site.url }}" />
 
 	{% if page.section == 'error' %}
-	<meta http-equiv="refresh" content="0;URL='http://www.mock-server.com/'" />
+	<meta http-equiv="refresh" content="0;URL='https://www.mock-server.com/'" />
 	{% endif %}
 
-	<!-- Global site tag (gtag.js) - Google Analytics -->
-	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-32687194-4"></script>
-	<script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-
-        gtag('config', 'UA-32687194-4');
+	<!-- Structured data (JSON-LD) — drives Google rich results, AI assistant citations, and knowledge-graph entries -->
+	{% if page.url == "/" %}
+	<script type="application/ld+json">
+	{
+	  "@context": "https://schema.org",
+	  "@type": "SoftwareApplication",
+	  "name": "MockServer",
+	  "alternateName": ["Mock Server", "mockserver"],
+	  "description": {{ site.description | strip_html | strip_newlines | jsonify }},
+	  "url": "{{ site.url }}",
+	  "applicationCategory": "DeveloperApplication",
+	  "applicationSubCategory": "API Testing, Mock Server, HTTP Proxy, MCP Server",
+	  "operatingSystem": "Cross-platform (JVM, Docker, Node.js, Python, Ruby)",
+	  "softwareVersion": "{{ site.mockserver_version }}",
+	  "downloadUrl": "{{ site.github_repo }}/releases",
+	  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+	  "image": "{{ site.url }}{{ site.social_card | default: '/apple-touch-icon.png' }}",
+	  "offers": {
+	    "@type": "Offer",
+	    "price": "0",
+	    "priceCurrency": "USD"
+	  },
+	  "featureList": [
+	    "Mock HTTP and HTTPS APIs",
+	    "Record and replay HTTP traffic",
+	    "HTTPS interception with auto-generated certificates",
+	    "Request matching with JSON, XPath, regex, and JSON Schema",
+	    "Response templating with Mustache, Velocity, and JavaScript",
+	    "Built-in MCP (Model Context Protocol) server for AI assistants",
+	    "OpenAPI / Swagger expectation generation",
+	    "gRPC mocking",
+	    "OAuth2 mocking",
+	    "Verification API for test assertions"
+	  ],
+	  "author": {
+	    "@type": "Person",
+	    "name": "{{ site.author.name.full }}",
+	    "url": "{{ site.author.github }}"
+	  },
+	  "publisher": {
+	    "@type": "Organization",
+	    "name": "MockServer",
+	    "url": "{{ site.url }}",
+	    "logo": {
+	      "@type": "ImageObject",
+	      "url": "{{ site.url }}/images/mockserver-icon.png"
+	    },
+	    "sameAs": [
+	      "{{ site.github_repo }}",
+	      "https://hub.docker.com/r/mockserver/mockserver",
+	      "https://www.npmjs.com/package/mockserver-client",
+	      "https://www.npmjs.com/package/mockserver-node",
+	      "https://central.sonatype.com/artifact/org.mock-server/mockserver-netty",
+	      "https://pypi.org/project/mockserver-client/",
+	      "https://rubygems.org/gems/mockserver-client"
+	    ]
+	  }
+	}
 	</script>
+	<script type="application/ld+json">
+	{
+	  "@context": "https://schema.org",
+	  "@type": "SoftwareSourceCode",
+	  "name": "MockServer",
+	  "description": {{ site.description | strip_html | strip_newlines | jsonify }},
+	  "codeRepository": "{{ site.github_repo }}",
+	  "programmingLanguage": ["Java", "JavaScript", "TypeScript", "Python", "Ruby"],
+	  "runtimePlatform": ["JVM", "Docker", "Node.js"],
+	  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+	  "url": "{{ site.url }}",
+	  "version": "{{ site.mockserver_version }}",
+	  "author": {
+	    "@type": "Person",
+	    "name": "{{ site.author.name.full }}",
+	    "url": "{{ site.author.github }}"
+	  }
+	}
+	</script>
+	<script type="application/ld+json">
+	{
+	  "@context": "https://schema.org",
+	  "@type": "WebSite",
+	  "name": "MockServer",
+	  "url": "{{ site.url }}"
+	}
+	</script>
+	{% else %}
+	<script type="application/ld+json">
+	{
+	  "@context": "https://schema.org",
+	  "@type": "TechArticle",
+	  "headline": {{ page.title | default: site.title | jsonify }},
+	  "description": {{ page_description | strip_html | strip_newlines | jsonify }},
+	  "url": "{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}",
+	  "image": "{{ site.url }}{{ site.social_card | default: '/apple-touch-icon.png' }}",
+	  "datePublished": "{% if page.sitemap.lastmod %}{{ page.sitemap.lastmod | date_to_xmlschema }}{% else %}2019-11-10T08:00:00+01:00{% endif %}",
+	  "dateModified": "{% if page.sitemap.lastmod %}{{ page.sitemap.lastmod | date_to_xmlschema }}{% else %}{{ site.time | date_to_xmlschema }}{% endif %}",
+	  "inLanguage": "en",
+	  "author": {
+	    "@type": "Person",
+	    "name": "{{ site.author.name.full }}",
+	    "url": "{{ site.author.github }}"
+	  },
+	  "publisher": {
+	    "@type": "Organization",
+	    "name": "MockServer",
+	    "url": "{{ site.url }}",
+	    "logo": {
+	      "@type": "ImageObject",
+	      "url": "{{ site.url }}/images/mockserver-icon.png"
+	    }
+	  },
+	  "mainEntityOfPage": {
+	    "@type": "WebPage",
+	    "@id": "{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}"
+	  },
+	  "isPartOf": {
+	    "@type": "WebSite",
+	    "name": "MockServer",
+	    "url": "{{ site.url }}"
+	  },
+	  "about": {
+	    "@type": "SoftwareApplication",
+	    "name": "MockServer",
+	    "url": "{{ site.url }}"
+	  }
+	}
+	</script>
+	{% if page.section and page.section != 'error' %}
+	<script type="application/ld+json">
+	{
+	  "@context": "https://schema.org",
+	  "@type": "BreadcrumbList",
+	  "itemListElement": [
+	    {
+	      "@type": "ListItem",
+	      "position": 1,
+	      "name": "MockServer",
+	      "item": "{{ site.url }}/"
+	    },
+	    {
+	      "@type": "ListItem",
+	      "position": 2,
+	      "name": {{ page.title | jsonify }},
+	      "item": "{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}"
+	    }
+	  ]
+	}
+	</script>
+	{% endif %}
+	{% endif %}
+
+	{% if site.ga4_measurement_id and site.ga4_measurement_id != "" and site.ga4_measurement_id != "G-XXXXXXXXXX" %}
+	<!-- Google Analytics 4 -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id={{ site.ga4_measurement_id }}"></script>
+	<script>
+		window.dataLayer = window.dataLayer || [];
+		function gtag(){dataLayer.push(arguments);}
+		gtag('js', new Date());
+		gtag('config', '{{ site.ga4_measurement_id }}');
+	</script>
+	{% endif %}
 </head>

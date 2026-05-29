@@ -256,7 +256,7 @@
 
 <h2>PKCE Extension</h2>
 
-<p><strong>PKCE</strong> (Proof Key for Code Exchange, <a target="_blank" href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636</a>) is an extension to the authorization code flow designed for public clients (single-page apps, mobile apps) that cannot securely store a client secret. The client generates a random <code>code_verifier</code> and sends a derived <code>code_challenge</code> in the authorization request, then proves possession of the verifier when exchanging the code for tokens.</p>
+<p><strong>PKCE</strong> (Proof Key for Code Exchange, <a target="_blank" href="https://datatracker.ietf.org/doc/html/rfc7636" rel="noopener noreferrer">RFC 7636</a>) is an extension to the authorization code flow designed for public clients (single-page apps, mobile apps) that cannot securely store a client secret. The client generates a random <code>code_verifier</code> and sends a derived <code>code_challenge</code> in the authorization request, then proves possession of the verifier when exchanging the code for tokens.</p>
 
 <button id="button_pkce_authorize" class="accordion">mock authorization endpoint with PKCE challenge</button>
 <div class="panel">
@@ -572,7 +572,7 @@
 
 <h2>Error Responses</h2>
 
-<p>Testing error scenarios is critical for building resilient OAuth2 integrations. The OAuth2 specification defines <a target="_blank" href="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2">standard error codes</a> that authorization servers return when requests fail.</p>
+<p>Testing error scenarios is critical for building resilient OAuth2 integrations. The OAuth2 specification defines <a target="_blank" href="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2" rel="noopener noreferrer">standard error codes</a> that authorization servers return when requests fail.</p>
 
 <button id="button_error_invalid_client" class="accordion">mock invalid client credentials error</button>
 <div class="panel">
