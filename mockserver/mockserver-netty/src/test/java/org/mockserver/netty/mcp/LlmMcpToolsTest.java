@@ -13,6 +13,9 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.ObjectMapperFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 
 import static org.hamcrest.CoreMatchers.*;
@@ -492,6 +495,59 @@ public class LlmMcpToolsTest {
         JsonNode result = toolRegistry.callTool("mock_llm_completion", params);
         assertThat(result.path("status").asText(), is("created"));
         assertThat(result.path("count").asInt(), is(1));
+    }
+
+    // --- VCR strict mode + replay normalisation ---
+
+    private Path writeFixture(String json) throws Exception {
+        Path file = Files.createTempFile("llm-fixture", ".json");
+        Files.write(file, json.getBytes(StandardCharsets.UTF_8));
+        return file;
+    }
+
+    @Test
+    public void shouldLoadFixturesInStrictMode() throws Exception {
+        Path file = writeFixture("[{\"httpRequest\":{\"method\":\"POST\",\"path\":\"/v1/messages\"}," +
+            "\"httpResponse\":{\"statusCode\":200,\"body\":\"ok\"}}]");
+        try {
+            ObjectNode params = objectMapper.createObjectNode();
+            params.put("path", file.toString());
+            params.put("strict", true);
+            JsonNode result = toolRegistry.callTool("load_expectations_from_file", params);
+            assertThat(result.path("status").asText(), is("loaded"));
+            assertThat(result.path("strict").asBoolean(), is(true));
+            assertThat(result.path("strictGuards").asInt(), is(1));
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    public void shouldLoadFixturesWithRequestBodyNormalization() throws Exception {
+        // body uses mixed-case Request_ID to exercise case-insensitive field dropping
+        Path file = writeFixture("[{\"httpRequest\":{\"method\":\"POST\",\"path\":\"/v1/messages\"," +
+            "\"body\":{\"type\":\"STRING\",\"string\":\"{\\\"Request_ID\\\":\\\"req_123\\\",\\\"q\\\":\\\"hi\\\"}\"}}," +
+            "\"httpResponse\":{\"statusCode\":200,\"body\":\"ok\"}}]");
+        try {
+            ObjectNode params = objectMapper.createObjectNode();
+            params.put("path", file.toString());
+            params.putArray("normalizeRequestBodyFields").add("request_id");
+            JsonNode result = toolRegistry.callTool("load_expectations_from_file", params);
+            assertThat(result.path("status").asText(), is("loaded"));
+            assertThat(result.path("count").asInt(), is(1));
+
+            // the registered matcher should have dropped the volatile request_id field
+            org.mockserver.model.HttpResponse active = httpState.retrieve(org.mockserver.model.HttpRequest.request()
+                .withMethod("PUT").withPath("/mockserver/retrieve")
+                .withQueryStringParameter("type", "ACTIVE_EXPECTATIONS")
+                .withQueryStringParameter("format", "JSON"));
+            String activeJson = active.getBodyAsString();
+            // case-insensitive drop: the mixed-case Request_ID field is gone, q is kept
+            assertThat(activeJson.toLowerCase().contains("request_id"), is(false));
+            assertThat(activeJson.contains("\"q\""), is(true));
+        } finally {
+            Files.deleteIfExists(file);
+        }
     }
 
     @Test

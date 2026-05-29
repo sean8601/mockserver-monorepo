@@ -307,4 +307,72 @@ public class FixtureRedactorTest {
         // then
         assertThat(redacted[0].getHttpResponse().getBodyAsString(), is("ok"));
     }
+
+    // --- Body field redaction ---
+
+    private final FixtureRedactor bodyRedactor = new FixtureRedactor(
+        Arrays.asList("Authorization"), Arrays.asList("api_key", "password"));
+
+    @Test
+    public void shouldRedactConfiguredJsonBodyFieldsInRequest() {
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api")
+                .withBody("{\"api_key\":\"sk-secret\",\"prompt\":\"hello\"}")
+        ).thenRespond(response().withStatusCode(200));
+
+        Expectation[] redacted = bodyRedactor.redact(new Expectation[]{expectation});
+
+        String body = requestOf(redacted[0]).getBodyAsString();
+        assertThat(body.contains("sk-secret"), is(false));
+        assertThat(body.contains(REDACTED_PLACEHOLDER), is(true));
+        assertThat(body.contains("hello"), is(true));
+    }
+
+    @Test
+    public void shouldRedactNestedJsonBodyFields() {
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api")
+                .withBody("{\"outer\":{\"password\":\"p@ss\",\"keep\":1}}")
+        ).thenRespond(response().withStatusCode(200));
+
+        Expectation[] redacted = bodyRedactor.redact(new Expectation[]{expectation});
+
+        String body = requestOf(redacted[0]).getBodyAsString();
+        assertThat(body.contains("p@ss"), is(false));
+        assertThat(body.contains(REDACTED_PLACEHOLDER), is(true));
+        assertThat(body.contains("keep"), is(true));
+    }
+
+    @Test
+    public void shouldRedactConfiguredJsonBodyFieldsInResponse() {
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api")
+        ).thenRespond(response().withStatusCode(200).withBody("{\"password\":\"secret\",\"ok\":true}"));
+
+        Expectation[] redacted = bodyRedactor.redact(new Expectation[]{expectation});
+
+        assertThat(redacted[0].getHttpResponse().getBodyAsString().contains("secret"), is(false));
+    }
+
+    @Test
+    public void shouldLeaveNonJsonBodyUnchangedWhenBodyRedactionConfigured() {
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api").withBody("not json api_key")
+        ).thenRespond(response().withStatusCode(200));
+
+        Expectation[] redacted = bodyRedactor.redact(new Expectation[]{expectation});
+
+        assertThat(requestOf(redacted[0]).getBodyAsString(), is("not json api_key"));
+    }
+
+    @Test
+    public void defaultRedactorDoesNotTouchBodies() {
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api").withBody("{\"api_key\":\"sk-secret\"}")
+        ).thenRespond(response().withStatusCode(200));
+
+        Expectation[] redacted = redactor.redact(new Expectation[]{expectation});
+
+        assertThat(requestOf(redacted[0]).getBodyAsString().contains("sk-secret"), is(true));
+    }
 }

@@ -8,9 +8,11 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.mockserver.client.LlmConversationBuilder;
 import org.mockserver.client.TurnBuilder;
 import org.mockserver.lifecycle.LifeCycle;
+import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.llm.IsolationSource;
 import org.mockserver.llm.ProviderCodecRegistry;
 import org.mockserver.llm.analysis.AgentRunAnalyzer;
+import org.mockserver.matchers.MatchType;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.MismatchRemediation;
@@ -1754,6 +1756,10 @@ public class McpToolRegistry {
             "Optional filter: only include recorded traffic whose request host matches this value");
         properties.putObject("requestPath").put("type", "string").put("description",
             "Optional filter: only include recorded traffic whose request path matches this value");
+        ObjectNode redactBodyFieldsProp = properties.putObject("redactBodyFields");
+        redactBodyFieldsProp.put("type", "array").put("description",
+            "Optional JSON field names whose values are redacted from request/response bodies (in addition to sensitive headers and the mockserver.fixtureBodyRedactFields config)");
+        redactBodyFieldsProp.putObject("items").put("type", "string");
         schema.putArray("required").add("path");
 
         tools.put("record_llm_fixtures", new ToolDefinition(
@@ -1761,9 +1767,10 @@ public class McpToolRegistry {
             "Snapshots LLM/MCP traffic recorded through MockServer's forwarding proxy into a committable, secret-free "
                 + "fixture file for deterministic replay. Converts recorded request-response pairs (including SSE streaming "
                 + "responses from APIs like Anthropic Claude, OpenAI, etc.) into MockServer expectations with secrets "
-                + "(Authorization, api-key, etc.) automatically redacted from headers. Note: request and response bodies "
-                + "are NOT redacted — if your application places credentials in bodies, review fixture files before "
-                + "committing. The output file uses MockServer's standard expectation JSON format and can be loaded "
+                + "(Authorization, api-key, etc.) automatically redacted from headers. JSON body fields are redacted too "
+                + "when named via redactBodyFields or the mockserver.fixtureBodyRedactFields config; otherwise bodies are "
+                + "left intact, so review fixtures before committing if your app puts credentials in bodies. "
+                + "The output file uses MockServer's standard expectation JSON format and can be loaded "
                 + "with load_expectations_from_file or via initializationJsonPath.",
             schema,
             this::handleRecordLlmFixtures
@@ -1835,8 +1842,19 @@ public class McpToolRegistry {
             SseAwareExpectationConverter sseConverter = new SseAwareExpectationConverter();
             Expectation[] sseAwareExpectations = sseConverter.convert(recordedExpectations);
 
-            // Redact sensitive headers
-            FixtureRedactor redactor = new FixtureRedactor();
+            // Redact sensitive headers, plus any configured/requested JSON body fields
+            List<String> bodyFields = new ArrayList<>(splitCsv(ConfigurationProperties.fixtureBodyRedactFields()));
+            JsonNode redactBodyFieldsNode = params.path("redactBodyFields");
+            if (redactBodyFieldsNode.isArray()) {
+                for (JsonNode f : redactBodyFieldsNode) {
+                    if (f.isTextual() && !f.asText().isEmpty()) {
+                        bodyFields.add(f.asText());
+                    }
+                }
+            }
+            FixtureRedactor redactor = bodyFields.isEmpty()
+                ? new FixtureRedactor()
+                : new FixtureRedactor(FixtureRedactor.defaultSensitiveHeaders(), bodyFields);
             Expectation[] redactedExpectations = redactor.redact(sseAwareExpectations);
 
             // Serialize to the fixture file
@@ -1861,6 +1879,12 @@ public class McpToolRegistry {
         ObjectNode properties = schema.putObject("properties");
         properties.putObject("path").put("type", "string").put("description",
             "File path to the fixture JSON file to load. Must be a valid MockServer expectations JSON file.");
+        properties.putObject("strict").put("type", "boolean").put("description",
+            "Strict VCR mode: register a low-priority catch-all per cassette path so a request matching no recorded entry returns HTTP 599 instead of falling through. Defaults to the mockserver.llmVcrStrict config.");
+        ObjectNode normalizeFieldsProp = properties.putObject("normalizeRequestBodyFields");
+        normalizeFieldsProp.put("type", "array").put("description",
+            "Optional JSON field names to drop from each recorded request body on load, matching the remaining fields loosely (ignoring extra fields), so volatile values do not block replay.");
+        normalizeFieldsProp.putObject("items").put("type", "string");
         schema.putArray("required").add("path");
 
         tools.put("load_expectations_from_file", new ToolDefinition(
@@ -1915,22 +1939,79 @@ public class McpToolRegistry {
                 return resultNode;
             }
 
+            // Optional replay normalisation: drop volatile JSON fields from each
+            // recorded request body and match the rest loosely (ignore extra fields).
+            List<String> normalizeFields = new ArrayList<>();
+            JsonNode normalizeFieldsNode = params.path("normalizeRequestBodyFields");
+            if (normalizeFieldsNode.isArray()) {
+                for (JsonNode f : normalizeFieldsNode) {
+                    if (f.isTextual() && !f.asText().isEmpty()) {
+                        normalizeFields.add(f.asText());
+                    }
+                }
+            }
+            if (!normalizeFields.isEmpty()) {
+                for (Expectation exp : expectations) {
+                    relaxRequestBodyForReplay(exp, normalizeFields);
+                }
+            }
+
             // Add expectations with unlimited times and TTL for replay
             List<Expectation> addedExpectations = new ArrayList<>();
             for (Expectation exp : expectations) {
                 addedExpectations.addAll(httpState.add(exp));
             }
 
+            // Strict VCR mode: register a low-priority catch-all per distinct path so a
+            // request matching no recorded entry fails loudly rather than falling through.
+            boolean strict = params.path("strict").isBoolean()
+                ? params.path("strict").asBoolean()
+                : ConfigurationProperties.llmVcrStrict();
+            int strictGuards = 0;
+            if (strict) {
+                Set<String> paths = new LinkedHashSet<>();
+                for (Expectation exp : expectations) {
+                    if (exp.getHttpRequest() instanceof HttpRequest) {
+                        HttpRequest req = (HttpRequest) exp.getHttpRequest();
+                        if (req.getPath() != null && req.getPath().getValue() != null) {
+                            paths.add(req.getPath().getValue());
+                        }
+                    }
+                }
+                for (String path : paths) {
+                    // Build the body via the mapper so a path with JSON-special characters
+                    // cannot produce malformed JSON.
+                    String guardBody = objectMapper.createObjectNode()
+                        .put("error", "strict VCR: no recorded fixture matched this request on path " + path)
+                        .toString();
+                    // Stable per-path id so re-loading upserts the same guard rather than
+                    // accumulating duplicates across repeated load calls.
+                    Expectation guard = Expectation.when(request().withPath(path), Integer.MIN_VALUE)
+                        .withId("__llm_vcr_strict__" + path)
+                        .thenRespond(HttpResponse.response()
+                            .withStatusCode(599)
+                            .withHeader("content-type", "application/json")
+                            .withBody(guardBody));
+                    httpState.add(guard);
+                    strictGuards++;
+                }
+            }
+
             ObjectNode resultNode = objectMapper.createObjectNode();
             resultNode.put("status", "loaded");
             resultNode.put("count", addedExpectations.size());
             resultNode.put("file", inputPath.toString());
+            resultNode.put("strict", strict);
+            if (strictGuards > 0) {
+                resultNode.put("strictGuards", strictGuards);
+            }
             ArrayNode ids = resultNode.putArray("ids");
             for (Expectation exp : addedExpectations) {
                 ids.add(exp.getId());
             }
             resultNode.put("message", "Loaded " + addedExpectations.size() + " expectation(s) from " + inputPath
-                + ". They are now active and will match incoming requests.");
+                + ". They are now active and will match incoming requests."
+                + (strict ? " Strict VCR mode is on (" + strictGuards + " catch-all guard(s))." : ""));
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to load expectations from file", e);
@@ -2633,6 +2714,64 @@ public class McpToolRegistry {
 
     private static String emptyToNull(String value) {
         return value == null || value.isEmpty() ? null : value;
+    }
+
+    private static List<String> splitCsv(String csv) {
+        List<String> result = new ArrayList<>();
+        if (csv != null && !csv.trim().isEmpty()) {
+            for (String part : csv.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    result.add(trimmed);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Replay normalisation: if the expectation's request has a JSON body, drop the
+     * named (volatile) fields and match the remainder loosely (extra fields in the
+     * incoming request are ignored), so volatile values do not block replay.
+     */
+    private void relaxRequestBodyForReplay(Expectation expectation, List<String> dropFields) {
+        if (!(expectation.getHttpRequest() instanceof HttpRequest)) {
+            return;
+        }
+        HttpRequest request = (HttpRequest) expectation.getHttpRequest();
+        String bodyString = request.getBodyAsString();
+        if (bodyString == null || bodyString.isEmpty()) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(bodyString);
+            if (root != null && (root.isObject() || root.isArray())) {
+                Set<String> dropSet = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+                dropSet.addAll(dropFields);
+                removeFieldsRecursively(root, dropSet);
+                request.withBody(org.mockserver.model.JsonBody.json(objectMapper.writeValueAsString(root), MatchType.ONLY_MATCHING_FIELDS));
+            }
+        } catch (Exception e) {
+            // not JSON — leave the body matcher unchanged
+        }
+    }
+
+    private void removeFieldsRecursively(JsonNode node, Set<String> dropFields) {
+        if (node.isObject()) {
+            ObjectNode object = (ObjectNode) node;
+            List<String> toRemove = new ArrayList<>();
+            object.fieldNames().forEachRemaining(name -> {
+                if (dropFields.contains(name)) {
+                    toRemove.add(name);
+                }
+            });
+            toRemove.forEach(object::remove);
+            object.fields().forEachRemaining(e -> removeFieldsRecursively(e.getValue(), dropFields));
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                removeFieldsRecursively(child, dropFields);
+            }
+        }
     }
 
     /**

@@ -91,6 +91,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_BASE_URL = "mockserver.llmBaseUrl";
     private static final String MOCKSERVER_LLM_BACKENDS_CONFIG = "mockserver.llmBackendsConfig";
     private static final String MOCKSERVER_LLM_REQUEST_TIMEOUT_MILLIS = "mockserver.llmRequestTimeoutMillis";
+    private static final String MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS = "mockserver.fixtureBodyRedactFields";
+    private static final String MOCKSERVER_LLM_VCR_STRICT = "mockserver.llmVcrStrict";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
     private static final String MOCKSERVER_HTTP2_ENABLED = "mockserver.http2Enabled";
@@ -1038,6 +1040,32 @@ public class ConfigurationProperties {
 
     public static void llmRequestTimeoutMillis(long millis) {
         setProperty(MOCKSERVER_LLM_REQUEST_TIMEOUT_MILLIS, "" + millis);
+    }
+
+    /**
+     * Comma-separated JSON field names whose values are redacted from recorded
+     * fixture request/response bodies (in addition to the always-redacted
+     * sensitive headers). Empty by default. Used by {@code record_llm_fixtures}.
+     */
+    public static String fixtureBodyRedactFields() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS, "MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS", "");
+    }
+
+    public static void fixtureBodyRedactFields(String fields) {
+        setProperty(MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS, fields);
+    }
+
+    /**
+     * When true, loading LLM fixtures in strict VCR mode registers a low-priority
+     * catch-all per cassette path so a request that matches no recorded entry
+     * fails loudly (HTTP 599) instead of falling through. Default false.
+     */
+    public static boolean llmVcrStrict() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_LLM_VCR_STRICT, "MOCKSERVER_LLM_VCR_STRICT", "" + false));
+    }
+
+    public static void llmVcrStrict(boolean strict) {
+        setProperty(MOCKSERVER_LLM_VCR_STRICT, "" + strict);
     }
 
     public static long regexMatchingTimeoutMillis() {

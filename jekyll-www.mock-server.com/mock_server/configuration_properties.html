@@ -863,6 +863,31 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmProvider="OPENAI" -Dmockserver.llmApiKey="sk-..."</code></pre>
 </div>
 
+<button id="button_configuration_llm_vcr" class="accordion title"><strong>LLM Fixture (VCR) Recording &amp; Replay</strong></button>
+<div class="panel title">
+    <p>Controls for recording LLM/MCP traffic to committable fixture files and replaying it deterministically (see the <a href="/mock_server/ai_mcp_tools.html"><code>record_llm_fixtures</code> and <code>load_expectations_from_file</code></a> MCP tools).</p>
+    <p><strong>Body field redaction</strong> &mdash; comma-separated JSON field names whose values are redacted from recorded request/response bodies, in addition to the always-redacted sensitive headers. Empty by default.</p>
+    <p>Type: <span class="keyword">String</span> Default: <span class="this_value">unset</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.fixtureBodyRedactFields(String commaSeparatedFields)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.fixtureBodyRedactFields=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.fixtureBodyRedactFields="api_key,password,token"</code></pre>
+    <p><strong>Strict VCR mode</strong> &mdash; when <code>true</code>, loading a fixture registers a low-priority catch-all per cassette path so a request matching no recorded entry returns HTTP <code>599</code> rather than falling through. Useful for catching un-recorded calls in tests. Default <code>false</code> (can also be set per call via the <code>load_expectations_from_file</code> <code>strict</code> parameter).</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmVcrStrict(boolean strict)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmVcrStrict=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_LLM_VCR_STRICT=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmVcrStrict="true"</code></pre>
+</div>
+
 <button id="button_configuration_stream_idle_timeout_seconds" class="accordion title"><strong>Streaming Response Idle Timeout</strong></button>
 <div class="panel title">
     <p>The maximum time in seconds a streaming response connection may be idle (no chunk received from the upstream server) before MockServer closes it and logs the captured portion as truncated. This replaces the fixed global socket timeout for streaming responses, which would otherwise terminate long-lived LLM completions. The timeout resets on every chunk received, so a slow-but-active stream is never cut off prematurely.</p>

@@ -300,11 +300,22 @@ Adding a provider = implement `LlmClient` + one `register(...)` line — the sam
 
 This SPI is never on the deterministic assertion/matching path. The features that consume it (drift detection, semantic matching) are tracked in `docs/plans/mockserver-llm-mocking.md`.
 
+## VCR (record / replay)
+
+LLM/MCP traffic forwarded through MockServer can be snapshotted to committable fixture files and replayed deterministically:
+
+- **Record** — `record_llm_fixtures` (MCP) converts recorded request/response pairs (including SSE) into expectations via `SseAwareExpectationConverter`, then `FixtureRedactor` masks sensitive **headers** and — when `redactBodyFields` / `mockserver.fixtureBodyRedactFields` is set — named **JSON body fields** (recursively, value → `***REDACTED***`).
+- **Replay** — `load_expectations_from_file` (MCP) loads the fixture as active expectations. Two replay aids: **strict mode** (`strict` param or `mockserver.llmVcrStrict`) registers a lowest-priority (`Integer.MIN_VALUE`) catch-all per cassette path returning HTTP 599 so an unmatched request fails loudly; **replay normalisation** (`normalizeRequestBodyFields`) drops volatile JSON fields from each recorded request body and rewrites the matcher to `JsonBody` with `MatchType.ONLY_MATCHING_FIELDS`, so per-run values do not block the match.
+
+These are operational settings (config + MCP, for CI/automation), not dashboard controls.
+
 ## Configuration
 
 | Property | Default | Range | Description |
 |----------|---------|-------|-------------|
 | `mockserver.maxLlmConversationBodySize` | `1048576` (1 MiB) | 16384 - 67108864 | Maximum request body size for conversation matcher parsing |
+| `mockserver.fixtureBodyRedactFields` | _(unset)_ | — | Comma-separated JSON field names redacted from recorded fixture bodies |
+| `mockserver.llmVcrStrict` | `false` | — | Strict VCR mode: unmatched requests on a cassette path return HTTP 599 |
 | `mockserver.llmProvider` | _(unset)_ | — | Default runtime-LLM backend provider (enables runtime-LLM features) |
 | `mockserver.llmApiKey` | _(unset)_ | — | API key for the default backend (secret; redacted in logs) |
 | `mockserver.llmModel` | _(provider default)_ | — | Model for the default backend |
@@ -358,3 +369,4 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/analysis/AgentRunAnalyzer.java` | Deterministic read-only agent-run inspection (tool-call counts, run summary) |
 | `model/LlmChaosProfile.java` | Fault/chaos profile carried on `HttpLlmResponse` |
 | `mock/action/http/HttpLlmResponseActionHandler.java` | Encodes LLM responses and applies chaos (error / truncation / malformed SSE) |
+| `fixture/FixtureRedactor.java` | Masks sensitive headers and (optional) JSON body fields when recording fixtures |

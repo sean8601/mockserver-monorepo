@@ -1,9 +1,13 @@
 package org.mockserver.fixture;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
 import org.mockserver.model.*;
+import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.util.*;
 
@@ -31,23 +35,56 @@ public class FixtureRedactor {
         DEFAULT_SENSITIVE_HEADERS.add("Proxy-Authorization");
     }
 
-    private final Set<String> sensitiveHeaders;
+    private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
 
     /**
-     * Create a redactor with the default sensitive header list.
+     * The default sensitive header names (case-insensitive), as an unmodifiable
+     * set, so callers can reuse them when constructing a redactor with additional
+     * body fields without re-declaring the list.
+     */
+    public static Set<String> defaultSensitiveHeaders() {
+        return Collections.unmodifiableSet(DEFAULT_SENSITIVE_HEADERS);
+    }
+
+    private final Set<String> sensitiveHeaders;
+    private final Set<String> sensitiveBodyFields;
+
+    /**
+     * Create a redactor with the default sensitive header list and no body-field
+     * redaction.
      */
     public FixtureRedactor() {
         this.sensitiveHeaders = DEFAULT_SENSITIVE_HEADERS;
+        this.sensitiveBodyFields = Collections.emptySet();
     }
 
     /**
-     * Create a redactor with a custom sensitive header list.
+     * Create a redactor with a custom sensitive header list and no body-field
+     * redaction.
      *
      * @param sensitiveHeaders header names to redact (case-insensitive)
      */
     public FixtureRedactor(Collection<String> sensitiveHeaders) {
+        this(sensitiveHeaders, Collections.emptyList());
+    }
+
+    /**
+     * Create a redactor with custom sensitive headers and JSON body field names.
+     * Body fields are matched case-insensitively at any depth of a JSON
+     * request/response body; their values are replaced with the placeholder.
+     *
+     * @param sensitiveHeaders    header names to redact (case-insensitive)
+     * @param sensitiveBodyFields JSON field names to redact in bodies (case-insensitive)
+     */
+    public FixtureRedactor(Collection<String> sensitiveHeaders, Collection<String> sensitiveBodyFields) {
         this.sensitiveHeaders = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        this.sensitiveHeaders.addAll(sensitiveHeaders);
+        if (sensitiveHeaders != null) {
+            this.sensitiveHeaders.addAll(sensitiveHeaders);
+        }
+        this.sensitiveBodyFields = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        if (sensitiveBodyFields != null) {
+            this.sensitiveBodyFields.addAll(sensitiveBodyFields);
+        }
     }
 
     /**
@@ -114,6 +151,7 @@ public class FixtureRedactor {
             }
             redacted.withHeaders(headers);
         }
+        redactBodyIfNeeded(redacted.getBodyAsString(), redacted::withBody);
         return redacted;
     }
 
@@ -131,7 +169,60 @@ public class FixtureRedactor {
             }
             redacted.withHeaders(headers);
         }
+        redactBodyIfNeeded(redacted.getBodyAsString(), redacted::withBody);
         return redacted;
+    }
+
+    /**
+     * If body-field redaction is configured and {@code bodyString} is JSON,
+     * redact matching fields and apply the result via {@code setter}. No-op for
+     * absent/non-JSON bodies or when no body fields are configured.
+     * <p>
+     * Note: the redacted body is re-applied as a string body. For recorded
+     * fixtures (captured traffic) bodies are already string bodies, so this does
+     * not change match semantics. SSE event-data payloads are out of scope —
+     * only request/response bodies are redacted, not individual stream chunks.
+     */
+    private void redactBodyIfNeeded(String bodyString, java.util.function.Consumer<String> setter) {
+        if (sensitiveBodyFields.isEmpty() || bodyString == null || bodyString.isEmpty()) {
+            return;
+        }
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(bodyString);
+            if (root != null && (root.isObject() || root.isArray())) {
+                redactJsonNode(root);
+                setter.accept(OBJECT_MAPPER.writeValueAsString(root));
+            }
+        } catch (Exception e) {
+            // not JSON — leave the body unchanged (headers were already redacted)
+        }
+    }
+
+    /**
+     * Recursively replace the value of any field whose name is in
+     * {@link #sensitiveBodyFields} with the placeholder.
+     */
+    private void redactJsonNode(JsonNode node) {
+        if (node.isObject()) {
+            ObjectNode object = (ObjectNode) node;
+            Iterator<String> names = object.fieldNames();
+            List<String> toRedact = new ArrayList<>();
+            while (names.hasNext()) {
+                String name = names.next();
+                if (sensitiveBodyFields.contains(name)) {
+                    toRedact.add(name);
+                } else {
+                    redactJsonNode(object.get(name));
+                }
+            }
+            for (String name : toRedact) {
+                object.put(name, REDACTED_PLACEHOLDER);
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                redactJsonNode(child);
+            }
+        }
     }
 
     private HttpSseResponse redactSseResponse(HttpSseResponse sseResponse) {

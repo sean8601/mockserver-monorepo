@@ -807,6 +807,7 @@ sitemap:
         <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>File path to write the fixture JSON to. The directory must exist.</td></tr>
         <tr><td><code>host</code></td><td>string</td><td>No</td><td>Only include recorded traffic whose request host matches this value</td></tr>
         <tr><td><code>requestPath</code></td><td>string</td><td>No</td><td>Only include recorded traffic whose request path matches this value</td></tr>
+        <tr><td><code>redactBodyFields</code></td><td>array of string</td><td>No</td><td>JSON field names whose values are redacted from recorded request/response bodies (in addition to sensitive headers and the <code>mockserver.fixtureBodyRedactFields</code> config). Non-JSON bodies are left intact.</td></tr>
     </tbody>
 </table>
 
@@ -853,6 +854,8 @@ sitemap:
     </thead>
     <tbody>
         <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>File path to the fixture JSON file to load. Must contain expectations in MockServer's standard JSON format.</td></tr>
+        <tr><td><code>strict</code></td><td>boolean</td><td>No</td><td>Strict VCR mode: register a low-priority catch-all per cassette path so a request matching no recorded fixture returns HTTP <code>599</code> instead of falling through. Defaults to the <code>mockserver.llmVcrStrict</code> config.</td></tr>
+        <tr><td><code>normalizeRequestBodyFields</code></td><td>array of string</td><td>No</td><td>JSON field names to drop from each recorded request body on load; the remaining fields are matched loosely (extra fields in the incoming request are ignored), so volatile per-run values do not block replay.</td></tr>
     </tbody>
 </table>
 
