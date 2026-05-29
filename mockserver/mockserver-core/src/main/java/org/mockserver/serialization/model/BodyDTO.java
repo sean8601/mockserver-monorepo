@@ -28,44 +28,31 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
     public static BodyDTO createDTO(Body<?> body) {
         BodyDTO result = null;
 
-        if (body instanceof BinaryBody) {
-            BinaryBody binaryBody = (BinaryBody) body;
+        if (body instanceof BinaryBody binaryBody) {
             result = new BinaryBodyDTO(binaryBody, binaryBody.getNot());
-        } else if (body instanceof JsonBody) {
-            JsonBody jsonBody = (JsonBody) body;
+        } else if (body instanceof JsonBody jsonBody) {
             result = new JsonBodyDTO(jsonBody, jsonBody.getNot());
-        } else if (body instanceof JsonSchemaBody) {
-            JsonSchemaBody jsonSchemaBody = (JsonSchemaBody) body;
+        } else if (body instanceof JsonSchemaBody jsonSchemaBody) {
             result = new JsonSchemaBodyDTO(jsonSchemaBody, jsonSchemaBody.getNot());
-        } else if (body instanceof JsonPathBody) {
-            JsonPathBody jsonPathBody = (JsonPathBody) body;
+        } else if (body instanceof JsonPathBody jsonPathBody) {
             result = new JsonPathBodyDTO(jsonPathBody, jsonPathBody.getNot());
-        } else if (body instanceof ParameterBody) {
-            ParameterBody parameterBody = (ParameterBody) body;
+        } else if (body instanceof ParameterBody parameterBody) {
             result = new ParameterBodyDTO(parameterBody, parameterBody.getNot());
-        } else if (body instanceof RegexBody) {
-            RegexBody regexBody = (RegexBody) body;
+        } else if (body instanceof RegexBody regexBody) {
             result = new RegexBodyDTO(regexBody, regexBody.getNot());
-        } else if (body instanceof StringBody) {
-            StringBody stringBody = (StringBody) body;
+        } else if (body instanceof StringBody stringBody) {
             result = new StringBodyDTO(stringBody, stringBody.getNot());
-        } else if (body instanceof XmlBody) {
-            XmlBody xmlBody = (XmlBody) body;
+        } else if (body instanceof XmlBody xmlBody) {
             result = new XmlBodyDTO(xmlBody, xmlBody.getNot());
-        } else if (body instanceof XmlSchemaBody) {
-            XmlSchemaBody xmlSchemaBody = (XmlSchemaBody) body;
+        } else if (body instanceof XmlSchemaBody xmlSchemaBody) {
             result = new XmlSchemaBodyDTO(xmlSchemaBody, xmlSchemaBody.getNot());
-        } else if (body instanceof XPathBody) {
-            XPathBody xPathBody = (XPathBody) body;
+        } else if (body instanceof XPathBody xPathBody) {
             result = new XPathBodyDTO(xPathBody, xPathBody.getNot());
-        } else if (body instanceof JsonRpcBody) {
-            JsonRpcBody jsonRpcBody = (JsonRpcBody) body;
+        } else if (body instanceof JsonRpcBody jsonRpcBody) {
             result = new JsonRpcBodyDTO(jsonRpcBody, jsonRpcBody.getNot());
-        } else if (body instanceof GraphQLBody) {
-            GraphQLBody graphQLBody = (GraphQLBody) body;
+        } else if (body instanceof GraphQLBody graphQLBody) {
             result = new GraphQLBodyDTO(graphQLBody, graphQLBody.getNot());
-        } else if (body instanceof FileBody) {
-            FileBody fileBody = (FileBody) body;
+        } else if (body instanceof FileBody fileBody) {
             result = new FileBodyDTO(fileBody, fileBody.getNot());
         }
 
@@ -77,17 +64,17 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
     }
 
     public static String toString(BodyDTO body) {
-        if (body instanceof BinaryBodyDTO) {
-            return Base64.encodeBase64String(((BinaryBodyDTO) body).getBase64Bytes());
-        } else if (body instanceof JsonBodyDTO) {
-            return ((JsonBodyDTO) body).getJson();
-        } else if (body instanceof JsonSchemaBodyDTO) {
-            return ((JsonSchemaBodyDTO) body).getJson();
-        } else if (body instanceof JsonPathBodyDTO) {
-            return ((JsonPathBodyDTO) body).getJsonPath();
-        } else if (body instanceof ParameterBodyDTO) {
+        if (body instanceof BinaryBodyDTO binaryBodyDTO) {
+            return Base64.encodeBase64String(binaryBodyDTO.getBase64Bytes());
+        } else if (body instanceof JsonBodyDTO jsonBodyDTO) {
+            return jsonBodyDTO.getJson();
+        } else if (body instanceof JsonSchemaBodyDTO jsonSchemaBodyDTO) {
+            return jsonSchemaBodyDTO.getJson();
+        } else if (body instanceof JsonPathBodyDTO jsonPathBodyDTO) {
+            return jsonPathBodyDTO.getJsonPath();
+        } else if (body instanceof ParameterBodyDTO parameterBodyDTO) {
             try {
-                return OBJECT_MAPPER.writeValueAsString(((ParameterBodyDTO) body).getParameters().getMultimap().asMap());
+                return OBJECT_MAPPER.writeValueAsString(parameterBodyDTO.getParameters().getMultimap().asMap());
             } catch (Throwable throwable) {
                 MOCK_SERVER_LOGGER
                     .logEvent(
@@ -98,22 +85,22 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
                     );
                 return "";
             }
-        } else if (body instanceof RegexBodyDTO) {
-            return ((RegexBodyDTO) body).getRegex();
-        } else if (body instanceof StringBodyDTO) {
-            return ((StringBodyDTO) body).getString();
-        } else if (body instanceof XmlBodyDTO) {
-            return ((XmlBodyDTO) body).getXml();
-        } else if (body instanceof XmlSchemaBodyDTO) {
-            return ((XmlSchemaBodyDTO) body).getXml();
-        } else if (body instanceof XPathBodyDTO) {
-            return ((XPathBodyDTO) body).getXPath();
-        } else if (body instanceof JsonRpcBodyDTO) {
-            return ((JsonRpcBodyDTO) body).getMethod();
-        } else if (body instanceof GraphQLBodyDTO) {
-            return ((GraphQLBodyDTO) body).getQuery();
-        } else if (body instanceof FileBodyDTO) {
-            return ((FileBodyDTO) body).getFilePath();
+        } else if (body instanceof RegexBodyDTO regexBodyDTO) {
+            return regexBodyDTO.getRegex();
+        } else if (body instanceof StringBodyDTO stringBodyDTO) {
+            return stringBodyDTO.getString();
+        } else if (body instanceof XmlBodyDTO xmlBodyDTO) {
+            return xmlBodyDTO.getXml();
+        } else if (body instanceof XmlSchemaBodyDTO xmlSchemaBodyDTO) {
+            return xmlSchemaBodyDTO.getXml();
+        } else if (body instanceof XPathBodyDTO xPathBodyDTO) {
+            return xPathBodyDTO.getXPath();
+        } else if (body instanceof JsonRpcBodyDTO jsonRpcBodyDTO) {
+            return jsonRpcBodyDTO.getMethod();
+        } else if (body instanceof GraphQLBodyDTO graphQLBodyDTO) {
+            return graphQLBodyDTO.getQuery();
+        } else if (body instanceof FileBodyDTO fileBodyDTO) {
+            return fileBodyDTO.getFilePath();
         }
 
         return "";

@@ -69,8 +69,8 @@ public class OpenAPIConverter {
                 String exampleName = null;
                 if (operationsAndResponses != null) {
                     Object value = operationsAndResponses.get(operation.getOperationId());
-                    if (value instanceof String) {
-                        apiResponseKey = (String) value;
+                    if (value instanceof String stringValue) {
+                        apiResponseKey = stringValue;
                     } else if (value instanceof Map) {
                         @SuppressWarnings("unchecked")
                         Map<String, Object> richValue = (Map<String, Object>) value;
@@ -194,8 +194,8 @@ public class OpenAPIConverter {
                                 response.withHeader(entry.getKey(), String.valueOf(headerExample));
                             } else if (value.getSchema() != null) {
                                 org.mockserver.openapi.examples.models.Example generatedExample = ExampleBuilder.fromSchema(value.getSchema(), openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null);
-                                if (generatedExample instanceof StringExample) {
-                                    response.withHeader(entry.getKey(), ((StringExample) generatedExample).getValue());
+                                if (generatedExample instanceof StringExample stringExample) {
+                                    response.withHeader(entry.getKey(), stringExample.getValue());
                                 } else {
                                     response.withHeader(entry.getKey(), serialise(generatedExample));
                                 }
@@ -231,11 +231,11 @@ public class OpenAPIConverter {
                                         }
                                     } else {
                                         org.mockserver.openapi.examples.models.Example generatedExample = ExampleBuilder.fromSchema(mediaType.getSchema(), openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null);
-                                        if (generatedExample instanceof StringExample) {
+                                        if (generatedExample instanceof StringExample stringExample) {
                                             if (isJsonContentType(contentType.getKey())) {
-                                                response.withBody(json(serialise(((StringExample) generatedExample).getValue())));
+                                                response.withBody(json(serialise(stringExample.getValue())));
                                             } else {
-                                                response.withBody(((StringExample) generatedExample).getValue());
+                                                response.withBody(stringExample.getValue());
                                             }
                                         } else if (generatedExample != null) {
                                             String serialise = serialise(generatedExample);
@@ -267,8 +267,7 @@ public class OpenAPIConverter {
             if (schema.getExample() != null) {
                 return resolveExampleRefs(schema.getExample(), openAPI);
             }
-            if (schema instanceof ComposedSchema) {
-                ComposedSchema composedSchema = (ComposedSchema) schema;
+            if (schema instanceof ComposedSchema composedSchema) {
                 if (composedSchema.getAllOf() != null) {
                     Map<String, Object> merged = new LinkedHashMap<>();
                     for (Schema<?> subSchema : composedSchema.getAllOf()) {
@@ -318,8 +317,7 @@ public class OpenAPIConverter {
                 }
                 return result.isEmpty() ? null : result;
             }
-            if (schema instanceof io.swagger.v3.oas.models.media.ArraySchema) {
-                io.swagger.v3.oas.models.media.ArraySchema arraySchema = (io.swagger.v3.oas.models.media.ArraySchema) schema;
+            if (schema instanceof io.swagger.v3.oas.models.media.ArraySchema arraySchema) {
                 if (arraySchema.getItems() != null) {
                     Object itemExample = resolveSchemaExample(arraySchema.getItems(), openAPI, activeStack);
                     if (itemExample != null) {
@@ -345,9 +343,9 @@ public class OpenAPIConverter {
                 return resolved != null ? resolved : example.getValue();
             }
         }
-        if (value.getExample() instanceof Example) {
-            Object resolved = resolveExampleRefs(((Example) value.getExample()).getValue(), openAPI);
-            return resolved != null ? resolved : ((Example) value.getExample()).getValue();
+        if (value.getExample() instanceof Example exampleObj) {
+            Object resolved = resolveExampleRefs(exampleObj.getValue(), openAPI);
+            return resolved != null ? resolved : exampleObj.getValue();
         } else if (value.getExample() != null) {
             return resolveExampleRefs(value.getExample(), openAPI);
         } else if (value.getExamples() != null && !value.getExamples().isEmpty()) {
@@ -369,8 +367,8 @@ public class OpenAPIConverter {
             }
         } else if (mediaType.getExample() != null) {
             Object raw = mediaType.getExample();
-            if (raw instanceof Example) {
-                example = ((Example) raw).getValue();
+            if (raw instanceof Example rawExample) {
+                example = rawExample.getValue();
             } else {
                 example = raw;
             }
@@ -396,8 +394,7 @@ public class OpenAPIConverter {
         if (structureDepth > MAX_STRUCTURE_DEPTH) {
             return value;
         }
-        if (value instanceof ObjectNode) {
-            ObjectNode node = (ObjectNode) value;
+        if (value instanceof ObjectNode node) {
             if (node.size() == 1 && node.has("$ref")) {
                 String ref = node.get("$ref").asText();
                 if (activeRefChain.contains(ref)) {
@@ -436,8 +433,7 @@ public class OpenAPIConverter {
                 }
             });
             return resolvedNode;
-        } else if (value instanceof ArrayNode) {
-            ArrayNode node = (ArrayNode) value;
+        } else if (value instanceof ArrayNode node) {
             ArrayNode resolvedNode = node.arrayNode();
             for (JsonNode item : node) {
                 Object resolvedItem = resolveExampleRefs(item, openAPI, activeRefChain, refDepth, structureDepth + 1);

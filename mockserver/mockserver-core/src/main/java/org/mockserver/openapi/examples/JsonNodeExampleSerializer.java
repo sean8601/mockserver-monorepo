@@ -32,13 +32,11 @@ public class JsonNodeExampleSerializer extends JsonSerializer<Example> {
     @Override
     public void serialize(Example value, JsonGenerator jsonGenerator, SerializerProvider provider) throws IOException {
 
-        if (value instanceof ObjectExample) {
-            ObjectExample obj = (ObjectExample) value;
+        if (value instanceof ObjectExample obj) {
             jsonGenerator.writeStartObject();
             writeTo(jsonGenerator, obj);
             jsonGenerator.writeEndObject();
-        } else if (value instanceof ArrayExample) {
-            ArrayExample obj = (ArrayExample) value;
+        } else if (value instanceof ArrayExample obj) {
             jsonGenerator.writeStartArray();
             for (Example item : obj.getItems()) {
                 if (item instanceof ObjectExample) {
@@ -56,15 +54,14 @@ public class JsonNodeExampleSerializer extends JsonSerializer<Example> {
     }
 
     public void writeTo(JsonGenerator jsonGenerator, Example o) throws IOException {
-        if (o instanceof ObjectExample) {
-            ObjectExample obj = (ObjectExample) o;
+        if (o instanceof ObjectExample obj) {
             for (String key : obj.keySet()) {
                 Example value = (Example) obj.get(key);
                 writeValue(jsonGenerator, key, value);
             }
-        } else if (o instanceof ArrayExample) {
+        } else if (o instanceof ArrayExample arrayExample) {
             jsonGenerator.writeStartArray();
-            List<Example> items = ((ArrayExample) o).getItems();
+            List<Example> items = arrayExample.getItems();
             for (Example item : items) {
                 serialize(item, jsonGenerator, null);
             }
@@ -75,8 +72,7 @@ public class JsonNodeExampleSerializer extends JsonSerializer<Example> {
     }
 
     public void writeValue(JsonGenerator jsonGenerator, String field, Example o) throws IOException {
-        if (o instanceof ArrayExample) {
-            ArrayExample obj = (ArrayExample) o;
+        if (o instanceof ArrayExample obj) {
             jsonGenerator.writeArrayFieldStart(field);
             for (Example item : obj.getItems()) {
                 if (item instanceof ObjectExample) {
@@ -88,63 +84,54 @@ public class JsonNodeExampleSerializer extends JsonSerializer<Example> {
                 }
             }
             jsonGenerator.writeEndArray();
-        } else if (o instanceof BooleanExample) {
-            BooleanExample obj = (BooleanExample) o;
+        } else if (o instanceof BooleanExample obj) {
             if (field != null) {
                 jsonGenerator.writeBooleanField(field, obj.getValue());
             } else {
                 jsonGenerator.writeBoolean(obj.getValue());
             }
-        } else if (o instanceof DecimalExample) {
-            DecimalExample obj = (DecimalExample) o;
+        } else if (o instanceof DecimalExample obj) {
             if (field != null) {
                 jsonGenerator.writeNumberField(field, obj.getValue());
             } else {
                 jsonGenerator.writeNumber(obj.getValue());
             }
-        } else if (o instanceof BigIntegerExample) {
-            BigIntegerExample obj = (BigIntegerExample) o;
+        } else if (o instanceof BigIntegerExample obj) {
             if (field != null) {
                 jsonGenerator.writeFieldName(field);
                 jsonGenerator.writeNumber(obj.getValue());
             } else {
                 jsonGenerator.writeNumber(obj.getValue());
             }
-        } else if (o instanceof DoubleExample) {
-            DoubleExample obj = (DoubleExample) o;
+        } else if (o instanceof DoubleExample obj) {
             if (field != null) {
                 jsonGenerator.writeNumberField(field, obj.getValue());
             } else {
                 jsonGenerator.writeNumber(obj.getValue());
             }
-        } else if (o instanceof FloatExample) {
-            FloatExample obj = (FloatExample) o;
+        } else if (o instanceof FloatExample obj) {
             if (field != null) {
                 jsonGenerator.writeNumberField(field, obj.getValue());
             } else {
                 jsonGenerator.writeNumber(obj.getValue());
             }
-        } else if (o instanceof IntegerExample) {
-            IntegerExample obj = (IntegerExample) o;
+        } else if (o instanceof IntegerExample obj) {
             if (field != null) {
                 jsonGenerator.writeNumberField(field, obj.getValue());
             } else {
                 jsonGenerator.writeNumber(obj.getValue());
             }
-        } else if (o instanceof LongExample) {
-            LongExample obj = (LongExample) o;
+        } else if (o instanceof LongExample obj) {
             if (field != null) {
                 jsonGenerator.writeNumberField(field, obj.getValue());
             } else {
                 jsonGenerator.writeNumber(obj.getValue());
             }
-        } else if (o instanceof ObjectExample) {
-            ObjectExample obj = (ObjectExample) o;
+        } else if (o instanceof ObjectExample obj) {
             if (field != null) {
                 jsonGenerator.writeObjectField(field, obj);
             }
-        } else if (o instanceof StringExample) {
-            StringExample obj = (StringExample) o;
+        } else if (o instanceof StringExample obj) {
             if (field != null) {
                 jsonGenerator.writeStringField(field, obj.getValue());
             } else {

@@ -111,14 +111,14 @@ public class ExampleBuilder {
                     processedModels.put(ref, output);
                 }
             }
-        } else if (property instanceof EmailSchema) {
+        } else if (property instanceof EmailSchema emailSchema) {
             if (example != null) {
                 output = new StringExample(example.toString());
             } else {
-                String defaultValue = ((EmailSchema) property).getDefault();
+                String defaultValue = emailSchema.getDefault();
 
                 if (defaultValue == null) {
-                    List<String> enums = ((EmailSchema) property).getEnum();
+                    List<String> enums = emailSchema.getEnum();
                     if (enums != null && !enums.isEmpty()) {
                         defaultValue = enums.get(0);
                     }
@@ -126,14 +126,14 @@ public class ExampleBuilder {
 
                 output = new StringExample(defaultValue == null ? SAMPLE_EMAIL_PROPERTY_VALUE : defaultValue);
             }
-        } else if (property instanceof UUIDSchema) {
+        } else if (property instanceof UUIDSchema uuidSchema) {
             if (example != null) {
                 output = new StringExample(example.toString());
             } else {
-                UUID defaultValue = ((UUIDSchema) property).getDefault();
+                UUID defaultValue = uuidSchema.getDefault();
 
                 if (defaultValue == null) {
-                    List<UUID> enums = ((UUIDSchema) property).getEnum();
+                    List<UUID> enums = uuidSchema.getEnum();
                     if (enums != null && !enums.isEmpty()) {
                         defaultValue = enums.get(0);
                     }
@@ -147,14 +147,14 @@ public class ExampleBuilder {
             } else {
                 output = new StringExample(SAMPLE_BYTE_PROPERTY_VALUE);
             }
-        } else if (property instanceof StringSchema) {
+        } else if (property instanceof StringSchema stringSchema) {
             if (example != null) {
                 output = new StringExample(example.toString());
             } else {
-                String defaultValue = ((StringSchema) property).getDefault();
+                String defaultValue = stringSchema.getDefault();
 
                 if (defaultValue == null) {
-                    List<String> enums = ((StringSchema) property).getEnum();
+                    List<String> enums = stringSchema.getEnum();
                     if (enums != null && !enums.isEmpty()) {
                         defaultValue = enums.get(0);
                     }
@@ -162,14 +162,14 @@ public class ExampleBuilder {
 
                 output = new StringExample(defaultValue == null ? SAMPLE_STRING_PROPERTY_VALUE : defaultValue);
             }
-        } else if (property instanceof PasswordSchema) {
+        } else if (property instanceof PasswordSchema passwordSchema) {
             if (example != null) {
                 output = new StringExample(example.toString());
             } else {
-                String defaultValue = ((PasswordSchema) property).getDefault();
+                String defaultValue = passwordSchema.getDefault();
 
                 if (defaultValue == null) {
-                    List<String> enums = ((PasswordSchema) property).getEnum();
+                    List<String> enums = passwordSchema.getEnum();
                     if (enums != null && !enums.isEmpty()) {
                         defaultValue = enums.get(0);
                     }
@@ -177,7 +177,7 @@ public class ExampleBuilder {
 
                 output = new StringExample(defaultValue == null ? SAMPLE_STRING_PROPERTY_VALUE : defaultValue);
             }
-        } else if (property instanceof IntegerSchema) {
+        } else if (property instanceof IntegerSchema integerSchema) {
             if (example != null) {
                 try {
                     if (property.getFormat() != null) {
@@ -194,10 +194,10 @@ public class ExampleBuilder {
             }
 
             if (output == null) {
-                Number defaultValue = ((IntegerSchema) property).getDefault();
+                Number defaultValue = integerSchema.getDefault();
 
                 if (defaultValue == null) {
-                    List<Number> enums = ((IntegerSchema) property).getEnum();
+                    List<Number> enums = integerSchema.getEnum();
                     if (enums != null && !enums.isEmpty()) {
                         defaultValue = enums.get(0);
                     }
@@ -212,7 +212,7 @@ public class ExampleBuilder {
                     output = new IntegerExample(SAMPLE_BASE_INTEGER_PROPERTY_VALUE);
                 }
             }
-        } else if (property instanceof NumberSchema) {
+        } else if (property instanceof NumberSchema numberSchema) {
 
             if (example != null) {
                 try {
@@ -230,10 +230,10 @@ public class ExampleBuilder {
             }
 
             if (output == null) {
-                BigDecimal defaultValue = ((NumberSchema) property).getDefault();
+                BigDecimal defaultValue = numberSchema.getDefault();
 
                 if (defaultValue == null) {
-                    List<BigDecimal> enums = ((NumberSchema) property).getEnum();
+                    List<BigDecimal> enums = numberSchema.getEnum();
                     if (enums != null && !enums.isEmpty()) {
                         defaultValue = enums.get(0);
                     }
@@ -257,33 +257,33 @@ public class ExampleBuilder {
                 Boolean defaultValue = (Boolean) property.getDefault();
                 output = new BooleanExample(defaultValue == null ? SAMPLE_BOOLEAN_PROPERTY_VALUE : defaultValue);
             }
-        } else if (property instanceof DateSchema) {
+        } else if (property instanceof DateSchema dateSchema) {
             DateFormat format = new SimpleDateFormat("yyyy-MM-dd");
             if (example != null) {
                 String exampleAsString = format.format(example);
                 output = new StringExample(exampleAsString);
             } else {
 
-                List<Date> enums = ((DateSchema) property).getEnum();
+                List<Date> enums = dateSchema.getEnum();
                 if (enums != null && !enums.isEmpty()) {
                     output = new StringExample(format.format(enums.get(0)));
                 } else {
                     output = new StringExample(SAMPLE_DATE_PROPERTY_VALUE);
                 }
             }
-        } else if (property instanceof DateTimeSchema) {
+        } else if (property instanceof DateTimeSchema dateTimeSchema) {
             if (example != null) {
                 String exampleAsString = example.toString();
                 output = new StringExample(exampleAsString);
             } else {
-                List<OffsetDateTime> enums = ((DateTimeSchema) property).getEnum();
+                List<OffsetDateTime> enums = dateTimeSchema.getEnum();
                 if (enums != null && !enums.isEmpty()) {
                     output = new StringExample(enums.get(0).toString());
                 } else {
                     output = new StringExample(SAMPLE_DATETIME_PROPERTY_VALUE);
                 }
             }
-        } else if (property instanceof ObjectSchema) {
+        } else if (property instanceof ObjectSchema objectSchema) {
             if (example != null) {
                 try {
                     output = Json.mapper().readValue(example.toString(), ObjectExample.class);
@@ -299,10 +299,9 @@ public class ExampleBuilder {
             } else {
                 ObjectExample outputExample = new ObjectExample();
                 outputExample.setName(property.getName());
-                ObjectSchema op = (ObjectSchema) property;
-                if (op.getProperties() != null) {
-                    for (String propertyname : op.getProperties().keySet()) {
-                        Schema<?> inner = op.getProperties().get(propertyname);
+                if (objectSchema.getProperties() != null) {
+                    for (String propertyname : objectSchema.getProperties().keySet()) {
+                        Schema<?> inner = objectSchema.getProperties().get(propertyname);
                         Example innerExample = fromProperty(propertyname, inner, definitions, processedModels, modelsStartedProcessing, location);
                         outputExample.put(propertyname, innerExample);
                     }
@@ -310,7 +309,7 @@ public class ExampleBuilder {
                 }
 
             }
-        } else if (property instanceof ArraySchema) {
+        } else if (property instanceof ArraySchema arraySchema) {
             if (example != null) {
                 try {
                     output = Json.mapper().readValue(example.toString(), ArrayExample.class);
@@ -324,8 +323,7 @@ public class ExampleBuilder {
                     output = new ArrayExample();
                 }
             } else {
-                ArraySchema ap = (ArraySchema) property;
-                Schema<?> inner = ap.getItems();
+                Schema<?> inner = arraySchema.getItems();
                 if (inner != null) {
                     Example innerExample = fromProperty(property.getType(), inner, definitions, processedModels, modelsStartedProcessing, location);
                     if (innerExample != null) {
@@ -336,8 +334,7 @@ public class ExampleBuilder {
                     }
                 }
             }
-        } else if (property instanceof ComposedSchema) {
-            ComposedSchema composedSchema = (ComposedSchema) property;
+        } else if (property instanceof ComposedSchema composedSchema) {
             if (composedSchema.getAllOf() != null) {
                 List<Schema> models = composedSchema.getAllOf();
                 ObjectExample ex = new ObjectExample();
@@ -414,8 +411,7 @@ public class ExampleBuilder {
             }
 
         }
-        if (property.getAdditionalProperties() instanceof Schema) {
-            Schema<?> inner = (Schema<?>) property.getAdditionalProperties();
+        if (property.getAdditionalProperties() instanceof Schema<?> inner) {
             if (inner != null) {
                 for (int i = 1; i <= 3; i++) {
                     Example innerExample = fromProperty(inner.getType(), inner, definitions, processedModels, modelsStartedProcessing, location);
@@ -424,8 +420,8 @@ public class ExampleBuilder {
                             output = new ObjectExample();
                         }
                         ObjectExample on = null;
-                        if (output instanceof ObjectExample) {
-                            on = (ObjectExample) output;
+                        if (output instanceof ObjectExample objectExample) {
+                            on = objectExample;
                         }
                         String key = "additionalProp" + i;
                         if (innerExample.getName() == null) {
@@ -492,8 +488,7 @@ public class ExampleBuilder {
 
     public static void mergeTo(ObjectExample output, List<Example> examples) {
         for (Example ex : examples) {
-            if (ex instanceof ObjectExample) {
-                ObjectExample objectExample = (ObjectExample) ex;
+            if (ex instanceof ObjectExample objectExample) {
                 Map<String, Example> values = objectExample.getValues();
                 if (values != null) {
                     output.putAll(values);

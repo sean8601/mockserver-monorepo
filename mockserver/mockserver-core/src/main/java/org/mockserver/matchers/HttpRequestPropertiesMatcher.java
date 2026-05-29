@@ -95,7 +95,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
 
     @Override
     public boolean apply(RequestDefinition requestDefinition) {
-        HttpRequest httpRequest = requestDefinition instanceof HttpRequest ? (HttpRequest) requestDefinition : null;
+        HttpRequest httpRequest = requestDefinition instanceof HttpRequest httpReq ? httpReq : null;
         if (this.httpRequest == null || !this.httpRequest.equals(httpRequest)) {
             this.hashCode = 0;
             this.httpRequest = httpRequest;
@@ -230,8 +230,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     }
 
     public boolean matches(final MatchDifference context, final RequestDefinition requestDefinition) {
-        if (requestDefinition instanceof HttpRequest) {
-            HttpRequest request = (HttpRequest) requestDefinition;
+        if (requestDefinition instanceof HttpRequest request) {
             StringBuilder becauseBuilder = new StringBuilder();
             boolean overallMatch = matches(context, request, becauseBuilder);
             if (!controlPlaneMatcher) {

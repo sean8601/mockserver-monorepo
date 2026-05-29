@@ -65,72 +65,63 @@ public class HttpRequestToJavaSerializer implements ToJavaSerializer<HttpRequest
                 output.append(")");
             }
             if (request.getBody() != null) {
-                if (request.getBody() instanceof JsonBody) {
+                if (request.getBody() instanceof JsonBody jsonBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    JsonBody jsonBody = (JsonBody) request.getBody();
                     if (jsonBody.isMatchNumbersAsStrings()) {
                         output.append("JsonBody.json(\"").append(StringEscapeUtils.escapeJava(jsonBody.getValue())).append("\", JsonBodyMatchType.").append(jsonBody.getMatchType()).append(", true)");
                     } else {
                         output.append("new JsonBody(\"").append(StringEscapeUtils.escapeJava(jsonBody.getValue())).append("\", JsonBodyMatchType.").append(jsonBody.getMatchType()).append(")");
                     }
                     output.append(")");
-                } else if (request.getBody() instanceof JsonPathBody) {
+                } else if (request.getBody() instanceof JsonPathBody jsonPathBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    JsonPathBody jsonPathBody = (JsonPathBody) request.getBody();
                     output.append("new JsonPathBody(\"").append(StringEscapeUtils.escapeJava(jsonPathBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof JsonSchemaBody) {
+                } else if (request.getBody() instanceof JsonSchemaBody jsonSchemaBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    JsonSchemaBody jsonSchemaBody = (JsonSchemaBody) request.getBody();
                     output.append("new JsonSchemaBody(\"").append(StringEscapeUtils.escapeJava(jsonSchemaBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof XmlBody) {
+                } else if (request.getBody() instanceof XmlBody xmlBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    XmlBody xmlBody = (XmlBody) request.getBody();
                     output.append("new XmlBody(\"").append(StringEscapeUtils.escapeJava(xmlBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof XPathBody) {
+                } else if (request.getBody() instanceof XPathBody xPathBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    XPathBody xPathBody = (XPathBody) request.getBody();
                     output.append("new XPathBody(\"").append(StringEscapeUtils.escapeJava(xPathBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof XmlSchemaBody) {
+                } else if (request.getBody() instanceof XmlSchemaBody xmlSchemaBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    XmlSchemaBody xmlSchemaBody = (XmlSchemaBody) request.getBody();
                     output.append("new XmlSchemaBody(\"").append(StringEscapeUtils.escapeJava(xmlSchemaBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof RegexBody) {
+                } else if (request.getBody() instanceof RegexBody regexBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    RegexBody regexBody = (RegexBody) request.getBody();
                     output.append("new RegexBody(\"").append(StringEscapeUtils.escapeJava(regexBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof StringBody) {
+                } else if (request.getBody() instanceof StringBody stringBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
-                    StringBody stringBody = (StringBody) request.getBody();
                     output.append("new StringBody(\"").append(StringEscapeUtils.escapeJava(stringBody.getValue())).append("\")");
                     output.append(")");
-                } else if (request.getBody() instanceof ParameterBody) {
+                } else if (request.getBody() instanceof ParameterBody parameterBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");
                     appendNewLineAndIndent((numberOfSpacesToIndent + 2) * INDENT_SIZE, output);
                     output.append("new ParameterBody(");
-                    List<Parameter> bodyParameters = ((ParameterBody) request.getBody()).getValue().getEntries();
+                    List<Parameter> bodyParameters = parameterBody.getValue().getEntries();
                     output.append(new ParameterToJavaSerializer().serializeAsJava(numberOfSpacesToIndent + 3, bodyParameters));
                     appendNewLineAndIndent((numberOfSpacesToIndent + 2) * INDENT_SIZE, output);
                     output.append(")");
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(")");
-                } else if (request.getBody() instanceof GraphQLBody) {
+                } else if (request.getBody() instanceof GraphQLBody graphQLBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
-                    GraphQLBody graphQLBody = (GraphQLBody) request.getBody();
                     output.append(".withBody(GraphQLBody.graphQL(\"").append(StringEscapeUtils.escapeJava(graphQLBody.getQuery())).append("\"");
                     if (isNotBlank(graphQLBody.getOperationName())) {
                         output.append(", \"").append(StringEscapeUtils.escapeJava(graphQLBody.getOperationName())).append("\"");
@@ -139,10 +130,9 @@ public class HttpRequestToJavaSerializer implements ToJavaSerializer<HttpRequest
                         }
                     }
                     output.append("))");
-                } else if (request.getBody() instanceof BinaryBody) {
+                } else if (request.getBody() instanceof BinaryBody binaryBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
-                    BinaryBody body = (BinaryBody) request.getBody();
-                    output.append(".withBody(new Base64Converter().base64StringToBytes(\"").append(base64Converter.bytesToBase64String(body.getRawBytes())).append("\"))");
+                    output.append(".withBody(new Base64Converter().base64StringToBytes(\"").append(base64Converter.bytesToBase64String(binaryBody.getRawBytes())).append("\"))");
                 }
             }
         }
