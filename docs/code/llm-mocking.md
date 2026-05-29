@@ -122,6 +122,7 @@ classDiagram
         +whenLatestMessageMatches(Pattern)
         +whenLatestMessageRole(Role)
         +whenContainsToolResultFor(String)
+        +whenSemanticMatch(String)
         +withNormalization(NormalizationOptions)
         +respondingWith(Completion)
         +andThen() TurnBuilder
@@ -132,6 +133,7 @@ classDiagram
         +latestMessageMatches: String
         +latestMessageRole: Role
         +containsToolResultFor: String
+        +semanticMatchAgainst: String
         +normalization: NormalizationOptions
     }
     class LlmConversationMatcher {
@@ -261,6 +263,7 @@ classDiagram
         +latestMessageMatches: String
         +latestMessageRole: Role
         +containsToolResultFor: String
+        +semanticMatchAgainst: String
         +normalization: NormalizationOptions
     }
     class ParsedConversation {
@@ -370,6 +373,10 @@ These are operational settings (config + MCP, for CI/automation), not dashboard 
 | `mockserver.llmBackendsConfig` | _(unset)_ | — | Path to JSON file of named backends |
 | `mockserver.llmRequestTimeoutMillis` | `30000` | — | Per-request timeout for outbound runtime-LLM calls |
 | `mockserver.llmSemanticMatchingEnabled` | `false` | — | Opt-in: activate the exploratory `semanticMatch` predicate (needs a backend; never for assertions) |
+| `mockserver.otelMetricsEnabled` | `false` | — | Export MockServer's metrics to an OTLP collector (alternative to Prometheus) |
+| `mockserver.otelTracesEnabled` | `false` | — | Emit one explicit GenAI semantic-convention span per served LLM completion |
+| `mockserver.otelEndpoint` | _(unset)_ | — | OTLP base endpoint shared by metrics and span export |
+| `mockserver.otelMetricsExportIntervalSeconds` | `60` | ≥1 | How often metrics are pushed to the OTLP collector |
 
 ## Related Documents
 

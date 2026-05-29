@@ -54,6 +54,14 @@ function buildPills(predicates: ConversationPredicates): PillDef[] {
       label: `has tool_result for ${truncate(predicates.containsToolResultFor)}`,
     });
   }
+  if (predicates.semanticMatchAgainst != null) {
+    // Flagged "exploratory" to match the wizard: this predicate is opt-in,
+    // non-deterministic (LLM-judged), and never on the assertion path.
+    pills.push({
+      key: 'semanticMatchAgainst',
+      label: `semantic ≈ "${truncate(predicates.semanticMatchAgainst)}" (exploratory)`,
+    });
+  }
   if (predicates.normalization != null) {
     const n = predicates.normalization;
     const parts: string[] = [];

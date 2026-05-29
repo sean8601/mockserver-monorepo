@@ -36,6 +36,12 @@ describe('PredicatePills', () => {
     expect(screen.getByText('has tool_result for search')).toBeInTheDocument();
   });
 
+  it('renders semanticMatchAgainst pill flagged exploratory', () => {
+    const predicates: ConversationPredicates = { semanticMatchAgainst: 'asks about the weather' };
+    render(<PredicatePills predicates={predicates} />);
+    expect(screen.getByText(/semantic ≈ "asks about the weather" \(exploratory\)/)).toBeInTheDocument();
+  });
+
   it('renders all non-turnIndex pills when those predicates are set', () => {
     const predicates: ConversationPredicates = {
       turnIndex: 1, // intentionally suppressed — see the dedicated test above
@@ -43,6 +49,7 @@ describe('PredicatePills', () => {
       latestMessageMatches: '\\w+',
       latestMessageRole: 'ASSISTANT',
       containsToolResultFor: 'calculator',
+      semanticMatchAgainst: 'wants the total',
     };
     render(<PredicatePills predicates={predicates} />);
     expect(screen.queryByText(/turn = 1/)).not.toBeInTheDocument();
@@ -50,6 +57,7 @@ describe('PredicatePills', () => {
     expect(screen.getByText(/latest msg ~ \/\\w\+\//)).toBeInTheDocument();
     expect(screen.getByText('latest role = ASSISTANT')).toBeInTheDocument();
     expect(screen.getByText('has tool_result for calculator')).toBeInTheDocument();
+    expect(screen.getByText(/semantic ≈ "wants the total" \(exploratory\)/)).toBeInTheDocument();
   });
 
   it('returns null when no predicates are set', () => {

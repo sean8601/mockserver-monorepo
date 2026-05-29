@@ -174,6 +174,7 @@ export interface ConversationPredicates {
   latestMessageMatches?: string;
   latestMessageRole?: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM';
   containsToolResultFor?: string;
+  semanticMatchAgainst?: string;
   normalization?: PromptNormalization;
 }
 
