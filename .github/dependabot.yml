@@ -16,6 +16,9 @@ updates:
     ignore:
       # Future Java floor or namespace migrations may add ignores here.
       # The javax → jakarta block was removed when the codebase migrated.
+      # checkstyle 13.x requires Java 21 runtime; we target Java 17.
+      - dependency-name: "com.puppycrawl.tools:checkstyle"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "maven"
     directory: "/mockserver/mockserver-maven-plugin"
@@ -31,6 +34,10 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # checkstyle 13.x requires Java 21 runtime; we target Java 17.
+      - dependency-name: "com.puppycrawl.tools:checkstyle"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directories:
