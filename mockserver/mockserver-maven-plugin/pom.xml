@@ -360,7 +360,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-plugin-plugin</artifactId>
-                <version>3.7.1</version>
+                <version>3.15.2</version>
                 <configuration>
                     <skipErrorNoDescriptorsFound>true</skipErrorNoDescriptorsFound>
                 </configuration>
@@ -368,7 +368,9 @@
                     <execution>
                         <goals>
                             <goal>descriptor</goal>
-                            <goal>report</goal>
+                            <!-- 'report' goal moved to maven-plugin-report-plugin in
+                                 maven-plugin-plugin 3.15+; the project does not run
+                                 'mvn site' so the report output is unused — drop it. -->
                             <goal>addPluginArtifactMetadata</goal>
                             <goal>helpmojo</goal>
                         </goals>
