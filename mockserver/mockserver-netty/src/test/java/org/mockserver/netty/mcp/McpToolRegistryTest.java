@@ -71,7 +71,11 @@ public class McpToolRegistryTest {
         assertThat(tools.containsKey("load_expectations_from_file"), is(true));
         assertThat(tools.containsKey("mock_llm_completion"), is(true));
         assertThat(tools.containsKey("create_llm_conversation"), is(true));
-        assertThat(tools.size(), is(24));
+        assertThat(tools.containsKey("verify_tool_call"), is(true));
+        assertThat(tools.containsKey("explain_agent_run"), is(true));
+        assertThat(tools.containsKey("detect_llm_drift"), is(true));
+        assertThat(tools.containsKey("mock_adversarial_llm_response"), is(true));
+        assertThat(tools.size(), is(28));
     }
 
     @Test
