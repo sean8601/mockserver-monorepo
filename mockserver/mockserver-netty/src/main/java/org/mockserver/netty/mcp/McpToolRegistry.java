@@ -9,9 +9,15 @@ import org.mockserver.client.LlmConversationBuilder;
 import org.mockserver.client.TurnBuilder;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.llm.IsolationSource;
 import org.mockserver.llm.ProviderCodecRegistry;
 import org.mockserver.llm.analysis.AgentRunAnalyzer;
+import org.mockserver.llm.client.LlmBackend;
+import org.mockserver.llm.client.LlmBackendResolver;
+import org.mockserver.llm.client.NettyHttpClientLlmTransport;
+import org.mockserver.llm.drift.DriftDetector;
+import org.mockserver.llm.drift.DriftReport;
 import org.mockserver.matchers.MatchType;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -123,6 +129,7 @@ public class McpToolRegistry {
         registerCreateLlmConversation();
         registerVerifyToolCall();
         registerExplainAgentRun();
+        registerDetectLlmDrift();
     }
 
     private void registerCreateExpectation() {
@@ -2696,6 +2703,152 @@ public class McpToolRegistry {
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to explain agent run", e);
+        }
+    }
+
+    // --- detect_llm_drift ---
+
+    private void registerDetectLlmDrift() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("cassettePath").put("type", "string").put("description",
+            "Path to a recorded fixture (cassette) JSON file whose exchanges are replayed against the live provider");
+        ObjectNode providerProp = properties.putObject("provider");
+        providerProp.put("type", "string").put("description", "LLM provider the cassette was recorded against");
+        ArrayNode providerEnum = providerProp.putArray("enum");
+        for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
+            providerEnum.add(name);
+        }
+        properties.putObject("backendName").put("type", "string").put("description",
+            "Optional named backend from mockserver.llmBackendsConfig; otherwise the default backend is resolved from env/properties");
+        ArrayNode required = schema.putArray("required");
+        required.add("cassettePath");
+        required.add("provider");
+
+        tools.put("detect_llm_drift", new ToolDefinition(
+            "detect_llm_drift",
+            "Replays a recorded LLM cassette against the live provider and reports STRUCTURAL drift in the responses "
+                + "(new/removed fields, type changes) — not semantic differences. Requires a configured runtime LLM backend "
+                + "(env vars, mockserver.llmProvider/llmApiKey, or a named backend); if none is configured the tool is disabled. "
+                + "Fails closed per exchange: a network error or non-2xx live response is reported as could-not-check, never as drift. "
+                + "Intended for an opt-in/scheduled CI lane, not the per-commit build.",
+            schema,
+            this::handleDetectLlmDrift
+        ));
+    }
+
+    private JsonNode handleDetectLlmDrift(JsonNode params) {
+        try {
+            String providerStr = params.path("provider").asText(null);
+            if (providerStr == null || providerStr.trim().isEmpty()) {
+                return errorResult("'provider' is required");
+            }
+            Provider provider = parseProviderParam(params);
+            if (provider == null) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+            String cassettePath = params.path("cassettePath").asText(null);
+            if (cassettePath == null || cassettePath.trim().isEmpty()) {
+                return errorResult("'cassettePath' is required and must not be blank");
+            }
+            Path inputPath = Paths.get(cassettePath).toAbsolutePath().normalize();
+            ObjectNode pathError = validateFilePath(inputPath, objectMapper);
+            if (pathError != null) {
+                return pathError;
+            }
+            if (!Files.exists(inputPath) || !Files.isReadable(inputPath)) {
+                return errorResult("Cassette file does not exist or is not readable: " + inputPath);
+            }
+
+            // Resolve a backend (off unless configured)
+            LlmBackendResolver resolver = new LlmBackendResolver();
+            String backendName = emptyToNull(params.path("backendName").asText(null));
+            Optional<LlmBackend> backendOpt = backendName != null ? resolver.resolveByName(backendName) : resolver.resolveDefault();
+            if (!backendOpt.isPresent()) {
+                ObjectNode disabled = objectMapper.createObjectNode();
+                disabled.put("disabled", true);
+                disabled.put("message", "No runtime LLM backend configured — drift detection is off. Set OPENAI_API_KEY/"
+                    + "ANTHROPIC_API_KEY/GEMINI_API_KEY/OLLAMA_HOST, the mockserver.llm* properties, or mockserver.llmBackendsConfig.");
+                return disabled;
+            }
+            LlmBackend backend = backendOpt.get();
+
+            // Extract recorded exchanges (non-streaming JSON responses)
+            String json = new String(Files.readAllBytes(inputPath), StandardCharsets.UTF_8);
+            Expectation[] expectations = getExpectationSerializer().deserializeArray(json, false);
+            List<DriftDetector.RecordedExchange> exchanges = new ArrayList<>();
+            int skippedSse = 0;
+            for (Expectation exp : expectations) {
+                if (exp.getHttpRequest() instanceof HttpRequest && exp.getHttpResponse() != null) {
+                    exchanges.add(new DriftDetector.RecordedExchange(
+                        (HttpRequest) exp.getHttpRequest(), exp.getHttpResponse().getBodyAsString()));
+                } else if (exp.getHttpSseResponse() != null) {
+                    skippedSse++;
+                }
+            }
+            if (exchanges.isEmpty()) {
+                ObjectNode empty = objectMapper.createObjectNode();
+                empty.put("status", "no_exchanges");
+                empty.put("message", "No non-streaming exchanges found in cassette to check"
+                    + (skippedSse > 0 ? " (" + skippedSse + " streaming exchange(s) skipped)" : ""));
+                return empty;
+            }
+
+            // Build a transient transport for the live calls and run the detector.
+            // Transient per-call is acceptable for the opt-in/scheduled CI lane this
+            // tool targets; promote to a shared instance if usage becomes frequent.
+            long timeout = backend.timeoutMillis() != null ? backend.timeoutMillis() : ConfigurationProperties.llmRequestTimeoutMillis();
+            io.netty.channel.EventLoopGroup group = new io.netty.channel.nio.NioEventLoopGroup(1);
+            DriftReport report;
+            try {
+                NettyHttpClient httpClient = new NettyHttpClient(httpState.getConfiguration(), mockServerLogger, group, null, false);
+                report = new DriftDetector(new NettyHttpClientLlmTransport(httpClient), timeout)
+                    .detect(exchanges, provider, backend);
+            } finally {
+                // bounded wind-down so threads do not accumulate across rapid calls
+                group.shutdownGracefully(0, 200, java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("status", "checked");
+            // surface a likely misconfiguration: the cassette's provider and the
+            // resolved backend's provider differ, so every live call will mis-target
+            if (backend.provider() != provider) {
+                resultNode.put("warning", "resolved backend provider " + backend.provider()
+                    + " does not match cassette provider " + provider + "; live calls may all fail");
+            }
+            resultNode.put("exchanges", exchanges.size());
+            resultNode.put("drifted", report.driftedCount());
+            resultNode.put("checked", report.checkedCount());
+            resultNode.put("couldNotCheck", report.couldNotCheckCount());
+            if (skippedSse > 0) {
+                resultNode.put("skippedStreaming", skippedSse);
+            }
+            ArrayNode details = resultNode.putArray("details");
+            for (DriftReport.ExchangeDrift ex : report.getExchanges()) {
+                ObjectNode node = details.addObject();
+                node.put("index", ex.getIndex());
+                node.put("status", ex.getStatus().name());
+                if (ex.getNote() != null) {
+                    node.put("note", ex.getNote());
+                }
+                if (!ex.getAddedPaths().isEmpty()) {
+                    ArrayNode a = node.putArray("addedPaths");
+                    ex.getAddedPaths().forEach(a::add);
+                }
+                if (!ex.getRemovedPaths().isEmpty()) {
+                    ArrayNode r = node.putArray("removedPaths");
+                    ex.getRemovedPaths().forEach(r::add);
+                }
+                if (!ex.getTypeChangedPaths().isEmpty()) {
+                    ArrayNode t = node.putArray("typeChangedPaths");
+                    ex.getTypeChangedPaths().forEach(t::add);
+                }
+            }
+            return resultNode;
+        } catch (Exception e) {
+            return errorResult("Failed to detect LLM drift", e);
         }
     }
 

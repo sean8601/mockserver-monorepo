@@ -300,6 +300,15 @@ Adding a provider = implement `LlmClient` + one `register(...)` line — the sam
 
 This SPI is never on the deterministic assertion/matching path. The features that consume it (drift detection, semantic matching) are tracked in `docs/plans/mockserver-llm-mocking.md`.
 
+## Drift detection
+
+`detect_llm_drift` (MCP) closes the loop on stale cassettes: it replays a recorded cassette's exchanges against the **live** provider and reports structural drift in the responses. Built from two pieces in `org.mockserver.llm.drift`:
+
+- `StructuralShapeDiff` — pure: walks two JSON documents into path→type shape maps and reports added / removed / type-changed paths (values ignored; arrays use a representative-first-element model). Reusable.
+- `DriftDetector` — for each recorded exchange, decodes the recorded request via the `ProviderCodec`, builds a fresh live request via the runtime-LLM `LlmClient` (Phase 2 SPI), sends it through an injected `LlmTransport`, and diffs the live response shape against the recorded one. **Fails closed** per exchange: a missing client/codec, network error, non-2xx, or non-JSON body is reported as `COULD_NOT_CHECK`, never as drift, and never thrown.
+
+The MCP tool resolves a backend via `LlmBackendResolver` and is **disabled** (returns `{disabled:true}`) when none is configured. When configured, it builds a transient `NettyHttpClient`-backed transport for the live calls. Because it needs real API keys/tokens and is inherently non-deterministic against a live API, it belongs in an opt-in/scheduled CI lane (see `docs/infrastructure/ci-cd.md`), never the per-commit build. No dashboard control — it is an operational/CI tool.
+
 ## VCR (record / replay)
 
 LLM/MCP traffic forwarded through MockServer can be snapshotted to committable fixture files and replayed deterministically:
@@ -370,3 +379,5 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `model/LlmChaosProfile.java` | Fault/chaos profile carried on `HttpLlmResponse` |
 | `mock/action/http/HttpLlmResponseActionHandler.java` | Encodes LLM responses and applies chaos (error / truncation / malformed SSE) |
 | `fixture/FixtureRedactor.java` | Masks sensitive headers and (optional) JSON body fields when recording fixtures |
+| `llm/drift/StructuralShapeDiff.java` | Pure JSON shape diff (added/removed/type-changed paths) |
+| `llm/drift/DriftDetector.java` + `DriftReport.java` | Replays a cassette against the live provider and reports structural drift, fail-closed |

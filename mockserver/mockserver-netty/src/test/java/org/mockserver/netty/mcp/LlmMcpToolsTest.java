@@ -550,6 +550,27 @@ public class LlmMcpToolsTest {
         }
     }
 
+    // --- detect_llm_drift (validation wiring; live path covered by DriftDetectorTest) ---
+
+    @Test
+    public void shouldErrorWhenDetectDriftMissingCassette() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        JsonNode result = toolRegistry.callTool("detect_llm_drift", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldErrorWhenDetectDriftCassetteFileMissing() throws Exception {
+        Path file = Files.createTempFile("missing-cassette", ".json");
+        Files.deleteIfExists(file); // ensure it does not exist
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("cassettePath", file.toString());
+        JsonNode result = toolRegistry.callTool("detect_llm_drift", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+    }
+
     @Test
     public void shouldCreateLlmConversationWithPerTurnChaos() {
         ObjectNode params = objectMapper.createObjectNode();

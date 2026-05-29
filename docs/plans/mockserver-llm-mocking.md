@@ -36,7 +36,7 @@ The original RFC (RFC-1 LLM Response Builder + RFC-2 Stateful Scripted Conversat
 | 10 | OTel GenAI / OpenInference span export | ❌ Not started |
 | 11 | Correlated agent-run session / call-graph view | ❌ Not started |
 | 12 | Prompt-injection / adversarial-response harness | ❌ Not started |
-| 13 | Drift detection (fixtures vs real API in CI) | ❌ Not started (was U5, ~5–8 days) |
+| 13 | Drift detection (fixtures vs real API in CI) | ✅ Shipped — `detect_llm_drift` MCP tool over `StructuralShapeDiff` + `DriftDetector` (replays cassette via runtime-LLM SPI, diffs response shape, fails closed); off unless a backend resolves; opt-in CI lane |
 | 14 | Run bisection / diff | 🟡 Partial — structural trajectory diff shipped in U4; full bisection workflow open (low priority) |
 
 ---
