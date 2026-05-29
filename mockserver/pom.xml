@@ -506,7 +506,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>1.5.9</version>
+                <version>3.0.3</version>
             </dependency>
             <dependency>
                 <groupId>com.jayway.jsonpath</groupId>
@@ -1079,6 +1079,16 @@
                                     <relocation>
                                         <pattern>org.yaml</pattern>
                                         <shadedPattern>shaded_package.org.yaml</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <!-- Jackson 3.x (tools.jackson) used internally by json-schema-validator 3.x -->
+                                        <pattern>tools.jackson</pattern>
+                                        <shadedPattern>shaded_package.tools.jackson</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <!-- snakeyaml-engine used by json-schema-validator 3.x for YAML schema support -->
+                                        <pattern>org.snakeyaml</pattern>
+                                        <shadedPattern>shaded_package.org.snakeyaml</shadedPattern>
                                     </relocation>
                                 </relocations>
                                 <filters>

@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Joiner;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SchemaRegistryConfig;
+import com.networknt.schema.SpecificationVersion;
+import com.networknt.schema.path.PathType;
 import org.apache.commons.lang3.StringUtils;
 import org.mockserver.file.FileReader;
 import org.mockserver.log.model.LogEntry;
@@ -35,12 +38,12 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
         "Documentation: https://mock-server.com/mock_server/creating_expectations.html";
     private static final Map<String, String> schemaCache = new ConcurrentHashMap<>();
     // using draft 07 as default due to TLS issues downloading draft 2019-09 which causes errors
-    private static final SpecVersion.VersionFlag DEFAULT_JSON_SCHEMA_VERSION = SpecVersion.VersionFlag.V7;
+    private static final SpecificationVersion DEFAULT_JSON_SCHEMA_VERSION = SpecificationVersion.DRAFT_7;
     private final MockServerLogger mockServerLogger;
     private final Class<?> type;
     private final String schema;
     private final JsonNode schemaJsonNode;
-    private JsonSchema validator;
+    private Schema validator;
     private final static ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
 
     public JsonSchemaValidator(MockServerLogger mockServerLogger, String schema) {
@@ -54,7 +57,7 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
             throw new IllegalArgumentException("Schema must either be a path reference to a *.json file or a json string");
         }
         this.schemaJsonNode = getSchemaJsonNode();
-        this.validator = getJsonSchemaFactory(this.schemaJsonNode).getSchema(this.schemaJsonNode);
+        this.validator = getSchemaRegistry(this.schemaJsonNode).getSchema(this.schema, InputFormat.JSON);
     }
 
     public JsonSchemaValidator(MockServerLogger mockServerLogger, String schema, JsonNode schemaJsonNode) {
@@ -62,7 +65,10 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
         this.type = null;
         this.schema = schema;
         this.schemaJsonNode = schemaJsonNode;
-        this.validator = getJsonSchemaFactory(this.schemaJsonNode).getSchema(this.schemaJsonNode);
+        // use the pre-parsed JsonNode serialized to strict JSON for schema loading,
+        // because the raw schema string may contain non-JSON prefixes (e.g. "!" for notted schemas)
+        String schemaJson = schemaJsonNode != null ? schemaJsonNode.toString() : this.schema;
+        this.validator = getSchemaRegistry(this.schemaJsonNode).getSchema(schemaJson, InputFormat.JSON);
     }
 
     public JsonSchemaValidator(MockServerLogger mockServerLogger, Class<?> type, String routePath, String mainSchemeFile, String... referenceFiles) {
@@ -73,33 +79,43 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
         }
         this.schema = schemaCache.get(mainSchemeFile);
         this.schemaJsonNode = getSchemaJsonNode();
-        this.validator = getJsonSchemaFactory(this.schemaJsonNode).getSchema(this.schemaJsonNode);
+        this.validator = getSchemaRegistry(this.schemaJsonNode).getSchema(this.schema, InputFormat.JSON);
     }
 
-    private JsonSchemaFactory getJsonSchemaFactory(JsonNode schema) {
+    private static final SchemaRegistryConfig SCHEMA_REGISTRY_CONFIG = SchemaRegistryConfig.builder()
+        .pathType(PathType.JSON_PATH)
+        .build();
+
+    private SchemaRegistry getSchemaRegistry(JsonNode schema) {
         if (schema != null) {
             JsonNode metaSchema = schema.get("$schema");
             if (metaSchema != null) {
                 String metaSchemaValue = metaSchema.textValue();
                 if (isNotBlank(metaSchemaValue)) {
-                    return getJsonSchemaFactory(metaSchemaValue);
+                    return getSchemaRegistry(metaSchemaValue);
                 }
             }
         }
-        return JsonSchemaFactory.getInstance(DEFAULT_JSON_SCHEMA_VERSION);
+        return createSchemaRegistry(DEFAULT_JSON_SCHEMA_VERSION);
     }
 
-    private JsonSchemaFactory getJsonSchemaFactory(String metaSchemaValue) {
+    private SchemaRegistry getSchemaRegistry(String metaSchemaValue) {
         if (metaSchemaValue.contains("draft-03") || metaSchemaValue.contains("draft-04")) {
-            return JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V4);
+            return createSchemaRegistry(SpecificationVersion.DRAFT_4);
         } else if (metaSchemaValue.contains("draft-05") || metaSchemaValue.contains("draft-06")) {
-            return JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V6);
+            return createSchemaRegistry(SpecificationVersion.DRAFT_6);
         } else if (metaSchemaValue.contains("draft-07")) {
-            return JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
+            return createSchemaRegistry(SpecificationVersion.DRAFT_7);
         } else if (metaSchemaValue.contains("draft/2019-09")) {
-            return JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V201909);
+            return createSchemaRegistry(SpecificationVersion.DRAFT_2019_09);
         }
-        return JsonSchemaFactory.getInstance(DEFAULT_JSON_SCHEMA_VERSION);
+        return createSchemaRegistry(DEFAULT_JSON_SCHEMA_VERSION);
+    }
+
+    private static SchemaRegistry createSchemaRegistry(SpecificationVersion version) {
+        return SchemaRegistry.withDefaultDialect(version, builder ->
+            builder.schemaRegistryConfig(SCHEMA_REGISTRY_CONFIG)
+        );
     }
 
     private JsonNode getSchemaJsonNode() {
@@ -162,10 +178,13 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
         String validationResult = "";
         if (isNotBlank(json)) {
             try {
-                validationResult = formatProcessingReport(validator.validate(OBJECT_MAPPER.readTree(json)), addOpenAPISpecificationMessage);
+                // parse with MockServer's lenient ObjectMapper (unquoted fields, comments, etc.)
+                // then serialize back to strict JSON for the json-schema-validator 3.x parser
+                String strictJson = OBJECT_MAPPER.writeValueAsString(OBJECT_MAPPER.readTree(json));
+                validationResult = formatProcessingReport(validator.validate(strictJson, InputFormat.JSON), addOpenAPISpecificationMessage);
             } catch (Throwable throwable) {
                 if (isNotBlank(throwable.getMessage()) && throwable.getMessage().contains("Unknown MetaSchema")) {
-                    validator = getJsonSchemaFactory(throwable.getMessage()).getSchema(this.schemaJsonNode);
+                    validator = getSchemaRegistry(throwable.getMessage()).getSchema(this.schema, InputFormat.JSON);
                     return isValid(json, addOpenAPISpecificationMessage);
                 }
                 mockServerLogger.logEvent(
@@ -196,7 +215,7 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
         return text;
     }
 
-    private String formatProcessingReport(Set<ValidationMessage> validationMessages, boolean addOpenAPISpecificationMessage) {
+    private String formatProcessingReport(List<Error> validationMessages, boolean addOpenAPISpecificationMessage) {
         if (validationMessages.isEmpty()) {
             return "";
         } else {
