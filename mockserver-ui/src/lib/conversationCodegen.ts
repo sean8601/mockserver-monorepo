@@ -48,9 +48,24 @@ export interface TurnResponse {
   streaming: boolean;
 }
 
+/**
+ * Fault/chaos profile for a turn's response (resilience testing). Mirrors
+ * org.mockserver.model.LlmChaosProfile.
+ */
+export interface ChaosDraft {
+  errorStatus?: number;
+  retryAfter?: string;
+  errorProbability?: number;
+  truncateMode?: 'NONE' | 'MID_STREAM';
+  truncateAtFraction?: number;
+  malformedSse?: boolean;
+  seed?: number;
+}
+
 export interface TurnDraft {
   predicates: TurnMatchPredicates;
   response: TurnResponse;
+  chaos?: ChaosDraft;
 }
 
 export interface ConversationDraft {
@@ -88,6 +103,36 @@ function normalizationToObject(n: NormalizationDraft | undefined): Record<string
   if (n.dropBuiltInVolatileFields != null) obj['dropBuiltInVolatileFields'] = n.dropBuiltInVolatileFields;
   if (n.dropVolatileFields && n.dropVolatileFields.length > 0) obj['dropVolatileFields'] = n.dropVolatileFields;
   return Object.keys(obj).length > 0 ? obj : undefined;
+}
+
+/**
+ * Build the wire `chaos` object, or undefined when the draft carries nothing.
+ */
+function chaosToObject(c: ChaosDraft | undefined): Record<string, unknown> | undefined {
+  if (!c) return undefined;
+  const obj: Record<string, unknown> = {};
+  if (c.errorStatus != null) obj['errorStatus'] = c.errorStatus;
+  if (c.retryAfter != null && c.retryAfter !== '') obj['retryAfter'] = c.retryAfter;
+  if (c.errorProbability != null) obj['errorProbability'] = c.errorProbability;
+  if (c.truncateMode != null && c.truncateMode !== 'NONE') obj['truncateMode'] = c.truncateMode;
+  if (c.truncateAtFraction != null) obj['truncateAtFraction'] = c.truncateAtFraction;
+  if (c.malformedSse != null) obj['malformedSse'] = c.malformedSse;
+  if (c.seed != null) obj['seed'] = c.seed;
+  return Object.keys(obj).length > 0 ? obj : undefined;
+}
+
+function parseChaos(raw: unknown): ChaosDraft | undefined {
+  if (raw == null || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const draft: ChaosDraft = {};
+  if (typeof r['errorStatus'] === 'number') draft.errorStatus = r['errorStatus'];
+  if (typeof r['retryAfter'] === 'string') draft.retryAfter = r['retryAfter'];
+  if (typeof r['errorProbability'] === 'number') draft.errorProbability = r['errorProbability'];
+  if (r['truncateMode'] === 'MID_STREAM' || r['truncateMode'] === 'NONE') draft.truncateMode = r['truncateMode'];
+  if (typeof r['truncateAtFraction'] === 'number') draft.truncateAtFraction = r['truncateAtFraction'];
+  if (typeof r['malformedSse'] === 'boolean') draft.malformedSse = r['malformedSse'];
+  if (typeof r['seed'] === 'number') draft.seed = r['seed'];
+  return Object.keys(draft).length > 0 ? draft : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +220,19 @@ export function conversationToJava(draft: ConversationDraft): string {
 
     lines.push(`        .respondingWith(${completionParts.join('\n            ')})`);
 
+    if (chaosToObject(turn.chaos)) {
+      const c = turn.chaos!;
+      const chaosParts: string[] = ['org.mockserver.model.LlmChaosProfile.llmChaosProfile()'];
+      if (c.errorStatus != null) chaosParts.push(`.withErrorStatus(${c.errorStatus})`);
+      if (c.retryAfter != null && c.retryAfter !== '') chaosParts.push(`.withRetryAfter("${escapeJava(c.retryAfter)}")`);
+      if (c.errorProbability != null) chaosParts.push(`.withErrorProbability(${c.errorProbability})`);
+      if (c.truncateMode != null && c.truncateMode !== 'NONE') chaosParts.push(`.withTruncateMode(org.mockserver.model.LlmChaosProfile.TruncateMode.${c.truncateMode})`);
+      if (c.truncateAtFraction != null) chaosParts.push(`.withTruncateAtFraction(${c.truncateAtFraction})`);
+      if (c.malformedSse != null) chaosParts.push(`.withMalformedSse(${c.malformedSse})`);
+      if (c.seed != null) chaosParts.push(`.withSeed(${c.seed}L)`);
+      lines.push(`        .withChaos(${chaosParts.join('')})`);
+    }
+
     if (i < draft.turns.length - 1) {
       lines.push('    .andThen()');
     }
@@ -257,6 +315,10 @@ export function conversationToJson(draft: ConversationDraft): string {
     }
     if (Object.keys(predicates).length > 0) {
       llmResponse['conversationPredicates'] = predicates;
+    }
+    const jsonChaos = chaosToObject(turn.chaos);
+    if (jsonChaos) {
+      llmResponse['chaos'] = jsonChaos;
     }
 
     expectations.push({
@@ -353,6 +415,10 @@ export function conversationToMcpArgs(
     }
     if (Object.keys(response).length > 0) {
       turnObj['response'] = response;
+    }
+    const mcpChaos = chaosToObject(turn.chaos);
+    if (mcpChaos) {
+      turnObj['chaos'] = mcpChaos;
     }
 
     return turnObj;
@@ -517,6 +583,7 @@ export function draftFromScenarioExpectations(
         stopReason: typeof completion['stopReason'] === 'string' ? (completion['stopReason'] as string) : '',
         streaming: llm['streaming'] === true,
       },
+      chaos: parseChaos(llm['chaos']),
     };
   });
 

@@ -3,6 +3,7 @@ package org.mockserver.client;
 import org.mockserver.llm.ParsedMessage;
 import org.mockserver.mock.Expectation;
 import org.mockserver.model.Completion;
+import org.mockserver.model.LlmChaosProfile;
 import org.mockserver.model.NormalizationOptions;
 
 import java.util.regex.Pattern;
@@ -23,6 +24,7 @@ public class TurnBuilder {
     ParsedMessage.Role latestMessageRole;
     String containsToolResultFor;
     NormalizationOptions normalization;
+    LlmChaosProfile chaos;
     Completion completion;
 
     TurnBuilder(LlmConversationBuilder parent) {
@@ -110,6 +112,18 @@ public class TurnBuilder {
      */
     public TurnBuilder withNormalization(NormalizationOptions normalization) {
         this.normalization = normalization;
+        return this;
+    }
+
+    /**
+     * Apply a fault/chaos profile to this turn's response (probabilistic errors,
+     * mid-stream truncation, malformed SSE) for resilience testing.
+     *
+     * @param chaos the chaos profile
+     * @return this builder
+     */
+    public TurnBuilder withChaos(LlmChaosProfile chaos) {
+        this.chaos = chaos;
         return this;
     }
 

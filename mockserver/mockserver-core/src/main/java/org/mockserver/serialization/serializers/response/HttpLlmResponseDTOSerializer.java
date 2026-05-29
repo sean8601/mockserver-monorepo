@@ -32,6 +32,9 @@ public class HttpLlmResponseDTOSerializer extends StdSerializer<HttpLlmResponseD
         if (httpLlmResponseDTO.getConversationPredicates() != null) {
             jgen.writeObjectField("conversationPredicates", httpLlmResponseDTO.getConversationPredicates());
         }
+        if (httpLlmResponseDTO.getChaos() != null) {
+            jgen.writeObjectField("chaos", httpLlmResponseDTO.getChaos());
+        }
         if (httpLlmResponseDTO.getDelay() != null) {
             jgen.writeObjectField("delay", httpLlmResponseDTO.getDelay());
         }

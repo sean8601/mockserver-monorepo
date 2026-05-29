@@ -194,6 +194,10 @@ public class LlmConversationBuilder {
                 llmResponse = llmResponse.withCompletion(turnBuilder.completion);
             }
 
+            if (turnBuilder.chaos != null) {
+                llmResponse = llmResponse.withChaos(turnBuilder.chaos);
+            }
+
             // Store the predicates on the response (survives JSON serialisation)
             if (predicates.hasAnyPredicate()) {
                 llmResponse.withConversationPredicates(predicates);

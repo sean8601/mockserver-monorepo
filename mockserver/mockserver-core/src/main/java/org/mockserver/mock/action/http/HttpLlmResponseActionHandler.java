@@ -9,8 +9,11 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.*;
 import org.slf4j.event.Level;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.mockserver.log.model.LogEntry.LogMessageType.EXPECTATION_RESPONSE;
 import static org.mockserver.model.HttpResponse.response;
@@ -143,7 +146,77 @@ public class HttpLlmResponseActionHandler {
         String model = httpLlmResponse.getModel();
         StreamingPhysics physics = completion.getStreamingPhysics();
 
-        return codecInstance.encodeStreaming(completion, model, physics);
+        List<SseEvent> events = codecInstance.encodeStreaming(completion, model, physics);
+        return applyStreamingChaos(events, httpLlmResponse.getChaos());
+    }
+
+    /**
+     * Returns an error {@link HttpResponse} (status + optional {@code Retry-After})
+     * when the chaos profile triggers a probabilistic error, or {@code null}
+     * otherwise. An {@code errorStatus} with no {@code errorProbability} always
+     * fires; a fractional probability draws once (reproducible via {@code seed}).
+     * Applies to both streaming and non-streaming responses — a provider error is
+     * a normal HTTP response, not an SSE stream.
+     */
+    public HttpResponse chaosErrorResponseOrNull(HttpLlmResponse httpLlmResponse) {
+        LlmChaosProfile chaos = httpLlmResponse.getChaos();
+        if (chaos == null || chaos.getErrorStatus() == null) {
+            return null;
+        }
+        Double probability = chaos.getErrorProbability();
+        boolean trigger;
+        if (probability == null || probability >= 1.0) {
+            trigger = true;
+        } else if (probability <= 0.0) {
+            trigger = false;
+        } else {
+            double draw = chaos.getSeed() != null
+                ? new Random(chaos.getSeed()).nextDouble()
+                : ThreadLocalRandom.current().nextDouble();
+            trigger = draw < probability;
+        }
+        if (!trigger) {
+            return null;
+        }
+        HttpResponse errorResponse = response()
+            .withStatusCode(chaos.getErrorStatus())
+            .withHeader("content-type", "application/json")
+            .withBody("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}");
+        if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
+            errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
+        }
+        return errorResponse;
+    }
+
+    /**
+     * Apply streaming chaos to the SSE event list: mid-stream truncation (keep a
+     * leading fraction of events) and/or a malformed (broken-JSON) trailing
+     * chunk. Deterministic. Returns the input unchanged when no streaming chaos
+     * is configured.
+     */
+    List<SseEvent> applyStreamingChaos(List<SseEvent> events, LlmChaosProfile chaos) {
+        if (chaos == null || events == null || events.isEmpty()) {
+            return events;
+        }
+        List<SseEvent> result = events;
+        if (chaos.getTruncateMode() == LlmChaosProfile.TruncateMode.MID_STREAM) {
+            double fraction = chaos.getTruncateAtFraction() != null ? chaos.getTruncateAtFraction() : 0.5;
+            if (fraction < 0.0) {
+                fraction = 0.0;
+            }
+            if (fraction > 1.0) {
+                fraction = 1.0;
+            }
+            int keep = (int) Math.floor(events.size() * fraction);
+            result = new ArrayList<>(events.subList(0, keep));
+        }
+        if (Boolean.TRUE.equals(chaos.getMalformedSse())) {
+            // append a deliberately broken-JSON chunk so the client must handle a
+            // corrupt mid-stream event (missing closing brace)
+            result = new ArrayList<>(result);
+            result.add(SseEvent.sseEvent().withData("{\"malformed\":true"));
+        }
+        return result;
     }
 
     private String extractInputFromRequest(HttpRequest request) {

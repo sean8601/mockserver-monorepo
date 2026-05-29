@@ -23,7 +23,7 @@ The original RFC (RFC-1 LLM Response Builder + RFC-2 Stateful Scripted Conversat
 | # | Item | Status |
 |---|---|---|
 | 5 | Token/cost analytics + budget assertions | ✅ Shipped (U3 — token/cost rollup tile + session inspector) |
-| 6 | LLM fault/chaos profiles (429/529 + Retry-After, mid-stream truncation, malformed SSE, probabilistic error rates) | ❌ Not started (was U6, ~8–12 days) |
+| 6 | LLM fault/chaos profiles (429/529 + Retry-After, mid-stream truncation, malformed SSE, probabilistic error rates) | ✅ Shipped — `LlmChaosProfile` on `HttpLlmResponse`, applied in `HttpLlmResponseActionHandler` (+ dispatcher); MCP `chaos` on `mock_llm_completion` and per conversation turn; dashboard wizard control; `LLM_CHAOS_INJECTED_COUNT` metric |
 | 7 | VCR mode + strict mode + body redaction + field normalisation | 🟡 Partial — cassette manager shipped in U4; strict-mode, body redaction, and field normalisation still open |
 
 ### Tier 3 — valuable / specialised

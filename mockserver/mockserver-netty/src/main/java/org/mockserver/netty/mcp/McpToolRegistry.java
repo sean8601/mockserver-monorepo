@@ -1989,6 +1989,7 @@ public class McpToolRegistry {
         usageProps.putObject("inputTokens").put("type", "integer");
         usageProps.putObject("outputTokens").put("type", "integer");
         properties.putObject("streaming").put("type", "boolean").put("description", "Whether to stream the response (default false)");
+        putChaosSchema(properties);
         ArrayNode required = schema.putArray("required");
         required.add("provider");
         required.add("path");
@@ -2096,6 +2097,10 @@ public class McpToolRegistry {
                 .withProvider(provider)
                 .withModel(model)
                 .withCompletion(completion);
+            LlmChaosProfile chaos = parseChaosProfile(params.path("chaos"));
+            if (chaos != null) {
+                llmResponse.withChaos(chaos);
+            }
 
             // Build and register expectation
             Expectation expectation = Expectation.when(
@@ -2192,6 +2197,9 @@ public class McpToolRegistry {
         respUsageProps.putObject("inputTokens").put("type", "integer");
         respUsageProps.putObject("outputTokens").put("type", "integer");
         responseProps.putObject("streaming").put("type", "boolean").put("description", "Whether to stream");
+
+        // optional per-turn chaos profile
+        putChaosSchema(turnItemProps);
 
         // Optional ids: array of expectation IDs to assign to the generated
         // expectations in turn order. When an id matches an existing
@@ -2402,6 +2410,12 @@ public class McpToolRegistry {
                         turnCompletion.streaming();
                     }
                     turnBuilder.respondingWith(turnCompletion);
+                }
+
+                // Optional chaos profile for this turn's response
+                LlmChaosProfile turnChaos = parseChaosProfile(turnNode.path("chaos"));
+                if (turnChaos != null) {
+                    turnBuilder.withChaos(turnChaos);
                 }
 
                 // Chain to next (except last)
@@ -2619,6 +2633,63 @@ public class McpToolRegistry {
 
     private static String emptyToNull(String value) {
         return value == null || value.isEmpty() ? null : value;
+    }
+
+    /**
+     * Add the optional {@code chaos} object schema to a tool's properties.
+     */
+    private void putChaosSchema(ObjectNode properties) {
+        ObjectNode chaosProp = properties.putObject("chaos");
+        chaosProp.put("type", "object").put("description", "Optional fault/chaos profile for resilience testing");
+        ObjectNode chaosProps = chaosProp.putObject("properties");
+        chaosProps.putObject("errorStatus").put("type", "integer").put("description", "HTTP error status to return (e.g. 429, 529); fires always unless errorProbability is set");
+        chaosProps.putObject("retryAfter").put("type", "string").put("description", "Value for the Retry-After header on an injected error");
+        chaosProps.putObject("errorProbability").put("type", "number").put("description", "Probability 0.0-1.0 of injecting the error (default 1.0 when errorStatus set)");
+        ObjectNode truncateModeProp = chaosProps.putObject("truncateMode");
+        truncateModeProp.put("type", "string").put("description", "Streaming truncation mode");
+        ArrayNode truncateEnum = truncateModeProp.putArray("enum");
+        truncateEnum.add("NONE");
+        truncateEnum.add("MID_STREAM");
+        chaosProps.putObject("truncateAtFraction").put("type", "number").put("description", "Fraction 0.0-1.0 of SSE events to keep before truncating (default 0.5)");
+        chaosProps.putObject("malformedSse").put("type", "boolean").put("description", "Append a malformed (broken-JSON) SSE chunk");
+        chaosProps.putObject("seed").put("type", "integer").put("description", "Seed making a fractional errorProbability reproducible");
+    }
+
+    /**
+     * Parse an optional chaos profile object into an {@link LlmChaosProfile}, or
+     * null if the node is absent/empty.
+     */
+    private LlmChaosProfile parseChaosProfile(JsonNode node) {
+        if (node == null || !node.isObject() || node.size() == 0) {
+            return null;
+        }
+        LlmChaosProfile chaos = LlmChaosProfile.llmChaosProfile();
+        if (node.path("errorStatus").isIntegralNumber()) {
+            chaos.withErrorStatus(node.path("errorStatus").asInt());
+        }
+        if (node.path("retryAfter").isTextual()) {
+            chaos.withRetryAfter(node.path("retryAfter").asText());
+        }
+        if (node.path("errorProbability").isNumber()) {
+            chaos.withErrorProbability(node.path("errorProbability").asDouble());
+        }
+        if (node.path("truncateMode").isTextual()) {
+            try {
+                chaos.withTruncateMode(LlmChaosProfile.TruncateMode.valueOf(node.path("truncateMode").asText().toUpperCase()));
+            } catch (IllegalArgumentException ignored) {
+                // leave unset on an unrecognised value
+            }
+        }
+        if (node.path("truncateAtFraction").isNumber()) {
+            chaos.withTruncateAtFraction(node.path("truncateAtFraction").asDouble());
+        }
+        if (node.path("malformedSse").isBoolean()) {
+            chaos.withMalformedSse(node.path("malformedSse").asBoolean());
+        }
+        if (node.path("seed").isIntegralNumber()) {
+            chaos.withSeed(node.path("seed").asLong());
+        }
+        return chaos;
     }
 
     /**

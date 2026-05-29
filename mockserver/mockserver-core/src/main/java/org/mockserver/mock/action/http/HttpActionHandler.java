@@ -82,6 +82,7 @@ public class HttpActionHandler {
     private NettyHttpClient httpClient;
     private HopByHopHeaderFilter hopByHopHeaderFilter = new HopByHopHeaderFilter();
     private HttpRequestToCurlSerializer httpRequestToCurlSerializer;
+    private final org.mockserver.metrics.Metrics metrics;
 
     public HttpActionHandler(Configuration configuration, EventLoopGroup eventLoopGroup, HttpState httpStateHandler, List<ProxyConfiguration> proxyConfigurations, NettySslContextFactory nettySslContextFactory) {
         this.configuration = configuration;
@@ -90,6 +91,7 @@ public class HttpActionHandler {
         this.mockServerLogger = httpStateHandler.getMockServerLogger();
         this.httpRequestToCurlSerializer = new HttpRequestToCurlSerializer(mockServerLogger);
         this.httpClient = new NettyHttpClient(configuration, mockServerLogger, eventLoopGroup, proxyConfigurations, true, nettySslContextFactory);
+        this.metrics = new org.mockserver.metrics.Metrics(configuration);
     }
 
     /**
@@ -270,7 +272,10 @@ public class HttpActionHandler {
                 }
                 case LLM_RESPONSE -> {
                     HttpLlmResponse llmAction = (HttpLlmResponse) action;
-                    boolean isStreaming = llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
+                    // Chaos: a probabilistic provider error short-circuits to a normal
+                    // (non-streaming) HTTP error response, even for a would-be stream.
+                    final HttpResponse chaosErrorResponse = getHttpLlmResponseActionHandler().chaosErrorResponseOrNull(llmAction);
+                    boolean isStreaming = chaosErrorResponse == null && llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
                     if (isStreaming) {
                         if (ctx == null) {
                             writeResponseActionResponse(
@@ -291,6 +296,12 @@ public class HttpActionHandler {
                                             .setArguments(request, action, action.getExpectationId())
                                     );
                                     java.util.List<SseEvent> sseEvents = getHttpLlmResponseActionHandler().handleStreaming(llmAction, request);
+                                    if (!sseEvents.isEmpty()
+                                        && llmAction.getChaos() != null
+                                        && (llmAction.getChaos().getTruncateMode() == org.mockserver.model.LlmChaosProfile.TruncateMode.MID_STREAM
+                                        || Boolean.TRUE.equals(llmAction.getChaos().getMalformedSse()))) {
+                                        metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
+                                    }
                                     HttpSseResponse sseResponse = HttpSseResponse.sseResponse()
                                         .withStatusCode(200)
                                         .withHeader("content-type", "text/event-stream")
@@ -328,7 +339,12 @@ public class HttpActionHandler {
                                         .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
                                         .setArguments(request, action, action.getExpectationId())
                                 );
-                                HttpResponse llmResponse = getHttpLlmResponseActionHandler().handle(llmAction, request);
+                                HttpResponse llmResponse = chaosErrorResponse != null
+                                    ? chaosErrorResponse
+                                    : getHttpLlmResponseActionHandler().handle(llmAction, request);
+                                if (chaosErrorResponse != null) {
+                                    metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
+                                }
                                 writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
                             } catch (Throwable throwable) {
                                 if (mockServerLogger.isEnabledForInstance(Level.INFO)) {

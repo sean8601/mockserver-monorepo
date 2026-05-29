@@ -167,6 +167,16 @@ Two MCP tools expose the LLM mocking feature to agents:
 
 The first two validate provider availability against `ProviderCodecRegistry` at registration time. The analysis tools delegate to `org.mockserver.llm.analysis.AgentRunAnalyzer`.
 
+## Fault / chaos injection
+
+`LlmChaosProfile` (`org.mockserver.model`) attaches a fault profile to any `HttpLlmResponse` for resilience testing. Applied by `HttpLlmResponseActionHandler`:
+
+- **Probabilistic error** — `chaosErrorResponseOrNull(...)` returns an error `HttpResponse` (`errorStatus` + optional `Retry-After`) when triggered. An `errorStatus` with no `errorProbability` always fires; a fractional probability draws once (reproducible via `seed`). `HttpActionHandler` checks this first and, if present, returns the error on the normal (non-streaming) path — a provider error is a plain HTTP response, not an SSE stream, even for a would-be streaming completion.
+- **Mid-stream truncation** — `applyStreamingChaos(...)` keeps a leading `truncateAtFraction` of the SSE events (default 0.5) so the stream ends early.
+- **Malformed SSE** — appends a deliberately broken-JSON chunk so the client must handle a corrupt event.
+
+Truncation and malformed-SSE are fully deterministic; the error path is deterministic at probability 0.0/1.0. Each injection increments the `LLM_CHAOS_INJECTED_COUNT` metric. The profile round-trips as the top-level `chaos` field on `HttpLlmResponse` (alongside `completion`, `embedding`, and `conversationPredicates`) and is exposed per turn in the dashboard wizard and via the `chaos` MCP parameter.
+
 ## Agent-run analysis
 
 `AgentRunAnalyzer` (`org.mockserver.llm.analysis`) is a deterministic, read-only inspector. Given the LLM requests MockServer recorded (retrieved via the normal request log), it decodes each with the provider's `ProviderCodec` and treats the **richest** conversation (most messages — the latest dialogue snapshot) as the canonical run. From that it derives:
@@ -346,3 +356,5 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/client/LlmCompletionService.java` | Orchestrator: off-unless-configured, fail-closed, cached |
 | `llm/client/LlmTransport.java` + `NettyHttpClientLlmTransport.java` | Transport seam over `NettyHttpClient` |
 | `llm/analysis/AgentRunAnalyzer.java` | Deterministic read-only agent-run inspection (tool-call counts, run summary) |
+| `model/LlmChaosProfile.java` | Fault/chaos profile carried on `HttpLlmResponse` |
+| `mock/action/http/HttpLlmResponseActionHandler.java` | Encodes LLM responses and applies chaos (error / truncation / malformed SSE) |

@@ -907,8 +907,28 @@ sitemap:
         <tr><td><code>stopReason</code></td><td>string</td><td>No</td><td>Stop reason to encode in the provider format (e.g. <code>end_turn</code>, <code>tool_use</code>, <code>stop</code>)</td></tr>
         <tr><td><code>usage</code></td><td>object</td><td>No</td><td>Token usage. Accepts <code>inputTokens</code> (integer) and <code>outputTokens</code> (integer).</td></tr>
         <tr><td><code>streaming</code></td><td>boolean</td><td>No</td><td>When <code>true</code>, the response is delivered as a Server-Sent Events stream. Defaults to <code>false</code>.</td></tr>
+        <tr><td><code>chaos</code></td><td>object</td><td>No</td><td>Optional fault/chaos profile for resilience testing (see the table below). Also accepted per turn in <a href="#create_llm_conversation"><code>create_llm_conversation</code></a>.</td></tr>
     </tbody>
 </table>
+
+<p><strong><code>chaos</code> fields</strong> (all optional):</p>
+
+<table>
+    <thead>
+        <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>errorStatus</code></td><td>integer</td><td>HTTP error status to return instead of a normal response (e.g. <code>429</code>, <code>529</code>). Fires every time unless <code>errorProbability</code> is set. A provider error is returned as a normal HTTP response even for a streaming completion.</td></tr>
+        <tr><td><code>retryAfter</code></td><td>string</td><td>Value for the <code>Retry-After</code> header on an injected error (e.g. <code>"30"</code>).</td></tr>
+        <tr><td><code>errorProbability</code></td><td>number</td><td>Probability 0.0&ndash;1.0 of injecting the error. <code>1.0</code> (or omitted with <code>errorStatus</code> set) always fires; <code>0.0</code> never does. Fractional values are non-deterministic unless <code>seed</code> is set.</td></tr>
+        <tr><td><code>truncateMode</code></td><td>string</td><td><code>NONE</code> or <code>MID_STREAM</code>. <code>MID_STREAM</code> truncates a streaming response after a leading fraction of events.</td></tr>
+        <tr><td><code>truncateAtFraction</code></td><td>number</td><td>Fraction 0.0&ndash;1.0 of SSE events to keep before truncating (default <code>0.5</code>).</td></tr>
+        <tr><td><code>malformedSse</code></td><td>boolean</td><td>Append a malformed (broken-JSON) SSE chunk so the client must handle a corrupt event.</td></tr>
+        <tr><td><code>seed</code></td><td>integer</td><td>Makes a fractional <code>errorProbability</code> reproducible.</td></tr>
+    </tbody>
+</table>
+
+<p>Chaos is deterministic for truncation, malformed SSE, and an <code>errorProbability</code> of 0.0 or 1.0 &mdash; safe for repeatable tests. Use a fractional probability (optionally with a <code>seed</code>) only when you intend flakiness.</p>
 
 <p><strong>Example request (Anthropic text completion):</strong></p>
 
@@ -1032,6 +1052,8 @@ sitemap:
         <tr><td><code>streaming</code></td><td>boolean</td><td>Stream this turn's response as SSE. Defaults to <code>false</code>.</td></tr>
     </tbody>
 </table>
+
+<p>Each turn may also carry an optional <code>chaos</code> object (a sibling of <code>match</code> and <code>response</code>) with the same fields as the <a href="#mock_llm_completion"><code>mock_llm_completion</code></a> <code>chaos</code> profile, to inject faults into that turn's response.</p>
 
 <p><strong>Example request (2-turn conversation isolated by session header):</strong></p>
 

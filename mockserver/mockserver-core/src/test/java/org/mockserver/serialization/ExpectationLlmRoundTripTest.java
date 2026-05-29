@@ -231,6 +231,42 @@ public class ExpectationLlmRoundTripTest {
     }
 
     @Test
+    public void shouldRoundTripChaosProfile() {
+        // given
+        Expectation original = when(request().withPath("/v1/messages"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withCompletion(completion().withText("hi"))
+                    .withChaos(
+                        org.mockserver.model.LlmChaosProfile.llmChaosProfile()
+                            .withErrorStatus(429)
+                            .withRetryAfter("30")
+                            .withErrorProbability(0.5)
+                            .withTruncateMode(org.mockserver.model.LlmChaosProfile.TruncateMode.MID_STREAM)
+                            .withTruncateAtFraction(0.25)
+                            .withMalformedSse(true)
+                            .withSeed(7L)
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then
+        org.mockserver.model.LlmChaosProfile chaos = deserialized[0].getHttpLlmResponse().getChaos();
+        assertThat(chaos, is(notNullValue()));
+        assertThat(chaos.getErrorStatus(), is(429));
+        assertThat(chaos.getRetryAfter(), is("30"));
+        assertThat(chaos.getErrorProbability(), is(0.5));
+        assertThat(chaos.getTruncateMode(), is(org.mockserver.model.LlmChaosProfile.TruncateMode.MID_STREAM));
+        assertThat(chaos.getTruncateAtFraction(), is(0.25));
+        assertThat(chaos.getMalformedSse(), is(true));
+        assertThat(chaos.getSeed(), is(7L));
+    }
+
+    @Test
     public void shouldRoundTripConversationPredicatesPartial() {
         // given - only some predicates set
         Expectation original = when(request().withPath("/v1/messages"))

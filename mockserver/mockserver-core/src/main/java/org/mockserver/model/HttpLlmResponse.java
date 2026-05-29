@@ -12,6 +12,7 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
     private Completion completion;
     private EmbeddingResponse embedding;
     private ConversationPredicates conversationPredicates;
+    private LlmChaosProfile chaos;
     @JsonIgnore
     private transient LlmConversationMatcher conversationMatcher;
 
@@ -68,6 +69,20 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
 
     public ConversationPredicates getConversationPredicates() {
         return conversationPredicates;
+    }
+
+    /**
+     * Optional fault/chaos profile applied when returning this response —
+     * probabilistic errors, mid-stream truncation, malformed SSE.
+     */
+    public HttpLlmResponse withChaos(LlmChaosProfile chaos) {
+        this.chaos = chaos;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public LlmChaosProfile getChaos() {
+        return chaos;
     }
 
     public HttpLlmResponse withConversationMatcher(LlmConversationMatcher conversationMatcher) {
@@ -133,13 +148,14 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
             Objects.equals(model, that.model) &&
             Objects.equals(completion, that.completion) &&
             Objects.equals(embedding, that.embedding) &&
-            Objects.equals(conversationPredicates, that.conversationPredicates);
+            Objects.equals(conversationPredicates, that.conversationPredicates) &&
+            Objects.equals(chaos, that.chaos);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), provider, model, completion, embedding, conversationPredicates);
+            hashCode = Objects.hash(super.hashCode(), provider, model, completion, embedding, conversationPredicates, chaos);
         }
         return hashCode;
     }

@@ -305,3 +305,61 @@ describe('latestMessageMatches (regex predicate)', () => {
     expect(draft.turns[0]!.predicates.latestMessageMatches).toBe('weather.*paris');
   });
 });
+
+describe('chaos profile', () => {
+  function chaosDraft(): ConversationDraft {
+    const draft = baseDraft();
+    draft.turns[0]!.chaos = {
+      errorStatus: 429,
+      retryAfter: '30',
+      errorProbability: 1.0,
+      truncateMode: 'MID_STREAM',
+      truncateAtFraction: 0.5,
+      malformedSse: true,
+      seed: 7,
+    };
+    return draft;
+  }
+
+  it('emits withChaos in Java', () => {
+    const java = conversationToJava(chaosDraft());
+    expect(java).toContain('.withChaos(');
+    expect(java).toContain('.withErrorStatus(429)');
+    expect(java).toContain('.withTruncateMode(org.mockserver.model.LlmChaosProfile.TruncateMode.MID_STREAM)');
+    expect(java).toContain('.withSeed(7L)');
+  });
+
+  it('emits chaos object in JSON httpLlmResponse', () => {
+    const json = JSON.parse(conversationToJson(chaosDraft()));
+    const chaos = json[0].httpLlmResponse.chaos;
+    expect(chaos.errorStatus).toBe(429);
+    expect(chaos.malformedSse).toBe(true);
+  });
+
+  it('emits chaos object in MCP turn', () => {
+    const args = conversationToMcpArgs(chaosDraft());
+    const turns = args['turns'] as Array<Record<string, unknown>>;
+    const chaos = turns[0]!['chaos'] as Record<string, unknown>;
+    expect(chaos['errorStatus']).toBe(429);
+    expect(chaos['truncateMode']).toBe('MID_STREAM');
+  });
+
+  it('round-trips chaos through draftFromScenarioExpectations', () => {
+    const json = JSON.parse(conversationToJson(chaosDraft())) as Array<Record<string, unknown>>;
+    const { draft } = draftFromScenarioExpectations(
+      json.map((value, i) => ({ key: `k${i}`, value })),
+    );
+    expect(draft.turns[0]!.chaos?.errorStatus).toBe(429);
+    expect(draft.turns[0]!.chaos?.malformedSse).toBe(true);
+  });
+
+  it('omits NONE truncateMode from wire output', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.chaos = { truncateMode: 'NONE', errorStatus: 500 };
+    const args = conversationToMcpArgs(draft);
+    const turns = args['turns'] as Array<Record<string, unknown>>;
+    const chaos = turns[0]!['chaos'] as Record<string, unknown>;
+    expect(chaos['truncateMode']).toBeUndefined();
+    expect(chaos['errorStatus']).toBe(500);
+  });
+});

@@ -14,7 +14,7 @@ import Collapse from '@mui/material/Collapse';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PredicatePills from './PredicatePills';
-import type { TurnDraft, TurnMatchPredicates, TurnResponse, NormalizationDraft } from '../lib/conversationCodegen';
+import type { TurnDraft, TurnMatchPredicates, TurnResponse, NormalizationDraft, ChaosDraft } from '../lib/conversationCodegen';
 import type { ToolCallDraft } from '../lib/expectationFromCapture';
 
 // ---------------------------------------------------------------------------
@@ -86,6 +86,21 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
       });
     },
     [turns, updatePredicates],
+  );
+
+  const toggleChaos = useCallback(
+    (index: number, enabled: boolean) => {
+      updateTurn(index, { chaos: enabled ? {} : undefined });
+    },
+    [updateTurn],
+  );
+
+  const updateChaos = useCallback(
+    (index: number, partial: Partial<ChaosDraft>) => {
+      const turn = turns[index]!;
+      updateTurn(index, { chaos: { ...(turn.chaos ?? {}), ...partial } });
+    },
+    [turns, updateTurn],
   );
 
   const updateToolCall = useCallback(
@@ -354,6 +369,85 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                 />
               </Box>
             </Box>
+
+            {/* Fault / chaos injection (resilience testing) */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={turn.chaos != null}
+                  onChange={(e) => toggleChaos(i, e.target.checked)}
+                  size="small"
+                />
+              }
+              label="Inject fault / chaos"
+              sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.75rem' }, mt: 0.5 }}
+            />
+            <Collapse in={turn.chaos != null} unmountOnExit>
+              <Box sx={{ pl: 1.5, mb: 1, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                <TextField
+                  label="Error status"
+                  size="small"
+                  type="number"
+                  value={turn.chaos?.errorStatus ?? ''}
+                  onChange={(e) => updateChaos(i, { errorStatus: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  sx={{ width: 110 }}
+                />
+                <TextField
+                  label="Retry-After"
+                  size="small"
+                  value={turn.chaos?.retryAfter ?? ''}
+                  onChange={(e) => updateChaos(i, { retryAfter: e.target.value || undefined })}
+                  sx={{ width: 110 }}
+                />
+                <TextField
+                  label="Error prob (0-1)"
+                  size="small"
+                  type="number"
+                  value={turn.chaos?.errorProbability ?? ''}
+                  onChange={(e) => updateChaos(i, { errorProbability: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                  sx={{ width: 130 }}
+                />
+                <TextField
+                  label="Truncate"
+                  size="small"
+                  select
+                  value={turn.chaos?.truncateMode ?? 'NONE'}
+                  onChange={(e) => updateChaos(i, { truncateMode: e.target.value as ChaosDraft['truncateMode'] })}
+                  sx={{ width: 130 }}
+                >
+                  <MenuItem value="NONE">None</MenuItem>
+                  <MenuItem value="MID_STREAM">Mid-stream</MenuItem>
+                </TextField>
+                <TextField
+                  label="Truncate frac"
+                  size="small"
+                  type="number"
+                  value={turn.chaos?.truncateAtFraction ?? ''}
+                  onChange={(e) => updateChaos(i, { truncateAtFraction: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                  sx={{ width: 120 }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={turn.chaos?.malformedSse === true}
+                      onChange={(e) => updateChaos(i, { malformedSse: e.target.checked })}
+                    />
+                  }
+                  label="Malformed SSE"
+                  sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.75rem' } }}
+                />
+                <TextField
+                  label="Seed"
+                  size="small"
+                  type="number"
+                  value={turn.chaos?.seed ?? ''}
+                  onChange={(e) => updateChaos(i, { seed: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  sx={{ width: 100 }}
+                  helperText="reproducible prob"
+                />
+              </Box>
+            </Collapse>
           </CardContent>
         </Card>
       ))}

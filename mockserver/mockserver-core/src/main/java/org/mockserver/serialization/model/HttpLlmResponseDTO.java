@@ -11,6 +11,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
     private Completion completion;
     private EmbeddingResponse embedding;
     private ConversationPredicates conversationPredicates;
+    private LlmChaosProfile chaos;
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean primary;
 
@@ -24,6 +25,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             completion = httpLlmResponse.getCompletion();
             embedding = httpLlmResponse.getEmbedding();
             conversationPredicates = httpLlmResponse.getConversationPredicates();
+            chaos = httpLlmResponse.getChaos();
             primary = httpLlmResponse.isPrimary();
         }
     }
@@ -39,6 +41,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             .withCompletion(completion)
             .withEmbedding(embedding)
             .withConversationPredicates(conversationPredicates)
+            .withChaos(chaos)
             .withPrimary(primary);
     }
 
@@ -93,6 +96,15 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
 
     public HttpLlmResponseDTO setConversationPredicates(ConversationPredicates conversationPredicates) {
         this.conversationPredicates = conversationPredicates;
+        return this;
+    }
+
+    public LlmChaosProfile getChaos() {
+        return chaos;
+    }
+
+    public HttpLlmResponseDTO setChaos(LlmChaosProfile chaos) {
+        this.chaos = chaos;
         return this;
     }
 

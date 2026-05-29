@@ -157,6 +157,41 @@
         }
       }
     },
+    "chaos": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "errorStatus": {
+          "type": "integer"
+        },
+        "retryAfter": {
+          "type": "string"
+        },
+        "errorProbability": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "truncateMode": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "MID_STREAM"
+          ]
+        },
+        "truncateAtFraction": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "malformedSse": {
+          "type": "boolean"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      }
+    },
     "primary": {
       "type": "boolean"
     }

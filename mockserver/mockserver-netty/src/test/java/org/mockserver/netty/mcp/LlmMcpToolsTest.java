@@ -475,4 +475,39 @@ public class LlmMcpToolsTest {
         assertThat(result.path("messageCount").asInt(), is(0));
         assertThat(result.has("message"), is(true));
     }
+
+    // --- chaos profiles ---
+
+    @Test
+    public void shouldCreateLlmCompletionWithChaosProfile() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "OPENAI");
+        params.put("path", "/v1/chat/completions");
+        params.put("text", "ok");
+        ObjectNode chaos = params.putObject("chaos");
+        chaos.put("errorStatus", 429);
+        chaos.put("retryAfter", "30");
+        chaos.put("errorProbability", 1.0);
+
+        JsonNode result = toolRegistry.callTool("mock_llm_completion", params);
+        assertThat(result.path("status").asText(), is("created"));
+        assertThat(result.path("count").asInt(), is(1));
+    }
+
+    @Test
+    public void shouldCreateLlmConversationWithPerTurnChaos() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        ArrayNode turns = params.putArray("turns");
+        ObjectNode turn1 = turns.addObject();
+        turn1.putObject("response").put("text", "Turn 0");
+        ObjectNode turnChaos = turn1.putObject("chaos");
+        turnChaos.put("truncateMode", "MID_STREAM");
+        turnChaos.put("truncateAtFraction", 0.5);
+
+        JsonNode result = toolRegistry.callTool("create_llm_conversation", params);
+        assertThat(result.path("status").asText(), is("created"));
+        assertThat(result.path("count").asInt(), is(1));
+    }
 }
