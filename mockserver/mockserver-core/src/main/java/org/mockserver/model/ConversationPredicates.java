@@ -19,6 +19,7 @@ public class ConversationPredicates extends ObjectWithJsonToString {
     private String latestMessageMatches;   // regex source string, not Pattern
     private ParsedMessage.Role latestMessageRole;
     private String containsToolResultFor;
+    private String semanticMatchAgainst;          // opt-in fuzzy LLM-judged match (off by default)
     private NormalizationOptions normalization;   // optional modifier applied before contains/matches
 
     public static ConversationPredicates conversationPredicates() {
@@ -76,6 +77,22 @@ public class ConversationPredicates extends ObjectWithJsonToString {
     }
 
     /**
+     * Opt-in fuzzy semantic match: the expected meaning the latest message
+     * should express, judged by a runtime LLM. Off by default — ignored unless
+     * {@code mockserver.llmSemanticMatchingEnabled} is set and a backend
+     * resolves. Non-deterministic; exploratory only, never for assertions.
+     */
+    public ConversationPredicates withSemanticMatchAgainst(String semanticMatchAgainst) {
+        this.semanticMatchAgainst = semanticMatchAgainst;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getSemanticMatchAgainst() {
+        return semanticMatchAgainst;
+    }
+
+    /**
      * Optional normalisation applied to the prompt text (and, for substring
      * matching, the expected value) before {@code latestMessageContains} /
      * {@code latestMessageMatches} are evaluated. A modifier, not a predicate:
@@ -101,7 +118,8 @@ public class ConversationPredicates extends ObjectWithJsonToString {
             || latestMessageContains != null
             || latestMessageMatches != null
             || latestMessageRole != null
-            || containsToolResultFor != null;
+            || containsToolResultFor != null
+            || semanticMatchAgainst != null;
     }
 
     @Override
@@ -121,13 +139,14 @@ public class ConversationPredicates extends ObjectWithJsonToString {
             Objects.equals(latestMessageMatches, that.latestMessageMatches) &&
             Objects.equals(latestMessageRole, that.latestMessageRole) &&
             Objects.equals(containsToolResultFor, that.containsToolResultFor) &&
+            Objects.equals(semanticMatchAgainst, that.semanticMatchAgainst) &&
             Objects.equals(normalization, that.normalization);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(turnIndex, latestMessageContains, latestMessageMatches, latestMessageRole, containsToolResultFor, normalization);
+            hashCode = Objects.hash(turnIndex, latestMessageContains, latestMessageMatches, latestMessageRole, containsToolResultFor, semanticMatchAgainst, normalization);
         }
         return hashCode;
     }

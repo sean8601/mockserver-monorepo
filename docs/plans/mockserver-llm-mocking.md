@@ -32,7 +32,7 @@ The original RFC (RFC-1 LLM Response Builder + RFC-2 Stateful Scripted Conversat
 |---|---|---|
 | 8 | MCP/A2A conformance contract testing (`run_mcp_contract_test`) | ❌ Not started — see Item assessments below |
 | 9a | Normalised prompt matching (deterministic) | ✅ Shipped — `NormalizationOptions` on `ConversationPredicates`, applied by `PromptNormalizer` before the text predicates (whitespace/case/JSON-key-sort/volatile-field drop) |
-| 9b | Semantic prompt matching (runtime LLM / embeddings) | ❌ Not started — opt-in only, not for assertions |
+| 9b | Semantic prompt matching (runtime LLM / embeddings) | ✅ Shipped (LLM-judge, opt-in) — `semanticMatch` predicate via `SemanticPromptMatcher`/`SemanticMatching`; off by default, ignored unless `mockserver.llmSemanticMatchingEnabled` + a backend resolves; fail-closed; never on the assertion path. Embeddings variant not pursued (judge suffices). |
 | 10 | OTel GenAI span export (+ metrics export) | ✅ Shipped — explicit GenAI spans per served completion (`GenAiSpanExporter`/`GenAiSpans`, `mockserver.otelTracesEnabled`) AND metrics export bridging the existing Prometheus gauges to OTLP (`OtelMetricsExporter`, `mockserver.otelMetricsEnabled`), as an alternative to Prometheus. Explicit spans only — no auto-instrumentation. Both off by default, fail-soft, OTLP HTTP/JDK-sender, `io.opentelemetry` relocated in shade. |
 | 11 | Correlated agent-run session / call-graph view | ✅ Shipped — `AgentRunAnalyzer.buildCallGraph` (nodes + NEXT/INVOKES/RESULT edges) in the `explain_agent_run` `callGraph` field; dashboard Sessions view renders it per session (`AgentRunGraph.tsx` + `lib/callGraph.ts`, incl. Mermaid source) |
 | 12 | Prompt-injection / adversarial-response harness | ❌ Not started |

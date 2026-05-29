@@ -861,6 +861,9 @@ ConfigurationProperties.llmRequestTimeoutMillis(long millis)</code></pre>
 mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p>Example (OpenAI default backend):</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmProvider="OPENAI" -Dmockserver.llmApiKey="sk-..."</code></pre>
+    <p><strong>Exploratory semantic matching</strong> &mdash; opt in to the fuzzy, LLM-judged <code>semanticMatch</code> conversation predicate. Off by default and ignored unless a backend (above) also resolves. It calls a live model to judge intent, so it is <strong>non-deterministic and must never gate a CI assertion</strong> &mdash; use it for exploration only. Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmSemanticMatchingEnabled(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmSemanticMatchingEnabled=... &nbsp; MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED=...</code></pre>
 </div>
 
 <button id="button_configuration_llm_vcr" class="accordion title"><strong>LLM Fixture (VCR) Recording &amp; Replay</strong></button>

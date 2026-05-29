@@ -79,6 +79,14 @@ Agent prompts are dynamically assembled, so exact-byte matching is brittle. `Nor
 
 For `latestMessageContains`, both the subject text and the expected substring are normalised; for `latestMessageMatches`, only the subject is normalised (normalising the regex source would corrupt the pattern). Normalisation applies **only to the latest-message text** — the `containsToolResultFor` tool name, `turnIndex`, and `latestMessageRole` are matched exactly as specified. Boolean options are nullable: an unset flag uses its default (`collapseWhitespace` and `sortJsonKeys` on; `lowercase` and `dropBuiltInVolatileFields` off), resolved identically whether the options arrive via the REST API or the MCP tool. Normalisation is idempotent and pure — it never makes a test flaky — and is a *modifier*, not a predicate: it does not count toward `hasAnyPredicate()` and has no effect unless a text predicate is also set.
 
+### Semantic prompt matching (opt-in, exploratory)
+
+The `semanticMatch` predicate (`ConversationPredicates.semanticMatchAgainst`) matches when the latest message expresses a given intent, judged by a runtime LLM. It is deliberately quarantined from the deterministic path:
+
+- **Off by default.** `SemanticMatching` is a static gate that is only `install`ed (at server start) when `mockserver.llmSemanticMatchingEnabled` is set **and** a backend resolves via `LlmBackendResolver`. Until then `isEnabled()` is false and `LlmConversationMatcher` **ignores** the predicate (logs once, deterministic fallback) — so default behaviour is unchanged.
+- **Fail-closed when active.** `SemanticPromptMatcher` asks the LLM (via the Phase-2 `LlmCompletionService`, `temperature=0`, cached) a strict yes/no judge question; a non-affirmative, empty, or errored answer does not match.
+- **Never for assertions.** It is non-deterministic by construction (a live model) and documented as exploratory only.
+
 ## Session Isolation
 
 `IsolationSource` describes where to extract the isolation key from an inbound request (header, query parameter, or cookie). The key is encoded into the scenario name:
@@ -342,6 +350,7 @@ These are operational settings (config + MCP, for CI/automation), not dashboard 
 | `mockserver.llmBaseUrl` | _(provider default)_ | — | Base URL override for the default backend |
 | `mockserver.llmBackendsConfig` | _(unset)_ | — | Path to JSON file of named backends |
 | `mockserver.llmRequestTimeoutMillis` | `30000` | — | Per-request timeout for outbound runtime-LLM calls |
+| `mockserver.llmSemanticMatchingEnabled` | `false` | — | Opt-in: activate the exploratory `semanticMatch` predicate (needs a backend; never for assertions) |
 
 ## Related Documents
 
@@ -386,7 +395,8 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/client/LlmBackendResolver.java` | Three-layer backend resolution (env / properties / named JSON) |
 | `llm/client/LlmCompletionService.java` | Orchestrator: off-unless-configured, fail-closed, cached |
 | `llm/client/LlmTransport.java` + `NettyHttpClientLlmTransport.java` | Transport seam over `NettyHttpClient` |
-| `llm/analysis/AgentRunAnalyzer.java` | Deterministic read-only agent-run inspection (tool-call counts, run summary) |
+| `llm/analysis/AgentRunAnalyzer.java` | Deterministic read-only agent-run inspection (tool-call counts, run summary, call graph) |
+| `llm/semantic/SemanticPromptMatcher.java` + `SemanticMatching.java` | Opt-in LLM-judge fuzzy match + its off-by-default static gate |
 | `model/LlmChaosProfile.java` | Fault/chaos profile carried on `HttpLlmResponse` |
 | `mock/action/http/HttpLlmResponseActionHandler.java` | Encodes LLM responses and applies chaos (error / truncation / malformed SSE) |
 | `fixture/FixtureRedactor.java` | Masks sensitive headers and (optional) JSON body fields when recording fixtures |

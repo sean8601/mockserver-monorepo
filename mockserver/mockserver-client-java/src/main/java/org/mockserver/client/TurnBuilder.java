@@ -23,6 +23,7 @@ public class TurnBuilder {
     Pattern latestMessageMatches;
     ParsedMessage.Role latestMessageRole;
     String containsToolResultFor;
+    String semanticMatchAgainst;
     NormalizationOptions normalization;
     LlmChaosProfile chaos;
     Completion completion;
@@ -98,6 +99,20 @@ public class TurnBuilder {
      */
     public TurnBuilder whenContainsToolResultFor(String toolName) {
         this.containsToolResultFor = toolName;
+        return this;
+    }
+
+    /**
+     * Opt-in fuzzy semantic match: match when the latest message expresses the
+     * given intent, judged by a runtime LLM. Off by default and ignored unless
+     * {@code mockserver.llmSemanticMatchingEnabled} is set and a backend
+     * resolves. Non-deterministic — exploratory only, never for assertions.
+     *
+     * @param expectedMeaning the intent the latest message should express
+     * @return this builder
+     */
+    public TurnBuilder whenSemanticMatch(String expectedMeaning) {
+        this.semanticMatchAgainst = expectedMeaning;
         return this;
     }
 

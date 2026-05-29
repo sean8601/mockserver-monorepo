@@ -38,6 +38,8 @@ export interface TurnMatchPredicates {
   latestMessageMatches?: string;
   latestMessageRole?: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM';
   containsToolResultFor?: string;
+  /** Opt-in fuzzy LLM-judged match (exploratory; off unless enabled server-side). */
+  semanticMatchAgainst?: string;
   normalization?: NormalizationDraft;
 }
 
@@ -184,6 +186,9 @@ export function conversationToJava(draft: ConversationDraft): string {
     if (turn.predicates.containsToolResultFor) {
       lines.push(`        .whenContainsToolResultFor("${escapeJava(turn.predicates.containsToolResultFor)}")`);
     }
+    if (turn.predicates.semanticMatchAgainst) {
+      lines.push(`        .whenSemanticMatch("${escapeJava(turn.predicates.semanticMatchAgainst)}")`);
+    }
     const normObj = normalizationToObject(turn.predicates.normalization);
     if (normObj) {
       const n = turn.predicates.normalization!;
@@ -296,6 +301,9 @@ export function conversationToJson(draft: ConversationDraft): string {
     if (turn.predicates.containsToolResultFor) {
       predicates['containsToolResultFor'] = turn.predicates.containsToolResultFor;
     }
+    if (turn.predicates.semanticMatchAgainst) {
+      predicates['semanticMatchAgainst'] = turn.predicates.semanticMatchAgainst;
+    }
     const jsonNorm = normalizationToObject(turn.predicates.normalization);
     if (jsonNorm) {
       predicates['normalization'] = jsonNorm;
@@ -384,6 +392,9 @@ export function conversationToMcpArgs(
     }
     if (turn.predicates.containsToolResultFor) {
       match['containsToolResultFor'] = turn.predicates.containsToolResultFor;
+    }
+    if (turn.predicates.semanticMatchAgainst) {
+      match['semanticMatchAgainst'] = turn.predicates.semanticMatchAgainst;
     }
     const mcpNorm = normalizationToObject(turn.predicates.normalization);
     if (mcpNorm) {
@@ -530,9 +541,9 @@ function parseNormalization(raw: unknown): NormalizationDraft | undefined {
  * Convert a group of expectations sharing a scenarioName back into a
  * ConversationDraft plus the ordered list of expectation IDs. Lossy by
  * design — predicates beyond turnIndex / latestMessageContains /
- * latestMessageMatches / latestMessageRole / containsToolResultFor (plus
- * optional normalization) are dropped, since the wizard only exposes those
- * match predicates.
+ * latestMessageMatches / latestMessageRole / containsToolResultFor /
+ * semanticMatchAgainst (plus optional normalization) are dropped, since the
+ * wizard only exposes those match predicates.
  */
 export function draftFromScenarioExpectations(
   expectations: ScenarioExpectationLike[],
@@ -575,6 +586,8 @@ export function draftFromScenarioExpectations(
           ? (predicates['latestMessageRole'] as 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM') : undefined,
         containsToolResultFor: typeof predicates['containsToolResultFor'] === 'string'
           ? (predicates['containsToolResultFor'] as string) : undefined,
+        semanticMatchAgainst: typeof predicates['semanticMatchAgainst'] === 'string'
+          ? (predicates['semanticMatchAgainst'] as string) : undefined,
         normalization: parseNormalization(predicates['normalization']),
       },
       response: {

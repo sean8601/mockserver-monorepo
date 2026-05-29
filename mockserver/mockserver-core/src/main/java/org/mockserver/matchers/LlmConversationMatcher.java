@@ -36,6 +36,7 @@ public class LlmConversationMatcher {
     private Pattern latestMessageMatches;      // lazily compiled from source
     private ParsedMessage.Role latestMessageRole;
     private String containsToolResultFor;
+    private String semanticMatchAgainst; // opt-in fuzzy LLM-judged match (off by default)
     private Provider provider;
     private NormalizationOptions normalization; // optional, applied before contains/matches
 
@@ -117,6 +118,15 @@ public class LlmConversationMatcher {
         return containsToolResultFor;
     }
 
+    public LlmConversationMatcher withSemanticMatchAgainst(String semanticMatchAgainst) {
+        this.semanticMatchAgainst = semanticMatchAgainst;
+        return this;
+    }
+
+    public String getSemanticMatchAgainst() {
+        return semanticMatchAgainst;
+    }
+
     public LlmConversationMatcher withProvider(Provider provider) {
         this.provider = provider;
         return this;
@@ -148,7 +158,8 @@ public class LlmConversationMatcher {
             || latestMessageContains != null
             || latestMessageMatchesSource != null
             || latestMessageRole != null
-            || containsToolResultFor != null;
+            || containsToolResultFor != null
+            || semanticMatchAgainst != null;
     }
 
     /**
@@ -259,6 +270,21 @@ public class LlmConversationMatcher {
             if (containsToolResultFor != null) {
                 if (!hasToolResultForName(messages, containsToolResultFor)) {
                     return false;
+                }
+            }
+
+            // semanticMatchAgainst: opt-in fuzzy LLM-judged match. Off by default —
+            // when not enabled the predicate is IGNORED (deterministic fallback), so
+            // default behaviour is never affected. Never on the assertion path.
+            if (semanticMatchAgainst != null) {
+                if (!org.mockserver.llm.semantic.SemanticMatching.isEnabled()) {
+                    LOGGER.debug("semanticMatch predicate ignored — semantic matching not enabled (deterministic fallback)");
+                } else {
+                    ParsedMessage lastMessage = messages.get(messages.size() - 1);
+                    String text = lastMessage.getTextContent();
+                    if (text == null || !org.mockserver.llm.semantic.SemanticMatching.matches(text, semanticMatchAgainst)) {
+                        return false;
+                    }
                 }
             }
 

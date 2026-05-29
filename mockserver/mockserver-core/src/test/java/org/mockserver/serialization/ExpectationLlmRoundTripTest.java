@@ -163,6 +163,7 @@ public class ExpectationLlmRoundTripTest {
                             .withLatestMessageMatches("\\d+")
                             .withLatestMessageRole(ParsedMessage.Role.USER)
                             .withContainsToolResultFor("search")
+                            .withSemanticMatchAgainst("about the weather")
                     )
             );
 
@@ -183,6 +184,7 @@ public class ExpectationLlmRoundTripTest {
         assertThat(preds.getLatestMessageMatches(), is("\\d+"));
         assertThat(preds.getLatestMessageRole(), is(ParsedMessage.Role.USER));
         assertThat(preds.getContainsToolResultFor(), is("search"));
+        assertThat(preds.getSemanticMatchAgainst(), is("about the weather"));
 
         // Verify the lazy-reconstructed matcher works
         assertThat(result.getHttpLlmResponse().getConversationMatcher(), is(notNullValue()));

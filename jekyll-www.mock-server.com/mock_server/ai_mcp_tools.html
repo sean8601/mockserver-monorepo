@@ -1023,6 +1023,7 @@ sitemap:
         <tr><td><code>latestMessageContains</code></td><td>string</td><td>Match when the latest message in the conversation contains this substring</td></tr>
         <tr><td><code>latestMessageRole</code></td><td>string</td><td>Match when the latest message has this role: <code>USER</code>, <code>ASSISTANT</code>, <code>SYSTEM</code>, or <code>TOOL</code></td></tr>
         <tr><td><code>containsToolResultFor</code></td><td>string</td><td>Match when the conversation contains a tool result for the named tool</td></tr>
+        <tr><td><code>semanticMatchAgainst</code></td><td>string</td><td>Opt-in, exploratory: the intent the latest message should express, judged by a runtime LLM. <strong>Off by default</strong> and ignored unless <code>mockserver.llmSemanticMatchingEnabled</code> is set and a backend resolves. Non-deterministic &mdash; for exploration only, never for CI assertions.</td></tr>
         <tr><td><code>normalization</code></td><td>object</td><td>Optional. Clean up the prompt text before <code>latestMessageContains</code> / <code>latestMessageMatches</code> are checked, so a match is not blocked by cosmetic differences in dynamically-assembled agent prompts. Deterministic &mdash; the same prompt always normalises the same way, so it never makes a test flaky. See the table below.</td></tr>
     </tbody>
 </table>

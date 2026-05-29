@@ -97,6 +97,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_OTEL_TRACES_ENABLED = "mockserver.otelTracesEnabled";
     private static final String MOCKSERVER_OTEL_ENDPOINT = "mockserver.otelEndpoint";
     private static final String MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS = "mockserver.otelMetricsExportIntervalSeconds";
+    private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
     private static final String MOCKSERVER_HTTP2_ENABLED = "mockserver.http2Enabled";
@@ -1124,6 +1125,21 @@ public class ConfigurationProperties {
 
     public static void otelMetricsExportIntervalSeconds(long seconds) {
         setProperty(MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS, "" + seconds);
+    }
+
+    /**
+     * Opt-in switch for fuzzy, LLM-judged semantic prompt matching (the
+     * {@code semanticMatch} conversation predicate). Off by default. Even when
+     * on, it only activates if a runtime LLM backend resolves; otherwise the
+     * predicate is ignored. Non-deterministic by nature — exploratory only,
+     * never for CI assertions. See {@link org.mockserver.llm.semantic.SemanticMatching}.
+     */
+    public static boolean llmSemanticMatchingEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED, "MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED", "" + false));
+    }
+
+    public static void llmSemanticMatchingEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED, "" + enabled);
     }
 
     public static long regexMatchingTimeoutMillis() {

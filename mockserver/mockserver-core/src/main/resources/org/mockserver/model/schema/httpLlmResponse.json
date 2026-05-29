@@ -131,6 +131,9 @@
         "containsToolResultFor": {
           "type": "string"
         },
+        "semanticMatchAgainst": {
+          "type": "string"
+        },
         "normalization": {
           "type": "object",
           "additionalProperties": false,

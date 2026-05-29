@@ -61,6 +61,37 @@ public abstract class LifeCycle implements Stoppable {
         this.httpState = new HttpState(this.configuration, this.mockServerLogger, this.scheduler);
         this.otelMetricsExporter = org.mockserver.metrics.OtelMetricsExporter.startIfEnabled();
         this.genAiSpanExporter = org.mockserver.telemetry.GenAiSpanExporter.startIfEnabled();
+        installSemanticMatchingIfEnabled(this.workerGroup);
+    }
+
+    /**
+     * Install the opt-in semantic prompt matcher only when explicitly enabled and
+     * a runtime LLM backend resolves. Off by default — the deterministic matcher
+     * is never affected unless both conditions hold. Fail-soft.
+     */
+    private void installSemanticMatchingIfEnabled(EventLoopGroup eventLoopGroup) {
+        if (!org.mockserver.configuration.ConfigurationProperties.llmSemanticMatchingEnabled()) {
+            return;
+        }
+        try {
+            java.util.Optional<org.mockserver.llm.client.LlmBackend> backend =
+                new org.mockserver.llm.client.LlmBackendResolver().resolveDefault();
+            if (!backend.isPresent()) {
+                return;
+            }
+            org.mockserver.httpclient.NettyHttpClient httpClient =
+                new org.mockserver.httpclient.NettyHttpClient(configuration, mockServerLogger, eventLoopGroup, null, false);
+            org.mockserver.llm.client.LlmCompletionService service =
+                new org.mockserver.llm.client.LlmCompletionService(new org.mockserver.llm.client.NettyHttpClientLlmTransport(httpClient));
+            org.mockserver.llm.semantic.SemanticMatching.install(
+                new org.mockserver.llm.semantic.SemanticPromptMatcher(service, backend.get()));
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .info("semantic prompt matching enabled (backend: {})", backend.get().provider());
+        } catch (Exception e) {
+            // fail-soft — semantic matching stays off
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .warn("failed to enable semantic prompt matching ({}); continuing without it", e.getMessage());
+        }
     }
 
     public CompletableFuture<String> stopAsync() {
@@ -105,6 +136,7 @@ public abstract class LifeCycle implements Stoppable {
                 if (genAiSpanExporter != null) {
                     genAiSpanExporter.stop();
                 }
+                org.mockserver.llm.semantic.SemanticMatching.clear();
 
                 // Shut down all event loops to terminate all threads.
                 bossGroup.shutdownGracefully(5, 5, MILLISECONDS);

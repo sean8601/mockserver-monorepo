@@ -711,4 +711,52 @@ public class LlmConversationMatcherTest {
 
         assertThat(matcher.matches(request), is(true));
     }
+
+    // --- semantic matching (opt-in) ---
+
+    @org.junit.After
+    public void clearSemanticMatching() {
+        org.mockserver.llm.semantic.SemanticMatching.clear();
+    }
+
+    private static HttpRequest weatherRequest() {
+        return request().withBody("{\"messages\":[{\"role\":\"user\",\"content\":\"what is the weather?\"}]}");
+    }
+
+    @Test
+    public void shouldIgnoreSemanticMatchWhenDisabled() {
+        // default: semantic matching not installed → predicate ignored, deterministic fallback
+        LlmConversationMatcher matcher = new LlmConversationMatcher()
+            .withProvider(Provider.ANTHROPIC)
+            .withSemanticMatchAgainst("the user is asking about the weather");
+        assertThat(matcher.matches(weatherRequest()), is(true));
+    }
+
+    @Test
+    public void shouldEvaluateSemanticMatchWhenEnabled() {
+        installJudge("yes");
+        LlmConversationMatcher matcher = new LlmConversationMatcher()
+            .withProvider(Provider.ANTHROPIC)
+            .withSemanticMatchAgainst("about weather");
+        assertThat(matcher.matches(weatherRequest()), is(true));
+    }
+
+    @Test
+    public void shouldNotMatchWhenSemanticJudgeSaysNo() {
+        installJudge("no");
+        LlmConversationMatcher matcher = new LlmConversationMatcher()
+            .withProvider(Provider.ANTHROPIC)
+            .withSemanticMatchAgainst("about cooking");
+        assertThat(matcher.matches(weatherRequest()), is(false));
+    }
+
+    private static void installJudge(String verdict) {
+        org.mockserver.llm.client.LlmTransport transport = (req, timeout) ->
+            org.mockserver.model.HttpResponse.response().withStatusCode(200)
+                .withBody("{\"message\":{\"content\":\"" + verdict + "\"}}");
+        org.mockserver.llm.semantic.SemanticMatching.install(
+            new org.mockserver.llm.semantic.SemanticPromptMatcher(
+                new org.mockserver.llm.client.LlmCompletionService(transport),
+                org.mockserver.llm.client.LlmBackend.of(Provider.OLLAMA, null)));
+    }
 }

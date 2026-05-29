@@ -238,6 +238,18 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                 }
                 sx={{ flex: 1, minWidth: 160 }}
               />
+              <TextField
+                label="Semantic match (exploratory)"
+                size="small"
+                value={turn.predicates.semanticMatchAgainst ?? ''}
+                onChange={(e) =>
+                  updatePredicates(i, {
+                    semanticMatchAgainst: e.target.value || undefined,
+                  })
+                }
+                helperText="LLM-judged; off unless enabled server-side"
+                sx={{ flex: 1, minWidth: 200 }}
+              />
             </Box>
 
             {/* Prompt normalisation (opt-in, deterministic) */}

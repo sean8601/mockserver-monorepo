@@ -306,6 +306,32 @@ describe('latestMessageMatches (regex predicate)', () => {
   });
 });
 
+describe('semanticMatchAgainst (opt-in fuzzy match)', () => {
+  function semanticDraft(): ConversationDraft {
+    const draft = baseDraft();
+    draft.turns[0]!.predicates = { semanticMatchAgainst: 'asking about the weather' };
+    return draft;
+  }
+
+  it('emits whenSemanticMatch in Java', () => {
+    expect(conversationToJava(semanticDraft())).toContain('.whenSemanticMatch("asking about the weather")');
+  });
+
+  it('emits semanticMatchAgainst in JSON predicates and MCP match', () => {
+    const json = JSON.parse(conversationToJson(semanticDraft()));
+    expect(json[0].httpLlmResponse.conversationPredicates.semanticMatchAgainst).toBe('asking about the weather');
+    const args = conversationToMcpArgs(semanticDraft());
+    const match = (args['turns'] as Array<Record<string, unknown>>)[0]!['match'] as Record<string, unknown>;
+    expect(match['semanticMatchAgainst']).toBe('asking about the weather');
+  });
+
+  it('round-trips through draftFromScenarioExpectations', () => {
+    const json = JSON.parse(conversationToJson(semanticDraft())) as Array<Record<string, unknown>>;
+    const { draft } = draftFromScenarioExpectations(json.map((value, i) => ({ key: `k${i}`, value })));
+    expect(draft.turns[0]!.predicates.semanticMatchAgainst).toBe('asking about the weather');
+  });
+});
+
 describe('chaos profile', () => {
   function chaosDraft(): ConversationDraft {
     const draft = baseDraft();

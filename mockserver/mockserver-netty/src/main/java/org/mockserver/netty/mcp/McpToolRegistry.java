@@ -2249,6 +2249,7 @@ public class McpToolRegistry {
         matchProps.putObject("latestMessageMatches").put("type", "string").put("description", "Match when latest message matches this Java regex pattern");
         matchProps.putObject("latestMessageRole").put("type", "string").put("description", "Match when latest message has this role");
         matchProps.putObject("containsToolResultFor").put("type", "string").put("description", "Match when conversation contains a tool result for this tool name");
+        matchProps.putObject("semanticMatchAgainst").put("type", "string").put("description", "Opt-in fuzzy match: the intent the latest message should express, judged by a runtime LLM. Off unless mockserver.llmSemanticMatchingEnabled is set and a backend resolves; non-deterministic, exploratory only, never for assertions");
 
         // optional prompt normalisation applied before the latestMessage* text predicates
         ObjectNode normProp = matchProps.putObject("normalization");
@@ -2415,6 +2416,10 @@ public class McpToolRegistry {
                     JsonNode containsToolResult = matchNode.path("containsToolResultFor");
                     if (!containsToolResult.isMissingNode() && !containsToolResult.isNull()) {
                         turnBuilder.whenContainsToolResultFor(containsToolResult.asText());
+                    }
+                    JsonNode semanticMatch = matchNode.path("semanticMatchAgainst");
+                    if (!semanticMatch.isMissingNode() && !semanticMatch.isNull()) {
+                        turnBuilder.whenSemanticMatch(semanticMatch.asText());
                     }
                     JsonNode normalizationNode = matchNode.path("normalization");
                     if (normalizationNode.isObject()) {
