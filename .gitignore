@@ -150,6 +150,10 @@ terraform/**/*.tfplan
 ###################################################
 /.tmp/.commit-lock
 
+# Local-only working/plan docs (never committed) #
+###################################################
+*.local.md
+
 # Claude Code local state (per-machine) #
 ##########################################
 .claude/scheduled_tasks.lock
