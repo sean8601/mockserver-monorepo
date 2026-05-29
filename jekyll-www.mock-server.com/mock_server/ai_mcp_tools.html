@@ -50,6 +50,7 @@ sitemap:
         <tr><td><a href="#explain_agent_run"><code>explain_agent_run</code></a></td><td>Summarise a recorded agent run (turns, tool-call sequence)</td><td>High</td></tr>
         <tr><td><a href="#detect_llm_drift"><code>detect_llm_drift</code></a></td><td>Replay a cassette against the live provider and report structural drift</td><td>High</td></tr>
         <tr><td><a href="#mock_adversarial_llm_response"><code>mock_adversarial_llm_response</code></a></td><td>Mock a hostile/malformed LLM response to test agent resilience</td><td>High</td></tr>
+        <tr><td><a href="#run_mcp_contract_test"><code>run_mcp_contract_test</code></a></td><td>Check a target MCP server conforms to the protocol over Streamable HTTP</td><td>High</td></tr>
         <tr><td><a href="#raw_expectation"><code>raw_expectation</code></a></td><td>Full expectation JSON passthrough</td><td>Low</td></tr>
         <tr><td><a href="#raw_retrieve"><code>raw_retrieve</code></a></td><td>Full retrieve with correlation ID filtering</td><td>Low</td></tr>
         <tr><td><a href="#raw_verify"><code>raw_verify</code></a></td><td>Full verification JSON</td><td>Low</td></tr>
@@ -1248,6 +1249,51 @@ sitemap:
   "params": {
     "name": "mock_adversarial_llm_response",
     "arguments": { "provider": "ANTHROPIC", "path": "/v1/messages", "payload": "prompt_injection_ignore_instructions" }
+  }
+}</code></pre>
+
+<a id="run_mcp_contract_test" class="anchor" href="#run_mcp_contract_test">&nbsp;</a>
+
+<h3>run_mcp_contract_test</h3>
+
+<p>Check that a target <strong>MCP (Model Context Protocol)</strong> server correctly implements the protocol over Streamable HTTP &mdash; use it to verify an MCP server you built or changed. The tool runs the required JSON-RPC handshake and core methods against the endpoint (<code>initialize</code>, <code>notifications/initialized</code>, <code>ping</code>, <code>tools/list</code>, and unknown-method rejection) and validates the <em>shape</em> of each response (the JSON-RPC 2.0 envelope and required result fields), never the semantics of any tool. It is fully deterministic and involves no LLM. Each request has a 10-second timeout.</p>
+
+<table>
+    <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>targetUrl</code></td><td>string</td><td>Yes</td><td>Full URL of the target MCP server's Streamable HTTP endpoint (e.g. <code>http://localhost:1080/mockserver/mcp</code>)</td></tr>
+        <tr><td><code>protocolVersion</code></td><td>string</td><td>No</td><td>MCP protocol version to advertise during <code>initialize</code> (default <code>2025-03-26</code>)</td></tr>
+        <tr><td><code>toolName</code></td><td>string</td><td>No</td><td>Optional tool to exercise via a <code>tools/call</code> shape check; omit to skip (a <code>tools/call</code> may have side effects on the target)</td></tr>
+    </tbody>
+</table>
+
+<p><strong>Example request:</strong></p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 44,
+  "method": "tools/call",
+  "params": {
+    "name": "run_mcp_contract_test",
+    "arguments": { "targetUrl": "http://localhost:1080/mockserver/mcp" }
+  }
+}</code></pre>
+
+<p><strong>Example response:</strong> the result text is a JSON report with an overall <code>status</code> (<code>all_passed</code> or <code>failures_detected</code>), the negotiated <code>protocolVersion</code> and <code>serverInfo</code>, and a per-check <code>results</code> array (each with <code>check</code>, <code>passed</code>, and any <code>validationErrors</code>):</p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 44,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"status\":\"all_passed\",\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"MockServer\"},\"totalChecks\":5,\"passed\":5,\"failed\":0,\"results\":[{\"check\":\"initialize\",\"passed\":true,\"statusCode\":200,\"detail\":\"session established\"},{\"check\":\"notifications/initialized\",\"passed\":true,\"statusCode\":202},{\"check\":\"ping\",\"passed\":true,\"statusCode\":200},{\"check\":\"tools/list\",\"passed\":true,\"statusCode\":200,\"detail\":\"29 tools advertised\"},{\"check\":\"rejects unknown method\",\"passed\":true,\"statusCode\":200,\"detail\":\"responded with code -32601\"}]}"
+      }
+    ],
+    "isError": false
   }
 }</code></pre>
 

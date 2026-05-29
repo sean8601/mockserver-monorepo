@@ -332,6 +332,21 @@ Both use the OTLP HTTP/protobuf exporter with the JDK HttpClient sender (no gRPC
 
 The MCP tool resolves a backend via `LlmBackendResolver` and is **disabled** (returns `{disabled:true}`) when none is configured. When configured, it builds a transient `NettyHttpClient`-backed transport for the live calls. Because it needs real API keys/tokens and is inherently non-deterministic against a live API, it belongs in an opt-in/scheduled CI lane (see `docs/infrastructure/ci-cd.md`), never the per-commit build. No dashboard control — it is an operational/CI tool.
 
+## MCP server conformance testing
+
+`run_mcp_contract_test` (MCP) verifies that a target **MCP (Model Context Protocol) server** correctly implements the protocol over Streamable HTTP. It is deterministic and involves no LLM — it checks the *protocol*, not any tool's semantics.
+
+- `org.mockserver.netty.mcp.McpContractTest` — the orchestrator. Pure, with an injected `JsonRpcExchange` transport (a `(message, sessionId) → ExchangeResult` function), so the whole check sequence is unit-testable without a network (`McpContractTestTest` drives it with stub servers). Runs an ordered suite of checks, each producing a `CheckResult` (name, passed, statusCode, detail, validationErrors), aggregated into a `Report` (checks + negotiated `protocolVersion` + `serverInfo`):
+  1. **initialize** — POSTs `initialize`, validates the JSON-RPC 2.0 envelope and that `result` carries `protocolVersion`, a `capabilities` object, and `serverInfo.name`; captures the `Mcp-Session-Id`. A transport error here short-circuits (only this check is reported).
+  2. **notifications/initialized** — sends the notification (no `id`) with the session; expects HTTP 200/202/204 and no JSON-RPC error.
+  3. **ping** — expects a JSON-RPC `result`.
+  4. **tools/list** — expects `result.tools` to be an array where every tool has a `name` and an object `inputSchema` (`type: object`).
+  5. **rejects unknown method** — sends a bogus method; expects a JSON-RPC `error` with code `-32601` (Method not found).
+  6. **tools/call** (optional) — only when the caller passes `toolName`, since a real call may have side effects; a shape check on `result.content[]` + the `isError` boolean.
+- The `McpToolRegistry` handler validates `targetUrl` (absolute http/https with a host), builds the `JsonRpcExchange` over the existing `sendHttpRequest` (`HttpURLConnection`, 10 s timeout), extracts the session header case-insensitively, and parses the JSON-RPC body — handling both `application/json` and `text/event-stream` (SSE `data:` framing) responses.
+
+The check sequence is self-consistent with MockServer's own `McpStreamableHttpHandler` (which returns `-32601` for unknown methods and `202 ACCEPTED` for the initialized notification), so pointing the tool at MockServer's own `/mockserver/mcp` endpoint passes. No dashboard control — it is an agent/CI-invoked developer tool, like `run_contract_test`.
+
 ## VCR (record / replay)
 
 LLM/MCP traffic forwarded through MockServer can be snapshotted to committable fixture files and replayed deterministically:

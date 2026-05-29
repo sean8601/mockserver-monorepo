@@ -75,7 +75,8 @@ public class McpToolRegistryTest {
         assertThat(tools.containsKey("explain_agent_run"), is(true));
         assertThat(tools.containsKey("detect_llm_drift"), is(true));
         assertThat(tools.containsKey("mock_adversarial_llm_response"), is(true));
-        assertThat(tools.size(), is(28));
+        assertThat(tools.containsKey("run_mcp_contract_test"), is(true));
+        assertThat(tools.size(), is(29));
     }
 
     @Test
@@ -1483,5 +1484,51 @@ public class McpToolRegistryTest {
         // then - should not get path error, should get "no recorded traffic" instead
         assertThat(result.has("error"), is(false));
         assertThat(result.path("status").asText(), is("no_recorded_traffic"));
+    }
+
+    // --- run_mcp_contract_test tool tests ---
+
+    @Test
+    public void shouldRunMcpContractTestToolHasSchema() {
+        // given
+        McpToolRegistry.ToolDefinition tool = toolRegistry.getTools().get("run_mcp_contract_test");
+
+        // then
+        assertThat(tool, notNullValue());
+        assertThat(tool.getDescription(), containsString("MCP"));
+        assertThat(tool.getDescription(), containsString("JSON-RPC"));
+        assertThat(tool.getInputSchema().path("properties").has("targetUrl"), is(true));
+        assertThat(tool.getInputSchema().path("properties").has("protocolVersion"), is(true));
+        assertThat(tool.getInputSchema().path("properties").has("toolName"), is(true));
+    }
+
+    @Test
+    public void shouldRejectBlankTargetUrlForMcpContractTest() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("targetUrl", "");
+
+        JsonNode result = toolRegistry.callTool("run_mcp_contract_test", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), is("'targetUrl' is required and must not be blank"));
+    }
+
+    @Test
+    public void shouldRejectTargetUrlWithNoHostForMcpContractTest() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("targetUrl", "file:///some/path");
+
+        JsonNode result = toolRegistry.callTool("run_mcp_contract_test", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("must be an absolute HTTP/HTTPS URL with a hostname"));
+    }
+
+    @Test
+    public void shouldRejectNonHttpSchemeForMcpContractTest() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("targetUrl", "ftp://example.com/mcp");
+
+        JsonNode result = toolRegistry.callTool("run_mcp_contract_test", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("must use the http or https scheme"));
     }
 }

@@ -123,6 +123,7 @@ public class McpToolRegistry {
         registerVerifyTrafficAgainstOpenApi();
         registerRunContractTest();
         registerRunResiliencyTest();
+        registerRunMcpContractTest();
         registerRecordLlmFixtures();
         registerLoadExpectationsFromFile();
         registerMockLlmCompletion();
@@ -1622,6 +1623,207 @@ public class McpToolRegistry {
             return responseNode;
         } catch (Exception e) {
             return errorResult("Failed to run resiliency test", e);
+        }
+    }
+
+    private void registerRunMcpContractTest() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("targetUrl").put("type", "string").put("description", "Full URL of the target MCP server's Streamable HTTP endpoint (e.g. http://localhost:1080/mockserver/mcp)");
+        properties.putObject("protocolVersion").put("type", "string").put("description", "MCP protocol version to advertise during initialize (default 2025-03-26)");
+        properties.putObject("toolName").put("type", "string").put("description", "Optional tool to exercise via a tools/call shape check; omit to skip (a tools/call may have side effects on the target)");
+        ArrayNode required = schema.putArray("required");
+        required.add("targetUrl");
+
+        tools.put("run_mcp_contract_test", new ToolDefinition(
+            "run_mcp_contract_test",
+            "Check that a target MCP (Model Context Protocol) server correctly implements the protocol over Streamable HTTP — "
+                + "use this to verify an MCP server you built or changed. Runs the required JSON-RPC handshake and core methods against "
+                + "the endpoint (initialize, notifications/initialized, ping, tools/list, and unknown-method rejection) and validates the "
+                + "shape of each response (JSON-RPC 2.0 envelope, required result fields), never the semantics of any tool. Optionally "
+                + "exercises one tools/call. Each request has a 10-second timeout (so up to ~60 seconds total across all checks).",
+            schema,
+            this::handleRunMcpContractTest
+        ));
+    }
+
+    private JsonNode handleRunMcpContractTest(JsonNode params) {
+        try {
+            String targetUrl = params.path("targetUrl").asText(null);
+            if (targetUrl == null || targetUrl.trim().isEmpty()) {
+                return errorResult("'targetUrl' is required and must not be blank");
+            }
+            String protocolVersion = params.path("protocolVersion").asText(null);
+            String toolName = params.path("toolName").asText(null);
+
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("MCP run_mcp_contract_test connecting to external MCP server:{}")
+                    .setArguments(targetUrl)
+            );
+
+            // Parse targetUrl into host, port, scheme, path
+            java.net.URI uri;
+            try {
+                uri = new java.net.URI(targetUrl);
+            } catch (Exception e) {
+                return errorResult("'targetUrl' is not a valid URL: " + targetUrl);
+            }
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return errorResult("'targetUrl' must be an absolute HTTP/HTTPS URL with a hostname: " + targetUrl);
+            }
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return errorResult("'targetUrl' must use the http or https scheme: " + targetUrl);
+            }
+            final boolean isSecure = "https".equalsIgnoreCase(scheme);
+            int port = uri.getPort();
+            if (port == -1) {
+                port = isSecure ? 443 : 80;
+            }
+            final java.net.InetSocketAddress remoteAddress = new java.net.InetSocketAddress(host, port);
+            final String hostHeader = host + ":" + port;
+            final String mcpPath = (uri.getRawPath() == null || uri.getRawPath().isEmpty()) ? "/" : uri.getRawPath();
+
+            McpContractTest.JsonRpcExchange exchange = (message, sessionId) -> {
+                try {
+                    HttpRequest httpRequest = request()
+                        .withMethod("POST")
+                        .withPath(mcpPath)
+                        .withHeader("Host", hostHeader)
+                        .withHeader("Content-Type", "application/json")
+                        .withHeader("Accept", "application/json, text/event-stream")
+                        .withSecure(isSecure)
+                        .withBody(objectMapper.writeValueAsString(message));
+                    if (sessionId != null && !sessionId.isEmpty()) {
+                        httpRequest.withHeader("Mcp-Session-Id", sessionId);
+                    }
+                    HttpResponse httpResponse = sendHttpRequest(httpRequest, remoteAddress, isSecure);
+                    int statusCode = httpResponse.getStatusCode() != null ? httpResponse.getStatusCode() : 0;
+                    if (statusCode == 0) {
+                        return McpContractTest.ExchangeResult.transportError(httpResponse.getBodyAsString());
+                    }
+                    return new McpContractTest.ExchangeResult(
+                        statusCode,
+                        firstHeaderIgnoreCase(httpResponse, "Mcp-Session-Id"),
+                        parseJsonRpcBody(httpResponse),
+                        null
+                    );
+                } catch (Exception e) {
+                    return McpContractTest.ExchangeResult.transportError(e.getMessage());
+                }
+            };
+
+            McpContractTest.Report report = new McpContractTest(objectMapper).run(protocolVersion, toolName, exchange);
+
+            int passed = 0;
+            int failed = 0;
+            ArrayNode resultsArray = objectMapper.createArrayNode();
+            for (McpContractTest.CheckResult check : report.getChecks()) {
+                ObjectNode node = objectMapper.createObjectNode();
+                node.put("check", check.getCheck());
+                node.put("passed", check.isPassed());
+                if (check.getStatusCode() != null) {
+                    node.put("statusCode", check.getStatusCode());
+                }
+                if (check.getDetail() != null) {
+                    node.put("detail", check.getDetail());
+                }
+                if (!check.getValidationErrors().isEmpty()) {
+                    ArrayNode errors = node.putArray("validationErrors");
+                    for (String error : check.getValidationErrors()) {
+                        errors.add(error);
+                    }
+                }
+                if (check.isPassed()) {
+                    passed++;
+                } else {
+                    failed++;
+                }
+                resultsArray.add(node);
+            }
+
+            ObjectNode responseNode = objectMapper.createObjectNode();
+            responseNode.put("status", failed == 0 ? "all_passed" : "failures_detected");
+            responseNode.put("protocolVersion", report.getProtocolVersion());
+            if (report.getServerName() != null) {
+                ObjectNode serverInfo = responseNode.putObject("serverInfo");
+                serverInfo.put("name", report.getServerName());
+                if (report.getServerVersion() != null) {
+                    serverInfo.put("version", report.getServerVersion());
+                }
+            }
+            responseNode.put("totalChecks", report.getChecks().size());
+            responseNode.put("passed", passed);
+            responseNode.put("failed", failed);
+            responseNode.set("results", resultsArray);
+            return responseNode;
+        } catch (Exception e) {
+            return errorResult("Failed to run MCP contract test", e);
+        }
+    }
+
+    /**
+     * Return the first value of the named response header, matched case-insensitively, or null.
+     */
+    private String firstHeaderIgnoreCase(HttpResponse response, String name) {
+        if (response.getHeaderList() == null) {
+            return null;
+        }
+        for (org.mockserver.model.Header header : response.getHeaderList()) {
+            if (header.getName() != null && header.getName().getValue() != null
+                && header.getName().getValue().equalsIgnoreCase(name)
+                && header.getValues() != null && !header.getValues().isEmpty()) {
+                return header.getValues().get(0).getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Parse the JSON-RPC message from an MCP HTTP response. Streamable HTTP servers may reply with
+     * either application/json or text/event-stream; for SSE the JSON-RPC message is carried in the
+     * "data:" field(s). Returns null when the body is empty or not valid JSON.
+     */
+    private JsonNode parseJsonRpcBody(HttpResponse response) {
+        String body = response.getBodyAsString();
+        if (body == null || body.trim().isEmpty()) {
+            return null;
+        }
+        String contentType = firstHeaderIgnoreCase(response, "Content-Type");
+        String json = body;
+        boolean looksLikeSse = (contentType != null && contentType.toLowerCase().contains("text/event-stream"))
+            || body.stripLeading().startsWith("event:")
+            || body.stripLeading().startsWith("data:");
+        if (looksLikeSse) {
+            // Extract the first SSE event's data only. Within an event, multiple "data:" lines
+            // are joined with newlines (SSE semantics); a blank line ends the event. A synchronous
+            // JSON-RPC response carries one message, so stop at the first complete event.
+            StringBuilder data = new StringBuilder();
+            boolean collecting = false;
+            for (String line : body.split("\n")) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("data:")) {
+                    if (data.length() > 0) {
+                        data.append("\n");
+                    }
+                    data.append(trimmed.substring("data:".length()).trim());
+                    collecting = true;
+                } else if (trimmed.isEmpty() && collecting) {
+                    break;
+                }
+            }
+            if (data.length() > 0) {
+                json = data.toString();
+            }
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (Exception e) {
+            return null;
         }
     }
 
