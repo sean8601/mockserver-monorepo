@@ -78,7 +78,9 @@ public class HttpLlmResponseActionHandler {
             // Non-streaming completion path
             Completion completion = httpLlmResponse.getCompletion();
             if (completion != null && !Boolean.TRUE.equals(completion.getStreaming())) {
-                return codecInstance.encode(completion, model);
+                HttpResponse encoded = codecInstance.encode(completion, model);
+                org.mockserver.telemetry.GenAiSpans.recordCompletion(provider, model, completion);
+                return encoded;
             }
 
             // Streaming completion path: this method only handles non-streaming.
@@ -147,6 +149,7 @@ public class HttpLlmResponseActionHandler {
         StreamingPhysics physics = completion.getStreamingPhysics();
 
         List<SseEvent> events = codecInstance.encodeStreaming(completion, model, physics);
+        org.mockserver.telemetry.GenAiSpans.recordCompletion(provider, model, completion);
         return applyStreamingChaos(events, httpLlmResponse.getChaos());
     }
 

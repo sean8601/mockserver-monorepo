@@ -636,6 +636,15 @@
                 <version>1.6.1</version>
             </dependency>
 
+            <!-- opentelemetry (optional metrics export; off by default) -->
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>1.45.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- spring -->
             <dependency>
                 <groupId>org.springframework</groupId>
@@ -1005,6 +1014,10 @@
                                     <relocation>
                                         <pattern>io.prometheus</pattern>
                                         <shadedPattern>shaded_package.io.prometheus</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>io.opentelemetry</pattern>
+                                        <shadedPattern>shaded_package.io.opentelemetry</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.activation</pattern>

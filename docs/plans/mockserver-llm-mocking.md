@@ -33,7 +33,7 @@ The original RFC (RFC-1 LLM Response Builder + RFC-2 Stateful Scripted Conversat
 | 8 | MCP/A2A conformance contract testing (`run_mcp_contract_test`) | ❌ Not started — see Item assessments below |
 | 9a | Normalised prompt matching (deterministic) | ✅ Shipped — `NormalizationOptions` on `ConversationPredicates`, applied by `PromptNormalizer` before the text predicates (whitespace/case/JSON-key-sort/volatile-field drop) |
 | 9b | Semantic prompt matching (runtime LLM / embeddings) | ❌ Not started — opt-in only, not for assertions |
-| 10 | OTel GenAI / OpenInference span export | ❌ Not started |
+| 10 | OTel GenAI span export (+ metrics export) | ✅ Shipped — explicit GenAI spans per served completion (`GenAiSpanExporter`/`GenAiSpans`, `mockserver.otelTracesEnabled`) AND metrics export bridging the existing Prometheus gauges to OTLP (`OtelMetricsExporter`, `mockserver.otelMetricsEnabled`), as an alternative to Prometheus. Explicit spans only — no auto-instrumentation. Both off by default, fail-soft, OTLP HTTP/JDK-sender, `io.opentelemetry` relocated in shade. |
 | 11 | Correlated agent-run session / call-graph view | ❌ Not started |
 | 12 | Prompt-injection / adversarial-response harness | ❌ Not started |
 | 13 | Drift detection (fixtures vs real API in CI) | ✅ Shipped — `detect_llm_drift` MCP tool over `StructuralShapeDiff` + `DriftDetector` (replays cassette via runtime-LLM SPI, diffs response shape, fails closed); off unless a backend resolves; opt-in CI lane |

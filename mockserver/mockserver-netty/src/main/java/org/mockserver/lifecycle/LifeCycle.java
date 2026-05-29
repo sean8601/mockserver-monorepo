@@ -45,6 +45,9 @@ public abstract class LifeCycle implements Stoppable {
     private final CompletableFuture<String> stopFuture = new CompletableFuture<>();
     private final AtomicBoolean stopping = new AtomicBoolean(false);
     private final Scheduler scheduler;
+    // optional OTel exporters — null unless the corresponding config is enabled
+    private final org.mockserver.metrics.OtelMetricsExporter otelMetricsExporter;
+    private final org.mockserver.telemetry.GenAiSpanExporter genAiSpanExporter;
 
     protected LifeCycle(Configuration configuration) {
         this.configuration = configuration != null ? configuration : configuration();
@@ -56,6 +59,8 @@ public abstract class LifeCycle implements Stoppable {
         this.workerGroup = new NioEventLoopGroup(this.configuration.nioEventLoopThreadCount(), new Scheduler.SchedulerThreadFactory(this.getClass().getSimpleName() + "-workerEventLoop"));
         this.scheduler = new Scheduler(this.configuration, this.mockServerLogger);
         this.httpState = new HttpState(this.configuration, this.mockServerLogger, this.scheduler);
+        this.otelMetricsExporter = org.mockserver.metrics.OtelMetricsExporter.startIfEnabled();
+        this.genAiSpanExporter = org.mockserver.telemetry.GenAiSpanExporter.startIfEnabled();
     }
 
     public CompletableFuture<String> stopAsync() {
@@ -94,6 +99,12 @@ public abstract class LifeCycle implements Stoppable {
 
                 httpState.stop();
                 scheduler.shutdown();
+                if (otelMetricsExporter != null) {
+                    otelMetricsExporter.stop();
+                }
+                if (genAiSpanExporter != null) {
+                    genAiSpanExporter.stop();
+                }
 
                 // Shut down all event loops to terminate all threads.
                 bossGroup.shutdownGracefully(5, 5, MILLISECONDS);

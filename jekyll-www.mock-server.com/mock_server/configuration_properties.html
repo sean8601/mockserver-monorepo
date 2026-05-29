@@ -888,6 +888,26 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmVcrStrict="true"</code></pre>
 </div>
 
+<button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry Export (Metrics &amp; GenAI Spans)</strong></button>
+<div class="panel title">
+    <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>
+    <p><strong>1. Metrics export</strong> &mdash; push MockServer's explicitly-defined metrics (request counts, expectation-match counts, action counts including the LLM and chaos counters) to OTLP, as an alternative to the Prometheus endpoint. Implemented as observable gauges reading the current values, so the Prometheus and OTLP views stay consistent. It does <strong>not</strong> add tracing or automatic instrumentation.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.otelMetricsEnabled(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelMetricsEnabled=... &nbsp; MOCKSERVER_OTEL_METRICS_ENABLED=...</code></pre>
+    <p>Export interval (seconds), default <span class="this_value">60</span>:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelMetricsExportIntervalSeconds=... &nbsp; MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS=...</code></pre>
+    <p><strong>2. GenAI span export</strong> &mdash; emit one OpenTelemetry GenAI semantic-convention span per LLM completion MockServer serves, carrying provider (<span class="inline_code">gen_ai.system</span>), model, token usage and finish reason. These are spans MockServer codes deliberately &mdash; <strong>no</strong> auto-instrumentation is added.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.otelTracesEnabled(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelTracesEnabled=... &nbsp; MOCKSERVER_OTEL_TRACES_ENABLED=...</code></pre>
+    <p><strong>OTLP endpoint (shared)</strong> &mdash; the collector base URL (e.g. <span class="inline_code">http://localhost:4318</span>); the <span class="inline_code">/v1/metrics</span> and <span class="inline_code">/v1/traces</span> paths are appended per signal. Empty uses the OTLP default (<span class="inline_code">http://localhost:4318</span>).</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.otelEndpoint(String baseUrl)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelEndpoint=... &nbsp; MOCKSERVER_OTEL_ENDPOINT=...</code></pre>
+    <p>Example (both signals to a collector):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelMetricsEnabled="true" -Dmockserver.otelTracesEnabled="true" -Dmockserver.otelEndpoint="http://otel-collector:4318"</code></pre>
+</div>
+
 <button id="button_configuration_stream_idle_timeout_seconds" class="accordion title"><strong>Streaming Response Idle Timeout</strong></button>
 <div class="panel title">
     <p>The maximum time in seconds a streaming response connection may be idle (no chunk received from the upstream server) before MockServer closes it and logs the captured portion as truncated. This replaces the fixed global socket timeout for streaming responses, which would otherwise terminate long-lived LLM completions. The timeout resets on every chunk received, so a slow-but-active stream is never cut off prematurely.</p>

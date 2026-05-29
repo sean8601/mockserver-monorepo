@@ -93,6 +93,10 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_REQUEST_TIMEOUT_MILLIS = "mockserver.llmRequestTimeoutMillis";
     private static final String MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS = "mockserver.fixtureBodyRedactFields";
     private static final String MOCKSERVER_LLM_VCR_STRICT = "mockserver.llmVcrStrict";
+    private static final String MOCKSERVER_OTEL_METRICS_ENABLED = "mockserver.otelMetricsEnabled";
+    private static final String MOCKSERVER_OTEL_TRACES_ENABLED = "mockserver.otelTracesEnabled";
+    private static final String MOCKSERVER_OTEL_ENDPOINT = "mockserver.otelEndpoint";
+    private static final String MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS = "mockserver.otelMetricsExportIntervalSeconds";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
     private static final String MOCKSERVER_HTTP2_ENABLED = "mockserver.http2Enabled";
@@ -1066,6 +1070,60 @@ public class ConfigurationProperties {
 
     public static void llmVcrStrict(boolean strict) {
         setProperty(MOCKSERVER_LLM_VCR_STRICT, "" + strict);
+    }
+
+    /**
+     * When true, MockServer's explicitly-defined metrics (the same gauges exposed
+     * for Prometheus) are also exported via OpenTelemetry OTLP. Off by default.
+     * No spans or auto-instrumentation are added — metrics only.
+     */
+    public static boolean otelMetricsEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_METRICS_ENABLED, "MOCKSERVER_OTEL_METRICS_ENABLED", "" + false));
+    }
+
+    public static void otelMetricsEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_OTEL_METRICS_ENABLED, "" + enabled);
+    }
+
+    /**
+     * When true, MockServer emits explicit GenAI semantic-convention spans for LLM
+     * traffic it serves (one span per completion, carrying provider, model, token
+     * usage and finish reason) via OpenTelemetry OTLP. Off by default. These are
+     * spans MockServer codes deliberately — no auto-instrumentation is added.
+     */
+    public static boolean otelTracesEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_TRACES_ENABLED, "MOCKSERVER_OTEL_TRACES_ENABLED", "" + false));
+    }
+
+    public static void otelTracesEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_OTEL_TRACES_ENABLED, "" + enabled);
+    }
+
+    /**
+     * Base OTLP HTTP endpoint for the collector (e.g. {@code http://localhost:4318}).
+     * The {@code /v1/metrics} and {@code /v1/traces} paths are appended per signal.
+     * Empty uses the OTLP exporter defaults ({@code http://localhost:4318}). A value
+     * that already ends in {@code /v1/metrics} or {@code /v1/traces} is accepted and
+     * normalised to the base.
+     */
+    public static String otelEndpoint() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_ENDPOINT, "MOCKSERVER_OTEL_ENDPOINT", "");
+    }
+
+    public static void otelEndpoint(String endpoint) {
+        setProperty(MOCKSERVER_OTEL_ENDPOINT, endpoint);
+    }
+
+    /**
+     * How often (seconds) OTel metrics are exported. Default 60.
+     */
+    public static long otelMetricsExportIntervalSeconds() {
+        // clamp to >= 1s; a zero/negative interval would make PeriodicMetricReader throw
+        return Math.max(1L, readLongProperty(MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS, "MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS", 60L));
+    }
+
+    public static void otelMetricsExportIntervalSeconds(long seconds) {
+        setProperty(MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS, "" + seconds);
     }
 
     public static long regexMatchingTimeoutMillis() {
