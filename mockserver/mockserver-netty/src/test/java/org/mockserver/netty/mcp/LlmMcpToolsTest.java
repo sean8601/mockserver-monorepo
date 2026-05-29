@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.lifecycle.LifeCycle;
+import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.scheduler.Scheduler;
@@ -19,6 +20,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST;
+import static org.mockserver.model.HttpRequest.request;
 
 public class LlmMcpToolsTest {
 
@@ -383,5 +386,93 @@ public class LlmMcpToolsTest {
         assertThat(result.path("states").get(1).path("newScenarioState").asText(), is("turn_2"));
         assertThat(result.path("states").get(2).path("scenarioState").asText(), is("turn_2"));
         assertThat(result.path("states").get(2).path("newScenarioState").asText(), is("__done"));
+    }
+
+    // --- verify_tool_call / explain_agent_run ---
+
+    private void logToolUseConversation() throws InterruptedException {
+        httpState.log(new LogEntry()
+            .setType(RECEIVED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("POST").withPath("/v1/messages").withBody("{\n" +
+                "  \"messages\": [\n" +
+                "    {\"role\": \"user\", \"content\": \"Weather in Paris?\"},\n" +
+                "    {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"toolu_1\", \"name\": \"get_weather\", \"input\": {\"city\": \"Paris\"}}]},\n" +
+                "    {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"toolu_1\", \"content\": \"sunny\"}]}\n" +
+                "  ]\n" +
+                "}"))
+            .setMessageFormat("received request")
+        );
+        Thread.sleep(500);
+    }
+
+    @Test
+    public void shouldVerifyToolCallWasMade() throws InterruptedException {
+        logToolUseConversation();
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("toolName", "get_weather");
+
+        JsonNode result = toolRegistry.callTool("verify_tool_call", params);
+        assertThat(result.path("satisfied").asBoolean(), is(true));
+        assertThat(result.path("count").asInt(), is(1));
+    }
+
+    @Test
+    public void shouldNotVerifyToolCallThatWasNotMade() throws InterruptedException {
+        logToolUseConversation();
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("toolName", "send_email");
+
+        JsonNode result = toolRegistry.callTool("verify_tool_call", params);
+        assertThat(result.path("satisfied").asBoolean(), is(false));
+        assertThat(result.path("count").asInt(), is(0));
+        assertThat(result.has("message"), is(true));
+    }
+
+    @Test
+    public void shouldFilterVerifyToolCallByArgumentsRegex() throws InterruptedException {
+        logToolUseConversation();
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("toolName", "get_weather");
+        params.put("argumentsRegex", "London");
+
+        JsonNode result = toolRegistry.callTool("verify_tool_call", params);
+        assertThat(result.path("satisfied").asBoolean(), is(false));
+    }
+
+    @Test
+    public void shouldErrorWhenVerifyToolCallMissingToolName() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        JsonNode result = toolRegistry.callTool("verify_tool_call", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldExplainAgentRun() throws InterruptedException {
+        logToolUseConversation();
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+
+        JsonNode result = toolRegistry.callTool("explain_agent_run", params);
+        assertThat(result.path("messageCount").asInt(), is(3));
+        assertThat(result.path("assistantTurnCount").asInt(), is(1));
+        assertThat(result.path("toolCallSequence").get(0).asText(), is("get_weather"));
+        assertThat(result.path("latestMessageRole").asText(), is("TOOL"));
+    }
+
+    @Test
+    public void shouldExplainAgentRunWithNoRecordedConversation() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        JsonNode result = toolRegistry.callTool("explain_agent_run", params);
+        assertThat(result.path("messageCount").asInt(), is(0));
+        assertThat(result.has("message"), is(true));
     }
 }

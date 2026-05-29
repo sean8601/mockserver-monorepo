@@ -1,5 +1,6 @@
 ---
 title: MCP Tools Reference
+description: Full reference for every MCP tool exposed by MockServer, including create_expectation, verify_request, retrieve, debug, OpenAPI, and LLM mocking tools.
 shortTitle: MCP Tools Reference
 layout: page
 pageOrder: 2
@@ -45,6 +46,8 @@ sitemap:
         <tr><td><a href="#load_expectations_from_file"><code>load_expectations_from_file</code></a></td><td>Load expectations from a fixture file for replay</td><td>High</td></tr>
         <tr><td><a href="#mock_llm_completion"><code>mock_llm_completion</code></a></td><td>Create a single-turn LLM completion expectation for any supported provider</td><td>High</td></tr>
         <tr><td><a href="#create_llm_conversation"><code>create_llm_conversation</code></a></td><td>Create a multi-turn scripted LLM conversation with optional per-session isolation</td><td>High</td></tr>
+        <tr><td><a href="#verify_tool_call"><code>verify_tool_call</code></a></td><td>Assert an agent called a named tool, from recorded LLM requests</td><td>High</td></tr>
+        <tr><td><a href="#explain_agent_run"><code>explain_agent_run</code></a></td><td>Summarise a recorded agent run (turns, tool-call sequence)</td><td>High</td></tr>
         <tr><td><a href="#raw_expectation"><code>raw_expectation</code></a></td><td>Full expectation JSON passthrough</td><td>Low</td></tr>
         <tr><td><a href="#raw_retrieve"><code>raw_retrieve</code></a></td><td>Full retrieve with correlation ID filtering</td><td>Low</td></tr>
         <tr><td><a href="#raw_verify"><code>raw_verify</code></a></td><td>Full verification JSON</td><td>Low</td></tr>
@@ -536,7 +539,7 @@ sitemap:
 
 <h3>create_expectation_from_openapi</h3>
 
-<p>Generate mock expectations from an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/">OpenAPI v3</a> specification. MockServer will create one expectation per operation in the specification, using example responses where available.</p>
+<p>Generate mock expectations from an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer">OpenAPI v3</a> specification. MockServer will create one expectation per operation in the specification, using example responses where available.</p>
 
 <table>
     <thead>
@@ -1093,6 +1096,70 @@ sitemap:
 
 <p>The <code>scenarioName</code> in the response is auto-generated and encodes the isolation key. The <code>states</code> array shows the scenario state progression: <code>Started</code> &rarr; <code>turn_1</code> &rarr; <code>__done</code>. Each concurrent session identified by a distinct <code>x-session-id</code> header value advances through its own copy of this state chain.</p>
 
+<a id="verify_tool_call" class="anchor" href="#verify_tool_call">&nbsp;</a>
+
+<h3>verify_tool_call</h3>
+
+<p>Assert that an agent called a particular tool, by decoding the LLM requests MockServer recorded and inspecting the assistant tool calls in the conversation. Deterministic and read-only &mdash; it does not call any LLM. Useful for testing that your agent decided to use the expected tool (and, optionally, with the expected arguments).</p>
+
+<table>
+    <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>provider</code></td><td>string</td><td>Yes</td><td>LLM provider whose recorded requests to inspect (e.g. <code>ANTHROPIC</code>, <code>OPENAI</code>)</td></tr>
+        <tr><td><code>toolName</code></td><td>string</td><td>Yes</td><td>Name of the tool the agent should have called</td></tr>
+        <tr><td><code>path</code></td><td>string</td><td>No</td><td>Restrict to requests on this path (e.g. <code>/v1/messages</code>)</td></tr>
+        <tr><td><code>argumentsRegex</code></td><td>string</td><td>No</td><td>Java regex matched against the tool call's argument JSON</td></tr>
+        <tr><td><code>atLeast</code></td><td>integer</td><td>No</td><td>Minimum matching calls required (default 1)</td></tr>
+        <tr><td><code>atMost</code></td><td>integer</td><td>No</td><td>Maximum matching calls allowed</td></tr>
+    </tbody>
+</table>
+
+<p>The result reports <code>count</code> (matching tool calls found) and <code>satisfied</code> (whether the count met the <code>atLeast</code>/<code>atMost</code> constraints); when not satisfied it includes a human-readable <code>message</code>.</p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 40,
+  "method": "tools/call",
+  "params": {
+    "name": "verify_tool_call",
+    "arguments": {
+      "provider": "ANTHROPIC",
+      "path": "/v1/messages",
+      "toolName": "get_weather",
+      "argumentsRegex": "Paris",
+      "atLeast": 1
+    }
+  }
+}</code></pre>
+
+<a id="explain_agent_run" class="anchor" href="#explain_agent_run">&nbsp;</a>
+
+<h3>explain_agent_run</h3>
+
+<p>Summarise an agent run reconstructed from recorded LLM requests &mdash; a quick way to see what an agent did without reading raw request bodies. Returns the message count, the number of assistant turns, the ordered sequence of tool-call names (<code>toolCallSequence</code>), the tool-use IDs a result was returned for (<code>toolResultsFor</code>, e.g. <code>"toolu_1"</code>), and the role of the latest message. Deterministic and read-only.</p>
+
+<table>
+    <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>provider</code></td><td>string</td><td>Yes</td><td>LLM provider whose recorded requests to summarise</td></tr>
+        <tr><td><code>path</code></td><td>string</td><td>No</td><td>Restrict to requests on this path</td></tr>
+    </tbody>
+</table>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 41,
+  "method": "tools/call",
+  "params": {
+    "name": "explain_agent_run",
+    "arguments": { "provider": "ANTHROPIC", "path": "/v1/messages" }
+  }
+}</code></pre>
+
 <a id="low_level_tools" class="anchor" href="#low_level_tools">&nbsp;</a>
 
 <h2>Low-Level Tools</h2>
@@ -1110,7 +1177,7 @@ sitemap:
         <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
     </thead>
     <tbody>
-        <tr><td><code>expectation</code></td><td>object</td><td>Yes</td><td>Full expectation JSON as defined in the <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi">REST API specification</a></td></tr>
+        <tr><td><code>expectation</code></td><td>object</td><td>Yes</td><td>Full expectation JSON as defined in the <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" rel="noopener noreferrer">REST API specification</a></td></tr>
     </tbody>
 </table>
 
@@ -1196,7 +1263,7 @@ sitemap:
         <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
     </thead>
     <tbody>
-        <tr><td><code>verification</code></td><td>object</td><td>Yes</td><td>Full verification JSON as defined in the <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi">REST API specification</a></td></tr>
+        <tr><td><code>verification</code></td><td>object</td><td>Yes</td><td>Full verification JSON as defined in the <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" rel="noopener noreferrer">REST API specification</a></td></tr>
     </tbody>
 </table>
 

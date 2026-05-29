@@ -10,6 +10,7 @@ import org.mockserver.client.TurnBuilder;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.llm.IsolationSource;
 import org.mockserver.llm.ProviderCodecRegistry;
+import org.mockserver.llm.analysis.AgentRunAnalyzer;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.MismatchRemediation;
@@ -118,6 +119,8 @@ public class McpToolRegistry {
         registerLoadExpectationsFromFile();
         registerMockLlmCompletion();
         registerCreateLlmConversation();
+        registerVerifyToolCall();
+        registerExplainAgentRun();
     }
 
     private void registerCreateExpectation() {
@@ -2462,6 +2465,189 @@ public class McpToolRegistry {
         } catch (Exception e) {
             return errorResult("Failed to create LLM conversation", e);
         }
+    }
+
+    // --- verify_tool_call ---
+
+    private void registerVerifyToolCall() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode providerProp = properties.putObject("provider");
+        providerProp.put("type", "string").put("description", "LLM provider whose recorded requests to inspect");
+        ArrayNode providerEnum = providerProp.putArray("enum");
+        for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
+            providerEnum.add(name);
+        }
+        properties.putObject("path").put("type", "string").put("description", "Optional request path filter (e.g. /v1/messages)");
+        properties.putObject("toolName").put("type", "string").put("description", "Name of the tool the agent should have called");
+        properties.putObject("argumentsRegex").put("type", "string").put("description", "Optional Java regex matched against the tool call's argument JSON");
+        properties.putObject("atLeast").put("type", "integer").put("description", "Minimum number of matching tool calls required (default 1)");
+        properties.putObject("atMost").put("type", "integer").put("description", "Optional maximum number of matching tool calls allowed");
+        ArrayNode required = schema.putArray("required");
+        required.add("provider");
+        required.add("toolName");
+
+        tools.put("verify_tool_call", new ToolDefinition(
+            "verify_tool_call",
+            "Assert that an agent called a named tool (optionally with arguments matching a regex) a given number of times, by inspecting LLM requests recorded through MockServer.",
+            schema,
+            this::handleVerifyToolCall
+        ));
+    }
+
+    private JsonNode handleVerifyToolCall(JsonNode params) {
+        try {
+            String providerStr = params.path("provider").asText(null);
+            if (providerStr == null || providerStr.trim().isEmpty()) {
+                return errorResult("'provider' is required");
+            }
+            Provider provider = parseProviderParam(params);
+            if (provider == null) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+            String toolName = params.path("toolName").asText(null);
+            if (toolName == null || toolName.trim().isEmpty()) {
+                return errorResult("'toolName' is required and must not be blank");
+            }
+            String path = emptyToNull(params.path("path").asText(null));
+            String argumentsRegex = emptyToNull(params.path("argumentsRegex").asText(null));
+            int atLeast = params.path("atLeast").isIntegralNumber() ? params.path("atLeast").asInt() : 1;
+            Integer atMost = params.path("atMost").isIntegralNumber() ? params.path("atMost").asInt() : null;
+            if (atMost != null && atMost < atLeast) {
+                return errorResult("'atMost' must be greater than or equal to 'atLeast'");
+            }
+
+            List<HttpRequest> requests = retrieveRecordedHttpRequests(path);
+            AgentRunAnalyzer.ToolCallReport report;
+            try {
+                report = new AgentRunAnalyzer().inspectToolCalls(requests, provider, toolName, argumentsRegex);
+            } catch (IllegalArgumentException e) {
+                return errorResult(e.getMessage());
+            }
+            boolean satisfied = report.getCount() >= atLeast && (atMost == null || report.getCount() <= atMost);
+
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("toolName", toolName);
+            resultNode.put("count", report.getCount());
+            resultNode.put("atLeast", atLeast);
+            if (atMost != null) {
+                resultNode.put("atMost", atMost);
+            }
+            resultNode.put("satisfied", satisfied);
+            if (!satisfied) {
+                resultNode.put("message", "expected tool '" + toolName + "' to be called "
+                    + (atMost != null ? "between " + atLeast + " and " + atMost : "at least " + atLeast)
+                    + " time(s) but found " + report.getCount());
+            }
+            return resultNode;
+        } catch (Exception e) {
+            return errorResult("Failed to verify tool call", e);
+        }
+    }
+
+    // --- explain_agent_run ---
+
+    private void registerExplainAgentRun() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode providerProp = properties.putObject("provider");
+        providerProp.put("type", "string").put("description", "LLM provider whose recorded requests to summarise");
+        ArrayNode providerEnum = providerProp.putArray("enum");
+        for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
+            providerEnum.add(name);
+        }
+        properties.putObject("path").put("type", "string").put("description", "Optional request path filter (e.g. /v1/messages)");
+        ArrayNode required = schema.putArray("required");
+        required.add("provider");
+
+        tools.put("explain_agent_run", new ToolDefinition(
+            "explain_agent_run",
+            "Summarise an agent run reconstructed from recorded LLM requests: message and assistant-turn counts, the ordered tool-call sequence, tool results, and the latest message role.",
+            schema,
+            this::handleExplainAgentRun
+        ));
+    }
+
+    private JsonNode handleExplainAgentRun(JsonNode params) {
+        try {
+            String providerStr = params.path("provider").asText(null);
+            if (providerStr == null || providerStr.trim().isEmpty()) {
+                return errorResult("'provider' is required");
+            }
+            Provider provider = parseProviderParam(params);
+            if (provider == null) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+            String path = emptyToNull(params.path("path").asText(null));
+            List<HttpRequest> requests = retrieveRecordedHttpRequests(path);
+            Optional<AgentRunAnalyzer.RunSummary> summaryOpt = new AgentRunAnalyzer().summarise(requests, provider);
+
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            if (!summaryOpt.isPresent()) {
+                resultNode.put("message", "no decodable " + provider + " conversation found in recorded requests");
+                resultNode.put("messageCount", 0);
+                return resultNode;
+            }
+            AgentRunAnalyzer.RunSummary summary = summaryOpt.get();
+            resultNode.put("messageCount", summary.getMessageCount());
+            resultNode.put("assistantTurnCount", summary.getAssistantTurnCount());
+            ArrayNode toolCalls = resultNode.putArray("toolCallSequence");
+            summary.getToolCallSequence().forEach(toolCalls::add);
+            ArrayNode toolResults = resultNode.putArray("toolResultsFor");
+            summary.getToolResultsFor().forEach(toolResults::add);
+            resultNode.put("latestMessageRole", summary.getLatestMessageRole());
+            return resultNode;
+        } catch (Exception e) {
+            return errorResult("Failed to explain agent run", e);
+        }
+    }
+
+    private Provider parseProviderParam(JsonNode params) {
+        String providerStr = params.path("provider").asText(null);
+        if (providerStr == null || providerStr.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            Provider provider = Provider.valueOf(providerStr.trim());
+            return ProviderCodecRegistry.getInstance().lookup(provider).isPresent() ? provider : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static String emptyToNull(String value) {
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    /**
+     * Retrieve the requests recorded by MockServer (optionally filtered by path)
+     * as concrete {@link HttpRequest}s for LLM analysis.
+     */
+    private List<HttpRequest> retrieveRecordedHttpRequests(String path) {
+        HttpRequest filter = request();
+        if (path != null && !path.isEmpty()) {
+            filter.withPath(path);
+        }
+        HttpRequest retrieveRequest = request()
+            .withMethod("PUT")
+            .withPath("/mockserver/retrieve")
+            .withQueryStringParameter("type", "REQUESTS")
+            .withQueryStringParameter("format", "JSON")
+            .withBody(getRequestDefinitionSerializer().serialize(filter));
+        HttpResponse retrieveResponse = httpState.retrieve(retrieveRequest);
+        String body = retrieveResponse.getBodyAsString();
+        List<HttpRequest> result = new ArrayList<>();
+        if (body != null && !body.isEmpty()) {
+            RequestDefinition[] definitions = getRequestDefinitionSerializer().deserializeArray(body);
+            for (RequestDefinition definition : definitions) {
+                if (definition instanceof HttpRequest) {
+                    result.add((HttpRequest) definition);
+                }
+            }
+        }
+        return result;
     }
 
     private ObjectNode errorResult(String message) {

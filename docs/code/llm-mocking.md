@@ -162,8 +162,19 @@ Two MCP tools expose the LLM mocking feature to agents:
 |------|-------------|
 | `mock_llm_completion` | Creates a single LLM expectation from provider, path, text, tool calls, usage |
 | `create_llm_conversation` | Creates a multi-turn conversation with scenario state chain, optional isolation, and an optional per-turn `match.normalization` object |
+| `verify_tool_call` | Asserts an agent called a named tool `atLeast`/`atMost` times (optional args regex), by decoding recorded LLM requests |
+| `explain_agent_run` | Summarises a recorded agent run: turn/tool-call sequence, tool results, latest role |
 
-Both validate provider availability against `ProviderCodecRegistry` at registration time.
+The first two validate provider availability against `ProviderCodecRegistry` at registration time. The analysis tools delegate to `org.mockserver.llm.analysis.AgentRunAnalyzer`.
+
+## Agent-run analysis
+
+`AgentRunAnalyzer` (`org.mockserver.llm.analysis`) is a deterministic, read-only inspector. Given the LLM requests MockServer recorded (retrieved via the normal request log), it decodes each with the provider's `ProviderCodec` and treats the **richest** conversation (most messages — the latest dialogue snapshot) as the canonical run. From that it derives:
+
+- `inspectToolCalls(requests, provider, toolName, argsRegex)` → count + matched tool calls (powers `verify_tool_call`).
+- `summarise(requests, provider)` → message count, assistant-turn count, ordered tool-call name sequence, tool-result keys, latest message role (powers `explain_agent_run`).
+
+No LLM is called and no network is used — it reads the structure the codecs already produce, so assertions are reproducible. The MCP tools are thin wrappers that retrieve recorded requests (`/mockserver/retrieve?type=REQUESTS`) and format the analyzer's output. The dashboard surfacing of this analysis is the correlated call-graph view (roadmap item #11).
 
 ## Dashboard Rendering
 
@@ -334,3 +345,4 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/client/LlmBackendResolver.java` | Three-layer backend resolution (env / properties / named JSON) |
 | `llm/client/LlmCompletionService.java` | Orchestrator: off-unless-configured, fail-closed, cached |
 | `llm/client/LlmTransport.java` + `NettyHttpClientLlmTransport.java` | Transport seam over `NettyHttpClient` |
+| `llm/analysis/AgentRunAnalyzer.java` | Deterministic read-only agent-run inspection (tool-call counts, run summary) |

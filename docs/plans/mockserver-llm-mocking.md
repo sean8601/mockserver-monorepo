@@ -15,8 +15,8 @@ The original RFC (RFC-1 LLM Response Builder + RFC-2 Stateful Scripted Conversat
 |---|---|---|
 | 1 | LLM response builder (`llmMock`) — RFC-1 | ✅ Shipped (M0–M5) |
 | 2 | Stateful scripted conversations — RFC-2 Layer B | ✅ Shipped (M2) |
-| 3 | Tool-call assertions (`verify_tool_call`) | ❌ Not started |
-| 4 | Agent-run / LLM-session analysis (`explain_agent_run`) | ❌ Not started |
+| 3 | Tool-call assertions (`verify_tool_call`) | ✅ Shipped — `verify_tool_call` MCP tool over `AgentRunAnalyzer` (decodes recorded requests; asserts a named tool was called atLeast/atMost times, optional args regex) |
+| 4 | Agent-run / LLM-session analysis (`explain_agent_run`) | ✅ Shipped — `explain_agent_run` MCP tool (turn/tool-call sequence, tool results, latest role). UI surfacing is item #11 (call-graph view) |
 
 ### Tier 2 — high value
 
