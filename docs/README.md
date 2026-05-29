@@ -100,7 +100,7 @@ mockserver-monorepo/
     ├── code/                       #   Code architecture (12 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm (5 docs)
     ├── operations/                 #   Build, release, deps, security, website, perf (11 docs)
-    ├── plans/                      #   Active plans and RFCs (4 docs)
+    ├── plans/                      #   Active plans and RFCs (3 docs)
     └── testing.md                  #   Test frameworks, architecture, config, coverage, CI
 ```
 
