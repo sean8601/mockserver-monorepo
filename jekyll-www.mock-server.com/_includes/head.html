@@ -16,11 +16,11 @@
 
 	<!-- Per-page description: page.description > page.excerpt > site.description -->
 	{% if page.description %}
-		{% assign page_description = page.description %}
+		{% assign page_description = page.description | strip_html | strip_newlines | truncate: 160 %}
 	{% elsif page.excerpt %}
 		{% assign page_description = page.excerpt | strip_html | strip_newlines | truncate: 160 %}
 	{% else %}
-		{% assign page_description = site.description %}
+		{% assign page_description = site.short_description | default: site.description | strip_html | strip_newlines | truncate: 160 %}
 	{% endif %}
 	<meta name="description" content="{{ page_description }}">
 	<meta name="keywords" content="{% if page.keywords %}{{ page.keywords }}, {% endif %}{{ site.keywords }}"/>

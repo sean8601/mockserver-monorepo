@@ -6,6 +6,8 @@ The MockServer documentation website at `https://www.mock-server.com` is a Jekyl
 
 **Source:** `jekyll-www.mock-server.com/`
 
+> **Missing pages return HTTP 404.** CloudFront maps the private bucket's 403 (missing object) to a real 404 serving `error403.html` (which still `meta refresh`es humans to the homepage). This keeps deleted URLs out of search-engine indexes — see the CloudFront notes in [docs/infrastructure/aws-infrastructure.md](../infrastructure/aws-infrastructure.md#cloudfront-distributions). The status code is set in `terraform/website/sites.tf` (`custom_error_response.response_code`). After `terraform apply`, cached error responses keep serving the old status for up to `error_caching_min_ttl` (300s), so run a CloudFront `/*` invalidation to take effect immediately. Roll back by setting `response_code = 200` and re-applying.
+
 ## Site Configuration
 
 **File:** `jekyll-www.mock-server.com/_config.yml`

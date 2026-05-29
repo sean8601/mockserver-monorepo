@@ -193,9 +193,13 @@ resource "aws_cloudfront_distribution" "main" {
     include_cookies = false
   }
 
+  # The bucket is private (OAC), so S3 returns 403 for any missing object.
+  # Serve the friendly error page, but preserve a real 404 status so search
+  # engines drop deleted URLs (old versioned-site copies, old apidocs) instead
+  # of treating thousands of soft-404s as duplicate indexable pages.
   custom_error_response {
     error_code            = 403
-    response_code         = 200
+    response_code         = 404
     response_page_path    = "/error403.html"
     error_caching_min_ttl = 300
   }
