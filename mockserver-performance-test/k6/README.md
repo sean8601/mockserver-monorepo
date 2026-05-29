@@ -1,9 +1,9 @@
 # MockServer k6 performance harness
 
-[k6](https://k6.io) load tests for MockServer. Replaces the legacy Locust harness
-(kept for one release under `../legacy/`). k6 gives native Prometheus
-remote-write output, built-in pass/fail **thresholds** (CI regression gates), and
-Grafana-native dashboards.
+[k6](https://k6.io) load tests for MockServer. Supersedes the Locust harness
+(the Locust files remain in `..` for one release, then are retired). k6 gives
+native Prometheus remote-write output, built-in pass/fail **thresholds** (CI
+regression gates), and Grafana-native dashboards.
 
 ## Scripts
 
@@ -71,5 +71,5 @@ k6 run -o experimental-prometheus-rw \
   mockserver-performance-test/k6/load.js
 ```
 
-The docker-compose stack (`../stack/`) wires k6 → Prometheus → Grafana and also
-scrapes MockServer's own `/mockserver/metrics`.
+A docker-compose stack that wires k6 → Prometheus → Grafana and scrapes
+MockServer's own `/mockserver/metrics` is added in a later increment.
