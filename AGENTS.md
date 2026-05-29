@@ -161,6 +161,14 @@ Always fix bugs and add features at the architecturally correct layer. If a bug 
 
 Use `.tmp/` at the repo root for scratch files — never `/tmp/`. See `.opencode/rules/tmp-directory.md`.
 
+## Local (Uncommitted) Plans
+
+Working/plan docs that should NOT be committed go in `docs/plans/` with a `.local.md` suffix
+(e.g. `docs/plans/sre-chaos-features.local.md`). The `*.local.md` glob is gitignored, so these
+files live alongside committed plans but never get staged. Use this for brainstorms, in-flight
+design notes, and session-resume docs. Committed plans use a plain `.md` suffix in the same
+directory. See `.opencode/rules/local-plans.md`.
+
 ## IDE Integration — Prefer IntelliJ MCP When Available
 
 When the conversation has the IntelliJ MCP toolset (tools prefixed `mcp__idea__*`, indicating IntelliJ is open with the project loaded), **prefer the IDE tools over Bash / `Edit` / `Read`** so the user can watch progress live in tool windows. This applies to terminal commands (use `mcp__idea__execute_terminal_command`), Java builds (`mcp__idea__build_project`), file edits (`mcp__idea__replace_text_in_file`), search (`mcp__idea__search_in_files_by_*`), and per-file inspections (`mcp__idea__get_file_problems`).
