@@ -2700,6 +2700,24 @@ public class McpToolRegistry {
             ArrayNode toolResults = resultNode.putArray("toolResultsFor");
             summary.getToolResultsFor().forEach(toolResults::add);
             resultNode.put("latestMessageRole", summary.getLatestMessageRole());
+
+            // correlated call graph (nodes + directed edges)
+            AgentRunAnalyzer.CallGraph graph = new AgentRunAnalyzer().buildCallGraph(requests, provider);
+            ObjectNode graphNode = resultNode.putObject("callGraph");
+            ArrayNode graphNodes = graphNode.putArray("nodes");
+            for (AgentRunAnalyzer.GraphNode node : graph.getNodes()) {
+                ObjectNode n = graphNodes.addObject();
+                n.put("id", node.getId());
+                n.put("kind", node.getKind());
+                n.put("label", node.getLabel());
+            }
+            ArrayNode graphEdges = graphNode.putArray("edges");
+            for (AgentRunAnalyzer.GraphEdge edge : graph.getEdges()) {
+                ObjectNode e = graphEdges.addObject();
+                e.put("from", edge.getFrom());
+                e.put("to", edge.getTo());
+                e.put("kind", edge.getKind());
+            }
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to explain agent run", e);

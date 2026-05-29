@@ -468,6 +468,9 @@ public class LlmMcpToolsTest {
         assertThat(result.path("assistantTurnCount").asInt(), is(1));
         assertThat(result.path("toolCallSequence").get(0).asText(), is("get_weather"));
         assertThat(result.path("latestMessageRole").asText(), is("TOOL"));
+        // call graph is included
+        assertThat(result.path("callGraph").path("nodes").size(), is(4));
+        assertThat(result.path("callGraph").path("edges").size() >= 3, is(true));
     }
 
     @Test

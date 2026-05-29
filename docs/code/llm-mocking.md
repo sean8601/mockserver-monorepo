@@ -184,7 +184,9 @@ Truncation and malformed-SSE are fully deterministic; the error path is determin
 - `inspectToolCalls(requests, provider, toolName, argsRegex)` → count + matched tool calls (powers `verify_tool_call`).
 - `summarise(requests, provider)` → message count, assistant-turn count, ordered tool-call name sequence, tool-result keys, latest message role (powers `explain_agent_run`).
 
-No LLM is called and no network is used — it reads the structure the codecs already produce, so assertions are reproducible. The MCP tools are thin wrappers that retrieve recorded requests (`/mockserver/retrieve?type=REQUESTS`) and format the analyzer's output. The dashboard surfacing of this analysis is the correlated call-graph view (roadmap item #11).
+- `buildCallGraph(requests, provider)` → a `CallGraph` of nodes (one per message, one per assistant tool call) and directed edges: `NEXT` (message sequence), `INVOKES` (assistant turn → the tool calls it made), `RESULT` (tool call → the tool message that returned its result, correlated by tool-call id). Powers the dashboard call-graph view.
+
+No LLM is called and no network is used — it reads the structure the codecs already produce, so assertions are reproducible. The MCP tools are thin wrappers that retrieve recorded requests (`/mockserver/retrieve?type=REQUESTS`) and format the analyzer's output; `explain_agent_run` includes the `callGraph` (nodes + edges). The dashboard **Sessions** view (`SessionInspector` → `AgentRunGraph.tsx`, with the pure transform `mockserver-ui/src/lib/callGraph.ts`) loads the graph per session via `explain_agent_run` and renders it as a step list (role + invoked tool calls + result indicator) plus a copyable Mermaid `flowchart`.
 
 ## Dashboard Rendering
 

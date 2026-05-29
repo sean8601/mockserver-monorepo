@@ -1186,6 +1186,8 @@ sitemap:
   }
 }</code></pre>
 
+<p>The result also includes a <code>callGraph</code> object: a <code>nodes</code> array (each with <code>id</code>, <code>kind</code> &mdash; a message role or <code>TOOL_CALL</code> &mdash; and <code>label</code>) and an <code>edges</code> array (each with <code>from</code>, <code>to</code>, and <code>kind</code>: <code>NEXT</code> for message sequence, <code>INVOKES</code> for a turn's tool calls, <code>RESULT</code> linking a tool call to its returned result). The dashboard <em>Sessions</em> view renders this graph per session.</p>
+
 <a id="detect_llm_drift" class="anchor" href="#detect_llm_drift">&nbsp;</a>
 
 <h3>detect_llm_drift</h3>

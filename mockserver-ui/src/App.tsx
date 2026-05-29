@@ -96,7 +96,7 @@ export default function App() {
           )}
           {view === 'dashboard' && <DashboardGrid />}
           {view === 'traffic' && <TrafficInspector />}
-          {view === 'sessions' && <SessionInspector />}
+          {view === 'sessions' && <SessionInspector connectionParams={params} />}
           {view === 'composer' && <ComposerView connectionParams={params} />}
           {view === 'library' && <LibraryView connectionParams={params} />}
         </Box>

@@ -10,7 +10,7 @@ import type { JsonListItem } from '../types';
 function renderInspector() {
   return render(
     <ThemeProvider theme={buildTheme('dark')}>
-      <SessionInspector />
+      <SessionInspector connectionParams={{ host: 'localhost', port: '1080', secure: false }} />
     </ThemeProvider>,
   );
 }

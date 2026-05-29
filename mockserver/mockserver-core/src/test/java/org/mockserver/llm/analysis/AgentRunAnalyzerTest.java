@@ -84,6 +84,31 @@ public class AgentRunAnalyzerTest {
     }
 
     @Test
+    public void buildsCorrelatedCallGraph() {
+        List<HttpRequest> requests = Collections.singletonList(toolUseConversation());
+        AgentRunAnalyzer.CallGraph graph = analyzer.buildCallGraph(requests, Provider.ANTHROPIC);
+        // 3 message nodes (user, assistant, tool) + 1 tool-call node
+        assertThat(graph.getNodes().size(), is(4));
+        boolean hasToolCallNode = graph.getNodes().stream()
+            .anyMatch(n -> n.getKind().equals("TOOL_CALL") && n.getLabel().equals("get_weather"));
+        assertThat(hasToolCallNode, is(true));
+        // a RESULT edge correlates the tool call to the tool message
+        boolean hasResultEdge = graph.getEdges().stream().anyMatch(e -> e.getKind().equals("RESULT"));
+        assertThat(hasResultEdge, is(true));
+        // sequence edges link the messages
+        long nextEdges = graph.getEdges().stream().filter(e -> e.getKind().equals("NEXT")).count();
+        assertThat(nextEdges, is(2L));
+    }
+
+    @Test
+    public void emptyCallGraphWhenNothingDecodes() {
+        List<HttpRequest> requests = Collections.singletonList(request().withBody("not json"));
+        AgentRunAnalyzer.CallGraph graph = analyzer.buildCallGraph(requests, Provider.ANTHROPIC);
+        assertThat(graph.getNodes().isEmpty(), is(true));
+        assertThat(graph.getEdges().isEmpty(), is(true));
+    }
+
+    @Test
     public void toolResultsForReportsCorrelatedToolNames() {
         List<HttpRequest> requests = Collections.singletonList(toolUseConversation());
         // Anthropic correlates tool_result by tool_use_id; the analyzer reports the raw result keys

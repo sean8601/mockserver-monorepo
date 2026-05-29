@@ -9,8 +9,10 @@ import org.mockserver.model.Provider;
 import org.mockserver.model.ToolUse;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -169,6 +171,138 @@ public class AgentRunAnalyzer {
         String latestRole = messages.get(messages.size() - 1).getRole().name();
         return Optional.of(new RunSummary(messages.size(), assistantTurns, toolCallSequence,
             new ArrayList<>(toolResultsFor), latestRole));
+    }
+
+    /** A node in the agent-run call graph. */
+    public static final class GraphNode {
+        private final String id;
+        private final String kind;   // USER / ASSISTANT / SYSTEM / TOOL / TOOL_CALL
+        private final String label;
+
+        public GraphNode(String id, String kind, String label) {
+            this.id = id;
+            this.kind = kind;
+            this.label = label;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public String getKind() {
+            return kind;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+    }
+
+    /** A directed edge in the agent-run call graph. */
+    public static final class GraphEdge {
+        private final String from;
+        private final String to;
+        private final String kind;   // NEXT (sequence) / INVOKES (turn->tool call) / RESULT (tool call->result)
+
+        public GraphEdge(String from, String to, String kind) {
+            this.from = from;
+            this.to = to;
+            this.kind = kind;
+        }
+
+        public String getFrom() {
+            return from;
+        }
+
+        public String getTo() {
+            return to;
+        }
+
+        public String getKind() {
+            return kind;
+        }
+    }
+
+    /** The correlated call graph of an agent run. */
+    public static final class CallGraph {
+        private final List<GraphNode> nodes;
+        private final List<GraphEdge> edges;
+
+        public CallGraph(List<GraphNode> nodes, List<GraphEdge> edges) {
+            this.nodes = nodes;
+            this.edges = edges;
+        }
+
+        public List<GraphNode> getNodes() {
+            return nodes;
+        }
+
+        public List<GraphEdge> getEdges() {
+            return edges;
+        }
+    }
+
+    /**
+     * Build a correlated call graph for an agent run: a node per message, a node
+     * per assistant tool call, {@code NEXT} edges along the message sequence,
+     * {@code INVOKES} edges from an assistant turn to the tool calls it made, and
+     * {@code RESULT} edges from a tool call to the tool message that returned its
+     * result (correlated by tool-call id, mirroring the matcher's correlation).
+     * Empty graph when nothing decodes.
+     */
+    public CallGraph buildCallGraph(List<HttpRequest> requests, Provider provider) {
+        List<GraphNode> nodes = new ArrayList<>();
+        List<GraphEdge> edges = new ArrayList<>();
+        ParsedConversation canonical = canonicalConversation(requests, provider);
+        if (canonical == null || canonical.getMessages().isEmpty()) {
+            return new CallGraph(nodes, edges);
+        }
+        List<ParsedMessage> messages = canonical.getMessages();
+        Map<String, String> toolCallIdToNode = new HashMap<>();
+        String previousMessageId = null;
+        for (int i = 0; i < messages.size(); i++) {
+            ParsedMessage message = messages.get(i);
+            String messageId = "m" + i;
+            nodes.add(new GraphNode(messageId, message.getRole().name(), label(message)));
+            if (previousMessageId != null) {
+                edges.add(new GraphEdge(previousMessageId, messageId, "NEXT"));
+            }
+            previousMessageId = messageId;
+
+            if (message.getRole() == ParsedMessage.Role.ASSISTANT) {
+                int t = 0;
+                for (ToolUse toolCall : message.getToolCalls()) {
+                    String toolNodeId = messageId + "_tc" + (t++);
+                    nodes.add(new GraphNode(toolNodeId, "TOOL_CALL", toolCall.getName()));
+                    edges.add(new GraphEdge(messageId, toolNodeId, "INVOKES"));
+                    if (toolCall.getId() != null) {
+                        toolCallIdToNode.put(toolCall.getId(), toolNodeId);
+                    }
+                }
+            }
+            if (message.getRole() == ParsedMessage.Role.TOOL) {
+                for (String resultId : message.getToolResults().keySet()) {
+                    String toolNodeId = toolCallIdToNode.get(resultId);
+                    if (toolNodeId != null) {
+                        edges.add(new GraphEdge(toolNodeId, messageId, "RESULT"));
+                    }
+                }
+            }
+        }
+        return new CallGraph(nodes, edges);
+    }
+
+    private static String label(ParsedMessage message) {
+        String text = message.getTextContent();
+        if (text == null || text.isEmpty()) {
+            return message.getRole().name();
+        }
+        // truncate by code points so a surrogate pair is never split
+        String trimmed = text;
+        if (text.codePointCount(0, text.length()) > 40) {
+            trimmed = new String(text.codePoints().limit(40).toArray(), 0, 40) + "…";
+        }
+        return trimmed.replaceAll("\\s+", " ").trim();
     }
 
     /**

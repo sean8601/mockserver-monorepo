@@ -11,6 +11,7 @@ import { useDashboardStore } from '../store';
 import { groupBySession, shortenScenarioName, type Session, type SessionRequest } from '../lib/sessionGrouping';
 import { getModelLabel, getTokenSummary } from '../lib/llmTraffic';
 import { AnthropicConversationView, OpenAiConversationView } from './ConversationView';
+import AgentRunGraph from './AgentRunGraph';
 
 // ---------------------------------------------------------------------------
 // Status colour for request chips
@@ -113,13 +114,28 @@ function RequestDetail({ request }: { request: SessionRequest }) {
 
 interface SessionLaneProps {
   session: Session;
+  connectionParams: { host: string; port: string; secure: boolean };
 }
 
-function SessionLane({ session }: SessionLaneProps) {
+// Map a parsed-traffic kind to the LLM Provider enum name explain_agent_run expects.
+const KIND_TO_PROVIDER: Record<string, string> = {
+  anthropic: 'ANTHROPIC',
+  openai: 'OPENAI',
+  openai_responses: 'OPENAI_RESPONSES',
+  gemini: 'GEMINI',
+  ollama: 'OLLAMA',
+};
+
+function SessionLane({ session, connectionParams }: SessionLaneProps) {
   const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
 
   const displayName = shortenScenarioName(session.scenarioName);
   const isUnscoped = session.scenarioName === '<unscoped>';
+
+  // Derive a provider + path for the call-graph lookup from the session's requests.
+  const graphRequest = session.requests.find((r) => KIND_TO_PROVIDER[r.parsed.kind] != null);
+  const graphProvider = graphRequest ? KIND_TO_PROVIDER[graphRequest.parsed.kind] : null;
+  const graphPath = graphRequest ? graphRequest.path : null;
 
   const handleChipClick = useCallback(
     (index: number) => {
@@ -199,6 +215,13 @@ function SessionLane({ session }: SessionLaneProps) {
           </Box>
         </>
       )}
+
+      {/* Correlated call graph (fetched on demand via explain_agent_run) */}
+      {!isUnscoped && graphProvider && (
+        <Box sx={{ px: 1.5, pb: 0.75 }}>
+          <AgentRunGraph connectionParams={connectionParams} provider={graphProvider} path={graphPath} />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -207,7 +230,11 @@ function SessionLane({ session }: SessionLaneProps) {
 // Main SessionInspector component
 // ---------------------------------------------------------------------------
 
-export default function SessionInspector() {
+interface SessionInspectorProps {
+  connectionParams: { host: string; port: string; secure: boolean };
+}
+
+export default function SessionInspector({ connectionParams }: SessionInspectorProps) {
   // Mirror TrafficInspector: combine both proxied + mocked traffic. Sessions are
   // grouped by isolation key extracted from a matching conversation expectation,
   // regardless of which capture pipeline the request travelled through.
@@ -314,6 +341,7 @@ export default function SessionInspector() {
             <SessionLane
               key={`${session.scenarioName}::${session.isolationKey}`}
               session={session}
+              connectionParams={connectionParams}
             />
           ))
         )}
