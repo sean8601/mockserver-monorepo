@@ -110,7 +110,7 @@ This cycle centres on **first-class LLM / AI-agent mocking** and a major **platf
 - Docker image and standalone executable JAR produced no log output because the shaded server JAR did not include an SLF4J logging provider (fixes #2097)
 - `*-no-dependencies` shaded artifacts leaked their un-shaded source module (and its transitive dependencies) onto consumers' classpaths; these artifacts are now truly dependency-free
 
-## [6.0.0] - 2026-05-21
+## [6.0.0] - 2026-05-20
 
 ### Added
 
