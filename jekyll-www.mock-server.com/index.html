@@ -21,19 +21,6 @@ layout: default
 	<a target="_blank" rel="noopener noreferrer" href="https://buildkite.com/mockserver/mockserver"><img src="https://badge.buildkite.com/3b6803f4fe98cb5ed7bf18292a1434f800b53d8fecb92811d8.svg?style=square&theme=slack&branch=master" alt="BuildKite Build Status"></a>
 </div>
 
-<aside class="ai_hero" aria-labelledby="ai-hero-heading">
-	<div class="ai_hero_badge">New</div>
-	<div class="ai_hero_body">
-		<h2 id="ai-hero-heading">MockServer now speaks <abbr title="Model Context Protocol">MCP</abbr> — connect AI coding assistants directly</h2>
-		<p>Every MockServer instance ships a built-in <strong>MCP (Model Context Protocol)</strong> server at <code>/mockserver/mcp</code>. Point <a href="/mock_server/ai_mcp_setup.html">Claude Code, Cursor, Windsurf, Cline, or OpenCode</a> at it and let an AI assistant create expectations, verify requests, retrieve recorded traffic, and debug request mismatches through natural language — no glue code required.</p>
-		<ul class="ai_hero_links">
-			<li><a href="/mock_server/ai_mcp_setup.html">Connect an AI assistant →</a></li>
-			<li><a href="/mock_server/ai_mcp_tools.html">MCP tools reference →</a></li>
-			<li><a href="/llms.txt">llms.txt</a> · <a href="/llms-full.txt">llms-full.txt</a></li>
-		</ul>
-	</div>
-</aside>
-
 <a id="getting_started" class="anchor" href="#getting_started">&nbsp;</a>
 
 <h2>Getting Started</h2>
@@ -50,7 +37,18 @@ layout: default
 	<li>a <a href="/mock_server/getting_started.html">mock</a> configured to return specific responses for different requests</li>
 	<li>a <a href="/proxy/getting_started.html">proxy</a> recording and optionally modifying requests and responses</li>
 	<li>both a <a href="/proxy/getting_started.html">proxy</a> for some requests and a <a href="/mock_server/getting_started.html">mock</a> for other requests at the same time</li>
+	<li>an <a href="/mock_server/ai_mcp_setup.html">MCP server</a> that lets AI coding assistants drive the mock and proxy in natural language</li>
 </ul>
+
+<p>MockServer is also <strong>AI-native</strong>: every instance ships a built-in <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a> server at <code>/mockserver/mcp</code> with no extra configuration, and the documentation is published in machine-readable form for LLMs. In practice this means:</p>
+
+<ul>
+	<li>AI assistants (Claude Code, Cursor, Windsurf, Cline, OpenCode) can <a href="/mock_server/ai_mcp_setup.html">connect over MCP</a> to create expectations, verify requests, retrieve recorded traffic, and debug mismatches — see the <a href="/mock_server/ai_mcp_tools.html">MCP tools reference</a></li>
+	<li>tools that don't yet speak MCP can fall back to MockServer's <a href="/mockserver-openapi.yaml">OpenAPI spec</a></li>
+	<li>LLMs can retrieve and cite the docs via <a href="/llms.txt">llms.txt</a>, <a href="/llms-full.txt">llms-full.txt</a>, and <a href="/ai.txt">ai.txt</a></li>
+</ul>
+
+<p>See <a href="#ai-and-mcp">AI &amp; MCP Integration</a> below for the full list of AI capabilities.</p>
 
 <p>When MockServer receives a request it matches the request against active <strong>expectations</strong> that have been configured. Then, if no matches are found, it proxies the request if appropriate; otherwise a 404 is returned.</p>
 
@@ -166,7 +164,7 @@ layout: default
 
 <h2>AI &amp; MCP Integration</h2>
 
-<p>MockServer is built to be <strong>AI-native</strong>. A built-in <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a> server lets AI coding assistants drive the mock server in natural language, and an OpenAPI spec provides a fallback for tools that don't yet speak MCP. All documentation, including <a href="/llms.txt">llms.txt</a> and <a href="/llms-full.txt">llms-full.txt</a>, is structured for retrieval and citation by LLMs.</p>
+<p>MockServer is built to be <strong>AI-native</strong>. A built-in <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a> server lets AI coding assistants drive the mock server in natural language, and an OpenAPI spec provides a fallback for tools that don't yet speak MCP. All documentation, including <a href="/llms.txt">llms.txt</a>, <a href="/llms-full.txt">llms-full.txt</a>, and <a href="/ai.txt">ai.txt</a>, is structured for retrieval and citation by LLMs.</p>
 
 <ul>
 	<li><strong><a href="/mock_server/ai_mcp_setup.html">MCP Setup</a></strong> — connect Claude Code, Cursor, Windsurf, Cline, or OpenCode to a running MockServer at <code>http://localhost:1080/mockserver/mcp</code> over the MCP Streamable HTTP transport</li>
