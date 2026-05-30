@@ -30,6 +30,7 @@ import static org.mockserver.character.Character.NEW_LINE;
 public class JsonStringMatcher extends BodyMatcher<String> {
     private static final String[] EXCLUDED_FIELDS = {"mockServerLogger"};
     private static final ObjectWriter PRETTY_PRINTER = ObjectMapperFactory.createObjectMapper(true, false);
+    private static final ThreadLocal<Object[]> BODY_PARSE_CACHE = ThreadLocal.withInitial(() -> new Object[2]);
     private final MockServerLogger mockServerLogger;
     private final String matcher;
     private JsonNode matcherJsonNode;
@@ -77,10 +78,19 @@ public class JsonStringMatcher extends BodyMatcher<String> {
                     if (matcherJsonNode == null) {
                         matcherJsonNode = ObjectMapperFactory.createObjectMapper().readTree(matcher);
                     }
+                    Object[] cache = BODY_PARSE_CACHE.get();
+                    JsonNode matchedNode;
+                    if (matched.equals(cache[0])) {
+                        matchedNode = (JsonNode) cache[1];
+                    } else {
+                        matchedNode = ObjectMapperFactory.createObjectMapper().readTree(matched);
+                        cache[0] = matched;
+                        cache[1] = matchedNode;
+                    }
                     result = Diff
                         .create(
                             matcherJsonNode,
-                            ObjectMapperFactory.createObjectMapper().readTree(matched),
+                            matchedNode,
                             "",
                             "",
                             diffConfig
