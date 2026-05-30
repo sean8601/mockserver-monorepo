@@ -8,6 +8,7 @@ import io.prometheus.metrics.expositionformats.ExpositionFormats;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.MetricSnapshots;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.cors.CORSHeaders;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 
@@ -20,10 +21,12 @@ public class MetricsHandler {
 
     private final Boolean metricsEnabled;
     private final ExpositionFormats expositionFormats;
+    private final CORSHeaders corsHeaders;
 
     public MetricsHandler(Configuration configuration) {
         metricsEnabled = configuration.metricsEnabled();
         expositionFormats = ExpositionFormats.init();
+        corsHeaders = new CORSHeaders(configuration);
     }
 
     public void renderMetrics(final ChannelHandlerContext ctx, final HttpRequest request) throws Exception {
@@ -40,6 +43,12 @@ public class MetricsHandler {
                     .withHeader(HttpHeaderNames.CONTENT_LENGTH.toString(), String.valueOf(content.length))
                     .withBody(content);
         }
+        // This endpoint writes directly to the channel (it does not go through
+        // ResponseWriter), so add CORS headers here — otherwise the dashboard
+        // served from another origin (e.g. a dev server) is blocked by CORS,
+        // including the disabled-state 404 (which the UI needs to read to show
+        // its "metrics disabled" guidance rather than a fetch error).
+        corsHeaders.addCORSHeaders(request, response);
         if (!request.isKeepAlive()) {
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         } else {

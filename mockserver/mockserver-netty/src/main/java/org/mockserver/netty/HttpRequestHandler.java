@@ -204,8 +204,12 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     }
                     openAPISpecHandler.renderOpenAPISpec(ctx, request);
 
-                } else if (configuration.metricsEnabled() && request.getMethod().getValue().equals("GET") && request.getPath().getValue().matches(PATH_PREFIX + "/metrics")) {
+                } else if (request.getMethod().getValue().equals("GET") && request.getPath().getValue().matches(PATH_PREFIX + "/metrics")) {
 
+                    // Always reserve this control-plane path (like /dashboard and /openapi.yaml
+                    // above). MetricsHandler serves the metrics when enabled and a CORS-decorated
+                    // 404 when disabled, so a cross-origin dashboard reads the disabled state
+                    // cleanly instead of the request falling through to mock matching.
                     metricsHandler.renderMetrics(ctx, request);
 
                 } else if (request.getMethod().getValue().equals("CONNECT")) {

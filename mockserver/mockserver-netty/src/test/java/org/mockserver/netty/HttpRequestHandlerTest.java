@@ -187,6 +187,27 @@ public class HttpRequestHandlerTest {
     }
 
     @Test
+    public void shouldReserveMetricsPathWithCORSWhenMetricsDisabled() {
+        // given - metrics disabled (the default configuration); the control-plane
+        // /metrics path is still reserved (like /dashboard and /openapi.yaml), so a
+        // cross-origin dashboard receives a CORS-decorated 404 it can read to show
+        // its "metrics disabled" guidance rather than the request falling through
+        // to mock matching
+        HttpRequest metricsRequest = request("/mockserver/metrics")
+            .withMethod("GET")
+            .withKeepAlive(true)
+            .withHeader("origin", "http://localhost:3000");
+
+        // when
+        embeddedChannel.writeInbound(metricsRequest);
+
+        // then
+        HttpResponse httpResponse = embeddedChannel.readOutbound();
+        assertThat(httpResponse.getStatusCode(), is(404));
+        assertThat(httpResponse.getFirstHeader("access-control-allow-origin"), is("http://localhost:3000"));
+    }
+
+    @Test
     public void shouldBindNewPorts() {
         // given
         when(server.bindServerPorts(anyList())).thenReturn(Arrays.asList(1090, 1090));
