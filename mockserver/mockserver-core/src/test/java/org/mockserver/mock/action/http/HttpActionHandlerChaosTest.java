@@ -1,5 +1,9 @@
 package org.mockserver.mock.action.http;
 
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.prometheus.metrics.model.snapshots.CounterSnapshot;
+import io.prometheus.metrics.model.snapshots.MetricSnapshot;
+import io.prometheus.metrics.model.snapshots.MetricSnapshots;
 import org.junit.*;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -8,6 +12,7 @@ import org.mockito.Spy;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.crud.CrudDispatcher;
@@ -85,7 +90,8 @@ public class HttpActionHandlerChaosTest {
 
     @Before
     public void setupMocks() {
-        configuration = configuration().logLevel(Level.INFO);
+        Metrics.resetAdditionalMetricsForTesting();
+        configuration = configuration().logLevel(Level.INFO).metricsEnabled(true);
 
         mockHttpStateHandler = mock(HttpState.class);
         scheduler = spy(new Scheduler(configuration, mockServerLogger));
@@ -460,5 +466,127 @@ public class HttpActionHandlerChaosTest {
             HttpResponse r = dispatchAndCapture(request, expectation, normalResponse);
             assertThat("match #" + i + " should be 503", r.getStatusCode(), is(503));
         }
+    }
+
+    // --- Prometheus metrics tests for HTTP chaos injection ---
+
+    @Test
+    public void chaosErrorIncrementsHttpChaosMetric() {
+        // given - chaos error fires (probability=1.0, errorStatus=503)
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(1.0));
+    }
+
+    @Test
+    public void chaosLatencyOnlyIncrementsLatencyMetric() {
+        // given - chaos with latency only, no error
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withLatency(milliseconds(100)));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - latency counter increments, error counter does NOT
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "latency"), is(1.0));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+    }
+
+    @Test
+    public void noChaosDoesNotIncrementMetric() {
+        // given - no chaos profile
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse);
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - no chaos counter increments
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "latency"), is(0.0));
+    }
+
+    @Test
+    public void chaosErrorProbabilityZeroDoesNotIncrementMetric() {
+        // given - chaos error probability=0
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(0.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+    }
+
+    @Test
+    public void chaosOutsideCountWindowDoesNotIncrementMetric() {
+        // given - chaos with succeedFirst=2, so match #1,#2 are outside chaos window
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(2));
+
+        // first two matches are outside the window
+        dispatchAndCapture(request, expectation, normalResponse);
+        dispatchAndCapture(request, expectation, normalResponse);
+
+        // then - no error metric increments for the first two (outside window)
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+
+        // third match is inside window
+        dispatchAndCapture(request, expectation, normalResponse);
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(1.0));
+    }
+
+    private static double scrapeCounterValue(String name, String labelName, String labelValue) {
+        MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
+        for (MetricSnapshot snapshot : snapshots) {
+            if (snapshot.getMetadata().getName().equals(name) && snapshot instanceof CounterSnapshot counterSnapshot) {
+                for (CounterSnapshot.CounterDataPointSnapshot dataPoint : counterSnapshot.getDataPoints()) {
+                    if (labelValue.equals(dataPoint.getLabels().get(labelName))) {
+                        return dataPoint.getValue();
+                    }
+                }
+            }
+        }
+        return 0.0;
     }
 }

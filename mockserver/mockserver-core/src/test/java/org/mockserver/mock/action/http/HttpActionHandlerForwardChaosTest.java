@@ -1,5 +1,9 @@
 package org.mockserver.mock.action.http;
 
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.prometheus.metrics.model.snapshots.CounterSnapshot;
+import io.prometheus.metrics.model.snapshots.MetricSnapshot;
+import io.prometheus.metrics.model.snapshots.MetricSnapshots;
 import org.junit.*;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -9,6 +13,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.crud.CrudDispatcher;
@@ -94,7 +99,8 @@ public class HttpActionHandlerForwardChaosTest {
 
     @Before
     public void setupMocks() {
-        configuration = configuration().logLevel(Level.INFO);
+        Metrics.resetAdditionalMetricsForTesting();
+        configuration = configuration().logLevel(Level.INFO).metricsEnabled(true);
 
         mockHttpStateHandler = mock(HttpState.class);
         scheduler = spy(new Scheduler(configuration, mockServerLogger));
@@ -409,5 +415,128 @@ public class HttpActionHandlerForwardChaosTest {
 
         HttpResponse r3 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
         assertThat("match #3 should be 503", r3.getStatusCode(), is(503));
+    }
+
+    // --- Prometheus metrics tests for HTTP chaos injection on forward path ---
+
+    @Test
+    public void forwardChaosErrorIncrementsHttpChaosMetric() {
+        // given - chaos error fires on forward path
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(1.0));
+    }
+
+    @Test
+    public void forwardChaosLatencyOnlyIncrementsLatencyMetric() {
+        // given - chaos with latency only on forward path
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withLatency(milliseconds(100)));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        // Intercept scheduler.schedule to avoid actual delay and still run the command
+        doAnswer(invocation -> {
+            Runnable cmd = invocation.getArgument(0);
+            cmd.run();
+            return null;
+        }).when(scheduler).schedule(any(Runnable.class), eq(true), any(Delay[].class));
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "latency"), is(1.0));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+    }
+
+    @Test
+    public void forwardNoChaosDoesNotIncrementMetric() {
+        // given - no chaos on forward path
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward);
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "latency"), is(0.0));
+    }
+
+    @Test
+    public void forwardChaosOutsideCountWindowDoesNotIncrementMetric() {
+        // given - succeedFirst=1, match #1 is outside window
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(1)
+                .withFailRequestCount(1));
+
+        // match #1 outside window
+        dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("no error metric for match #1 (outside window)",
+            scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+
+        // match #2 inside window
+        dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("error metric increments for match #2 (inside window)",
+            scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(1.0));
+
+        // match #3 outside window again
+        dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("no additional error metric for match #3 (outside window)",
+            scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(1.0));
+    }
+
+    private static double scrapeCounterValue(String name, String labelName, String labelValue) {
+        MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
+        for (MetricSnapshot snapshot : snapshots) {
+            if (snapshot.getMetadata().getName().equals(name) && snapshot instanceof CounterSnapshot counterSnapshot) {
+                for (CounterSnapshot.CounterDataPointSnapshot dataPoint : counterSnapshot.getDataPoints()) {
+                    if (labelValue.equals(dataPoint.getLabels().get(labelName))) {
+                        return dataPoint.getValue();
+                    }
+                }
+            }
+        }
+        return 0.0;
     }
 }

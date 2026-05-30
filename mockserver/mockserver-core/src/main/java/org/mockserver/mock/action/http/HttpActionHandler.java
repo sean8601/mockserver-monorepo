@@ -957,6 +957,14 @@ public class HttpActionHandler {
         // Gate latency by the same count window as error injection
         final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
 
+        // Metrics: record chaos faults only when they actually fire
+        if (chaosError != null) {
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("error");
+        }
+        if (chaosLatency != null) {
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("latency");
+        }
+
         Delay[] delays = combineWithChaosAndGlobalDelay(effectiveResponse.getDelay(), chaosLatency);
         scheduler.schedule(() -> {
             try {
@@ -1072,6 +1080,14 @@ public class HttpActionHandler {
                 // Gate latency by the same count window as error injection
                 final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
                 final boolean chaosErrorInjected = chaosError != null;
+
+                // Metrics: record chaos faults only when they actually fire
+                if (chaosErrorInjected) {
+                    org.mockserver.metrics.Metrics.incrementHttpChaosInjected("error");
+                }
+                if (chaosLatency != null) {
+                    org.mockserver.metrics.Metrics.incrementHttpChaosInjected("latency");
+                }
 
                 // Factor the write (streaming vs non-streaming) into a single command so
                 // it can be dispatched either directly or via the non-blocking scheduler.

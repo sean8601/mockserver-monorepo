@@ -32,6 +32,8 @@ public class Metrics {
     private static volatile Histogram requestDurationByMethodSeconds;
     // Counter for slow forwarded requests. Null until metrics are enabled.
     private static volatile Counter slowRequestTotal;
+    // Counter for HTTP chaos faults injected (error or latency). Null until metrics are enabled.
+    private static volatile Counter httpChaosInjectedTotal;
 
     private final Boolean metricsEnabled;
 
@@ -50,6 +52,11 @@ public class Metrics {
             slowRequestTotal = Counter.builder()
                 .name("mock_server_slow_requests")
                 .help("Total number of forwarded requests that exceeded the slow request threshold")
+                .register();
+            httpChaosInjectedTotal = Counter.builder()
+                .name("mock_server_http_chaos_injected")
+                .help("Total HTTP chaos faults injected by type")
+                .labelNames("fault_type")
                 .register();
             if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
                 requestDurationByMethodSeconds = Histogram.builder()
@@ -92,14 +99,15 @@ public class Metrics {
      * metrics so that a subsequent {@code new Metrics(configuration)} call
      * re-registers them.  Also clears the default Prometheus registry.
      * <p>
-     * Package-private: intended for {@code MetricsTest} only, to guarantee
-     * deterministic test ordering.
+     * Public for cross-package test access (e.g. chaos injection tests);
+     * intended for test use only to guarantee deterministic test ordering.
      */
-    static void resetAdditionalMetricsForTesting() {
+    public static void resetAdditionalMetricsForTesting() {
         additionalMetricsRegistered.set(false);
         requestDurationSeconds = null;
         requestDurationByMethodSeconds = null;
         slowRequestTotal = null;
+        httpChaosInjectedTotal = null;
         metrics.clear();
         PrometheusRegistry.defaultRegistry.clear();
     }
@@ -155,6 +163,19 @@ public class Metrics {
         Counter counter = slowRequestTotal;
         if (counter != null) {
             counter.inc();
+        }
+    }
+
+    /**
+     * Increment the HTTP chaos injected counter for the given fault type.
+     * No-op when metrics are disabled (counter not registered) or faultType is null.
+     *
+     * @param faultType one of "error" or "latency"
+     */
+    public static void incrementHttpChaosInjected(String faultType) {
+        Counter counter = httpChaosInjectedTotal;
+        if (counter != null && faultType != null) {
+            counter.labelValues(faultType).inc();
         }
     }
 
