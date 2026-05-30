@@ -1,0 +1,196 @@
+---
+title: Network Latency Debugging
+description: Capture per-request HTTP timing (connect, TTFB, total), export HAR with breakdowns, flag slow requests, and track latency percentiles via Prometheus.
+layout: page
+pageOrder: 6
+section: 'Proxy'
+subsection: true
+sitemap:
+  priority: 0.7
+  changefreq: 'monthly'
+  lastmod: 2026-05-30T08:00:00+00:00
+keywords: http latency debugging, slow request detection, proxy timing, har timing export, time to first byte, ttfb proxy, request duration histogram
+---
+
+<p>When a service is slow or intermittently slow, the first step is usually to understand <strong>where the time goes</strong> for each HTTP request. MockServer can act as an in-path HTTP(S) proxy that records per-request timing breakdowns &mdash; connection time, time to first byte (TTFB), and total round-trip &mdash; so you can identify whether latency is in the network, the upstream server's processing, or the response transfer.</p>
+
+<p>This page covers how to use MockServer's proxy timing features for latency diagnosis. It complements <a href="/proxy/debugging_proxied_traffic.html">Debugging Proxied Traffic</a> (which focuses on inspecting request/response content) and <a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a> (which injects faults for resilience testing).</p>
+
+<p><strong>Scope:</strong> MockServer operates at the HTTP layer (L7). It captures timing from the perspective of MockServer's own outbound connection to the upstream server &mdash; TCP connect, TLS handshake (included in connect time), server processing (TTFB), and response body transfer. It does <strong>not</strong> capture network-layer (L3/L4) metrics such as packet-level round-trip times, retransmissions, or congestion-window behaviour. For those, use dedicated packet-capture or TCP-analysis tools alongside MockServer's HTTP-level view.</p>
+
+<a id="per_request_timing" class="anchor" href="#per_request_timing">&nbsp;</a>
+
+<h2>Per-Request Timing Breakdown</h2>
+
+<p>Every time MockServer forwards a request (in proxy mode or via a forward action), it records a <code class="inline code">timing</code> object on the response with these fields:</p>
+
+<table>
+    <thead>
+        <tr><th>Field</th><th>What it measures</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code class="inline code">connectionTimeInMillis</code></td><td>Time to establish the TCP connection (and TLS handshake, if HTTPS) to the upstream server.</td></tr>
+        <tr><td><code class="inline code">timeToFirstByteInMillis</code></td><td>Time from the start of the request until the first byte of the response is received. This is the connect time plus the upstream server's processing time.</td></tr>
+        <tr><td><code class="inline code">totalTimeInMillis</code></td><td>Total round-trip time from sending the request to receiving the complete response body.</td></tr>
+    </tbody>
+</table>
+
+<p>These fields are available on every recorded request-response pair retrieved via the <a href="/proxy/debugging_proxied_traffic.html#download_export">retrieve API</a>:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=JSON"</code></pre>
+
+<p>Example response with timing:</p>
+
+<pre class="prettyprint code"><code class="code">{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/api/users"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "body": "...",
+        "timing": {
+            "connectionTimeInMillis": 12,
+            "timeToFirstByteInMillis": 85,
+            "totalTimeInMillis": 142
+        }
+    }
+}</code></pre>
+
+<p>From these numbers you can derive the three phases of the request:</p>
+
+<ul>
+    <li><strong>Connect</strong> (12ms) &mdash; TCP + TLS setup. High values suggest network latency or DNS resolution delays.</li>
+    <li><strong>Wait / server processing</strong> (85ms &minus; 12ms = 73ms) &mdash; the time the upstream spent processing the request before it started sending the response. This is the "thinking time" and is typically where application-level slowness shows up.</li>
+    <li><strong>Receive / body transfer</strong> (142ms &minus; 85ms = 57ms) &mdash; the time to transfer the response body. High values point to large payloads or bandwidth constraints.</li>
+</ul>
+
+<a id="har_export_with_timings" class="anchor" href="#har_export_with_timings">&nbsp;</a>
+
+<h2>HAR Export with Timing Breakdown</h2>
+
+<p>When you export recorded traffic as a <a href="http://www.softwareishard.com/blog/har-12-spec/" target="_blank" rel="noopener noreferrer">HAR 1.2</a> file, MockServer populates the standard <code class="inline code">timings</code> object on each entry with <code class="inline code">connect</code>, <code class="inline code">wait</code>, and <code class="inline code">receive</code> values derived from the per-request timing fields. This means you can open the HAR file in browser DevTools or any HTTP-analysis tool and see a familiar waterfall chart with accurate timing breakdowns.</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR" -o recording.har</code></pre>
+
+<p>You can narrow the export to specific paths or hosts by sending a request matcher in the body:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR" \
+  -d '{"path": "/api/.*"}' -o api-traffic.har</code></pre>
+
+<p>The HAR <code class="inline code">timings</code> section for each entry will look like:</p>
+
+<pre class="prettyprint code"><code class="code">"timings": {
+    "connect": 12,
+    "wait": 73,
+    "receive": 57
+}</code></pre>
+
+<p>This is especially useful for sharing a capture with teammates or loading it into performance-analysis tools.</p>
+
+<a id="slow_request_flagging" class="anchor" href="#slow_request_flagging">&nbsp;</a>
+
+<h2>Flagging Slow Requests</h2>
+
+<p>When you are looking for intermittently slow requests rather than inspecting every single one, you can set a threshold so that MockServer automatically flags any forwarded request that exceeds it. This saves you from manually scanning through hundreds of timing entries.</p>
+
+<p>Set the <a href="/mock_server/configuration_properties.html#button_configuration_slow_request_threshold_millis"><code class="inline code">slowRequestThresholdMillis</code></a> property to a value greater than 0. Any forwarded request whose total time exceeds this threshold will:</p>
+
+<ol>
+    <li>Emit a <strong>WARN-level log entry</strong> in MockServer's event log, visible in the <a href="/mock_server/mockserver_ui.html">dashboard UI</a> and retrievable via the <a href="/mock_server/debugging_issues.html#retrieving_recorded_logs">log retrieval API</a>.</li>
+    <li>Increment the <code class="inline code">mock_server_slow_requests</code> <strong>Prometheus counter</strong> (when <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>), so you can alert on slow-request rates.</li>
+</ol>
+
+<p>Configuration examples:</p>
+
+<pre class="prettyprint code"><code class="code"># System property
+-Dmockserver.slowRequestThresholdMillis=500
+
+# Environment variable (e.g. Docker / Kubernetes)
+MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS=500
+
+# Property file
+mockserver.slowRequestThresholdMillis=500</code></pre>
+
+<p>When a request exceeds the threshold, a log entry like this appears:</p>
+
+<pre class="code"><code class="code">WARN - slow forwarded request GET /api/users took 1230ms (threshold 500ms)</code></pre>
+
+<p>The default is <code class="inline code">0</code>, which disables slow-request flagging entirely.</p>
+
+<a id="latency_percentiles" class="anchor" href="#latency_percentiles">&nbsp;</a>
+
+<h2>Latency Percentiles via Prometheus</h2>
+
+<p>MockServer exposes a <code class="inline code">mock_server_request_duration_seconds</code> histogram via the <code class="inline code">GET /mockserver/metrics</code> Prometheus endpoint (when <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>). This histogram records the duration of every request MockServer handles, so you can compute p50, p95, and p99 latency percentiles in your monitoring system.</p>
+
+<p>For more granular analysis, enable the <a href="/mock_server/configuration_properties.html#button_configuration_metrics_request_duration_route_labels"><code class="inline code">metricsRequestDurationRouteLabels</code></a> property. This adds a per-HTTP-method histogram (<code class="inline code">mock_server_request_duration_by_method_seconds</code>) with a <code class="inline code">method</code> label (GET, POST, PUT, etc.), letting you compare latency distributions across different types of requests.</p>
+
+<pre class="prettyprint code"><code class="code"># Enable per-method latency histogram
+-Dmockserver.metricsRequestDurationRouteLabels=true
+
+# or via environment variable
+MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS=true</code></pre>
+
+<p>Example Prometheus queries:</p>
+
+<pre class="prettyprint code"><code class="code"># p95 latency across all requests (15-minute window)
+histogram_quantile(0.95, rate(mock_server_request_duration_seconds_bucket[15m]))
+
+# p95 latency for GET requests specifically
+histogram_quantile(0.95, rate(mock_server_request_duration_by_method_seconds_bucket{method="GET"}[15m]))
+
+# Slow request rate (per second, 5-minute window)
+rate(mock_server_slow_requests_total[5m])</code></pre>
+
+<p>Cardinality is bounded to the set of standard HTTP methods, so enabling route labels does not risk a cardinality explosion.</p>
+
+<a id="kubernetes_in_path" class="anchor" href="#kubernetes_in_path">&nbsp;</a>
+
+<h2>In-Path Capture in Kubernetes</h2>
+
+<p>To capture latency data for a specific dependency in Kubernetes, deploy MockServer between your application and the upstream service using any of the deployment patterns described in <a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a>:</p>
+
+<ul>
+    <li><strong>Reverse proxy</strong> (<a href="/mock_server/chaos_testing_kubernetes.html#reverse_proxy_pattern">Pattern 1</a>) &mdash; a Kubernetes Service that routes calls to MockServer, which forwards to the real backend.</li>
+    <li><strong>Egress proxy</strong> (<a href="/mock_server/chaos_testing_kubernetes.html#forward_proxy_pattern">Pattern 2</a>) &mdash; set <code class="inline code">HTTP_PROXY</code>/<code class="inline code">HTTPS_PROXY</code> on your application to route outbound traffic through MockServer.</li>
+    <li><strong>Sidecar</strong> (<a href="/mock_server/chaos_testing_kubernetes.html#sidecar_pattern">Pattern 3</a>) &mdash; run MockServer as a sidecar container in the same pod.</li>
+</ul>
+
+<p>In all cases, enable timing and metrics with environment variables on the MockServer container:</p>
+
+<pre class="prettyprint lang-yaml code"><code class="code">env:
+  - name: MOCKSERVER_METRICS_ENABLED
+    value: "true"
+  - name: MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS
+    value: "500"
+  - name: MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS
+    value: "true"</code></pre>
+
+<p>Then scrape the <code class="inline code">/mockserver/metrics</code> endpoint from your Prometheus instance and export HAR files or retrieve recorded timings via the API as needed.</p>
+
+<p>The same deployment can serve both latency diagnostics <strong>and</strong> fault injection at the same time &mdash; add chaos profiles to specific forward expectations to test resilience while simultaneously collecting timing data on all traffic. See <a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a> for the chaos configuration.</p>
+
+<a id="limitations" class="anchor" href="#limitations">&nbsp;</a>
+
+<h2>What This Does Not Cover</h2>
+
+<p>MockServer's timing operates at the HTTP layer (L7). This means it captures the timing characteristics visible to an HTTP client &mdash; connection setup, server processing, and response transfer. It does <strong>not</strong> provide:</p>
+
+<ul>
+    <li><strong>Packet-level metrics</strong> &mdash; TCP retransmissions, congestion window sizes, or packet loss rates. Use a packet-capture tool for these.</li>
+    <li><strong>Network-layer (L3/L4) visibility</strong> &mdash; MockServer does not intercept traffic transparently; it must be explicitly placed in the request path.</li>
+    <li><strong>Client-side timing</strong> &mdash; the timing reflects MockServer's outbound connection to the upstream. It does not include the time between the original client and MockServer itself.</li>
+    <li><strong>DNS resolution time</strong> &mdash; DNS lookups are included in the connect time but not broken out separately.</li>
+</ul>
+
+<p>For a complete network-level investigation, combine MockServer's HTTP timing data with packet-capture or TCP-analysis tools to get both the application-layer and transport-layer views.</p>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/proxy/debugging_proxied_traffic.html">Debugging Proxied Traffic</a> &mdash; inspect and export the content of recorded proxy traffic (requests, responses, headers, bodies)</li>
+    <li><a href="/mock_server/debugging_issues.html">Logging &amp; Debugging</a> &mdash; retrieve logs, metrics, and configuration</li>
+    <li><a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a> &mdash; deploy MockServer in Kubernetes for fault injection and latency capture</li>
+    <li><a href="/mock_server/configuration_properties.html">Configuration Properties</a> &mdash; all properties including <code class="inline code">slowRequestThresholdMillis</code> and <code class="inline code">metricsRequestDurationRouteLabels</code></li>
+</ul>

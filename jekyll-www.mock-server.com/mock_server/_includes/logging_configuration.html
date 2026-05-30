@@ -21,6 +21,8 @@
         <tr><td><a href="#button_configuration_detailed_verification_failures"><code>detailedVerificationFailures</code></a></td><td>Include per-field diff in verification failures</td><td><code>true</code></td></tr>
         <tr><td><a href="#button_configuration_launch_ui__debug"><code>launchUIForLogLevelDebug</code></a></td><td>Auto-open UI when log level is DEBUG</td><td><code>false</code></td></tr>
         <tr><td><a href="#button_configuration_enabled_metrics"><code>metricsEnabled</code></a></td><td>Prometheus metrics endpoint</td><td><code>false</code></td></tr>
+        <tr><td><a href="#button_configuration_slow_request_threshold_millis"><code>slowRequestThresholdMillis</code></a></td><td>Flag forwarded requests slower than this threshold</td><td><code>0</code> (disabled)</td></tr>
+        <tr><td><a href="#button_configuration_metrics_request_duration_route_labels"><code>metricsRequestDurationRouteLabels</code></a></td><td>Add per-HTTP-method labels to the request duration histogram</td><td><code>false</code></td></tr>
     </tbody>
 </table>
 
@@ -209,6 +211,40 @@
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.metricsEnabled=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true"</code></pre>
+</div>
+
+<button id="button_configuration_slow_request_threshold_millis" class="accordion title"><strong>Slow Request Threshold</strong></button>
+<div class="panel title">
+    <p>Threshold in milliseconds for flagging slow forwarded requests. When a forwarded request's total round-trip time exceeds this value, MockServer emits a WARN-level log entry and increments the <code class="inline code">mock_server_slow_requests</code> Prometheus counter (when <a href="#button_configuration_enabled_metrics">metrics are enabled</a>). This is useful for detecting intermittently slow upstream services without scanning every recorded request manually.</p>
+    <p>Set to <code class="inline code">0</code> to disable slow-request detection. See <a href="/proxy/network_latency_debugging.html#slow_request_flagging">Network Latency Debugging</a> for usage examples.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">0</span> (disabled)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.slowRequestThresholdMillis(long milliseconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.slowRequestThresholdMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.slowRequestThresholdMillis=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.slowRequestThresholdMillis="500"</code></pre>
+</div>
+
+<button id="button_configuration_metrics_request_duration_route_labels" class="accordion title"><strong>Per-Method Request Duration Histogram Labels</strong></button>
+<div class="panel title">
+    <p>When enabled, MockServer registers an additional Prometheus histogram <code class="inline code">mock_server_request_duration_by_method_seconds</code> with a <code class="inline code">method</code> label for the HTTP method (GET, POST, PUT, etc.). This lets you compute per-method latency percentiles in your monitoring system. Cardinality is bounded to the set of standard HTTP methods.</p>
+    <p>Requires <a href="#button_configuration_enabled_metrics">metricsEnabled</a> to be <code class="inline code">true</code>. See <a href="/proxy/network_latency_debugging.html#latency_percentiles">Network Latency Debugging</a> for Prometheus query examples.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.metricsRequestDurationRouteLabels(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsRequestDurationRouteLabels=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.metricsRequestDurationRouteLabels=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsRequestDurationRouteLabels="true"</code></pre>
 </div>
 
 <button id="button_configuration_log_event_listener" class="accordion title"><strong>Custom Log Event Listener</strong></button>

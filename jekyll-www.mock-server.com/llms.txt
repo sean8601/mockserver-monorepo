@@ -46,6 +46,7 @@
 
 ## Proxying
 - [Proxying Overview](https://www.mock-server.com/proxy/getting_started.html): Use MockServer as a recording proxy to capture and inspect HTTP traffic between services
+- [Network Latency Debugging](https://www.mock-server.com/proxy/network_latency_debugging.html): Capture per-request timing (connect, TTFB, total), export HAR with timing breakdowns, flag slow requests, and track latency percentiles via Prometheus
 
 ## TLS / HTTPS
 - [TLS Configuration](https://www.mock-server.com/mock_server/HTTPS_TLS.html): Configure TLS/HTTPS including custom certificates, mTLS, and CA certificate chains

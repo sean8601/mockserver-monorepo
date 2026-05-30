@@ -80,6 +80,7 @@ sitemap:
 	<li><strong>Why is a request not matching?</strong> Compare a recorded request against your <a href="/mock_server/creating_expectations.html">expectations</a> to see exactly which field differs (see also <a href="/mock_server/ai_debugging.html">AI-assisted debugging</a>).</li>
 	<li><strong>Share a reproduction.</strong> A HAR file or the JSON recording is a precise, self-contained capture you can attach to a bug report or hand to a teammate.</li>
 	<li><strong>Turn it into a test.</strong> Once you understand the traffic, replay it as deterministic mocks — see <a href="/proxy/record_and_replay.html">Record &amp; Replay</a>.</li>
+	<li><strong>Where is the time going?</strong> Use the per-request timing breakdown (connect, TTFB, total) and HAR timing export to identify whether latency is in the network, the upstream's processing, or the response transfer &mdash; see <a href="/proxy/network_latency_debugging.html">Network Latency Debugging</a>.</li>
 </ul>
 
 <p>For the complete list of <code>type</code> and <code>format</code> values and the full REST specification, see the <a href="/mock_server/configuration_properties.html">configuration</a> docs and the <a href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">retrieve REST API</a>.</p>

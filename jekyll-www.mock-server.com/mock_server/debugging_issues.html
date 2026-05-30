@@ -179,11 +179,12 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
 
 <h2>Request Forwarding Timings</h2>
 
-<p>When MockServer forwards a request (in proxy mode or via a forward action), the response includes a <code class="inline code">timing</code> field containing connection and total round-trip timing information. This is included in retrieved request-response pairs and can be used to monitor upstream service latency or detect connectivity issues during testing.</p>
+<p>When MockServer forwards a request (in proxy mode or via a forward action), the response includes a <code class="inline code">timing</code> field containing connection, time-to-first-byte, and total round-trip timing information. This is included in retrieved request-response pairs and can be used to monitor upstream service latency or detect connectivity issues during testing.</p>
 
 <p>The <code class="inline code">timing</code> object contains:</p>
 <ul>
-    <li><strong>connectTimeInMillis</strong> &mdash; the time taken to establish the TCP connection to the upstream server</li>
+    <li><strong>connectionTimeInMillis</strong> &mdash; the time taken to establish the TCP connection (and TLS handshake, if HTTPS) to the upstream server</li>
+    <li><strong>timeToFirstByteInMillis</strong> &mdash; the time from the start of the request until the first byte of the response is received (connect time plus the upstream server's processing time)</li>
     <li><strong>totalTimeInMillis</strong> &mdash; the total time from sending the request to receiving the complete response</li>
 </ul>
 
@@ -198,7 +199,8 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
         "statusCode": 200,
         "body": "...",
         "timing": {
-            "connectTimeInMillis": 15,
+            "connectionTimeInMillis": 15,
+            "timeToFirstByteInMillis": 85,
             "totalTimeInMillis": 142
         }
     }
@@ -207,6 +209,8 @@ mockServerClient("localhost", 1080).retrieveActiveExpectations({
 <p>Timings are available when retrieving recorded request-response pairs via the REST API:</p>
 
 <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=JSON"</code></pre>
+
+<p>For a detailed guide on using these timing fields to diagnose slow or intermittently slow upstream services &mdash; including HAR export with timing breakdowns, slow-request flagging, and Prometheus latency percentiles &mdash; see <a href="/proxy/network_latency_debugging.html">Network Latency Debugging</a>.</p>
 
 <a id="retrieving_recorded_logs" class="anchor" href="#retrieving_recorded_logs">&nbsp;</a>
 
