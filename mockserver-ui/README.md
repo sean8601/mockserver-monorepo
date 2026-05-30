@@ -30,5 +30,30 @@ npm start
 open http://localhost:3000/?port=1080
 ```
 
+## Demo data (manual UI testing)
+
+To exercise every dashboard view against a richly populated server, run:
+```bash
+npm run demo
+```
+This builds (if needed) and launches the MockServer backend, loads a varied demo
+dataset, starts the UI dev server, and opens the dashboard. The dataset covers
+plain HTTP expectations (varied verbs / status / bodies / headers / query /
+cookies / delay / times / priority), a forward, LLM response mocks for every
+provider (Anthropic, OpenAI, OpenAI Responses, Gemini, Ollama) including tool
+calls, streaming and a chaos profile, multi-turn agent loops that group into
+**Sessions** with call graphs, token/cost usage, and a conversation expectation
+exercising every predicate pill. Press Ctrl+C to stop both servers.
+
+Options: `--rebuild`, `--no-browser`, `--port <n>`, `--ui-port <n>`.
+
+To (re-)load the data into an already-running MockServer:
+```bash
+npm run demo:data            # defaults to http://localhost:1080
+npm run demo:data -- --url http://localhost:9090
+```
+The populate logic lives in [`scripts/populate-demo-data.mjs`](scripts/populate-demo-data.mjs)
+and the launcher in [`scripts/launch-with-demo-data.sh`](scripts/launch-with-demo-data.sh).
+
 ## Contributing
 In lieu of a formal styleguide, take care to maintain the existing coding style. Add unit tests for any new or changed functionality.

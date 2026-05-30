@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+#
+# launch-with-demo-data.sh
+# ------------------------
+# Launch the MockServer backend + the UI dev server and populate a rich demo
+# dataset so every dashboard view can be tested by hand. Complements the repo's
+# scripts/local_ui_dev.sh — this one lives in the UI folder and loads the much
+# larger dataset in scripts/populate-demo-data.mjs (HTTP, forward, every LLM
+# provider, conversations, agent-loop sessions, token/cost, predicate pills).
+#
+# Usage:
+#   ./scripts/launch-with-demo-data.sh [OPTIONS]
+#   npm run demo
+#
+# Options:
+#   --rebuild      Force rebuild of the MockServer JAR even if one exists
+#   --no-browser   Do not auto-open the browser
+#   --port PORT    MockServer port (default: 1080)
+#   --ui-port PORT UI dev server port (default: 3000)
+#   --help         Show this help
+#
+# Press Ctrl+C to stop both servers.
+
+set -euo pipefail
+
+for cmd in java curl node npm; do
+  command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: '$cmd' is required but not installed"; exit 1; }
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$UI_DIR/.." && pwd)"
+
+MOCKSERVER_PORT=1080
+UI_PORT=3000
+REBUILD=false
+NO_BROWSER=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --rebuild) REBUILD=true; shift ;;
+    --no-browser) NO_BROWSER=true; shift ;;
+    --port) MOCKSERVER_PORT="$2"; shift 2 ;;
+    --ui-port) UI_PORT="$2"; shift 2 ;;
+    --help|-h) sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "Unknown option: $1 (use --help)"; exit 1 ;;
+  esac
+done
+
+echo "========================================"
+echo "MockServer UI + Demo Data"
+echo "========================================"
+
+# --- locate or build the runnable MockServer JAR --------------------------
+find_jar() {
+  # Newest matching JAR wins, so stale builds from other branches don't shadow it.
+  local jar
+  jar=$(ls -t "$REPO_ROOT"/mockserver/mockserver-netty-no-dependencies/target/mockserver-netty-no-dependencies-*.jar 2>/dev/null \
+    | grep -Ev '(-sources|-javadoc|/original-)' | head -1)
+  [ -n "$jar" ] && { echo "$jar"; return 0; } || return 1
+}
+
+if [ "$REBUILD" = true ] || ! find_jar >/dev/null; then
+  echo "→ Building MockServer JAR (this can take a few minutes)..."
+  (cd "$REPO_ROOT/mockserver" && ./mvnw -q clean install -DskipTests -pl mockserver-netty-no-dependencies -am)
+fi
+MOCKSERVER_JAR="$(find_jar)" || { echo "ERROR: MockServer JAR not found after build"; exit 1; }
+echo "✓ MockServer JAR: $(basename "$MOCKSERVER_JAR")"
+
+# --- install UI deps if needed --------------------------------------------
+if [ ! -d "$UI_DIR/node_modules" ]; then
+  echo "→ Installing UI dependencies..."
+  (cd "$UI_DIR" && npm install)
+fi
+
+# --- start MockServer ------------------------------------------------------
+MOCKSERVER_LOG="$UI_DIR/mockserver-demo.log"
+echo "→ Starting MockServer on port $MOCKSERVER_PORT (log: $MOCKSERVER_LOG)..."
+java -jar "$MOCKSERVER_JAR" -serverPort "$MOCKSERVER_PORT" -logLevel INFO > "$MOCKSERVER_LOG" 2>&1 &
+MOCKSERVER_PID=$!
+
+UI_PID=""
+cleanup() {
+  echo ""
+  echo "→ Stopping servers..."
+  [ -n "${UI_PID:-}" ] && kill "$UI_PID" 2>/dev/null || true
+  [ -n "${MOCKSERVER_PID:-}" ] && kill "$MOCKSERVER_PID" 2>/dev/null || true
+  wait 2>/dev/null || true
+  echo "✓ Stopped"
+}
+trap cleanup INT TERM EXIT
+
+wait_for() {
+  # MockServer's control plane answers /mockserver/status only to PUT, so the
+  # HTTP method is a parameter (default GET for plain pages like the dashboard).
+  local url="$1" name="$2" method="${3:-GET}" timeout=60 elapsed=0
+  echo "  Waiting for $name..."
+  until curl -sf -X "$method" "$url" >/dev/null 2>&1; do
+    [ "$elapsed" -ge "$timeout" ] && { echo "ERROR: $name did not start within ${timeout}s"; return 1; }
+    sleep 1; elapsed=$((elapsed + 1))
+  done
+}
+
+wait_for "http://localhost:$MOCKSERVER_PORT/mockserver/status" "MockServer" PUT
+echo "✓ MockServer ready (PID $MOCKSERVER_PID)"
+
+# --- populate demo data ----------------------------------------------------
+echo "→ Populating demo data..."
+node "$SCRIPT_DIR/populate-demo-data.mjs" --url "http://localhost:$MOCKSERVER_PORT"
+
+# --- start UI dev server ---------------------------------------------------
+echo "→ Starting UI dev server on port $UI_PORT..."
+(cd "$UI_DIR" && MOCKSERVER_URL="http://localhost:$MOCKSERVER_PORT" npm run dev -- --port "$UI_PORT" >/dev/null 2>&1) &
+UI_PID=$!
+
+UI_URL="http://localhost:$UI_PORT/mockserver/dashboard/?port=$MOCKSERVER_PORT"
+wait_for "http://localhost:$UI_PORT/mockserver/dashboard/" "UI dev server"
+echo "✓ UI dev server ready (PID $UI_PID)"
+
+if [ "$NO_BROWSER" = false ]; then
+  if command -v open >/dev/null 2>&1; then open "$UI_URL"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$UI_URL"
+  fi
+fi
+
+echo ""
+echo "========================================"
+echo "✓ Ready — populated demo environment"
+echo "========================================"
+echo "  UI (dev) : $UI_URL"
+echo "  Dashboard: http://localhost:$MOCKSERVER_PORT/mockserver/dashboard"
+echo "  MockServer log: $MOCKSERVER_LOG"
+echo ""
+echo "  Re-populate at any time:  npm run demo:data"
+echo "  Press Ctrl+C to stop both servers."
+echo "========================================"
+
+wait

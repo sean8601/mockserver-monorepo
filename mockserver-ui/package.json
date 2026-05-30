@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo": "bash scripts/launch-with-demo-data.sh",
+    "demo:data": "node scripts/populate-demo-data.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
