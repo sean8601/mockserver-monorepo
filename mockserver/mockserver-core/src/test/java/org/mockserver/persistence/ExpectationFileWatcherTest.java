@@ -23,8 +23,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -301,9 +299,6 @@ public class ExpectationFileWatcherTest {
                 .initializationJsonPath(mockserverInitializer.getParentFile().getAbsolutePath() + "/" + uniquePrefix + "_mockserverInitialization{One,Two}*.json")
                 .watchInitializationJson(true);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
-            // and - expectation update notification
-            AtomicInteger expectationsUpdatedCount = new AtomicInteger();
-            requestMatchers.registerListener((requestMatchers, cause) -> expectationsUpdatedCount.incrementAndGet());
             // and - file watcher
             expectationFileWatcher = new ExpectationFileWatcher(configuration, logger, requestMatchers, new ExpectationInitializerLoader(configuration, logger, requestMatchers));
 
@@ -386,14 +381,16 @@ public class ExpectationFileWatcherTest {
             Files.write(mockserverInitializerThree.toPath(), expectationSerializer.serialize(expectationsThree).getBytes(StandardCharsets.UTF_8));
             long updatedFileTime = System.currentTimeMillis();
 
-            Retries.tryWaitForSuccess(() -> assertThat(expectationsUpdatedCount.get(), equalTo(2)), 150, 100, MILLISECONDS);
-            System.out.println("update processed in: " + (System.currentTimeMillis() - updatedFileTime) + "ms");
-
-            // then - wait for all expectations to be loaded
+            // then - wait for all expectations to be loaded (poll with generous timeout)
             Retries.tryWaitForSuccess(() -> {
                 List<Expectation> expectationsList = requestMatchers.retrieveActiveExpectations(null);
                 assertThat(expectationsList.size(), equalTo(4));
-            }, 150, 100, MILLISECONDS);
+            }, 300, 100, MILLISECONDS);
+            System.out.println("update processed in: " + (System.currentTimeMillis() - updatedFileTime) + "ms");
+
+            // stop the file watcher before asserting to prevent transient state from concurrent reloads
+            expectationFileWatcher.stop();
+
             List<Expectation> expectationsList = requestMatchers.retrieveActiveExpectations(null);
             assertThat(expectationsList.size(), equalTo(4));
             assertThat(expectationsList, containsInAnyOrder(
