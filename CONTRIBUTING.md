@@ -1,5 +1,7 @@
 # Contributing to MockServer
 
+This project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold it.
+
 ## Issues
 
 If you have any problems, please [check the project issues](https://github.com/mock-server/mockserver-monorepo/issues?state=open) and avoid opening issues that have already been fixed. When you open an issue please provide:
@@ -104,6 +106,8 @@ Pull requests are welcome. Please:
 2. Follow existing code conventions in the module you are changing
 3. Add tests for any new functionality
 4. Ensure all tests pass before submitting
+
+Opening a pull request shows a [checklist template](.github/PULL_REQUEST_TEMPLATE.md) covering tests, changelog, docs, and the Java 17 / `jakarta.*` requirement — work through it before requesting review.
 
 ## Feature Requests
 
