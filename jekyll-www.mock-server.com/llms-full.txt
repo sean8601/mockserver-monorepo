@@ -51,7 +51,7 @@ When a request arrives, MockServer evaluates expectations in priority order (hig
 
 ## REST API Reference
 
-All control plane endpoints use the PUT method. The base path is `/mockserver`.
+Most control plane endpoints use the PUT method. Some (e.g. clock status, configuration, OpenAPI spec) also support GET. The base path is `/mockserver`.
 
 ### PUT /mockserver/expectation
 
@@ -317,6 +317,36 @@ Request body:
 Use `0` for dynamically allocated ports.
 
 Response (200 OK): the ports that were actually bound.
+
+### PUT /mockserver/clock
+
+Control the server clock for deterministic time-based testing. Freeze the clock at a specific instant, advance it by a duration, or reset it to real wall-clock time. The controllable clock affects response template date/time helpers (`now_iso_8601`, `now_epoch`, `now_rfc_1123`, `dates.*`) and expectation TimeToLive expiry. Event-log timestamps and JWT issuance are not affected.
+
+Request body:
+
+    {"action": "freeze", "instant": "2025-01-15T09:30:00Z"}
+    {"action": "advance", "durationMillis": 3600000}
+    {"action": "reset"}
+
+- `action` (required): one of `freeze`, `advance`, `reset`
+- `instant` (optional, freeze only): ISO-8601 instant to freeze at; omit to freeze at current time
+- `durationMillis` (required for advance): positive number of milliseconds to advance by
+
+Response (200 OK):
+
+    {"status": "freeze", "currentInstant": "2025-01-15T09:30:00Z", "currentEpochMillis": 1736933400000}
+
+Response (400 Bad Request): if action is missing, instant is malformed, or durationMillis is non-positive.
+
+### GET /mockserver/clock
+
+Returns the current server clock status.
+
+No request body required.
+
+Response (200 OK):
+
+    {"currentInstant": "2025-01-15T09:30:00Z", "currentEpochMillis": 1736933400000, "frozen": true}
 
 ## Request Matching
 

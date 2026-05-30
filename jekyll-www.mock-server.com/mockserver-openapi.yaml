@@ -314,6 +314,51 @@ paths:
               description: JSON object containing the configuration properties to update
         description: configuration properties to update, only non-null fields are applied
         required: true
+  /mockserver/clock:
+    put:
+      tags:
+        - control
+      summary: control the server clock for deterministic time-based testing
+      description: >-
+        Freeze, advance, or reset MockServer's internal clock. The controllable clock affects
+        response template date/time helpers (now_iso_8601, now_epoch, now_rfc_1123, dates.*) and
+        expectation TimeToLive expiry. Event-log timestamps and JWT issuance are not affected.
+      responses:
+        '200':
+          description: clock action applied successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClockResponse"
+        '400':
+          description: incorrect request format (missing or invalid action, invalid instant, non-positive duration)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClockRequest"
+        description: clock action to perform
+        required: true
+    get:
+      tags:
+        - control
+      summary: retrieve the current server clock status
+      description: >-
+        Returns the current instant, epoch milliseconds, and whether the clock is frozen.
+      responses:
+        '200':
+          description: current clock status returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClockStatus"
   /mockserver/stop:
     put:
       tags:
@@ -1099,6 +1144,61 @@ components:
             - expectationIds
         - required:
             - httpRequests
+    ClockRequest:
+      description: "clock control request"
+      type: object
+      additionalProperties: false
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum: [ "freeze", "advance", "reset" ]
+          description: >-
+            freeze: freeze the clock at the given instant (or current time if instant is omitted);
+            advance: advance the frozen clock by durationMillis (freezes first if not already frozen);
+            reset: reset the clock to real wall-clock time
+        instant:
+          type: string
+          format: date-time
+          description: "ISO-8601 instant to freeze at (only used with action 'freeze'; omit to freeze at current time)"
+        durationMillis:
+          type: integer
+          format: int64
+          minimum: 1
+          description: "number of milliseconds to advance the clock by (required when action is 'advance')"
+    ClockResponse:
+      description: "clock control response after a freeze, advance, or reset action"
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          description: "the action that was performed (freeze, advance, or reset)"
+        currentInstant:
+          type: string
+          format: date-time
+          description: "the current server clock instant after the action"
+        currentEpochMillis:
+          type: integer
+          format: int64
+          description: "the current server clock time as epoch milliseconds after the action"
+    ClockStatus:
+      description: "clock status response"
+      type: object
+      additionalProperties: false
+      properties:
+        currentInstant:
+          type: string
+          format: date-time
+          description: "the current server clock instant"
+        currentEpochMillis:
+          type: integer
+          format: int64
+          description: "the current server clock time as epoch milliseconds"
+        frozen:
+          type: boolean
+          description: "true if the clock is currently frozen"
     Ports:
       description: "list of ports"
       type: object
