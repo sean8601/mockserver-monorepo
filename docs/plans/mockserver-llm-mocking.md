@@ -148,7 +148,7 @@ The natural first slice is the SPI + registry + a single provider, and **Ollama 
 Tracked separately in `docs/code/llm-security-audit.md`:
 - Ollama codec emits SSE-shaped events instead of native NDJSON
 - Bedrock codec emits plain Anthropic SSE rather than the `aws-chunked` binary envelope
-- `whenContainsToolResultFor` E2E false-negative for Gemini/Ollama (unit tests pass; pipeline-level interaction issue)
+- ~~`whenContainsToolResultFor` E2E false-negative for Gemini/Ollama~~ — **resolved**; covered by `LlmAgentLoopE2eTest` predicate-driven E2E tests for Gemini and Ollama
 
 ---
 

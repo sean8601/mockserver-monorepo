@@ -295,6 +295,47 @@ public class LlmAgentLoopE2eTest {
         assertThat("Turn 2 should have text part", hasTextPart, is(true));
     }
 
+    @Test
+    public void shouldMatchContainsToolResultForGeminiEndToEnd() throws Exception {
+        // Reproduction for the documented E2E false-negative: drive turn 2 via the
+        // containsToolResultFor predicate (not scenario ordering) for Gemini.
+        conversation()
+            .withPath("/v1beta/models/gemini-2.0-flash/generateContent")
+            .withProvider(GEMINI)
+            .withModel("gemini-2.0-flash")
+            .turn()
+                .whenTurnIndex(0)
+                .respondingWith(completion()
+                    .withToolCall(toolUse("get_weather").withArguments("{\"city\":\"Paris\"}"))
+                    .withStopReason("end_turn"))
+            .andThen()
+            .turn()
+                .whenContainsToolResultFor("get_weather")
+                .respondingWith(completion()
+                    .withText("It is 18C and sunny in Paris.")
+                    .withStopReason("end_turn"))
+            .andThen()
+            .applyTo(mockServerClient);
+
+        String turn1Body = "{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"What is the weather in Paris?\"}]}]}";
+        sendPost("/v1beta/models/gemini-2.0-flash/generateContent", turn1Body);
+
+        String turn2Body = "{\"contents\":["
+            + "{\"role\":\"user\",\"parts\":[{\"text\":\"What is the weather in Paris?\"}]},"
+            + "{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\"}}}]},"
+            + "{\"role\":\"user\",\"parts\":[{\"functionResponse\":{\"name\":\"get_weather\",\"response\":\"18C and sunny\"}}]}"
+            + "]}";
+        String turn2Response = sendPost("/v1beta/models/gemini-2.0-flash/generateContent", turn2Body);
+        JsonNode turn2 = OBJECT_MAPPER.readTree(extractJsonBody(turn2Response));
+        boolean hasTextPart = false;
+        for (JsonNode part : turn2.path("candidates").get(0).path("content").path("parts")) {
+            if (part.has("text") && part.get("text").asText().contains("18C and sunny")) {
+                hasTextPart = true;
+            }
+        }
+        assertThat("Turn 2 (containsToolResultFor) should return the final answer", hasTextPart, is(true));
+    }
+
     // ---- AWS Bedrock ----
 
     @Test
@@ -440,6 +481,44 @@ public class LlmAgentLoopE2eTest {
         JsonNode turn2 = OBJECT_MAPPER.readTree(extractJsonBody(turn2Response));
         assertThat(turn2.get("done").asBoolean(), is(true));
         assertThat(turn2.path("message").get("content").asText(), containsString("18C and sunny"));
+    }
+
+    @Test
+    public void shouldMatchContainsToolResultForOllamaEndToEnd() throws Exception {
+        // Reproduction for the documented E2E false-negative: drive turn 2 via the
+        // containsToolResultFor predicate (not scenario ordering) for Ollama.
+        conversation()
+            .withPath("/api/chat")
+            .withProvider(OLLAMA)
+            .withModel("llama3.2")
+            .turn()
+                .whenTurnIndex(0)
+                .respondingWith(completion()
+                    .withToolCall(toolUse("get_weather").withArguments("{\"city\":\"Paris\"}"))
+                    .withStopReason("tool_use"))
+            .andThen()
+            .turn()
+                .whenContainsToolResultFor("get_weather")
+                .respondingWith(completion()
+                    .withText("It is 18C and sunny in Paris.")
+                    .withStopReason("end_turn"))
+            .andThen()
+            .applyTo(mockServerClient);
+
+        String turn1Body = "{\"model\":\"llama3.2\",\"messages\":[{\"role\":\"user\",\"content\":\"What is the weather?\"}]}";
+        sendPost("/api/chat", turn1Body);
+
+        String turn2Body = "{\"model\":\"llama3.2\",\"messages\":["
+            + "{\"role\":\"user\",\"content\":\"What is the weather?\"},"
+            + "{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":["
+            + "{\"function\":{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\"}}}"
+            + "]},"
+            + "{\"role\":\"tool\",\"content\":\"18C and sunny\"}"
+            + "]}";
+        String turn2Response = sendPost("/api/chat", turn2Body);
+        JsonNode turn2 = OBJECT_MAPPER.readTree(extractJsonBody(turn2Response));
+        assertThat("Turn 2 (containsToolResultFor) should return the final answer",
+            turn2.path("message").get("content").asText(), containsString("18C and sunny"));
     }
 
     // ---- Streaming E2E ----

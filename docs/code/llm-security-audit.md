@@ -108,16 +108,6 @@ The runtime-LLM `GeminiLlmClient` passes the API key as a `?key=` query paramete
 
 The `GeminiCodec.encodeStreaming()` method re-serialises tool-call arguments through Jackson (`OBJECT_MAPPER.readTree` + `writeValueAsString`) before embedding them in the SSE chunk. If the arguments are not valid JSON, they are wrapped in a `{"value":"<escaped>"}` object. This is a safe fallback that prevents malformed arguments from corrupting the JSON chunk. No action required.
 
-### `whenContainsToolResultFor` E2E false-negative for Gemini and Ollama
+### `whenContainsToolResultFor` E2E false-negative for Gemini and Ollama — RESOLVED
 
-**Bug — requires investigation before fix.**
-
-Unit tests confirm that `LlmConversationMatcher.hasToolResultForName` correctly matches tool results for all providers, including Gemini (name-based correlation) and Ollama (positional fallback). However, when exercised through the full E2E matching pipeline (Netty pipeline &rarr; `RequestMatchers` &rarr; conversation matcher), the predicate fails for Gemini and Ollama turn-2 requests.
-
-The most likely candidates for root cause, in order of probability:
-1. The Netty pipeline deserialises the body into a `JsonBody` before `LlmConversationMatcher` receives it. The codec's `decode()` path may receive a pre-parsed form rather than the raw bytes, causing the Gemini/Ollama tool-result extractor to miss the expected field path.
-2. The body-size cap check in `LlmConversationMatcher.matches()` uses `request.getBodyAsRawBytes().length`. If the Netty pipeline has already consumed the raw bytes into a parsed `JsonBody`, `getBodyAsRawBytes()` may return an empty array, causing every body to pass the size check but `codec.decode()` to receive an empty string.
-
-To investigate: add a DEBUG log in `LlmConversationMatcher.matches()` that records the actual body bytes length and the decoded `ParsedConversation` before predicate evaluation. Compare the Anthropic and Gemini/Ollama code paths at the point `codec.decode(request)` is called.
-
-The scenario state machine (which does not use `whenContainsToolResultFor`) works correctly for all providers. E2E tests for Gemini and Ollama rely on `turnIndex` ordering rather than tool-result predicates. Not a security issue.
+**Resolved.** This was previously reported as an E2E-only false-negative (the matcher unit tests passed for all providers, but the predicate was believed to fail through the full Netty pipeline for Gemini/Ollama turn-2 requests). It no longer reproduces: `LlmAgentLoopE2eTest.shouldMatchContainsToolResultForGeminiEndToEnd` and `…ForOllamaEndToEnd` drive turn 2 purely via `whenContainsToolResultFor` (not scenario ordering), through the real Netty pipeline, and both pass — Gemini's name-keyed correlation and Ollama's positional fallback work end-to-end. These regression tests guard against recurrence. (The earlier behaviour was fixed by subsequent matcher/codec work; the body is delivered to the matcher correctly E2E, as the Anthropic/OpenAI/Azure/Bedrock predicate-driven E2E tests also demonstrate.) Not a security issue.
