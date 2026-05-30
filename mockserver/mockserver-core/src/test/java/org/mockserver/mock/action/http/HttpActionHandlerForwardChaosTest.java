@@ -24,6 +24,9 @@ import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.concurrent.CompletableFuture;
 
+import org.mockserver.matchers.TimeToLive;
+import org.mockserver.matchers.Times;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.StringContains.containsString;
@@ -335,5 +338,76 @@ public class HttpActionHandlerForwardChaosTest {
                     entry.getMessageFormat().contains("chaos-injected"), is(false));
             }
         }
+    }
+
+    // --- Count-based stateful chaos tests on forward path ---
+
+    /**
+     * Helper: simulates the matching flow by calling consumeMatch() on the
+     * expectation and then dispatches via processAction, returning the written response.
+     */
+    private HttpResponse dispatchForwardAndCapture(HttpRequest request, Expectation expectation,
+                                                   HttpForward forward, HttpResponse upstreamResponse) {
+        expectation.consumeMatch();
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        reset(mockResponseWriter);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        return responseCaptor.getValue();
+    }
+
+    @Test
+    public void forwardChaosFailFirstTwoThenRecover() {
+        // succeedFirst=0, failRequestCount=2 → #1,#2 = 503, #3 = upstream 200
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(0)
+                .withFailRequestCount(2));
+
+        HttpResponse r1 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("match #1 should be 503", r1.getStatusCode(), is(503));
+
+        HttpResponse r2 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("match #2 should be 503", r2.getStatusCode(), is(503));
+
+        HttpResponse r3 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("match #3 should recover to upstream 200", r3.getStatusCode(), is(200));
+        assertThat("match #3 should have upstream body", r3.getBodyAsString(), is("upstream body"));
+    }
+
+    @Test
+    public void forwardChaosSucceedFirstTwoThenFail() {
+        // succeedFirst=2, failRequestCount=null → #1,#2 = upstream 200, #3 = 503
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(2));
+
+        HttpResponse r1 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("match #1 should pass through", r1.getStatusCode(), is(200));
+
+        HttpResponse r2 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("match #2 should pass through", r2.getStatusCode(), is(200));
+
+        HttpResponse r3 = dispatchForwardAndCapture(request, expectation, forward, upstreamResponse);
+        assertThat("match #3 should be 503", r3.getStatusCode(), is(503));
     }
 }

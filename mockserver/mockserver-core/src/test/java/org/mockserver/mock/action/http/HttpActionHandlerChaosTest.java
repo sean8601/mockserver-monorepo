@@ -26,6 +26,8 @@ import static org.hamcrest.core.Is.is;
 import static org.mockito.Mockito.*;
 import static org.mockito.MockitoAnnotations.openMocks;
 import static org.mockserver.configuration.Configuration.configuration;
+import org.mockserver.matchers.TimeToLive;
+import org.mockserver.matchers.Times;
 import static org.mockserver.model.Delay.milliseconds;
 import static org.mockserver.model.HttpChaosProfile.httpChaosProfile;
 import static org.mockserver.model.HttpRequest.request;
@@ -263,5 +265,200 @@ public class HttpActionHandlerChaosTest {
         HttpResponse writtenResponse = responseCaptor.getValue();
         assertThat(writtenResponse.getStatusCode(), is(500));
         assertThat(writtenResponse.getFirstHeader("Retry-After"), is(""));
+    }
+
+    // --- Count-based stateful chaos tests ---
+    //
+    // These tests create a real Expectation with Times.unlimited() and call
+    // consumeMatch() to increment matchCount before each processAction call.
+    // This mirrors the real flow where RequestMatchers.firstMatchingExpectation
+    // calls consumeMatch() (which increments matchCount via AtomicInteger).
+
+    /**
+     * Helper: simulates the matching flow by calling consumeMatch() on the
+     * expectation (which increments matchCount) and then dispatches the request.
+     * Returns the HttpResponse that was written to the response writer.
+     */
+    private HttpResponse dispatchAndCapture(HttpRequest request, Expectation expectation, HttpResponse normalResponse) {
+        // simulate the matching flow: consumeMatch increments matchCount
+        expectation.consumeMatch();
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // reset to capture this invocation
+        reset(mockResponseWriter);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        return responseCaptor.getValue();
+    }
+
+    @Test
+    public void failFirstTwoThenRecover() {
+        // succeedFirst=0, failRequestCount=2, errorStatus=503
+        // → matches #1,#2 return 503, #3 returns the mocked 200
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(0)
+                .withFailRequestCount(2));
+
+        HttpResponse r1 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #1 should be 503", r1.getStatusCode(), is(503));
+
+        HttpResponse r2 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #2 should be 503", r2.getStatusCode(), is(503));
+
+        HttpResponse r3 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #3 should recover to 200", r3.getBodyAsString(), is("normal body"));
+    }
+
+    @Test
+    public void succeedFirstTwoThenFail() {
+        // succeedFirst=2, failRequestCount=null, errorStatus=503
+        // → #1,#2 = 200, #3 = 503
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(2));
+
+        HttpResponse r1 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #1 should succeed", r1.getBodyAsString(), is("normal body"));
+
+        HttpResponse r2 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #2 should succeed", r2.getBodyAsString(), is("normal body"));
+
+        HttpResponse r3 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #3 should be 503", r3.getStatusCode(), is(503));
+    }
+
+    @Test
+    public void failOnlyTheNthRequest() {
+        // succeedFirst=2, failRequestCount=1 → only #3 fails
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withSucceedFirst(2)
+                .withFailRequestCount(1));
+
+        HttpResponse r1 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #1 should succeed", r1.getBodyAsString(), is("normal body"));
+
+        HttpResponse r2 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #2 should succeed", r2.getBodyAsString(), is("normal body"));
+
+        HttpResponse r3 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #3 should be 503", r3.getStatusCode(), is(503));
+
+        HttpResponse r4 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #4 should recover to 200", r4.getBodyAsString(), is("normal body"));
+    }
+
+    @Test
+    public void countWindowLatencyAppliesOnlyWithinWindow() {
+        // succeedFirst=1, failRequestCount=1, latency=500ms
+        // → match #1: no latency, match #2: latency applies, match #3: no latency
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withLatency(milliseconds(500))
+                .withSucceedFirst(1)
+                .withFailRequestCount(1));
+
+        // Capture delays for each invocation
+        java.util.List<Delay[]> capturedDelaysList = new java.util.ArrayList<>();
+        doAnswer(invocation -> {
+            Runnable cmd = invocation.getArgument(0);
+            Delay[] delays = invocation.getArguments().length > 2
+                ? java.util.Arrays.copyOfRange(invocation.getArguments(), 2, invocation.getArguments().length, Delay[].class)
+                : new Delay[0];
+            capturedDelaysList.add(delays);
+            cmd.run();
+            return null;
+        }).when(scheduler).schedule(any(Runnable.class), eq(true), any(Delay[].class));
+
+        // match #1: outside window (succeedFirst=1), no chaos latency
+        expectation.consumeMatch();
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat("scheduler should have been invoked for match #1", capturedDelaysList.isEmpty(), is(false));
+        boolean found500msInMatch1 = false;
+        for (Delay d : capturedDelaysList.get(capturedDelaysList.size() - 1)) {
+            if (d != null && d.getTimeUnit() == java.util.concurrent.TimeUnit.MILLISECONDS && d.getValue() == 500) {
+                found500msInMatch1 = true;
+                break;
+            }
+        }
+        assertThat("match #1 should NOT have chaos latency", found500msInMatch1, is(false));
+
+        // match #2: within window, chaos latency should apply
+        capturedDelaysList.clear();
+        expectation.consumeMatch();
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat("scheduler should have been invoked for match #2", capturedDelaysList.isEmpty(), is(false));
+        boolean found500msInMatch2 = false;
+        for (Delay d : capturedDelaysList.get(capturedDelaysList.size() - 1)) {
+            if (d != null && d.getTimeUnit() == java.util.concurrent.TimeUnit.MILLISECONDS && d.getValue() == 500) {
+                found500msInMatch2 = true;
+                break;
+            }
+        }
+        assertThat("match #2 should have chaos latency", found500msInMatch2, is(true));
+
+        // match #3: outside window (beyond failRequestCount), no chaos latency
+        capturedDelaysList.clear();
+        expectation.consumeMatch();
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat("scheduler should have been invoked for match #3", capturedDelaysList.isEmpty(), is(false));
+        boolean found500msInMatch3 = false;
+        for (Delay d : capturedDelaysList.get(capturedDelaysList.size() - 1)) {
+            if (d != null && d.getTimeUnit() == java.util.concurrent.TimeUnit.MILLISECONDS && d.getValue() == 500) {
+                found500msInMatch3 = true;
+                break;
+            }
+        }
+        assertThat("match #3 should NOT have chaos latency", found500msInMatch3, is(false));
+    }
+
+    @Test
+    public void backwardCompatNoCountFieldsBehavesLikeBefore() {
+        // No succeedFirst/failRequestCount → errorProbability governs (always inject)
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0));
+
+        // All 3 matches should get chaos error
+        for (int i = 1; i <= 3; i++) {
+            HttpResponse r = dispatchAndCapture(request, expectation, normalResponse);
+            assertThat("match #" + i + " should be 503", r.getStatusCode(), is(503));
+        }
     }
 }

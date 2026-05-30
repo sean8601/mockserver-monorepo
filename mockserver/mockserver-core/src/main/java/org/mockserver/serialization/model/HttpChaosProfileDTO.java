@@ -10,6 +10,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
     private Double errorProbability;
     private DelayDTO latency;
     private Long seed;
+    private Integer succeedFirst;
+    private Integer failRequestCount;
 
     public HttpChaosProfileDTO(HttpChaosProfile httpChaosProfile) {
         if (httpChaosProfile != null) {
@@ -20,6 +22,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
                 latency = new DelayDTO(httpChaosProfile.getLatency());
             }
             seed = httpChaosProfile.getSeed();
+            succeedFirst = httpChaosProfile.getSucceedFirst();
+            failRequestCount = httpChaosProfile.getFailRequestCount();
         }
     }
 
@@ -32,7 +36,9 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             .withRetryAfter(retryAfter)
             .withErrorProbability(errorProbability)
             .withLatency(latency != null ? latency.buildObject() : null)
-            .withSeed(seed);
+            .withSeed(seed)
+            .withSucceedFirst(succeedFirst)
+            .withFailRequestCount(failRequestCount);
     }
 
     public Integer getErrorStatus() {
@@ -77,6 +83,24 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
 
     public HttpChaosProfileDTO setSeed(Long seed) {
         this.seed = seed;
+        return this;
+    }
+
+    public Integer getSucceedFirst() {
+        return succeedFirst;
+    }
+
+    public HttpChaosProfileDTO setSucceedFirst(Integer succeedFirst) {
+        this.succeedFirst = succeedFirst;
+        return this;
+    }
+
+    public Integer getFailRequestCount() {
+        return failRequestCount;
+    }
+
+    public HttpChaosProfileDTO setFailRequestCount(Integer failRequestCount) {
+        this.failRequestCount = failRequestCount;
         return this;
     }
 }

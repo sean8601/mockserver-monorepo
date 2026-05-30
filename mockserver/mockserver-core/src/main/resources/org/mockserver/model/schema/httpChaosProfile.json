@@ -22,6 +22,14 @@
     },
     "seed": {
       "type": "integer"
+    },
+    "succeedFirst": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failRequestCount": {
+      "type": "integer",
+      "minimum": 1
     }
   }
 }

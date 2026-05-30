@@ -1158,6 +1158,12 @@ components:
         seed:
           type: integer
           format: int64
+        succeedFirst:
+          type: integer
+          minimum: 0
+        failRequestCount:
+          type: integer
+          minimum: 1
     Delay:
       description: "response delay"
       type: object

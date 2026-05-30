@@ -25,6 +25,19 @@ import java.util.Objects;
  * single draw reproducible (note: a fixed seed yields the same decision every
  * time).
  * <p>
+ * Count-based stateful fault window: {@code succeedFirst} and
+ * {@code failRequestCount} define a window over the expectation's 1-based
+ * match count where chaos is eligible:
+ * <ul>
+ *   <li>Matches 1..succeedFirst are NOT eligible (chaos is suppressed).</li>
+ *   <li>Matches (succeedFirst+1)..(succeedFirst+failRequestCount) ARE eligible.</li>
+ *   <li>Matches beyond succeedFirst+failRequestCount recover (no chaos).</li>
+ * </ul>
+ * When both fields are {@code null} every match is eligible, preserving
+ * backward compatibility. The window check is deterministic and composes
+ * with the probabilistic error draw: a match must be within the window AND
+ * pass the probability check to receive an injected fault.
+ * <p>
  * Follows the model field/{@code withX}/getter convention so it round-trips
  * without a bespoke (de)serializer.
  */
@@ -36,6 +49,8 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     private Double errorProbability;   // 0.0-1.0; null/0 = never inject an error
     private Delay latency;             // optional injected latency
     private Long seed;                 // optional, makes a fractional errorProbability reproducible
+    private Integer succeedFirst;      // first N matches are NOT eligible for chaos (>= 0; null = 0)
+    private Integer failRequestCount;  // after succeedFirst, next M matches ARE eligible (>= 1; null = unlimited)
 
     public static HttpChaosProfile httpChaosProfile() {
         return new HttpChaosProfile();
@@ -97,6 +112,57 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
         return seed;
     }
 
+    public HttpChaosProfile withSucceedFirst(Integer succeedFirst) {
+        if (succeedFirst != null && succeedFirst < 0) {
+            throw new IllegalArgumentException("succeedFirst must be >= 0, got " + succeedFirst);
+        }
+        this.succeedFirst = succeedFirst;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getSucceedFirst() {
+        return succeedFirst;
+    }
+
+    public HttpChaosProfile withFailRequestCount(Integer failRequestCount) {
+        if (failRequestCount != null && failRequestCount < 1) {
+            throw new IllegalArgumentException("failRequestCount must be >= 1, got " + failRequestCount);
+        }
+        this.failRequestCount = failRequestCount;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getFailRequestCount() {
+        return failRequestCount;
+    }
+
+    /**
+     * Returns {@code true} when the given 1-based match count falls within the
+     * chaos-eligible window defined by {@code succeedFirst} and
+     * {@code failRequestCount}. When both fields are {@code null} this returns
+     * {@code true} for any {@code matchCount} (backward compatible), including
+     * {@code matchCount == 0} which the handler passes when chaos is null (the
+     * no-chaos overloads).
+     *
+     * @param matchCount 1-based match count from the expectation (0 when unknown)
+     * @return {@code true} if this match is eligible for chaos injection
+     */
+    public boolean countWindowEligible(int matchCount) {
+        if (succeedFirst == null && failRequestCount == null) {
+            return true;
+        }
+        int after = succeedFirst != null ? succeedFirst : 0;
+        if (matchCount <= after) {
+            return false;
+        }
+        if (failRequestCount != null && (long) matchCount > (long) after + failRequestCount) {
+            return false;
+        }
+        return true;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -113,13 +179,15 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
             Objects.equals(retryAfter, that.retryAfter) &&
             Objects.equals(errorProbability, that.errorProbability) &&
             Objects.equals(latency, that.latency) &&
-            Objects.equals(seed, that.seed);
+            Objects.equals(seed, that.seed) &&
+            Objects.equals(succeedFirst, that.succeedFirst) &&
+            Objects.equals(failRequestCount, that.failRequestCount);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, latency, seed);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, latency, seed, succeedFirst, failRequestCount);
         }
         return hashCode;
     }
