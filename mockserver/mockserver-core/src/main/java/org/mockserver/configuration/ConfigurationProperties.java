@@ -438,9 +438,10 @@ public class ConfigurationProperties {
     }
 
     /**
-     * Enable per-route (HTTP method) labels on the request duration histogram. When enabled,
-     * the {@code mock_server_request_duration_seconds} histogram includes a {@code method}
-     * label for the HTTP method (GET, POST, etc.). Default is false (no labels).
+     * Enable per-route (HTTP method) latency metrics. When enabled, an additional histogram
+     * {@code mock_server_request_duration_by_method_seconds} is registered with a {@code method}
+     * label for the HTTP method (GET, POST, etc.), alongside the unlabelled
+     * {@code mock_server_request_duration_seconds}. Default is false (no labelled histogram).
      * <p>
      * Cardinality is bounded to the set of standard HTTP methods.
      *

@@ -98,7 +98,7 @@ keywords: http latency debugging, slow request detection, proxy timing, har timi
 
 <ol>
     <li>Emit a <strong>WARN-level log entry</strong> in MockServer's event log, visible in the <a href="/mock_server/mockserver_ui.html">dashboard UI</a> and retrievable via the <a href="/mock_server/debugging_issues.html#retrieving_recorded_logs">log retrieval API</a>.</li>
-    <li>Increment the <code class="inline code">mock_server_slow_requests</code> <strong>Prometheus counter</strong> (when <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>), so you can alert on slow-request rates.</li>
+    <li>Increment the <code class="inline code">mock_server_slow_requests_total</code> <strong>Prometheus counter</strong> (when <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>), so you can alert on slow-request rates.</li>
 </ol>
 
 <p>Configuration examples:</p>

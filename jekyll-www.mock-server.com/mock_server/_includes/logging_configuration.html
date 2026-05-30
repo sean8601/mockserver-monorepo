@@ -215,7 +215,7 @@
 
 <button id="button_configuration_slow_request_threshold_millis" class="accordion title"><strong>Slow Request Threshold</strong></button>
 <div class="panel title">
-    <p>Threshold in milliseconds for flagging slow forwarded requests. When a forwarded request's total round-trip time exceeds this value, MockServer emits a WARN-level log entry and increments the <code class="inline code">mock_server_slow_requests</code> Prometheus counter (when <a href="#button_configuration_enabled_metrics">metrics are enabled</a>). This is useful for detecting intermittently slow upstream services without scanning every recorded request manually.</p>
+    <p>Threshold in milliseconds for flagging slow forwarded requests. When a forwarded request's total round-trip time exceeds this value, MockServer emits a WARN-level log entry and increments the <code class="inline code">mock_server_slow_requests_total</code> Prometheus counter (when <a href="#button_configuration_enabled_metrics">metrics are enabled</a>). This is useful for detecting intermittently slow upstream services without scanning every recorded request manually.</p>
     <p>Set to <code class="inline code">0</code> to disable slow-request detection. See <a href="/proxy/network_latency_debugging.html#slow_request_flagging">Network Latency Debugging</a> for usage examples.</p>
     <p>Type: <span class="keyword">long</span> Default: <span class="this_value">0</span> (disabled)</p>
     <p>Java Code:</p>
