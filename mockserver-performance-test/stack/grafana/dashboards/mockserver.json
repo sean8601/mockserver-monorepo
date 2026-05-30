@@ -1,0 +1,102 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "schemaVersion": 39,
+  "tags": ["mockserver"],
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "5s",
+  "title": "MockServer",
+  "uid": "mockserver-overview",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Requests / sec",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rate(requests_received_count[1m])", "legendFormat": "received" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Match outcome / sec",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rate(response_expectations_matched_count[1m])", "legendFormat": "matched" },
+        { "refId": "B", "expr": "rate(expectations_not_matched_count[1m])", "legendFormat": "not matched" },
+        { "refId": "C", "expr": "rate(forward_expectations_matched_count[1m])", "legendFormat": "forwarded" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Actions / sec",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum by (__name__) (rate({__name__=~\".+_actions_count|llm_chaos_injected_count\"}[1m]))", "legendFormat": "{{__name__}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM memory (heap)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "jvm_memory_used_bytes{area=\"heap\"}", "legendFormat": "used" },
+        { "refId": "B", "expr": "jvm_memory_committed_bytes{area=\"heap\"}", "legendFormat": "committed" },
+        { "refId": "C", "expr": "jvm_memory_max_bytes{area=\"heap\"}", "legendFormat": "max" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Threads",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "jvm_threads_current", "legendFormat": "current" },
+        { "refId": "B", "expr": "jvm_threads_daemon", "legendFormat": "daemon" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GC / sec",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rate(jvm_gc_collection_count[1m])", "legendFormat": "collections" },
+        { "refId": "B", "expr": "rate(jvm_gc_collection_seconds_sum[1m])", "legendFormat": "seconds" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "k6 throughput (load profile)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rate(k6_http_reqs[1m])", "legendFormat": "k6 http reqs" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "k6 request duration (load profile)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "k6_http_req_duration_p95", "legendFormat": "p95" },
+        { "refId": "B", "expr": "k6_http_req_duration_p99", "legendFormat": "p99" },
+        { "refId": "C", "expr": "k6_http_req_duration_avg", "legendFormat": "avg" }
+      ]
+    }
+  ]
+}

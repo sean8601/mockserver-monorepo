@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # MockServer exposes Prometheus metrics at /mockserver/metrics (not /metrics)
+  # when started with metricsEnabled=true.
+  - job_name: mockserver
+    metrics_path: /mockserver/metrics
+    static_configs:
+      - targets: ["mockserver:1080"]

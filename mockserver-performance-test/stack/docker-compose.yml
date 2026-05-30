@@ -1,0 +1,85 @@
+# MockServer observability + load stack.
+#
+# Two ways to run:
+#   docker compose up -d                 # monitoring only: MockServer + Prometheus + Grafana
+#   docker compose --profile load up     # also fire the k6 load test at MockServer
+#   docker compose --profile monitoring up -d   # also start cAdvisor (container CPU/mem)
+#
+# Grafana: http://localhost:3000 (anonymous, Admin) — "MockServer" dashboard.
+# Prometheus: http://localhost:9090. MockServer: http://localhost:1080.
+#
+# MockServer image is overridable so you can point at a local snapshot build
+# (which includes the JVM metrics); the default public image exposes the
+# request/action counters but not the newer JVM gauges.
+services:
+  mockserver:
+    image: ${MOCKSERVER_IMAGE:-mockserver/mockserver:latest}
+    command: -serverPort 1080
+    environment:
+      MOCKSERVER_METRICS_ENABLED: "true"
+      MOCKSERVER_LOG_LEVEL: "WARN"
+      MOCKSERVER_DISABLE_SYSTEM_OUT: "true"
+    ports:
+      - "1080:1080"
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    # enable the remote-write receiver so k6 can push its own load metrics.
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - mockserver
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  # Fire the k6 load test against MockServer (profile-gated so the stack can run
+  # as a pure monitoring stack). Pushes k6 metrics to Prometheus via remote-write.
+  k6:
+    image: grafana/k6:1.7.1@sha256:4fd3a694926b064d3491d9b02b01cde886583c4931f1223816e3d9a7bdfa7e0f
+    profiles: ["load"]
+    command: run -o experimental-prometheus-rw /k6/load.js
+    environment:
+      BASE_URL: "http://mockserver:1080"
+      K6_PROMETHEUS_RW_SERVER_URL: "http://prometheus:9090/api/v1/write"
+      K6_PROMETHEUS_RW_TREND_STATS: "p(95),p(99),avg"
+      K6_RAMP_UP: "20s"
+      K6_HOLD: "1m"
+      K6_RAMP_DOWN: "10s"
+    volumes:
+      - ../k6:/k6:ro
+    # wait for MockServer to be HEALTHY (the image ships a built-in healthcheck)
+    # before k6 setup() seeds expectations, else the run aborts on connection refused.
+    depends_on:
+      mockserver:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+
+  # Container CPU/memory (optional — `--profile monitoring`).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["monitoring"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
