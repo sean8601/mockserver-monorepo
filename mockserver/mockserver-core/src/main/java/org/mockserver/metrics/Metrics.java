@@ -1,6 +1,7 @@
 package org.mockserver.metrics;
 
 import io.prometheus.metrics.core.metrics.Gauge;
+import io.prometheus.metrics.core.metrics.Histogram;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
@@ -22,6 +23,10 @@ public class Metrics {
 
     private static final AtomicReference<Boolean> additionalMetricsRegistered = new AtomicReference<>(false);
     private static final Map<Name, Gauge> metrics = new ConcurrentHashMap<>();
+    // Request-latency histogram. Null until metrics are enabled, so
+    // observeRequestDurationSeconds() is a no-op when metrics are off (the
+    // caller on the request hot path pays nothing — see the Part A/C tension).
+    private static volatile Histogram requestDurationSeconds;
 
     private final Boolean metricsEnabled;
 
@@ -31,6 +36,12 @@ public class Metrics {
             PrometheusRegistry.defaultRegistry.register(new BuildInfoCollector());
             PrometheusRegistry.defaultRegistry.register(new JvmMetricsCollector());
             Arrays.stream(Name.values()).forEach(Metrics::getOrCreate);
+            requestDurationSeconds = Histogram.builder()
+                .name("mock_server_request_duration_seconds")
+                .help("MockServer request handling duration in seconds")
+                .classicOnly()
+                .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+                .register();
         }
     }
 
@@ -74,6 +85,18 @@ public class Metrics {
 
     public static Integer get(Name name) {
         return (int) getOrCreate(name).get();
+    }
+
+    /**
+     * Record a request-handling duration (seconds) in the latency histogram.
+     * No-op unless metrics are enabled (the histogram is null until then), so a
+     * caller on the request hot path pays nothing when metrics are off.
+     */
+    public static void observeRequestDurationSeconds(double seconds) {
+        Histogram histogram = requestDurationSeconds;
+        if (histogram != null) {
+            histogram.observe(seconds);
+        }
     }
 
     public void increment(Name name) {

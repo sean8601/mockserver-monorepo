@@ -10,6 +10,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.metrics.Metrics;
 import org.mockserver.model.ConnectionOptions;
 import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
@@ -31,15 +32,23 @@ public class NettyResponseWriter extends ResponseWriter {
 
     private final ChannelHandlerContext ctx;
     private final Scheduler scheduler;
+    // Request-received time for the latency histogram; -1 when metrics are
+    // disabled so sendResponse() adds nothing to the hot path. A new
+    // NettyResponseWriter is created per request, so this is race-free.
+    private final long startNanos;
 
     public NettyResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, ChannelHandlerContext ctx, Scheduler scheduler) {
         super(configuration, mockServerLogger);
         this.ctx = ctx;
         this.scheduler = scheduler;
+        this.startNanos = configuration.metricsEnabled() ? System.nanoTime() : -1L;
     }
 
     @Override
     public void sendResponse(HttpRequest request, HttpResponse response) {
+        if (startNanos >= 0) {
+            Metrics.observeRequestDurationSeconds((System.nanoTime() - startNanos) / 1_000_000_000.0);
+        }
         if (response.getStreamingBody() != null) {
             writeStreamingResponse(ctx, request, response);
         } else {

@@ -91,6 +91,16 @@ The `Metrics.Name` enum defines 24 request/action/websocket gauges (all Promethe
 
 These let Grafana and the dashboard Metrics view chart heap/GC/thread behaviour alongside the request and action counters.
 
+### Request Latency Histogram
+
+`mock_server_request_duration_seconds` is a Prometheus classic histogram of request handling duration (receipt → response), with buckets from 0.5 ms to 10 s. It exposes the usual `_bucket{le="…"}`, `_sum`, and `_count` series, so Grafana/PromQL can derive latency percentiles, e.g.:
+
+```promql
+histogram_quantile(0.95, sum by (le) (rate(mock_server_request_duration_seconds_bucket[1m])))
+```
+
+It is registered (once) when `metricsEnabled`. Timing is captured per `NettyResponseWriter` (one is created per request, so there is no cross-request race) and **only when metrics are enabled** — `Metrics.observeRequestDurationSeconds(...)` is a no-op otherwise, so the request hot path pays nothing when metrics are off.
+
 ### How Metrics Are Incremented
 
 - `HttpActionHandler` calls `metrics.increment(action.getType())` after dispatching each action, which maps the `Action.Type` enum to the corresponding `*_ACTIONS_COUNT` gauge
