@@ -3,6 +3,8 @@ import {
   parsePrometheusText,
   findSample,
   metricValue,
+  metricValueByLabel,
+  hasMetric,
 } from '../lib/prometheusParser';
 
 // A faithful slice of a real MockServer `GET /mockserver/metrics` response.
@@ -66,5 +68,20 @@ describe('parsePrometheusText', () => {
   it('returns an empty array for empty input', () => {
     expect(parsePrometheusText('')).toEqual([]);
     expect(parsePrometheusText('\n\n# just a comment\n')).toEqual([]);
+  });
+
+  it('resolves label-scoped values (e.g. JVM area=heap)', () => {
+    const samples = parsePrometheusText(
+      'jvm_memory_used_bytes{area="heap"} 1000\njvm_memory_used_bytes{area="nonheap"} 200\n',
+    );
+    expect(metricValueByLabel(samples, 'jvm_memory_used_bytes', 'area', 'heap')).toBe(1000);
+    expect(metricValueByLabel(samples, 'jvm_memory_used_bytes', 'area', 'nonheap')).toBe(200);
+    expect(metricValueByLabel(samples, 'jvm_memory_used_bytes', 'area', 'missing')).toBe(0);
+  });
+
+  it('hasMetric detects presence by name', () => {
+    const samples = parsePrometheusText('jvm_threads_current 12\n');
+    expect(hasMetric(samples, 'jvm_threads_current')).toBe(true);
+    expect(hasMetric(samples, 'jvm_memory_used_bytes')).toBe(false);
   });
 });

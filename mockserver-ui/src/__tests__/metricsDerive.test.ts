@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gaugeSeries, ratePerSecond, latestRate, type MetricsSnapshot } from '../lib/metricsDerive';
+import { gaugeSeries, gaugeSeriesByLabel, ratePerSecond, latestRate, type MetricsSnapshot } from '../lib/metricsDerive';
 
 function snap(at: number, received: number): MetricsSnapshot {
   return { at, samples: [{ name: 'requests_received_count', labels: {}, value: received }] };
@@ -30,6 +30,15 @@ describe('metricsDerive', () => {
   it('ratePerSecond is empty for fewer than 2 snapshots', () => {
     expect(ratePerSecond([snap(0, 10)], 'requests_received_count')).toEqual([]);
     expect(ratePerSecond([], 'requests_received_count')).toEqual([]);
+  });
+
+  it('gaugeSeriesByLabel extracts a label-scoped gauge across snapshots', () => {
+    const history: MetricsSnapshot[] = [
+      { at: 0, samples: [{ name: 'jvm_memory_used_bytes', labels: { area: 'heap' }, value: 100 }] },
+      { at: 1000, samples: [{ name: 'jvm_memory_used_bytes', labels: { area: 'heap' }, value: 150 }] },
+    ];
+    expect(gaugeSeriesByLabel(history, 'jvm_memory_used_bytes', 'area', 'heap')).toEqual([100, 150]);
+    expect(gaugeSeriesByLabel(history, 'jvm_memory_used_bytes', 'area', 'nonheap')).toEqual([0, 0]);
   });
 
   it('latestRate returns the most recent rate or 0', () => {

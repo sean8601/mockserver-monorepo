@@ -81,3 +81,30 @@ export function metricValue(samples: PrometheusSample[], name: string, fallback 
   const sample = findSample(samples, name);
   return sample ? sample.value : fallback;
 }
+
+/** First sample matching `name` and `labels[labelKey] === labelValue`. */
+export function findSampleByLabel(
+  samples: PrometheusSample[],
+  name: string,
+  labelKey: string,
+  labelValue: string,
+): PrometheusSample | undefined {
+  return samples.find((s) => s.name === name && s.labels[labelKey] === labelValue);
+}
+
+/** Numeric value for `name` with a specific label, or `fallback` when absent. */
+export function metricValueByLabel(
+  samples: PrometheusSample[],
+  name: string,
+  labelKey: string,
+  labelValue: string,
+  fallback = 0,
+): number {
+  const sample = findSampleByLabel(samples, name, labelKey, labelValue);
+  return sample ? sample.value : fallback;
+}
+
+/** True if any sample with `name` is present (for feature-detecting metrics). */
+export function hasMetric(samples: PrometheusSample[], name: string): boolean {
+  return samples.some((s) => s.name === name);
+}

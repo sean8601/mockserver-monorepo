@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
@@ -17,9 +17,12 @@ import TrafficInspector from './components/TrafficInspector';
 import SessionInspector from './components/SessionInspector';
 import ComposerView from './components/ComposerView';
 import LibraryView from './components/LibraryView';
-import MetricsView from './components/MetricsView';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import type { RequestFilter } from './types';
+
+// Lazy-loaded so the @mui/x-charts bundle only loads when the Metrics tab is
+// opened, keeping it off the initial dashboard load.
+const MetricsView = lazy(() => import('./components/MetricsView'));
 
 export default function App() {
   const themeMode = useDashboardStore((s) => s.themeMode);
@@ -100,7 +103,11 @@ export default function App() {
           {view === 'sessions' && <SessionInspector connectionParams={params} />}
           {view === 'composer' && <ComposerView connectionParams={params} />}
           {view === 'library' && <LibraryView connectionParams={params} />}
-          {view === 'metrics' && <MetricsView connectionParams={params} />}
+          {view === 'metrics' && (
+            <Suspense fallback={<Box sx={{ p: 2 }}>Loading metrics…</Box>}>
+              <MetricsView connectionParams={params} />
+            </Suspense>
+          )}
         </Box>
         <DebugMismatchDialog />
       </DebugMismatchContext.Provider>

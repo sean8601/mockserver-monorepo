@@ -47,4 +47,30 @@ describe('MetricsView', () => {
     render(<MetricsView connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('MockServer 6.1.0')).toBeInTheDocument());
   });
+
+  it('renders the JVM section when JVM metrics are present', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'jvm_memory_used_bytes{area="heap"} 1048576',
+        'jvm_memory_committed_bytes{area="heap"} 2097152',
+        'jvm_threads_current 12.0',
+        'jvm_threads_daemon 8.0',
+        'jvm_gc_collection_count 3.0',
+        'jvm_gc_collection_seconds_sum 0.5',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('JVM heap memory')).toBeInTheDocument());
+    expect(screen.getByText('Threads & GC')).toBeInTheDocument();
+  });
+
+  it('hides the JVM section when JVM metrics are absent', async () => {
+    stubFetch(200, 'requests_received_count 5.0\n');
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    expect(screen.queryByText('JVM heap memory')).not.toBeInTheDocument();
+  });
 });
