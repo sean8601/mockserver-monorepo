@@ -113,4 +113,44 @@ describe('MetricsView', () => {
     await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
     expect(screen.queryByText('Request latency (since start)')).not.toBeInTheDocument();
   });
+
+  it('renders the HTTP Chaos Faults section when chaos metrics have non-zero data', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_http_chaos_injected_total{fault_type="error"} 3.0',
+        'mock_server_http_chaos_injected_total{fault_type="latency"} 5.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('HTTP Chaos Faults')).toBeInTheDocument());
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('error faults')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('latency faults')).toBeInTheDocument();
+  });
+
+  it('hides the HTTP Chaos Faults section when the metric is absent', async () => {
+    stubFetch(200, 'requests_received_count 5.0\n');
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    expect(screen.queryByText('HTTP Chaos Faults')).not.toBeInTheDocument();
+  });
+
+  it('hides the HTTP Chaos Faults section when both counters are zero', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'mock_server_http_chaos_injected_total{fault_type="error"} 0.0',
+        'mock_server_http_chaos_injected_total{fault_type="latency"} 0.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    expect(screen.queryByText('HTTP Chaos Faults')).not.toBeInTheDocument();
+  });
 });

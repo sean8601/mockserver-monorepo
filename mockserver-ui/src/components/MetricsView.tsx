@@ -10,13 +10,14 @@ import CircularProgress from '@mui/material/CircularProgress';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useMetricsPolling } from '../hooks/useMetricsPolling';
-import { findSample, metricValue, hasMetric } from '../lib/prometheusParser';
+import { findSample, metricValue, metricValueByLabel, hasMetric } from '../lib/prometheusParser';
 import { gaugeSeries, gaugeSeriesByLabel, ratePerSecond, latestRate } from '../lib/metricsDerive';
 import { histogramQuantile } from '../lib/histogramQuantile';
 import Sparkline from './Sparkline';
 import MetricsLineChart from './MetricsLineChart';
 
 const LATENCY_METRIC = 'mock_server_request_duration_seconds';
+const CHAOS_METRIC = 'mock_server_http_chaos_injected_total';
 
 interface MetricsViewProps {
   connectionParams: ConnectionParams;
@@ -66,6 +67,10 @@ export default function MetricsView({ connectionParams }: MetricsViewProps) {
   const maxAction = actionRows.reduce((m, r) => Math.max(m, r.value), 0);
   const jvmEnabled = latest ? hasMetric(latest.samples, 'jvm_memory_used_bytes') : false;
   const latencyEnabled = latest ? hasMetric(latest.samples, `${LATENCY_METRIC}_count`) : false;
+  const chaosErrorTotal = latest ? metricValueByLabel(latest.samples, CHAOS_METRIC, 'fault_type', 'error') : 0;
+  const chaosLatencyTotal = latest ? metricValueByLabel(latest.samples, CHAOS_METRIC, 'fault_type', 'latency') : 0;
+  const chaosEnabled = latest ? hasMetric(latest.samples, CHAOS_METRIC) : false;
+  const chaosHasData = chaosErrorTotal > 0 || chaosLatencyTotal > 0;
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -176,6 +181,37 @@ MOCKSERVER_METRICS_ENABLED=true`}
                     }),
                     label: 'p95 ms',
                   }]}
+                />
+              </Box>
+            </Paper>
+          )}
+
+          {/* HTTP Chaos Faults (only when the metric is present and has non-zero data) */}
+          {chaosEnabled && chaosHasData && (
+            <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">HTTP Chaos Faults</Typography>
+              <Box sx={{ display: 'flex', gap: 3, mt: 0.5, flexWrap: 'wrap' }}>
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                    {chaosErrorTotal.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">error faults</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                    {chaosLatencyTotal.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">latency faults</Typography>
+                </Box>
+              </Box>
+              <Box sx={{ mt: 1 }}>
+                <MetricsLineChart
+                  height={180}
+                  valueFormatter={(v) => Math.round(v).toLocaleString()}
+                  series={[
+                    { data: gaugeSeriesByLabel(history, CHAOS_METRIC, 'fault_type', 'error'), label: 'Error' },
+                    { data: gaugeSeriesByLabel(history, CHAOS_METRIC, 'fault_type', 'latency'), label: 'Latency' },
+                  ]}
                 />
               </Box>
             </Paper>
