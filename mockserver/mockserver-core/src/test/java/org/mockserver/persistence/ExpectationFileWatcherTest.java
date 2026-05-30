@@ -381,19 +381,16 @@ public class ExpectationFileWatcherTest {
             Files.write(mockserverInitializerThree.toPath(), expectationSerializer.serialize(expectationsThree).getBytes(StandardCharsets.UTF_8));
             long updatedFileTime = System.currentTimeMillis();
 
-            // then - wait for all expectations to be loaded (poll with generous timeout)
+            // then - wait for all expectations to be loaded. Poll the *complete* assertion
+            // (size AND contents) with a generous timeout: a background watcher poll reloads
+            // per file by clearing then re-adding, so a read taken mid-reload can transiently
+            // observe fewer than 4 expectations. Asserting inside the retry loop means any such
+            // transient state simply retries instead of failing, and the steady state between
+            // reloads (all 4 present) is what ultimately satisfies the assertion.
             Retries.tryWaitForSuccess(() -> {
                 List<Expectation> expectationsList = requestMatchers.retrieveActiveExpectations(null);
                 assertThat(expectationsList.size(), equalTo(4));
-            }, 300, 100, MILLISECONDS);
-            System.out.println("update processed in: " + (System.currentTimeMillis() - updatedFileTime) + "ms");
-
-            // stop the file watcher before asserting to prevent transient state from concurrent reloads
-            expectationFileWatcher.stop();
-
-            List<Expectation> expectationsList = requestMatchers.retrieveActiveExpectations(null);
-            assertThat(expectationsList.size(), equalTo(4));
-            assertThat(expectationsList, containsInAnyOrder(
+                assertThat(expectationsList, containsInAnyOrder(
                 new Expectation(
                     request()
                         .withPath("/pathOneFirst")
@@ -426,7 +423,9 @@ public class ExpectationFileWatcherTest {
                         response()
                             .withBody("two second response")
                     )
-            ));
+                ));
+            }, 300, 100, MILLISECONDS);
+            System.out.println("update processed in: " + (System.currentTimeMillis() - updatedFileTime) + "ms");
         } finally {
             if (expectationFileWatcher != null) {
                 expectationFileWatcher.stop();
