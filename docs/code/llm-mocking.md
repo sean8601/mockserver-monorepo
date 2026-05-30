@@ -175,6 +175,7 @@ Two MCP tools expose the LLM mocking feature to agents:
 | `verify_tool_call` | Asserts an agent called a named tool `atLeast`/`atMost` times (optional args regex), by decoding recorded LLM requests |
 | `explain_agent_run` | Summarises a recorded agent run: turn/tool-call sequence, tool results, latest role |
 | `verify_structured_output` | Validates the JSON output text of recorded LLM responses against a JSON Schema (decodes each response via the runtime-LLM client SPI, then `JsonSchemaValidator`); reports per-response conformance |
+| `verify_cost_budget` | Sums input/output tokens from recorded responses' usage, prices them via `org.mockserver.llm.cost.LlmPricing`, and asserts the total USD cost is within `maxCostUsd` — a deterministic CI cost gate. Unpriceable models are reported and excluded |
 
 The first two validate provider availability against `ProviderCodecRegistry` at registration time. The analysis tools delegate to `org.mockserver.llm.analysis.AgentRunAnalyzer`.
 

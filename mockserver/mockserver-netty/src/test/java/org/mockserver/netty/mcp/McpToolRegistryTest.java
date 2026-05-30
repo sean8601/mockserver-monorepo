@@ -77,7 +77,8 @@ public class McpToolRegistryTest {
         assertThat(tools.containsKey("mock_adversarial_llm_response"), is(true));
         assertThat(tools.containsKey("run_mcp_contract_test"), is(true));
         assertThat(tools.containsKey("verify_structured_output"), is(true));
-        assertThat(tools.size(), is(30));
+        assertThat(tools.containsKey("verify_cost_budget"), is(true));
+        assertThat(tools.size(), is(31));
     }
 
     @Test
@@ -1624,5 +1625,200 @@ public class McpToolRegistryTest {
         assertThat(result.path("checked").asInt(), is(1));
         assertThat(result.path("nonConforming").asInt(), is(1));
         assertThat(result.path("allConform").asBoolean(), is(false));
+    }
+
+    // --- verify_cost_budget tool tests ---
+
+    @Test
+    public void shouldRejectMissingMaxCostForVerifyCostBudget() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("maxCostUsd"));
+    }
+
+    @Test
+    public void shouldRejectNegativeMaxCostForVerifyCostBudget() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("maxCostUsd", -1.0);
+
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("negative"));
+    }
+
+    @Test
+    public void shouldReportZeroCostWhenNoRecordedResponses() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("maxCostUsd", 5.0);
+
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+        assertThat(result.has("error"), is(false));
+        assertThat(result.path("checked").asInt(), is(0));
+        assertThat(result.path("totalCostUsd").asDouble(), is(0.0));
+        assertThat(result.path("withinBudget").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldPassWhenCostWithinBudget() throws Exception {
+        // 1M input + 1M output @ claude-sonnet-4 ($3 in / $15 out) = $18.00
+        httpState.log(new LogEntry()
+            .setType(FORWARDED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("POST").withPath("/v1/messages"))
+            .setHttpResponse(response().withStatusCode(200).withBody(
+                "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":1000000,\"output_tokens\":1000000}}"))
+            .setMessageFormat("returning response:{}for forwarded request")
+            .setArguments(response().withStatusCode(200)));
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("model", "claude-sonnet-4");
+        params.put("maxCostUsd", 20.0);
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+
+        assertThat(result.has("error"), is(false));
+        assertThat(result.path("checked").asInt(), is(1));
+        assertThat(result.path("totalInputTokens").asLong(), is(1000000L));
+        assertThat(result.path("totalOutputTokens").asLong(), is(1000000L));
+        assertThat(result.path("totalCostUsd").asDouble(), is(18.0));
+        assertThat(result.path("withinBudget").asBoolean(), is(true));
+        assertThat(result.path("budgetCheckAuthoritative").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldSumCostAcrossMultipleResponses() throws Exception {
+        // two responses, 500k+500k tokens each at claude-sonnet-4 -> $9.00 each -> $18.00 total
+        for (int i = 0; i < 2; i++) {
+            httpState.log(new LogEntry()
+                .setType(FORWARDED_REQUEST)
+                .setLogLevel(org.slf4j.event.Level.INFO)
+                .setHttpRequest(request().withMethod("POST").withPath("/v1/messages"))
+                .setHttpResponse(response().withStatusCode(200).withBody(
+                    "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":500000,\"output_tokens\":500000}}"))
+                .setMessageFormat("returning response:{}for forwarded request")
+                .setArguments(response().withStatusCode(200)));
+        }
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("model", "claude-sonnet-4");
+        params.put("maxCostUsd", 20.0);
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+
+        assertThat(result.path("checked").asInt(), is(2));
+        assertThat(result.path("totalInputTokens").asLong(), is(1000000L));
+        assertThat(result.path("totalOutputTokens").asLong(), is(1000000L));
+        assertThat(result.path("totalCostUsd").asDouble(), is(18.0));
+        assertThat(result.path("withinBudget").asBoolean(), is(true));
+        assertThat(result.path("budgetCheckAuthoritative").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldReportPartialTotalAndNonAuthoritativeForMixedPriceability() throws Exception {
+        // one priceable response (model in request body) + one unpriceable (no model)
+        httpState.log(new LogEntry()
+            .setType(FORWARDED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("POST").withPath("/v1/messages")
+                .withBody("{\"model\":\"claude-sonnet-4\"}"))
+            .setHttpResponse(response().withStatusCode(200).withBody(
+                "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":1000000,\"output_tokens\":0}}"))
+            .setMessageFormat("returning response:{}for forwarded request")
+            .setArguments(response().withStatusCode(200)));
+        httpState.log(new LogEntry()
+            .setType(FORWARDED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("POST").withPath("/v1/messages"))
+            .setHttpResponse(response().withStatusCode(200).withBody(
+                "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":1000000,\"output_tokens\":0}}"))
+            .setMessageFormat("returning response:{}for forwarded request")
+            .setArguments(response().withStatusCode(200)));
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("maxCostUsd", 20.0);
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+
+        assertThat(result.path("checked").asInt(), is(2));
+        assertThat(result.path("unpriceable").asInt(), is(1));
+        // only the priceable response (1M input @ $3) contributes to the total
+        assertThat(result.path("totalCostUsd").asDouble(), is(3.0));
+        // total understates true cost -> not authoritative even though withinBudget is true
+        assertThat(result.path("withinBudget").asBoolean(), is(true));
+        assertThat(result.path("budgetCheckAuthoritative").asBoolean(), is(false));
+    }
+
+    @Test
+    public void shouldFailWhenCostExceedsBudget() throws Exception {
+        httpState.log(new LogEntry()
+            .setType(FORWARDED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("POST").withPath("/v1/messages"))
+            .setHttpResponse(response().withStatusCode(200).withBody(
+                "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":1000000,\"output_tokens\":1000000}}"))
+            .setMessageFormat("returning response:{}for forwarded request")
+            .setArguments(response().withStatusCode(200)));
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("model", "claude-sonnet-4");
+        params.put("maxCostUsd", 5.0);
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+
+        assertThat(result.path("totalCostUsd").asDouble(), is(18.0));
+        assertThat(result.path("withinBudget").asBoolean(), is(false));
+    }
+
+    @Test
+    public void shouldReportUnpriceableWhenModelUnknown() throws Exception {
+        // no model param and the request body carries no model -> unpriceable
+        httpState.log(new LogEntry()
+            .setType(FORWARDED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("POST").withPath("/v1/messages"))
+            .setHttpResponse(response().withStatusCode(200).withBody(
+                "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":100,\"output_tokens\":100}}"))
+            .setMessageFormat("returning response:{}for forwarded request")
+            .setArguments(response().withStatusCode(200)));
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("maxCostUsd", 5.0);
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+
+        assertThat(result.path("checked").asInt(), is(1));
+        assertThat(result.path("unpriceable").asInt(), is(1));
+        assertThat(result.path("totalCostUsd").asDouble(), is(0.0));
+        // unpriceable responses are excluded, so an empty total stays within budget...
+        assertThat(result.path("withinBudget").asBoolean(), is(true));
+        // ...but the check is NOT authoritative — the caller must not trust withinBudget here
+        assertThat(result.path("budgetCheckAuthoritative").asBoolean(), is(false));
+    }
+
+    @Test
+    public void shouldNotBeAuthoritativeWhenNoResponses() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("maxCostUsd", 5.0);
+
+        JsonNode result = toolRegistry.callTool("verify_cost_budget", params);
+        assertThat(result.path("checked").asInt(), is(0));
+        assertThat(result.path("withinBudget").asBoolean(), is(true));
+        assertThat(result.path("budgetCheckAuthoritative").asBoolean(), is(false));
     }
 }

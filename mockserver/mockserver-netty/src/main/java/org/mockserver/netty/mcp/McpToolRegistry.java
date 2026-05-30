@@ -18,6 +18,7 @@ import org.mockserver.llm.client.LlmBackendResolver;
 import org.mockserver.llm.client.LlmClient;
 import org.mockserver.llm.client.LlmClientRegistry;
 import org.mockserver.llm.client.NettyHttpClientLlmTransport;
+import org.mockserver.llm.cost.LlmPricing;
 import org.mockserver.validator.jsonschema.JsonSchemaValidator;
 import org.mockserver.llm.drift.DriftDetector;
 import org.mockserver.llm.drift.DriftReport;
@@ -133,6 +134,7 @@ public class McpToolRegistry {
         registerCreateLlmConversation();
         registerVerifyToolCall();
         registerVerifyStructuredOutput();
+        registerVerifyCostBudget();
         registerExplainAgentRun();
         registerDetectLlmDrift();
         registerMockAdversarialLlmResponse();
@@ -2983,6 +2985,161 @@ public class McpToolRegistry {
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to verify structured output", e);
+        }
+    }
+
+    // --- verify_cost_budget ---
+
+    private void registerVerifyCostBudget() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode providerProp = properties.putObject("provider");
+        providerProp.put("type", "string").put("description", "LLM provider whose recorded responses to total (must have a registered runtime client).");
+        ArrayNode providerEnum = providerProp.putArray("enum");
+        for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
+            providerEnum.add(name);
+        }
+        properties.putObject("maxCostUsd").put("type", "number").put("description", "Cost budget in USD. The assertion passes when the total estimated cost of the recorded responses is at or below this value.");
+        properties.putObject("model").put("type", "string").put("description", "Optional model id used to price every response (e.g. claude-sonnet-4). If omitted, the model is read from each recorded request body; responses whose model cannot be priced are reported as unpriceable and excluded from the total.");
+        properties.putObject("path").put("type", "string").put("description", "Optional request path filter (only total responses to this path).");
+        ArrayNode required = schema.putArray("required");
+        required.add("provider");
+        required.add("maxCostUsd");
+
+        tools.put("verify_cost_budget", new ToolDefinition(
+            "verify_cost_budget",
+            "Assert that the total estimated USD cost of recorded LLM responses is within a budget. "
+                + "Decodes each recorded response for the given provider (via the runtime-LLM client SPI), sums input/output "
+                + "tokens from the reported usage, prices them with the built-in pricing table, and compares the total against "
+                + "maxCostUsd. Read-only and deterministic — use it as a CI cost gate for an agent run. Responses without usage "
+                + "are skipped; responses whose model has no known price are reported as unpriceable and excluded from the total.",
+            schema,
+            this::handleVerifyCostBudget
+        ));
+    }
+
+    private JsonNode handleVerifyCostBudget(JsonNode params) {
+        try {
+            String providerStr = params.path("provider").asText(null);
+            if (providerStr == null || providerStr.trim().isEmpty()) {
+                return errorResult("'provider' is required");
+            }
+            Provider provider = parseProviderParam(params);
+            if (provider == null) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+            JsonNode maxCostNode = params.path("maxCostUsd");
+            if (maxCostNode.isMissingNode() || maxCostNode.isNull() || !maxCostNode.isNumber()) {
+                return errorResult("'maxCostUsd' is required and must be a number");
+            }
+            double maxCostUsd = maxCostNode.asDouble();
+            if (maxCostUsd < 0) {
+                return errorResult("'maxCostUsd' must not be negative");
+            }
+            Optional<LlmClient> clientOpt = LlmClientRegistry.getInstance().lookup(provider);
+            if (!clientOpt.isPresent()) {
+                return errorResult("no runtime client for provider " + provider + " to parse responses");
+            }
+            LlmClient client = clientOpt.get();
+            String modelOverride = emptyToNull(params.path("model").asText(null));
+            String path = emptyToNull(params.path("path").asText(null));
+            List<LogEventRequestAndResponse> pairs = retrieveRecordedPairs(path);
+
+            int checked = 0;
+            int skipped = 0;
+            int unpriceable = 0;
+            long totalInputTokens = 0;
+            long totalOutputTokens = 0;
+            double totalCostUsd = 0.0;
+            ArrayNode results = objectMapper.createArrayNode();
+            for (LogEventRequestAndResponse pair : pairs) {
+                HttpResponse recordedResponse = pair.getHttpResponse();
+                if (recordedResponse == null) {
+                    continue;
+                }
+                Usage usage;
+                try {
+                    usage = client.parseCompletionResponse(recordedResponse).getUsage();
+                } catch (Exception e) {
+                    usage = null;
+                }
+                if (usage == null || (usage.getInputTokens() == null && usage.getOutputTokens() == null)) {
+                    skipped++;
+                    continue;
+                }
+                checked++;
+                long inputTokens = usage.getInputTokens() == null ? 0 : usage.getInputTokens();
+                long outputTokens = usage.getOutputTokens() == null ? 0 : usage.getOutputTokens();
+                totalInputTokens += inputTokens;
+                totalOutputTokens += outputTokens;
+
+                String model = modelOverride != null ? modelOverride : modelFromRequest(pair.getHttpRequest());
+                Double cost = LlmPricing.estimateCostUsd(provider, model, inputTokens, outputTokens);
+
+                ObjectNode entry = objectMapper.createObjectNode();
+                if (pair.getHttpRequest() instanceof HttpRequest && ((HttpRequest) pair.getHttpRequest()).getPath() != null) {
+                    entry.put("path", ((HttpRequest) pair.getHttpRequest()).getPath().getValue());
+                }
+                if (model != null) {
+                    entry.put("model", model);
+                }
+                entry.put("inputTokens", inputTokens);
+                entry.put("outputTokens", outputTokens);
+                if (cost == null) {
+                    unpriceable++;
+                    entry.put("priceable", false);
+                } else {
+                    totalCostUsd += cost;
+                    entry.put("priceable", true);
+                    entry.put("costUsd", cost);
+                }
+                results.add(entry);
+            }
+
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("provider", provider.name());
+            if (modelOverride != null) {
+                resultNode.put("model", modelOverride);
+            }
+            resultNode.put("checked", checked);
+            resultNode.put("skippedNoUsage", skipped);
+            resultNode.put("unpriceable", unpriceable);
+            resultNode.put("totalInputTokens", totalInputTokens);
+            resultNode.put("totalOutputTokens", totalOutputTokens);
+            resultNode.put("totalCostUsd", totalCostUsd);
+            resultNode.put("maxCostUsd", maxCostUsd);
+            resultNode.put("withinBudget", totalCostUsd <= maxCostUsd);
+            // withinBudget only reflects the priced subset. It is authoritative only when at
+            // least one response was checked AND every checked response could be priced —
+            // otherwise the total understates the true cost and the gate may pass vacuously.
+            resultNode.put("budgetCheckAuthoritative", checked > 0 && unpriceable == 0);
+            resultNode.set("results", results);
+            return resultNode;
+        } catch (Exception e) {
+            return errorResult("Failed to verify cost budget", e);
+        }
+    }
+
+    /**
+     * Best-effort extraction of the {@code model} field from a recorded LLM
+     * request body. Returns {@code null} if the body is absent or not JSON with
+     * a textual {@code model} field.
+     */
+    private String modelFromRequest(RequestDefinition requestDefinition) {
+        if (!(requestDefinition instanceof HttpRequest)) {
+            return null;
+        }
+        HttpRequest httpRequest = (HttpRequest) requestDefinition;
+        if (httpRequest.getBody() == null) {
+            return null;
+        }
+        try {
+            JsonNode body = objectMapper.readTree(httpRequest.getBodyAsString());
+            JsonNode model = body.path("model");
+            return model.isTextual() ? model.asText() : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 

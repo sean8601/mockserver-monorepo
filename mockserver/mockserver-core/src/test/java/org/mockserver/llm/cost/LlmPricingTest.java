@@ -87,4 +87,9 @@ public class LlmPricingTest {
     public void shouldReturnNullForNullModel() {
         assertThat(LlmPricing.estimateCostUsd(Provider.ANTHROPIC, null, 100, 100), is(nullValue()));
     }
+
+    @Test
+    public void shouldReturnNullForNullProvider() {
+        assertThat(LlmPricing.estimateCostUsd(null, "claude-sonnet-4", 100, 100), is(nullValue()));
+    }
 }

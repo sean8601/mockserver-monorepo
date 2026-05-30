@@ -49,6 +49,7 @@ sitemap:
         <tr><td><a href="#verify_tool_call"><code>verify_tool_call</code></a></td><td>Assert an agent called a named tool, from recorded LLM requests</td><td>High</td></tr>
         <tr><td><a href="#explain_agent_run"><code>explain_agent_run</code></a></td><td>Summarise a recorded agent run (turns, tool-call sequence)</td><td>High</td></tr>
         <tr><td><a href="#verify_structured_output"><code>verify_structured_output</code></a></td><td>Validate recorded LLM responses' JSON output against a JSON Schema</td><td>High</td></tr>
+        <tr><td><a href="#verify_cost_budget"><code>verify_cost_budget</code></a></td><td>Assert the total estimated USD cost of recorded LLM responses is within a budget</td><td>High</td></tr>
         <tr><td><a href="#detect_llm_drift"><code>detect_llm_drift</code></a></td><td>Replay a cassette against the live provider and report structural drift</td><td>High</td></tr>
         <tr><td><a href="#mock_adversarial_llm_response"><code>mock_adversarial_llm_response</code></a></td><td>Mock a hostile/malformed LLM response to test agent resilience</td><td>High</td></tr>
         <tr><td><a href="#run_mcp_contract_test"><code>run_mcp_contract_test</code></a></td><td>Check a target MCP server conforms to the protocol over Streamable HTTP</td><td>High</td></tr>
@@ -1225,6 +1226,38 @@ sitemap:
 }</code></pre>
 
 <p>The result also includes a <code>callGraph</code> object: a <code>nodes</code> array (each with <code>id</code>, <code>kind</code> &mdash; a message role or <code>TOOL_CALL</code> &mdash; and <code>label</code>) and an <code>edges</code> array (each with <code>from</code>, <code>to</code>, and <code>kind</code>: <code>NEXT</code> for message sequence, <code>INVOKES</code> for a turn's tool calls, <code>RESULT</code> linking a tool call to its returned result). The dashboard <em>Sessions</em> view renders this graph per session.</p>
+
+<a id="verify_cost_budget" class="anchor" href="#verify_cost_budget">&nbsp;</a>
+
+<h3>verify_cost_budget</h3>
+
+<p>Asserts that the total estimated USD cost of the LLM responses MockServer has recorded is within a budget &mdash; a deterministic, read-only cost gate you can run in CI. It decodes each recorded response for the given provider (via the runtime-LLM client SPI), sums the input/output tokens reported in each response's usage, prices them with MockServer's built-in pricing table, and compares the total against <code>maxCostUsd</code>.</p>
+
+<table>
+    <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>provider</code></td><td>string (enum)</td><td>Yes</td><td>Provider whose recorded responses to total (<code>ANTHROPIC</code>, <code>OPENAI</code>, &hellip;)</td></tr>
+        <tr><td><code>maxCostUsd</code></td><td>number</td><td>Yes</td><td>Cost budget in USD. The assertion passes (<code>withinBudget: true</code>) when the total estimated cost is at or below this value.</td></tr>
+        <tr><td><code>model</code></td><td>string</td><td>No</td><td>Model id used to price every response (e.g. <code>claude-sonnet-4</code>). If omitted, the model is read from each recorded request body; responses whose model has no known price are reported as <code>unpriceable</code> and excluded from the total.</td></tr>
+        <tr><td><code>path</code></td><td>string</td><td>No</td><td>Only total responses to this request path.</td></tr>
+    </tbody>
+</table>
+
+<p>The result reports <code>checked</code>, <code>skippedNoUsage</code>, <code>unpriceable</code>, <code>totalInputTokens</code>, <code>totalOutputTokens</code>, <code>totalCostUsd</code>, <code>maxCostUsd</code>, <code>withinBudget</code>, <code>budgetCheckAuthoritative</code>, and a per-response <code>results</code> breakdown. The pricing table is public list pricing captured 2025-Q4 and kept in sync with the dashboard &mdash; treat totals as an estimate, not an invoice.</p>
+
+<p><strong>Important:</strong> <code>withinBudget</code> reflects only the responses that could be priced. When <code>unpriceable &gt; 0</code> (a recorded model has no known price) or <code>checked == 0</code> (no responses had usage), the total understates the true cost and a passing <code>withinBudget</code> is not trustworthy. Gate your CI step on <code>budgetCheckAuthoritative</code> (<code>true</code> only when at least one response was checked and every checked response was priced) before trusting <code>withinBudget</code> &mdash; pin the <code>model</code> param to guarantee everything is priceable.</p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "method": "tools/call",
+  "params": {
+    "name": "verify_cost_budget",
+    "arguments": { "provider": "ANTHROPIC", "model": "claude-sonnet-4", "maxCostUsd": 0.50 }
+  }
+}</code></pre>
 
 <a id="detect_llm_drift" class="anchor" href="#detect_llm_drift">&nbsp;</a>
 
