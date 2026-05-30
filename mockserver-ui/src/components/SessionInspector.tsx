@@ -1,6 +1,8 @@
 import { useMemo, useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -12,6 +14,7 @@ import { groupBySession, shortenScenarioName, type Session, type SessionRequest 
 import { getModelLabel, getTokenSummary } from '../lib/llmTraffic';
 import { AnthropicConversationView, OpenAiConversationView } from './ConversationView';
 import AgentRunGraph from './AgentRunGraph';
+import { CompareRunsBody } from './CompareRunsDialog';
 
 // ---------------------------------------------------------------------------
 // Status colour for request chips
@@ -242,6 +245,7 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
   const recordedRequests = useDashboardStore((s) => s.recordedRequests);
   const activeExpectations = useDashboardStore((s) => s.activeExpectations);
   const [search, setSearch] = useState('');
+  const [tab, setTab] = useState(0);
 
   const allRequests = useMemo(
     () => [...proxiedRequests, ...recordedRequests],
@@ -265,87 +269,96 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
   const hasLlmTraffic = sessions.length > 0;
 
   return (
-    <Box
-      sx={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        p: 1,
-        overflow: 'hidden',
-        minHeight: 0,
-      }}
-    >
-      {/* Summary bar */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          mb: 1,
-          flexShrink: 0,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
-          Sessions
-        </Typography>
-        {hasLlmTraffic && (
-          <Chip
-            label={`Active sessions: ${sessions.length}`}
-            size="small"
-            color="primary"
-            variant="outlined"
-            sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
-          />
-        )}
-        <TextField
-          size="small"
-          placeholder="Filter sessions..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            },
-          }}
-          sx={{
-            ml: 'auto',
-            maxWidth: 250,
-            '& .MuiInputBase-root': { height: 28, fontSize: '0.75rem' },
-            '& .MuiSvgIcon-root': { fontSize: '0.875rem' },
-          }}
-        />
-      </Box>
+    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, p: 1 }}>
+      <Paper variant="outlined" sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <Tabs
+          value={tab}
+          onChange={(_, v: number) => setTab(v)}
+          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: '0.8rem' } }}
+        >
+          <Tab label="Sessions" />
+          <Tab label="Compare" />
+        </Tabs>
 
-      {/* Session lanes */}
-      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-        {!hasLlmTraffic ? (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography variant="body2" color="text.secondary">
-              No LLM traffic captured yet
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-              Configure your application to proxy through MockServer to see session groupings.
-            </Typography>
+        {tab === 0 && (
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, p: 1 }}>
+            {/* Summary bar */}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                mb: 1,
+                flexShrink: 0,
+                flexWrap: 'wrap',
+              }}
+            >
+              {hasLlmTraffic && (
+                <Chip
+                  label={`Active sessions: ${sessions.length}`}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+                />
+              )}
+              <TextField
+                size="small"
+                placeholder="Filter sessions..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+                sx={{
+                  ml: 'auto',
+                  maxWidth: 250,
+                  '& .MuiInputBase-root': { height: 28, fontSize: '0.75rem' },
+                  '& .MuiSvgIcon-root': { fontSize: '0.875rem' },
+                }}
+              />
+            </Box>
+
+            {/* Session lanes */}
+            <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {!hasLlmTraffic ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No LLM traffic captured yet
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    Configure your application to proxy through MockServer to see session groupings.
+                  </Typography>
+                </Box>
+              ) : filteredSessions.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+                  No sessions match the current filter
+                </Typography>
+              ) : (
+                filteredSessions.map((session) => (
+                  <SessionLane
+                    key={`${session.scenarioName}::${session.isolationKey}`}
+                    session={session}
+                    connectionParams={connectionParams}
+                  />
+                ))
+              )}
+            </Box>
           </Box>
-        ) : filteredSessions.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-            No sessions match the current filter
-          </Typography>
-        ) : (
-          filteredSessions.map((session) => (
-            <SessionLane
-              key={`${session.scenarioName}::${session.isolationKey}`}
-              session={session}
-              connectionParams={connectionParams}
-            />
-          ))
         )}
-      </Box>
+
+        {tab === 1 && (
+          <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, p: 2 }}>
+            <CompareRunsBody />
+          </Box>
+        )}
+      </Paper>
     </Box>
   );
 }

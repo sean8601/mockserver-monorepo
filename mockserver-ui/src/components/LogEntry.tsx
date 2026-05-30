@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -63,13 +63,19 @@ function renderMessagePart(part: MessagePart) {
   if (part.json) {
     if (typeof part.value === 'object' && part.value !== null) {
       return (
-        <Box key={part.key} sx={{ display: 'inline-block', pl: 0.5 }}>
-          <JsonViewer
-            data={part.value as Record<string, unknown>}
-            collapsed={0}
-            enableClipboard={true}
-          />
-        </Box>
+        // Trailing non-breaking space separates the expandable JSON block from
+        // the following text (e.g. "} matched expectation:") which would
+        // otherwise butt directly against the closing brace.
+        <Fragment key={part.key}>
+          <Box sx={{ display: 'inline-block', pl: 0.5 }}>
+            <JsonViewer
+              data={part.value as Record<string, unknown>}
+              collapsed={0}
+              enableClipboard={true}
+            />
+          </Box>
+          {'\u00A0'}
+        </Fragment>
       );
     }
     return (

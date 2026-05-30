@@ -162,6 +162,21 @@ describe('SessionInspector', () => {
     expect(screen.queryByText(/chat \/ agent-B/)).not.toBeInTheDocument();
   });
 
+  it('exposes a Compare tab that switches to the session comparison view', async () => {
+    const user = userEvent.setup();
+    renderInspector();
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs[0]).toHaveTextContent('Sessions');
+    expect(tabs[1]).toHaveTextContent('Compare');
+
+    await user.click(screen.getByRole('tab', { name: 'Compare' }));
+
+    // The Compare (session comparison) view exposes Run A / Run B selectors.
+    expect(screen.getByLabelText('Run A')).toBeInTheDocument();
+    expect(screen.getByLabelText('Run B')).toBeInTheDocument();
+  });
+
   it('renders unscoped session for requests without isolation', () => {
     useDashboardStore.setState({
       proxiedRequests: [
