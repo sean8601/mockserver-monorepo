@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 2s
+
+scrape_configs:
+  - job_name: mockserver
+    metrics_path: /mockserver/metrics
+    static_configs:
+      - targets: ["mockserver:1080"]

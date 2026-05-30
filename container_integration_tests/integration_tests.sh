@@ -128,6 +128,7 @@ function run_all_tests() {
       test "docker_compose_jvm_options"
       test "docker_compose_libs_classpath"
       test "docker_compose_graceful_shutdown"
+      test "docker_compose_metrics"
       # 5c.4 - per-variant smoke tests (root/snapshot/local Dockerfiles).
       # Same gate as docker_compose_* tests: they share the same JAR + docker
       # daemon, and the helm-only CI step (helm-integration-test.sh) sets

@@ -1,0 +1,36 @@
+# Integration test: MockServer metrics output on BOTH paths —
+#   1. Prometheus scrapes GET /mockserver/metrics (metricsEnabled), and
+#   2. MockServer pushes the same metrics via OTLP to an OpenTelemetry Collector
+#      (otelMetricsEnabled), which re-exports them on its own Prometheus endpoint.
+# The test asserts the request counter + the JVM gauges arrive on both paths.
+services:
+  mockserver:
+    image: mockserver/mockserver:integration_testing
+    command: -serverPort 1080
+    environment:
+      MOCKSERVER_METRICS_ENABLED: "true"
+      MOCKSERVER_OTEL_METRICS_ENABLED: "true"
+      MOCKSERVER_OTEL_ENDPOINT: "http://otel-collector:4318"
+      MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS: "2"
+      MOCKSERVER_LOG_LEVEL: "WARN"
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ${OVERRIDE_DIR}/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    volumes:
+      - ${OVERRIDE_DIR}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  client:
+    image: mockserver/mockserver:integration_testing_client_curl
+    command: ["sleep", "86400"]
+    depends_on:
+      - mockserver
+      - prometheus
+      - otel-collector
