@@ -34,6 +34,8 @@ public class Metrics {
     private static volatile Counter slowRequestTotal;
     // Counter for HTTP chaos faults injected (error or latency). Null until metrics are enabled.
     private static volatile Counter httpChaosInjectedTotal;
+    // OTel histogram for OTLP export. Set by OtelMetricsExporter when enabled; null otherwise.
+    private static volatile io.opentelemetry.api.metrics.DoubleHistogram otelRequestDurationHistogram;
 
     private final Boolean metricsEnabled;
 
@@ -108,6 +110,7 @@ public class Metrics {
         requestDurationByMethodSeconds = null;
         slowRequestTotal = null;
         httpChaosInjectedTotal = null;
+        otelRequestDurationHistogram = null;
         metrics.clear();
         PrometheusRegistry.defaultRegistry.clear();
     }
@@ -131,6 +134,14 @@ public class Metrics {
     }
 
     /**
+     * Register an OTel histogram for request duration. Called by
+     * {@link OtelMetricsExporter} when OTLP export is enabled.
+     */
+    public static void registerOtelRequestDurationHistogram(io.opentelemetry.api.metrics.DoubleHistogram histogram) {
+        otelRequestDurationHistogram = histogram;
+    }
+
+    /**
      * Record a request-handling duration (seconds) in the latency histogram.
      * No-op unless metrics are enabled (the histogram is null until then), so a
      * caller on the request hot path pays nothing when metrics are off.
@@ -139,6 +150,10 @@ public class Metrics {
         Histogram histogram = requestDurationSeconds;
         if (histogram != null) {
             histogram.observe(seconds);
+        }
+        io.opentelemetry.api.metrics.DoubleHistogram otelHistogram = otelRequestDurationHistogram;
+        if (otelHistogram != null) {
+            otelHistogram.record(seconds);
         }
     }
 
@@ -172,6 +187,23 @@ public class Metrics {
         Counter counter = slowRequestTotal;
         if (counter != null) {
             counter.inc();
+        }
+    }
+
+    /**
+     * Return the current chaos-injected count for the given fault type, or 0 if
+     * metrics are disabled. Used by {@link OtelMetricsExporter} to mirror the
+     * Prometheus counter via OTLP.
+     */
+    public static long getHttpChaosInjectedCount(String faultType) {
+        Counter counter = httpChaosInjectedTotal;
+        if (counter == null || faultType == null) {
+            return 0L;
+        }
+        try {
+            return (long) counter.labelValues(faultType).get();
+        } catch (Exception e) {
+            return 0L;
         }
     }
 

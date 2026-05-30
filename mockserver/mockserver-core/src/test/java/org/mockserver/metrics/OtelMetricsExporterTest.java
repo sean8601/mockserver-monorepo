@@ -86,6 +86,92 @@ public class OtelMetricsExporterTest {
     }
 
     @Test
+    public void exportsChaosCounterByFaultType() {
+        // given — increment chaos counters (requires metrics enabled)
+        Metrics.resetAdditionalMetricsForTesting();
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.incrementHttpChaosInjected("error");
+        Metrics.incrementHttpChaosInjected("error");
+        Metrics.incrementHttpChaosInjected("latency");
+
+        InMemoryMetricReader reader = InMemoryMetricReader.create();
+        OtelMetricsExporter exporter = OtelMetricsExporter.startWithReader(reader);
+        try {
+            Collection<MetricData> collected = reader.collectAllMetrics();
+            Set<String> names = collected.stream().map(MetricData::getName).collect(Collectors.toSet());
+
+            assertThat(names, hasItem("mock_server_http_chaos_injected_total"));
+
+            MetricData chaosMetric = collected.stream()
+                .filter(m -> m.getName().equals("mock_server_http_chaos_injected_total"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("mock_server_http_chaos_injected_total not exported"));
+
+            // verify error count = 2
+            long errorCount = chaosMetric.getLongGaugeData().getPoints().stream()
+                .filter(p -> "error".equals(p.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("fault_type"))))
+                .mapToLong(io.opentelemetry.sdk.metrics.data.LongPointData::getValue)
+                .findFirst()
+                .orElse(-1);
+            assertThat(errorCount, is(2L));
+
+            // verify latency count = 1
+            long latencyCount = chaosMetric.getLongGaugeData().getPoints().stream()
+                .filter(p -> "latency".equals(p.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("fault_type"))))
+                .mapToLong(io.opentelemetry.sdk.metrics.data.LongPointData::getValue)
+                .findFirst()
+                .orElse(-1);
+            assertThat(latencyCount, is(1L));
+        } finally {
+            exporter.stop();
+        }
+    }
+
+    @Test
+    public void exportsRequestDurationHistogram() {
+        InMemoryMetricReader reader = InMemoryMetricReader.create();
+        OtelMetricsExporter exporter = OtelMetricsExporter.startWithReader(reader);
+        try {
+            // when — observe a duration (routed through the OTel histogram registered by the exporter)
+            Metrics.observeRequestDurationSeconds(0.1);
+            Metrics.observeRequestDurationSeconds(0.25);
+
+            Collection<MetricData> collected = reader.collectAllMetrics();
+            Set<String> names = collected.stream().map(MetricData::getName).collect(Collectors.toSet());
+
+            // then — histogram is present
+            assertThat(names, hasItem("mock_server_request_duration_seconds"));
+
+            MetricData histogramMetric = collected.stream()
+                .filter(m -> m.getName().equals("mock_server_request_duration_seconds"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("mock_server_request_duration_seconds histogram not exported"));
+
+            // verify the histogram has data points with count >= 2
+            long totalCount = histogramMetric.getHistogramData().getPoints().stream()
+                .mapToLong(io.opentelemetry.sdk.metrics.data.HistogramPointData::getCount)
+                .sum();
+            assertThat(totalCount, greaterThanOrEqualTo(2L));
+        } finally {
+            exporter.stop();
+        }
+    }
+
+    @Test
+    public void stopClearsOtelHistogramReference() {
+        InMemoryMetricReader reader = InMemoryMetricReader.create();
+        OtelMetricsExporter exporter = OtelMetricsExporter.startWithReader(reader);
+
+        // record something before stop
+        Metrics.observeRequestDurationSeconds(0.05);
+
+        exporter.stop();
+
+        // after stop, observing should not throw (OTel histogram is null)
+        Metrics.observeRequestDurationSeconds(0.1);
+    }
+
+    @Test
     public void disabledByDefaultReturnsNull() {
         // off unless configured — startIfEnabled reads mockserver.otelMetricsEnabled (default false)
         assertThat(OtelMetricsExporter.startIfEnabled() == null, is(true));

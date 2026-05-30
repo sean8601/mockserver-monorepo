@@ -78,6 +78,9 @@ public class OtelMetricsExporter {
      *       {@link JvmMetricsCollector} on the Prometheus side).</li>
      *   <li>A gauge mirroring the slow-request counter so OTLP-only consumers
      *       can observe it without a Prometheus scrape.</li>
+     *   <li>A gauge mirroring the per-fault-type chaos-injection counter.</li>
+     *   <li>A histogram for request-handling duration (seconds), fed from the
+     *       same observation path as the Prometheus histogram.</li>
      * </ul>
      * Visible for testing (a test can pass an in-memory reader instead of the
      * OTLP periodic reader).
@@ -97,6 +100,8 @@ public class OtelMetricsExporter {
         }
         registerJvmMetrics(meter);
         registerSlowRequestCounter(meter);
+        registerChaosCounter(meter);
+        registerRequestDurationHistogram(meter);
         return new OtelMetricsExporter(provider);
     }
 
@@ -178,10 +183,31 @@ public class OtelMetricsExporter {
             .buildWithCallback(m -> m.record(Metrics.getSlowRequestCount()));
     }
 
+    private static void registerChaosCounter(Meter meter) {
+        meter.gaugeBuilder("mock_server_http_chaos_injected_total")
+            .setDescription("Total HTTP chaos faults injected by type (mirrors Prometheus counter)")
+            .ofLongs()
+            .buildWithCallback(m -> {
+                for (String faultType : new String[]{"drop", "error", "latency"}) {
+                    m.record(Metrics.getHttpChaosInjectedCount(faultType),
+                        Attributes.of(AttributeKey.stringKey("fault_type"), faultType));
+                }
+            });
+    }
+
+    private static void registerRequestDurationHistogram(Meter meter) {
+        io.opentelemetry.api.metrics.DoubleHistogram requestDuration = meter.histogramBuilder("mock_server_request_duration_seconds")
+            .setDescription("MockServer request handling duration in seconds")
+            .setUnit("s")
+            .build();
+        Metrics.registerOtelRequestDurationHistogram(requestDuration);
+    }
+
     /**
      * Stop exporting and release resources. Safe to call once.
      */
     public void stop() {
+        Metrics.registerOtelRequestDurationHistogram(null);
         try {
             meterProvider.shutdown().join(2, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
