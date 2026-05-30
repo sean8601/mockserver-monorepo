@@ -231,7 +231,11 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
 
     public boolean matches(final MatchDifference context, final RequestDefinition requestDefinition) {
         if (requestDefinition instanceof HttpRequest request) {
-            StringBuilder becauseBuilder = new StringBuilder();
+            // The "because" message is only consumed by the INFO log below, so only
+            // allocate the builder when it will be used (a no-op otherwise — see
+            // the matching gate in failFast). Null when not logging at INFO.
+            boolean logBecause = !controlPlaneMatcher && mockServerLogger.isEnabledForInstance(Level.INFO);
+            StringBuilder becauseBuilder = logBecause ? new StringBuilder() : null;
             boolean overallMatch = matches(context, request, becauseBuilder);
             if (!controlPlaneMatcher) {
                 if (overallMatch) {
@@ -247,7 +251,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                                 .setArguments(request, (this.expectation == null ? this : this.expectation.clone()))
                         );
                     }
-                } else {
+                } else if (becauseBuilder != null) {
                     becauseBuilder.replace(0, 1, "");
                     String because = becauseBuilder.toString();
                     if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -407,18 +411,18 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
 
     private boolean failFast(Matcher<?> matcher, MatchDifference context, MatchDifferenceCount matchDifferenceCount, StringBuilder becauseBuilder, boolean fieldMatches, MatchDifference.Field fieldName) {
         // The human-readable "because" message is only ever consumed when INFO
-        // logging is on (see matches(...) above). Building it — the per-field
-        // appends and, more expensively, generateHintsForField — is otherwise
-        // wasted work allocated per field, per matcher, per request. Gate it on
-        // the same INFO check so a performance-tuned deployment (log level below
-        // INFO) does not pay for strings it discards. The match-difference
-        // counter and the fail-fast result below stay unconditional, and the
-        // MatchDifference itself is still populated by the field matchers, so
-        // detailedMatchFailures / debugMismatch / explainUnmatched / verification
-        // are unaffected.
-        boolean logBecause = !controlPlaneMatcher && mockServerLogger.isEnabledForInstance(Level.INFO);
+        // logging is on, so matches(...) allocates becauseBuilder only then (and
+        // never for a control-plane matcher); a null builder is the single source
+        // of truth for "do not build the because string". Building it — the
+        // per-field appends and, more expensively, generateHintsForField — is
+        // otherwise wasted work allocated per field, per matcher, per request, so
+        // a performance-tuned deployment (log level below INFO) does not pay for
+        // strings it discards. The match-difference counter and the fail-fast
+        // result below stay unconditional, and the MatchDifference itself is still
+        // populated by the field matchers, so detailedMatchFailures /
+        // debugMismatch / explainUnmatched / verification are unaffected.
         // update because builder
-        if (logBecause) {
+        if (becauseBuilder != null) {
             becauseBuilder
                 .append(NEW_LINE)
                 .append(fieldName.getName()).append(fieldMatches ? MATCHED : DID_NOT_MATCH);
@@ -435,7 +439,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             }
         }
         if (!fieldMatches) {
-            if (logBecause) {
+            if (becauseBuilder != null) {
                 if (matchDifferenceCount.getHttpRequest().isNot()) {
                     becauseBuilder
                         .append(REQUEST_NOT_OPERATOR_IS_ENABLED);
