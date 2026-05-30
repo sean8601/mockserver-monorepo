@@ -18,6 +18,7 @@ from mockserver.exceptions import (
 from mockserver.fluent import ForwardChainExpectation
 from mockserver.models import (
     Expectation,
+    HttpChaosProfile,
     HttpObjectCallback,
     HttpRequest,
     HttpRequestAndHttpResponse,
@@ -223,6 +224,53 @@ class AsyncMockServerClient:
         if status >= 400:
             raise MockServerError(
                 f"Failed to get clock status (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def set_service_chaos(self, host: str, chaos: HttpChaosProfile) -> dict:
+        """Register a service-scoped HTTP chaos profile for an upstream *host*.
+
+        The profile is applied to every matched forward expectation to that host
+        that does not define its own chaos (an expectation's own chaos always
+        wins). The host is matched case-insensitively, ignoring any ``:port``.
+        """
+        body = json.dumps({"host": host, "chaos": chaos.to_dict()})
+        status, response_body = await self._request("PUT", "/mockserver/serviceChaos", body)
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to set service chaos (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def remove_service_chaos(self, host: str) -> dict:
+        """Remove the service-scoped chaos profile registered for *host*."""
+        body = json.dumps({"host": host, "remove": True})
+        status, response_body = await self._request("PUT", "/mockserver/serviceChaos", body)
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to remove service chaos (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def clear_service_chaos(self) -> dict:
+        """Clear all service-scoped chaos profiles."""
+        body = json.dumps({"clear": True})
+        status, response_body = await self._request("PUT", "/mockserver/serviceChaos", body)
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to clear service chaos (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def service_chaos_status(self) -> dict:
+        """Query the current service-scoped chaos registrations.
+
+        Returns a dict of the form ``{"services": {host: profile, ...}}``.
+        """
+        status, response_body = await self._request("GET", "/mockserver/serviceChaos")
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to get service chaos (status={status}): {response_body}"
             )
         return json.loads(response_body) if response_body else {}
 

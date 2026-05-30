@@ -1899,4 +1899,94 @@ public class MockServerClient implements Stoppable {
         );
         return httpResponse != null ? httpResponse.getBodyAsString() : "";
     }
+
+    /**
+     * Register a service-scoped HTTP chaos profile for an upstream host. The profile
+     * is applied to every matched forward expectation to that host that does not
+     * define its own {@code chaos} block (an expectation's own chaos always wins).
+     * The host is matched case-insensitively, ignoring any {@code :port}. See
+     * {@code PUT /mockserver/serviceChaos}.
+     *
+     * @param host  the upstream host to break
+     * @param chaos the chaos profile to apply to that host's forwarded responses
+     * @return this MockServerClient
+     */
+    public MockServerClient setServiceChaos(String host, HttpChaosProfile chaos) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            body.put("host", host);
+            body.set("chaos", objectMapper.valueToTree(new org.mockserver.serialization.model.HttpChaosProfileDTO(chaos)));
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("serviceChaos"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception serializing service chaos profile for host \"" + host + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Remove the service-scoped chaos profile registered for the given host.
+     *
+     * @param host the upstream host whose service-scoped chaos should be removed
+     * @return this MockServerClient
+     */
+    public MockServerClient removeServiceChaos(String host) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            body.put("host", host);
+            body.put("remove", true);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("serviceChaos"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception removing service chaos profile for host \"" + host + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Clear all service-scoped chaos profiles.
+     *
+     * @return this MockServerClient
+     */
+    public MockServerClient clearServiceChaos() {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("serviceChaos"))
+                .withBody("{\"clear\":true}", StandardCharsets.UTF_8),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Retrieve the current service-scoped chaos registrations as a JSON string
+     * ({@code {"services":{host: profile, ...}}}).
+     *
+     * @return JSON string of the current host → profile registrations
+     */
+    public String serviceChaosStatus() {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("serviceChaos")),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
 }

@@ -8,6 +8,7 @@ from mockserver.async_client import AsyncMockServerClient
 from mockserver.models import (
     Delay,
     Expectation,
+    HttpChaosProfile,
     HttpError,
     HttpForward,
     HttpOverrideForwardedRequest,
@@ -129,6 +130,22 @@ class MockServerClient:
     def clock_status(self) -> dict:
         """Query the current clock status."""
         return self._run(self._async_client.clock_status())
+
+    def set_service_chaos(self, host: str, chaos: HttpChaosProfile) -> dict:
+        """Register a service-scoped HTTP chaos profile for an upstream host."""
+        return self._run(self._async_client.set_service_chaos(host, chaos))
+
+    def remove_service_chaos(self, host: str) -> dict:
+        """Remove the service-scoped chaos profile registered for *host*."""
+        return self._run(self._async_client.remove_service_chaos(host))
+
+    def clear_service_chaos(self) -> dict:
+        """Clear all service-scoped chaos profiles."""
+        return self._run(self._async_client.clear_service_chaos())
+
+    def service_chaos_status(self) -> dict:
+        """Query the current service-scoped chaos registrations."""
+        return self._run(self._async_client.service_chaos_status())
 
     def verify(
         self,

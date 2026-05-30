@@ -11,6 +11,7 @@ from mockserver.exceptions import MockServerError, MockServerVerificationError
 from mockserver.models import (
     Delay,
     Expectation,
+    HttpChaosProfile,
     HttpError,
     HttpForward,
     HttpRequest,
@@ -381,3 +382,49 @@ class TestSyncClockControl:
         with MockServerClient("127.0.0.1", sync_mock_server) as client:
             with pytest.raises(MockServerError, match="Failed to freeze clock"):
                 client.freeze_clock()
+
+
+class TestSyncServiceChaos:
+    def test_set_service_chaos(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({"status": "registered", "host": "payments.svc"})
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.set_service_chaos(
+                "payments.svc",
+                HttpChaosProfile(error_status=503, error_probability=1.0),
+            )
+            assert SyncMockHandler.last_path == "/mockserver/serviceChaos"
+            assert SyncMockHandler.last_method == "PUT"
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["host"] == "payments.svc"
+            assert sent["chaos"]["errorStatus"] == 503
+            assert result["status"] == "registered"
+
+    def test_remove_service_chaos(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({"status": "removed", "host": "payments.svc"})
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.remove_service_chaos("payments.svc")
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["host"] == "payments.svc"
+            assert sent["remove"] is True
+
+    def test_clear_service_chaos(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({"status": "cleared"})
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.clear_service_chaos()
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["clear"] is True
+
+    def test_set_service_chaos_error(self, sync_mock_server):
+        SyncMockHandler.response_status = 400
+        SyncMockHandler.response_body = '{"error": "invalid chaos profile"}'
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            with pytest.raises(MockServerError, match="Failed to set service chaos"):
+                client.set_service_chaos("payments.svc", HttpChaosProfile(error_status=503))
+
+    def test_service_chaos_status(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({"services": {"payments.svc": {"errorStatus": 503}}})
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.service_chaos_status()
+            assert SyncMockHandler.last_path == "/mockserver/serviceChaos"
+            assert SyncMockHandler.last_method == "GET"
+            assert result["services"]["payments.svc"]["errorStatus"] == 503

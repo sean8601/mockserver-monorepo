@@ -1078,6 +1078,49 @@ var mockServerClient;
                 }
             };
         };
+        /**
+         * Register a service-scoped HTTP chaos profile for an upstream host. The
+         * profile is applied to every matched forward expectation to that host that
+         * does not define its own chaos. The host is matched case-insensitively,
+         * ignoring any ":port".
+         *
+         * @param serviceHost  the upstream host to break
+         * @param chaos        the HttpChaosProfile to apply to that host
+         */
+        var setServiceChaos = function (serviceHost, chaos) {
+            return makeRequest(host, port, "/mockserver/serviceChaos", {host: serviceHost, chaos: chaos});
+        };
+        /**
+         * Remove the service-scoped chaos profile registered for the given host.
+         *
+         * @param serviceHost  the upstream host whose service-scoped chaos to remove
+         */
+        var removeServiceChaos = function (serviceHost) {
+            return makeRequest(host, port, "/mockserver/serviceChaos", {host: serviceHost, remove: true});
+        };
+        /**
+         * Clear all service-scoped chaos profiles.
+         */
+        var clearServiceChaos = function () {
+            return makeRequest(host, port, "/mockserver/serviceChaos", {clear: true});
+        };
+        /**
+         * Query the current service-scoped chaos registrations.
+         *
+         * @return promise resolving to {services: {host: profile, ...}}
+         */
+        var serviceChaosStatus = function () {
+            return {
+                then: function (sucess, error) {
+                    makeGetRequest(host, port, "/mockserver/serviceChaos")
+                        .then(function (result) {
+                            sucess(result.body && JSON.parse(result.body));
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
 
         /* jshint -W003 */
         var _this = {
@@ -1100,6 +1143,10 @@ var mockServerClient;
             advanceClock: advanceClock,
             resetClock: resetClock,
             clockStatus: clockStatus,
+            setServiceChaos: setServiceChaos,
+            removeServiceChaos: removeServiceChaos,
+            clearServiceChaos: clearServiceChaos,
+            serviceChaosStatus: serviceChaosStatus,
             bind: bind,
             retrieveRecordedRequests: retrieveRecordedRequests,
             retrieveRecordedRequestsAndResponses: retrieveRecordedRequestsAndResponses,

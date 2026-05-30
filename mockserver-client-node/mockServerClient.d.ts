@@ -8,7 +8,7 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-import {Expectation, ExpectationId, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, KeyToMultiValue, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
+import {Expectation, ExpectationId, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, KeyToMultiValue, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
 
 export type Host = string;
 export type Port = number;
@@ -73,6 +73,14 @@ export interface MockServerClient {
     resetClock(): Promise<RequestResponse>;
 
     clockStatus(): Promise<ClockStatus>;
+
+    setServiceChaos(host: string, chaos: HttpChaosProfile): Promise<RequestResponse>;
+
+    removeServiceChaos(host: string): Promise<RequestResponse>;
+
+    clearServiceChaos(): Promise<RequestResponse>;
+
+    serviceChaosStatus(): Promise<{ services: { [host: string]: HttpChaosProfile } }>;
 
     bind(ports: Port[]): Promise<RequestResponse>;
 

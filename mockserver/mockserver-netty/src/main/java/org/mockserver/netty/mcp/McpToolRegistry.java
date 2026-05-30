@@ -112,6 +112,7 @@ public class McpToolRegistry {
         registerRetrieveRecordedRequests();
         registerClearExpectations();
         registerReset();
+        registerManageServiceChaos();
         registerGetStatus();
         registerVerifyRequestSequence();
         registerRetrieveRequestResponses();
@@ -642,6 +643,70 @@ public class McpToolRegistry {
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to reset", e);
+        }
+    }
+
+    private void registerManageServiceChaos() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("action").put("type", "string").put("description", "One of: register (set a host's chaos), remove (clear one host), clear (clear all)");
+        properties.putObject("host").put("type", "string").put("description", "Upstream host to break (required for register/remove); matched case-insensitively, ignoring any :port");
+        properties.putObject("chaos").put("type", "object").put("description", "The HttpChaosProfile to apply (required for register): same fields as the create_expectation 'chaos' block (errorStatus, errorProbability, dropConnectionProbability, latency, truncateBodyAtFraction, malformedBody, slowResponseChunkSize/Delay, quota*, degradationRampMillis, etc.)");
+        schema.putArray("required").add("action");
+
+        tools.put("manage_service_chaos", new ToolDefinition(
+            "manage_service_chaos",
+            "Manage service-scoped HTTP chaos: register one chaos profile per upstream host (applied to all matched forwards to that host that have no chaos of their own), remove a host's profile, or clear all. The host-keyed profiles are applied on the matched-forward path; an expectation's own chaos always takes precedence.",
+            schema,
+            this::handleManageServiceChaos
+        ));
+    }
+
+    private JsonNode handleManageServiceChaos(JsonNode params) {
+        try {
+            String action = params.path("action").asText(null);
+            if (action == null || action.isBlank()) {
+                return errorResult("'action' is required and must be one of: register, remove, clear");
+            }
+            org.mockserver.mock.action.http.ServiceChaosRegistry registry = org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance();
+            switch (action.toLowerCase()) {
+                case "clear":
+                    registry.reset();
+                    return objectMapper.createObjectNode().put("status", "cleared");
+                case "remove": {
+                    String host = params.path("host").asText(null);
+                    if (host == null || host.isBlank()) {
+                        return errorResult("'host' is required for action 'remove'");
+                    }
+                    registry.remove(host);
+                    return objectMapper.createObjectNode().put("status", "removed").put("host", host);
+                }
+                case "register": {
+                    String host = params.path("host").asText(null);
+                    if (host == null || host.isBlank()) {
+                        return errorResult("'host' is required for action 'register'");
+                    }
+                    if (!params.path("chaos").isObject()) {
+                        return errorResult("'chaos' object is required for action 'register'");
+                    }
+                    org.mockserver.model.HttpChaosProfile profile;
+                    try {
+                        profile = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                            .treeToValue(params.get("chaos"), org.mockserver.serialization.model.HttpChaosProfileDTO.class)
+                            .buildObject();
+                    } catch (IllegalArgumentException | com.fasterxml.jackson.core.JsonProcessingException e) {
+                        // validation (IllegalArgumentException from withX) or malformed chaos JSON
+                        return errorResult("invalid chaos profile: " + e.getMessage());
+                    }
+                    registry.put(host, profile);
+                    return objectMapper.createObjectNode().put("status", "registered").put("host", host);
+                }
+                default:
+                    return errorResult("unknown action '" + action + "', must be one of: register, remove, clear");
+            }
+        } catch (Exception e) {
+            return errorResult("Failed to manage service chaos", e);
         }
     }
 

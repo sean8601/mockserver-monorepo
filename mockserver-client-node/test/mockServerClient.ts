@@ -179,4 +179,10 @@ async function test() {
     requestResponse = await client.advanceClock(3600000);
     requestResponse = await client.resetClock();
     let clockStatus: ClockStatus = await client.clockStatus();
+
+    // service-scoped chaos
+    requestResponse = await client.setServiceChaos("payments.svc", chaosProfile);
+    requestResponse = await client.removeServiceChaos("payments.svc");
+    requestResponse = await client.clearServiceChaos();
+    let serviceChaos: { services: { [host: string]: HttpChaosProfile } } = await client.serviceChaosStatus();
 }

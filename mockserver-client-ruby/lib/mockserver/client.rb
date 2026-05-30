@@ -204,6 +204,59 @@ module MockServer
       response_body && !response_body.empty? ? JSON.parse(response_body) : {}
     end
 
+    # Register a service-scoped HTTP chaos profile for an upstream host. The profile
+    # is applied to every matched forward expectation to that host that does not
+    # define its own chaos (an expectation's own chaos always wins). The host is
+    # matched case-insensitively, ignoring any +:port+.
+    # @param host [String] the upstream host to break
+    # @param chaos [HttpChaosProfile] the chaos profile to apply
+    # @return [Hash] response with status and host
+    def set_service_chaos(host, chaos)
+      body = JSON.generate({ 'host' => host, 'chaos' => chaos.to_h })
+      status, response_body = request('PUT', '/mockserver/serviceChaos', body)
+      if status >= 400
+        raise Error, "Failed to set service chaos (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Remove the service-scoped chaos profile registered for +host+.
+    # @param host [String]
+    # @return [Hash]
+    def remove_service_chaos(host)
+      body = JSON.generate({ 'host' => host, 'remove' => true })
+      status, response_body = request('PUT', '/mockserver/serviceChaos', body)
+      if status >= 400
+        raise Error, "Failed to remove service chaos (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Clear all service-scoped chaos profiles.
+    # @return [Hash]
+    def clear_service_chaos
+      body = JSON.generate({ 'clear' => true })
+      status, response_body = request('PUT', '/mockserver/serviceChaos', body)
+      if status >= 400
+        raise Error, "Failed to clear service chaos (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Query the current service-scoped chaos registrations.
+    # @return [Hash] of the form { "services" => { host => profile, ... } }
+    def service_chaos_status
+      status, response_body = request('GET', '/mockserver/serviceChaos')
+      if status >= 400
+        raise Error, "Failed to get service chaos (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
     # Verify that a request was received.
     # @param request [HttpRequest]
     # @param times [VerificationTimes, nil]

@@ -3,6 +3,7 @@ package org.mockserver.netty.mcp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.lifecycle.LifeCycle;
@@ -44,6 +45,11 @@ public class McpToolRegistryTest {
         objectMapper = ObjectMapperFactory.buildObjectMapperWithoutRemovingEmptyValues();
     }
 
+    @After
+    public void resetServiceChaos() {
+        org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
+    }
+
     @Test
     public void shouldRegisterAllTools() {
         Map<String, McpToolRegistry.ToolDefinition> tools = toolRegistry.getTools();
@@ -78,7 +84,8 @@ public class McpToolRegistryTest {
         assertThat(tools.containsKey("run_mcp_contract_test"), is(true));
         assertThat(tools.containsKey("verify_structured_output"), is(true));
         assertThat(tools.containsKey("verify_cost_budget"), is(true));
-        assertThat(tools.size(), is(31));
+        assertThat(tools.containsKey("manage_service_chaos"), is(true));
+        assertThat(tools.size(), is(32));
     }
 
     @Test
@@ -188,6 +195,47 @@ public class McpToolRegistryTest {
         JsonNode result = toolRegistry.callTool("get_status", objectMapper.createObjectNode());
         assertThat(result.path("running").asBoolean(), is(true));
         assertThat(result.path("ports").get(0).asInt(), is(1080));
+    }
+
+    @Test
+    public void shouldManageServiceChaos() {
+        try {
+            // register
+            ObjectNode chaos = objectMapper.createObjectNode();
+            chaos.put("errorStatus", 503);
+            chaos.put("errorProbability", 1.0);
+            ObjectNode registerParams = objectMapper.createObjectNode();
+            registerParams.put("action", "register");
+            registerParams.put("host", "payments.svc");
+            registerParams.set("chaos", chaos);
+            JsonNode registered = toolRegistry.callTool("manage_service_chaos", registerParams);
+            assertThat(registered.path("status").asText(), is("registered"));
+            assertThat(org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().get("payments.svc"), is(notNullValue()));
+
+            // remove
+            ObjectNode removeParams = objectMapper.createObjectNode();
+            removeParams.put("action", "remove");
+            removeParams.put("host", "payments.svc");
+            JsonNode removed = toolRegistry.callTool("manage_service_chaos", removeParams);
+            assertThat(removed.path("status").asText(), is("removed"));
+            assertThat(org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().get("payments.svc"), is(nullValue()));
+        } finally {
+            org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
+        }
+    }
+
+    @Test
+    public void shouldRejectManageServiceChaosWithInvalidProfile() {
+        ObjectNode chaos = objectMapper.createObjectNode();
+        chaos.put("errorStatus", 999); // out of range
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("action", "register");
+        params.put("host", "payments.svc");
+        params.set("chaos", chaos);
+        JsonNode result = toolRegistry.callTool("manage_service_chaos", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("invalid chaos profile"));
+        assertThat(org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().get("payments.svc"), is(nullValue()));
     }
 
     @Test

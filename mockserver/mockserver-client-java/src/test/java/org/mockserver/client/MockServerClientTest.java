@@ -1481,4 +1481,72 @@ public class MockServerClientTest {
         );
     }
 
+    // -------------------------------------------------------------------
+    // Service-scoped Chaos
+    // -------------------------------------------------------------------
+
+    @Test
+    public void shouldSendSetServiceChaosRequest() {
+        // when
+        mockServerClient.setServiceChaos("payments.svc", HttpChaosProfile.httpChaosProfile().withErrorStatus(503).withErrorProbability(1.0));
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/serviceChaos"));
+        assertThat(sent.getBodyAsString(), containsString("\"host\":\"payments.svc\""));
+        assertThat(sent.getBodyAsString(), containsString("\"errorStatus\":503"));
+    }
+
+    @Test
+    public void shouldSendRemoveServiceChaosRequest() {
+        // when
+        mockServerClient.removeServiceChaos("payments.svc");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/serviceChaos"));
+        assertThat(sent.getBodyAsString(), containsString("\"host\":\"payments.svc\""));
+        assertThat(sent.getBodyAsString(), containsString("\"remove\":true"));
+    }
+
+    @Test
+    public void shouldSendClearServiceChaosRequest() {
+        // when
+        mockServerClient.clearServiceChaos();
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/serviceChaos")
+                .withBody("{\"clear\":true}", StandardCharsets.UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
+    public void shouldSendServiceChaosStatusRequest() {
+        // when
+        mockServerClient.serviceChaosStatus();
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("GET")
+                .withPath("/mockserver/serviceChaos"),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
 }

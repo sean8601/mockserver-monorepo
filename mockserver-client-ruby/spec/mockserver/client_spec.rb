@@ -804,4 +804,67 @@ RSpec.describe MockServer::Client do
       expect { client.clock_status }.to raise_error(MockServer::Error, /Failed to get clock status/)
     end
   end
+
+  describe '#set_service_chaos' do
+    it 'sends PUT to /mockserver/serviceChaos with host and chaos' do
+      stub_request(:put, "#{base_url}/mockserver/serviceChaos")
+        .to_return(status: 200, body: JSON.generate({ 'status' => 'registered', 'host' => 'payments.svc' }))
+
+      chaos = MockServer::HttpChaosProfile.new(error_status: 503, error_probability: 1.0)
+      result = client.set_service_chaos('payments.svc', chaos)
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/serviceChaos")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['host'] == 'payments.svc' && parsed['chaos']['errorStatus'] == 503
+        }
+      expect(result['status']).to eq('registered')
+    end
+  end
+
+  describe '#remove_service_chaos' do
+    it 'sends PUT to /mockserver/serviceChaos with remove flag' do
+      stub_request(:put, "#{base_url}/mockserver/serviceChaos")
+        .to_return(status: 200, body: JSON.generate({ 'status' => 'removed', 'host' => 'payments.svc' }))
+
+      client.remove_service_chaos('payments.svc')
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/serviceChaos")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['host'] == 'payments.svc' && parsed['remove'] == true
+        }
+    end
+  end
+
+  describe '#clear_service_chaos' do
+    it 'sends PUT to /mockserver/serviceChaos with clear flag' do
+      stub_request(:put, "#{base_url}/mockserver/serviceChaos")
+        .to_return(status: 200, body: JSON.generate({ 'status' => 'cleared' }))
+
+      client.clear_service_chaos
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/serviceChaos")
+        .with { |r| JSON.parse(r.body)['clear'] == true }
+    end
+  end
+
+  describe '#service_chaos_status' do
+    it 'sends GET to /mockserver/serviceChaos' do
+      stub_request(:get, "#{base_url}/mockserver/serviceChaos")
+        .to_return(status: 200, body: JSON.generate({ 'services' => { 'payments.svc' => { 'errorStatus' => 503 } } }))
+
+      result = client.service_chaos_status
+
+      expect(WebMock).to have_requested(:get, "#{base_url}/mockserver/serviceChaos")
+      expect(result['services']['payments.svc']['errorStatus']).to eq(503)
+    end
+
+    it 'raises Error on failure' do
+      stub_request(:get, "#{base_url}/mockserver/serviceChaos")
+        .to_return(status: 400, body: '{"error":"bad"}')
+
+      expect { client.service_chaos_status }.to raise_error(MockServer::Error, /Failed to get service chaos/)
+    end
+  end
 end
