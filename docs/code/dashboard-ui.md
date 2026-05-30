@@ -7,7 +7,7 @@ The MockServer dashboard is a React single-page application (SPA) that receives 
 ```mermaid
 graph TB
     subgraph "Browser"
-        REACT["React 18 SPA
+        REACT["React 19 SPA
 Zustand store"]
         WS_C[WebSocket Client]
     end
@@ -305,10 +305,10 @@ The AppBar renders the five toggle buttons (Dashboard / Traffic / Sessions / Com
 
 | Component | Technology |
 |-----------|-----------|
-| Framework | React 18 |
+| Framework | React 19 |
 | State management | Zustand |
 | Build tool | Vite |
-| UI library | MUI v6 |
+| UI library | MUI v9 |
 | Language | TypeScript |
 | Testing | Vitest + React Testing Library |
 
