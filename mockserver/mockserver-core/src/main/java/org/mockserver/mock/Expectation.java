@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
 import org.mockserver.model.*;
+import org.mockserver.time.TimeService;
 import org.mockserver.uuid.UUIDService;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.mockserver.model.OpenAPIDefinition.openAPI;
 
@@ -61,6 +63,8 @@ public class Expectation extends ObjectWithJsonToString {
     private String newScenarioState;
     @JsonIgnore
     private final AtomicInteger matchCount = new AtomicInteger(0);
+    @JsonIgnore
+    private final AtomicLong chaosFirstMatchEpochMillis = new AtomicLong(0L);
     @JsonIgnore
     private final ThreadLocal<Integer> lastConsumedCount = new ThreadLocal<>();
 
@@ -829,12 +833,25 @@ public class Expectation extends ObjectWithJsonToString {
             }
         }
         lastConsumedCount.set(matchCount.incrementAndGet());
+        // record the first-match instant (via the controllable clock) once, to anchor
+        // any time-based chaos outage window on this expectation
+        chaosFirstMatchEpochMillis.compareAndSet(0L, TimeService.currentTimeMillis());
         return true;
     }
 
     @JsonIgnore
     public int getMatchCount() {
         return matchCount.get();
+    }
+
+    /**
+     * Epoch-ms (from the controllable clock) of this expectation's first match, or
+     * {@code 0} if it has not been matched yet. Anchors any time-based chaos outage
+     * window. Transient runtime state — not serialized, not cloned.
+     */
+    @JsonIgnore
+    public long getChaosFirstMatchEpochMillis() {
+        return chaosFirstMatchEpochMillis.get();
     }
 
     @SuppressWarnings("PointlessNullCheck")

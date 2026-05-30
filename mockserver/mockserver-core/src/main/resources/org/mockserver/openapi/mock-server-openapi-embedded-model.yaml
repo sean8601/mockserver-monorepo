@@ -1169,6 +1169,16 @@ components:
         failRequestCount:
           type: integer
           minimum: 1
+        outageAfterMillis:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "Time-based outage window: chaos becomes active this many milliseconds after the expectation's first match (measured via the controllable clock)"
+        outageDurationMillis:
+          type: integer
+          format: int64
+          minimum: 1
+          description: "Time-based outage window: chaos stays active for this many milliseconds then self-heals; omit for an unbounded outage"
     Delay:
       description: "response delay"
       type: object

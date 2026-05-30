@@ -11,6 +11,8 @@ _FIELD_MAP = {
     "retry_after": "retryAfter",
     "succeed_first": "succeedFirst",
     "fail_request_count": "failRequestCount",
+    "outage_after_millis": "outageAfterMillis",
+    "outage_duration_millis": "outageDurationMillis",
     "status_code": "statusCode",
     "reason_phrase": "reasonPhrase",
     "keep_alive": "keepAlive",
@@ -315,6 +317,8 @@ class HttpChaosProfile:
     seed: int | None = None
     succeed_first: int | None = None
     fail_request_count: int | None = None
+    outage_after_millis: int | None = None
+    outage_duration_millis: int | None = None
 
     def to_dict(self) -> dict:
         return _strip_none({
@@ -326,6 +330,8 @@ class HttpChaosProfile:
             "seed": self.seed,
             "succeedFirst": self.succeed_first,
             "failRequestCount": self.fail_request_count,
+            "outageAfterMillis": self.outage_after_millis,
+            "outageDurationMillis": self.outage_duration_millis,
         })
 
     @classmethod
@@ -341,6 +347,8 @@ class HttpChaosProfile:
             seed=data.get("seed"),
             succeed_first=data.get("succeedFirst"),
             fail_request_count=data.get("failRequestCount"),
+            outage_after_millis=data.get("outageAfterMillis"),
+            outage_duration_millis=data.get("outageDurationMillis"),
         )
 
 

@@ -599,4 +599,23 @@ public class ExpectationTest {
         assertEquals(a, b);
         assertFalse(a.equals(c));
     }
+
+    @Test
+    public void shouldAnchorChaosFirstMatchEpochOnceOnFirstMatch() {
+        try {
+            org.mockserver.time.TimeService.freeze(java.time.Instant.ofEpochMilli(1_000_000L));
+            Expectation expectation = new Expectation(request());
+            // before any match the anchor is unset
+            assertThat(expectation.getChaosFirstMatchEpochMillis(), is(0L));
+            // first match records the anchor via the controllable clock
+            assertTrue(expectation.consumeMatch());
+            assertThat(expectation.getChaosFirstMatchEpochMillis(), is(1_000_000L));
+            // advancing the clock and matching again must NOT move the anchor (set-once)
+            org.mockserver.time.TimeService.advance(java.time.Duration.ofMillis(5_000L));
+            assertTrue(expectation.consumeMatch());
+            assertThat(expectation.getChaosFirstMatchEpochMillis(), is(1_000_000L));
+        } finally {
+            org.mockserver.time.TimeService.reset();
+        }
+    }
 }

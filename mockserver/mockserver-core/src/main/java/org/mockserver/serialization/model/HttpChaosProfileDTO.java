@@ -13,6 +13,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
     private Long seed;
     private Integer succeedFirst;
     private Integer failRequestCount;
+    private Long outageAfterMillis;
+    private Long outageDurationMillis;
 
     public HttpChaosProfileDTO(HttpChaosProfile httpChaosProfile) {
         if (httpChaosProfile != null) {
@@ -26,6 +28,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             seed = httpChaosProfile.getSeed();
             succeedFirst = httpChaosProfile.getSucceedFirst();
             failRequestCount = httpChaosProfile.getFailRequestCount();
+            outageAfterMillis = httpChaosProfile.getOutageAfterMillis();
+            outageDurationMillis = httpChaosProfile.getOutageDurationMillis();
         }
     }
 
@@ -41,7 +45,9 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             .withLatency(latency != null ? latency.buildObject() : null)
             .withSeed(seed)
             .withSucceedFirst(succeedFirst)
-            .withFailRequestCount(failRequestCount);
+            .withFailRequestCount(failRequestCount)
+            .withOutageAfterMillis(outageAfterMillis)
+            .withOutageDurationMillis(outageDurationMillis);
     }
 
     public Integer getErrorStatus() {
@@ -113,6 +119,24 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
 
     public HttpChaosProfileDTO setFailRequestCount(Integer failRequestCount) {
         this.failRequestCount = failRequestCount;
+        return this;
+    }
+
+    public Long getOutageAfterMillis() {
+        return outageAfterMillis;
+    }
+
+    public HttpChaosProfileDTO setOutageAfterMillis(Long outageAfterMillis) {
+        this.outageAfterMillis = outageAfterMillis;
+        return this;
+    }
+
+    public Long getOutageDurationMillis() {
+        return outageDurationMillis;
+    }
+
+    public HttpChaosProfileDTO setOutageDurationMillis(Long outageDurationMillis) {
+        this.outageDurationMillis = outageDurationMillis;
         return this;
     }
 }

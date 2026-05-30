@@ -418,4 +418,102 @@ public class HttpChaosProfileTest {
         assertThat(deserialized[0].getChaos().getSucceedFirst() == null, is(true));
         assertThat(deserialized[0].getChaos().getFailRequestCount() == null, is(true));
     }
+
+    // --- time-based outage window ---
+
+    @Test
+    public void shouldAcceptValidOutageFields() {
+        HttpChaosProfile chaos = httpChaosProfile()
+            .withOutageAfterMillis(0L)
+            .withOutageDurationMillis(1L);
+        assertThat(chaos.getOutageAfterMillis(), is(0L));
+        assertThat(chaos.getOutageDurationMillis(), is(1L));
+
+        HttpChaosProfile nullChaos = httpChaosProfile()
+            .withOutageAfterMillis(null)
+            .withOutageDurationMillis(null);
+        assertThat(nullChaos.getOutageAfterMillis() == null, is(true));
+        assertThat(nullChaos.getOutageDurationMillis() == null, is(true));
+    }
+
+    @Test
+    public void shouldRejectNegativeOutageAfterMillis() {
+        assertThrows(IllegalArgumentException.class, () -> httpChaosProfile().withOutageAfterMillis(-1L));
+    }
+
+    @Test
+    public void shouldRejectOutageDurationMillisBelowOne() {
+        assertThrows(IllegalArgumentException.class, () -> httpChaosProfile().withOutageDurationMillis(0L));
+    }
+
+    @Test
+    public void shouldIncludeOutageFieldsInEqualsAndHashCode() {
+        HttpChaosProfile one = httpChaosProfile().withOutageAfterMillis(5000L).withOutageDurationMillis(10000L);
+        HttpChaosProfile two = httpChaosProfile().withOutageAfterMillis(5000L).withOutageDurationMillis(10000L);
+        HttpChaosProfile different = httpChaosProfile().withOutageAfterMillis(5000L).withOutageDurationMillis(9999L);
+        assertThat(one, is(equalTo(two)));
+        assertThat(one.hashCode(), is(two.hashCode()));
+        assertThat(one, is(not(equalTo(different))));
+    }
+
+    @Test
+    public void timeWindowEligibleReturnsTrueWhenNoWindowConfigured() {
+        HttpChaosProfile chaos = httpChaosProfile().withErrorProbability(1.0);
+        assertThat(chaos.timeWindowEligible(1_000L, 1_000_000L), is(true));
+        assertThat(chaos.timeWindowEligible(0L, 0L), is(true));
+    }
+
+    @Test
+    public void timeWindowEligibleGatesOnTheConfiguredWindow() {
+        HttpChaosProfile chaos = httpChaosProfile()
+            .withOutageAfterMillis(5_000L)
+            .withOutageDurationMillis(10_000L);
+        long anchor = 1_000_000L;
+        // before the window opens
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 4_999L), is(false));
+        // exactly at the window open
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 5_000L), is(true));
+        // inside the window
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 10_000L), is(true));
+        // exactly at the window close (exclusive) — healed
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 15_000L), is(false));
+        // after the window — healed
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 20_000L), is(false));
+    }
+
+    @Test
+    public void timeWindowEligibleFailsOpenWhenAnchorUnknown() {
+        HttpChaosProfile chaos = httpChaosProfile().withOutageAfterMillis(5_000L).withOutageDurationMillis(10_000L);
+        assertThat(chaos.timeWindowEligible(0L, 1_000_000L), is(true));
+    }
+
+    @Test
+    public void timeWindowEligibleHonoursUnboundedDuration() {
+        HttpChaosProfile chaos = httpChaosProfile().withOutageAfterMillis(5_000L);
+        long anchor = 1_000_000L;
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 4_999L), is(false));
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 5_000L), is(true));
+        assertThat(chaos.timeWindowEligible(anchor, anchor + 1_000_000L), is(true));
+    }
+
+    @Test
+    public void expectationWithChaosOutageFieldsRoundTripsViaSerializer() {
+        ExpectationSerializer serializer = new ExpectationSerializer(new MockServerLogger());
+
+        Expectation original = new Expectation(request("/test"))
+            .thenRespond(response("ok"))
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withOutageAfterMillis(5000L)
+                .withOutageDurationMillis(10000L));
+
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
+        assertThat(deserialized[0].getChaos().getOutageAfterMillis(), is(5000L));
+        assertThat(deserialized[0].getChaos().getOutageDurationMillis(), is(10000L));
+    }
 }

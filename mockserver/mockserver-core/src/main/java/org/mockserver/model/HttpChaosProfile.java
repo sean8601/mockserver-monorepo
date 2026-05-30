@@ -38,6 +38,18 @@ import java.util.Objects;
  * with the probabilistic error draw: a match must be within the window AND
  * pass the probability check to receive an injected fault.
  * <p>
+ * Time-based outage window: {@code outageAfterMillis} and
+ * {@code outageDurationMillis} define a self-healing window, measured relative
+ * to the expectation's first match, during which chaos is active. The window
+ * opens {@code outageAfterMillis} ms after the first match and (when a duration
+ * is set) closes after {@code outageDurationMillis} ms, after which the service
+ * behaves normally again. The window is measured with the controllable clock
+ * ({@link org.mockserver.time.TimeService}), so freezing/advancing the clock
+ * (e.g. via {@code PUT /mockserver/clock}) makes it deterministic in tests. It
+ * composes with the count window and the probability draws: a fault fires only
+ * when the request is inside the time window AND the count window AND the draw
+ * passes. When both fields are {@code null} there is no time gate.
+ * <p>
  * Follows the model field/{@code withX}/getter convention so it round-trips
  * without a bespoke (de)serializer.
  */
@@ -52,6 +64,8 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     private Long seed;                 // optional, makes a fractional errorProbability reproducible
     private Integer succeedFirst;      // first N matches are NOT eligible for chaos (>= 0; null = 0)
     private Integer failRequestCount;  // after succeedFirst, next M matches ARE eligible (>= 1; null = unlimited)
+    private Long outageAfterMillis;    // chaos starts this many ms after the first match (>= 0; null = 0)
+    private Long outageDurationMillis; // after outageAfterMillis, chaos stays active for this long then self-heals (>= 1; null = unbounded)
 
     public static HttpChaosProfile httpChaosProfile() {
         return new HttpChaosProfile();
@@ -152,6 +166,65 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
         return failRequestCount;
     }
 
+    public HttpChaosProfile withOutageAfterMillis(Long outageAfterMillis) {
+        if (outageAfterMillis != null && outageAfterMillis < 0) {
+            throw new IllegalArgumentException("outageAfterMillis must be >= 0, got " + outageAfterMillis);
+        }
+        this.outageAfterMillis = outageAfterMillis;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Long getOutageAfterMillis() {
+        return outageAfterMillis;
+    }
+
+    public HttpChaosProfile withOutageDurationMillis(Long outageDurationMillis) {
+        if (outageDurationMillis != null && outageDurationMillis < 1) {
+            throw new IllegalArgumentException("outageDurationMillis must be >= 1, got " + outageDurationMillis);
+        }
+        this.outageDurationMillis = outageDurationMillis;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Long getOutageDurationMillis() {
+        return outageDurationMillis;
+    }
+
+    /**
+     * Returns {@code true} when the request falls within the time-based outage
+     * window defined by {@code outageAfterMillis} and {@code outageDurationMillis},
+     * measured relative to the expectation's first match. When both fields are
+     * {@code null} there is no time gate and this returns {@code true} (backward
+     * compatible). The window opens {@code outageAfterMillis} ms after the first
+     * match and, when {@code outageDurationMillis} is set, closes (self-heals)
+     * after that duration. The instants are supplied by the controllable clock
+     * ({@link org.mockserver.time.TimeService}) so the window is deterministic
+     * under clock freeze/advance.
+     *
+     * @param firstMatchEpochMillis epoch-ms of the expectation's first match (0 when not yet recorded)
+     * @param nowEpochMillis        the current epoch-ms (from the controllable clock)
+     * @return {@code true} if this request is inside the outage window (or there is no window)
+     */
+    public boolean timeWindowEligible(long firstMatchEpochMillis, long nowEpochMillis) {
+        if (outageAfterMillis == null && outageDurationMillis == null) {
+            return true;
+        }
+        if (firstMatchEpochMillis <= 0L) {
+            return true;
+        }
+        long elapsed = nowEpochMillis - firstMatchEpochMillis;
+        long start = outageAfterMillis != null ? outageAfterMillis : 0L;
+        if (elapsed < start) {
+            return false;
+        }
+        if (outageDurationMillis != null && elapsed >= start + outageDurationMillis) {
+            return false;
+        }
+        return true;
+    }
+
     /**
      * Returns {@code true} when the given 1-based match count falls within the
      * chaos-eligible window defined by {@code succeedFirst} and
@@ -196,13 +269,15 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
             Objects.equals(latency, that.latency) &&
             Objects.equals(seed, that.seed) &&
             Objects.equals(succeedFirst, that.succeedFirst) &&
-            Objects.equals(failRequestCount, that.failRequestCount);
+            Objects.equals(failRequestCount, that.failRequestCount) &&
+            Objects.equals(outageAfterMillis, that.outageAfterMillis) &&
+            Objects.equals(outageDurationMillis, that.outageDurationMillis);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis);
         }
         return hashCode;
     }

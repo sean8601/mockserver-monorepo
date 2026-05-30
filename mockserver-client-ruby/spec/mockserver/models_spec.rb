@@ -1736,6 +1736,15 @@ RSpec.describe 'MockServer models' do
       expect(restored.drop_connection_probability).to eq(0.75)
     end
 
+    it 'serializes and deserializes the time-based outage window' do
+      chaos = MockServer::HttpChaosProfile.new(outage_after_millis: 5000, outage_duration_millis: 10000)
+      h = chaos.to_h
+      expect(h).to eq({ 'outageAfterMillis' => 5000, 'outageDurationMillis' => 10000 })
+      restored = MockServer::HttpChaosProfile.from_hash(h)
+      expect(restored.outage_after_millis).to eq(5000)
+      expect(restored.outage_duration_millis).to eq(10000)
+    end
+
     it 'round-trips correctly' do
       original = MockServer::HttpChaosProfile.new(
         error_status: 503,

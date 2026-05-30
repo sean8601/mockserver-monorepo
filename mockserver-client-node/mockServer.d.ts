@@ -343,6 +343,8 @@ export interface HttpChaosProfile {
   seed?: number;
   succeedFirst?: number;
   failRequestCount?: number;
+  outageAfterMillis?: number;
+  outageDurationMillis?: number;
 }
 
 export interface AfterAction {

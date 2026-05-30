@@ -171,6 +171,8 @@ public class McpToolRegistry {
             chaosProps.putObject("seed").put("type", "integer").put("description", "Optional seed for reproducible probabilistic draws");
             chaosProps.putObject("succeedFirst").put("type", "integer").put("description", "First N matches are NOT eligible for chaos (>= 0)");
             chaosProps.putObject("failRequestCount").put("type", "integer").put("description", "After succeedFirst, next M matches ARE eligible for chaos (>= 1)");
+            chaosProps.putObject("outageAfterMillis").put("type", "integer").put("description", "Time-based outage window: chaos becomes active this many ms after the first match (>= 0)");
+            chaosProps.putObject("outageDurationMillis").put("type", "integer").put("description", "Time-based outage window: chaos stays active for this many ms then self-heals (>= 1)");
         }
         ArrayNode required = schema.putArray("required");
         required.add("method");
@@ -311,6 +313,14 @@ public class McpToolRegistry {
                 JsonNode failRequestCountNode = chaosNode.path("failRequestCount");
                 if (!failRequestCountNode.isMissingNode() && !failRequestCountNode.isNull()) {
                     chaos.withFailRequestCount(failRequestCountNode.asInt());
+                }
+                JsonNode outageAfterMillisNode = chaosNode.path("outageAfterMillis");
+                if (!outageAfterMillisNode.isMissingNode() && !outageAfterMillisNode.isNull()) {
+                    chaos.withOutageAfterMillis(outageAfterMillisNode.asLong());
+                }
+                JsonNode outageDurationMillisNode = chaosNode.path("outageDurationMillis");
+                if (!outageDurationMillisNode.isMissingNode() && !outageDurationMillisNode.isNull()) {
+                    chaos.withOutageDurationMillis(outageDurationMillisNode.asLong());
                 }
                 expectation.withChaos(chaos);
             }

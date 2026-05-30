@@ -67,7 +67,9 @@ module MockServer
     'drop_connection_probability'    => 'dropConnectionProbability',
     'retry_after'                    => 'retryAfter',
     'succeed_first'                  => 'succeedFirst',
-    'fail_request_count'             => 'failRequestCount'
+    'fail_request_count'             => 'failRequestCount',
+    'outage_after_millis'            => 'outageAfterMillis',
+    'outage_duration_millis'         => 'outageDurationMillis'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -1154,10 +1156,12 @@ module MockServer
 
   class HttpChaosProfile
     attr_accessor :error_status, :error_probability, :drop_connection_probability,
-                  :retry_after, :latency, :seed, :succeed_first, :fail_request_count
+                  :retry_after, :latency, :seed, :succeed_first, :fail_request_count,
+                  :outage_after_millis, :outage_duration_millis
 
     def initialize(error_status: nil, error_probability: nil, drop_connection_probability: nil,
-                   retry_after: nil, latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil)
+                   retry_after: nil, latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil,
+                   outage_after_millis: nil, outage_duration_millis: nil)
       @error_status = error_status
       @error_probability = error_probability
       @drop_connection_probability = drop_connection_probability
@@ -1166,6 +1170,8 @@ module MockServer
       @seed = seed
       @succeed_first = succeed_first
       @fail_request_count = fail_request_count
+      @outage_after_millis = outage_after_millis
+      @outage_duration_millis = outage_duration_millis
     end
 
     def to_h
@@ -1177,7 +1183,9 @@ module MockServer
         'latency'                    => @latency&.to_h,
         'seed'                       => @seed,
         'succeedFirst'               => @succeed_first,
-        'failRequestCount'           => @fail_request_count
+        'failRequestCount'           => @fail_request_count,
+        'outageAfterMillis'          => @outage_after_millis,
+        'outageDurationMillis'       => @outage_duration_millis
       })
     end
 
@@ -1192,7 +1200,9 @@ module MockServer
         latency:                     Delay.from_hash(data['latency']),
         seed:                        data['seed'],
         succeed_first:               data['succeedFirst'],
-        fail_request_count:          data['failRequestCount']
+        fail_request_count:          data['failRequestCount'],
+        outage_after_millis:         data['outageAfterMillis'],
+        outage_duration_millis:      data['outageDurationMillis']
       )
     end
   end

@@ -667,6 +667,39 @@ public class HttpActionHandlerChaosTest {
         assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(1.0));
     }
 
+    @Test
+    public void chaosIsGatedByTimeBasedOutageWindow() {
+        try {
+            // freeze the controllable clock so the outage window is deterministic
+            org.mockserver.time.TimeService.freeze(java.time.Instant.ofEpochMilli(2_000_000L));
+            HttpRequest request = request("some_path");
+            HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+            Expectation expectation = new Expectation(request)
+                .thenRespond(normalResponse)
+                .withChaos(httpChaosProfile()
+                    .withErrorStatus(503)
+                    .withErrorProbability(1.0)
+                    .withOutageAfterMillis(5_000L)
+                    .withOutageDurationMillis(10_000L));
+
+            // first request anchors the window at the frozen instant; elapsed 0 -> before the window -> normal
+            HttpResponse before = dispatchAndCapture(request, expectation, normalResponse);
+            assertThat(before.getBodyAsString(), is("normal body"));
+
+            // advance into the window -> chaos error injected
+            org.mockserver.time.TimeService.advance(java.time.Duration.ofMillis(6_000L));
+            HttpResponse during = dispatchAndCapture(request, expectation, normalResponse);
+            assertThat(during.getStatusCode(), is(503));
+
+            // advance past the window -> self-healed -> normal
+            org.mockserver.time.TimeService.advance(java.time.Duration.ofMillis(10_000L));
+            HttpResponse after = dispatchAndCapture(request, expectation, normalResponse);
+            assertThat(after.getBodyAsString(), is("normal body"));
+        } finally {
+            org.mockserver.time.TimeService.reset();
+        }
+    }
+
     private static double scrapeCounterValue(String name, String labelName, String labelValue) {
         MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
         for (MetricSnapshot snapshot : snapshots) {

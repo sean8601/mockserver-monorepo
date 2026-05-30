@@ -2101,6 +2101,8 @@ class TestHttpChaosProfile:
         assert chaos.seed is None
         assert chaos.succeed_first is None
         assert chaos.fail_request_count is None
+        assert chaos.outage_after_millis is None
+        assert chaos.outage_duration_millis is None
 
     def test_construction_all_fields(self):
         chaos = HttpChaosProfile(
@@ -2215,6 +2217,15 @@ class TestHttpChaosProfile:
 
         restored = HttpChaosProfile.from_dict(result)
         assert restored.drop_connection_probability == 0.75
+
+    def test_outage_window(self):
+        chaos = HttpChaosProfile(outage_after_millis=5000, outage_duration_millis=10000)
+        result = chaos.to_dict()
+        assert result == {"outageAfterMillis": 5000, "outageDurationMillis": 10000}
+
+        restored = HttpChaosProfile.from_dict(result)
+        assert restored.outage_after_millis == 5000
+        assert restored.outage_duration_millis == 10000
 
 
 class TestRequestDefinitionAlias:

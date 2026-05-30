@@ -10,7 +10,7 @@ sitemap:
   priority: 0.9
   changefreq: 'monthly'
   lastmod: 2026-05-30T08:00:00+00:00
-keywords: chaos testing, fault injection, resilience testing, latency injection, connection drop, simulate outage, SRE testing, retry and backoff testing, mock 429 rate limit, chaos testing in kubernetes
+keywords: chaos testing, fault injection, resilience testing, latency injection, connection drop, simulate outage, outage window, time-based fault injection, SRE testing, retry and backoff testing, mock 429 rate limit, chaos testing in kubernetes
 schema_faq:
   - question: "How do I simulate a 429 rate limit with MockServer?"
     answer: "Add a chaos profile to your expectation with errorStatus set to 429, errorProbability set to 1.0 for every request (or a fraction like 0.3 for 30% of requests), and an optional retryAfter value. The chaos profile works on both mocked responses and forwarded/proxied upstream calls."
@@ -103,8 +103,41 @@ schema_faq:
             <td>After the <code class="inline code">succeedFirst</code> window, the next M matching requests receive chaos; after <code class="inline code">succeedFirst</code> + M matches the expectation recovers (normal responses). Omit for unlimited faults after the succeed window.</td>
             <td>&ge; 1 (default: omitted = unlimited)</td>
         </tr>
+        <tr>
+            <td><code class="inline code">outageAfterMillis</code></td>
+            <td>integer</td>
+            <td>Time-based outage window: chaos becomes active this many milliseconds after the expectation's <em>first</em> matched request. Before this point requests behave normally. Combine with <code class="inline code">outageDurationMillis</code> for a self-healing outage.</td>
+            <td>&ge; 0 (default: omitted = 0)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">outageDurationMillis</code></td>
+            <td>integer</td>
+            <td>Time-based outage window: once the outage has started, chaos stays active for this many milliseconds, then the expectation self-heals and serves normal responses again. Omit for an outage that never ends.</td>
+            <td>&ge; 1 (default: omitted = unbounded)</td>
+        </tr>
     </tbody>
 </table>
+
+<a id="outage_windows" class="anchor" href="#outage_windows">&nbsp;</a>
+
+<h2>Outage Windows (time-based)</h2>
+
+<p>
+    The <code class="inline code">outageAfterMillis</code> and <code class="inline code">outageDurationMillis</code> fields define a
+    self-healing outage window measured relative to the expectation's first matched request: chaos is active only from
+    <code class="inline code">outageAfterMillis</code> until <code class="inline code">outageAfterMillis</code> +
+    <code class="inline code">outageDurationMillis</code> have elapsed, after which the service recovers automatically. This models a
+    dependency that is healthy for a while, degrades for a bounded period, then comes back &mdash; ideal for testing how a service
+    behaves across a transient downstream outage. The time window composes with the count window and the probability fields: a
+    fault fires only when the request falls inside the time window <em>and</em> the count window <em>and</em> the probability draw
+    passes.
+</p>
+<p>
+    Outage windows are measured with MockServer's controllable clock, so tests do not have to wait in real time. Freeze and
+    advance the clock with the <a href="/mock_server/clearing_and_resetting.html#clock_control"><code class="inline code">PUT /mockserver/clock</code></a>
+    control-plane endpoint to step deterministically from "before the outage" to "during the outage" to "recovered" without any
+    <code class="inline code">sleep</code> calls.
+</p>
 
 <a id="where_chaos_applies" class="anchor" href="#where_chaos_applies">&nbsp;</a>
 
