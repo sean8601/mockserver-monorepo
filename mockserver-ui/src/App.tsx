@@ -17,6 +17,7 @@ import TrafficInspector from './components/TrafficInspector';
 import SessionInspector from './components/SessionInspector';
 import ComposerView from './components/ComposerView';
 import LibraryView from './components/LibraryView';
+import MetricsView from './components/MetricsView';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import type { RequestFilter } from './types';
 
@@ -99,6 +100,7 @@ export default function App() {
           {view === 'sessions' && <SessionInspector connectionParams={params} />}
           {view === 'composer' && <ComposerView connectionParams={params} />}
           {view === 'library' && <LibraryView connectionParams={params} />}
+          {view === 'metrics' && <MetricsView connectionParams={params} />}
         </Box>
         <DebugMismatchDialog />
       </DebugMismatchContext.Provider>

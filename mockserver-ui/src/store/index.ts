@@ -10,7 +10,7 @@ import type {
 } from '../types';
 import { ACTION_TYPES, LLM_PROVIDERS } from '../lib/clientFilters';
 
-export type ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library';
+export type ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'metrics';
 
 interface DashboardState {
   logMessages: LogMessage[];

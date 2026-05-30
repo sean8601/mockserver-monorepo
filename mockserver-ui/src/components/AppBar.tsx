@@ -23,6 +23,7 @@ import TrafficIcon from '@mui/icons-material/Traffic';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PostAddIcon from '@mui/icons-material/PostAdd';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
+import SpeedIcon from '@mui/icons-material/Speed';
 import { useState } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
 import type { ConnectionStatus } from '../types';
@@ -149,6 +150,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           <ToggleButton value="library" aria-label="Library of captured content">
             <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Library
+          </ToggleButton>
+          <ToggleButton value="metrics" aria-label="Metrics view">
+            <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Metrics
           </ToggleButton>
         </ToggleButtonGroup>
         <Box sx={{ flex: 1 }} />

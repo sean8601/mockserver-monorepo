@@ -92,15 +92,15 @@ The `DashboardWebSocketHandler` implements both `MockServerLogListener` and `Moc
 
 ## Top-Level Views
 
-The dashboard has **five top-level views** controlled by a toggle strip in the AppBar: **Dashboard**, **Traffic**, **Sessions**, **Composer**, and **Library**. The view state is stored in Zustand as `view: ViewMode` where `ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'`.
+The dashboard has **six top-level views** controlled by a toggle strip in the AppBar: **Dashboard**, **Traffic**, **Sessions**, **Composer**, **Library**, and **Metrics**. The view state is stored in Zustand as `view: ViewMode` where `ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'metrics'`.
 
-The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on Composer and Library.
+The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on Composer, Library, and Metrics.
 
 ```mermaid
 graph TB
     APP["App.tsx"]
     AB["AppBar.tsx
-5-button toggle strip"]
+6-button toggle strip"]
     FP["FilterPanel.tsx
 (dashboard, traffic, sessions only)"]
     DG["DashboardGrid.tsx
@@ -113,6 +113,8 @@ graph TB
 (view = 'composer')"]
     LV["LibraryView.tsx
 (view = 'library')"]
+    MV["MetricsView.tsx
+(view = 'metrics')"]
 
     APP --> AB
     APP --> FP
@@ -122,7 +124,19 @@ graph TB
     APP -->|view = sessions| SI
     APP -->|view = composer| CV
     APP -->|view = library| LV
+    APP -->|view = metrics| MV
 ```
+
+## Metrics View
+
+`MetricsView.tsx` (view = `metrics`) is the dashboard's observability surface. Unlike the other views — which are pushed data over the WebSocket — it **polls** MockServer's Prometheus endpoint `GET /mockserver/metrics` on an interval (default 3s) via the `useMetricsPolling` hook, parses the text exposition format (`lib/prometheusParser.ts`), and keeps a rolling history so it can derive time series client-side (`lib/metricsDerive.ts`).
+
+It renders:
+- summary stat cards (requests received, matched, not-matched, forwarded) with inline-SVG sparklines (`Sparkline.tsx`),
+- a derived requests-per-second throughput chart (Δcount / Δt between scrapes, since the metrics are monotonic gauges), and
+- a per-action breakdown of the `*_actions_count` gauges, plus the served MockServer version from `mock_server_build_info`.
+
+There is **no charting dependency** (inline SVG) and no server change required. Because metrics are off by default, a 404 is treated as a first-class `disabled` state that shows the user how to enable them (`metricsEnabled`) rather than an error.
 
 ## Dashboard View
 
