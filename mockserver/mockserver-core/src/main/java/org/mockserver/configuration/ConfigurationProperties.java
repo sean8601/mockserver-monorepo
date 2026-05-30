@@ -41,7 +41,9 @@ import static org.slf4j.event.Level.DEBUG;
  */
 public class ConfigurationProperties {
 
-    private static final MockServerLogger MOCK_SERVER_LOGGER = new MockServerLogger(ConfigurationProperties.class);
+    private static final class LoggerHolder {
+        private static final MockServerLogger LOGGER = new MockServerLogger(ConfigurationProperties.class);
+    }
 
     private static final String DEFAULT_LOG_LEVEL = "INFO";
 
@@ -241,6 +243,16 @@ public class ConfigurationProperties {
     // properties file
     private static final String MOCKSERVER_PROPERTY_FILE = "mockserver.propertyFile";
     public static final Properties PROPERTIES = readPropertyFile();
+
+    static {
+        // Apply the configured log level to java.util.logging once PROPERTIES is loaded.
+        // MockServerLogger.<clinit> installs only the default format (it no longer reads
+        // ConfigurationProperties), so this is the point at which a configured level
+        // (e.g. -Dmockserver.logLevel=DEBUG) is pushed into java.util.logging at startup.
+        // The dependency is one-way (ConfigurationProperties -> MockServerLogger), so there
+        // is no class-init cycle.
+        MockServerLogger.configureLogger();
+    }
 
     private static Map<String, String> slf4jOrJavaLoggerToJavaLoggerLevelMapping;
 
@@ -519,7 +531,7 @@ public class ConfigurationProperties {
                 return ObjectMapperFactory.createObjectMapper().readValue(overridesJson, new TypeReference<Map<String, String>>() {
                 });
             } catch (Exception e) {
-                MOCK_SERVER_LOGGER.logEvent(
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setType(SERVER_CONFIGURATION)
                         .setLogLevel(Level.WARN)
@@ -548,7 +560,7 @@ public class ConfigurationProperties {
             try {
                 setProperty(MOCKSERVER_LOG_LEVEL_OVERRIDES, ObjectMapperFactory.createObjectMapper().writeValueAsString(overrides));
             } catch (Exception e) {
-                MOCK_SERVER_LOGGER.logEvent(
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setType(SERVER_CONFIGURATION)
                         .setLogLevel(Level.WARN)
@@ -971,8 +983,8 @@ public class ConfigurationProperties {
     public static int maxLlmConversationBodySize() {
         int value = readIntegerProperty(MOCKSERVER_MAX_LLM_CONVERSATION_BODY_SIZE, "MOCKSERVER_MAX_LLM_CONVERSATION_BODY_SIZE", 1048576);
         if (value < 16384) {
-            if (MOCK_SERVER_LOGGER != null) {
-                MOCK_SERVER_LOGGER.logEvent(
+            if (LoggerHolder.LOGGER != null) {
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
                         .setLogLevel(Level.INFO)
@@ -983,8 +995,8 @@ public class ConfigurationProperties {
             return 16384;
         }
         if (value > 67108864) {
-            if (MOCK_SERVER_LOGGER != null) {
-                MOCK_SERVER_LOGGER.logEvent(
+            if (LoggerHolder.LOGGER != null) {
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
                         .setLogLevel(Level.INFO)
@@ -1916,8 +1928,8 @@ public class ConfigurationProperties {
         try {
             return ObjectMapperFactory.createObjectMapper().readValue(value, new TypeReference<List<ProxyPassMapping>>() {});
         } catch (Exception e) {
-            if (MOCK_SERVER_LOGGER != null) {
-                MOCK_SERVER_LOGGER.logEvent(
+            if (LoggerHolder.LOGGER != null) {
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.ERROR)
                         .setMessageFormat("invalid proxyPass value: " + value)
@@ -1947,8 +1959,8 @@ public class ConfigurationProperties {
         try {
             setProperty(MOCKSERVER_PROXY_PASS, ObjectMapperFactory.createObjectMapper().writeValueAsString(mappings));
         } catch (Exception e) {
-            if (MOCK_SERVER_LOGGER != null) {
-                MOCK_SERVER_LOGGER.logEvent(
+            if (LoggerHolder.LOGGER != null) {
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.ERROR)
                         .setMessageFormat("failed to serialize proxyPass mappings")
@@ -1966,7 +1978,7 @@ public class ConfigurationProperties {
         try {
             long millis = Long.parseLong(value);
             if (millis < 0) {
-                MOCK_SERVER_LOGGER.logEvent(
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.ERROR)
                         .setMessageFormat("invalid value {} for globalResponseDelayMillis, must be >= 0")
@@ -2585,7 +2597,7 @@ public class ConfigurationProperties {
                 try {
                     inetSocketAddress = new InetSocketAddress(proxyParts[0], Integer.parseInt(proxyParts[1]));
                 } catch (NumberFormatException nfe) {
-                    MOCK_SERVER_LOGGER.logEvent(
+                    LoggerHolder.LOGGER.logEvent(
                         new LogEntry()
                             .setLogLevel(Level.ERROR)
                             .setMessageFormat("NumberFormatException converting value \"" + proxyParts[1] + "\" into an integer")
@@ -2601,7 +2613,7 @@ public class ConfigurationProperties {
         try {
             return Integer.parseInt(readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue));
         } catch (NumberFormatException nfe) {
-            MOCK_SERVER_LOGGER.logEvent(
+            LoggerHolder.LOGGER.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat("NumberFormatException converting " + key + " with value [" + readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue) + "]")
@@ -2615,7 +2627,7 @@ public class ConfigurationProperties {
         try {
             return Long.parseLong(readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue));
         } catch (NumberFormatException nfe) {
-            MOCK_SERVER_LOGGER.logEvent(
+            LoggerHolder.LOGGER.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat("NumberFormatException converting " + key + " with value [" + readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue) + "]")
@@ -2639,8 +2651,8 @@ public class ConfigurationProperties {
                         properties.load(inputStream);
                     } catch (IOException e) {
                         e.printStackTrace();
-                        if (MOCK_SERVER_LOGGER != null) {
-                            MOCK_SERVER_LOGGER.logEvent(
+                        if (LoggerHolder.LOGGER != null) {
+                            LoggerHolder.LOGGER.logEvent(
                                 new LogEntry()
                                     .setAlwaysLog(true)
                                     .setLogLevel(Level.ERROR)
@@ -2650,8 +2662,8 @@ public class ConfigurationProperties {
                         }
                     }
                 } else {
-                    if (MOCK_SERVER_LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
-                        MOCK_SERVER_LOGGER.logEvent(
+                    if (LoggerHolder.LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
+                        LoggerHolder.LOGGER.logEvent(
                             new LogEntry()
                                 .setType(SERVER_CONFIGURATION)
                                 .setLogLevel(DEBUG)
@@ -2661,8 +2673,8 @@ public class ConfigurationProperties {
                     try {
                         properties.load(new FileInputStream(propertyFile()));
                     } catch (FileNotFoundException e) {
-                        if (MOCK_SERVER_LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
-                            MOCK_SERVER_LOGGER.logEvent(
+                        if (LoggerHolder.LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
+                            LoggerHolder.LOGGER.logEvent(
                                 new LogEntry()
                                     .setType(SERVER_CONFIGURATION)
                                     .setLogLevel(DEBUG)
@@ -2671,8 +2683,8 @@ public class ConfigurationProperties {
                         }
                     } catch (IOException e) {
                         e.printStackTrace();
-                        if (MOCK_SERVER_LOGGER != null) {
-                            MOCK_SERVER_LOGGER.logEvent(
+                        if (LoggerHolder.LOGGER != null) {
+                            LoggerHolder.LOGGER.logEvent(
                                 new LogEntry()
                                     .setAlwaysLog(true)
                                     .setLogLevel(Level.ERROR)
@@ -2698,8 +2710,8 @@ public class ConfigurationProperties {
             }
 
             Level logLevel = Level.valueOf(getSLF4JOrJavaLoggerToSLF4JLevelMapping().get(readPropertyHierarchically(properties, MOCKSERVER_LOG_LEVEL, "MOCKSERVER_LOG_LEVEL", DEFAULT_LOG_LEVEL).toUpperCase()));
-            if (MOCK_SERVER_LOGGER != null && MockServerLogger.isEnabled(Level.INFO, logLevel)) {
-                MOCK_SERVER_LOGGER.logEvent(
+            if (LoggerHolder.LOGGER != null && MockServerLogger.isEnabled(Level.INFO, logLevel)) {
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setAlwaysLog(true)
                         .setType(SERVER_CONFIGURATION)
@@ -2721,8 +2733,8 @@ public class ConfigurationProperties {
                 try {
                     inputStream = new FileInputStream(propertyFile());
                 } catch (FileNotFoundException e) {
-                    if (MOCK_SERVER_LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
-                        MOCK_SERVER_LOGGER.logEvent(
+                    if (LoggerHolder.LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
+                        LoggerHolder.LOGGER.logEvent(
                             new LogEntry()
                                 .setType(SERVER_CONFIGURATION)
                                 .setLogLevel(DEBUG)
@@ -2752,8 +2764,8 @@ public class ConfigurationProperties {
             }
         } catch (IOException e) {
             e.printStackTrace();
-            if (MOCK_SERVER_LOGGER != null) {
-                MOCK_SERVER_LOGGER.logEvent(
+            if (LoggerHolder.LOGGER != null) {
+                LoggerHolder.LOGGER.logEvent(
                     new LogEntry()
                         .setAlwaysLog(true)
                         .setLogLevel(Level.ERROR)

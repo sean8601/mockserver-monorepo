@@ -31,10 +31,24 @@ public class MockServerLogger {
     private static volatile Consumer<LogEntry> globalLogEventListener;
 
     static {
-        configureLogger();
+        // Only install the default java.util.logging format here. This static initializer
+        // MUST NOT read ConfigurationProperties: MockServerLogger and ConfigurationProperties
+        // reference each other, and if MockServerLogger.<clinit> touched ConfigurationProperties
+        // two threads first-touching the two classes concurrently would deadlock on their class
+        // init locks (the cause of the reverted parallel-Surefire deadlock). The configured log
+        // level is applied separately by configureLogger(), invoked from ConfigurationProperties'
+        // static initializer (once its properties are loaded) and from its log-level / system-out
+        // setters.
+        installDefaultJavaLoggingFormat();
     }
 
-    public static void configureLogger() {
+    /**
+     * Installs the default java.util.logging handler and format. Deliberately free of any
+     * {@link ConfigurationProperties} dependency so it is safe to run from this class's static
+     * initializer. The format (including the MockServer version) is identical to the default
+     * previously installed by {@link #configureLogger()}, so log output formatting is unchanged.
+     */
+    private static void installDefaultJavaLoggingFormat() {
         try {
             if (System.getProperty("java.util.logging.config.file") == null && System.getProperty("java.util.logging.config.class") == null) {
                 LogManager.getLogManager().readConfiguration(new ByteArrayInputStream(("" +
@@ -44,6 +58,18 @@ public class MockServerLogger {
                     "java.util.logging.SimpleFormatter.format=%1$tF %1$tT " + Version.getVersion() + " %4$s %5$s %6$s%n" + NEW_LINE +
                     "org.mockserver.level=INFO" + NEW_LINE +
                     "io.netty.level=WARNING").getBytes(UTF_8)));
+            }
+        } catch (Throwable throwable) {
+            // Must not call logEvent() here: it would read ConfigurationProperties (disableLogging,
+            // logLevel) and re-introduce the class-init dependency this method exists to avoid.
+            throwable.printStackTrace();
+        }
+    }
+
+    public static void configureLogger() {
+        try {
+            if (System.getProperty("java.util.logging.config.file") == null && System.getProperty("java.util.logging.config.class") == null) {
+                installDefaultJavaLoggingFormat();
                 if (isNotBlank(ConfigurationProperties.javaLoggerLogLevel())) {
                     String loggingConfiguration = "" +
                         (!ConfigurationProperties.disableSystemOut() ? "handlers=org.mockserver.logging.StandardOutConsoleHandler" + NEW_LINE +
