@@ -167,6 +167,7 @@ public class McpToolRegistry {
             ObjectNode latencyProps = latencyProp.putObject("properties");
             latencyProps.putObject("timeUnit").put("type", "string").put("description", "Time unit (e.g. MILLISECONDS, SECONDS)");
             latencyProps.putObject("value").put("type", "integer").put("description", "Delay value");
+            chaosProps.putObject("dropConnectionProbability").put("type", "number").put("description", "Probability (0.0-1.0) of dropping the TCP connection without sending any response");
             chaosProps.putObject("seed").put("type", "integer").put("description", "Optional seed for reproducible probabilistic draws");
             chaosProps.putObject("succeedFirst").put("type", "integer").put("description", "First N matches are NOT eligible for chaos (>= 0)");
             chaosProps.putObject("failRequestCount").put("type", "integer").put("description", "After succeedFirst, next M matches ARE eligible for chaos (>= 1)");
@@ -284,6 +285,10 @@ public class McpToolRegistry {
                 JsonNode retryAfterNode = chaosNode.path("retryAfter");
                 if (!retryAfterNode.isMissingNode() && !retryAfterNode.isNull()) {
                     chaos.withRetryAfter(retryAfterNode.asText());
+                }
+                JsonNode dropConnectionProbabilityNode = chaosNode.path("dropConnectionProbability");
+                if (!dropConnectionProbabilityNode.isMissingNode() && !dropConnectionProbabilityNode.isNull()) {
+                    chaos.withDropConnectionProbability(dropConnectionProbabilityNode.asDouble());
                 }
                 JsonNode latencyNode = chaosNode.path("latency");
                 if (latencyNode.isObject()) {

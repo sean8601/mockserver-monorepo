@@ -35,6 +35,7 @@ const expectation: Expectation = {
 const chaosProfile: HttpChaosProfile = {
     errorStatus: 503,
     errorProbability: 0.5,
+    dropConnectionProbability: 0.1,
     retryAfter: "30",
     latency: {
         timeUnit: "MILLISECONDS",

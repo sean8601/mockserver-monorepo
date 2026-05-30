@@ -2095,6 +2095,7 @@ class TestHttpChaosProfile:
         chaos = HttpChaosProfile()
         assert chaos.error_status is None
         assert chaos.error_probability is None
+        assert chaos.drop_connection_probability is None
         assert chaos.retry_after is None
         assert chaos.latency is None
         assert chaos.seed is None
@@ -2146,6 +2147,7 @@ class TestHttpChaosProfile:
         result = chaos.to_dict()
         assert result == {"errorStatus": 500}
         assert "errorProbability" not in result
+        assert "dropConnectionProbability" not in result
         assert "retryAfter" not in result
         assert "latency" not in result
         assert "seed" not in result
@@ -2178,6 +2180,7 @@ class TestHttpChaosProfile:
         chaos = HttpChaosProfile.from_dict({"errorStatus": 500, "errorProbability": 1.0})
         assert chaos.error_status == 500
         assert chaos.error_probability == 1.0
+        assert chaos.drop_connection_probability is None
         assert chaos.retry_after is None
         assert chaos.latency is None
         assert chaos.seed is None
@@ -2204,6 +2207,14 @@ class TestHttpChaosProfile:
         assert restored.succeed_first == original.succeed_first
         assert restored.fail_request_count == original.fail_request_count
         assert restored.to_dict() == original.to_dict()
+
+    def test_drop_connection_probability(self):
+        chaos = HttpChaosProfile(drop_connection_probability=0.75)
+        result = chaos.to_dict()
+        assert result == {"dropConnectionProbability": 0.75}
+
+        restored = HttpChaosProfile.from_dict(result)
+        assert restored.drop_connection_probability == 0.75
 
 
 class TestRequestDefinitionAlias:

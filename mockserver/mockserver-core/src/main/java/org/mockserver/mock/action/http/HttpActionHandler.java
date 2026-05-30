@@ -125,7 +125,7 @@ public class HttpActionHandler {
                 scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
                     final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
                     // chaos: inject HTTP chaos faults on early mocked responses
-                    writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous);
             }
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
@@ -203,35 +203,35 @@ public class HttpActionHandler {
                 case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
                     // chaos: inject HTTP chaos faults on mocked responses
-                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous);
                 case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpResponse response = getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, request);
                     // chaos: inject HTTP chaos faults on mocked responses
-                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, action.getDelay());
                 case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpResponse response = getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, request);
                     // chaos: inject HTTP chaos faults on mocked responses
-                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, action.getDelay());
                 case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
                         getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
                     synchronous, action.getDelay());
                 // chaos: inject HTTP chaos faults on expectation-based forwarded responses (FORWARD, FORWARD_TEMPLATE,
                 // FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE). Deferred: FORWARD_OBJECT_CALLBACK has
-                // its own write path, the unmatched/anonymous proxy-pass path, and dropConnectionProbability.
+                // its own write path and the unmatched/anonymous proxy-pass path.
                 case FORWARD -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardActionHandler().handle((HttpForward) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 // deferred: FORWARD_OBJECT_CALLBACK chaos injection — uses its own write path
                 case FORWARD_OBJECT_CALLBACK -> scheduler.schedule(() ->
@@ -239,11 +239,11 @@ public class HttpActionHandler {
                     synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_REPLACE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos(), capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case SSE_RESPONSE -> {
                     if (ctx == null) {
@@ -913,6 +913,25 @@ public class HttpActionHandler {
     }
 
     /**
+     * Returns {@code true} when the chaos profile's drop-connection fault should
+     * fire — i.e. the connection should be dropped without sending any response.
+     * Uses a derived seed ({@code seed ^ 0x44524F50L}) so the drop draw is
+     * independent of (but reproducible alongside) the error draw.
+     *
+     * @param chaos      the chaos profile (may be null)
+     * @param matchCount 1-based match count from the expectation; used for count-window gating
+     */
+    boolean shouldDropConnection(final HttpChaosProfile chaos, int matchCount) {
+        return chaos != null
+            && chaos.getDropConnectionProbability() != null
+            && chaos.countWindowEligible(matchCount)
+            && ChaosProbability.shouldInject(
+                chaos.getDropConnectionProbability(),
+                chaos.getSeed() == null ? null : chaos.getSeed() ^ 0x44524F50L
+            );
+    }
+
+    /**
      * Shared helper: builds the synthetic chaos error response when the chaos
      * profile's error injection should fire, or returns {@code null} when no
      * error should be injected (probability miss, no errorStatus, null chaos,
@@ -951,6 +970,22 @@ public class HttpActionHandler {
      * </ol>
      */
     void writeResponseActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final RequestDefinition requestDefinition, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount) {
+        writeResponseActionResponse(response, responseWriter, request, action, synchronous, requestDefinition, postProcessor, chaos, matchCount, null);
+    }
+
+    void writeResponseActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final RequestDefinition requestDefinition, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx) {
+        // Chaos: drop connection takes priority over error and latency
+        if (shouldDropConnection(chaos, matchCount)) {
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("drop");
+            if (ctx != null) {
+                getHttpErrorActionHandler().handle(HttpError.error().withDropConnection(true), ctx);
+            }
+            if (postProcessor != null) {
+                postProcessor.run();
+            }
+            return;
+        }
+
         // Chaos: determine final response and extra delay via shared helper
         HttpResponse chaosError = chaosErrorResponseOrNull(chaos, matchCount);
         final HttpResponse effectiveResponse = chaosError != null ? chaosError : response;
@@ -1060,19 +1095,34 @@ public class HttpActionHandler {
     /**
      * Forward response choke point with optional HTTP chaos injection.
      * <p>
-     * When {@code chaos} is non-null the same error-injection + latency logic used for
+     * When {@code chaos} is non-null the same drop/error/latency logic used for
      * mocked responses is applied to the upstream response received from the forwarded
      * request. For streaming responses an injected error replaces the stream with a
      * non-streaming synthetic error response; latency is applied before writing.
      * <p>
-     * Deferred: {@code FORWARD_OBJECT_CALLBACK}'s own write path, the unmatched /
-     * anonymous proxy-pass path, and {@code dropConnectionProbability} (connection drop)
-     * are not yet wired and will follow in later slices.
+     * Deferred: {@code FORWARD_OBJECT_CALLBACK}'s own write path and the unmatched /
+     * anonymous proxy-pass path are not yet wired and will follow in later slices.
      */
     void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount) {
+        writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, postProcessor, chaos, matchCount, null);
+    }
+
+    void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx) {
         scheduler.submit(responseFuture, () -> {
             try {
                 HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+
+                // chaos: drop connection takes priority over error and latency
+                if (shouldDropConnection(chaos, matchCount)) {
+                    org.mockserver.metrics.Metrics.incrementHttpChaosInjected("drop");
+                    if (ctx != null) {
+                        getHttpErrorActionHandler().handle(HttpError.error().withDropConnection(true), ctx);
+                    }
+                    if (postProcessor != null) {
+                        postProcessor.run();
+                    }
+                    return;
+                }
 
                 // chaos: error injection on forwarded responses — replaces the upstream response
                 HttpResponse chaosError = chaosErrorResponseOrNull(chaos, matchCount);

@@ -8,6 +8,7 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
     private Integer errorStatus;
     private String retryAfter;
     private Double errorProbability;
+    private Double dropConnectionProbability;
     private DelayDTO latency;
     private Long seed;
     private Integer succeedFirst;
@@ -18,6 +19,7 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             errorStatus = httpChaosProfile.getErrorStatus();
             retryAfter = httpChaosProfile.getRetryAfter();
             errorProbability = httpChaosProfile.getErrorProbability();
+            dropConnectionProbability = httpChaosProfile.getDropConnectionProbability();
             if (httpChaosProfile.getLatency() != null) {
                 latency = new DelayDTO(httpChaosProfile.getLatency());
             }
@@ -35,6 +37,7 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             .withErrorStatus(errorStatus)
             .withRetryAfter(retryAfter)
             .withErrorProbability(errorProbability)
+            .withDropConnectionProbability(dropConnectionProbability)
             .withLatency(latency != null ? latency.buildObject() : null)
             .withSeed(seed)
             .withSucceedFirst(succeedFirst)
@@ -65,6 +68,15 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
 
     public HttpChaosProfileDTO setErrorProbability(Double errorProbability) {
         this.errorProbability = errorProbability;
+        return this;
+    }
+
+    public Double getDropConnectionProbability() {
+        return dropConnectionProbability;
+    }
+
+    public HttpChaosProfileDTO setDropConnectionProbability(Double dropConnectionProbability) {
+        this.dropConnectionProbability = dropConnectionProbability;
         return this;
     }
 

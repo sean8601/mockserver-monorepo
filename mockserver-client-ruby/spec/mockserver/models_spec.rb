@@ -1630,6 +1630,7 @@ RSpec.describe 'MockServer models' do
       chaos = MockServer::HttpChaosProfile.new
       expect(chaos.error_status).to be_nil
       expect(chaos.error_probability).to be_nil
+      expect(chaos.drop_connection_probability).to be_nil
       expect(chaos.retry_after).to be_nil
       expect(chaos.latency).to be_nil
       expect(chaos.seed).to be_nil
@@ -1683,6 +1684,7 @@ RSpec.describe 'MockServer models' do
       h = chaos.to_h
       expect(h).to eq({ 'errorStatus' => 500 })
       expect(h).not_to have_key('errorProbability')
+      expect(h).not_to have_key('dropConnectionProbability')
       expect(h).not_to have_key('retryAfter')
       expect(h).not_to have_key('latency')
       expect(h).not_to have_key('seed')
@@ -1718,11 +1720,20 @@ RSpec.describe 'MockServer models' do
       chaos = MockServer::HttpChaosProfile.from_hash({ 'errorStatus' => 500, 'errorProbability' => 1.0 })
       expect(chaos.error_status).to eq(500)
       expect(chaos.error_probability).to eq(1.0)
+      expect(chaos.drop_connection_probability).to be_nil
       expect(chaos.retry_after).to be_nil
       expect(chaos.latency).to be_nil
       expect(chaos.seed).to be_nil
       expect(chaos.succeed_first).to be_nil
       expect(chaos.fail_request_count).to be_nil
+    end
+
+    it 'serializes and deserializes drop_connection_probability' do
+      chaos = MockServer::HttpChaosProfile.new(drop_connection_probability: 0.75)
+      h = chaos.to_h
+      expect(h).to eq({ 'dropConnectionProbability' => 0.75 })
+      restored = MockServer::HttpChaosProfile.from_hash(h)
+      expect(restored.drop_connection_probability).to eq(0.75)
     end
 
     it 'round-trips correctly' do

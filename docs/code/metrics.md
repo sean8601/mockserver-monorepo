@@ -103,10 +103,11 @@ It is registered (once) when `metricsEnabled`. Timing is captured per `NettyResp
 
 ### HTTP Chaos Fault Counter
 
-`mock_server_http_chaos_injected_total` is a Prometheus `Counter` with a `fault_type` label (values: `"error"` or `"latency"`) that tracks every HTTP chaos fault injected by the chaos profile subsystem. It is registered once when `metricsEnabled` is `true`.
+`mock_server_http_chaos_injected_total` is a Prometheus `Counter` with a `fault_type` label (values: `"drop"`, `"error"`, or `"latency"`) that tracks every HTTP chaos fault injected by the chaos profile subsystem. It is registered once when `metricsEnabled` is `true`.
 
 | Label Value | Incremented When |
 |-------------|------------------|
+| `drop` | A chaos profile drops the TCP connection without sending any response |
 | `error` | A chaos profile injects an HTTP error status instead of the normal response |
 | `latency` | A chaos profile injects artificial latency into a response |
 

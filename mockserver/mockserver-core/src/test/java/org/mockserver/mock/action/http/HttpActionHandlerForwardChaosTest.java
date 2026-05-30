@@ -346,6 +346,86 @@ public class HttpActionHandlerForwardChaosTest {
         }
     }
 
+    // --- Drop connection chaos tests on forward path ---
+
+    @Test
+    public void chaosDropConnectionOnForwardedResponseWhenProbabilityIsOne() {
+        // given - a FORWARD expectation with chaos (dropConnectionProbability=1.0)
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - no response is written (connection is dropped)
+        verify(mockResponseWriter, never()).writeResponse(any(), any(HttpResponse.class), anyBoolean());
+    }
+
+    @Test
+    public void chaosDropTakesPriorityOverErrorOnForwardPath() {
+        // given - both drop and error at 1.0 on forward path — drop should win
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(1.0)
+                .withErrorStatus(503)
+                .withErrorProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - connection is dropped, no response written (drop wins over error)
+        verify(mockResponseWriter, never()).writeResponse(any(), any(HttpResponse.class), anyBoolean());
+        // drop metric incremented, error metric NOT
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "drop"), is(1.0));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+    }
+
+    @Test
+    public void chaosDropDoesNotFireOnForwardPathWhenProbabilityIsZero() {
+        // given - chaos drop probability=0 on forward path
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(0.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - the upstream response passes through unchanged
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        HttpResponse writtenResponse = responseCaptor.getValue();
+        assertThat(writtenResponse.getStatusCode(), is(200));
+        assertThat(writtenResponse.getBodyAsString(), is("upstream body"));
+    }
+
     // --- Count-based stateful chaos tests on forward path ---
 
     /**

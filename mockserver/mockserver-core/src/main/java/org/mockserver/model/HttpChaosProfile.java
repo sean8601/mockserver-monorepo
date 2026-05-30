@@ -4,8 +4,8 @@ import java.util.Objects;
 
 /**
  * Declarative HTTP fault/chaos injection for mocked and forwarded responses:
- * probabilistic error status injection (e.g. 500, 503, 429 with an optional
- * {@code Retry-After} header) and latency injection.
+ * probabilistic connection-drop injection, error status injection (e.g. 500,
+ * 503, 429 with an optional {@code Retry-After} header) and latency injection.
  * <p>
  * Attach to an {@link org.mockserver.mock.Expectation} via
  * {@code expectation.withChaos(httpChaosProfile()...)} to inject faults into
@@ -47,6 +47,7 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     private Integer errorStatus;       // HTTP status to inject (e.g. 500, 503, 429)
     private String retryAfter;         // optional Retry-After header value on injected error
     private Double errorProbability;   // 0.0-1.0; null/0 = never inject an error
+    private Double dropConnectionProbability; // 0.0-1.0; null/0 = never drop the connection
     private Delay latency;             // optional injected latency
     private Long seed;                 // optional, makes a fractional errorProbability reproducible
     private Integer succeedFirst;      // first N matches are NOT eligible for chaos (>= 0; null = 0)
@@ -90,6 +91,19 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
 
     public Double getErrorProbability() {
         return errorProbability;
+    }
+
+    public HttpChaosProfile withDropConnectionProbability(Double dropConnectionProbability) {
+        if (dropConnectionProbability != null && (Double.isNaN(dropConnectionProbability) || dropConnectionProbability < 0.0 || dropConnectionProbability > 1.0)) {
+            throw new IllegalArgumentException("dropConnectionProbability must be between 0.0 and 1.0, got " + dropConnectionProbability);
+        }
+        this.dropConnectionProbability = dropConnectionProbability;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Double getDropConnectionProbability() {
+        return dropConnectionProbability;
     }
 
     public HttpChaosProfile withLatency(Delay latency) {
@@ -178,6 +192,7 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
         return Objects.equals(errorStatus, that.errorStatus) &&
             Objects.equals(retryAfter, that.retryAfter) &&
             Objects.equals(errorProbability, that.errorProbability) &&
+            Objects.equals(dropConnectionProbability, that.dropConnectionProbability) &&
             Objects.equals(latency, that.latency) &&
             Objects.equals(seed, that.seed) &&
             Objects.equals(succeedFirst, that.succeedFirst) &&
@@ -187,7 +202,7 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, latency, seed, succeedFirst, failRequestCount);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount);
         }
         return hashCode;
     }

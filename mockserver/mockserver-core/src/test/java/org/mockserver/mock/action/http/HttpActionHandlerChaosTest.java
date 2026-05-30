@@ -468,6 +468,97 @@ public class HttpActionHandlerChaosTest {
         }
     }
 
+    // --- Drop connection chaos tests ---
+
+    @Test
+    public void chaosDropConnectionWhenProbabilityIsOne() {
+        // given - an expectation with RESPONSE action and chaos (dropConnectionProbability=1.0)
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - no response is written (connection is dropped); ctx is null in test so
+        // HttpErrorActionHandler is NOT called, but the postProcessor runs and
+        // responseWriter is NOT invoked
+        verify(mockResponseWriter, never()).writeResponse(any(), any(HttpResponse.class), anyBoolean());
+    }
+
+    @Test
+    public void chaosDropConnectionDoesNotFireWhenProbabilityIsZero() {
+        // given - chaos drop probability=0
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(0.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - the original response is written
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        HttpResponse writtenResponse = responseCaptor.getValue();
+        assertThat(writtenResponse.getBodyAsString(), is("normal body"));
+    }
+
+    @Test
+    public void chaosDropTakesPriorityOverError() {
+        // given - both drop and error at 1.0 — drop should win
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(1.0)
+                .withErrorStatus(503)
+                .withErrorProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then - connection is dropped, no response written (drop wins over error)
+        verify(mockResponseWriter, never()).writeResponse(any(), any(HttpResponse.class), anyBoolean());
+    }
+
+    @Test
+    public void chaosDropIncrementsDropMetric() {
+        // given - chaos drop fires (probability=1.0)
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(1.0));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "drop"), is(1.0));
+        // error metric should NOT be incremented (drop takes priority)
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+    }
+
     // --- Prometheus metrics tests for HTTP chaos injection ---
 
     @Test

@@ -9,7 +9,7 @@ sitemap:
   priority: 0.9
   changefreq: 'monthly'
   lastmod: 2026-05-30T08:00:00+00:00
-keywords: chaos testing, fault injection, resilience testing, latency injection, simulate outage, SRE testing, retry and backoff testing, mock 429 rate limit, chaos testing in kubernetes
+keywords: chaos testing, fault injection, resilience testing, latency injection, connection drop, simulate outage, SRE testing, retry and backoff testing, mock 429 rate limit, chaos testing in kubernetes
 schema_faq:
   - question: "How do I simulate a 429 rate limit with MockServer?"
     answer: "Add a chaos profile to your expectation with errorStatus set to 429, errorProbability set to 1.0 for every request (or a fraction like 0.3 for 30% of requests), and an optional retryAfter value. The chaos profile works on both mocked responses and forwarded/proxied upstream calls."
@@ -29,6 +29,7 @@ schema_faq:
 
 <p>Attach a declarative <strong>chaos profile</strong> to any expectation to control:</p>
 <ul>
+    <li><strong>Connection drop injection</strong> — drop the TCP connection without sending any response, simulating a hard network failure or connection reset</li>
     <li><strong>Error injection</strong> — return an HTTP error status (e.g. 500, 503, 429) instead of the normal response, with an optional <code class="inline code">Retry-After</code> header</li>
     <li><strong>Latency injection</strong> — add artificial delay to responses to test timeout handling, deadline propagation, and slow-response UX</li>
     <li><strong>Probabilistic or deterministic</strong> — control what fraction of requests are affected, from "every request" (<code class="inline code">1.0</code>) to "10% of requests" (<code class="inline code">0.1</code>)</li>
@@ -63,6 +64,12 @@ schema_faq:
             <td><code class="inline code">errorProbability</code></td>
             <td>number</td>
             <td>The probability (0.0 to 1.0) that a matched request will receive the error instead of the normal response. <code class="inline code">0.0</code> or omitted means errors are never injected; <code class="inline code">1.0</code> means every request gets the error (deterministic). Fractional values (e.g. <code class="inline code">0.3</code>) inject errors on approximately 30% of requests.</td>
+            <td>0.0 &ndash; 1.0</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">dropConnectionProbability</code></td>
+            <td>number</td>
+            <td>The probability (0.0 to 1.0) that a matched request will have its TCP connection dropped without any response being sent, simulating a hard connection failure or network blip. When a connection drop fires it takes priority over error and latency injection. Uses a derived seed for independent but reproducible draws.</td>
             <td>0.0 &ndash; 1.0</td>
         </tr>
         <tr>
@@ -162,6 +169,21 @@ schema_faq:
         </tr>
     </tbody>
 </table>
+
+<a id="connection_drop_injection" class="anchor" href="#connection_drop_injection">&nbsp;</a>
+
+<h2>Connection Drop Injection</h2>
+
+<p>Connection drop injection closes the TCP connection without sending any response, simulating a hard network failure or connection reset. This is the most severe fault type and takes priority over error and latency injection when multiple fault types are configured.</p>
+
+<p><strong>How it works:</strong> on each matched request, MockServer first draws against <code class="inline code">dropConnectionProbability</code>. If the draw says "drop," the TCP connection is closed immediately with no response written. When the draw says "skip," the chaos profile falls through to error injection (if configured) and then latency injection. This ordering ensures that connection drops, errors, and latency are evaluated as independent faults with a clear priority: <strong>drop &gt; error &gt; latency</strong>.</p>
+
+<p><strong>Common use cases:</strong></p>
+<ul>
+    <li><strong>Test connection timeout handling:</strong> verify that your HTTP client detects and handles a dropped connection (e.g. retries, circuit-breaker tripping)</li>
+    <li><strong>Test network blip resilience:</strong> inject connection drops at a fractional probability to simulate intermittent network instability</li>
+    <li><strong>Test proxy/load balancer failover:</strong> simulate a backend disappearing mid-request to verify failover behaviour</li>
+</ul>
 
 <a id="error_injection" class="anchor" href="#error_injection">&nbsp;</a>
 
@@ -284,7 +306,7 @@ schema_faq:
         <tr>
             <td><code class="inline code">mock_server_http_chaos_injected_total</code></td>
             <td>Counter</td>
-            <td><code class="inline code">fault_type</code> = <code class="inline code">error</code> | <code class="inline code">latency</code></td>
+            <td><code class="inline code">fault_type</code> = <code class="inline code">drop</code> | <code class="inline code">error</code> | <code class="inline code">latency</code></td>
             <td>Cumulative count of HTTP chaos faults injected, split by fault type</td>
         </tr>
     </tbody>
@@ -311,7 +333,6 @@ mock_server_http_chaos_injected_total{fault_type="latency"}</code></pre>
 
 <p>The following chaos features are planned for future releases:</p>
 <ul>
-    <li><strong>Connection drop injection</strong> — probabilistic connection drops (wiring to the existing <code class="inline code">httpError.dropConnection</code> capability)</li>
     <li><strong>Advanced stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills), circuit-breaker windows, and gradual degradation ramps</li>
 </ul>
 

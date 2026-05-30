@@ -64,6 +64,7 @@ module MockServer
     'initial_data'                   => 'initialData',
     'error_status'                   => 'errorStatus',
     'error_probability'              => 'errorProbability',
+    'drop_connection_probability'    => 'dropConnectionProbability',
     'retry_after'                    => 'retryAfter',
     'succeed_first'                  => 'succeedFirst',
     'fail_request_count'             => 'failRequestCount'
@@ -1152,13 +1153,14 @@ module MockServer
   end
 
   class HttpChaosProfile
-    attr_accessor :error_status, :error_probability, :retry_after,
-                  :latency, :seed, :succeed_first, :fail_request_count
+    attr_accessor :error_status, :error_probability, :drop_connection_probability,
+                  :retry_after, :latency, :seed, :succeed_first, :fail_request_count
 
-    def initialize(error_status: nil, error_probability: nil, retry_after: nil,
-                   latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil)
+    def initialize(error_status: nil, error_probability: nil, drop_connection_probability: nil,
+                   retry_after: nil, latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil)
       @error_status = error_status
       @error_probability = error_probability
+      @drop_connection_probability = drop_connection_probability
       @retry_after = retry_after
       @latency = latency
       @seed = seed
@@ -1168,13 +1170,14 @@ module MockServer
 
     def to_h
       MockServer.strip_none({
-        'errorStatus'      => @error_status,
-        'errorProbability'  => @error_probability,
-        'retryAfter'        => @retry_after,
-        'latency'           => @latency&.to_h,
-        'seed'              => @seed,
-        'succeedFirst'      => @succeed_first,
-        'failRequestCount'  => @fail_request_count
+        'errorStatus'               => @error_status,
+        'errorProbability'           => @error_probability,
+        'dropConnectionProbability'  => @drop_connection_probability,
+        'retryAfter'                 => @retry_after,
+        'latency'                    => @latency&.to_h,
+        'seed'                       => @seed,
+        'succeedFirst'               => @succeed_first,
+        'failRequestCount'           => @fail_request_count
       })
     end
 
@@ -1182,13 +1185,14 @@ module MockServer
       return nil if data.nil?
 
       new(
-        error_status:      data['errorStatus'],
-        error_probability:  data['errorProbability'],
-        retry_after:        data['retryAfter'],
-        latency:            Delay.from_hash(data['latency']),
-        seed:               data['seed'],
-        succeed_first:      data['succeedFirst'],
-        fail_request_count: data['failRequestCount']
+        error_status:               data['errorStatus'],
+        error_probability:           data['errorProbability'],
+        drop_connection_probability: data['dropConnectionProbability'],
+        retry_after:                 data['retryAfter'],
+        latency:                     Delay.from_hash(data['latency']),
+        seed:                        data['seed'],
+        succeed_first:               data['succeedFirst'],
+        fail_request_count:          data['failRequestCount']
       )
     end
   end

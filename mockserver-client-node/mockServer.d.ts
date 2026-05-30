@@ -337,6 +337,7 @@ export interface HttpWebSocketResponse {
 export interface HttpChaosProfile {
   errorStatus?: number;
   errorProbability?: number;
+  dropConnectionProbability?: number;
   retryAfter?: string;
   latency?: Delay;
   seed?: number;

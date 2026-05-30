@@ -17,6 +17,12 @@
       "minimum": 0.0,
       "maximum": 1.0
     },
+    "dropConnectionProbability": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Probability (0.0 to 1.0) of dropping the TCP connection without sending any response"
+    },
     "latency": {
       "$ref": "#/definitions/delay"
     },

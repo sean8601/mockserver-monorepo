@@ -7,6 +7,7 @@ from typing import Any
 _FIELD_MAP = {
     "error_status": "errorStatus",
     "error_probability": "errorProbability",
+    "drop_connection_probability": "dropConnectionProbability",
     "retry_after": "retryAfter",
     "succeed_first": "succeedFirst",
     "fail_request_count": "failRequestCount",
@@ -308,6 +309,7 @@ TimeToLive.exactly = staticmethod(_ttl_exactly)
 class HttpChaosProfile:
     error_status: int | None = None
     error_probability: float | None = None
+    drop_connection_probability: float | None = None
     retry_after: str | None = None
     latency: Delay | None = None
     seed: int | None = None
@@ -318,6 +320,7 @@ class HttpChaosProfile:
         return _strip_none({
             "errorStatus": self.error_status,
             "errorProbability": self.error_probability,
+            "dropConnectionProbability": self.drop_connection_probability,
             "retryAfter": self.retry_after,
             "latency": self.latency.to_dict() if self.latency else None,
             "seed": self.seed,
@@ -332,6 +335,7 @@ class HttpChaosProfile:
         return cls(
             error_status=data.get("errorStatus"),
             error_probability=data.get("errorProbability"),
+            drop_connection_probability=data.get("dropConnectionProbability"),
             retry_after=data.get("retryAfter"),
             latency=Delay.from_dict(data.get("latency")),
             seed=data.get("seed"),

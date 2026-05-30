@@ -79,6 +79,41 @@ public class HttpChaosProfileTest {
         assertThat(exception.getMessage(), is("errorStatus must be between 100 and 599, got 600"));
     }
 
+    // --- dropConnectionProbability validation tests ---
+
+    @Test
+    public void withDropConnectionProbabilityAcceptsNull() {
+        httpChaosProfile().withDropConnectionProbability(null);
+    }
+
+    @Test
+    public void withDropConnectionProbabilityAcceptsValidRange() {
+        httpChaosProfile().withDropConnectionProbability(0.0);
+        httpChaosProfile().withDropConnectionProbability(0.5);
+        httpChaosProfile().withDropConnectionProbability(1.0);
+    }
+
+    @Test
+    public void withDropConnectionProbabilityRejectsBelowZero() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withDropConnectionProbability(-0.1));
+        assertThat(exception.getMessage(), is("dropConnectionProbability must be between 0.0 and 1.0, got -0.1"));
+    }
+
+    @Test
+    public void withDropConnectionProbabilityRejectsAboveOne() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withDropConnectionProbability(1.1));
+        assertThat(exception.getMessage(), is("dropConnectionProbability must be between 0.0 and 1.0, got 1.1"));
+    }
+
+    @Test
+    public void withDropConnectionProbabilityRejectsNaN() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withDropConnectionProbability(Double.NaN));
+        assertThat(exception.getMessage(), is("dropConnectionProbability must be between 0.0 and 1.0, got NaN"));
+    }
+
     // --- equals/hashCode tests ---
 
     @Test
@@ -114,6 +149,13 @@ public class HttpChaosProfileTest {
     public void differentProfilesAreNotEqual() {
         HttpChaosProfile a = httpChaosProfile().withErrorStatus(503);
         HttpChaosProfile b = httpChaosProfile().withErrorStatus(500);
+        assertThat(a, is(not(equalTo(b))));
+    }
+
+    @Test
+    public void dropConnectionProbabilityIncludedInEquals() {
+        HttpChaosProfile a = httpChaosProfile().withDropConnectionProbability(0.5);
+        HttpChaosProfile b = httpChaosProfile().withDropConnectionProbability(0.8);
         assertThat(a, is(not(equalTo(b))));
     }
 
@@ -165,6 +207,25 @@ public class HttpChaosProfileTest {
         assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
         assertThat(deserialized[0].getChaos().getLatency().getTimeUnit(), is(TimeUnit.MILLISECONDS));
         assertThat(deserialized[0].getChaos().getLatency().getValue(), is(500L));
+    }
+
+    @Test
+    public void expectationWithChaosDropConnectionProbabilityRoundTripsViaSerializer() {
+        ExpectationSerializer serializer = new ExpectationSerializer(new MockServerLogger());
+
+        Expectation original = new Expectation(request("/test"))
+            .thenRespond(response("ok"))
+            .withChaos(httpChaosProfile()
+                .withDropConnectionProbability(0.75)
+                .withSeed(99L));
+
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
+        assertThat(deserialized[0].getChaos().getDropConnectionProbability(), is(0.75));
+        assertThat(deserialized[0].getChaos().getSeed(), is(99L));
     }
 
     @Test
