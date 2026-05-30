@@ -49,6 +49,9 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     }
 
     public LlmChaosProfile withErrorStatus(Integer errorStatus) {
+        if (errorStatus != null && (errorStatus < 100 || errorStatus > 599)) {
+            throw new IllegalArgumentException("errorStatus must be between 100 and 599, got " + errorStatus);
+        }
         this.errorStatus = errorStatus;
         this.hashCode = 0;
         return this;
@@ -69,6 +72,9 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     }
 
     public LlmChaosProfile withErrorProbability(Double errorProbability) {
+        if (errorProbability != null && (Double.isNaN(errorProbability) || errorProbability < 0.0 || errorProbability > 1.0)) {
+            throw new IllegalArgumentException("errorProbability must be between 0.0 and 1.0, got " + errorProbability);
+        }
         this.errorProbability = errorProbability;
         this.hashCode = 0;
         return this;
@@ -89,6 +95,9 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     }
 
     public LlmChaosProfile withTruncateAtFraction(Double truncateAtFraction) {
+        if (truncateAtFraction != null && (Double.isNaN(truncateAtFraction) || truncateAtFraction < 0.0 || truncateAtFraction > 1.0)) {
+            throw new IllegalArgumentException("truncateAtFraction must be between 0.0 and 1.0, got " + truncateAtFraction);
+        }
         this.truncateAtFraction = truncateAtFraction;
         this.hashCode = 0;
         return this;
@@ -129,6 +138,9 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     }
 
     public LlmChaosProfile withQuotaLimit(Integer quotaLimit) {
+        if (quotaLimit != null && quotaLimit < 1) {
+            throw new IllegalArgumentException("quotaLimit must be >= 1, got " + quotaLimit);
+        }
         this.quotaLimit = quotaLimit;
         this.hashCode = 0;
         return this;
@@ -139,6 +151,9 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     }
 
     public LlmChaosProfile withQuotaWindowMillis(Long quotaWindowMillis) {
+        if (quotaWindowMillis != null && quotaWindowMillis < 1) {
+            throw new IllegalArgumentException("quotaWindowMillis must be >= 1, got " + quotaWindowMillis);
+        }
         this.quotaWindowMillis = quotaWindowMillis;
         this.hashCode = 0;
         return this;
@@ -149,6 +164,9 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     }
 
     public LlmChaosProfile withQuotaErrorStatus(Integer quotaErrorStatus) {
+        if (quotaErrorStatus != null && (quotaErrorStatus < 100 || quotaErrorStatus > 599)) {
+            throw new IllegalArgumentException("quotaErrorStatus must be between 100 and 599, got " + quotaErrorStatus);
+        }
         this.quotaErrorStatus = quotaErrorStatus;
         this.hashCode = 0;
         return this;
