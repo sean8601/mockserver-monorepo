@@ -17,6 +17,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
     private Long outageDurationMillis;
     private Double truncateBodyAtFraction;
     private Boolean malformedBody;
+    private Integer slowResponseChunkSize;
+    private DelayDTO slowResponseChunkDelay;
 
     public HttpChaosProfileDTO(HttpChaosProfile httpChaosProfile) {
         if (httpChaosProfile != null) {
@@ -34,6 +36,10 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             outageDurationMillis = httpChaosProfile.getOutageDurationMillis();
             truncateBodyAtFraction = httpChaosProfile.getTruncateBodyAtFraction();
             malformedBody = httpChaosProfile.getMalformedBody();
+            slowResponseChunkSize = httpChaosProfile.getSlowResponseChunkSize();
+            if (httpChaosProfile.getSlowResponseChunkDelay() != null) {
+                slowResponseChunkDelay = new DelayDTO(httpChaosProfile.getSlowResponseChunkDelay());
+            }
         }
     }
 
@@ -53,7 +59,9 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             .withOutageAfterMillis(outageAfterMillis)
             .withOutageDurationMillis(outageDurationMillis)
             .withTruncateBodyAtFraction(truncateBodyAtFraction)
-            .withMalformedBody(malformedBody);
+            .withMalformedBody(malformedBody)
+            .withSlowResponseChunkSize(slowResponseChunkSize)
+            .withSlowResponseChunkDelay(slowResponseChunkDelay != null ? slowResponseChunkDelay.buildObject() : null);
     }
 
     public Integer getErrorStatus() {
@@ -161,6 +169,24 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
 
     public HttpChaosProfileDTO setMalformedBody(Boolean malformedBody) {
         this.malformedBody = malformedBody;
+        return this;
+    }
+
+    public Integer getSlowResponseChunkSize() {
+        return slowResponseChunkSize;
+    }
+
+    public HttpChaosProfileDTO setSlowResponseChunkSize(Integer slowResponseChunkSize) {
+        this.slowResponseChunkSize = slowResponseChunkSize;
+        return this;
+    }
+
+    public DelayDTO getSlowResponseChunkDelay() {
+        return slowResponseChunkDelay;
+    }
+
+    public HttpChaosProfileDTO setSlowResponseChunkDelay(DelayDTO slowResponseChunkDelay) {
+        this.slowResponseChunkDelay = slowResponseChunkDelay;
         return this;
     }
 }

@@ -2114,6 +2114,21 @@ class TestHttpChaosProfile:
         assert restored.truncate_body_at_fraction == 0.25
         assert restored.malformed_body is True
 
+    def test_slow_response_round_trip(self):
+        chaos = HttpChaosProfile(
+            slow_response_chunk_size=8,
+            slow_response_chunk_delay=Delay(time_unit="MILLISECONDS", value=250),
+        )
+        result = chaos.to_dict()
+        assert result == {
+            "slowResponseChunkSize": 8,
+            "slowResponseChunkDelay": {"timeUnit": "MILLISECONDS", "value": 250},
+        }
+        restored = HttpChaosProfile.from_dict(result)
+        assert restored.slow_response_chunk_size == 8
+        assert restored.slow_response_chunk_delay.time_unit == "MILLISECONDS"
+        assert restored.slow_response_chunk_delay.value == 250
+
     def test_construction_all_fields(self):
         chaos = HttpChaosProfile(
             error_status=503,

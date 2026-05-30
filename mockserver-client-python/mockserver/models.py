@@ -15,6 +15,8 @@ _FIELD_MAP = {
     "outage_duration_millis": "outageDurationMillis",
     "truncate_body_at_fraction": "truncateBodyAtFraction",
     "malformed_body": "malformedBody",
+    "slow_response_chunk_size": "slowResponseChunkSize",
+    "slow_response_chunk_delay": "slowResponseChunkDelay",
     "status_code": "statusCode",
     "reason_phrase": "reasonPhrase",
     "keep_alive": "keepAlive",
@@ -323,6 +325,8 @@ class HttpChaosProfile:
     outage_duration_millis: int | None = None
     truncate_body_at_fraction: float | None = None
     malformed_body: bool | None = None
+    slow_response_chunk_size: int | None = None
+    slow_response_chunk_delay: Delay | None = None
 
     def to_dict(self) -> dict:
         return _strip_none({
@@ -338,6 +342,8 @@ class HttpChaosProfile:
             "outageDurationMillis": self.outage_duration_millis,
             "truncateBodyAtFraction": self.truncate_body_at_fraction,
             "malformedBody": self.malformed_body,
+            "slowResponseChunkSize": self.slow_response_chunk_size,
+            "slowResponseChunkDelay": self.slow_response_chunk_delay.to_dict() if self.slow_response_chunk_delay else None,
         })
 
     @classmethod
@@ -357,6 +363,8 @@ class HttpChaosProfile:
             outage_duration_millis=data.get("outageDurationMillis"),
             truncate_body_at_fraction=data.get("truncateBodyAtFraction"),
             malformed_body=data.get("malformedBody"),
+            slow_response_chunk_size=data.get("slowResponseChunkSize"),
+            slow_response_chunk_delay=Delay.from_dict(data.get("slowResponseChunkDelay")),
         )
 
 

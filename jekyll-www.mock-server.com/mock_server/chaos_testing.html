@@ -127,6 +127,18 @@ schema_faq:
             <td>Corrupt the response body by appending a broken-JSON fragment so it fails to parse. Tests client-side body-parsing resilience. Applies to the real (non-error) response only and is skipped for streaming bodies.</td>
             <td>true / false (default: omitted = false)</td>
         </tr>
+        <tr>
+            <td><code class="inline code">slowResponseChunkSize</code></td>
+            <td>integer</td>
+            <td>Dribble the response body in chunks of this many bytes (chunked transfer-encoding). Combine with <code class="inline code">slowResponseChunkDelay</code> to trickle the body slowly and test read timeouts. Applies to the real (non-error) response only and is skipped for streaming bodies.</td>
+            <td>&ge; 1 (default: omitted = no dribble)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">slowResponseChunkDelay</code></td>
+            <td>delay</td>
+            <td>The delay between dribbled chunks (a <code class="inline code">{ "timeUnit": ..., "value": ... }</code> object). Required alongside <code class="inline code">slowResponseChunkSize</code> for the slow response to take effect.</td>
+            <td>(default: omitted = no dribble)</td>
+        </tr>
     </tbody>
 </table>
 
@@ -285,6 +297,20 @@ schema_faq:
     <li><strong>Test JSON-parsing resilience:</strong> set <code class="inline code">malformedBody: true</code> and verify your client surfaces a clear parse error rather than crashing.</li>
     <li><strong>Test partial-response handling:</strong> set <code class="inline code">truncateBodyAtFraction: 0.5</code> and verify your client detects the short / incomplete payload.</li>
     <li><strong>Test a flaky upstream in proxy mode:</strong> attach body corruption to a forward action to see how your application copes with a dependency returning damaged payloads.</li>
+</ul>
+
+<a id="slow_response" class="anchor" href="#slow_response">&nbsp;</a>
+
+<h2>Slow (Dribbled) Response</h2>
+
+<p>A slow response trickles the response body to the client in small chunks with a delay between each, instead of sending it all at once. This is useful for testing read timeouts and slow-network behaviour — distinct from <code class="inline code">latency</code> (which delays the <em>whole</em> response by a fixed amount before sending it).</p>
+
+<p><strong>How it works:</strong> set <code class="inline code">slowResponseChunkSize</code> (bytes per chunk) <em>and</em> <code class="inline code">slowResponseChunkDelay</code> (the delay between chunks). MockServer then sends the body using chunked transfer-encoding, writing one chunk at a time with the configured delay between them. Both fields are required — a chunk size with no delay simply chunks the body without slowing it down. Like body corruption, the slow response is deterministic, applies to the real (mocked or forwarded) response within the active count and outage windows, and is skipped for streaming bodies. It is metered as <code class="inline code">fault_type=slow</code>.</p>
+
+<p><strong>Common use cases:</strong></p>
+<ul>
+    <li><strong>Test read timeouts:</strong> dribble a body in 1-byte chunks with a 1-second delay and verify your client's socket read timeout fires.</li>
+    <li><strong>Test slow-network handling:</strong> trickle a large payload to verify progress indicators and partial-read handling.</li>
 </ul>
 
 <a id="reproducibility" class="anchor" href="#reproducibility">&nbsp;</a>

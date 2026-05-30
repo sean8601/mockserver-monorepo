@@ -1843,6 +1843,11 @@ public class McpToolRegistryTest {
         chaos.put("failRequestCount", 5);
         chaos.put("truncateBodyAtFraction", 0.25);
         chaos.put("malformedBody", true);
+        chaos.put("slowResponseChunkSize", 8);
+        ObjectNode slowDelay = objectMapper.createObjectNode();
+        slowDelay.put("timeUnit", "MILLISECONDS");
+        slowDelay.put("value", 250);
+        chaos.set("slowResponseChunkDelay", slowDelay);
         params.set("chaos", chaos);
 
         JsonNode result = toolRegistry.callTool("create_expectation", params);
@@ -1871,6 +1876,9 @@ public class McpToolRegistryTest {
                 assertThat(chaosResult.path("failRequestCount").asInt(), is(5));
                 assertThat(chaosResult.path("truncateBodyAtFraction").asDouble(), is(0.25));
                 assertThat(chaosResult.path("malformedBody").asBoolean(), is(true));
+                assertThat(chaosResult.path("slowResponseChunkSize").asInt(), is(8));
+                assertThat(chaosResult.path("slowResponseChunkDelay").path("timeUnit").asText(), is("MILLISECONDS"));
+                assertThat(chaosResult.path("slowResponseChunkDelay").path("value").asInt(), is(250));
                 foundChaos = true;
             }
         }

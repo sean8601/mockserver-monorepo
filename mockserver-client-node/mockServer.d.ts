@@ -347,6 +347,8 @@ export interface HttpChaosProfile {
   outageDurationMillis?: number;
   truncateBodyAtFraction?: number;
   malformedBody?: boolean;
+  slowResponseChunkSize?: number;
+  slowResponseChunkDelay?: Delay;
 }
 
 export interface AfterAction {

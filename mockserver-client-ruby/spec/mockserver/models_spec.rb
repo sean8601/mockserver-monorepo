@@ -1754,6 +1754,19 @@ RSpec.describe 'MockServer models' do
       expect(restored.malformed_body).to be(true)
     end
 
+    it 'serializes and deserializes the slow-response dribble' do
+      chaos = MockServer::HttpChaosProfile.new(
+        slow_response_chunk_size: 8,
+        slow_response_chunk_delay: MockServer::Delay.new(time_unit: 'MILLISECONDS', value: 250)
+      )
+      h = chaos.to_h
+      expect(h).to eq({ 'slowResponseChunkSize' => 8, 'slowResponseChunkDelay' => { 'timeUnit' => 'MILLISECONDS', 'value' => 250 } })
+      restored = MockServer::HttpChaosProfile.from_hash(h)
+      expect(restored.slow_response_chunk_size).to eq(8)
+      expect(restored.slow_response_chunk_delay.time_unit).to eq('MILLISECONDS')
+      expect(restored.slow_response_chunk_delay.value).to eq(250)
+    end
+
     it 'round-trips correctly' do
       original = MockServer::HttpChaosProfile.new(
         error_status: 503,

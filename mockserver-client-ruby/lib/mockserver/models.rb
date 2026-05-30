@@ -71,7 +71,9 @@ module MockServer
     'outage_after_millis'            => 'outageAfterMillis',
     'outage_duration_millis'         => 'outageDurationMillis',
     'truncate_body_at_fraction'      => 'truncateBodyAtFraction',
-    'malformed_body'                 => 'malformedBody'
+    'malformed_body'                 => 'malformedBody',
+    'slow_response_chunk_size'       => 'slowResponseChunkSize',
+    'slow_response_chunk_delay'      => 'slowResponseChunkDelay'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -1160,12 +1162,14 @@ module MockServer
     attr_accessor :error_status, :error_probability, :drop_connection_probability,
                   :retry_after, :latency, :seed, :succeed_first, :fail_request_count,
                   :outage_after_millis, :outage_duration_millis,
-                  :truncate_body_at_fraction, :malformed_body
+                  :truncate_body_at_fraction, :malformed_body,
+                  :slow_response_chunk_size, :slow_response_chunk_delay
 
     def initialize(error_status: nil, error_probability: nil, drop_connection_probability: nil,
                    retry_after: nil, latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil,
                    outage_after_millis: nil, outage_duration_millis: nil,
-                   truncate_body_at_fraction: nil, malformed_body: nil)
+                   truncate_body_at_fraction: nil, malformed_body: nil,
+                   slow_response_chunk_size: nil, slow_response_chunk_delay: nil)
       @error_status = error_status
       @error_probability = error_probability
       @drop_connection_probability = drop_connection_probability
@@ -1178,6 +1182,8 @@ module MockServer
       @outage_duration_millis = outage_duration_millis
       @truncate_body_at_fraction = truncate_body_at_fraction
       @malformed_body = malformed_body
+      @slow_response_chunk_size = slow_response_chunk_size
+      @slow_response_chunk_delay = slow_response_chunk_delay
     end
 
     def to_h
@@ -1193,7 +1199,9 @@ module MockServer
         'outageAfterMillis'          => @outage_after_millis,
         'outageDurationMillis'       => @outage_duration_millis,
         'truncateBodyAtFraction'     => @truncate_body_at_fraction,
-        'malformedBody'              => @malformed_body
+        'malformedBody'              => @malformed_body,
+        'slowResponseChunkSize'      => @slow_response_chunk_size,
+        'slowResponseChunkDelay'     => @slow_response_chunk_delay&.to_h
       })
     end
 
@@ -1212,7 +1220,9 @@ module MockServer
         outage_after_millis:         data['outageAfterMillis'],
         outage_duration_millis:      data['outageDurationMillis'],
         truncate_body_at_fraction:   data['truncateBodyAtFraction'],
-        malformed_body:              data['malformedBody']
+        malformed_body:              data['malformedBody'],
+        slow_response_chunk_size:    data['slowResponseChunkSize'],
+        slow_response_chunk_delay:   Delay.from_hash(data['slowResponseChunkDelay'])
       )
     end
   end

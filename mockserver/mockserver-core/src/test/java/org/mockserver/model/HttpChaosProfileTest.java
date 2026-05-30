@@ -145,6 +145,22 @@ public class HttpChaosProfileTest {
         assertThat(exception.getMessage(), is("truncateBodyAtFraction must be between 0.0 and 1.0, got NaN"));
     }
 
+    // --- slowResponseChunkSize validation tests ---
+
+    @Test
+    public void withSlowResponseChunkSizeAcceptsNullAndPositive() {
+        httpChaosProfile().withSlowResponseChunkSize(null);
+        httpChaosProfile().withSlowResponseChunkSize(1);
+        httpChaosProfile().withSlowResponseChunkSize(1024);
+    }
+
+    @Test
+    public void withSlowResponseChunkSizeRejectsBelowOne() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withSlowResponseChunkSize(0));
+        assertThat(exception.getMessage(), is("slowResponseChunkSize must be >= 1, got 0"));
+    }
+
     // --- equals/hashCode tests ---
 
     @Test
@@ -284,6 +300,26 @@ public class HttpChaosProfileTest {
         assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
         assertThat(deserialized[0].getChaos().getTruncateBodyAtFraction(), is(0.25));
         assertThat(deserialized[0].getChaos().getMalformedBody(), is(true));
+    }
+
+    @Test
+    public void expectationWithChaosSlowResponseRoundTripsViaSerializer() {
+        ExpectationSerializer serializer = new ExpectationSerializer(new MockServerLogger());
+
+        Expectation original = new Expectation(request("/test"))
+            .thenRespond(response("ok"))
+            .withChaos(httpChaosProfile()
+                .withSlowResponseChunkSize(8)
+                .withSlowResponseChunkDelay(Delay.milliseconds(250)));
+
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
+        assertThat(deserialized[0].getChaos().getSlowResponseChunkSize(), is(8));
+        assertThat(deserialized[0].getChaos().getSlowResponseChunkDelay().getTimeUnit(), is(TimeUnit.MILLISECONDS));
+        assertThat(deserialized[0].getChaos().getSlowResponseChunkDelay().getValue(), is(250L));
     }
 
     @Test

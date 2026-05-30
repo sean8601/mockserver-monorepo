@@ -250,6 +250,34 @@ public class HttpActionHandlerForwardChaosTest {
         assertThat(new String(responseCaptor.getValue().getBodyAsRawBytes(), java.nio.charset.StandardCharsets.UTF_8), is("upstream body{\"__chaos_malformed__\":"));
     }
 
+    @Test
+    public void slowResponseSetsChunkedConnectionOptionsOnForwardedResponse() {
+        // given - a FORWARD expectation with slow-response dribble configured
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile()
+                .withSlowResponseChunkSize(4)
+                .withSlowResponseChunkDelay(milliseconds(100)));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        HttpResponse written = responseCaptor.getValue();
+        assertThat(written.getBodyAsString(), is("upstream body"));
+        assertThat("connection options set", written.getConnectionOptions() != null, is(true));
+        assertThat(written.getConnectionOptions().getChunkSize(), is(4));
+        assertThat(written.getConnectionOptions().getChunkDelay().getValue(), is(100L));
+    }
+
     // ---- Latency injection test (non-blocking via scheduler) ----
 
     @Test

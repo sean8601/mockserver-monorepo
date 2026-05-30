@@ -47,7 +47,12 @@ const chaosProfile: HttpChaosProfile = {
     outageAfterMillis: 5000,
     outageDurationMillis: 10000,
     truncateBodyAtFraction: 0.25,
-    malformedBody: true
+    malformedBody: true,
+    slowResponseChunkSize: 8,
+    slowResponseChunkDelay: {
+        timeUnit: "MILLISECONDS",
+        value: 250
+    }
 };
 
 const chaosExpectation: Expectation = {

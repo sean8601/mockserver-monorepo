@@ -175,6 +175,12 @@ public class McpToolRegistry {
             chaosProps.putObject("outageDurationMillis").put("type", "integer").put("description", "Time-based outage window: chaos stays active for this many ms then self-heals (>= 1)");
             chaosProps.putObject("truncateBodyAtFraction").put("type", "number").put("description", "Corrupt the response body by keeping only this leading fraction (0.0-1.0) of its bytes");
             chaosProps.putObject("malformedBody").put("type", "boolean").put("description", "Corrupt the response body by appending a broken-JSON fragment so it fails to parse");
+            chaosProps.putObject("slowResponseChunkSize").put("type", "integer").put("description", "Dribble the response body in chunks of this many bytes (>= 1); requires slowResponseChunkDelay");
+            ObjectNode slowDelayProp = chaosProps.putObject("slowResponseChunkDelay");
+            slowDelayProp.put("type", "object").put("description", "Delay between dribbled response chunks");
+            ObjectNode slowDelayProps = slowDelayProp.putObject("properties");
+            slowDelayProps.putObject("timeUnit").put("type", "string").put("description", "Time unit (e.g. MILLISECONDS, SECONDS)");
+            slowDelayProps.putObject("value").put("type", "integer").put("description", "Delay value");
         }
         ArrayNode required = schema.putArray("required");
         required.add("method");
@@ -331,6 +337,27 @@ public class McpToolRegistry {
                 JsonNode malformedBodyNode = chaosNode.path("malformedBody");
                 if (!malformedBodyNode.isMissingNode() && !malformedBodyNode.isNull()) {
                     chaos.withMalformedBody(malformedBodyNode.asBoolean());
+                }
+                JsonNode slowChunkSizeNode = chaosNode.path("slowResponseChunkSize");
+                if (!slowChunkSizeNode.isMissingNode() && !slowChunkSizeNode.isNull()) {
+                    int slowChunkSize = slowChunkSizeNode.asInt();
+                    if (slowChunkSize < 1) {
+                        return errorResult("chaos slowResponseChunkSize must be >= 1");
+                    }
+                    chaos.withSlowResponseChunkSize(slowChunkSize);
+                }
+                JsonNode slowChunkDelayNode = chaosNode.path("slowResponseChunkDelay");
+                if (slowChunkDelayNode.isObject()) {
+                    String slowTimeUnit = slowChunkDelayNode.path("timeUnit").asText("MILLISECONDS");
+                    int slowValue = slowChunkDelayNode.path("value").asInt(0);
+                    if (slowValue < 1) {
+                        return errorResult("chaos slowResponseChunkDelay value must be >= 1 (a zero delay would not slow the response)");
+                    }
+                    try {
+                        chaos.withSlowResponseChunkDelay(new Delay(TimeUnit.valueOf(slowTimeUnit.toUpperCase()), slowValue));
+                    } catch (IllegalArgumentException e) {
+                        return errorResult("chaos slowResponseChunkDelay timeUnit must be one of: NANOSECONDS, MICROSECONDS, MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS");
+                    }
                 }
                 expectation.withChaos(chaos);
             }

@@ -843,6 +843,94 @@ public class HttpActionHandlerChaosTest {
         assertThat("match #3 past window keeps full body", dispatchAndCapture(request, expectation, normalResponse).getBodyAsString(), is("normal body"));
     }
 
+    // --- Slow-response (dribble) chaos tests ---
+
+    @Test
+    public void slowResponseSetsChunkedConnectionOptions() {
+        // given - slowResponseChunkSize + slowResponseChunkDelay set
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withSlowResponseChunkSize(4)
+                .withSlowResponseChunkDelay(milliseconds(100)));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        HttpResponse written = responseCaptor.getValue();
+        // body is unchanged; the response carries chunk settings so the writer dribbles it
+        assertThat(written.getBodyAsString(), is("normal body"));
+        ConnectionOptions connectionOptions = written.getConnectionOptions();
+        assertThat("connection options set", connectionOptions != null, is(true));
+        assertThat(connectionOptions.getChunkSize(), is(4));
+        assertThat(connectionOptions.getChunkDelay().getValue(), is(100L));
+    }
+
+    @Test
+    public void slowResponseIncrementsSlowMetric() {
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withSlowResponseChunkSize(4)
+                .withSlowResponseChunkDelay(milliseconds(100)));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "slow"), is(1.0));
+    }
+
+    @Test
+    public void slowResponseNotAppliedWhenOnlyChunkSizeSet() {
+        // chunkDelay is required alongside chunkSize for the dribble to apply
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile().withSlowResponseChunkSize(4));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        // no chunk dribble applied (the original response had no connection options)
+        assertThat(responseCaptor.getValue().getConnectionOptions() == null, is(true));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "slow"), is(0.0));
+    }
+
+    @Test
+    public void slowResponseNotAppliedWhenOnlyChunkDelaySet() {
+        // chunkSize is required alongside chunkDelay for the dribble to apply
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile().withSlowResponseChunkDelay(milliseconds(100)));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(responseCaptor.getValue().getConnectionOptions() == null, is(true));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "slow"), is(0.0));
+    }
+
     private static double scrapeCounterValue(String name, String labelName, String labelValue) {
         MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
         for (MetricSnapshot snapshot : snapshots) {

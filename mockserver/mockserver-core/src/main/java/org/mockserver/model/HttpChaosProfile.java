@@ -8,13 +8,16 @@ import java.util.Objects;
  * 503, 429 with an optional {@code Retry-After} header), latency injection, and
  * response-body corruption ({@code truncateBodyAtFraction} keeps only a leading
  * fraction of the body bytes; {@code malformedBody} appends a broken-JSON
- * fragment) for testing client-side body-parsing resilience.
+ * fragment) for testing client-side body-parsing resilience, and a slow
+ * ("dribbled") response ({@code slowResponseChunkSize} + {@code slowResponseChunkDelay}
+ * send the body in small chunks with a delay between each) for testing read
+ * timeouts on a trickling response.
  * <p>
- * Body corruption is deterministic (no probability draw): it applies to the
- * real (non-error) response whenever the count and time windows are eligible,
- * and is skipped for streaming bodies. Connection-drop and error injection take
- * priority — when an error is injected the synthetic error body is returned
- * uncorrupted.
+ * Body corruption and slow-response are deterministic (no probability draw):
+ * they apply to the real (non-error) response whenever the count and time
+ * windows are eligible, and are skipped for streaming bodies. Connection-drop
+ * and error injection take priority — when an error is injected the synthetic
+ * error body is returned uncorrupted and at full speed.
  * <p>
  * Attach to an {@link org.mockserver.mock.Expectation} via
  * {@code expectation.withChaos(httpChaosProfile()...)} to inject faults into
@@ -77,6 +80,8 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     private Long outageDurationMillis; // after outageAfterMillis, chaos stays active for this long then self-heals (>= 1; null = unbounded)
     private Double truncateBodyAtFraction; // 0.0-1.0 fraction of the response body bytes to keep; null = don't truncate
     private Boolean malformedBody;     // append a broken-JSON fragment to corrupt the response body; null/false = don't corrupt
+    private Integer slowResponseChunkSize; // dribble the response body in chunks of this many bytes (>= 1); null = don't dribble
+    private Delay slowResponseChunkDelay;  // delay between dribbled chunks; required (with chunkSize) to slow the response
 
     public static HttpChaosProfile httpChaosProfile() {
         return new HttpChaosProfile();
@@ -226,6 +231,29 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
         return malformedBody;
     }
 
+    public HttpChaosProfile withSlowResponseChunkSize(Integer slowResponseChunkSize) {
+        if (slowResponseChunkSize != null && slowResponseChunkSize < 1) {
+            throw new IllegalArgumentException("slowResponseChunkSize must be >= 1, got " + slowResponseChunkSize);
+        }
+        this.slowResponseChunkSize = slowResponseChunkSize;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getSlowResponseChunkSize() {
+        return slowResponseChunkSize;
+    }
+
+    public HttpChaosProfile withSlowResponseChunkDelay(Delay slowResponseChunkDelay) {
+        this.slowResponseChunkDelay = slowResponseChunkDelay;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Delay getSlowResponseChunkDelay() {
+        return slowResponseChunkDelay;
+    }
+
     /**
      * Returns {@code true} when the request falls within the time-based outage
      * window defined by {@code outageAfterMillis} and {@code outageDurationMillis},
@@ -307,13 +335,15 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
             Objects.equals(outageAfterMillis, that.outageAfterMillis) &&
             Objects.equals(outageDurationMillis, that.outageDurationMillis) &&
             Objects.equals(truncateBodyAtFraction, that.truncateBodyAtFraction) &&
-            Objects.equals(malformedBody, that.malformedBody);
+            Objects.equals(malformedBody, that.malformedBody) &&
+            Objects.equals(slowResponseChunkSize, that.slowResponseChunkSize) &&
+            Objects.equals(slowResponseChunkDelay, that.slowResponseChunkDelay);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis, truncateBodyAtFraction, malformedBody);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis, truncateBodyAtFraction, malformedBody, slowResponseChunkSize, slowResponseChunkDelay);
         }
         return hashCode;
     }

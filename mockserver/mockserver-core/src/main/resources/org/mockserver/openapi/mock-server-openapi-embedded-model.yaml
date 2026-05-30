@@ -1187,6 +1187,12 @@ components:
         malformedBody:
           type: boolean
           description: "Corrupt the response body by appending a broken-JSON fragment so it fails to parse"
+        slowResponseChunkSize:
+          type: integer
+          minimum: 1
+          description: "Dribble the response body in chunks of this many bytes; requires slowResponseChunkDelay to slow the response"
+        slowResponseChunkDelay:
+          $ref: "#/components/schemas/Delay"
     Delay:
       description: "response delay"
       type: object
