@@ -20,6 +20,7 @@ import java.net.SocketAddress;
 import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.*;
 import static io.netty.handler.codec.http.HttpUtil.isKeepAlive;
@@ -36,8 +37,13 @@ public class FullHttpRequestToMockServerHttpRequest {
     private final Certificate[] clientCertificates;
     private final Integer port;
     private final JDKCertificateToMockServerX509Certificate jdkCertificateToMockServerX509Certificate;
+    private final BooleanSupplier hasBodyMatchers;
 
     public FullHttpRequestToMockServerHttpRequest(Configuration configuration, MockServerLogger mockServerLogger, boolean isSecure, Certificate[] clientCertificates, Integer port) {
+        this(configuration, mockServerLogger, isSecure, clientCertificates, port, null);
+    }
+
+    public FullHttpRequestToMockServerHttpRequest(Configuration configuration, MockServerLogger mockServerLogger, boolean isSecure, Certificate[] clientCertificates, Integer port, BooleanSupplier hasBodyMatchers) {
         this.mockServerLogger = mockServerLogger;
         this.bodyDecoderEncoder = new BodyDecoderEncoder();
         this.formParameterParser = new ExpandedParameterDecoder(configuration, mockServerLogger);
@@ -45,6 +51,7 @@ public class FullHttpRequestToMockServerHttpRequest {
         this.clientCertificates = clientCertificates;
         this.port = port;
         this.jdkCertificateToMockServerX509Certificate = new JDKCertificateToMockServerX509Certificate(mockServerLogger);
+        this.hasBodyMatchers = hasBodyMatchers;
     }
 
     public HttpRequest mapFullHttpRequestToMockServerRequest(FullHttpRequest fullHttpRequest, List<Header> preservedHeaders, SocketAddress localAddress, SocketAddress remoteAddress, Protocol protocol) {
@@ -179,6 +186,15 @@ public class FullHttpRequestToMockServerHttpRequest {
     }
 
     private void setBody(HttpRequest httpRequest, FullHttpRequest fullHttpRequest) {
-        httpRequest.withBody(bodyDecoderEncoder.byteBufToBody(fullHttpRequest.content(), fullHttpRequest.headers().get(CONTENT_TYPE)));
+        if (hasBodyMatchers != null && !hasBodyMatchers.getAsBoolean()) {
+            // No expectation has a body matcher — skip content-type decode; store raw bytes
+            if (fullHttpRequest.content() != null && fullHttpRequest.content().readableBytes() > 0) {
+                byte[] rawBytes = new byte[fullHttpRequest.content().readableBytes()];
+                fullHttpRequest.content().readBytes(rawBytes);
+                httpRequest.withBody(BinaryBody.binary(rawBytes));
+            }
+        } else {
+            httpRequest.withBody(bodyDecoderEncoder.byteBufToBody(fullHttpRequest.content(), fullHttpRequest.headers().get(CONTENT_TYPE)));
+        }
     }
 }

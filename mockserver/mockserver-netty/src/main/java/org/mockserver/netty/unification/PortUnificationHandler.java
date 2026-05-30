@@ -315,7 +315,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             if (configuration.mcpEnabled()) {
                 addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
             }
-            addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, false, null, ctx.channel().localAddress()));
+            addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, false, null, ctx.channel().localAddress(), () -> httpState.getRequestMatchers().hasBodyMatchers()));
             if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
                 addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
                 addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
@@ -357,7 +357,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             if (configuration.mcpEnabled()) {
                 addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
             }
-            addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
+            addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress(), () -> httpState.getRequestMatchers().hasBodyMatchers()));
             if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
                 addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
                 addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
@@ -415,7 +415,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 if (configuration.mcpEnabled()) {
                     addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
                 }
-                addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
+                addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress(), () -> httpState.getRequestMatchers().hasBodyMatchers()));
                 addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
                 pipeline.remove(this);
 

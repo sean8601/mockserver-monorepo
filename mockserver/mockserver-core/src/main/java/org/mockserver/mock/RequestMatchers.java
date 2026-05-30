@@ -48,6 +48,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     private MatcherBuilder matcherBuilder;
     private Metrics metrics;
     private final ScenarioManager scenarioManager = new ScenarioManager();
+    private final AtomicInteger bodyMatcherCount = new AtomicInteger(0);
 
     public RequestMatchers(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, WebSocketClientRegistry webSocketClientRegistry) {
         super(scheduler);
@@ -84,6 +85,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     if (httpRequestMatcher.getExpectation() != null && httpRequestMatcher.getExpectation().getAction() != null) {
                         metrics.decrement(httpRequestMatcher.getExpectation().getAction().getType());
                     }
+                    boolean oldHadBody = expectationHasBodyMatcher(httpRequestMatcher.getExpectation());
                     if (httpRequestMatcher.getExpectation() != null) {
                         // propagate created time from previous entry to avoid re-ordering on update
                         expectation.withCreated(httpRequestMatcher.getExpectation().getCreated());
@@ -91,6 +93,12 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     httpRequestMatchers.removePriorityKey(httpRequestMatcher);
                     if (httpRequestMatcher.update(expectation)) {
                         httpRequestMatchers.addPriorityKey(httpRequestMatcher);
+                        boolean newHasBody = expectationHasBodyMatcher(expectation);
+                        if (!oldHadBody && newHasBody) {
+                            bodyMatcherCount.incrementAndGet();
+                        } else if (oldHadBody && !newHasBody) {
+                            bodyMatcherCount.decrementAndGet();
+                        }
                         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                             mockServerLogger.logEvent(
                                 new LogEntry()
@@ -143,6 +151,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                             if (httpRequestMatcher.getExpectation() != null && httpRequestMatcher.getExpectation().getAction() != null) {
                                 metrics.decrement(httpRequestMatcher.getExpectation().getAction().getType());
                             }
+                            boolean oldHadBody = expectationHasBodyMatcher(httpRequestMatcher.getExpectation());
                             if (httpRequestMatcher.getExpectation() != null) {
                                 // propagate created time from previous entry to avoid re-ordering on update
                                 expectation.withCreated(httpRequestMatcher.getExpectation().getCreated());
@@ -150,6 +159,12 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                             httpRequestMatchers.removePriorityKey(httpRequestMatcher);
                             if (httpRequestMatcher.update(expectation)) {
                                 httpRequestMatchers.addPriorityKey(httpRequestMatcher);
+                                boolean newHasBody = expectationHasBodyMatcher(expectation);
+                                if (!oldHadBody && newHasBody) {
+                                    bodyMatcherCount.incrementAndGet();
+                                } else if (oldHadBody && !newHasBody) {
+                                    bodyMatcherCount.decrementAndGet();
+                                }
                                 numberOfChanges.getAndIncrement();
                                 if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                                     mockServerLogger.logEvent(
@@ -212,6 +227,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(expectation);
         httpRequestMatchers.add(httpRequestMatcher);
         httpRequestMatcher.withSource(cause);
+        if (expectationHasBodyMatcher(expectation)) {
+            bodyMatcherCount.incrementAndGet();
+        }
         if (expectation.getAction() != null) {
             metrics.increment(expectation.getAction().getType());
         }
@@ -235,6 +253,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     public void reset(Cause cause) {
         httpRequestMatchers.stream().forEach(httpRequestMatcher -> removeHttpRequestMatcher(httpRequestMatcher, cause, false, UUIDService.getUUID()));
         expectationRequestDefinitions.clear();
+        bodyMatcherCount.set(0);
         scenarioManager.reset();
         Metrics.clearActionMetrics();
         Metrics.clearRequestAndExpectationMetrics();
@@ -447,6 +466,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     @SuppressWarnings("rawtypes")
     private void removeHttpRequestMatcher(HttpRequestMatcher httpRequestMatcher, Cause cause, boolean notifyAndUpdateMetrics, String logCorrelationId) {
         if (httpRequestMatchers.remove(httpRequestMatcher)) {
+            if (expectationHasBodyMatcher(httpRequestMatcher.getExpectation())) {
+                bodyMatcherCount.decrementAndGet();
+            }
             if (httpRequestMatcher.getExpectation() != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
                 Expectation expectation = httpRequestMatcher.getExpectation().clone();
                 mockServerLogger.logEvent(
@@ -576,6 +598,20 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
     public boolean isEmpty() {
         return httpRequestMatchers.isEmpty();
+    }
+
+    /**
+     * Returns true if any registered expectation has a body matcher.
+     * Used to skip request body decoding when no expectation needs it.
+     */
+    public boolean hasBodyMatchers() {
+        return bodyMatcherCount.get() > 0;
+    }
+
+    private static boolean expectationHasBodyMatcher(Expectation expectation) {
+        return expectation != null
+            && expectation.getHttpRequest() instanceof HttpRequest
+            && ((HttpRequest) expectation.getHttpRequest()).getBody() != null;
     }
 
     public ScenarioManager getScenarioManager() {

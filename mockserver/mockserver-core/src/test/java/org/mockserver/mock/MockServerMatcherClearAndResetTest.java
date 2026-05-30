@@ -28,7 +28,9 @@ import static org.mockserver.matchers.TimeToLive.unlimited;
 import static org.mockserver.mock.listeners.MockServerMatcherNotifier.Cause.API;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
+import static org.mockserver.model.JsonBody.json;
 import static org.mockserver.model.OpenAPIDefinition.openAPI;
+import static org.mockserver.model.StringBody.exact;
 
 /**
  * @author jamesdbloom
@@ -884,6 +886,65 @@ public class MockServerMatcherClearAndResetTest {
 
         // then
         assertThat(requestMatchers.httpRequestMatchers.toSortedList(), is(httpRequestMatchers));
+    }
+
+    @Test
+    public void shouldReturnFalseWhenNoBodyMatcherExpectations() {
+        // given - no expectations
+        assertThat(requestMatchers.hasBodyMatchers(), is(false));
+
+        // when - add expectation without body matcher
+        requestMatchers.add(
+            new Expectation(request().withPath("somepath")).thenRespond(response().withBody("somebody")),
+            API
+        );
+
+        // then - still no body matchers
+        assertThat(requestMatchers.hasBodyMatchers(), is(false));
+    }
+
+    @Test
+    public void shouldReturnTrueWhenBodyMatcherExpectationExists() {
+        // when - add expectation with body matcher
+        Expectation bodyExpectation = new Expectation(
+            request().withPath("somepath").withBody(json("{\"key\":\"value\"}"))
+        ).thenRespond(response().withBody("somebody"));
+        requestMatchers.add(bodyExpectation, API);
+
+        // then
+        assertThat(requestMatchers.hasBodyMatchers(), is(true));
+    }
+
+    @Test
+    public void shouldTrackBodyMatcherCountAcrossAddAndRemove() {
+        // given - add two expectations, one with body matcher
+        Expectation noBody = new Expectation(request().withPath("a")).thenRespond(response());
+        Expectation withBody = new Expectation(request().withPath("b").withBody(exact("hello"))).thenRespond(response());
+        requestMatchers.add(noBody, API);
+        requestMatchers.add(withBody, API);
+        assertThat(requestMatchers.hasBodyMatchers(), is(true));
+
+        // when - clear the body-matcher expectation
+        requestMatchers.clear(request().withPath("b"));
+
+        // then - no body matchers left
+        assertThat(requestMatchers.hasBodyMatchers(), is(false));
+    }
+
+    @Test
+    public void shouldResetBodyMatcherCount() {
+        // given
+        requestMatchers.add(
+            new Expectation(request().withBody(exact("test"))).thenRespond(response()),
+            API
+        );
+        assertThat(requestMatchers.hasBodyMatchers(), is(true));
+
+        // when
+        requestMatchers.reset();
+
+        // then
+        assertThat(requestMatchers.hasBodyMatchers(), is(false));
     }
 
 }

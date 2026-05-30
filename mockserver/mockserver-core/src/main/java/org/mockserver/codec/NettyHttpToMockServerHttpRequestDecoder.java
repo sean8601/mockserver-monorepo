@@ -11,6 +11,7 @@ import org.mockserver.model.Header;
 import java.net.SocketAddress;
 import java.security.cert.Certificate;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 import static org.mockserver.socket.tls.SniHandler.getALPNProtocol;
 
@@ -23,8 +24,12 @@ public class NettyHttpToMockServerHttpRequestDecoder extends MessageToMessageDec
     private final MockServerLogger mockServerLogger;
 
     public NettyHttpToMockServerHttpRequestDecoder(Configuration configuration, MockServerLogger mockServerLogger, boolean isSecure, Certificate[] clientCertificates, Integer port) {
+        this(configuration, mockServerLogger, isSecure, clientCertificates, port, null);
+    }
+
+    public NettyHttpToMockServerHttpRequestDecoder(Configuration configuration, MockServerLogger mockServerLogger, boolean isSecure, Certificate[] clientCertificates, Integer port, BooleanSupplier hasBodyMatchers) {
         this.mockServerLogger = mockServerLogger;
-        this.fullHttpRequestToMockServerRequest = new FullHttpRequestToMockServerHttpRequest(configuration, mockServerLogger, isSecure, clientCertificates, port);
+        this.fullHttpRequestToMockServerRequest = new FullHttpRequestToMockServerHttpRequest(configuration, mockServerLogger, isSecure, clientCertificates, port, hasBodyMatchers);
     }
 
     @Override
