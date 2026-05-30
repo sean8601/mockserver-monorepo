@@ -19,7 +19,7 @@ public class TimeToLiveTest {
     @After
     public void tearDown() {
         TimeService.reset();
-        TimeService.fixedTime = false;
+        TimeService.fixedTime(false);
     }
 
     @Test

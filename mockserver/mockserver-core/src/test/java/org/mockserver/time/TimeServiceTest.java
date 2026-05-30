@@ -17,7 +17,7 @@ public class TimeServiceTest {
     @After
     public void tearDown() {
         TimeService.reset();
-        TimeService.fixedTime = false;
+        TimeService.fixedTime(false);
     }
 
     @Test
@@ -125,7 +125,7 @@ public class TimeServiceTest {
     @Test
     public void shouldSupportLegacyFixedTimeFlag() {
         // when
-        TimeService.fixedTime = true;
+        TimeService.fixedTime(true);
 
         // then
         assertThat(TimeService.now(), is(TimeService.FIXED_INSTANT_FOR_TESTS));
@@ -136,7 +136,7 @@ public class TimeServiceTest {
     public void shouldPreferFrozenInstantOverFixedTimeFlag() {
         // given
         Instant frozen = Instant.parse("2024-06-01T12:00:00Z");
-        TimeService.fixedTime = true;
+        TimeService.fixedTime(true);
         TimeService.freeze(frozen);
 
         // when/then - frozen instant takes precedence
@@ -146,7 +146,7 @@ public class TimeServiceTest {
     @Test
     public void shouldAdvanceFromFixedInstantForTestsWhenFixedTimeFlagSet() {
         // given - fixedTime=true but frozenInstant is null
-        TimeService.fixedTime = true;
+        TimeService.fixedTime(true);
         assertThat(TimeService.now(), is(TimeService.FIXED_INSTANT_FOR_TESTS));
 
         // when

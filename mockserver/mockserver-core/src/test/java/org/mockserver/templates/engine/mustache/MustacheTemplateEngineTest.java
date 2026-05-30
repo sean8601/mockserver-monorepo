@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.hamcrest.Matcher;
 import org.junit.*;
 import org.junit.rules.ExpectedException;
+import org.mockserver.time.FixedTime;
 import org.mockito.Mock;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
@@ -14,7 +15,6 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.model.HttpRequestDTO;
 import org.mockserver.serialization.model.HttpResponseDTO;
-import org.mockserver.time.EpochService;
 import org.mockserver.time.TimeService;
 import org.mockserver.uuid.UUIDService;
 import org.slf4j.event.Level;
@@ -53,25 +53,16 @@ import static org.slf4j.event.Level.INFO;
 public class MustacheTemplateEngineTest {
 
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
-    private static boolean originalFixedTime;
     private static final Configuration configuration = configuration();
+
+    @ClassRule
+    public static final FixedTime fixedTime = new FixedTime();
 
     @Rule
     public final ExpectedException exception = ExpectedException.none();
 
     @Mock
     private MockServerLogger mockServerLogger;
-
-    @BeforeClass
-    public static void fixTime() {
-        originalFixedTime = EpochService.fixedTime;
-        EpochService.fixedTime = true;
-    }
-
-    @AfterClass
-    public static void fixTimeReset() {
-        EpochService.fixedTime = originalFixedTime;
-    }
 
     @Before
     public void setupTestFixture() {
@@ -334,12 +325,12 @@ public class MustacheTemplateEngineTest {
 
     @Test
     public void shouldHandleHttpRequestsWithMustacheResponseTemplateWithDynamicValuesDateAndUUID() throws JsonProcessingException {
-        boolean originalFixedUUID = UUIDService.fixedUUID;
-        boolean originalFixedTime = TimeService.fixedTime;
+        boolean originalFixedUUID = UUIDService.fixedUUID();
+        boolean originalFixedTime = TimeService.fixedTime();
         try {
             // given
-            UUIDService.fixedUUID = true;
-            TimeService.fixedTime = true;
+            UUIDService.fixedUUID(true);
+            TimeService.fixedTime(true);
             String template = "{" + NEW_LINE +
                 "    'statusCode': 200," + NEW_LINE +
                 "    'body': \"{'date': '{{ now }}', 'date_epoch': '{{ now_epoch }}', 'date_iso_8601': '{{ now_iso_8601 }}', 'date_rfc_1123': '{{ now_rfc_1123 }}', 'uuids': ['{{ uuid }}', '{{ uuid }}'] }\"" + NEW_LINE +
@@ -383,8 +374,8 @@ public class MustacheTemplateEngineTest {
             );
 
         } finally {
-            UUIDService.fixedUUID = originalFixedUUID;
-            TimeService.fixedTime = originalFixedTime;
+            UUIDService.fixedUUID(originalFixedUUID);
+            TimeService.fixedTime(originalFixedTime);
         }
     }
 

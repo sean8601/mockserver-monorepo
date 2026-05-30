@@ -78,7 +78,7 @@ import static org.mockserver.model.XmlSchemaBody.xmlSchemaFromResource;
 public abstract class AbstractExtendedMockingIntegrationTest extends AbstractBasicMockingSameJVMIntegrationTest {
     @BeforeClass
     public static void fixTime() {
-        EpochService.fixedTime = true;
+        EpochService.fixedTimeGlobally(true);
     }
 
     @Test

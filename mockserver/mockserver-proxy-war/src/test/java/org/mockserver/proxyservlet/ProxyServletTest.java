@@ -66,7 +66,7 @@ public class ProxyServletTest {
 
     @BeforeClass
     public static void fixTime() {
-        EpochService.fixedTime = true;
+        EpochService.fixedTimeGlobally(true);
     }
 
     @Before

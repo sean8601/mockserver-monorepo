@@ -20,7 +20,7 @@ import org.mockserver.model.*;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
-import org.mockserver.time.EpochService;
+import org.mockserver.time.FixedTime;
 import org.mockserver.uuid.UUIDService;
 import org.slf4j.event.Level;
 
@@ -78,10 +78,8 @@ public class HttpActionHandlerChaosTest {
     private HttpActionHandler actionHandler;
     private Configuration configuration;
 
-    @BeforeClass
-    public static void fixTime() {
-        EpochService.fixedTime = true;
-    }
+    @ClassRule
+    public static final FixedTime fixedTime = new FixedTime();
 
     @AfterClass
     public static void stopScheduler() {

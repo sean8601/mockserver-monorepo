@@ -3,6 +3,7 @@ package org.mockserver.matchers;
 import org.apache.commons.text.StringEscapeUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
@@ -11,6 +12,8 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.model.*;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.time.EpochService;
+import org.mockserver.time.FixedTime;
+import org.mockserver.uuid.FixedUUID;
 import org.mockserver.uuid.UUIDService;
 import org.slf4j.event.Level;
 
@@ -46,18 +49,19 @@ public class HttpRequestPropertiesMatcherLogTest {
     private final HttpState httpStateHandler = new HttpState(configuration(), mockServerLogger, new Scheduler(configuration(), mockServerLogger));
     private static Level originalLevel;
 
+    @ClassRule
+    public static final FixedTime fixedTime = new FixedTime();
+    @ClassRule
+    public static final FixedUUID fixedUUID = new FixedUUID();
+
     @BeforeClass
-    public static void fixTimeAndLogs() {
-        EpochService.fixedTime = true;
-        UUIDService.fixedUUID = true;
+    public static void fixLogs() {
         originalLevel = logLevel();
         logLevel("INFO");
     }
 
     @AfterClass
-    public static void resetTimeAndLogs() {
-        EpochService.fixedTime = false;
-        UUIDService.fixedUUID = false;
+    public static void resetLogs() {
         logLevel(originalLevel.name());
     }
 

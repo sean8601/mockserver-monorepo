@@ -1,7 +1,7 @@
 package org.mockserver.log;
 
 import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
@@ -13,6 +13,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.model.RequestDefinition;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.time.EpochService;
+import org.mockserver.time.GlobalFixedTime;
 import org.slf4j.event.Level;
 
 import java.util.List;
@@ -40,10 +41,8 @@ public class MockServerEventLogTest {
     private MockServerLogger mockServerLogger;
     private MockServerEventLog mockServerEventLog;
 
-    @BeforeClass
-    public static void fixTime() {
-        EpochService.fixedTime = true;
-    }
+    @ClassRule
+    public static final GlobalFixedTime fixedTime = new GlobalFixedTime();
 
     @Before
     public void setupTestFixture() {

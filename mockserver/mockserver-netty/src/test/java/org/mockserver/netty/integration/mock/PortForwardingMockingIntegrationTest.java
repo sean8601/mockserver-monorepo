@@ -76,7 +76,7 @@ public class PortForwardingMockingIntegrationTest extends AbstractBasicMockingSa
         try {
             // given
             ConfigurationProperties.logLevel("INFO");
-            UUIDService.fixedUUID = true;
+            UUIDService.fixedUUIDGlobally(true);
 
             // when
             mockServerClient.reset();
@@ -279,7 +279,7 @@ public class PortForwardingMockingIntegrationTest extends AbstractBasicMockingSa
                 }
             }
         } finally {
-            UUIDService.fixedUUID = false;
+            UUIDService.fixedUUIDGlobally(false);
             ConfigurationProperties.logLevel(originalLevel.name());
         }
     }

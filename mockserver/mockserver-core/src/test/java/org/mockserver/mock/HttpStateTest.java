@@ -5,7 +5,7 @@ import com.google.common.collect.ImmutableMap;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -15,6 +15,7 @@ import org.mockserver.file.FilePath;
 import org.mockserver.file.FileReader;
 import org.mockserver.log.MockServerEventLog;
 import org.mockserver.time.EpochService;
+import org.mockserver.time.GlobalFixedTime;
 import org.mockserver.time.TimeService;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -88,10 +89,8 @@ public class HttpStateTest {
     @InjectMocks
     private HttpState httpState;
 
-    @BeforeClass
-    public static void fixTime() {
-        EpochService.fixedTime = true;
-    }
+    @ClassRule
+    public static final GlobalFixedTime fixedTime = new GlobalFixedTime();
 
     @Before
     public void prepareTestFixture() {

@@ -74,7 +74,7 @@ public class HttpRequestHandlerTest {
 
     @BeforeClass
     public static void fixTime() {
-        EpochService.fixedTime = true;
+        EpochService.fixedTimeGlobally(true);
     }
 
     @Before

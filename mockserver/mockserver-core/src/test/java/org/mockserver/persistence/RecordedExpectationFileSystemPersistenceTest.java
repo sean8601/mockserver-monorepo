@@ -1,6 +1,6 @@
 package org.mockserver.persistence;
 
-import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.MockServerEventLog;
@@ -11,7 +11,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
 import org.mockserver.scheduler.Scheduler;
-import org.mockserver.time.EpochService;
+import org.mockserver.time.FixedTime;
 
 import java.io.File;
 import java.io.IOException;
@@ -29,10 +29,8 @@ import static org.mockserver.model.HttpResponse.response;
 
 public class RecordedExpectationFileSystemPersistenceTest {
 
-    @BeforeClass
-    public static void fixTime() {
-        EpochService.fixedTime = true;
-    }
+    @ClassRule
+    public static final FixedTime fixedTime = new FixedTime();
 
     @Test
     public void shouldPersistRecordedExpectationsOnForwardedRequest() throws Exception {

@@ -322,7 +322,7 @@ public class MockServerServletTest {
         try {
             // given
             ConfigurationProperties.logLevel("INFO");
-            UUIDService.fixedUUID = true;
+            UUIDService.fixedUUIDGlobally(true);
             Expectation expectationOne = new Expectation(request("request_one")).thenRespond(response("response_one"));
             httpStateHandler.add(expectationOne);
             MockHttpServletRequest retrieveLogRequest = buildHttpServletRequest(
@@ -358,7 +358,7 @@ public class MockServerServletTest {
                 "    }" + NEW_LINE +
                 "  }" + NEW_LINE));
         } finally {
-            UUIDService.fixedUUID = false;
+            UUIDService.fixedUUIDGlobally(false);
             ConfigurationProperties.logLevel(originalLevel.name());
         }
     }

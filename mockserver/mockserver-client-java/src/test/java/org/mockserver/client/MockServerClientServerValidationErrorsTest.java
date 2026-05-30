@@ -103,7 +103,7 @@ public class MockServerClientServerValidationErrorsTest {
         try {
             // given
             ConfigurationProperties.logLevel("INFO");
-            UUIDService.fixedUUID = true;
+            UUIDService.fixedUUIDGlobally(true);
             String responseBody = "some_random_response";
             echoServer.withNextResponse(response()
                                             .withStatusCode(403)
@@ -137,7 +137,7 @@ public class MockServerClientServerValidationErrorsTest {
                 containsString("while submitted expectation:")
             );
         } finally {
-            UUIDService.fixedUUID = false;
+            UUIDService.fixedUUIDGlobally(false);
             if (originalLevel != null) {
                 ConfigurationProperties.logLevel(originalLevel.name());
             }

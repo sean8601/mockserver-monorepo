@@ -1357,7 +1357,7 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
             ConfigurationProperties.logLevel("INFO");
 
             // when
-            UUIDService.fixedUUID = true;
+            UUIDService.fixedUUIDGlobally(true);
             mockServerClient.reset();
             mockServerClient.when(request().withPath(calculatePath("some_path.*")), exactly(4)).respond(response().withBody("some_body"));
             assertEquals(
@@ -1559,7 +1559,7 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 }
             }
         } finally {
-            UUIDService.fixedUUID = false;
+            UUIDService.fixedUUIDGlobally(false);
             ConfigurationProperties.logLevel(originalLevel.name());
         }
     }
