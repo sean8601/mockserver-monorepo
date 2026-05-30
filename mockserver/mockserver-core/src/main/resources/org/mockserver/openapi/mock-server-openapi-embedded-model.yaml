@@ -1179,6 +1179,14 @@ components:
           format: int64
           minimum: 1
           description: "Time-based outage window: chaos stays active for this many milliseconds then self-heals; omit for an unbounded outage"
+        truncateBodyAtFraction:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: "Corrupt the response body by keeping only this leading fraction (0.0 to 1.0) of its bytes"
+        malformedBody:
+          type: boolean
+          description: "Corrupt the response body by appending a broken-JSON fragment so it fails to parse"
     Delay:
       description: "response delay"
       type: object

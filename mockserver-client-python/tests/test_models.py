@@ -2103,6 +2103,16 @@ class TestHttpChaosProfile:
         assert chaos.fail_request_count is None
         assert chaos.outage_after_millis is None
         assert chaos.outage_duration_millis is None
+        assert chaos.truncate_body_at_fraction is None
+        assert chaos.malformed_body is None
+
+    def test_body_corruption_round_trip(self):
+        chaos = HttpChaosProfile(truncate_body_at_fraction=0.25, malformed_body=True)
+        result = chaos.to_dict()
+        assert result == {"truncateBodyAtFraction": 0.25, "malformedBody": True}
+        restored = HttpChaosProfile.from_dict(result)
+        assert restored.truncate_body_at_fraction == 0.25
+        assert restored.malformed_body is True
 
     def test_construction_all_fields(self):
         chaos = HttpChaosProfile(
@@ -2113,6 +2123,8 @@ class TestHttpChaosProfile:
             seed=42,
             succeed_first=3,
             fail_request_count=5,
+            truncate_body_at_fraction=0.25,
+            malformed_body=True,
         )
         assert chaos.error_status == 503
         assert chaos.error_probability == 0.5
@@ -2122,6 +2134,8 @@ class TestHttpChaosProfile:
         assert chaos.seed == 42
         assert chaos.succeed_first == 3
         assert chaos.fail_request_count == 5
+        assert chaos.truncate_body_at_fraction == 0.25
+        assert chaos.malformed_body is True
 
     def test_to_dict_all_fields(self):
         chaos = HttpChaosProfile(
@@ -2132,6 +2146,8 @@ class TestHttpChaosProfile:
             seed=99,
             succeed_first=5,
             fail_request_count=10,
+            truncate_body_at_fraction=0.5,
+            malformed_body=True,
         )
         result = chaos.to_dict()
         assert result == {
@@ -2142,6 +2158,8 @@ class TestHttpChaosProfile:
             "seed": 99,
             "succeedFirst": 5,
             "failRequestCount": 10,
+            "truncateBodyAtFraction": 0.5,
+            "malformedBody": True,
         }
 
     def test_to_dict_strips_none(self):

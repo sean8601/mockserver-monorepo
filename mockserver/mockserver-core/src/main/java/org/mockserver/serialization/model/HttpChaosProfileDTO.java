@@ -15,6 +15,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
     private Integer failRequestCount;
     private Long outageAfterMillis;
     private Long outageDurationMillis;
+    private Double truncateBodyAtFraction;
+    private Boolean malformedBody;
 
     public HttpChaosProfileDTO(HttpChaosProfile httpChaosProfile) {
         if (httpChaosProfile != null) {
@@ -30,6 +32,8 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             failRequestCount = httpChaosProfile.getFailRequestCount();
             outageAfterMillis = httpChaosProfile.getOutageAfterMillis();
             outageDurationMillis = httpChaosProfile.getOutageDurationMillis();
+            truncateBodyAtFraction = httpChaosProfile.getTruncateBodyAtFraction();
+            malformedBody = httpChaosProfile.getMalformedBody();
         }
     }
 
@@ -47,7 +51,9 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             .withSucceedFirst(succeedFirst)
             .withFailRequestCount(failRequestCount)
             .withOutageAfterMillis(outageAfterMillis)
-            .withOutageDurationMillis(outageDurationMillis);
+            .withOutageDurationMillis(outageDurationMillis)
+            .withTruncateBodyAtFraction(truncateBodyAtFraction)
+            .withMalformedBody(malformedBody);
     }
 
     public Integer getErrorStatus() {
@@ -137,6 +143,24 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
 
     public HttpChaosProfileDTO setOutageDurationMillis(Long outageDurationMillis) {
         this.outageDurationMillis = outageDurationMillis;
+        return this;
+    }
+
+    public Double getTruncateBodyAtFraction() {
+        return truncateBodyAtFraction;
+    }
+
+    public HttpChaosProfileDTO setTruncateBodyAtFraction(Double truncateBodyAtFraction) {
+        this.truncateBodyAtFraction = truncateBodyAtFraction;
+        return this;
+    }
+
+    public Boolean getMalformedBody() {
+        return malformedBody;
+    }
+
+    public HttpChaosProfileDTO setMalformedBody(Boolean malformedBody) {
+        this.malformedBody = malformedBody;
         return this;
     }
 }

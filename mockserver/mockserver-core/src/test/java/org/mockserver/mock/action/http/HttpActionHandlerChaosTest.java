@@ -698,6 +698,151 @@ public class HttpActionHandlerChaosTest {
         }
     }
 
+    // --- Body-corruption chaos tests ---
+
+    private static String capturedBody(ArgumentCaptor<HttpResponse> captor) {
+        return new String(captor.getValue().getBodyAsRawBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    @Test
+    public void truncateBodyKeepsLeadingFraction() {
+        // given - body "normal body" (11 bytes), truncateBodyAtFraction=0.5 -> keep floor(11*0.5)=5
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile().withTruncateBodyAtFraction(0.5));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(capturedBody(responseCaptor), is("norma"));
+    }
+
+    @Test
+    public void malformedBodyAppendsBrokenFragment() {
+        // given - malformedBody=true appends an unterminated JSON object
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile().withMalformedBody(true));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(capturedBody(responseCaptor), is("normal body{\"__chaos_malformed__\":"));
+    }
+
+    @Test
+    public void truncateThenMalformedComposes() {
+        // given - truncate to 0 bytes then append the malformed fragment
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withTruncateBodyAtFraction(0.0)
+                .withMalformedBody(true));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(capturedBody(responseCaptor), is("{\"__chaos_malformed__\":"));
+    }
+
+    @Test
+    public void bodyChaosNotAppliedWhenErrorInjected() {
+        // given - error injection AND body corruption both set; error wins and its body is left intact
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withErrorStatus(503)
+                .withErrorProbability(1.0)
+                .withMalformedBody(true)
+                .withTruncateBodyAtFraction(0.5));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(responseCaptor.getValue().getStatusCode(), is(503));
+        assertThat(capturedBody(responseCaptor), is("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected HTTP chaos error\"}}"));
+        // body-corruption metrics did NOT fire because the error response replaced the real one
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "truncate"), is(0.0));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "malformed"), is(0.0));
+    }
+
+    @Test
+    public void truncateBodyIncrementsTruncateMetric() {
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile().withTruncateBodyAtFraction(0.5));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "truncate"), is(1.0));
+    }
+
+    @Test
+    public void malformedBodyIncrementsMalformedMetric() {
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile().withMalformedBody(true));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "malformed"), is(1.0));
+    }
+
+    @Test
+    public void bodyChaosGatedByCountWindow() {
+        // succeedFirst=1, failRequestCount=1, truncateBodyAtFraction=0.0
+        // -> match #1 full body, match #2 truncated to empty, match #3 full body again
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withTruncateBodyAtFraction(0.0)
+                .withSucceedFirst(1)
+                .withFailRequestCount(1));
+
+        assertThat("match #1 outside window keeps full body", dispatchAndCapture(request, expectation, normalResponse).getBodyAsString(), is("normal body"));
+
+        HttpResponse r2 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("match #2 inside window is truncated", r2.getBodyAsRawBytes().length, is(0));
+
+        assertThat("match #3 past window keeps full body", dispatchAndCapture(request, expectation, normalResponse).getBodyAsString(), is("normal body"));
+    }
+
     private static double scrapeCounterValue(String name, String labelName, String labelValue) {
         MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
         for (MetricSnapshot snapshot : snapshots) {

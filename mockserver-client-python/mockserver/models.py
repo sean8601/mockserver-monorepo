@@ -13,6 +13,8 @@ _FIELD_MAP = {
     "fail_request_count": "failRequestCount",
     "outage_after_millis": "outageAfterMillis",
     "outage_duration_millis": "outageDurationMillis",
+    "truncate_body_at_fraction": "truncateBodyAtFraction",
+    "malformed_body": "malformedBody",
     "status_code": "statusCode",
     "reason_phrase": "reasonPhrase",
     "keep_alive": "keepAlive",
@@ -319,6 +321,8 @@ class HttpChaosProfile:
     fail_request_count: int | None = None
     outage_after_millis: int | None = None
     outage_duration_millis: int | None = None
+    truncate_body_at_fraction: float | None = None
+    malformed_body: bool | None = None
 
     def to_dict(self) -> dict:
         return _strip_none({
@@ -332,6 +336,8 @@ class HttpChaosProfile:
             "failRequestCount": self.fail_request_count,
             "outageAfterMillis": self.outage_after_millis,
             "outageDurationMillis": self.outage_duration_millis,
+            "truncateBodyAtFraction": self.truncate_body_at_fraction,
+            "malformedBody": self.malformed_body,
         })
 
     @classmethod
@@ -349,6 +355,8 @@ class HttpChaosProfile:
             fail_request_count=data.get("failRequestCount"),
             outage_after_millis=data.get("outageAfterMillis"),
             outage_duration_millis=data.get("outageDurationMillis"),
+            truncate_body_at_fraction=data.get("truncateBodyAtFraction"),
+            malformed_body=data.get("malformedBody"),
         )
 
 

@@ -345,6 +345,8 @@ export interface HttpChaosProfile {
   failRequestCount?: number;
   outageAfterMillis?: number;
   outageDurationMillis?: number;
+  truncateBodyAtFraction?: number;
+  malformedBody?: boolean;
 }
 
 export interface AfterAction {

@@ -45,7 +45,9 @@ const chaosProfile: HttpChaosProfile = {
     succeedFirst: 3,
     failRequestCount: 5,
     outageAfterMillis: 5000,
-    outageDurationMillis: 10000
+    outageDurationMillis: 10000,
+    truncateBodyAtFraction: 0.25,
+    malformedBody: true
 };
 
 const chaosExpectation: Expectation = {

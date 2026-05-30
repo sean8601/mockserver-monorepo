@@ -986,6 +986,62 @@ public class HttpActionHandler {
         return errorResponse;
     }
 
+    // Appended to a body to make it malformed; an unterminated JSON object so any
+    // JSON payload becomes unparseable and any other payload gains clear garbage.
+    private static final byte[] MALFORMED_BODY_SUFFIX = "{\"__chaos_malformed__\":".getBytes(StandardCharsets.UTF_8);
+
+    /**
+     * Applies body-corruption chaos ({@code truncateBodyAtFraction} and/or
+     * {@code malformedBody}) to a real (non-error) response. Returns the response
+     * unchanged when no body-corruption field is set, the count window is not
+     * eligible, or the response is streaming (streaming bodies are out of scope —
+     * the LLM response path has its own mid-stream truncation). Truncation keeps a
+     * leading fraction of the body bytes; malformed-body appends a broken-JSON
+     * fragment. The corrupted clone preserves the original content-type and drops
+     * any stale {@code Content-Length} so the response is still well-framed.
+     *
+     * @param chaos      the chaos profile (may be null)
+     * @param matchCount 1-based match count; used for count-window gating
+     */
+    HttpResponse applyBodyChaos(final HttpResponse response, final HttpChaosProfile chaos, int matchCount) {
+        if (response == null || chaos == null || !chaos.countWindowEligible(matchCount)) {
+            return response;
+        }
+        final Double fraction = chaos.getTruncateBodyAtFraction();
+        final boolean malformed = Boolean.TRUE.equals(chaos.getMalformedBody());
+        if (fraction == null && !malformed) {
+            return response;
+        }
+        if (response.getStreamingBody() != null) {
+            return response;
+        }
+        // getBodyAsRawBytes() returns an empty array (never null) when there is no body
+        byte[] corrupted = response.getBodyAsRawBytes();
+        if (fraction != null) {
+            // fraction is validated to [0.0, 1.0] by withTruncateBodyAtFraction, so
+            // keep is always within [0, corrupted.length]
+            int keep = (int) Math.floor(corrupted.length * fraction);
+            corrupted = java.util.Arrays.copyOf(corrupted, keep);
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("truncate");
+        }
+        if (malformed) {
+            byte[] combined = java.util.Arrays.copyOf(corrupted, corrupted.length + MALFORMED_BODY_SUFFIX.length);
+            System.arraycopy(MALFORMED_BODY_SUFFIX, 0, combined, corrupted.length, MALFORMED_BODY_SUFFIX.length);
+            corrupted = combined;
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("malformed");
+        }
+        String contentType = response.getFirstHeader("content-type");
+        if (!isNotBlank(contentType) && response.getBody() != null) {
+            contentType = response.getBody().getContentType();
+        }
+        HttpResponse out = response.clone().withBody(corrupted);
+        if (isNotBlank(contentType)) {
+            out.replaceHeader("content-type", contentType);
+        }
+        out.removeHeader("content-length");
+        return out;
+    }
+
     /**
      * Core response-writing choke point. When a non-null {@code chaos} profile is provided,
      * HTTP chaos injection is applied before the response is written:
@@ -1017,7 +1073,7 @@ public class HttpActionHandler {
 
         // Chaos: determine final response and extra delay via shared helper
         HttpResponse chaosError = chaosErrorResponseOrNull(chaos, matchCount);
-        final HttpResponse effectiveResponse = chaosError != null ? chaosError : response;
+        final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyBodyChaos(response, chaos, matchCount);
         // Gate latency by the same count window as error injection
         final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
 
@@ -1155,7 +1211,7 @@ public class HttpActionHandler {
 
                 // chaos: error injection on forwarded responses — replaces the upstream response
                 HttpResponse chaosError = chaosErrorResponseOrNull(chaos, matchCount);
-                final HttpResponse effectiveResponse = chaosError != null ? chaosError : response;
+                final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyBodyChaos(response, chaos, matchCount);
                 // Gate latency by the same count window as error injection
                 final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
                 final boolean chaosErrorInjected = chaosError != null;

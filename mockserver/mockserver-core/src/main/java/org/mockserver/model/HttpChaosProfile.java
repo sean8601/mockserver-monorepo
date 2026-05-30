@@ -5,7 +5,16 @@ import java.util.Objects;
 /**
  * Declarative HTTP fault/chaos injection for mocked and forwarded responses:
  * probabilistic connection-drop injection, error status injection (e.g. 500,
- * 503, 429 with an optional {@code Retry-After} header) and latency injection.
+ * 503, 429 with an optional {@code Retry-After} header), latency injection, and
+ * response-body corruption ({@code truncateBodyAtFraction} keeps only a leading
+ * fraction of the body bytes; {@code malformedBody} appends a broken-JSON
+ * fragment) for testing client-side body-parsing resilience.
+ * <p>
+ * Body corruption is deterministic (no probability draw): it applies to the
+ * real (non-error) response whenever the count and time windows are eligible,
+ * and is skipped for streaming bodies. Connection-drop and error injection take
+ * priority — when an error is injected the synthetic error body is returned
+ * uncorrupted.
  * <p>
  * Attach to an {@link org.mockserver.mock.Expectation} via
  * {@code expectation.withChaos(httpChaosProfile()...)} to inject faults into
@@ -66,6 +75,8 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     private Integer failRequestCount;  // after succeedFirst, next M matches ARE eligible (>= 1; null = unlimited)
     private Long outageAfterMillis;    // chaos starts this many ms after the first match (>= 0; null = 0)
     private Long outageDurationMillis; // after outageAfterMillis, chaos stays active for this long then self-heals (>= 1; null = unbounded)
+    private Double truncateBodyAtFraction; // 0.0-1.0 fraction of the response body bytes to keep; null = don't truncate
+    private Boolean malformedBody;     // append a broken-JSON fragment to corrupt the response body; null/false = don't corrupt
 
     public static HttpChaosProfile httpChaosProfile() {
         return new HttpChaosProfile();
@@ -192,6 +203,29 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
         return outageDurationMillis;
     }
 
+    public HttpChaosProfile withTruncateBodyAtFraction(Double truncateBodyAtFraction) {
+        if (truncateBodyAtFraction != null && (Double.isNaN(truncateBodyAtFraction) || truncateBodyAtFraction < 0.0 || truncateBodyAtFraction > 1.0)) {
+            throw new IllegalArgumentException("truncateBodyAtFraction must be between 0.0 and 1.0, got " + truncateBodyAtFraction);
+        }
+        this.truncateBodyAtFraction = truncateBodyAtFraction;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Double getTruncateBodyAtFraction() {
+        return truncateBodyAtFraction;
+    }
+
+    public HttpChaosProfile withMalformedBody(Boolean malformedBody) {
+        this.malformedBody = malformedBody;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Boolean getMalformedBody() {
+        return malformedBody;
+    }
+
     /**
      * Returns {@code true} when the request falls within the time-based outage
      * window defined by {@code outageAfterMillis} and {@code outageDurationMillis},
@@ -271,13 +305,15 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
             Objects.equals(succeedFirst, that.succeedFirst) &&
             Objects.equals(failRequestCount, that.failRequestCount) &&
             Objects.equals(outageAfterMillis, that.outageAfterMillis) &&
-            Objects.equals(outageDurationMillis, that.outageDurationMillis);
+            Objects.equals(outageDurationMillis, that.outageDurationMillis) &&
+            Objects.equals(truncateBodyAtFraction, that.truncateBodyAtFraction) &&
+            Objects.equals(malformedBody, that.malformedBody);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis, truncateBodyAtFraction, malformedBody);
         }
         return hashCode;
     }

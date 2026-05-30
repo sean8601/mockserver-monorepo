@@ -1841,6 +1841,8 @@ public class McpToolRegistryTest {
         chaos.put("seed", 42);
         chaos.put("succeedFirst", 3);
         chaos.put("failRequestCount", 5);
+        chaos.put("truncateBodyAtFraction", 0.25);
+        chaos.put("malformedBody", true);
         params.set("chaos", chaos);
 
         JsonNode result = toolRegistry.callTool("create_expectation", params);
@@ -1867,6 +1869,8 @@ public class McpToolRegistryTest {
                 assertThat(chaosResult.path("seed").asLong(), is(42L));
                 assertThat(chaosResult.path("succeedFirst").asInt(), is(3));
                 assertThat(chaosResult.path("failRequestCount").asInt(), is(5));
+                assertThat(chaosResult.path("truncateBodyAtFraction").asDouble(), is(0.25));
+                assertThat(chaosResult.path("malformedBody").asBoolean(), is(true));
                 foundChaos = true;
             }
         }

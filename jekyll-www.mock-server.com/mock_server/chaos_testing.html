@@ -115,6 +115,18 @@ schema_faq:
             <td>Time-based outage window: once the outage has started, chaos stays active for this many milliseconds, then the expectation self-heals and serves normal responses again. Omit for an outage that never ends.</td>
             <td>&ge; 1 (default: omitted = unbounded)</td>
         </tr>
+        <tr>
+            <td><code class="inline code">truncateBodyAtFraction</code></td>
+            <td>number</td>
+            <td>Corrupt the response body by keeping only this leading fraction of its bytes (e.g. <code class="inline code">0.5</code> keeps the first half, <code class="inline code">0.0</code> empties the body). Tests how a client copes with a partial / cut-off payload. Applies to the real (non-error) response only and is skipped for streaming bodies.</td>
+            <td>0.0 &ndash; 1.0 (default: omitted = no truncation)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">malformedBody</code></td>
+            <td>boolean</td>
+            <td>Corrupt the response body by appending a broken-JSON fragment so it fails to parse. Tests client-side body-parsing resilience. Applies to the real (non-error) response only and is skipped for streaming bodies.</td>
+            <td>true / false (default: omitted = false)</td>
+        </tr>
     </tbody>
 </table>
 
@@ -252,6 +264,28 @@ schema_faq:
 </ul>
 
 <p>For more complex latency patterns (uniform distribution, log-normal, gaussian), use the <code class="inline code">delay</code> field on the response action itself. See <a href="/mock_server/creating_expectations.html">Creating Expectations</a> and <a href="/mock_server/performance.html">Scalability &amp; Latency</a> for details.</p>
+
+<a id="body_corruption" class="anchor" href="#body_corruption">&nbsp;</a>
+
+<h2>Body Corruption</h2>
+
+<p>Body corruption damages the <em>payload</em> of an otherwise-successful response so you can test how robustly your client parses what it receives — independently of the status code. Two fields are available and can be combined:</p>
+
+<ul>
+    <li><strong><code class="inline code">truncateBodyAtFraction</code></strong> &mdash; keeps only a leading fraction of the body bytes (for example <code class="inline code">0.5</code> returns the first half of the body, <code class="inline code">0.0</code> returns an empty body). Simulates a connection that delivered a partial / cut-off payload.</li>
+    <li><strong><code class="inline code">malformedBody</code></strong> &mdash; appends a broken-JSON fragment to the body so a JSON parser fails. Simulates a corrupted or truncated-then-garbled payload.</li>
+</ul>
+
+<p><strong>How it works:</strong> body corruption is <strong>deterministic</strong> — it is not subject to a probability draw. It applies to the real (mocked or forwarded) response whenever the request is inside the active count window and time-based outage window. When both fields are set, the body is truncated first and the malformed fragment is then appended. To keep the response well-framed, MockServer removes any stale <code class="inline code">Content-Length</code> header so the response encoder sets the correct length for the corrupted body, and preserves the original <code class="inline code">Content-Type</code>.</p>
+
+<p><strong>Priority:</strong> connection-drop and error injection take precedence — when an error status is injected, its synthetic error body is returned <em>uncorrupted</em>. Body corruption only affects the real response that would otherwise have been returned. Streaming response bodies are not corrupted (the LLM response path has its own mid-stream truncation).</p>
+
+<p><strong>Common use cases:</strong></p>
+<ul>
+    <li><strong>Test JSON-parsing resilience:</strong> set <code class="inline code">malformedBody: true</code> and verify your client surfaces a clear parse error rather than crashing.</li>
+    <li><strong>Test partial-response handling:</strong> set <code class="inline code">truncateBodyAtFraction: 0.5</code> and verify your client detects the short / incomplete payload.</li>
+    <li><strong>Test a flaky upstream in proxy mode:</strong> attach body corruption to a forward action to see how your application copes with a dependency returning damaged payloads.</li>
+</ul>
 
 <a id="reproducibility" class="anchor" href="#reproducibility">&nbsp;</a>
 

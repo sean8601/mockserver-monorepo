@@ -1745,6 +1745,15 @@ RSpec.describe 'MockServer models' do
       expect(restored.outage_duration_millis).to eq(10000)
     end
 
+    it 'serializes and deserializes body-corruption faults' do
+      chaos = MockServer::HttpChaosProfile.new(truncate_body_at_fraction: 0.25, malformed_body: true)
+      h = chaos.to_h
+      expect(h).to eq({ 'truncateBodyAtFraction' => 0.25, 'malformedBody' => true })
+      restored = MockServer::HttpChaosProfile.from_hash(h)
+      expect(restored.truncate_body_at_fraction).to eq(0.25)
+      expect(restored.malformed_body).to be(true)
+    end
+
     it 'round-trips correctly' do
       original = MockServer::HttpChaosProfile.new(
         error_status: 503,

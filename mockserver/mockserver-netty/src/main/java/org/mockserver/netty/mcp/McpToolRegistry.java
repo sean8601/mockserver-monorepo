@@ -173,6 +173,8 @@ public class McpToolRegistry {
             chaosProps.putObject("failRequestCount").put("type", "integer").put("description", "After succeedFirst, next M matches ARE eligible for chaos (>= 1)");
             chaosProps.putObject("outageAfterMillis").put("type", "integer").put("description", "Time-based outage window: chaos becomes active this many ms after the first match (>= 0)");
             chaosProps.putObject("outageDurationMillis").put("type", "integer").put("description", "Time-based outage window: chaos stays active for this many ms then self-heals (>= 1)");
+            chaosProps.putObject("truncateBodyAtFraction").put("type", "number").put("description", "Corrupt the response body by keeping only this leading fraction (0.0-1.0) of its bytes");
+            chaosProps.putObject("malformedBody").put("type", "boolean").put("description", "Corrupt the response body by appending a broken-JSON fragment so it fails to parse");
         }
         ArrayNode required = schema.putArray("required");
         required.add("method");
@@ -321,6 +323,14 @@ public class McpToolRegistry {
                 JsonNode outageDurationMillisNode = chaosNode.path("outageDurationMillis");
                 if (!outageDurationMillisNode.isMissingNode() && !outageDurationMillisNode.isNull()) {
                     chaos.withOutageDurationMillis(outageDurationMillisNode.asLong());
+                }
+                JsonNode truncateBodyAtFractionNode = chaosNode.path("truncateBodyAtFraction");
+                if (!truncateBodyAtFractionNode.isMissingNode() && !truncateBodyAtFractionNode.isNull()) {
+                    chaos.withTruncateBodyAtFraction(truncateBodyAtFractionNode.asDouble());
+                }
+                JsonNode malformedBodyNode = chaosNode.path("malformedBody");
+                if (!malformedBodyNode.isMissingNode() && !malformedBodyNode.isNull()) {
+                    chaos.withMalformedBody(malformedBodyNode.asBoolean());
                 }
                 expectation.withChaos(chaos);
             }

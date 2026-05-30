@@ -203,6 +203,53 @@ public class HttpActionHandlerForwardChaosTest {
         assertThat(writtenResponse.getBodyAsString(), is("upstream body"));
     }
 
+    // ---- Body-corruption tests ----
+
+    @Test
+    public void truncateBodyCorruptsForwardedResponse() {
+        // given - a FORWARD expectation with truncateBodyAtFraction=0.5; upstream body "upstream body" (13 bytes) -> keep floor(13*0.5)=6
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile().withTruncateBodyAtFraction(0.5));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(responseCaptor.getValue().getStatusCode(), is(200));
+        assertThat(new String(responseCaptor.getValue().getBodyAsRawBytes(), java.nio.charset.StandardCharsets.UTF_8), is("upstre"));
+    }
+
+    @Test
+    public void malformedBodyAppendsFragmentToForwardedResponse() {
+        // given - a FORWARD expectation with malformedBody=true
+        HttpRequest request = request("some_path");
+        HttpResponse upstreamResponse = response("upstream body").withStatusCode(200).withDelay(milliseconds(0));
+        HttpForward forward = forward().withHost("localhost").withPort(1090);
+        HttpForwardActionResult forwardResult = completedForwardResult(upstreamResponse);
+
+        Expectation expectation = new Expectation(request)
+            .thenForward(forward)
+            .withChaos(httpChaosProfile().withMalformedBody(true));
+
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(forwardResult);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(new String(responseCaptor.getValue().getBodyAsRawBytes(), java.nio.charset.StandardCharsets.UTF_8), is("upstream body{\"__chaos_malformed__\":"));
+    }
+
     // ---- Latency injection test (non-blocking via scheduler) ----
 
     @Test

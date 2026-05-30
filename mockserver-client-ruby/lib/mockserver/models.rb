@@ -69,7 +69,9 @@ module MockServer
     'succeed_first'                  => 'succeedFirst',
     'fail_request_count'             => 'failRequestCount',
     'outage_after_millis'            => 'outageAfterMillis',
-    'outage_duration_millis'         => 'outageDurationMillis'
+    'outage_duration_millis'         => 'outageDurationMillis',
+    'truncate_body_at_fraction'      => 'truncateBodyAtFraction',
+    'malformed_body'                 => 'malformedBody'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -1157,11 +1159,13 @@ module MockServer
   class HttpChaosProfile
     attr_accessor :error_status, :error_probability, :drop_connection_probability,
                   :retry_after, :latency, :seed, :succeed_first, :fail_request_count,
-                  :outage_after_millis, :outage_duration_millis
+                  :outage_after_millis, :outage_duration_millis,
+                  :truncate_body_at_fraction, :malformed_body
 
     def initialize(error_status: nil, error_probability: nil, drop_connection_probability: nil,
                    retry_after: nil, latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil,
-                   outage_after_millis: nil, outage_duration_millis: nil)
+                   outage_after_millis: nil, outage_duration_millis: nil,
+                   truncate_body_at_fraction: nil, malformed_body: nil)
       @error_status = error_status
       @error_probability = error_probability
       @drop_connection_probability = drop_connection_probability
@@ -1172,6 +1176,8 @@ module MockServer
       @fail_request_count = fail_request_count
       @outage_after_millis = outage_after_millis
       @outage_duration_millis = outage_duration_millis
+      @truncate_body_at_fraction = truncate_body_at_fraction
+      @malformed_body = malformed_body
     end
 
     def to_h
@@ -1185,7 +1191,9 @@ module MockServer
         'succeedFirst'               => @succeed_first,
         'failRequestCount'           => @fail_request_count,
         'outageAfterMillis'          => @outage_after_millis,
-        'outageDurationMillis'       => @outage_duration_millis
+        'outageDurationMillis'       => @outage_duration_millis,
+        'truncateBodyAtFraction'     => @truncate_body_at_fraction,
+        'malformedBody'              => @malformed_body
       })
     end
 
@@ -1202,7 +1210,9 @@ module MockServer
         succeed_first:               data['succeedFirst'],
         fail_request_count:          data['failRequestCount'],
         outage_after_millis:         data['outageAfterMillis'],
-        outage_duration_millis:      data['outageDurationMillis']
+        outage_duration_millis:      data['outageDurationMillis'],
+        truncate_body_at_fraction:   data['truncateBodyAtFraction'],
+        malformed_body:              data['malformedBody']
       )
     end
   end

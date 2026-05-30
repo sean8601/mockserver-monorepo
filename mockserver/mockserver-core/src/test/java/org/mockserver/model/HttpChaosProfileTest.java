@@ -114,6 +114,37 @@ public class HttpChaosProfileTest {
         assertThat(exception.getMessage(), is("dropConnectionProbability must be between 0.0 and 1.0, got NaN"));
     }
 
+    // --- truncateBodyAtFraction validation tests ---
+
+    @Test
+    public void withTruncateBodyAtFractionAcceptsNullAndRange() {
+        httpChaosProfile().withTruncateBodyAtFraction(null);
+        httpChaosProfile().withTruncateBodyAtFraction(0.0);
+        httpChaosProfile().withTruncateBodyAtFraction(0.5);
+        httpChaosProfile().withTruncateBodyAtFraction(1.0);
+    }
+
+    @Test
+    public void withTruncateBodyAtFractionRejectsBelowZero() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withTruncateBodyAtFraction(-0.1));
+        assertThat(exception.getMessage(), is("truncateBodyAtFraction must be between 0.0 and 1.0, got -0.1"));
+    }
+
+    @Test
+    public void withTruncateBodyAtFractionRejectsAboveOne() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withTruncateBodyAtFraction(1.1));
+        assertThat(exception.getMessage(), is("truncateBodyAtFraction must be between 0.0 and 1.0, got 1.1"));
+    }
+
+    @Test
+    public void withTruncateBodyAtFractionRejectsNaN() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withTruncateBodyAtFraction(Double.NaN));
+        assertThat(exception.getMessage(), is("truncateBodyAtFraction must be between 0.0 and 1.0, got NaN"));
+    }
+
     // --- equals/hashCode tests ---
 
     @Test
@@ -164,6 +195,14 @@ public class HttpChaosProfileTest {
         HttpChaosProfile a = httpChaosProfile().withLatency(Delay.milliseconds(100));
         HttpChaosProfile b = httpChaosProfile().withLatency(Delay.milliseconds(200));
         assertThat(a, is(not(equalTo(b))));
+    }
+
+    @Test
+    public void bodyCorruptionFieldsIncludedInEquals() {
+        assertThat(httpChaosProfile().withTruncateBodyAtFraction(0.5),
+            is(not(equalTo(httpChaosProfile().withTruncateBodyAtFraction(0.9)))));
+        assertThat(httpChaosProfile().withMalformedBody(true),
+            is(not(equalTo(httpChaosProfile().withMalformedBody(false)))));
     }
 
     // --- serialization round-trip test ---
@@ -226,6 +265,25 @@ public class HttpChaosProfileTest {
         assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
         assertThat(deserialized[0].getChaos().getDropConnectionProbability(), is(0.75));
         assertThat(deserialized[0].getChaos().getSeed(), is(99L));
+    }
+
+    @Test
+    public void expectationWithChaosBodyCorruptionRoundTripsViaSerializer() {
+        ExpectationSerializer serializer = new ExpectationSerializer(new MockServerLogger());
+
+        Expectation original = new Expectation(request("/test"))
+            .thenRespond(response("ok"))
+            .withChaos(httpChaosProfile()
+                .withTruncateBodyAtFraction(0.25)
+                .withMalformedBody(true));
+
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
+        assertThat(deserialized[0].getChaos().getTruncateBodyAtFraction(), is(0.25));
+        assertThat(deserialized[0].getChaos().getMalformedBody(), is(true));
     }
 
     @Test
