@@ -1,0 +1,341 @@
+---
+title: Chaos Proxy in Kubernetes
+description: Deploy MockServer as a chaos proxy in Kubernetes to inject faults into service-to-service and external API calls using forward expectations with chaos profiles.
+layout: page
+pageOrder: 2
+section: 'Chaos Testing'
+subsection: true
+sitemap:
+  priority: 0.8
+  changefreq: 'monthly'
+  lastmod: 2026-05-30T08:00:00+00:00
+keywords: chaos testing kubernetes, fault injection kubernetes, sidecar proxy chaos, egress proxy fault injection, test resilience kubernetes, simulate dependency failure
+schema_faq:
+  - question: "How do I inject faults into a service's external API calls in Kubernetes?"
+    answer: "Deploy MockServer as a sidecar or standalone proxy in your Kubernetes cluster, set your application's HTTP_PROXY / HTTPS_PROXY environment variables to point at MockServer, and create forward expectations with chaos profiles for the target hosts. MockServer forwards requests to the real upstream and probabilistically injects errors or latency into the responses it relays back."
+  - question: "How do I make a dependency intermittently fail in a Kubernetes cluster?"
+    answer: "Place MockServer between your application and the dependency using a Kubernetes Service that routes to MockServer instead of the real backend. Create a forward expectation that sends requests to the real upstream host and attach a chaos profile with an errorStatus (e.g. 503), an errorProbability (e.g. 0.3 for 30% failures), and optionally a latency delay. Only matched requests get chaos; other traffic passes through normally."
+  - question: "Does MockServer support transparent traffic interception in Kubernetes?"
+    answer: "No. MockServer operates at the HTTP layer (L7) and requires explicit routing — either via HTTP_PROXY / HTTPS_PROXY environment variables, a Kubernetes Service pointing at MockServer, or the proxyRemoteHost / proxyRemotePort configuration. It does not intercept traffic transparently at the network layer (L3/L4) and does not use iptables or a service mesh sidecar protocol."
+  - question: "How do I intercept HTTPS traffic through MockServer in Kubernetes?"
+    answer: "For HTTPS interception, clients must trust MockServer's Certificate Authority (CA). MockServer dynamically generates TLS certificates signed by its CA. You can use the default CA certificate bundled with MockServer or generate a unique one with dynamicallyCreateCertificateAuthorityCertificate. Add the CA certificate to your application's trust store — for JVM apps use keytool, for others mount the CA PEM and configure the system or application trust store. See the TLS Configuration page for details."
+---
+
+<p>MockServer can be deployed as a <strong>chaos proxy</strong> in Kubernetes to inject faults (errors, latency, stateful failures) into real service-to-service calls and external API calls. Instead of mocking a dependency, you route traffic through MockServer and let it forward requests to the real upstream while probabilistically injecting failures into the responses.</p>
+
+<p>This is useful for:</p>
+<ul>
+    <li>Testing how your service handles an unreliable internal dependency (e.g. a payment service returning 503s)</li>
+    <li>Simulating external API rate limiting (e.g. a third-party API returning 429 with <code class="inline code">Retry-After</code>)</li>
+    <li>Verifying timeout handling when an upstream becomes slow</li>
+    <li>Testing circuit breakers, retries, and fallback behaviour under realistic conditions</li>
+</ul>
+
+<p>This page builds on the <a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> page, which covers the <code class="inline code">chaos</code> profile fields in detail. Here we focus on <strong>deployment patterns in Kubernetes</strong> that put MockServer in the request path so chaos profiles apply to real upstream traffic.</p>
+
+<a id="how_it_works" class="anchor" href="#how_it_works">&nbsp;</a>
+
+<h2>How It Works</h2>
+
+<ol>
+    <li><strong>Deploy MockServer</strong> in your Kubernetes cluster (standalone Deployment, sidecar container, or via the <a href="https://www.mock-server.com/where/kubernetes.html">Helm chart</a>)</li>
+    <li><strong>Route your application's traffic</strong> through MockServer — using a Kubernetes Service, <code class="inline code">HTTP_PROXY</code>/<code class="inline code">HTTPS_PROXY</code> environment variables, or <code class="inline code">proxyRemoteHost</code>/<code class="inline code">proxyRemotePort</code> configuration</li>
+    <li><strong>Create forward expectations with chaos profiles</strong> — MockServer forwards matched requests to the real upstream and injects faults according to the chaos profile</li>
+    <li>Unmatched requests pass through normally (when <code class="inline code">attemptToProxyIfNoMatchingExpectation</code> is <code class="inline code">true</code>, which is the default)</li>
+</ol>
+
+<p>MockServer operates at the <strong>HTTP layer (L7)</strong>. It does not transparently intercept traffic at the network layer (L3/L4) — traffic must be explicitly routed through it. It does not use iptables rules or a service mesh sidecar protocol.</p>
+
+<p>Chaos profiles apply to forward action types: <code class="inline code">httpForward</code>, forward template, forward class callback, forward with override (<code class="inline code">httpOverrideForwardedRequest</code>), and forward with validation. They do <strong>not</strong> apply to forward object callbacks or the unmatched proxy pass-through path. See the <a href="/mock_server/chaos_testing.html#where_chaos_applies">compatibility table</a> on the Chaos Testing page.</p>
+
+<a id="reverse_proxy_pattern" class="anchor" href="#reverse_proxy_pattern">&nbsp;</a>
+
+<h2>Pattern 1: Reverse Proxy in Front of a Dependency</h2>
+
+<p>Route a Kubernetes Service through MockServer so that calls to a dependency go via MockServer, which forwards them to the real backend with chaos injection.</p>
+
+<h3>Kubernetes manifests</h3>
+
+<p>Deploy MockServer as a standalone Deployment with a Service. Your application calls the MockServer Service instead of the real dependency.</p>
+
+<pre class="prettyprint lang-yaml code"><code class="code">---
+# MockServer Deployment — acts as a reverse proxy for the payment service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-chaos-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-chaos-proxy
+  template:
+    metadata:
+      labels:
+        app: payment-chaos-proxy
+    spec:
+      containers:
+        - name: mockserver
+          image: mockserver/mockserver:mockserver-{{ site.mockserver_version }}
+          ports:
+            - containerPort: 1080
+          env:
+            - name: MOCKSERVER_LOG_LEVEL
+              value: "INFO"
+---
+# Service that your application calls instead of the real payment-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service-chaos
+spec:
+  selector:
+    app: payment-chaos-proxy
+  ports:
+    - port: 8080
+      targetPort: 1080</code></pre>
+
+<h3>Forward expectation with chaos</h3>
+
+<p>Create an expectation that matches requests to the payment service and forwards them to the real backend, injecting 503 errors on 30% of requests with 200ms of added latency:</p>
+
+<pre class="prettyprint lang-javascript code"><code class="code">PUT /mockserver/expectation
+
+{
+  "httpRequest": {
+    "path": "/payments/.*"
+  },
+  "httpForward": {
+    "host": "payment-service.production.svc.cluster.local",
+    "port": 8080,
+    "scheme": "HTTP"
+  },
+  "chaos": {
+    "errorStatus": 503,
+    "errorProbability": 0.3,
+    "latency": {
+      "timeUnit": "MILLISECONDS",
+      "value": 200
+    }
+  },
+  "times": {
+    "unlimited": true
+  }
+}</code></pre>
+
+<p>Your application connects to <code class="inline code">payment-service-chaos:8080</code> instead of <code class="inline code">payment-service:8080</code>. MockServer forwards every request to the real <code class="inline code">payment-service.production.svc.cluster.local:8080</code> and injects errors and latency according to the chaos profile. When you are done testing, point your application back to the real service.</p>
+
+<a id="forward_proxy_pattern" class="anchor" href="#forward_proxy_pattern">&nbsp;</a>
+
+<h2>Pattern 2: Egress / Forward Proxy</h2>
+
+<p>Configure your application to use MockServer as its HTTP(S) proxy by setting <code class="inline code">HTTP_PROXY</code> and <code class="inline code">HTTPS_PROXY</code> environment variables. This lets you inject chaos into calls to external APIs without changing hostnames or Services.</p>
+
+<h3>Application Deployment with proxy env vars</h3>
+
+<pre class="prettyprint lang-yaml code"><code class="code">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: app
+          image: my-app:latest
+          env:
+            - name: HTTP_PROXY
+              value: "http://mockserver.chaos.svc.cluster.local:1080"
+            - name: HTTPS_PROXY
+              value: "http://mockserver.chaos.svc.cluster.local:1080"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1,*.svc.cluster.local"</code></pre>
+
+<p>With these environment variables, your application's HTTP client sends outbound requests via MockServer. Use <code class="inline code">NO_PROXY</code> to exclude internal cluster traffic you do not want to route through MockServer.</p>
+
+<h3>Forward expectation for an external API</h3>
+
+<p>Inject 429 rate-limit errors on 50% of requests to <code class="inline code">api.stripe.com</code>:</p>
+
+<pre class="prettyprint lang-javascript code"><code class="code">PUT /mockserver/expectation
+
+{
+  "httpRequest": {
+    "headers": {
+      "Host": ["api.stripe.com"]
+    }
+  },
+  "httpForward": {
+    "host": "api.stripe.com",
+    "port": 443,
+    "scheme": "HTTPS"
+  },
+  "chaos": {
+    "errorStatus": 429,
+    "errorProbability": 0.5,
+    "retryAfter": "30"
+  },
+  "times": {
+    "unlimited": true
+  }
+}</code></pre>
+
+<p>Requests to other hosts pass through normally (the default <code class="inline code">attemptToProxyIfNoMatchingExpectation</code> is <code class="inline code">true</code>). Only requests matching the expectation receive chaos injection.</p>
+
+<a id="sidecar_pattern" class="anchor" href="#sidecar_pattern">&nbsp;</a>
+
+<h2>Pattern 3: Sidecar Proxy</h2>
+
+<p>Run MockServer as a sidecar container in the same pod as your application. This keeps the proxy co-located with the application and avoids a separate Deployment.</p>
+
+<pre class="prettyprint lang-yaml code"><code class="code">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        # Your application
+        - name: order-service
+          image: order-service:latest
+          env:
+            - name: INVENTORY_SERVICE_URL
+              value: "http://localhost:1080"
+        # MockServer sidecar — forwards to the real inventory service
+        - name: mockserver-sidecar
+          image: mockserver/mockserver:mockserver-{{ site.mockserver_version }}
+          ports:
+            - containerPort: 1080
+          env:
+            - name: MOCKSERVER_LOG_LEVEL
+              value: "INFO"
+            # Forward all unmatched requests to the real inventory service
+            - name: MOCKSERVER_PROXY_REMOTE_HOST
+              value: "inventory-service.production.svc.cluster.local"
+            - name: MOCKSERVER_PROXY_REMOTE_PORT
+              value: "8080"</code></pre>
+
+<p>With <code class="inline code">MOCKSERVER_PROXY_REMOTE_HOST</code> and <code class="inline code">MOCKSERVER_PROXY_REMOTE_PORT</code> set, MockServer forwards all unmatched requests to the real inventory service. Add expectations with chaos profiles for specific paths to inject faults:</p>
+
+<pre class="prettyprint lang-javascript code"><code class="code">PUT /mockserver/expectation
+
+{
+  "httpRequest": {
+    "path": "/inventory/check"
+  },
+  "httpForward": {
+    "host": "inventory-service.production.svc.cluster.local",
+    "port": 8080,
+    "scheme": "HTTP"
+  },
+  "chaos": {
+    "errorStatus": 500,
+    "errorProbability": 1.0,
+    "succeedFirst": 3,
+    "failRequestCount": 5
+  },
+  "times": {
+    "unlimited": true
+  }
+}</code></pre>
+
+<p>This example lets the first 3 requests to <code class="inline code">/inventory/check</code> succeed, then injects 500 errors on requests 4 through 8, and recovers to normal responses after that. This is useful for testing retry logic and circuit breakers. See <a href="/mock_server/chaos_testing.html#stateful_count_based_faults">Stateful / Count-Based Faults</a> for more on <code class="inline code">succeedFirst</code> and <code class="inline code">failRequestCount</code>.</p>
+
+<a id="helm_deployment" class="anchor" href="#helm_deployment">&nbsp;</a>
+
+<h2>Deploying with Helm</h2>
+
+<p>The <a href="https://www.mock-server.com/where/kubernetes.html">MockServer Helm chart</a> deploys a standalone MockServer instance. You can configure it as a reverse proxy using <code class="inline code">app.proxyRemoteHost</code> and <code class="inline code">app.proxyRemotePort</code> (which map to the <code class="inline code">PROXY_REMOTE_HOST</code> and <code class="inline code">PROXY_REMOTE_PORT</code> environment variables in the Deployment template), and inject a <code class="inline code">mockserver.properties</code> file via the inline config feature for additional settings.</p>
+
+<pre class="prettyprint code"><code class="code"># Install MockServer as a reverse proxy for the inventory service
+helm install inventory-chaos oci://ghcr.io/mock-server/charts/mockserver \
+  --set app.proxyRemoteHost="inventory-service.production.svc.cluster.local" \
+  --set app.proxyRemotePort="8080" \
+  --set service.type=ClusterIP</code></pre>
+
+<p>Then create forward expectations with chaos profiles via the MockServer API (using <code class="inline code">curl</code>, a client library, or the dashboard UI).</p>
+
+<p>The Helm chart does <strong>not</strong> have a built-in sidecar template. For sidecar deployments, add MockServer as a container directly in your application's Deployment manifest as shown in <a href="#sidecar_pattern">Pattern 3</a> above.</p>
+
+<a id="https_interception" class="anchor" href="#https_interception">&nbsp;</a>
+
+<h2>HTTPS Interception</h2>
+
+<p>MockServer can intercept and forward HTTPS traffic, but clients must <strong>trust MockServer's Certificate Authority (CA)</strong> for this to work. MockServer dynamically generates TLS certificates for upstream hosts, signed by its CA. Without trust, clients will reject MockServer's certificates with TLS handshake errors.</p>
+
+<p><strong>How to establish trust:</strong></p>
+<ul>
+    <li><strong>Default CA:</strong> MockServer ships with a default CA certificate (<code class="inline code">CertificateAuthorityCertificate.pem</code>) bundled in the JAR. Add this certificate to your application's trust store.</li>
+    <li><strong>Dynamic CA:</strong> Set <code class="inline code">MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE=true</code> and <code class="inline code">MOCKSERVER_DIRECTORY_TO_SAVE_DYNAMIC_SSL_CERTIFICATE=/certs</code> to generate a unique CA on startup. Mount the output directory as a shared volume between the MockServer container and your application container, then add the generated CA PEM to your application's trust store.</li>
+    <li><strong>Custom CA:</strong> Provide your own CA certificate and private key via <code class="inline code">mockserver.certificateAuthorityCertificate</code> and <code class="inline code">mockserver.certificateAuthorityPrivateKey</code>.</li>
+</ul>
+
+<p><strong>For JVM applications</strong>, add the CA certificate to the JVM trust store:</p>
+
+<pre class="prettyprint code"><code class="code">keytool -import -trustcacerts -keystore $JAVA_HOME/lib/security/cacerts \
+  -storepass changeit -noprompt -alias mockserver-ca \
+  -file /certs/CertificateAuthorityCertificate.pem</code></pre>
+
+<p><strong>For non-JVM applications</strong>, mount the CA PEM file and configure the application or OS trust store (e.g. <code class="inline code">SSL_CERT_FILE</code>, <code class="inline code">REQUESTS_CA_BUNDLE</code>, or <code class="inline code">NODE_EXTRA_CA_CERTS</code>).</p>
+
+<p>See the <a href="/mock_server/HTTPS_TLS.html">TLS Configuration</a> page for full details on MockServer's TLS architecture, including mTLS and custom certificate chains.</p>
+
+<p><strong>Important:</strong> MockServer performs L7 (HTTP/HTTPS) proxying only. It does not support L3/L4 transparent TCP interception or raw packet manipulation.</p>
+
+<a id="selective_chaos" class="anchor" href="#selective_chaos">&nbsp;</a>
+
+<h2>Selective Chaos Scope</h2>
+
+<p>Chaos is injected only for requests that match an expectation with a chaos profile. All other requests are either handled by other expectations or, if <code class="inline code">attemptToProxyIfNoMatchingExpectation</code> is <code class="inline code">true</code> (the default), forwarded to the original destination unchanged.</p>
+
+<p>This means you can inject chaos into specific hosts, paths, or header combinations while leaving everything else untouched. For example, you could inject latency into calls to <code class="inline code">/api/slow-endpoint</code> while leaving <code class="inline code">/api/fast-endpoint</code> and all other paths operating normally.</p>
+
+<p>The <code class="inline code">attemptToProxyIfNoMatchingExpectation</code> property (environment variable: <code class="inline code">MOCKSERVER_ATTEMPT_TO_PROXY_IF_NO_MATCHING_EXPECTATION</code>) controls what happens to unmatched requests. When <code class="inline code">true</code> (default), unmatched requests are forwarded to their original destination based on the Host header. When <code class="inline code">false</code>, unmatched requests receive a 404. See <a href="/mock_server/configuration_properties.html#button_configuration_attempt_to_proxy_if_no_matching_expectation">Configuration Properties</a> for details.</p>
+
+<a id="faq" class="anchor" href="#faq">&nbsp;</a>
+
+<h2>FAQ</h2>
+
+<button id="button_faq_inject_external" class="accordion">How do I inject faults into a service's external API calls in Kubernetes?</button>
+<div class="panel">
+    <p>Deploy MockServer as a sidecar or standalone proxy in your Kubernetes cluster, set your application's <code class="inline code">HTTP_PROXY</code> / <code class="inline code">HTTPS_PROXY</code> environment variables to point at MockServer, and create forward expectations with chaos profiles for the target hosts. MockServer forwards requests to the real upstream and probabilistically injects errors or latency into the responses it relays back. See <a href="#forward_proxy_pattern">Pattern 2: Egress / Forward Proxy</a> above.</p>
+</div>
+
+<button id="button_faq_intermittent_failure" class="accordion">How do I make a dependency intermittently fail in a cluster?</button>
+<div class="panel">
+    <p>Place MockServer between your application and the dependency using a Kubernetes Service that routes to MockServer instead of the real backend. Create a forward expectation that sends requests to the real upstream host and attach a chaos profile with an <code class="inline code">errorStatus</code> (e.g. 503), an <code class="inline code">errorProbability</code> (e.g. 0.3 for 30% failures), and optionally a <code class="inline code">latency</code> delay. Only matched requests get chaos; other traffic passes through normally. See <a href="#reverse_proxy_pattern">Pattern 1: Reverse Proxy</a> above.</p>
+</div>
+
+<button id="button_faq_transparent" class="accordion">Does MockServer support transparent traffic interception in Kubernetes?</button>
+<div class="panel">
+    <p>No. MockServer operates at the HTTP layer (L7) and requires explicit routing. Traffic must be directed to MockServer via <code class="inline code">HTTP_PROXY</code> / <code class="inline code">HTTPS_PROXY</code> environment variables, a Kubernetes Service, or the <code class="inline code">proxyRemoteHost</code> / <code class="inline code">proxyRemotePort</code> configuration. It does not intercept traffic transparently at the network layer (L3/L4) and does not use iptables or a service mesh sidecar protocol.</p>
+</div>
+
+<button id="button_faq_https" class="accordion">How do I intercept HTTPS traffic through MockServer in Kubernetes?</button>
+<div class="panel">
+    <p>Clients must trust MockServer's Certificate Authority (CA). MockServer dynamically generates TLS certificates signed by its CA. You can use the default CA certificate bundled with MockServer, generate a unique one with <code class="inline code">dynamicallyCreateCertificateAuthorityCertificate</code>, or provide your own CA. Add the CA certificate to your application's trust store. See <a href="#https_interception">HTTPS Interception</a> above and the <a href="/mock_server/HTTPS_TLS.html">TLS Configuration</a> page.</p>
+</div>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> — chaos profile fields, examples, and compatibility table</li>
+    <li><a href="/mock_server/HTTPS_TLS.html">TLS Configuration</a> — CA certificates, mTLS, and TLS trust chains</li>
+    <li><a href="/mock_server/configuration_properties.html">Configuration Properties</a> — all properties including <code class="inline code">proxyRemoteHost</code>, <code class="inline code">proxyRemotePort</code>, and <code class="inline code">attemptToProxyIfNoMatchingExpectation</code></li>
+    <li><a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> — using MockServer as a reverse proxy to isolate a service for debugging</li>
+</ul>

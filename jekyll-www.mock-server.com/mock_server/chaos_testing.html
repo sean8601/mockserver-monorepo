@@ -308,7 +308,7 @@ schema_faq:
 
 <button id="button_faq_kubernetes" class="accordion">Does MockServer chaos testing work in Kubernetes?</button>
 <div class="panel">
-    <p>Yes. Deploy MockServer as a sidecar proxy, egress proxy, or reverse proxy in your Kubernetes cluster and attach chaos profiles to inject faults into the traffic flowing through it. MockServer operates at the HTTP layer (L7) and requires explicit routing (e.g. <code class="inline code">HTTP_PROXY</code> environment variable or Service rewrite). See the <a href="#chaos_proxy">Chaos Proxy</a> section above and <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for proxy deployment patterns.</p>
+    <p>Yes. Deploy MockServer as a sidecar proxy, egress proxy, or reverse proxy in your Kubernetes cluster and attach chaos profiles to inject faults into the traffic flowing through it. MockServer operates at the HTTP layer (L7) and requires explicit routing (e.g. <code class="inline code">HTTP_PROXY</code> environment variable or Service rewrite). See <a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a> for sidecar/egress/reverse-proxy deployment patterns, and <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for general proxy setup.</p>
 </div>
 
 <button id="button_faq_fail_then_recover" class="accordion">How do I make a mock fail the first few requests then recover?</button>
