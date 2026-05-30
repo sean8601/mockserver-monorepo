@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      JMH micro-benchmarks for MockServer's request-matching hot path.
+
+      Deliberately NOT listed in the parent's <modules>, so it never enters the
+      default `mvn install` / CI build (JMH's annotation processor and the
+      benchmark classpath must not touch production artifacts). It is an
+      on-demand module: build and run it via ./run.sh (see README.md), which
+      compiles it and invokes org.openjdk.jmh.Main with the full classpath.
+
+      Per the Fix Placement Policy the benchmarks target mockserver-core hot-path
+      classes (RequestMatchers.firstMatchingExpectation and friends). Used to
+      gate the Part-A hot-path optimizations: no allocation "win" lands without
+      before/after `-prof gc` numbers from here.
+    -->
+    <parent>
+        <groupId>org.mock-server</groupId>
+        <artifactId>mockserver</artifactId>
+        <version>6.1.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>mockserver-benchmark</artifactId>
+    <packaging>jar</packaging>
+    <name>MockServer Benchmark</name>
+    <description>JMH micro-benchmarks for the MockServer request-matching hot path. Not part of the default build.</description>
+
+    <properties>
+        <jmh.version>1.37</jmh.version>
+        <!-- never published — this is a local, on-demand tooling module -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.mock-server</groupId>
+            <artifactId>mockserver-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>${jmh.version}</version>
+        </dependency>
+        <!-- lightweight stand-ins for the Scheduler / WebSocketClientRegistry the
+             RequestMatchers constructor needs (the matching path never calls them) -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <!-- run the JMH benchmark-list generator without making it a
+                         runtime dependency -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.openjdk.jmh</groupId>
+                            <artifactId>jmh-generator-annprocess</artifactId>
+                            <version>${jmh.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
