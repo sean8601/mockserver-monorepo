@@ -13,7 +13,6 @@ import { useMetricsPolling } from '../hooks/useMetricsPolling';
 import { findSample, metricValue, metricValueByLabel, hasMetric } from '../lib/prometheusParser';
 import { gaugeSeries, gaugeSeriesByLabel, ratePerSecond, latestRate } from '../lib/metricsDerive';
 import { histogramQuantile } from '../lib/histogramQuantile';
-import Sparkline from './Sparkline';
 import MetricsLineChart from './MetricsLineChart';
 
 const LATENCY_METRIC = 'mock_server_request_duration_seconds';
@@ -127,19 +126,6 @@ MOCKSERVER_METRICS_ENABLED=true`}
 
       {latest && (
         <>
-          {/* Summary stat cards */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 1, mb: 1.5 }}>
-            {SUMMARY.map(({ name, label }) => (
-              <Paper key={name} variant="outlined" sx={{ p: 1.25 }}>
-                <Typography variant="caption" color="text.secondary">{label}</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                  {metricValue(latest.samples, name).toLocaleString()}
-                </Typography>
-                <Sparkline data={gaugeSeries(history, name)} ariaLabel={`${label} over time`} />
-              </Paper>
-            ))}
-          </Box>
-
           {/* Throughput */}
           <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
@@ -217,9 +203,40 @@ MOCKSERVER_METRICS_ENABLED=true`}
             </Paper>
           )}
 
-          {/* JVM (only when the server exposes JVM metrics) */}
+          {/* Request activity over time — the four request counters as separate lines */}
+          <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">Request activity (cumulative)</Typography>
+            <MetricsLineChart
+              height={200}
+              valueFormatter={(v) => Math.round(v).toLocaleString()}
+              series={SUMMARY.map(({ name, label }) => ({ data: gaugeSeries(history, name), label }))}
+            />
+          </Paper>
+
+          {/* Actions executed over time — one line per action type */}
+          <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">Actions executed</Typography>
+            {maxAction === 0 ? (
+              <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
+                No actions executed yet.
+              </Typography>
+            ) : (
+              <MetricsLineChart
+                height={200}
+                valueFormatter={(v) => Math.round(v).toLocaleString()}
+                series={actionRows
+                  .filter((r) => r.value > 0)
+                  .map((r) => ({
+                    data: gaugeSeries(history, r.name),
+                    label: r.label.charAt(0).toUpperCase() + r.label.slice(1),
+                  }))}
+              />
+            )}
+          </Paper>
+
+          {/* JVM runtime (Memory, Threads & GC) — at the bottom; only when the server exposes JVM metrics */}
           {jvmEnabled && latest && (
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 1, mb: 1.5 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 1 }}>
               <Paper variant="outlined" sx={{ p: 1.25 }}>
                 <Typography variant="caption" color="text.secondary">JVM heap memory</Typography>
                 <MetricsLineChart
@@ -260,37 +277,6 @@ MOCKSERVER_METRICS_ENABLED=true`}
               </Paper>
             </Box>
           )}
-
-          {/* Request activity over time — the four request counters as separate lines */}
-          <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
-            <Typography variant="caption" color="text.secondary">Request activity (cumulative)</Typography>
-            <MetricsLineChart
-              height={200}
-              valueFormatter={(v) => Math.round(v).toLocaleString()}
-              series={SUMMARY.map(({ name, label }) => ({ data: gaugeSeries(history, name), label }))}
-            />
-          </Paper>
-
-          {/* Actions executed over time — one line per action type */}
-          <Paper variant="outlined" sx={{ p: 1.25 }}>
-            <Typography variant="caption" color="text.secondary">Actions executed</Typography>
-            {maxAction === 0 ? (
-              <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
-                No actions executed yet.
-              </Typography>
-            ) : (
-              <MetricsLineChart
-                height={200}
-                valueFormatter={(v) => Math.round(v).toLocaleString()}
-                series={actionRows
-                  .filter((r) => r.value > 0)
-                  .map((r) => ({
-                    data: gaugeSeries(history, r.name),
-                    label: r.label.charAt(0).toUpperCase() + r.label.slice(1),
-                  }))}
-              />
-            )}
-          </Paper>
         </>
       )}
     </Box>

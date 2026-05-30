@@ -30,16 +30,17 @@ describe('MetricsView', () => {
     expect(screen.getByText(/MOCKSERVER_METRICS_ENABLED=true/)).toBeInTheDocument();
   });
 
-  it('renders summary panels and values from parsed metrics', async () => {
+  it('renders the metric panels from parsed metrics', async () => {
     stubFetch(
       200,
       'requests_received_count 42.0\nresponse_expectations_matched_count 7.0\nexpectations_not_matched_count 3.0\n',
     );
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
-    expect(screen.getByText('42')).toBeInTheDocument();
-    expect(screen.getByText('Matched')).toBeInTheDocument();
-    expect(screen.getByText('7')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
+    expect(screen.getByText('Request activity (cumulative)')).toBeInTheDocument();
+    // the standalone number cards were removed — those counts now live only in
+    // the Request activity timeline graph, not as a card value
+    expect(screen.queryByText('42')).not.toBeInTheDocument();
   });
 
   it('renders the request-activity and actions-executed graph panels', async () => {
@@ -85,7 +86,7 @@ describe('MetricsView', () => {
   it('hides the JVM section when JVM metrics are absent', async () => {
     stubFetch(200, 'requests_received_count 5.0\n');
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
     expect(screen.queryByText('JVM heap memory')).not.toBeInTheDocument();
   });
 
@@ -110,7 +111,7 @@ describe('MetricsView', () => {
   it('hides the latency panel when the histogram is absent', async () => {
     stubFetch(200, 'requests_received_count 5.0\n');
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
     expect(screen.queryByText('Request latency (since start)')).not.toBeInTheDocument();
   });
 
@@ -135,7 +136,7 @@ describe('MetricsView', () => {
   it('hides the HTTP Chaos Faults section when the metric is absent', async () => {
     stubFetch(200, 'requests_received_count 5.0\n');
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
     expect(screen.queryByText('HTTP Chaos Faults')).not.toBeInTheDocument();
   });
 
@@ -150,7 +151,7 @@ describe('MetricsView', () => {
       ].join('\n'),
     );
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Requests received')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
     expect(screen.queryByText('HTTP Chaos Faults')).not.toBeInTheDocument();
   });
 });
