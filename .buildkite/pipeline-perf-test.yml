@@ -2,3 +2,13 @@ steps:
   - label: ":chart_with_upwards_trend: perf test lint"
     command: ".buildkite/scripts/steps/perf-test-lint.sh"
     timeout_in_minutes: 5
+
+  # Opt-in load test: runs only on manual ("New Build") or scheduled builds, not
+  # on every commit, so it does not keep scale-to-zero agents busy. k6 load.js
+  # thresholds are the pass/fail gate.
+  - label: ":k6: k6 load test"
+    command: ".buildkite/scripts/steps/perf-test-load.sh"
+    timeout_in_minutes: 20
+    if: "build.source == 'ui' || build.source == 'schedule'"
+    agents:
+      queue: "default"
