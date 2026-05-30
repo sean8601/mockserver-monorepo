@@ -1108,6 +1108,41 @@ public class McpStreamableHttpHandlerTest {
         response.release();
     }
 
+    @Test
+    public void shouldAnswerCorsPreflightForCrossOriginDashboard() {
+        FullHttpRequest request = new DefaultFullHttpRequest(
+            HttpVersion.HTTP_1_1, HttpMethod.OPTIONS, "/mockserver/mcp");
+        request.headers().set(HttpHeaderNames.ORIGIN, "http://localhost:3000");
+        request.headers().set(HttpHeaderNames.ACCESS_CONTROL_REQUEST_METHOD, "POST");
+        request.headers().set(HttpHeaderNames.ACCESS_CONTROL_REQUEST_HEADERS, "content-type, mcp-session-id");
+        channel.writeInbound(request);
+
+        FullHttpResponse response = awaitOutbound();
+        assertThat(response.status(), is(HttpResponseStatus.OK));
+        assertThat(response.headers().get(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN), is("http://localhost:3000"));
+        assertThat(response.headers().get(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS), containsString("POST"));
+        assertThat(response.headers().get(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS), containsString("mcp-session-id"));
+        response.release();
+    }
+
+    @Test
+    public void shouldEchoCorsOriginOnMcpResponse() {
+        String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\"}}";
+        FullHttpRequest request = new DefaultFullHttpRequest(
+            HttpVersion.HTTP_1_1, HttpMethod.POST, "/mockserver/mcp",
+            Unpooled.copiedBuffer(body, StandardCharsets.UTF_8));
+        request.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
+        request.headers().set(HttpHeaderNames.ORIGIN, "http://localhost:3000");
+        channel.writeInbound(request);
+
+        FullHttpResponse response = awaitOutbound();
+        assertThat(response.headers().get(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN), is("http://localhost:3000"));
+        // The browser must be able to read the session id returned by initialize.
+        assertThat(response.headers().get(HttpHeaderNames.ACCESS_CONTROL_EXPOSE_HEADERS), containsString("Mcp-Session-Id"));
+        assertThat(response.headers().get("Mcp-Session-Id"), notNullValue());
+        response.release();
+    }
+
     private String initializeAndGetSessionId() throws Exception {
         String requestBody = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
         FullHttpResponse response = sendPost(requestBody);

@@ -10,7 +10,9 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.*;
+import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
+import org.mockserver.cors.CORSHeaders;
 import org.mockserver.authentication.AuthenticationException;
 import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.lifecycle.LifeCycle;
@@ -35,6 +37,10 @@ import static org.mockserver.exception.ExceptionHandling.connectionClosedExcepti
 public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
 
     private static final String MCP_PATH = "/mockserver/mcp";
+    // Per-request CORS context, captured at request entry so responses written
+    // deeper in the handler can echo the requesting origin / requested headers.
+    private static final AttributeKey<String> CORS_ORIGIN = AttributeKey.valueOf("mockserver.mcp.cors.origin");
+    private static final AttributeKey<String> CORS_REQUEST_HEADERS = AttributeKey.valueOf("mockserver.mcp.cors.requestHeaders");
     private static final String PROTOCOL_VERSION = "2025-03-26";
     private static final String SERVER_NAME = "MockServer";
     private static final String SERVER_VERSION = Version.getVersion();
@@ -120,8 +126,16 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void handleMcpRequest(ChannelHandlerContext ctx, FullHttpRequest request) {
+        // Capture the CORS context per request so responses written deep in the
+        // handlers can echo it; the dashboard may be served from another origin.
+        String origin = request.headers().get(HttpHeaderNames.ORIGIN);
+        ctx.channel().attr(CORS_ORIGIN).set(origin);
+        ctx.channel().attr(CORS_REQUEST_HEADERS).set(request.headers().get(HttpHeaderNames.ACCESS_CONTROL_REQUEST_HEADERS));
         HttpMethod method = request.method();
-        if (method.equals(HttpMethod.POST)) {
+        if (method.equals(HttpMethod.OPTIONS) && origin != null && !origin.isEmpty()) {
+            // CORS preflight from a browser — answer with the allow headers (added by writeEmptyResponse).
+            writeEmptyResponse(ctx, HttpResponseStatus.OK);
+        } else if (method.equals(HttpMethod.POST)) {
             handlePost(ctx, request);
         } else if (method.equals(HttpMethod.GET)) {
             handleGet(ctx, request);
@@ -131,6 +145,28 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             writeJsonResponse(ctx, HttpResponseStatus.METHOD_NOT_ALLOWED,
                 JsonRpcMessage.JsonRpcResponse.error(null, JsonRpcMessage.INVALID_REQUEST, "Method not allowed"), null);
         }
+    }
+
+    /**
+     * Echo CORS headers onto an MCP response so the dashboard works cross-origin.
+     * Reflects the request Origin (captured per request) and advertises the
+     * standard allow-methods / allow-headers, mirroring the control-plane API.
+     */
+    private void addCorsHeaders(ChannelHandlerContext ctx, io.netty.handler.codec.http.HttpResponse response) {
+        String origin = ctx.channel().attr(CORS_ORIGIN).get();
+        if (origin == null || origin.isEmpty()) {
+            return;
+        }
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, CORSHeaders.DEFAULT_ALLOW_METHODS);
+        String requestedHeaders = ctx.channel().attr(CORS_REQUEST_HEADERS).get();
+        String allowHeaders = (requestedHeaders != null && !requestedHeaders.isEmpty())
+            ? requestedHeaders : CORSHeaders.DEFAULT_ALLOW_HEADERS;
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, allowHeaders);
+        // Expose Mcp-Session-Id so a cross-origin dashboard can read the session id
+        // returned by initialize (browsers hide non-exposed response headers).
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_EXPOSE_HEADERS, "Mcp-Session-Id, " + CORSHeaders.DEFAULT_ALLOW_HEADERS);
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_MAX_AGE, "300");
     }
 
     private boolean authenticateRequest(ChannelHandlerContext ctx, FullHttpRequest request) {
@@ -577,6 +613,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             if (sessionId != null) {
                 response.headers().set("Mcp-Session-Id", sessionId);
             }
+            addCorsHeaders(ctx, response);
             ctx.writeAndFlush(response);
         } catch (JsonProcessingException e) {
             byte[] fallback = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error\"},\"id\":null}".getBytes(StandardCharsets.UTF_8);
@@ -587,6 +624,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             );
             fallbackResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
             HttpUtil.setContentLength(fallbackResponse, fallback.length);
+            addCorsHeaders(ctx, fallbackResponse);
             ctx.writeAndFlush(fallbackResponse);
         }
     }
@@ -605,6 +643,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             if (sessionId != null) {
                 response.headers().set("Mcp-Session-Id", sessionId);
             }
+            addCorsHeaders(ctx, response);
             ctx.writeAndFlush(response);
         } catch (JsonProcessingException e) {
             byte[] fallback = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error\"},\"id\":null}".getBytes(StandardCharsets.UTF_8);
@@ -615,6 +654,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             );
             fallbackResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
             HttpUtil.setContentLength(fallbackResponse, fallback.length);
+            addCorsHeaders(ctx, fallbackResponse);
             ctx.writeAndFlush(fallbackResponse);
         }
     }
@@ -626,6 +666,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             Unpooled.EMPTY_BUFFER
         );
         HttpUtil.setContentLength(response, 0);
+        addCorsHeaders(ctx, response);
         ctx.writeAndFlush(response);
     }
 }

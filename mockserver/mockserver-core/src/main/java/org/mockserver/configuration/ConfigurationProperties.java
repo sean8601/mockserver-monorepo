@@ -1320,7 +1320,7 @@ public class ConfigurationProperties {
 
     /**
      * <p>The value used for CORS in the access-control-allow-methods header.</p>
-     * <p>The default is "CONNECT, DELETE, GET, HEAD, OPTIONS, POST, PUT, PATCH, TRACE"</p>
+     * <p>The property default is blank; when blank, MockServer applies "CONNECT, DELETE, GET, HEAD, OPTIONS, POST, PUT, PATCH, TRACE" as a built-in fallback (see CORSHeaders).</p>
      *
      * @param corsAllowMethods the value used for CORS in the access-control-allow-methods header
      */
@@ -1335,7 +1335,7 @@ public class ConfigurationProperties {
     /**
      * <p>the value used for CORS in the access-control-allow-headers and access-control-expose-headers headers.</p>
      * <p>In addition to this default value any headers specified in the request header access-control-request-headers also get added to access-control-allow-headers and access-control-expose-headers headers in a CORS response.</p>
-     * <p>The default is "Allow, Content-Encoding, Content-Length, Content-Type, ETag, Expires, Last-Modified, Location, Server, Vary, Authorization"</p>
+     * <p>The property default is blank; when blank, MockServer applies "Allow, Content-Encoding, Content-Length, Content-Type, ETag, Expires, Last-Modified, Location, Server, Vary, Authorization" as a built-in fallback (see CORSHeaders).</p>
      *
      * @param corsAllowHeaders the value used for CORS in the access-control-allow-headers and access-control-expose-headers headers
      */

@@ -201,4 +201,49 @@ public class CORSHeadersTest {
         assertThat(response.getFirstHeader("access-control-allow-headers"), containsString("X-API-Key"));
     }
 
+    @Test
+    public void shouldReflectOriginAndDefaultMethodsHeadersWhenBlank() {
+        // given - all CORS settings left blank (the defaults), no credentials, a
+        // cross-origin browser request
+        HttpRequest request = request()
+            .withHeader("origin", "http://localhost:3000");
+        HttpResponse response = response();
+        CORSHeaders corsHeaders = new CORSHeaders(
+            "",
+            "",
+            "",
+            false,
+            300
+        );
+
+        // when
+        corsHeaders.addCORSHeaders(request, response);
+
+        // then - origin reflected, and methods/headers default to usable values
+        // (not empty) so a PUT preflight from the dashboard passes
+        assertThat(response.getFirstHeader("access-control-allow-origin"), is("http://localhost:3000"));
+        assertThat(response.getFirstHeader("access-control-allow-methods"), containsString("PUT"));
+        assertThat(response.getFirstHeader("access-control-allow-headers"), containsString("Content-Type"));
+    }
+
+    @Test
+    public void shouldFallBackToAnyOriginWhenAllowOriginBlankAndNoOrigin() {
+        // given - default (blank) corsAllowOrigin, no Origin header on the request
+        HttpRequest request = request();
+        HttpResponse response = response();
+        CORSHeaders corsHeaders = new CORSHeaders(
+            "",
+            "Allow, Content-Type",
+            "GET, PUT, OPTIONS",
+            false,
+            300
+        );
+
+        // when
+        corsHeaders.addCORSHeaders(request, response);
+
+        // then
+        assertThat(response.getFirstHeader("access-control-allow-origin"), is("*"));
+    }
+
 }
