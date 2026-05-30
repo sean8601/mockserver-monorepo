@@ -6,6 +6,8 @@ MockServer's security scanning, vulnerability management, and the security postu
 
 MockServer is a **development and testing tool** -- it is not designed for production deployment. Its security posture reflects this: the project invests heavily in automated scanning and dependency management to keep the supply chain clean, while deliberately retaining certain capabilities (like SSRF forwarding and trust-all TLS) that are essential for testing but would be vulnerabilities in a production service.
 
+Users who need to lock down a MockServer deployment can harden these capabilities through configuration. The consumer-facing [**API Security: Configuration Hardening**](https://www.mock-server.com/mock_server/control_plane_authorisation.html#configuration_hardening) guide ([source](../../jekyll-www.mock-server.com/mock_server/control_plane_authorisation.html)) documents the recommended property values -- loopback binding, SSRF blocking, upstream TLS validation, the TLS protocol floor, response-template class restrictions, request-parsing limits, and control-plane authentication (mTLS/JWT).
+
 See [SECURITY.md](../../SECURITY.md) for the full security policy, including intentional security behaviours and vulnerability reporting.
 
 ## Static Analysis: CodeQL
