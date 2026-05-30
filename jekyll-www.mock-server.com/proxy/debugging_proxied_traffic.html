@@ -1,0 +1,85 @@
+---
+title: Debugging Proxied Traffic
+description: Inspect and export the traffic recorded by the MockServer proxy — using the dashboard UI or the retrieve/download API (JSON, log entries, HAR, cURL) — to understand and debug how a system behaves.
+layout: page
+pageOrder: 5
+section: 'Proxy'
+subsection: true
+sitemap:
+  priority: 0.7
+  changefreq: 'monthly'
+  lastmod: 2026-05-30T08:00:00+00:00
+---
+
+<p>When MockServer runs as a <a href="/proxy/getting_started.html">proxy</a> it records every request it forwards and the response it received. That recording is the single best way to <strong>understand how a system actually behaves</strong> — which calls a client really makes, in what order, with which headers and bodies, and how the upstream responds. This page covers the two ways to inspect that traffic: interactively in the <strong>dashboard UI</strong>, or by <strong>downloading/exporting</strong> it in a range of formats.</p>
+
+<p>This is complementary to <a href="/proxy/record_and_replay.html">Record &amp; Replay</a>: there you turn recorded traffic into reusable mock expectations; here you inspect it to debug and understand a system.</p>
+
+<a id="dashboard_ui" class="anchor" href="#dashboard_ui">&nbsp;</a>
+
+<h2>Inspecting in the Dashboard UI</h2>
+
+<p>The <a href="/mock_server/mockserver_ui.html">MockServer dashboard</a> (served at <code>http://localhost:1080/mockserver/dashboard</code>) updates in real time as traffic flows through the proxy, so you can watch a system as it runs:</p>
+
+<ul>
+	<li><strong>Received &amp; proxied requests</strong> — every forwarded request and its response appear live. Expand any entry to see the full request line, headers, and body alongside the response status, headers, and body.</li>
+	<li><strong>Log messages</strong> — the structured log shows each forwarding decision (which request was proxied where, and the response returned), so you can follow the exact sequence of calls a system makes.</li>
+	<li><strong>Sessions</strong> — related requests are grouped so you can trace a multi-step interaction (and, for AI traffic, view the correlated call graph) rather than reading a flat list.</li>
+	<li><strong>Export</strong> — the Library &rarr; Export tab downloads the recorded traffic without leaving the browser: choose the <em>Recorded requests</em> scope and pick a format (JSON, log entries, HAR, or cURL) from the dropdown.</li>
+</ul>
+
+<p>The dashboard is read-only over the same port as the proxy — no extra configuration or container is required.</p>
+
+<a id="download_export" class="anchor" href="#download_export">&nbsp;</a>
+
+<h2>Downloading &amp; Exporting Recorded Traffic</h2>
+
+<p>The same traffic can be pulled out of MockServer programmatically with the retrieve API (<code>PUT /mockserver/retrieve</code>), which is ideal for scripting, sharing with teammates, or feeding into other tools. Two <code>type</code> values cover proxied traffic — <strong>REQUESTS</strong> (the requests only) and <strong>REQUEST_RESPONSES</strong> (each request paired with its response) — and the <code>format</code> parameter selects the representation:</p>
+
+<table>
+	<thead>
+		<tr><th>Format</th><th>Applies to</th><th>Use it to&hellip;</th></tr>
+	</thead>
+	<tbody>
+		<tr><td><strong>JSON</strong> (default)</td><td>REQUESTS, REQUEST_RESPONSES</td><td>Inspect the raw recorded requests/response pairs, or process them in a script.</td></tr>
+		<tr><td><strong>LOG_ENTRIES</strong></td><td>REQUESTS, REQUEST_RESPONSES</td><td>Read the traffic in MockServer's human-readable log format.</td></tr>
+		<tr><td><strong>HAR</strong></td><td>REQUEST_RESPONSES</td><td>Open the recording in browser DevTools or any HTTP-analysis tool that reads <a href="http://www.softwareishard.com/blog/har-12-spec/" target="_blank" rel="noopener noreferrer">HAR 1.2</a> — a great way to share a capture.</td></tr>
+		<tr><td><strong>CURL</strong></td><td>REQUESTS, REQUEST_RESPONSES</td><td>Get one <code>curl</code> command per recorded request so you can replay an individual call by hand.</td></tr>
+		<tr><td><strong>JAVA</strong></td><td>REQUESTS, REQUEST_RESPONSES</td><td>Render the requests as Java client code (handy for pasting into a test).</td></tr>
+	</tbody>
+</table>
+
+<p>Retrieve request/response pairs as JSON:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=JSON"</code></pre>
+
+<p>Export a HAR file to open in DevTools or share:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR" -o recording.har</code></pre>
+
+<p>Get one <code>curl</code> command per recorded request to replay a call:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUESTS&format=CURL"</code></pre>
+
+<p>Any retrieval can be narrowed to the traffic you care about by sending a <a href="/mock_server/creating_expectations.html">request matcher</a> in the body — for example, only the calls to a particular path or host:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&format=HAR" -d '{
+    "path": "/api/.*"
+}'</code></pre>
+
+<a id="debugging_a_system" class="anchor" href="#debugging_a_system">&nbsp;</a>
+
+<h2>Using This to Debug &amp; Understand a System</h2>
+
+<p>Recorded proxy traffic answers the questions that are hardest to reason about from source code alone:</p>
+
+<ul>
+	<li><strong>What does my client actually send?</strong> See the real method, path, query parameters, headers, and body — including values added by frameworks, SDKs, or interceptors you did not write.</li>
+	<li><strong>What does the upstream really return?</strong> Capture the exact status codes, headers, and bodies a dependency produces, including error and edge-case responses that are hard to reproduce on demand.</li>
+	<li><strong>In what order do calls happen?</strong> Follow the sequence of requests to spot redundant calls, missing retries, or unexpected fan-out.</li>
+	<li><strong>Why is a request not matching?</strong> Compare a recorded request against your <a href="/mock_server/creating_expectations.html">expectations</a> to see exactly which field differs (see also <a href="/mock_server/ai_debugging.html">AI-assisted debugging</a>).</li>
+	<li><strong>Share a reproduction.</strong> A HAR file or the JSON recording is a precise, self-contained capture you can attach to a bug report or hand to a teammate.</li>
+	<li><strong>Turn it into a test.</strong> Once you understand the traffic, replay it as deterministic mocks — see <a href="/proxy/record_and_replay.html">Record &amp; Replay</a>.</li>
+</ul>
+
+<p>For the complete list of <code>type</code> and <code>format</code> values and the full REST specification, see the <a href="/mock_server/configuration_properties.html">configuration</a> docs and the <a href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">retrieve REST API</a>.</p>
