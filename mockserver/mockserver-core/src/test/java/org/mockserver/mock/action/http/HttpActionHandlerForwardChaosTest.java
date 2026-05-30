@@ -98,6 +98,7 @@ public class HttpActionHandlerForwardChaosTest {
     @Before
     public void setupMocks() {
         Metrics.resetAdditionalMetricsForTesting();
+        HttpQuotaRegistry.getInstance().reset();
         configuration = configuration().logLevel(Level.INFO).metricsEnabled(true);
 
         mockHttpStateHandler = mock(HttpState.class);

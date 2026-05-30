@@ -139,6 +139,30 @@ schema_faq:
             <td>The delay between dribbled chunks (a <code class="inline code">{ "timeUnit": ..., "value": ... }</code> object). Required alongside <code class="inline code">slowResponseChunkSize</code> for the slow response to take effect.</td>
             <td>(default: omitted = no dribble)</td>
         </tr>
+        <tr>
+            <td><code class="inline code">quotaName</code></td>
+            <td>string</td>
+            <td>Stateful rate-limit counter key. Expectations sharing the same <code class="inline code">quotaName</code> share one counter (model an upstream account limit). Required (with <code class="inline code">quotaLimit</code> and <code class="inline code">quotaWindowMillis</code>) to enable the quota.</td>
+            <td>(default: omitted = no quota)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">quotaLimit</code></td>
+            <td>integer</td>
+            <td>Maximum number of requests allowed within the window before requests are rejected.</td>
+            <td>&ge; 1 (default: omitted = no quota)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">quotaWindowMillis</code></td>
+            <td>integer</td>
+            <td>Fixed-window length in milliseconds. The first request starts the window; it resets after this duration elapses.</td>
+            <td>&ge; 1 (default: omitted = no quota)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">quotaErrorStatus</code></td>
+            <td>integer</td>
+            <td>The HTTP status returned when the quota is exceeded.</td>
+            <td>100&ndash;599 (default: 429)</td>
+        </tr>
     </tbody>
 </table>
 
@@ -312,6 +336,18 @@ schema_faq:
     <li><strong>Test read timeouts:</strong> dribble a body in 1-byte chunks with a 1-second delay and verify your client's socket read timeout fires.</li>
     <li><strong>Test slow-network handling:</strong> trickle a large payload to verify progress indicators and partial-read handling.</li>
 </ul>
+
+<a id="request_quota" class="anchor" href="#request_quota">&nbsp;</a>
+
+<h2>Stateful Request Quota (rate limit)</h2>
+
+<p>The request quota is a <strong>deterministic, stateful</strong> fixed-window rate limit — the counterpart to the probabilistic 429 (which fires randomly per request). It lets you drive an application into a <em>hard</em> rate limit: "the 5th call within 60 seconds gets 429."</p>
+
+<p><strong>How it works:</strong> set <code class="inline code">quotaName</code>, <code class="inline code">quotaLimit</code> and <code class="inline code">quotaWindowMillis</code>. MockServer counts matched requests against the named quota; once the count exceeds <code class="inline code">quotaLimit</code> within the current window, further requests are rejected with <code class="inline code">quotaErrorStatus</code> (default 429) and the <code class="inline code">retryAfter</code> header. The window is fixed: the first request starts it and it resets <code class="inline code">quotaWindowMillis</code> later. Expectations that share a <code class="inline code">quotaName</code> share one counter, so you can model a single upstream account limit spread across several mocks. The counter is process-wide and is cleared on server reset.</p>
+
+<p>The quota gate takes priority over the probabilistic error and the body/slow faults (it is evaluated right after the connection-drop check), so a rate-limited request always returns the quota status. A misconfigured quota (any of the three fields missing) is ignored.</p>
+
+<p>When the quota is combined with a count window (<code class="inline code">succeedFirst</code> / <code class="inline code">failRequestCount</code>), only requests inside that window count against the quota — requests in the "succeed" or "recovered" phases are not counted. Most setups use the quota on its own, where every matched request counts.</p>
 
 <a id="reproducibility" class="anchor" href="#reproducibility">&nbsp;</a>
 

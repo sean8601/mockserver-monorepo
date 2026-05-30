@@ -52,7 +52,11 @@ const chaosProfile: HttpChaosProfile = {
     slowResponseChunkDelay: {
         timeUnit: "MILLISECONDS",
         value: 250
-    }
+    },
+    quotaName: "acct",
+    quotaLimit: 4,
+    quotaWindowMillis: 60000,
+    quotaErrorStatus: 429
 };
 
 const chaosExpectation: Expectation = {

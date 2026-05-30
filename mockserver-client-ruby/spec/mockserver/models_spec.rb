@@ -1767,6 +1767,19 @@ RSpec.describe 'MockServer models' do
       expect(restored.slow_response_chunk_delay.value).to eq(250)
     end
 
+    it 'serializes and deserializes the stateful request quota' do
+      chaos = MockServer::HttpChaosProfile.new(
+        quota_name: 'acct', quota_limit: 4, quota_window_millis: 60000, quota_error_status: 429
+      )
+      h = chaos.to_h
+      expect(h).to eq({ 'quotaName' => 'acct', 'quotaLimit' => 4, 'quotaWindowMillis' => 60000, 'quotaErrorStatus' => 429 })
+      restored = MockServer::HttpChaosProfile.from_hash(h)
+      expect(restored.quota_name).to eq('acct')
+      expect(restored.quota_limit).to eq(4)
+      expect(restored.quota_window_millis).to eq(60000)
+      expect(restored.quota_error_status).to eq(429)
+    end
+
     it 'round-trips correctly' do
       original = MockServer::HttpChaosProfile.new(
         error_status: 503,

@@ -19,6 +19,10 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
     private Boolean malformedBody;
     private Integer slowResponseChunkSize;
     private DelayDTO slowResponseChunkDelay;
+    private String quotaName;
+    private Integer quotaLimit;
+    private Long quotaWindowMillis;
+    private Integer quotaErrorStatus;
 
     public HttpChaosProfileDTO(HttpChaosProfile httpChaosProfile) {
         if (httpChaosProfile != null) {
@@ -40,6 +44,10 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             if (httpChaosProfile.getSlowResponseChunkDelay() != null) {
                 slowResponseChunkDelay = new DelayDTO(httpChaosProfile.getSlowResponseChunkDelay());
             }
+            quotaName = httpChaosProfile.getQuotaName();
+            quotaLimit = httpChaosProfile.getQuotaLimit();
+            quotaWindowMillis = httpChaosProfile.getQuotaWindowMillis();
+            quotaErrorStatus = httpChaosProfile.getQuotaErrorStatus();
         }
     }
 
@@ -61,7 +69,11 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
             .withTruncateBodyAtFraction(truncateBodyAtFraction)
             .withMalformedBody(malformedBody)
             .withSlowResponseChunkSize(slowResponseChunkSize)
-            .withSlowResponseChunkDelay(slowResponseChunkDelay != null ? slowResponseChunkDelay.buildObject() : null);
+            .withSlowResponseChunkDelay(slowResponseChunkDelay != null ? slowResponseChunkDelay.buildObject() : null)
+            .withQuotaName(quotaName)
+            .withQuotaLimit(quotaLimit)
+            .withQuotaWindowMillis(quotaWindowMillis)
+            .withQuotaErrorStatus(quotaErrorStatus);
     }
 
     public Integer getErrorStatus() {
@@ -187,6 +199,42 @@ public class HttpChaosProfileDTO extends ObjectWithReflectiveEqualsHashCodeToStr
 
     public HttpChaosProfileDTO setSlowResponseChunkDelay(DelayDTO slowResponseChunkDelay) {
         this.slowResponseChunkDelay = slowResponseChunkDelay;
+        return this;
+    }
+
+    public String getQuotaName() {
+        return quotaName;
+    }
+
+    public HttpChaosProfileDTO setQuotaName(String quotaName) {
+        this.quotaName = quotaName;
+        return this;
+    }
+
+    public Integer getQuotaLimit() {
+        return quotaLimit;
+    }
+
+    public HttpChaosProfileDTO setQuotaLimit(Integer quotaLimit) {
+        this.quotaLimit = quotaLimit;
+        return this;
+    }
+
+    public Long getQuotaWindowMillis() {
+        return quotaWindowMillis;
+    }
+
+    public HttpChaosProfileDTO setQuotaWindowMillis(Long quotaWindowMillis) {
+        this.quotaWindowMillis = quotaWindowMillis;
+        return this;
+    }
+
+    public Integer getQuotaErrorStatus() {
+        return quotaErrorStatus;
+    }
+
+    public HttpChaosProfileDTO setQuotaErrorStatus(Integer quotaErrorStatus) {
+        this.quotaErrorStatus = quotaErrorStatus;
         return this;
     }
 }

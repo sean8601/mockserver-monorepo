@@ -19,6 +19,16 @@ import java.util.Objects;
  * and error injection take priority — when an error is injected the synthetic
  * error body is returned uncorrupted and at full speed.
  * <p>
+ * It also carries an optional <em>stateful</em> request quota (a fixed-window
+ * rate limit): when {@code quotaName}, {@code quotaLimit} and
+ * {@code quotaWindowMillis} are set, requests beyond {@code quotaLimit} within
+ * the window are rejected with {@code quotaErrorStatus} (default 429) and the
+ * {@code retryAfter} header. Unlike the probabilistic error this is deterministic
+ * and counts real requests across the process (see
+ * {@link org.mockserver.mock.action.http.HttpQuotaRegistry}); expectations sharing
+ * a {@code quotaName} share one counter. The quota gate takes priority over the
+ * probabilistic error and the body/slow faults (after connection-drop).
+ * <p>
  * Attach to an {@link org.mockserver.mock.Expectation} via
  * {@code expectation.withChaos(httpChaosProfile()...)} to inject faults into
  * the following action types:
@@ -82,6 +92,10 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
     private Boolean malformedBody;     // append a broken-JSON fragment to corrupt the response body; null/false = don't corrupt
     private Integer slowResponseChunkSize; // dribble the response body in chunks of this many bytes (>= 1); null = don't dribble
     private Delay slowResponseChunkDelay;  // delay between dribbled chunks; required (with chunkSize) to slow the response
+    private String quotaName;          // stateful quota: shared counter key
+    private Integer quotaLimit;        // stateful quota: max requests allowed per window (>= 1)
+    private Long quotaWindowMillis;    // stateful quota: window length in milliseconds (>= 1)
+    private Integer quotaErrorStatus;  // stateful quota: status when exceeded (default 429)
 
     public static HttpChaosProfile httpChaosProfile() {
         return new HttpChaosProfile();
@@ -254,6 +268,55 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
         return slowResponseChunkDelay;
     }
 
+    public HttpChaosProfile withQuotaName(String quotaName) {
+        this.quotaName = quotaName;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getQuotaName() {
+        return quotaName;
+    }
+
+    public HttpChaosProfile withQuotaLimit(Integer quotaLimit) {
+        if (quotaLimit != null && quotaLimit < 1) {
+            throw new IllegalArgumentException("quotaLimit must be >= 1, got " + quotaLimit);
+        }
+        this.quotaLimit = quotaLimit;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getQuotaLimit() {
+        return quotaLimit;
+    }
+
+    public HttpChaosProfile withQuotaWindowMillis(Long quotaWindowMillis) {
+        if (quotaWindowMillis != null && quotaWindowMillis < 1) {
+            throw new IllegalArgumentException("quotaWindowMillis must be >= 1, got " + quotaWindowMillis);
+        }
+        this.quotaWindowMillis = quotaWindowMillis;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Long getQuotaWindowMillis() {
+        return quotaWindowMillis;
+    }
+
+    public HttpChaosProfile withQuotaErrorStatus(Integer quotaErrorStatus) {
+        if (quotaErrorStatus != null && (quotaErrorStatus < 100 || quotaErrorStatus > 599)) {
+            throw new IllegalArgumentException("quotaErrorStatus must be between 100 and 599, got " + quotaErrorStatus);
+        }
+        this.quotaErrorStatus = quotaErrorStatus;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getQuotaErrorStatus() {
+        return quotaErrorStatus;
+    }
+
     /**
      * Returns {@code true} when the request falls within the time-based outage
      * window defined by {@code outageAfterMillis} and {@code outageDurationMillis},
@@ -337,13 +400,17 @@ public class HttpChaosProfile extends ObjectWithJsonToString {
             Objects.equals(truncateBodyAtFraction, that.truncateBodyAtFraction) &&
             Objects.equals(malformedBody, that.malformedBody) &&
             Objects.equals(slowResponseChunkSize, that.slowResponseChunkSize) &&
-            Objects.equals(slowResponseChunkDelay, that.slowResponseChunkDelay);
+            Objects.equals(slowResponseChunkDelay, that.slowResponseChunkDelay) &&
+            Objects.equals(quotaName, that.quotaName) &&
+            Objects.equals(quotaLimit, that.quotaLimit) &&
+            Objects.equals(quotaWindowMillis, that.quotaWindowMillis) &&
+            Objects.equals(quotaErrorStatus, that.quotaErrorStatus);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis, truncateBodyAtFraction, malformedBody, slowResponseChunkSize, slowResponseChunkDelay);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, dropConnectionProbability, latency, seed, succeedFirst, failRequestCount, outageAfterMillis, outageDurationMillis, truncateBodyAtFraction, malformedBody, slowResponseChunkSize, slowResponseChunkDelay, quotaName, quotaLimit, quotaWindowMillis, quotaErrorStatus);
         }
         return hashCode;
     }

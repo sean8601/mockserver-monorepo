@@ -349,6 +349,10 @@ export interface HttpChaosProfile {
   malformedBody?: boolean;
   slowResponseChunkSize?: number;
   slowResponseChunkDelay?: Delay;
+  quotaName?: string;
+  quotaLimit?: number;
+  quotaWindowMillis?: number;
+  quotaErrorStatus?: number;
 }
 
 export interface AfterAction {

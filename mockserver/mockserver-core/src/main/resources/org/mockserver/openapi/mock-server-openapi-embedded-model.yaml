@@ -1193,6 +1193,23 @@ components:
           description: "Dribble the response body in chunks of this many bytes; requires slowResponseChunkDelay to slow the response"
         slowResponseChunkDelay:
           $ref: "#/components/schemas/Delay"
+        quotaName:
+          type: string
+          description: "Stateful quota: shared counter key; expectations with the same quotaName share one rate-limit counter"
+        quotaLimit:
+          type: integer
+          minimum: 1
+          description: "Stateful quota: max requests allowed per window before requests are rejected"
+        quotaWindowMillis:
+          type: integer
+          format: int64
+          minimum: 1
+          description: "Stateful quota: fixed-window length in milliseconds"
+        quotaErrorStatus:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: "Stateful quota: status returned when the quota is exceeded (default 429)"
     Delay:
       description: "response delay"
       type: object

@@ -181,6 +181,10 @@ public class McpToolRegistry {
             ObjectNode slowDelayProps = slowDelayProp.putObject("properties");
             slowDelayProps.putObject("timeUnit").put("type", "string").put("description", "Time unit (e.g. MILLISECONDS, SECONDS)");
             slowDelayProps.putObject("value").put("type", "integer").put("description", "Delay value");
+            chaosProps.putObject("quotaName").put("type", "string").put("description", "Stateful quota: shared counter key; expectations with the same quotaName share one rate-limit counter");
+            chaosProps.putObject("quotaLimit").put("type", "integer").put("description", "Stateful quota: max requests allowed per window before requests are rejected (>= 1)");
+            chaosProps.putObject("quotaWindowMillis").put("type", "integer").put("description", "Stateful quota: fixed-window length in milliseconds (>= 1)");
+            chaosProps.putObject("quotaErrorStatus").put("type", "integer").put("description", "Stateful quota: status returned when the quota is exceeded (default 429)");
         }
         ArrayNode required = schema.putArray("required");
         required.add("method");
@@ -358,6 +362,30 @@ public class McpToolRegistry {
                     } catch (IllegalArgumentException e) {
                         return errorResult("chaos slowResponseChunkDelay timeUnit must be one of: NANOSECONDS, MICROSECONDS, MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS");
                     }
+                }
+                JsonNode quotaNameNode = chaosNode.path("quotaName");
+                if (quotaNameNode.isTextual()) {
+                    chaos.withQuotaName(quotaNameNode.asText());
+                }
+                JsonNode quotaLimitNode = chaosNode.path("quotaLimit");
+                if (!quotaLimitNode.isMissingNode() && !quotaLimitNode.isNull()) {
+                    int quotaLimit = quotaLimitNode.asInt();
+                    if (quotaLimit < 1) {
+                        return errorResult("chaos quotaLimit must be >= 1");
+                    }
+                    chaos.withQuotaLimit(quotaLimit);
+                }
+                JsonNode quotaWindowMillisNode = chaosNode.path("quotaWindowMillis");
+                if (!quotaWindowMillisNode.isMissingNode() && !quotaWindowMillisNode.isNull()) {
+                    long quotaWindowMillis = quotaWindowMillisNode.asLong();
+                    if (quotaWindowMillis < 1) {
+                        return errorResult("chaos quotaWindowMillis must be >= 1");
+                    }
+                    chaos.withQuotaWindowMillis(quotaWindowMillis);
+                }
+                JsonNode quotaErrorStatusNode = chaosNode.path("quotaErrorStatus");
+                if (!quotaErrorStatusNode.isMissingNode() && !quotaErrorStatusNode.isNull()) {
+                    chaos.withQuotaErrorStatus(quotaErrorStatusNode.asInt());
                 }
                 expectation.withChaos(chaos);
             }

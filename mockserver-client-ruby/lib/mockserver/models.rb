@@ -73,7 +73,11 @@ module MockServer
     'truncate_body_at_fraction'      => 'truncateBodyAtFraction',
     'malformed_body'                 => 'malformedBody',
     'slow_response_chunk_size'       => 'slowResponseChunkSize',
-    'slow_response_chunk_delay'      => 'slowResponseChunkDelay'
+    'slow_response_chunk_delay'      => 'slowResponseChunkDelay',
+    'quota_name'                     => 'quotaName',
+    'quota_limit'                    => 'quotaLimit',
+    'quota_window_millis'            => 'quotaWindowMillis',
+    'quota_error_status'             => 'quotaErrorStatus'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -1163,13 +1167,15 @@ module MockServer
                   :retry_after, :latency, :seed, :succeed_first, :fail_request_count,
                   :outage_after_millis, :outage_duration_millis,
                   :truncate_body_at_fraction, :malformed_body,
-                  :slow_response_chunk_size, :slow_response_chunk_delay
+                  :slow_response_chunk_size, :slow_response_chunk_delay,
+                  :quota_name, :quota_limit, :quota_window_millis, :quota_error_status
 
     def initialize(error_status: nil, error_probability: nil, drop_connection_probability: nil,
                    retry_after: nil, latency: nil, seed: nil, succeed_first: nil, fail_request_count: nil,
                    outage_after_millis: nil, outage_duration_millis: nil,
                    truncate_body_at_fraction: nil, malformed_body: nil,
-                   slow_response_chunk_size: nil, slow_response_chunk_delay: nil)
+                   slow_response_chunk_size: nil, slow_response_chunk_delay: nil,
+                   quota_name: nil, quota_limit: nil, quota_window_millis: nil, quota_error_status: nil)
       @error_status = error_status
       @error_probability = error_probability
       @drop_connection_probability = drop_connection_probability
@@ -1184,6 +1190,10 @@ module MockServer
       @malformed_body = malformed_body
       @slow_response_chunk_size = slow_response_chunk_size
       @slow_response_chunk_delay = slow_response_chunk_delay
+      @quota_name = quota_name
+      @quota_limit = quota_limit
+      @quota_window_millis = quota_window_millis
+      @quota_error_status = quota_error_status
     end
 
     def to_h
@@ -1201,7 +1211,11 @@ module MockServer
         'truncateBodyAtFraction'     => @truncate_body_at_fraction,
         'malformedBody'              => @malformed_body,
         'slowResponseChunkSize'      => @slow_response_chunk_size,
-        'slowResponseChunkDelay'     => @slow_response_chunk_delay&.to_h
+        'slowResponseChunkDelay'     => @slow_response_chunk_delay&.to_h,
+        'quotaName'                  => @quota_name,
+        'quotaLimit'                 => @quota_limit,
+        'quotaWindowMillis'          => @quota_window_millis,
+        'quotaErrorStatus'           => @quota_error_status
       })
     end
 
@@ -1222,7 +1236,11 @@ module MockServer
         truncate_body_at_fraction:   data['truncateBodyAtFraction'],
         malformed_body:              data['malformedBody'],
         slow_response_chunk_size:    data['slowResponseChunkSize'],
-        slow_response_chunk_delay:   Delay.from_hash(data['slowResponseChunkDelay'])
+        slow_response_chunk_delay:   Delay.from_hash(data['slowResponseChunkDelay']),
+        quota_name:                  data['quotaName'],
+        quota_limit:                 data['quotaLimit'],
+        quota_window_millis:         data['quotaWindowMillis'],
+        quota_error_status:          data['quotaErrorStatus']
       )
     end
   end

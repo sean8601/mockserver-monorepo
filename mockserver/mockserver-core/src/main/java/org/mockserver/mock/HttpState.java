@@ -279,6 +279,7 @@ public class HttpState {
         crudDispatcher.reset();
         fileStore.reset();
         org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        org.mockserver.mock.action.http.HttpQuotaRegistry.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
                 new LogEntry()

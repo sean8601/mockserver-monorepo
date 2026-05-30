@@ -17,6 +17,10 @@ _FIELD_MAP = {
     "malformed_body": "malformedBody",
     "slow_response_chunk_size": "slowResponseChunkSize",
     "slow_response_chunk_delay": "slowResponseChunkDelay",
+    "quota_name": "quotaName",
+    "quota_limit": "quotaLimit",
+    "quota_window_millis": "quotaWindowMillis",
+    "quota_error_status": "quotaErrorStatus",
     "status_code": "statusCode",
     "reason_phrase": "reasonPhrase",
     "keep_alive": "keepAlive",
@@ -327,6 +331,10 @@ class HttpChaosProfile:
     malformed_body: bool | None = None
     slow_response_chunk_size: int | None = None
     slow_response_chunk_delay: Delay | None = None
+    quota_name: str | None = None
+    quota_limit: int | None = None
+    quota_window_millis: int | None = None
+    quota_error_status: int | None = None
 
     def to_dict(self) -> dict:
         return _strip_none({
@@ -344,6 +352,10 @@ class HttpChaosProfile:
             "malformedBody": self.malformed_body,
             "slowResponseChunkSize": self.slow_response_chunk_size,
             "slowResponseChunkDelay": self.slow_response_chunk_delay.to_dict() if self.slow_response_chunk_delay else None,
+            "quotaName": self.quota_name,
+            "quotaLimit": self.quota_limit,
+            "quotaWindowMillis": self.quota_window_millis,
+            "quotaErrorStatus": self.quota_error_status,
         })
 
     @classmethod
@@ -365,6 +377,10 @@ class HttpChaosProfile:
             malformed_body=data.get("malformedBody"),
             slow_response_chunk_size=data.get("slowResponseChunkSize"),
             slow_response_chunk_delay=Delay.from_dict(data.get("slowResponseChunkDelay")),
+            quota_name=data.get("quotaName"),
+            quota_limit=data.get("quotaLimit"),
+            quota_window_millis=data.get("quotaWindowMillis"),
+            quota_error_status=data.get("quotaErrorStatus"),
         )
 
 

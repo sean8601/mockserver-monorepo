@@ -161,6 +161,38 @@ public class HttpChaosProfileTest {
         assertThat(exception.getMessage(), is("slowResponseChunkSize must be >= 1, got 0"));
     }
 
+    // --- quota validation tests ---
+
+    @Test
+    public void withQuotaLimitRejectsBelowOne() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withQuotaLimit(0));
+        assertThat(exception.getMessage(), is("quotaLimit must be >= 1, got 0"));
+    }
+
+    @Test
+    public void withQuotaWindowMillisRejectsBelowOne() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withQuotaWindowMillis(0L));
+        assertThat(exception.getMessage(), is("quotaWindowMillis must be >= 1, got 0"));
+    }
+
+    @Test
+    public void withQuotaErrorStatusRejectsOutOfRange() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> httpChaosProfile().withQuotaErrorStatus(42));
+        assertThat(exception.getMessage(), is("quotaErrorStatus must be between 100 and 599, got 42"));
+    }
+
+    @Test
+    public void withQuotaFieldsAcceptValidValues() {
+        httpChaosProfile()
+            .withQuotaName("acct")
+            .withQuotaLimit(1)
+            .withQuotaWindowMillis(1L)
+            .withQuotaErrorStatus(429);
+    }
+
     // --- equals/hashCode tests ---
 
     @Test
@@ -320,6 +352,29 @@ public class HttpChaosProfileTest {
         assertThat(deserialized[0].getChaos().getSlowResponseChunkSize(), is(8));
         assertThat(deserialized[0].getChaos().getSlowResponseChunkDelay().getTimeUnit(), is(TimeUnit.MILLISECONDS));
         assertThat(deserialized[0].getChaos().getSlowResponseChunkDelay().getValue(), is(250L));
+    }
+
+    @Test
+    public void expectationWithChaosQuotaRoundTripsViaSerializer() {
+        ExpectationSerializer serializer = new ExpectationSerializer(new MockServerLogger());
+
+        Expectation original = new Expectation(request("/test"))
+            .thenRespond(response("ok"))
+            .withChaos(httpChaosProfile()
+                .withQuotaName("acct-1")
+                .withQuotaLimit(4)
+                .withQuotaWindowMillis(60000L)
+                .withQuotaErrorStatus(429));
+
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getChaos(), is(equalTo(original.getChaos())));
+        assertThat(deserialized[0].getChaos().getQuotaName(), is("acct-1"));
+        assertThat(deserialized[0].getChaos().getQuotaLimit(), is(4));
+        assertThat(deserialized[0].getChaos().getQuotaWindowMillis(), is(60000L));
+        assertThat(deserialized[0].getChaos().getQuotaErrorStatus(), is(429));
     }
 
     @Test

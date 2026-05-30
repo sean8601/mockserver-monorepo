@@ -986,6 +986,38 @@ public class HttpActionHandler {
         return errorResponse;
     }
 
+    /**
+     * Builds the synthetic quota-exceeded response when the chaos profile's stateful
+     * request quota ({@code quotaName} + {@code quotaLimit} + {@code quotaWindowMillis})
+     * is exceeded for the current fixed window, or returns {@code null} when the quota
+     * is not fully configured, the count window is not eligible, or the request is
+     * still within the quota. Counts every eligible matched request against the named
+     * quota in {@link HttpQuotaRegistry}.
+     *
+     * @param chaos      the chaos profile (may be null)
+     * @param matchCount 1-based match count; used for count-window gating
+     */
+    HttpResponse quotaErrorResponseOrNull(final HttpChaosProfile chaos, int matchCount) {
+        if (chaos == null || chaos.getQuotaName() == null || chaos.getQuotaLimit() == null || chaos.getQuotaWindowMillis() == null
+            || !chaos.countWindowEligible(matchCount)) {
+            return null;
+        }
+        boolean allowed = HttpQuotaRegistry.getInstance()
+            .tryAcquire(chaos.getQuotaName(), chaos.getQuotaLimit(), chaos.getQuotaWindowMillis());
+        if (allowed) {
+            return null;
+        }
+        int status = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : 429;
+        HttpResponse errorResponse = response()
+            .withStatusCode(status)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"error\":{\"type\":\"quota_exceeded\",\"message\":\"HTTP request quota exceeded\"}}");
+        if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
+            errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
+        }
+        return errorResponse;
+    }
+
     // Appended to a body to make it malformed; an unterminated JSON object so any
     // JSON payload becomes unparseable and any other payload gains clear garbage.
     private static final byte[] MALFORMED_BODY_SUFFIX = "{\"__chaos_malformed__\":".getBytes(StandardCharsets.UTF_8);
@@ -1107,14 +1139,17 @@ public class HttpActionHandler {
             return;
         }
 
-        // Chaos: determine final response and extra delay via shared helper
-        HttpResponse chaosError = chaosErrorResponseOrNull(chaos, matchCount);
+        // Chaos: the deterministic quota (rate limit) takes priority over the probabilistic error
+        HttpResponse quotaError = quotaErrorResponseOrNull(chaos, matchCount);
+        HttpResponse chaosError = quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount);
         final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyResponseChaos(response, chaos, matchCount);
         // Gate latency by the same count window as error injection
         final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
 
         // Metrics: record chaos faults only when they actually fire
-        if (chaosError != null) {
+        if (quotaError != null) {
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("quota");
+        } else if (chaosError != null) {
             org.mockserver.metrics.Metrics.incrementHttpChaosInjected("error");
         }
         if (chaosLatency != null) {
@@ -1245,15 +1280,18 @@ public class HttpActionHandler {
                     return;
                 }
 
-                // chaos: error injection on forwarded responses — replaces the upstream response
-                HttpResponse chaosError = chaosErrorResponseOrNull(chaos, matchCount);
+                // chaos: quota (deterministic rate limit) then probabilistic error injection on forwarded responses — replaces the upstream response
+                HttpResponse quotaError = quotaErrorResponseOrNull(chaos, matchCount);
+                HttpResponse chaosError = quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount);
                 final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyResponseChaos(response, chaos, matchCount);
                 // Gate latency by the same count window as error injection
                 final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
                 final boolean chaosErrorInjected = chaosError != null;
 
                 // Metrics: record chaos faults only when they actually fire
-                if (chaosErrorInjected) {
+                if (quotaError != null) {
+                    org.mockserver.metrics.Metrics.incrementHttpChaosInjected("quota");
+                } else if (chaosErrorInjected) {
                     org.mockserver.metrics.Metrics.incrementHttpChaosInjected("error");
                 }
                 if (chaosLatency != null) {

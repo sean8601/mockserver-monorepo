@@ -89,6 +89,7 @@ public class HttpActionHandlerChaosTest {
     @Before
     public void setupMocks() {
         Metrics.resetAdditionalMetricsForTesting();
+        HttpQuotaRegistry.getInstance().reset();
         configuration = configuration().logLevel(Level.INFO).metricsEnabled(true);
 
         mockHttpStateHandler = mock(HttpState.class);
@@ -929,6 +930,74 @@ public class HttpActionHandlerChaosTest {
         verify(mockResponseWriter).writeResponse(eq(request), responseCaptor.capture(), eq(false));
         assertThat(responseCaptor.getValue().getConnectionOptions() == null, is(true));
         assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "slow"), is(0.0));
+    }
+
+    // --- Stateful quota (rate limit) chaos tests ---
+
+    @Test
+    public void quotaAllowsUpToLimitThenReturnsConfiguredStatus() {
+        // quotaLimit=2 within a 60s window -> matches #1,#2 normal, #3 rejected with 429 + Retry-After
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withQuotaName("test-quota-allow")
+                .withQuotaLimit(2)
+                .withQuotaWindowMillis(60_000L)
+                .withRetryAfter("5"));
+
+        assertThat("request #1 within quota", dispatchAndCapture(request, expectation, normalResponse).getBodyAsString(), is("normal body"));
+        assertThat("request #2 within quota", dispatchAndCapture(request, expectation, normalResponse).getBodyAsString(), is("normal body"));
+
+        HttpResponse r3 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("request #3 exceeds quota", r3.getStatusCode(), is(429));
+        assertThat(r3.getFirstHeader("Retry-After"), is("5"));
+        assertThat(r3.getBodyAsString(), is("{\"error\":{\"type\":\"quota_exceeded\",\"message\":\"HTTP request quota exceeded\"}}"));
+    }
+
+    @Test
+    public void quotaUsesConfiguredErrorStatusAndIncrementsQuotaMetric() {
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withQuotaName("test-quota-status")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(60_000L)
+                .withQuotaErrorStatus(503));
+
+        dispatchAndCapture(request, expectation, normalResponse); // #1 allowed
+        HttpResponse r2 = dispatchAndCapture(request, expectation, normalResponse); // #2 rejected
+        assertThat(r2.getStatusCode(), is(503));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "quota"), is(1.0));
+        // the probabilistic error metric was NOT used for the quota rejection
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "error"), is(0.0));
+    }
+
+    @Test
+    public void quotaTakesPriorityOverProbabilisticError() {
+        // both quota (limit 1) and a guaranteed error (probability 1.0) set; once over quota the
+        // quota response wins and is metered as quota, not error
+        HttpRequest request = request("some_path");
+        HttpResponse normalResponse = response("normal body").withDelay(milliseconds(0));
+        Expectation expectation = new Expectation(request, Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(normalResponse)
+            .withChaos(httpChaosProfile()
+                .withQuotaName("test-quota-priority")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(60_000L)
+                .withErrorStatus(418)
+                .withErrorProbability(1.0));
+
+        // #1: within quota, but probabilistic error fires -> 418
+        HttpResponse r1 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("request #1 gets the probabilistic error", r1.getStatusCode(), is(418));
+        // #2: over quota -> quota response (429) wins over the 418 error
+        HttpResponse r2 = dispatchAndCapture(request, expectation, normalResponse);
+        assertThat("request #2 gets the quota rejection", r2.getStatusCode(), is(429));
+        assertThat(scrapeCounterValue("mock_server_http_chaos_injected", "fault_type", "quota"), is(1.0));
     }
 
     private static double scrapeCounterValue(String name, String labelName, String labelValue) {

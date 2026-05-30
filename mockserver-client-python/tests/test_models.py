@@ -2129,6 +2129,26 @@ class TestHttpChaosProfile:
         assert restored.slow_response_chunk_delay.time_unit == "MILLISECONDS"
         assert restored.slow_response_chunk_delay.value == 250
 
+    def test_quota_round_trip(self):
+        chaos = HttpChaosProfile(
+            quota_name="acct",
+            quota_limit=4,
+            quota_window_millis=60000,
+            quota_error_status=429,
+        )
+        result = chaos.to_dict()
+        assert result == {
+            "quotaName": "acct",
+            "quotaLimit": 4,
+            "quotaWindowMillis": 60000,
+            "quotaErrorStatus": 429,
+        }
+        restored = HttpChaosProfile.from_dict(result)
+        assert restored.quota_name == "acct"
+        assert restored.quota_limit == 4
+        assert restored.quota_window_millis == 60000
+        assert restored.quota_error_status == 429
+
     def test_construction_all_fields(self):
         chaos = HttpChaosProfile(
             error_status=503,
