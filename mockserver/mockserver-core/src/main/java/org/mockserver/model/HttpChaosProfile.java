@@ -11,13 +11,13 @@ import java.util.Objects;
  * {@code expectation.withChaos(httpChaosProfile()...)} to inject faults into
  * the following action types:
  * <ul>
- *   <li>Mocked responses: RESPONSE, RESPONSE_TEMPLATE, RESPONSE_CLASS_CALLBACK,
- *       RESPONSE_OBJECT_CALLBACK</li>
+ *   <li>Mocked responses: RESPONSE, RESPONSE_TEMPLATE, RESPONSE_CLASS_CALLBACK</li>
  *   <li>Forward actions: FORWARD, FORWARD_TEMPLATE, FORWARD_CLASS_CALLBACK,
  *       FORWARD_REPLACE, FORWARD_VALIDATE</li>
  * </ul>
- * Not yet covered: FORWARD_OBJECT_CALLBACK (uses its own write path) and
- * the anonymous/unmatched proxy-pass path.
+ * Not yet covered: RESPONSE_OBJECT_CALLBACK and FORWARD_OBJECT_CALLBACK (both
+ * use their own callback-driven write path) and the anonymous/unmatched
+ * proxy-pass path.
  * <p>
  * Determinism: with {@code errorProbability} of {@code 1.0} (always) or
  * {@code 0.0}/null (never) the error decision is fully deterministic. A
