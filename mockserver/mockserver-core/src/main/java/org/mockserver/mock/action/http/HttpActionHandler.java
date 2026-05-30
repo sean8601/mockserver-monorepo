@@ -201,294 +201,7 @@ public class HttpActionHandler {
 
         if (expectation != null && expectation.getAction() != null) {
 
-            final Action action = expectation.getAction();
-            // capture matchCount before scheduling to avoid race with concurrent requests
-            final int capturedMatchCount = expectation.getMatchCount();
-            // chaos: gate the whole profile by the time-based outage window once per request
-            // (relative to first match, via the controllable clock); outside the window chaos is disabled
-            final HttpChaosProfile expectationChaos = expectation.getChaos();
-            final HttpChaosProfile effectiveChaos = (expectationChaos != null
-                && expectationChaos.timeWindowEligible(expectation.getChaosFirstMatchEpochMillis(), org.mockserver.time.TimeService.currentTimeMillis()))
-                ? expectationChaos : null;
-            switch (action.getType()) {
-                case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
-                    // chaos: inject HTTP chaos faults on mocked responses
-                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous);
-                case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpResponse response = getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, request);
-                    // chaos: inject HTTP chaos faults on mocked responses
-                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, action.getDelay());
-                case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpResponse response = getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, request);
-                    // chaos: inject HTTP chaos faults on mocked responses
-                    writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, action.getDelay());
-                case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
-                        getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
-                    synchronous, action.getDelay());
-                // chaos: inject HTTP chaos faults on expectation-based forwarded responses (FORWARD, FORWARD_TEMPLATE,
-                // FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE). Deferred: FORWARD_OBJECT_CALLBACK has
-                // its own write path and the unmatched/anonymous proxy-pass path.
-                case FORWARD -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpForwardActionResult responseFuture = getHttpForwardActionHandler().handle((HttpForward) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-                case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpForwardActionResult responseFuture = getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-                case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpForwardActionResult responseFuture = getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-                // deferred: FORWARD_OBJECT_CALLBACK chaos injection — uses its own write path
-                case FORWARD_OBJECT_CALLBACK -> scheduler.schedule(() ->
-                        getHttpForwardObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
-                    synchronous, combineWithGlobalDelay(action.getDelay()));
-                case FORWARD_REPLACE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpForwardActionResult responseFuture = getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-                case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    final HttpForwardActionResult responseFuture = getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-                case SSE_RESPONSE -> {
-                    if (ctx == null) {
-                        writeResponseActionResponse(
-                            response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
-                            responseWriter, request, action, synchronous, null, expectationPostProcessor
-                        );
-                    } else {
-                        scheduler.schedule(() -> {
-                            try {
-                                mockServerLogger.logEvent(
-                                    new LogEntry()
-                                        .setType(EXPECTATION_RESPONSE)
-                                        .setLogLevel(Level.INFO)
-                                        .setCorrelationId(request.getLogCorrelationId())
-                                        .setHttpRequest(request)
-                                        .setExpectationId(action.getExpectationId())
-                                        .setMessageFormat("returning SSE response for request:{}for action:{}from expectation:{}")
-                                        .setArguments(request, action, action.getExpectationId())
-                                );
-                                getHttpSseResponseActionHandler().handle((HttpSseResponse) action, ctx, request);
-                            } catch (Throwable throwable) {
-                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setType(WARN)
-                                            .setLogLevel(Level.INFO)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setMessageFormat(throwable.getMessage())
-                                            .setThrowable(throwable)
-                                    );
-                                }
-                                ctx.close();
-                            } finally {
-                                expectationPostProcessor.run();
-                            }
-                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
-                    }
-                }
-                case LLM_RESPONSE -> {
-                    HttpLlmResponse llmAction = (HttpLlmResponse) action;
-                    // Chaos: a probabilistic provider error short-circuits to a normal
-                    // (non-streaming) HTTP error response, even for a would-be stream.
-                    final HttpResponse chaosErrorResponse = getHttpLlmResponseActionHandler().chaosErrorResponseOrNull(llmAction);
-                    boolean isStreaming = chaosErrorResponse == null && llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
-                    if (isStreaming) {
-                        if (ctx == null) {
-                            writeResponseActionResponse(
-                                response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
-                                responseWriter, request, action, synchronous, null, expectationPostProcessor
-                            );
-                        } else {
-                            scheduler.schedule(() -> {
-                                try {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setType(EXPECTATION_RESPONSE)
-                                            .setLogLevel(Level.INFO)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setExpectationId(action.getExpectationId())
-                                            .setMessageFormat("returning streaming LLM response for request:{}for action:{}from expectation:{}")
-                                            .setArguments(request, action, action.getExpectationId())
-                                    );
-                                    java.util.List<SseEvent> sseEvents = getHttpLlmResponseActionHandler().handleStreaming(llmAction, request);
-                                    if (!sseEvents.isEmpty()
-                                        && llmAction.getChaos() != null
-                                        && (llmAction.getChaos().getTruncateMode() == org.mockserver.model.LlmChaosProfile.TruncateMode.MID_STREAM
-                                        || Boolean.TRUE.equals(llmAction.getChaos().getMalformedSse()))) {
-                                        metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
-                                    }
-                                    HttpSseResponse sseResponse = HttpSseResponse.sseResponse()
-                                        .withStatusCode(200)
-                                        .withHeader("content-type", "text/event-stream")
-                                        .withHeader("cache-control", "no-cache")
-                                        .withEvents(sseEvents);
-                                    getHttpSseResponseActionHandler().handle(sseResponse, ctx, request);
-                                } catch (Throwable throwable) {
-                                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                        mockServerLogger.logEvent(
-                                            new LogEntry()
-                                                .setType(WARN)
-                                                .setLogLevel(Level.INFO)
-                                                .setCorrelationId(request.getLogCorrelationId())
-                                                .setHttpRequest(request)
-                                                .setMessageFormat(throwable.getMessage())
-                                                .setThrowable(throwable)
-                                        );
-                                    }
-                                    ctx.close();
-                                } finally {
-                                    expectationPostProcessor.run();
-                                }
-                            }, synchronous, combineWithGlobalDelay(action.getDelay()));
-                        }
-                    } else {
-                        scheduler.schedule(() -> {
-                            try {
-                                mockServerLogger.logEvent(
-                                    new LogEntry()
-                                        .setType(EXPECTATION_RESPONSE)
-                                        .setLogLevel(Level.INFO)
-                                        .setCorrelationId(request.getLogCorrelationId())
-                                        .setHttpRequest(request)
-                                        .setExpectationId(action.getExpectationId())
-                                        .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
-                                        .setArguments(request, action, action.getExpectationId())
-                                );
-                                HttpResponse llmResponse = chaosErrorResponse != null
-                                    ? chaosErrorResponse
-                                    : getHttpLlmResponseActionHandler().handle(llmAction, request);
-                                if (chaosErrorResponse != null) {
-                                    metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
-                                }
-                                writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
-                            } catch (Throwable throwable) {
-                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setType(WARN)
-                                            .setLogLevel(Level.INFO)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setMessageFormat(throwable.getMessage())
-                                            .setThrowable(throwable)
-                                    );
-                                }
-                                expectationPostProcessor.run();
-                            }
-                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
-                    }
-                }
-                case WEBSOCKET_RESPONSE -> {
-                    if (ctx == null) {
-                        writeResponseActionResponse(
-                            response().withStatusCode(501).withBody("WebSocket mocking is not supported in WAR deployments"),
-                            responseWriter, request, action, synchronous, null, expectationPostProcessor
-                        );
-                    } else {
-                        scheduler.schedule(() -> {
-                            try {
-                                mockServerLogger.logEvent(
-                                    new LogEntry()
-                                        .setType(EXPECTATION_RESPONSE)
-                                        .setLogLevel(Level.INFO)
-                                        .setCorrelationId(request.getLogCorrelationId())
-                                        .setHttpRequest(request)
-                                        .setExpectationId(action.getExpectationId())
-                                        .setMessageFormat("returning WebSocket response for request:{}for action:{}from expectation:{}")
-                                        .setArguments(request, action, action.getExpectationId())
-                                );
-                                getHttpWebSocketResponseActionHandler().handle((HttpWebSocketResponse) action, ctx, request);
-                            } catch (Throwable throwable) {
-                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setType(WARN)
-                                            .setLogLevel(Level.INFO)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setMessageFormat(throwable.getMessage())
-                                            .setThrowable(throwable)
-                                    );
-                                }
-                                ctx.close();
-                            } finally {
-                                expectationPostProcessor.run();
-                            }
-                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
-                    }
-                }
-                case GRPC_STREAM_RESPONSE -> {
-                    if (ctx == null) {
-                        writeResponseActionResponse(
-                            response().withStatusCode(501).withBody("gRPC streaming is not supported in WAR deployments"),
-                            responseWriter, request, action, synchronous, null, expectationPostProcessor
-                        );
-                    } else {
-                        scheduler.schedule(() -> {
-                            try {
-                                mockServerLogger.logEvent(
-                                    new LogEntry()
-                                        .setType(EXPECTATION_RESPONSE)
-                                        .setLogLevel(Level.INFO)
-                                        .setCorrelationId(request.getLogCorrelationId())
-                                        .setHttpRequest(request)
-                                        .setExpectationId(action.getExpectationId())
-                                        .setMessageFormat("returning gRPC stream response for request:{}for action:{}from expectation:{}")
-                                        .setArguments(request, action, action.getExpectationId())
-                                );
-                                getGrpcStreamResponseActionHandler().handle((GrpcStreamResponse) action, ctx, request);
-                            } catch (Throwable throwable) {
-                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setType(WARN)
-                                            .setLogLevel(Level.INFO)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setMessageFormat(throwable.getMessage())
-                                            .setThrowable(throwable)
-                                    );
-                                }
-                                ctx.close();
-                            } finally {
-                                expectationPostProcessor.run();
-                            }
-                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
-                    }
-                }
-                case ERROR -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                    getHttpErrorActionHandler().handle((HttpError) action, ctx);
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(EXPECTATION_RESPONSE)
-                            .setLogLevel(Level.INFO)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setHttpRequest(request)
-                            .setHttpError((HttpError) action)
-                            .setExpectationId(action.getExpectationId())
-                            .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
-                            .setArguments(action, request, action, action.getExpectationId())
-                    );
-                    expectationPostProcessor.run();
-                }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-            }
-
-            final List<Action> secondaryActions = expectation.getSecondaryActions();
-            if (!secondaryActions.isEmpty()) {
-                for (final Action secondaryAction : secondaryActions) {
-                    dispatchSecondaryAction(secondaryAction, request, synchronous);
-                }
-            }
+            dispatchPrimaryAction(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
 
         } else if (CORSHeaders.isPreflightRequest(configuration, request) && (configuration.enableCORSForAPI() || configuration.enableCORSForAllResponses())) {
 
@@ -509,161 +222,466 @@ public class HttpActionHandler {
 
         } else if (proxyingRequest || potentiallyHttpProxy) {
 
-            if (request.getHeaders() != null && request.getHeaders().containsEntry(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
+            handleUnmatchedProxyForward(request, responseWriter, ctx, synchronous, potentiallyHttpProxy);
 
-                if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setLogLevel(TRACE)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setMessageFormat("received \"x-forwarded-by\" header caused by exploratory HTTP proxy or proxy loop - falling back to no proxy:{}")
-                            .setArguments(request)
+        } else {
+
+            returnNotFound(responseWriter, request, null);
+
+        }
+    }
+
+    /**
+     * Dispatches the matched expectation's primary action to the appropriate per-type handler.
+     * Extracted from {@link #processAction} so the high-level request flow stays readable; the
+     * action-type switch and secondary-action fan-out live here.
+     */
+    private void dispatchPrimaryAction(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable expectationPostProcessor) {
+        final Action action = expectation.getAction();
+        // capture matchCount before scheduling to avoid race with concurrent requests
+        final int capturedMatchCount = expectation.getMatchCount();
+        // chaos: gate the whole profile by the time-based outage window once per request
+        // (relative to first match, via the controllable clock); outside the window chaos is disabled
+        final HttpChaosProfile expectationChaos = expectation.getChaos();
+        final HttpChaosProfile effectiveChaos = (expectationChaos != null
+            && expectationChaos.timeWindowEligible(expectation.getChaosFirstMatchEpochMillis(), org.mockserver.time.TimeService.currentTimeMillis()))
+            ? expectationChaos : null;
+        switch (action.getType()) {
+            case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
+                // chaos: inject HTTP chaos faults on mocked responses
+                writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous);
+            case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpResponse response = getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, request);
+                // chaos: inject HTTP chaos faults on mocked responses
+                writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, action.getDelay());
+            case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpResponse response = getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, request);
+                // chaos: inject HTTP chaos faults on mocked responses
+                writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, action.getDelay());
+            case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
+                    getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
+                synchronous, action.getDelay());
+            // chaos: inject HTTP chaos faults on expectation-based forwarded responses (FORWARD, FORWARD_TEMPLATE,
+            // FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE). Deferred: FORWARD_OBJECT_CALLBACK has
+            // its own write path and the unmatched/anonymous proxy-pass path.
+            case FORWARD -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpForwardActionResult responseFuture = getHttpForwardActionHandler().handle((HttpForward) action, request);
+                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpForwardActionResult responseFuture = getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, request);
+                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpForwardActionResult responseFuture = getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, request);
+                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            // deferred: FORWARD_OBJECT_CALLBACK chaos injection — uses its own write path
+            case FORWARD_OBJECT_CALLBACK -> scheduler.schedule(() ->
+                    getHttpForwardObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
+                synchronous, combineWithGlobalDelay(action.getDelay()));
+            case FORWARD_REPLACE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpForwardActionResult responseFuture = getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, request);
+                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                final HttpForwardActionResult responseFuture = getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, request);
+                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            case SSE_RESPONSE -> {
+                if (ctx == null) {
+                    writeResponseActionResponse(
+                        response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
+                        responseWriter, request, action, synchronous, null, expectationPostProcessor
                     );
+                } else {
+                    scheduler.schedule(() -> {
+                        try {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(EXPECTATION_RESPONSE)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setExpectationId(action.getExpectationId())
+                                    .setMessageFormat("returning SSE response for request:{}for action:{}from expectation:{}")
+                                    .setArguments(request, action, action.getExpectationId())
+                            );
+                            getHttpSseResponseActionHandler().handle((HttpSseResponse) action, ctx, request);
+                        } catch (Throwable throwable) {
+                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
+                            ctx.close();
+                        } finally {
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
                 }
-                returnNotFound(responseWriter, request, null);
+            }
+            case LLM_RESPONSE -> {
+                HttpLlmResponse llmAction = (HttpLlmResponse) action;
+                // Chaos: a probabilistic provider error short-circuits to a normal
+                // (non-streaming) HTTP error response, even for a would-be stream.
+                final HttpResponse chaosErrorResponse = getHttpLlmResponseActionHandler().chaosErrorResponseOrNull(llmAction);
+                boolean isStreaming = chaosErrorResponse == null && llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
+                if (isStreaming) {
+                    if (ctx == null) {
+                        writeResponseActionResponse(
+                            response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
+                            responseWriter, request, action, synchronous, null, expectationPostProcessor
+                        );
+                    } else {
+                        scheduler.schedule(() -> {
+                            try {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(EXPECTATION_RESPONSE)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setExpectationId(action.getExpectationId())
+                                        .setMessageFormat("returning streaming LLM response for request:{}for action:{}from expectation:{}")
+                                        .setArguments(request, action, action.getExpectationId())
+                                );
+                                java.util.List<SseEvent> sseEvents = getHttpLlmResponseActionHandler().handleStreaming(llmAction, request);
+                                if (!sseEvents.isEmpty()
+                                    && llmAction.getChaos() != null
+                                    && (llmAction.getChaos().getTruncateMode() == org.mockserver.model.LlmChaosProfile.TruncateMode.MID_STREAM
+                                    || Boolean.TRUE.equals(llmAction.getChaos().getMalformedSse()))) {
+                                    metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
+                                }
+                                HttpSseResponse sseResponse = HttpSseResponse.sseResponse()
+                                    .withStatusCode(200)
+                                    .withHeader("content-type", "text/event-stream")
+                                    .withHeader("cache-control", "no-cache")
+                                    .withEvents(sseEvents);
+                                getHttpSseResponseActionHandler().handle(sseResponse, ctx, request);
+                            } catch (Throwable throwable) {
+                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setType(WARN)
+                                            .setLogLevel(Level.INFO)
+                                            .setCorrelationId(request.getLogCorrelationId())
+                                            .setHttpRequest(request)
+                                            .setMessageFormat(throwable.getMessage())
+                                            .setThrowable(throwable)
+                                    );
+                                }
+                                ctx.close();
+                            } finally {
+                                expectationPostProcessor.run();
+                            }
+                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }
+                } else {
+                    scheduler.schedule(() -> {
+                        try {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(EXPECTATION_RESPONSE)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setExpectationId(action.getExpectationId())
+                                    .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
+                                    .setArguments(request, action, action.getExpectationId())
+                            );
+                            HttpResponse llmResponse = chaosErrorResponse != null
+                                ? chaosErrorResponse
+                                : getHttpLlmResponseActionHandler().handle(llmAction, request);
+                            if (chaosErrorResponse != null) {
+                                metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
+                            }
+                            writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
+                        } catch (Throwable throwable) {
+                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                }
+            }
+            case WEBSOCKET_RESPONSE -> {
+                if (ctx == null) {
+                    writeResponseActionResponse(
+                        response().withStatusCode(501).withBody("WebSocket mocking is not supported in WAR deployments"),
+                        responseWriter, request, action, synchronous, null, expectationPostProcessor
+                    );
+                } else {
+                    scheduler.schedule(() -> {
+                        try {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(EXPECTATION_RESPONSE)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setExpectationId(action.getExpectationId())
+                                    .setMessageFormat("returning WebSocket response for request:{}for action:{}from expectation:{}")
+                                    .setArguments(request, action, action.getExpectationId())
+                            );
+                            getHttpWebSocketResponseActionHandler().handle((HttpWebSocketResponse) action, ctx, request);
+                        } catch (Throwable throwable) {
+                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
+                            ctx.close();
+                        } finally {
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                }
+            }
+            case GRPC_STREAM_RESPONSE -> {
+                if (ctx == null) {
+                    writeResponseActionResponse(
+                        response().withStatusCode(501).withBody("gRPC streaming is not supported in WAR deployments"),
+                        responseWriter, request, action, synchronous, null, expectationPostProcessor
+                    );
+                } else {
+                    scheduler.schedule(() -> {
+                        try {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(EXPECTATION_RESPONSE)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setExpectationId(action.getExpectationId())
+                                    .setMessageFormat("returning gRPC stream response for request:{}for action:{}from expectation:{}")
+                                    .setArguments(request, action, action.getExpectationId())
+                            );
+                            getGrpcStreamResponseActionHandler().handle((GrpcStreamResponse) action, ctx, request);
+                        } catch (Throwable throwable) {
+                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
+                            ctx.close();
+                        } finally {
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                }
+            }
+            case ERROR -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                getHttpErrorActionHandler().handle((HttpError) action, ctx);
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(EXPECTATION_RESPONSE)
+                        .setLogLevel(Level.INFO)
+                        .setCorrelationId(request.getLogCorrelationId())
+                        .setHttpRequest(request)
+                        .setHttpError((HttpError) action)
+                        .setExpectationId(action.getExpectationId())
+                        .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
+                        .setArguments(action, request, action, action.getExpectationId())
+                );
+                expectationPostProcessor.run();
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+        }
+
+        final List<Action> secondaryActions = expectation.getSecondaryActions();
+        if (!secondaryActions.isEmpty()) {
+            for (final Action secondaryAction : secondaryActions) {
+                dispatchSecondaryAction(secondaryAction, request, synchronous);
+            }
+        }
+    }
+
+    /**
+     * Forwards a request that matched no expectation through the (reverse or forward) proxy path:
+     * loop-prevention, optional proxy authentication, the upstream call, and response/streaming/error
+     * handling. Extracted from {@link #processAction} to keep the top-level dispatch chain readable.
+     */
+    private void handleUnmatchedProxyForward(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final boolean potentiallyHttpProxy) {
+        if (request.getHeaders() != null && request.getHeaders().containsEntry(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
+
+            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(TRACE)
+                        .setCorrelationId(request.getLogCorrelationId())
+                        .setMessageFormat("received \"x-forwarded-by\" header caused by exploratory HTTP proxy or proxy loop - falling back to no proxy:{}")
+                        .setArguments(request)
+                );
+            }
+            returnNotFound(responseWriter, request, null);
+
+        } else {
+
+            String username = configuration.proxyAuthenticationUsername();
+            String password = configuration.proxyAuthenticationPassword();
+            // only authenticate potentiallyHttpProxy because other proxied requests should have already been authenticated (i.e. in CONNECT request)
+            if (potentiallyHttpProxy && isNotBlank(username) && isNotBlank(password) &&
+                !request.containsHeader(PROXY_AUTHORIZATION.toString(), "Basic " + Base64.encode(Unpooled.copiedBuffer(username + ':' + password, StandardCharsets.UTF_8), false).toString(StandardCharsets.US_ASCII))) {
+
+                HttpResponse response = response()
+                    .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
+                    .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
+                responseWriter.writeResponse(request, response, false);
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(AUTHENTICATION_FAILED)
+                        .setLogLevel(Level.INFO)
+                        .setCorrelationId(request.getLogCorrelationId())
+                        .setHttpRequest(request)
+                        .setHttpResponse(response)
+                        .setExpectation(request, response)
+                        .setMessageFormat("proxy authentication failed so returning response:{}for forwarded request:{}")
+                        .setArguments(response, request)
+                );
 
             } else {
 
-                String username = configuration.proxyAuthenticationUsername();
-                String password = configuration.proxyAuthenticationPassword();
-                // only authenticate potentiallyHttpProxy because other proxied requests should have already been authenticated (i.e. in CONNECT request)
-                if (potentiallyHttpProxy && isNotBlank(username) && isNotBlank(password) &&
-                    !request.containsHeader(PROXY_AUTHORIZATION.toString(), "Basic " + Base64.encode(Unpooled.copiedBuffer(username + ':' + password, StandardCharsets.UTF_8), false).toString(StandardCharsets.US_ASCII))) {
-
-                    HttpResponse response = response()
-                        .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
-                        .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
-                    responseWriter.writeResponse(request, response, false);
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(AUTHENTICATION_FAILED)
-                            .setLogLevel(Level.INFO)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setHttpRequest(request)
-                            .setHttpResponse(response)
-                            .setExpectation(request, response)
-                            .setMessageFormat("proxy authentication failed so returning response:{}for forwarded request:{}")
-                            .setArguments(response, request)
-                    );
-
-                } else {
-
-                    final InetSocketAddress remoteAddress = getRemoteAddressWithFallback(ctx);
-                    final HttpRequest clonedRequest = hopByHopHeaderFilter.onRequest(request).withHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue());
-                    adjustHostHeaderForUnmatchedRequest(clonedRequest, remoteAddress);
-                    final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, remoteAddress, potentiallyHttpProxy ? 1000 : configuration.socketConnectionTimeoutInMillis()), null, remoteAddress);
-                    scheduler.submit(responseFuture, () -> {
-                            try {
-                                HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-                                if (response == null) {
-                                    response = badGatewayResponse();
+                final InetSocketAddress remoteAddress = getRemoteAddressWithFallback(ctx);
+                final HttpRequest clonedRequest = hopByHopHeaderFilter.onRequest(request).withHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue());
+                adjustHostHeaderForUnmatchedRequest(clonedRequest, remoteAddress);
+                final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, remoteAddress, potentiallyHttpProxy ? 1000 : configuration.socketConnectionTimeoutInMillis()), null, remoteAddress);
+                scheduler.submit(responseFuture, () -> {
+                        try {
+                            HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+                            if (response == null) {
+                                response = badGatewayResponse();
+                            }
+                            if (response.containsHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
+                                response.removeHeader(httpStateHandler.getUniqueLoopPreventionHeaderName());
+                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setType(NO_MATCH_RESPONSE)
+                                            .setLogLevel(Level.INFO)
+                                            .setCorrelationId(request.getLogCorrelationId())
+                                            .setHttpRequest(request)
+                                            .setHttpResponse(notFoundResponse())
+                                            .setMessageFormat(NO_MATCH_RESPONSE_NO_EXPECTATION_MESSAGE_FORMAT)
+                                            .setArguments(request, response)
+                                    );
                                 }
-                                if (response.containsHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
-                                    response.removeHeader(httpStateHandler.getUniqueLoopPreventionHeaderName());
-                                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                        mockServerLogger.logEvent(
-                                            new LogEntry()
-                                                .setType(NO_MATCH_RESPONSE)
-                                                .setLogLevel(Level.INFO)
-                                                .setCorrelationId(request.getLogCorrelationId())
-                                                .setHttpRequest(request)
-                                                .setHttpResponse(notFoundResponse())
-                                                .setMessageFormat(NO_MATCH_RESPONSE_NO_EXPECTATION_MESSAGE_FORMAT)
-                                                .setArguments(request, response)
-                                        );
+                                responseWriter.writeResponse(request, response, false);
+                            } else if (response.getStreamingBody() != null) {
+                                // Streaming response: write the head immediately and log
+                                // the FORWARDED_REQUEST entry after the stream completes
+                                final HttpResponse streamingResponse = response;
+                                responseWriter.writeResponse(request, streamingResponse, false);
+                                streamingResponse.getStreamingBody().addCompletionListener(() -> {
+                                    HttpResponse logResponse = streamingResponse.clone();
+                                    byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
+                                    setCapturedStreamingBody(logResponse, captured);
+                                    logResponse.withHeader("x-mockserver-streamed", "true");
+                                    if (streamingResponse.getStreamingBody().isTruncated()) {
+                                        logResponse.withHeader("x-mockserver-stream-truncated", "true");
                                     }
-                                    responseWriter.writeResponse(request, response, false);
-                                } else if (response.getStreamingBody() != null) {
-                                    // Streaming response: write the head immediately and log
-                                    // the FORWARDED_REQUEST entry after the stream completes
-                                    final HttpResponse streamingResponse = response;
-                                    responseWriter.writeResponse(request, streamingResponse, false);
-                                    streamingResponse.getStreamingBody().addCompletionListener(() -> {
-                                        HttpResponse logResponse = streamingResponse.clone();
-                                        byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
-                                        setCapturedStreamingBody(logResponse, captured);
-                                        logResponse.withHeader("x-mockserver-streamed", "true");
-                                        if (streamingResponse.getStreamingBody().isTruncated()) {
-                                            logResponse.withHeader("x-mockserver-stream-truncated", "true");
-                                        }
-                                        mockServerLogger.logEvent(
-                                            new LogEntry()
-                                                .setType(FORWARDED_REQUEST)
-                                                .setLogLevel(Level.INFO)
-                                                .setCorrelationId(request.getLogCorrelationId())
-                                                .setHttpRequest(request)
-                                                .setHttpResponse(logResponse)
-                                                .setExpectation(request, logResponse)
-                                                .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                                .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
-                                        );
-                                    });
-                                } else {
                                     mockServerLogger.logEvent(
                                         new LogEntry()
                                             .setType(FORWARDED_REQUEST)
                                             .setLogLevel(Level.INFO)
                                             .setCorrelationId(request.getLogCorrelationId())
                                             .setHttpRequest(request)
-                                            .setHttpResponse(response)
-                                            .setExpectation(request, response)
+                                            .setHttpResponse(logResponse)
+                                            .setExpectation(request, logResponse)
                                             .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                            .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
+                                            .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
                                     );
-                                    responseWriter.writeResponse(request, response, false);
-                                }
-                            } catch (SocketCommunicationException sce) {
-                                returnBadGateway(responseWriter, request, sce.getMessage());
-                            } catch (Throwable throwable) {
-                                if (potentiallyHttpProxy && connectionException(throwable)) {
-                                    if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
-                                        mockServerLogger.logEvent(
-                                            new LogEntry()
-                                                .setLogLevel(TRACE)
-                                                .setCorrelationId(request.getLogCorrelationId())
-                                                .setMessageFormat("failed to connect to proxied socket due to exploratory HTTP proxy for:{}due to:{}falling back to no proxy")
-                                                .setArguments(request, throwable.getCause())
-                                        );
-                                    }
-                                    returnBadGateway(responseWriter, request, "failed to connect to proxied socket due to exploratory HTTP proxy");
-                                } else if (sslHandshakeException(throwable)) {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setLogLevel(Level.ERROR)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setMessageFormat("TLS handshake exception while proxying request{}to remote address{}with channel" + (ctx != null ? String.valueOf(ctx.channel()) : ""))
-                                            .setArguments(request, remoteAddress)
-                                            .setThrowable(throwable)
-                                    );
-                                    returnBadGateway(responseWriter, request, "TLS handshake exception while proxying request to remote address" + remoteAddress);
-                                } else if (!connectionClosedException(throwable)) {
-                                    mockServerLogger.logEvent(
-                                        new LogEntry()
-                                            .setType(EXCEPTION)
-                                            .setLogLevel(Level.ERROR)
-                                            .setCorrelationId(request.getLogCorrelationId())
-                                            .setHttpRequest(request)
-                                            .setMessageFormat(throwable.getMessage())
-                                            .setThrowable(throwable)
-                                    );
-                                    returnBadGateway(responseWriter, request, "connection closed while proxying request to remote address" + remoteAddress);
-                                } else {
-                                    returnBadGateway(responseWriter, request, throwable.getMessage());
-                                }
+                                });
+                            } else {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(FORWARDED_REQUEST)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setHttpResponse(response)
+                                        .setExpectation(request, response)
+                                        .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
+                                        .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
+                                );
+                                responseWriter.writeResponse(request, response, false);
                             }
-                        },
-                        synchronous,
-                        throwable -> !(potentiallyHttpProxy && isNotBlank(throwable.getMessage()) || !throwable.getMessage().contains("Connection refused"))
-                    );
-
-                }
+                        } catch (SocketCommunicationException sce) {
+                            returnBadGateway(responseWriter, request, sce.getMessage());
+                        } catch (Throwable throwable) {
+                            if (potentiallyHttpProxy && connectionException(throwable)) {
+                                if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setLogLevel(TRACE)
+                                            .setCorrelationId(request.getLogCorrelationId())
+                                            .setMessageFormat("failed to connect to proxied socket due to exploratory HTTP proxy for:{}due to:{}falling back to no proxy")
+                                            .setArguments(request, throwable.getCause())
+                                    );
+                                }
+                                returnBadGateway(responseWriter, request, "failed to connect to proxied socket due to exploratory HTTP proxy");
+                            } else if (sslHandshakeException(throwable)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setLogLevel(Level.ERROR)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat("TLS handshake exception while proxying request{}to remote address{}with channel" + (ctx != null ? String.valueOf(ctx.channel()) : ""))
+                                        .setArguments(request, remoteAddress)
+                                        .setThrowable(throwable)
+                                );
+                                returnBadGateway(responseWriter, request, "TLS handshake exception while proxying request to remote address" + remoteAddress);
+                            } else if (!connectionClosedException(throwable)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(EXCEPTION)
+                                        .setLogLevel(Level.ERROR)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                                returnBadGateway(responseWriter, request, "connection closed while proxying request to remote address" + remoteAddress);
+                            } else {
+                                returnBadGateway(responseWriter, request, throwable.getMessage());
+                            }
+                        }
+                    },
+                    synchronous,
+                    throwable -> !(potentiallyHttpProxy && isNotBlank(throwable.getMessage()) || !throwable.getMessage().contains("Connection refused"))
+                );
 
             }
-
-        } else {
-
-            returnNotFound(responseWriter, request, null);
 
         }
     }
