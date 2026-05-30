@@ -3,14 +3,21 @@ package org.mockserver.model;
 import java.util.Objects;
 
 /**
- * Declarative HTTP fault/chaos injection for mocked responses: probabilistic
- * error status injection (e.g. 500, 503, 429 with an optional {@code Retry-After}
- * header) and latency injection.
+ * Declarative HTTP fault/chaos injection for mocked and forwarded responses:
+ * probabilistic error status injection (e.g. 500, 503, 429 with an optional
+ * {@code Retry-After} header) and latency injection.
  * <p>
  * Attach to an {@link org.mockserver.mock.Expectation} via
  * {@code expectation.withChaos(httpChaosProfile()...)} to inject faults into
- * RESPONSE, RESPONSE_TEMPLATE, RESPONSE_CLASS_CALLBACK, and
- * RESPONSE_OBJECT_CALLBACK actions.
+ * the following action types:
+ * <ul>
+ *   <li>Mocked responses: RESPONSE, RESPONSE_TEMPLATE, RESPONSE_CLASS_CALLBACK,
+ *       RESPONSE_OBJECT_CALLBACK</li>
+ *   <li>Forward actions: FORWARD, FORWARD_TEMPLATE, FORWARD_CLASS_CALLBACK,
+ *       FORWARD_REPLACE, FORWARD_VALIDATE</li>
+ * </ul>
+ * Not yet covered: FORWARD_OBJECT_CALLBACK (uses its own write path) and
+ * the anonymous/unmatched proxy-pass path.
  * <p>
  * Determinism: with {@code errorProbability} of {@code 1.0} (always) or
  * {@code 0.0}/null (never) the error decision is fully deterministic. A

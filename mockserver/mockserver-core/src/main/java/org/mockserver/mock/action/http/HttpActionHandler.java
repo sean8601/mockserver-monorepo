@@ -212,28 +212,32 @@ public class HttpActionHandler {
                 case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
                         getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
                     synchronous, action.getDelay());
+                // chaos: inject HTTP chaos faults on expectation-based forwarded responses (FORWARD, FORWARD_TEMPLATE,
+                // FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE). Deferred: FORWARD_OBJECT_CALLBACK has
+                // its own write path, the unmatched/anonymous proxy-pass path, and dropConnectionProbability.
                 case FORWARD -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardActionHandler().handle((HttpForward) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos());
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos());
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos());
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+                // deferred: FORWARD_OBJECT_CALLBACK chaos injection — uses its own write path
                 case FORWARD_OBJECT_CALLBACK -> scheduler.schedule(() ->
                         getHttpForwardObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
                     synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_REPLACE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos());
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                     final HttpForwardActionResult responseFuture = getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, request);
-                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor);
+                    writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, expectation.getChaos());
                 }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
                 case SSE_RESPONSE -> {
                     if (ctx == null) {
@@ -903,6 +907,27 @@ public class HttpActionHandler {
     }
 
     /**
+     * Shared helper: builds the synthetic chaos error response when the chaos
+     * profile's error injection should fire, or returns {@code null} when no
+     * error should be injected (probability miss, no errorStatus, or null chaos).
+     * Used by both mocked-response and forwarded-response chaos paths.
+     */
+    HttpResponse chaosErrorResponseOrNull(final HttpChaosProfile chaos) {
+        if (chaos == null || chaos.getErrorStatus() == null
+            || !ChaosProbability.shouldInject(chaos.getErrorProbability(), chaos.getSeed())) {
+            return null;
+        }
+        HttpResponse errorResponse = response()
+            .withStatusCode(chaos.getErrorStatus())
+            .withHeader("content-type", "application/json")
+            .withBody("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected HTTP chaos error\"}}");
+        if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
+            errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
+        }
+        return errorResponse;
+    }
+
+    /**
      * Core response-writing choke point. When a non-null {@code chaos} profile is provided,
      * HTTP chaos injection is applied before the response is written:
      * <ol>
@@ -915,28 +940,10 @@ public class HttpActionHandler {
      * </ol>
      */
     void writeResponseActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final RequestDefinition requestDefinition, final Runnable postProcessor, final HttpChaosProfile chaos) {
-        // Chaos: determine final response and extra delay
-        final HttpResponse effectiveResponse;
-        final Delay chaosLatency;
-        if (chaos != null) {
-            // Error injection
-            if (chaos.getErrorStatus() != null && ChaosProbability.shouldInject(chaos.getErrorProbability(), chaos.getSeed())) {
-                HttpResponse errorResponse = response()
-                    .withStatusCode(chaos.getErrorStatus())
-                    .withHeader("content-type", "application/json")
-                    .withBody("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected HTTP chaos error\"}}");
-                if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
-                    errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
-                }
-                effectiveResponse = errorResponse;
-            } else {
-                effectiveResponse = response;
-            }
-            chaosLatency = chaos.getLatency();
-        } else {
-            effectiveResponse = response;
-            chaosLatency = null;
-        }
+        // Chaos: determine final response and extra delay via shared helper
+        HttpResponse chaosError = chaosErrorResponseOrNull(chaos);
+        final HttpResponse effectiveResponse = chaosError != null ? chaosError : response;
+        final Delay chaosLatency = chaos != null ? chaos.getLatency() : null;
 
         Delay[] delays = combineWithChaosAndGlobalDelay(effectiveResponse.getDelay(), chaosLatency);
         scheduler.schedule(() -> {
@@ -1023,32 +1030,74 @@ public class HttpActionHandler {
     }
 
     void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous) {
-        writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, null);
+        writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, null, null);
     }
 
     void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor) {
+        writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, postProcessor, null);
+    }
+
+    /**
+     * Forward response choke point with optional HTTP chaos injection.
+     * <p>
+     * When {@code chaos} is non-null the same error-injection + latency logic used for
+     * mocked responses is applied to the upstream response received from the forwarded
+     * request. For streaming responses an injected error replaces the stream with a
+     * non-streaming synthetic error response; latency is applied before writing.
+     * <p>
+     * Deferred: {@code FORWARD_OBJECT_CALLBACK}'s own write path, the unmatched /
+     * anonymous proxy-pass path, and {@code dropConnectionProbability} (connection drop)
+     * are not yet wired and will follow in later slices.
+     */
+    void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos) {
         scheduler.submit(responseFuture, () -> {
             try {
                 HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-                if (response != null && response.getStreamingBody() != null) {
-                    writeStreamingForwardActionResponse(response, responseWriter, request, action, responseFuture, postProcessor);
+
+                // chaos: error injection on forwarded responses — replaces the upstream response
+                HttpResponse chaosError = chaosErrorResponseOrNull(chaos);
+                final HttpResponse effectiveResponse = chaosError != null ? chaosError : response;
+                final Delay chaosLatency = chaos != null ? chaos.getLatency() : null;
+                final boolean chaosErrorInjected = chaosError != null;
+
+                // Factor the write (streaming vs non-streaming) into a single command so
+                // it can be dispatched either directly or via the non-blocking scheduler.
+                final Runnable writeCommand;
+                if (!chaosErrorInjected && effectiveResponse != null && effectiveResponse.getStreamingBody() != null) {
+                    writeCommand = () -> writeStreamingForwardActionResponse(effectiveResponse, responseWriter, request, action, responseFuture, postProcessor);
                 } else {
-                    responseWriter.writeResponse(request, response, false);
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(FORWARDED_REQUEST)
-                            .setLogLevel(Level.INFO)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setHttpRequest(request)
-                            .setHttpResponse(response)
-                            .setExpectation(request, response)
-                            .setExpectationId(action.getExpectationId())
-                            .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
-                            .setArguments(response, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId())
-                    );
-                    if (postProcessor != null) {
-                        postProcessor.run();
-                    }
+                    writeCommand = () -> {
+                        responseWriter.writeResponse(request, effectiveResponse, false);
+                        String logMessageFormat = chaosErrorInjected
+                            ? "returning chaos-injected error response:{}replacing forwarded response" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}"
+                            : "returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}";
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setType(FORWARDED_REQUEST)
+                                .setLogLevel(Level.INFO)
+                                .setCorrelationId(request.getLogCorrelationId())
+                                .setHttpRequest(request)
+                                .setHttpResponse(effectiveResponse)
+                                .setExpectation(request, effectiveResponse)
+                                .setExpectationId(action.getExpectationId())
+                                .setMessageFormat(logMessageFormat)
+                                .setArguments(effectiveResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId())
+                        );
+                        if (postProcessor != null) {
+                            postProcessor.run();
+                        }
+                    };
+                }
+
+                // Apply chaos latency via the non-blocking scheduler timer rather than a
+                // blocking Thread.sleep — avoids starving the bounded scheduler thread pool.
+                // Only chaos latency is scheduled here because the forward path's action +
+                // global delay was already applied when the forward handler was dispatched
+                // (see combineWithGlobalDelay(action.getDelay()) in the processAction switch).
+                if (chaosLatency != null) {
+                    scheduler.schedule(writeCommand, synchronous, chaosLatency);
+                } else {
+                    writeCommand.run();
                 }
             } catch (Throwable throwable) {
                 handleExceptionDuringForwardingRequest(action, request, responseWriter, throwable);
