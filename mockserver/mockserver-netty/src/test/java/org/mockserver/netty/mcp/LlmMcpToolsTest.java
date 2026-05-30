@@ -146,6 +146,30 @@ public class LlmMcpToolsTest {
     }
 
     @Test
+    public void shouldParseQuotaFieldsInChaosProfile() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "ANTHROPIC");
+        params.put("path", "/v1/messages");
+        params.put("text", "hi");
+        ObjectNode chaos = params.putObject("chaos");
+        chaos.put("quotaName", "acct-x");
+        chaos.put("quotaLimit", 5);
+        chaos.put("quotaWindowMillis", 60000);
+        chaos.put("quotaErrorStatus", 529);
+
+        JsonNode result = toolRegistry.callTool("mock_llm_completion", params);
+        assertThat(result.path("status").asText(), is("created"));
+
+        org.mockserver.model.LlmChaosProfile parsed = httpState
+            .allMatchingExpectation(request().withMethod("POST").withPath("/v1/messages")).get(0)
+            .getHttpLlmResponse().getChaos();
+        assertThat(parsed.getQuotaName(), is("acct-x"));
+        assertThat(parsed.getQuotaLimit(), is(5));
+        assertThat(parsed.getQuotaWindowMillis(), is(60000L));
+        assertThat(parsed.getQuotaErrorStatus(), is(529));
+    }
+
+    @Test
     public void shouldCreateLlmCompletionWithUsage() {
         ObjectNode params = objectMapper.createObjectNode();
         params.put("provider", "ANTHROPIC");

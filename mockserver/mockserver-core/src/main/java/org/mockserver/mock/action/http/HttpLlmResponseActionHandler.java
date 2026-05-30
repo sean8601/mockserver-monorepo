@@ -2,6 +2,7 @@ package org.mockserver.mock.action.http;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockserver.llm.LlmQuotaRegistry;
 import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.ProviderCodecRegistry;
 import org.mockserver.log.model.LogEntry;
@@ -228,7 +229,17 @@ public class HttpLlmResponseActionHandler {
      */
     public HttpResponse chaosErrorResponseOrNull(HttpLlmResponse httpLlmResponse) {
         LlmChaosProfile chaos = httpLlmResponse.getChaos();
-        if (chaos == null || chaos.getErrorStatus() == null) {
+        if (chaos == null) {
+            return null;
+        }
+        // Stateful quota (a hard, deterministic rate limit) is checked first and
+        // consumes one slot per call. An exceeded quota short-circuits to its own
+        // error before any probabilistic-error decision.
+        HttpResponse quotaError = quotaErrorResponseOrNull(chaos);
+        if (quotaError != null) {
+            return quotaError;
+        }
+        if (chaos.getErrorStatus() == null) {
             return null;
         }
         if (!ChaosProbability.shouldInject(chaos.getErrorProbability(), chaos.getSeed())) {
@@ -238,6 +249,38 @@ public class HttpLlmResponseActionHandler {
             .withStatusCode(chaos.getErrorStatus())
             .withHeader("content-type", "application/json")
             .withBody("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}");
+        if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
+            errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
+        }
+        return errorResponse;
+    }
+
+    /**
+     * If the profile declares a stateful quota and this request exceeds it within
+     * the current window, return the quota error response (status
+     * {@code quotaErrorStatus}, default 429, plus the {@code Retry-After} header
+     * when set); otherwise {@code null}. Calling this records one request against
+     * the quota. A quota that is not fully configured ({@code quotaName} +
+     * {@code quotaLimit} + {@code quotaWindowMillis}) is ignored.
+     * <p>
+     * Called once per matched LLM request (via {@link #chaosErrorResponseOrNull})
+     * regardless of whether the response path ultimately delivers an LLM payload,
+     * so the count reflects requests received, not payloads returned.
+     */
+    HttpResponse quotaErrorResponseOrNull(LlmChaosProfile chaos) {
+        if (chaos.getQuotaName() == null || chaos.getQuotaLimit() == null || chaos.getQuotaWindowMillis() == null) {
+            return null;
+        }
+        boolean allowed = LlmQuotaRegistry.getInstance()
+            .tryAcquire(chaos.getQuotaName(), chaos.getQuotaLimit(), chaos.getQuotaWindowMillis());
+        if (allowed) {
+            return null;
+        }
+        int status = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : 429;
+        HttpResponse errorResponse = response()
+            .withStatusCode(status)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"error\":{\"type\":\"quota_exceeded\",\"message\":\"LLM request quota exceeded\"}}");
         if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
             errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
         }

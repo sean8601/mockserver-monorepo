@@ -3573,6 +3573,10 @@ public class McpToolRegistry {
         chaosProps.putObject("truncateAtFraction").put("type", "number").put("description", "Fraction 0.0-1.0 of SSE events to keep before truncating (default 0.5)");
         chaosProps.putObject("malformedSse").put("type", "boolean").put("description", "Append a malformed (broken-JSON) SSE chunk");
         chaosProps.putObject("seed").put("type", "integer").put("description", "Seed making a fractional errorProbability reproducible");
+        chaosProps.putObject("quotaName").put("type", "string").put("description", "Stateful quota bucket name; expectations sharing a name share one request counter");
+        chaosProps.putObject("quotaLimit").put("type", "integer").put("description", "Stateful quota: max requests allowed per window before requests are rejected");
+        chaosProps.putObject("quotaWindowMillis").put("type", "integer").put("description", "Stateful quota: window length in milliseconds");
+        chaosProps.putObject("quotaErrorStatus").put("type", "integer").put("description", "Stateful quota: HTTP status returned when the quota is exceeded (default 429)");
     }
 
     /**
@@ -3608,6 +3612,18 @@ public class McpToolRegistry {
         }
         if (node.path("seed").isIntegralNumber()) {
             chaos.withSeed(node.path("seed").asLong());
+        }
+        if (node.path("quotaName").isTextual()) {
+            chaos.withQuotaName(node.path("quotaName").asText());
+        }
+        if (node.path("quotaLimit").isIntegralNumber()) {
+            chaos.withQuotaLimit(node.path("quotaLimit").asInt());
+        }
+        if (node.path("quotaWindowMillis").isIntegralNumber()) {
+            chaos.withQuotaWindowMillis(node.path("quotaWindowMillis").asLong());
+        }
+        if (node.path("quotaErrorStatus").isIntegralNumber()) {
+            chaos.withQuotaErrorStatus(node.path("quotaErrorStatus").asInt());
         }
         return chaos;
     }

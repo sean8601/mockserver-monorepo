@@ -195,6 +195,20 @@
         },
         "seed": {
           "type": "integer"
+        },
+        "quotaName": {
+          "type": "string"
+        },
+        "quotaLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quotaWindowMillis": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "quotaErrorStatus": {
+          "type": "integer"
         }
       }
     },

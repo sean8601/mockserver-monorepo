@@ -934,10 +934,14 @@ sitemap:
         <tr><td><code>truncateAtFraction</code></td><td>number</td><td>Fraction 0.0&ndash;1.0 of SSE events to keep before truncating (default <code>0.5</code>).</td></tr>
         <tr><td><code>malformedSse</code></td><td>boolean</td><td>Append a malformed (broken-JSON) SSE chunk so the client must handle a corrupt event.</td></tr>
         <tr><td><code>seed</code></td><td>integer</td><td>Makes a fractional <code>errorProbability</code> reproducible.</td></tr>
+        <tr><td><code>quotaName</code></td><td>string</td><td>Enables a <strong>stateful</strong> request quota (a fixed-window rate limit). Expectations sharing a <code>quotaName</code> share one request counter, so you can model an upstream account limit across several mocks.</td></tr>
+        <tr><td><code>quotaLimit</code></td><td>integer</td><td>Maximum requests allowed within the window before further requests are rejected. Requires <code>quotaName</code> and <code>quotaWindowMillis</code>.</td></tr>
+        <tr><td><code>quotaWindowMillis</code></td><td>integer</td><td>Window length in milliseconds. The window starts on the first request and resets once it elapses.</td></tr>
+        <tr><td><code>quotaErrorStatus</code></td><td>integer</td><td>HTTP status returned when the quota is exceeded (default <code>429</code>); the <code>retryAfter</code> value, if set, is sent as the <code>Retry-After</code> header.</td></tr>
     </tbody>
 </table>
 
-<p>Chaos is deterministic for truncation, malformed SSE, and an <code>errorProbability</code> of 0.0 or 1.0 &mdash; safe for repeatable tests. Use a fractional probability (optionally with a <code>seed</code>) only when you intend flakiness.</p>
+<p>Chaos is deterministic for truncation, malformed SSE, an <code>errorProbability</code> of 0.0 or 1.0, and the stateful quota &mdash; safe for repeatable tests. Use a fractional probability (optionally with a <code>seed</code>) only when you intend flakiness. The quota is the deterministic, stateful counterpart to the probabilistic error: it counts real requests and rejects the ones over <code>quotaLimit</code> per window (the count resets on server reset).</p>
 
 <p><strong>Example request (Anthropic text completion):</strong></p>
 

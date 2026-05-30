@@ -16,6 +16,8 @@ import java.util.List;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.core.Is.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -31,6 +33,9 @@ public class HttpLlmResponseActionHandlerTest {
         // substitute a throwing codec, so other tests in the same JVM are not
         // affected.
         ProviderCodecRegistry.getInstance().register(new AnthropicCodec());
+        // The quota registry is a JVM singleton — clear it so quota tests do not
+        // accumulate state across runs in a shared (non-forked) JVM.
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
     }
 
     @Test
@@ -338,6 +343,70 @@ public class HttpLlmResponseActionHandlerTest {
         // then
         assertThat(response.getStatusCode(), is(200));
         assertThat(response.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), is(""));
+    }
+
+    // --- stateful quota (chaos rate limit) ---
+
+    @Test
+    public void shouldReturnQuotaErrorAfterLimitExceeded() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        // unique name keeps this test independent of the shared registry singleton
+        String quotaName = "test-quota-" + System.nanoTime();
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi"))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withQuotaLimit(2)
+                .withQuotaWindowMillis(600_000L)   // large window: all calls fall in one window
+                .withRetryAfter("30"));
+
+        // first two requests are within quota -> no chaos error
+        assertThat(handler.chaosErrorResponseOrNull(llmResponse), is(nullValue()));
+        assertThat(handler.chaosErrorResponseOrNull(llmResponse), is(nullValue()));
+
+        // third exceeds the quota -> 429 with Retry-After
+        HttpResponse quotaError = handler.chaosErrorResponseOrNull(llmResponse);
+        assertThat(quotaError, is(notNullValue()));
+        assertThat(quotaError.getStatusCode(), is(429));
+        assertThat(quotaError.getFirstHeader("Retry-After"), is("30"));
+        assertThat(quotaError.getBodyAsString(), containsString("quota_exceeded"));
+    }
+
+    @Test
+    public void shouldUseCustomQuotaErrorStatus() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-quota-" + System.nanoTime();
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi"))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(600_000L)
+                .withQuotaErrorStatus(529));
+
+        assertThat(handler.chaosErrorResponseOrNull(llmResponse), is(nullValue()));
+        HttpResponse quotaError = handler.chaosErrorResponseOrNull(llmResponse);
+        assertThat(quotaError, is(notNullValue()));
+        assertThat(quotaError.getStatusCode(), is(529));
+    }
+
+    @Test
+    public void shouldIgnoreIncompleteQuotaConfig() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        // quotaName set but no limit/window -> quota ignored, and no probabilistic error set
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi"))
+            .withChaos(new LlmChaosProfile().withQuotaName("incomplete"));
+
+        for (int i = 0; i < 5; i++) {
+            assertThat(handler.chaosErrorResponseOrNull(llmResponse), is(nullValue()));
+        }
     }
 
     @Test

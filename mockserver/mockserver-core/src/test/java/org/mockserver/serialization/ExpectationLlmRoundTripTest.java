@@ -275,6 +275,10 @@ public class ExpectationLlmRoundTripTest {
                             .withTruncateAtFraction(0.25)
                             .withMalformedSse(true)
                             .withSeed(7L)
+                            .withQuotaName("acct-1")
+                            .withQuotaLimit(100)
+                            .withQuotaWindowMillis(60_000L)
+                            .withQuotaErrorStatus(529)
                     )
             );
 
@@ -292,6 +296,10 @@ public class ExpectationLlmRoundTripTest {
         assertThat(chaos.getTruncateAtFraction(), is(0.25));
         assertThat(chaos.getMalformedSse(), is(true));
         assertThat(chaos.getSeed(), is(7L));
+        assertThat(chaos.getQuotaName(), is("acct-1"));
+        assertThat(chaos.getQuotaLimit(), is(100));
+        assertThat(chaos.getQuotaWindowMillis(), is(60_000L));
+        assertThat(chaos.getQuotaErrorStatus(), is(529));
     }
 
     @Test

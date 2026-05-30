@@ -14,6 +14,15 @@ import java.util.Objects;
  * time). Truncation and malformed-SSE are deterministic. Follows the model
  * field/{@code withX}/getter convention so it round-trips without a bespoke
  * (de)serializer.
+ * <p>
+ * It also carries an optional <em>stateful</em> request quota (a fixed-window
+ * rate limit): when {@code quotaName}, {@code quotaLimit}, and
+ * {@code quotaWindowMillis} are set, requests beyond {@code quotaLimit} within
+ * the window are rejected with {@code quotaErrorStatus} (default 429) and the
+ * {@code retryAfter} header. Unlike the probabilistic error this is
+ * deterministic and counts real requests across the process (see
+ * {@link org.mockserver.llm.LlmQuotaRegistry}); expectations sharing a
+ * {@code quotaName} share one counter.
  */
 public class LlmChaosProfile extends ObjectWithJsonToString {
 
@@ -24,12 +33,16 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
 
     private int hashCode;
     private Integer errorStatus;       // e.g. 429, 529, 500
-    private String retryAfter;         // value for the Retry-After header on an error
+    private String retryAfter;         // value for the Retry-After header on an error (probabilistic or quota)
     private Double errorProbability;   // 0.0–1.0; null/0 = never inject an error
     private TruncateMode truncateMode; // streaming: truncate the SSE event stream
     private Double truncateAtFraction; // 0.0–1.0 fraction of events to keep before truncating
     private Boolean malformedSse;      // streaming: emit a malformed (broken-JSON) SSE chunk
     private Long seed;                 // optional, makes a fractional errorProbability reproducible
+    private String quotaName;          // stateful quota: shared counter key
+    private Integer quotaLimit;        // stateful quota: max requests allowed per window
+    private Long quotaWindowMillis;    // stateful quota: window length in milliseconds
+    private Integer quotaErrorStatus;  // stateful quota: status when exceeded (default 429)
 
     public static LlmChaosProfile llmChaosProfile() {
         return new LlmChaosProfile();
@@ -105,6 +118,46 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
         return seed;
     }
 
+    public LlmChaosProfile withQuotaName(String quotaName) {
+        this.quotaName = quotaName;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getQuotaName() {
+        return quotaName;
+    }
+
+    public LlmChaosProfile withQuotaLimit(Integer quotaLimit) {
+        this.quotaLimit = quotaLimit;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getQuotaLimit() {
+        return quotaLimit;
+    }
+
+    public LlmChaosProfile withQuotaWindowMillis(Long quotaWindowMillis) {
+        this.quotaWindowMillis = quotaWindowMillis;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Long getQuotaWindowMillis() {
+        return quotaWindowMillis;
+    }
+
+    public LlmChaosProfile withQuotaErrorStatus(Integer quotaErrorStatus) {
+        this.quotaErrorStatus = quotaErrorStatus;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Integer getQuotaErrorStatus() {
+        return quotaErrorStatus;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -123,13 +176,18 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
             truncateMode == that.truncateMode &&
             Objects.equals(truncateAtFraction, that.truncateAtFraction) &&
             Objects.equals(malformedSse, that.malformedSse) &&
-            Objects.equals(seed, that.seed);
+            Objects.equals(seed, that.seed) &&
+            Objects.equals(quotaName, that.quotaName) &&
+            Objects.equals(quotaLimit, that.quotaLimit) &&
+            Objects.equals(quotaWindowMillis, that.quotaWindowMillis) &&
+            Objects.equals(quotaErrorStatus, that.quotaErrorStatus);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, truncateMode, truncateAtFraction, malformedSse, seed);
+            hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, truncateMode, truncateAtFraction, malformedSse, seed,
+                quotaName, quotaLimit, quotaWindowMillis, quotaErrorStatus);
         }
         return hashCode;
     }
