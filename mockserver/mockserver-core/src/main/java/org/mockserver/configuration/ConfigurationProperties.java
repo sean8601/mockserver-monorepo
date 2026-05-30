@@ -52,6 +52,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DETAILED_MATCH_FAILURES = "mockserver.detailedMatchFailures";
     private static final String MOCKSERVER_LAUNCH_UI_FOR_LOG_LEVEL_DEBUG = "mockserver.launchUIForLogLevelDebug";
     private static final String MOCKSERVER_METRICS_ENABLED = "mockserver.metricsEnabled";
+    private static final String MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS = "mockserver.slowRequestThresholdMillis";
+    private static final String MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS = "mockserver.metricsRequestDurationRouteLabels";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
     private static final String MOCKSERVER_COMPACT_LOG_FORMAT = "mockserver.compactLogFormat";
@@ -412,6 +414,40 @@ public class ConfigurationProperties {
      */
     public static void metricsEnabled(boolean enable) {
         setProperty(MOCKSERVER_METRICS_ENABLED, "" + enable);
+    }
+
+    public static long slowRequestThresholdMillis() {
+        return readLongProperty(MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS, "MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS", 0L);
+    }
+
+    /**
+     * Threshold in milliseconds for flagging slow forwarded requests. When a forwarded
+     * request's total time exceeds this threshold, a WARN-level log entry is emitted and
+     * the {@code mock_server_slow_requests_total} Prometheus counter is incremented.
+     * <p>
+     * Default is 0 (disabled).
+     *
+     * @param milliseconds threshold in milliseconds, 0 to disable
+     */
+    public static void slowRequestThresholdMillis(long milliseconds) {
+        setProperty(MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS, "" + milliseconds);
+    }
+
+    public static boolean metricsRequestDurationRouteLabels() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS, "MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS", "" + false));
+    }
+
+    /**
+     * Enable per-route (HTTP method) labels on the request duration histogram. When enabled,
+     * the {@code mock_server_request_duration_seconds} histogram includes a {@code method}
+     * label for the HTTP method (GET, POST, etc.). Default is false (no labels).
+     * <p>
+     * Cardinality is bounded to the set of standard HTTP methods.
+     *
+     * @param enable enable method labels on the request duration histogram
+     */
+    public static void metricsRequestDurationRouteLabels(boolean enable) {
+        setProperty(MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS, "" + enable);
     }
 
     public static boolean mcpEnabled() {

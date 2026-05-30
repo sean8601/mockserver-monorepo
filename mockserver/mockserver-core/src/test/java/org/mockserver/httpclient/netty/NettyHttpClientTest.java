@@ -12,6 +12,7 @@ import org.mockserver.echo.http.EchoServer;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
+import org.mockserver.model.Timing;
 import org.mockserver.scheduler.Scheduler;
 
 import java.net.InetSocketAddress;
@@ -227,6 +228,25 @@ public class NettyHttpClientTest {
                 .withCookie(cookie("another_cookie_name", "another_cookie_value"))
                 .withBody(binary("this is an example body".getBytes(UTF_8), MediaType.ANY_VIDEO_TYPE))
         ));
+    }
+
+    @Test
+    public void shouldPopulateTimeToFirstByteInTiming() throws Exception {
+        // given
+        NettyHttpClient nettyHttpClient = new NettyHttpClient(configuration(), mockServerLogger, clientEventLoopGroup, null, false);
+
+        // when
+        HttpResponse httpResponse = nettyHttpClient.sendRequest(request().withHeader("Host", "0.0.0.0:" + echoServer.getPort()))
+            .get(10, TimeUnit.SECONDS);
+
+        // then
+        Timing timing = httpResponse.getTiming();
+        assertThat("timing should be present", timing != null, is(true));
+        assertThat("TTFB should be populated", timing.getTimeToFirstByteInMillis() != null, is(true));
+        assertThat("TTFB should be >= 0", timing.getTimeToFirstByteInMillis() >= 0, is(true));
+        assertThat("TTFB should be <= totalTime", timing.getTimeToFirstByteInMillis() <= timing.getTotalTimeInMillis(), is(true));
+        assertThat("totalTime should be > 0", timing.getTotalTimeInMillis() > 0, is(true));
+        assertThat("connectionTime should be >= 0", timing.getConnectionTimeInMillis() >= 0, is(true));
     }
 
 }

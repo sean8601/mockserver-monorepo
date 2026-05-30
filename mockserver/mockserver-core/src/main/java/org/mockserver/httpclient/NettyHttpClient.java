@@ -16,6 +16,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.filters.HopByHopHeaderFilter;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.metrics.Metrics;
 import org.mockserver.model.*;
 import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
@@ -45,6 +46,7 @@ public class NettyHttpClient {
     static final AttributeKey<CompletableFuture<Message>> RESPONSE_FUTURE = AttributeKey.valueOf("RESPONSE_FUTURE");
     static final AttributeKey<Boolean> ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE = AttributeKey.valueOf("ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE");
     static final AttributeKey<Boolean> DISABLE_RESPONSE_STREAMING = AttributeKey.valueOf("DISABLE_RESPONSE_STREAMING");
+    static final AttributeKey<AtomicLong> FIRST_BYTE_MILLIS = TimeToFirstByteHandler.FIRST_BYTE_MILLIS;
     private static final HopByHopHeaderFilter hopByHopHeaderFilter = new HopByHopHeaderFilter();
     private final Configuration configuration;
     private final MockServerLogger mockServerLogger;
@@ -106,6 +108,7 @@ public class NettyHttpClient {
 
             final long requestStartedMillis = System.currentTimeMillis();
             final AtomicLong connectionEstablishedMillis = new AtomicLong();
+            final AtomicLong firstByteMillis = new AtomicLong();
 
             Bootstrap bootstrap = new Bootstrap()
                 .group(eventLoopGroup)
@@ -118,6 +121,7 @@ public class NettyHttpClient {
                 .attr(REMOTE_SOCKET, remoteAddress)
                 .attr(RESPONSE_FUTURE, responseFuture)
                 .attr(ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE, true)
+                .attr(FIRST_BYTE_MILLIS, firstByteMillis)
                 .handler(clientInitializer);
             if (disableStreaming) {
                 bootstrap.attr(DISABLE_RESPONSE_STREAMING, true);
@@ -142,12 +146,30 @@ public class NettyHttpClient {
                 .whenComplete((message, throwable) -> {
                     if (throwable == null) {
                         long responseReceivedMillis = System.currentTimeMillis();
+                        long firstByte = firstByteMillis.get();
+                        long totalTime = responseReceivedMillis - requestStartedMillis;
                         Timing timing = Timing.timing()
                             .withRequestStartedMillis(requestStartedMillis)
                             .withConnectionEstablishedMillis(connectionEstablishedMillis.get())
                             .withResponseReceivedMillis(responseReceivedMillis)
                             .withConnectionTimeInMillis(connectionEstablishedMillis.get() - requestStartedMillis)
-                            .withTotalTimeInMillis(responseReceivedMillis - requestStartedMillis);
+                            .withTimeToFirstByteInMillis(firstByte > 0 ? firstByte - requestStartedMillis : null)
+                            .withTotalTimeInMillis(totalTime);
+                        // Slow-request flagging
+                        long threshold = configuration.slowRequestThresholdMillis();
+                        if (threshold > 0 && totalTime > threshold) {
+                            Metrics.incrementSlowRequestTotal();
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setLogLevel(Level.WARN)
+                                    .setMessageFormat("slow forwarded request {} took {}ms (threshold {}ms)")
+                                    .setArguments(
+                                        httpRequest.getMethod("") + " " + httpRequest.getPath(),
+                                        totalTime,
+                                        threshold
+                                    )
+                            );
+                        }
                         if (message != null) {
                             HttpResponse response = (HttpResponse) message;
                             response.withTiming(timing);

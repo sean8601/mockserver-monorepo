@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import org.mockserver.model.*;
+import org.mockserver.model.Timing;
 
 import java.util.Arrays;
 import java.util.Base64;
@@ -476,5 +477,94 @@ public class HarConverterTest {
         JsonNode root = objectMapper.readTree(har);
         JsonNode harEntry = root.get("log").get("entries").get(0);
         assertThat(harEntry.get("serverIPAddress").asText(), is("192.168.1.100"));
+    }
+
+    @Test
+    public void shouldPopulateHarTimingsFromResponseTiming() throws Exception {
+        // given
+        Timing timing = Timing.timing()
+            .withRequestStartedMillis(1000L)
+            .withConnectionEstablishedMillis(1010L)
+            .withResponseReceivedMillis(1150L)
+            .withConnectionTimeInMillis(10L)
+            .withTimeToFirstByteInMillis(50L)
+            .withTotalTimeInMillis(150L);
+
+        LogEventRequestAndResponse entry = new LogEventRequestAndResponse()
+            .withTimestamp("2026-01-15T10:30:00.000Z")
+            .withHttpRequest(request("/api/test").withMethod("GET").withHeader("host", "example.com"))
+            .withHttpResponse(response().withStatusCode(200).withReasonPhrase("OK").withTiming(timing));
+
+        // when
+        String har = harConverter.serialize(Collections.singletonList(entry));
+
+        // then
+        JsonNode root = objectMapper.readTree(har);
+        JsonNode harEntry = root.get("log").get("entries").get(0);
+        JsonNode timings = harEntry.get("timings");
+
+        // connect = connectionTimeInMillis = 10
+        assertThat(timings.get("connect").asLong(), is(10L));
+        // wait = TTFB - connect = 50 - 10 = 40
+        assertThat(timings.get("wait").asLong(), is(40L));
+        // receive = totalTime - wait - connect = 150 - 40 - 10 = 100
+        assertThat(timings.get("receive").asLong(), is(100L));
+        // time = totalTime
+        assertThat(harEntry.get("time").asLong(), is(150L));
+    }
+
+    @Test
+    public void shouldPopulateHarTimingsWithoutTTFB() throws Exception {
+        // given - Timing without TTFB (uses responseReceived - connectionEstablished fallback)
+        Timing timing = Timing.timing()
+            .withRequestStartedMillis(1000L)
+            .withConnectionEstablishedMillis(1010L)
+            .withResponseReceivedMillis(1150L)
+            .withConnectionTimeInMillis(10L)
+            .withTotalTimeInMillis(150L);
+
+        LogEventRequestAndResponse entry = new LogEventRequestAndResponse()
+            .withTimestamp("2026-01-15T10:30:00.000Z")
+            .withHttpRequest(request("/api/test").withMethod("GET").withHeader("host", "example.com"))
+            .withHttpResponse(response().withStatusCode(200).withReasonPhrase("OK").withTiming(timing));
+
+        // when
+        String har = harConverter.serialize(Collections.singletonList(entry));
+
+        // then
+        JsonNode root = objectMapper.readTree(har);
+        JsonNode timings = root.get("log").get("entries").get(0).get("timings");
+
+        // connect = 10
+        assertThat(timings.get("connect").asLong(), is(10L));
+        // wait = responseReceived - connectionEstablished = 1150 - 1010 = 140
+        assertThat(timings.get("wait").asLong(), is(140L));
+        // receive = totalTime - wait - connect = 150 - 140 - 10 = 0
+        assertThat(timings.get("receive").asLong(), is(0L));
+    }
+
+    @Test
+    public void shouldReturnDefaultTimingsWithoutTiming() throws Exception {
+        // given - no Timing on response
+        LogEventRequestAndResponse entry = new LogEventRequestAndResponse()
+            .withTimestamp("2026-01-15T10:30:00.000Z")
+            .withHttpRequest(request("/api/test").withMethod("GET").withHeader("host", "example.com"))
+            .withHttpResponse(response().withStatusCode(200).withReasonPhrase("OK"));
+
+        // when
+        String har = harConverter.serialize(Collections.singletonList(entry));
+
+        // then
+        JsonNode root = objectMapper.readTree(har);
+        JsonNode timings = root.get("log").get("entries").get(0).get("timings");
+
+        // Without Timing, defaults: send=0, wait=0, receive=0; blocked/dns/connect/ssl = -1
+        assertThat(timings.get("send").asLong(), is(0L));
+        assertThat(timings.get("wait").asLong(), is(0L));
+        assertThat(timings.get("receive").asLong(), is(0L));
+        assertThat(timings.get("blocked").asLong(), is(-1L));
+        assertThat(timings.get("dns").asLong(), is(-1L));
+        assertThat(timings.get("connect").asLong(), is(-1L));
+        assertThat(timings.get("ssl").asLong(), is(-1L));
     }
 }

@@ -1,5 +1,6 @@
 package org.mockserver.metrics;
 
+import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.core.metrics.Gauge;
 import io.prometheus.metrics.core.metrics.Histogram;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
@@ -27,6 +28,10 @@ public class Metrics {
     // observeRequestDurationSeconds() is a no-op when metrics are off (the
     // caller on the request hot path pays nothing — see the Part A/C tension).
     private static volatile Histogram requestDurationSeconds;
+    // Per-route (method-labeled) histogram, registered only when route labels are enabled.
+    private static volatile Histogram requestDurationByMethodSeconds;
+    // Counter for slow forwarded requests. Null until metrics are enabled.
+    private static volatile Counter slowRequestTotal;
 
     private final Boolean metricsEnabled;
 
@@ -42,6 +47,19 @@ public class Metrics {
                 .classicOnly()
                 .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
                 .register();
+            slowRequestTotal = Counter.builder()
+                .name("mock_server_slow_requests")
+                .help("Total number of forwarded requests that exceeded the slow request threshold")
+                .register();
+            if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
+                requestDurationByMethodSeconds = Histogram.builder()
+                    .name("mock_server_request_duration_by_method_seconds")
+                    .help("MockServer request handling duration in seconds, labeled by HTTP method")
+                    .labelNames("method")
+                    .classicOnly()
+                    .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+                    .register();
+            }
         }
     }
 
@@ -67,6 +85,23 @@ public class Metrics {
             }
             return gauge;
         }
+    }
+
+    /**
+     * Reset the one-shot registration guard and null all lazily-registered
+     * metrics so that a subsequent {@code new Metrics(configuration)} call
+     * re-registers them.  Also clears the default Prometheus registry.
+     * <p>
+     * Package-private: intended for {@code MetricsTest} only, to guarantee
+     * deterministic test ordering.
+     */
+    static void resetAdditionalMetricsForTesting() {
+        additionalMetricsRegistered.set(false);
+        requestDurationSeconds = null;
+        requestDurationByMethodSeconds = null;
+        slowRequestTotal = null;
+        metrics.clear();
+        PrometheusRegistry.defaultRegistry.clear();
     }
 
     public static void clear() {
@@ -96,6 +131,30 @@ public class Metrics {
         Histogram histogram = requestDurationSeconds;
         if (histogram != null) {
             histogram.observe(seconds);
+        }
+    }
+
+    /**
+     * Record a request-handling duration (seconds) in the per-method labeled histogram.
+     * No-op unless route labels are enabled.
+     *
+     * @param seconds  duration in seconds
+     * @param method   the HTTP method (e.g. "GET", "POST")
+     */
+    public static void observeRequestDurationByMethodSeconds(double seconds, String method) {
+        Histogram histogram = requestDurationByMethodSeconds;
+        if (histogram != null && method != null) {
+            histogram.labelValues(method.toUpperCase()).observe(seconds);
+        }
+    }
+
+    /**
+     * Increment the slow request counter. No-op unless metrics are enabled.
+     */
+    public static void incrementSlowRequestTotal() {
+        Counter counter = slowRequestTotal;
+        if (counter != null) {
+            counter.inc();
         }
     }
 

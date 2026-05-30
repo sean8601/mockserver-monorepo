@@ -44,11 +44,16 @@ public class HarConverter {
     }
 
     private HarEntry convertEntry(LogEventRequestAndResponse requestAndResponse) {
+        HttpResponse httpResponse = requestAndResponse.getHttpResponse();
+        HarTimings harTimings = buildHarTimings(httpResponse);
+
         HarEntry entry = new HarEntry()
             .withStartedDateTime(requestAndResponse.getTimestamp() != null ? requestAndResponse.getTimestamp() : "")
-            .withTime(0)
+            .withTime(httpResponse != null && httpResponse.getTiming() != null && httpResponse.getTiming().getTotalTimeInMillis() != null
+                ? httpResponse.getTiming().getTotalTimeInMillis() : 0)
             .withRequest(convertRequest(requestAndResponse.getHttpRequest()))
-            .withResponse(convertResponse(requestAndResponse.getHttpResponse()));
+            .withResponse(convertResponse(httpResponse))
+            .withTimings(harTimings);
 
         HttpRequest httpRequest = requestAndResponse.getHttpRequest();
         if (httpRequest != null) {
@@ -342,5 +347,49 @@ public class HarConverter {
         }
 
         return content;
+    }
+
+    /**
+     * Build HAR 1.2 timings from a MockServer {@link Timing} object attached to the response.
+     * When no Timing is present, returns default timings (all zero/absent per HAR spec: -1
+     * means "not applicable").
+     * <p>
+     * Mapping:
+     * <ul>
+     *   <li>{@code connect} = {@link Timing#getConnectionTimeInMillis()}</li>
+     *   <li>{@code wait} = TTFB - connect when TTFB is available, otherwise responseReceived - connectionEstablished</li>
+     *   <li>{@code receive} = totalTime - wait - connect (clamped to >= 0)</li>
+     * </ul>
+     */
+    private HarTimings buildHarTimings(HttpResponse httpResponse) {
+        if (httpResponse == null || httpResponse.getTiming() == null) {
+            return new HarTimings();
+        }
+        Timing timing = httpResponse.getTiming();
+
+        long connect = timing.getConnectionTimeInMillis() != null ? timing.getConnectionTimeInMillis() : 0;
+
+        long wait;
+        if (timing.getTimeToFirstByteInMillis() != null) {
+            wait = timing.getTimeToFirstByteInMillis() - connect;
+        } else if (timing.getResponseReceivedMillis() != null && timing.getConnectionEstablishedMillis() != null) {
+            wait = timing.getResponseReceivedMillis() - timing.getConnectionEstablishedMillis();
+        } else {
+            wait = 0;
+        }
+        if (wait < 0) {
+            wait = 0;
+        }
+
+        long total = timing.getTotalTimeInMillis() != null ? timing.getTotalTimeInMillis() : 0;
+        long receive = total - wait - connect;
+        if (receive < 0) {
+            receive = 0;
+        }
+
+        return new HarTimings()
+            .withConnect(connect > 0 ? connect : -1)
+            .withWait(wait)
+            .withReceive(receive);
     }
 }

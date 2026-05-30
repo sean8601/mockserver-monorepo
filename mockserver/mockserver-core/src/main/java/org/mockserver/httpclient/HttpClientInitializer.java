@@ -111,6 +111,7 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
     private void configureHttp1Pipeline(ChannelPipeline pipeline) {
         pipeline.addLast(new HttpClientCodec());
         pipeline.addLast(new HttpContentDecompressor());
+        pipeline.addLast(new TimeToFirstByteHandler());
         if (configuration != null) {
             pipeline.addLast(new StreamingAwareHttpObjectAggregator(configuration.maxResponseBodySize(), configuration, mockServerLogger));
         } else {
@@ -141,6 +142,7 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
         }
         pipeline.addLast(http2ConnectionHandlerBuilder.build());
         pipeline.addLast(new Http2SettingsHandler(protocolFuture));
+        pipeline.addLast(new TimeToFirstByteHandler());
         pipeline.addLast(new MockServerHttpClientCodec(mockServerLogger, proxyConfigurations));
         pipeline.addLast(httpClientHandler);
     }

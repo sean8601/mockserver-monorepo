@@ -38,6 +38,8 @@ public class Configuration {
     private Boolean detailedMatchFailures;
     private Boolean launchUIForLogLevelDebug;
     private Boolean metricsEnabled;
+    private Long slowRequestThresholdMillis;
+    private Boolean metricsRequestDurationRouteLabels;
     private Boolean mcpEnabled;
     private String grpcDescriptorDirectory;
     private String grpcProtoDirectory;
@@ -327,6 +329,44 @@ public class Configuration {
      */
     public Configuration metricsEnabled(Boolean metricsEnabled) {
         this.metricsEnabled = metricsEnabled;
+        return this;
+    }
+
+    public Long slowRequestThresholdMillis() {
+        if (slowRequestThresholdMillis == null) {
+            return ConfigurationProperties.slowRequestThresholdMillis();
+        }
+        return slowRequestThresholdMillis;
+    }
+
+    /**
+     * Threshold in milliseconds for flagging slow forwarded requests. When a forwarded
+     * request's total time exceeds this threshold, a WARN-level log entry is emitted and
+     * the {@code mock_server_slow_requests_total} Prometheus counter is incremented.
+     * <p>
+     * Default is 0 (disabled).
+     *
+     * @param slowRequestThresholdMillis threshold in milliseconds, 0 to disable
+     */
+    public Configuration slowRequestThresholdMillis(Long slowRequestThresholdMillis) {
+        this.slowRequestThresholdMillis = slowRequestThresholdMillis;
+        return this;
+    }
+
+    public Boolean metricsRequestDurationRouteLabels() {
+        if (metricsRequestDurationRouteLabels == null) {
+            return ConfigurationProperties.metricsRequestDurationRouteLabels();
+        }
+        return metricsRequestDurationRouteLabels;
+    }
+
+    /**
+     * Enable per-route (HTTP method) labels on the request duration histogram.
+     *
+     * @param metricsRequestDurationRouteLabels enable method labels
+     */
+    public Configuration metricsRequestDurationRouteLabels(Boolean metricsRequestDurationRouteLabels) {
+        this.metricsRequestDurationRouteLabels = metricsRequestDurationRouteLabels;
         return this;
     }
 

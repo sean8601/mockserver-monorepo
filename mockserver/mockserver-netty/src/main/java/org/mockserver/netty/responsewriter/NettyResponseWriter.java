@@ -47,7 +47,9 @@ public class NettyResponseWriter extends ResponseWriter {
     @Override
     public void sendResponse(HttpRequest request, HttpResponse response) {
         if (startNanos >= 0) {
-            Metrics.observeRequestDurationSeconds((System.nanoTime() - startNanos) / 1_000_000_000.0);
+            double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
+            Metrics.observeRequestDurationSeconds(durationSeconds);
+            Metrics.observeRequestDurationByMethodSeconds(durationSeconds, request != null ? request.getMethod("") : null);
         }
         if (response.getStreamingBody() != null) {
             writeStreamingResponse(ctx, request, response);
