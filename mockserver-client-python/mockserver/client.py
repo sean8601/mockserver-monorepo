@@ -111,6 +111,25 @@ class MockServerClient:
     def reset(self) -> None:
         return self._run(self._async_client.reset())
 
+    def freeze_clock(self, instant: str | None = None) -> dict:
+        """Freeze the server clock at the given ISO-8601 instant.
+
+        If *instant* is ``None``, the clock freezes at the current real time.
+        """
+        return self._run(self._async_client.freeze_clock(instant))
+
+    def advance_clock(self, duration_millis: int) -> dict:
+        """Advance the frozen clock by *duration_millis* milliseconds."""
+        return self._run(self._async_client.advance_clock(duration_millis))
+
+    def reset_clock(self) -> dict:
+        """Reset the server clock to real wall-clock time."""
+        return self._run(self._async_client.reset_clock())
+
+    def clock_status(self) -> dict:
+        """Query the current clock status."""
+        return self._run(self._async_client.clock_status())
+
     def verify(
         self,
         request: HttpRequest,

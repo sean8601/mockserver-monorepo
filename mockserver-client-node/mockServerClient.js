@@ -66,6 +66,42 @@ var mockServerClient;
             };
         });
 
+        var makeGetRequest = (runningInNode() ? require('./sendRequest').sendGetRequest(tls, caCertPemFilePath) : function (host, port, path) {
+            var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
+
+            return {
+                then: function (sucess, error) {
+                    try {
+                        var xmlhttp = new XMLHttpRequest();
+                        xmlhttp.addEventListener("load", (function (sucess, error) {
+                            return function () {
+                                if (error && this.status >= 400 && this.status < 600) {
+                                    if (this.statusCode === 404) {
+                                        error("404 Not Found");
+                                    } else {
+                                        error(this.responseText);
+                                    }
+                                } else {
+                                    if (sucess) {
+                                        sucess({
+                                            statusCode: this.status,
+                                            body: this.responseText
+                                        });
+                                    }
+                                }
+                            };
+                        })(sucess, error));
+                        xmlhttp.open('GET', url);
+                        xmlhttp.send();
+                    } catch (e) {
+                        if (error) {
+                            error(e);
+                        }
+                    }
+                }
+            };
+        });
+
         var cleanedContextPath = (function (contextPath) {
             if (contextPath) {
                 if (!contextPath.endsWith("/")) {
@@ -997,6 +1033,52 @@ var mockServerClient;
             };
         };
 
+        /**
+         * Freeze the server clock at the given ISO-8601 instant.
+         * If instant is omitted, the clock freezes at the current real time.
+         *
+         * @param instant  optional ISO-8601 instant string (e.g. "2025-01-15T09:30:00Z")
+         */
+        var freezeClock = function (instant) {
+            var body = {action: "freeze"};
+            if (instant) {
+                body.instant = instant;
+            }
+            return makeRequest(host, port, "/mockserver/clock", body);
+        };
+        /**
+         * Advance the frozen clock by the specified number of milliseconds.
+         *
+         * @param durationMillis  number of milliseconds to advance
+         */
+        var advanceClock = function (durationMillis) {
+            return makeRequest(host, port, "/mockserver/clock", {action: "advance", durationMillis: durationMillis});
+        };
+        /**
+         * Reset the server clock to real wall-clock time.
+         */
+        var resetClock = function () {
+            return makeRequest(host, port, "/mockserver/clock", {action: "reset"});
+        };
+        /**
+         * Query the current clock status.
+         *
+         * @return promise resolving to {statusCode, body} where body contains
+         *         currentInstant, currentEpochMillis, and frozen
+         */
+        var clockStatus = function () {
+            return {
+                then: function (sucess, error) {
+                    makeGetRequest(host, port, "/mockserver/clock")
+                        .then(function (result) {
+                            sucess(result.body && JSON.parse(result.body));
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
+
         /* jshint -W003 */
         var _this = {
             openAPIExpectation: openAPIExpectation,
@@ -1014,6 +1096,10 @@ var mockServerClient;
             reset: reset,
             clear: clear,
             clearById: clearById,
+            freezeClock: freezeClock,
+            advanceClock: advanceClock,
+            resetClock: resetClock,
+            clockStatus: clockStatus,
             bind: bind,
             retrieveRecordedRequests: retrieveRecordedRequests,
             retrieveRecordedRequestsAndResponses: retrieveRecordedRequestsAndResponses,

@@ -26,6 +26,7 @@ class SyncMockHandler(BaseHTTPRequestHandler):
     response_body = "[]"
     last_request_body = None
     last_path = None
+    last_method = None
     request_count = 0
 
     def do_PUT(self):
@@ -33,6 +34,18 @@ class SyncMockHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
         SyncMockHandler.last_request_body = body
         SyncMockHandler.last_path = self.path
+        SyncMockHandler.last_method = "PUT"
+        SyncMockHandler.request_count += 1
+
+        self.send_response(SyncMockHandler.response_status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(SyncMockHandler.response_body.encode("utf-8"))
+
+    def do_GET(self):
+        SyncMockHandler.last_request_body = None
+        SyncMockHandler.last_path = self.path
+        SyncMockHandler.last_method = "GET"
         SyncMockHandler.request_count += 1
 
         self.send_response(SyncMockHandler.response_status)
@@ -55,6 +68,7 @@ def sync_mock_server():
     SyncMockHandler.response_body = "[]"
     SyncMockHandler.last_request_body = None
     SyncMockHandler.last_path = None
+    SyncMockHandler.last_method = None
     SyncMockHandler.request_count = 0
     yield port
     server.shutdown()
@@ -292,3 +306,78 @@ class TestSyncOpenApiExpectation:
                 OpenAPIExpectation(spec_url_or_payload="https://example.com/spec.json")
             )
             assert "/mockserver/openapi" in SyncMockHandler.last_path
+
+
+class TestSyncClockControl:
+    def test_freeze_clock_with_instant(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({
+            "status": "freeze",
+            "currentInstant": "2025-01-15T09:30:00Z",
+            "currentEpochMillis": 1736933400000,
+        })
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.freeze_clock("2025-01-15T09:30:00Z")
+            assert SyncMockHandler.last_path == "/mockserver/clock"
+            assert SyncMockHandler.last_method == "PUT"
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["action"] == "freeze"
+            assert sent["instant"] == "2025-01-15T09:30:00Z"
+            assert result["status"] == "freeze"
+
+    def test_freeze_clock_without_instant(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({
+            "status": "freeze",
+            "currentInstant": "2026-05-30T12:00:00Z",
+            "currentEpochMillis": 1780228800000,
+        })
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.freeze_clock()
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["action"] == "freeze"
+            assert "instant" not in sent
+            assert result["status"] == "freeze"
+
+    def test_advance_clock(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({
+            "status": "advance",
+            "currentInstant": "2025-01-15T10:30:00Z",
+            "currentEpochMillis": 1736937000000,
+        })
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.advance_clock(3600000)
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["action"] == "advance"
+            assert sent["durationMillis"] == 3600000
+            assert result["status"] == "advance"
+
+    def test_reset_clock(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({
+            "status": "reset",
+            "currentInstant": "2026-05-30T12:00:00Z",
+            "currentEpochMillis": 1780228800000,
+        })
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.reset_clock()
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["action"] == "reset"
+            assert result["status"] == "reset"
+
+    def test_clock_status(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps({
+            "currentInstant": "2025-01-15T09:30:00Z",
+            "currentEpochMillis": 1736933400000,
+            "frozen": True,
+        })
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.clock_status()
+            assert SyncMockHandler.last_path == "/mockserver/clock"
+            assert SyncMockHandler.last_method == "GET"
+            assert result["frozen"] is True
+            assert result["currentInstant"] == "2025-01-15T09:30:00Z"
+
+    def test_freeze_clock_error(self, sync_mock_server):
+        SyncMockHandler.response_status = 400
+        SyncMockHandler.response_body = '{"error": "bad request"}'
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            with pytest.raises(MockServerError, match="Failed to freeze clock"):
+                client.freeze_clock()

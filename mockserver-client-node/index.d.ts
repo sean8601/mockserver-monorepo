@@ -6,7 +6,7 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-export { mockServerClient, KeysToMultiValues, MockServerClient } from './mockServerClient';
+export { mockServerClient, ClockStatus, KeysToMultiValues, MockServerClient } from './mockServerClient';
 export {
   Expectation,
   ExpectationId,

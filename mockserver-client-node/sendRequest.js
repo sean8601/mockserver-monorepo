@@ -127,8 +127,64 @@
             };
         };
 
+        var sendGetRequest = function (tls, caCertPath) {
+            var http = tls ? require('https') : require('http');
+            return function (host, port, path) {
+                var deferred = defer();
+                downloadCACert(tls, caCertPath, function (ca) {
+
+                    var options = {
+                        protocol: tls ? 'https:' : 'http:',
+                        method: 'GET',
+                        host: host,
+                        path: path,
+                        port: port,
+                        ca: ca,
+                    };
+
+                    var req = http.request(options);
+
+                    req.once('response', function (response) {
+                        var data = '';
+
+                        response.on('data', function (chunk) {
+                            data += chunk;
+                        });
+
+                        response.on('end', function () {
+                            if (response.statusCode >= 400 && response.statusCode < 600) {
+                                if (response.statusCode === 404) {
+                                    deferred.reject("404 Not Found");
+                                } else {
+                                    deferred.reject(data);
+                                }
+                            } else {
+                                deferred.resolve({
+                                    statusCode: response.statusCode,
+                                    body: data
+                                });
+                            }
+                        });
+                    });
+
+                    req.once('error', function (error) {
+                        if (error.code && error.code === "ECONNREFUSED") {
+                            deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
+                        } else {
+                            deferred.reject(JSON.stringify(error));
+                        }
+                    });
+
+                    req.end();
+
+                });
+                return deferred.promise;
+            };
+        };
+
         module.exports = {
-            sendRequest: sendRequest
+            sendRequest: sendRequest,
+            sendGetRequest: sendGetRequest
         };
     }
 })();

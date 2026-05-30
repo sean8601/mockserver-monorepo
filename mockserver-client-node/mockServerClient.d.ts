@@ -20,6 +20,12 @@ export type KeysToMultiValues = KeyToMultiValue;
 
 export type ClearType = 'EXPECTATIONS' | 'LOG' | 'ALL';
 
+export interface ClockStatus {
+    currentInstant: string;
+    currentEpochMillis: number;
+    frozen: boolean;
+}
+
 export interface SuccessFullRequest {
     statusCode: number;
     body: string;
@@ -59,6 +65,14 @@ export interface MockServerClient {
     clear(pathOrRequestDefinition: PathOrRequestDefinition, type: ClearType): Promise<RequestResponse>;
 
     clearById(expectationId: string, type: ClearType): Promise<RequestResponse>;
+
+    freezeClock(instant?: string): Promise<RequestResponse>;
+
+    advanceClock(durationMillis: number): Promise<RequestResponse>;
+
+    resetClock(): Promise<RequestResponse>;
+
+    clockStatus(): Promise<ClockStatus>;
 
     bind(ports: Port[]): Promise<RequestResponse>;
 

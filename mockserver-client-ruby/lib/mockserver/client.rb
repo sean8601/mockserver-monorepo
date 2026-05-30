@@ -148,6 +148,62 @@ module MockServer
       close
     end
 
+    # -------------------------------------------------------------------
+    # Clock Control
+    # -------------------------------------------------------------------
+
+    # Freeze the server clock at the given ISO-8601 instant.
+    # If +instant+ is nil, the clock freezes at the current real time.
+    # @param instant [String, nil] ISO-8601 instant (e.g. "2025-01-15T09:30:00Z")
+    # @return [Hash] response with status, currentInstant, currentEpochMillis
+    def freeze_clock(instant = nil)
+      payload = { 'action' => 'freeze' }
+      payload['instant'] = instant if instant
+      body = JSON.generate(payload)
+      status, response_body = request('PUT', '/mockserver/clock', body)
+      if status >= 400
+        raise Error, "Failed to freeze clock (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Advance the frozen clock by +duration_millis+ milliseconds.
+    # @param duration_millis [Integer]
+    # @return [Hash] response with status, currentInstant, currentEpochMillis
+    def advance_clock(duration_millis)
+      body = JSON.generate({ 'action' => 'advance', 'durationMillis' => duration_millis })
+      status, response_body = request('PUT', '/mockserver/clock', body)
+      if status >= 400
+        raise Error, "Failed to advance clock (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Reset the server clock to real wall-clock time.
+    # @return [Hash] response with status, currentInstant, currentEpochMillis
+    def reset_clock
+      body = JSON.generate({ 'action' => 'reset' })
+      status, response_body = request('PUT', '/mockserver/clock', body)
+      if status >= 400
+        raise Error, "Failed to reset clock (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Query the current clock status.
+    # @return [Hash] with currentInstant, currentEpochMillis, frozen
+    def clock_status
+      status, response_body = request('GET', '/mockserver/clock')
+      if status >= 400
+        raise Error, "Failed to get clock status (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
     # Verify that a request was received.
     # @param request [HttpRequest]
     # @param times [VerificationTimes, nil]

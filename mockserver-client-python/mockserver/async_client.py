@@ -166,6 +166,66 @@ class AsyncMockServerClient:
                 f"Failed to reset (status={status}): {response_body}"
             )
 
+    async def freeze_clock(self, instant: str | None = None) -> dict:
+        """Freeze the server clock at the given ISO-8601 instant.
+
+        If *instant* is ``None``, the clock freezes at the current real time.
+
+        Returns the JSON response as a dict with keys ``status``,
+        ``currentInstant``, and ``currentEpochMillis``.
+        """
+        payload: dict = {"action": "freeze"}
+        if instant is not None:
+            payload["instant"] = instant
+        body = json.dumps(payload)
+        status, response_body = await self._request("PUT", "/mockserver/clock", body)
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to freeze clock (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def advance_clock(self, duration_millis: int) -> dict:
+        """Advance the frozen clock by *duration_millis* milliseconds.
+
+        Returns the JSON response as a dict with keys ``status``,
+        ``currentInstant``, and ``currentEpochMillis``.
+        """
+        body = json.dumps({"action": "advance", "durationMillis": duration_millis})
+        status, response_body = await self._request("PUT", "/mockserver/clock", body)
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to advance clock (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def reset_clock(self) -> dict:
+        """Reset the server clock to real wall-clock time.
+
+        Returns the JSON response as a dict with keys ``status``,
+        ``currentInstant``, and ``currentEpochMillis``.
+        """
+        body = json.dumps({"action": "reset"})
+        status, response_body = await self._request("PUT", "/mockserver/clock", body)
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to reset clock (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def clock_status(self) -> dict:
+        """Query the current clock status.
+
+        Returns a dict with keys ``currentInstant``, ``currentEpochMillis``,
+        and ``frozen``.
+        """
+        status, response_body = await self._request("GET", "/mockserver/clock")
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to get clock status (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
     async def verify(
         self,
         request: HttpRequest,

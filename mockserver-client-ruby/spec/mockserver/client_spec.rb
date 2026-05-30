@@ -682,4 +682,126 @@ RSpec.describe MockServer::Client do
       expect { client.reset }.to raise_error(MockServer::ConnectionError, /TLS error/)
     end
   end
+
+  # -------------------------------------------------------------------
+  # clock control
+  # -------------------------------------------------------------------
+  describe '#freeze_clock' do
+    it 'sends PUT to /mockserver/clock with freeze action and instant' do
+      response_body = {
+        'status' => 'freeze',
+        'currentInstant' => '2025-01-15T09:30:00Z',
+        'currentEpochMillis' => 1_736_933_400_000
+      }
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 200, body: JSON.generate(response_body))
+
+      result = client.freeze_clock('2025-01-15T09:30:00Z')
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/clock")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['action'] == 'freeze' && parsed['instant'] == '2025-01-15T09:30:00Z'
+        }
+      expect(result['status']).to eq('freeze')
+    end
+
+    it 'sends freeze without instant when nil' do
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 200, body: JSON.generate({ 'status' => 'freeze' }))
+
+      client.freeze_clock
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/clock")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['action'] == 'freeze' && !parsed.key?('instant')
+        }
+    end
+
+    it 'raises Error on failure' do
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 400, body: '{"error":"bad"}')
+
+      expect { client.freeze_clock }.to raise_error(MockServer::Error, /Failed to freeze clock/)
+    end
+  end
+
+  describe '#advance_clock' do
+    it 'sends PUT to /mockserver/clock with advance action' do
+      response_body = {
+        'status' => 'advance',
+        'currentInstant' => '2025-01-15T10:30:00Z',
+        'currentEpochMillis' => 1_736_937_000_000
+      }
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 200, body: JSON.generate(response_body))
+
+      result = client.advance_clock(3_600_000)
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/clock")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['action'] == 'advance' && parsed['durationMillis'] == 3_600_000
+        }
+      expect(result['status']).to eq('advance')
+    end
+
+    it 'raises Error on failure' do
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 400, body: '{"error":"bad"}')
+
+      expect { client.advance_clock(1000) }.to raise_error(MockServer::Error, /Failed to advance clock/)
+    end
+  end
+
+  describe '#reset_clock' do
+    it 'sends PUT to /mockserver/clock with reset action' do
+      response_body = {
+        'status' => 'reset',
+        'currentInstant' => '2026-05-30T12:00:00Z',
+        'currentEpochMillis' => 1_780_228_800_000
+      }
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 200, body: JSON.generate(response_body))
+
+      result = client.reset_clock
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/clock")
+        .with { |r| JSON.parse(r.body)['action'] == 'reset' }
+      expect(result['status']).to eq('reset')
+    end
+
+    it 'raises Error on failure' do
+      stub_request(:put, "#{base_url}/mockserver/clock")
+        .to_return(status: 400, body: '{"error":"bad"}')
+
+      expect { client.reset_clock }.to raise_error(MockServer::Error, /Failed to reset clock/)
+    end
+  end
+
+  describe '#clock_status' do
+    it 'sends GET to /mockserver/clock' do
+      response_body = {
+        'currentInstant' => '2025-01-15T09:30:00Z',
+        'currentEpochMillis' => 1_736_933_400_000,
+        'frozen' => true
+      }
+      stub_request(:get, "#{base_url}/mockserver/clock")
+        .to_return(status: 200, body: JSON.generate(response_body))
+
+      result = client.clock_status
+
+      expect(WebMock).to have_requested(:get, "#{base_url}/mockserver/clock")
+      expect(result['frozen']).to be true
+      expect(result['currentInstant']).to eq('2025-01-15T09:30:00Z')
+    end
+
+    it 'raises Error on failure' do
+      stub_request(:get, "#{base_url}/mockserver/clock")
+        .to_return(status: 400, body: '{"error":"bad"}')
+
+      expect { client.clock_status }.to raise_error(MockServer::Error, /Failed to get clock status/)
+    end
+  end
 end

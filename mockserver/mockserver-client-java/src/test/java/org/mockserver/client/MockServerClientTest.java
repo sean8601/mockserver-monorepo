@@ -1384,4 +1384,101 @@ public class MockServerClientTest {
         assertTrue(configRequestCaptor.getValue().isSecure());
     }
 
+    // -------------------------------------------------------------------
+    // Clock Control
+    // -------------------------------------------------------------------
+
+    @Test
+    public void shouldSendFreezeClockRequestWithInstant() {
+        // when
+        mockServerClient.freezeClock(java.time.Instant.parse("2025-01-15T09:30:00Z"));
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/clock")
+                .withBody("{\"action\":\"freeze\",\"instant\":\"2025-01-15T09:30:00Z\"}", StandardCharsets.UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
+    public void shouldSendFreezeClockRequestWithoutInstant() {
+        // when
+        mockServerClient.freezeClock();
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/clock")
+                .withBody("{\"action\":\"freeze\"}", StandardCharsets.UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
+    public void shouldSendAdvanceClockRequest() {
+        // when
+        mockServerClient.advanceClock(java.time.Duration.ofHours(1));
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/clock")
+                .withBody("{\"action\":\"advance\",\"durationMillis\":3600000}", StandardCharsets.UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
+    public void shouldSendResetClockRequest() {
+        // when
+        mockServerClient.resetClock();
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/clock")
+                .withBody("{\"action\":\"reset\"}", StandardCharsets.UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
+    public void shouldSendClockStatusRequest() {
+        // when
+        mockServerClient.clockStatus();
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("GET")
+                .withPath("/mockserver/clock"),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
 }

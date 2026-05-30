@@ -1,4 +1,4 @@
-import {mockServerClient, MockServerClient} from '../index';
+import {mockServerClient, ClockStatus, MockServerClient} from '../index';
 import {RequestResponse} from '../mockServerClient';
 import {Expectation, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, RequestDefinition} from '../mockServer';
 
@@ -157,4 +157,11 @@ async function test() {
     requestResponse = await client.clear('some/path', 'EXPECTATIONS');
 
     requestResponse = await client.bind([1, 2, 3, 4]);
+
+    // clock control
+    requestResponse = await client.freezeClock("2025-01-15T09:30:00Z");
+    requestResponse = await client.freezeClock();
+    requestResponse = await client.advanceClock(3600000);
+    requestResponse = await client.resetClock();
+    let clockStatus: ClockStatus = await client.clockStatus();
 }

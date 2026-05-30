@@ -1815,4 +1815,88 @@ public class MockServerClient implements Stoppable {
         );
         return clientClass.cast(this);
     }
+
+    // -------------------------------------------------------------------
+    // Clock Control
+    // -------------------------------------------------------------------
+
+    /**
+     * Freeze the MockServer clock at the specified instant.
+     *
+     * @param instant the instant to freeze the clock at
+     * @return this MockServerClient
+     */
+    public MockServerClient freezeClock(java.time.Instant instant) {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("clock"))
+                .withBody(instant != null
+                    ? "{\"action\":\"freeze\",\"instant\":\"" + instant + "\"}"
+                    : "{\"action\":\"freeze\"}", StandardCharsets.UTF_8),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Freeze the MockServer clock at the current time.
+     *
+     * @return this MockServerClient
+     */
+    public MockServerClient freezeClock() {
+        return freezeClock(null);
+    }
+
+    /**
+     * Advance the MockServer clock by the specified duration.
+     *
+     * @param duration the duration to advance the clock by
+     * @return this MockServerClient
+     */
+    public MockServerClient advanceClock(java.time.Duration duration) {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("clock"))
+                .withBody("{\"action\":\"advance\",\"durationMillis\":" + duration.toMillis() + "}", StandardCharsets.UTF_8),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Reset the MockServer clock to real wall-clock time.
+     *
+     * @return this MockServerClient
+     */
+    public MockServerClient resetClock() {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("clock"))
+                .withBody("{\"action\":\"reset\"}", StandardCharsets.UTF_8),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Retrieve the current clock status including the current instant,
+     * epoch millis, and whether the clock is frozen.
+     *
+     * @return JSON string with fields: currentInstant, currentEpochMillis, frozen
+     */
+    public String clockStatus() {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("clock")),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
 }
