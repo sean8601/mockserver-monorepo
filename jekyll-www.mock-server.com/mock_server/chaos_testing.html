@@ -21,6 +21,8 @@ schema_faq:
     answer: "Set the seed field on your chaos profile to a fixed value. With the same seed, a given errorProbability always produces the same inject-or-skip decision, making fractional-probability chaos deterministic across test runs."
   - question: "Does MockServer chaos testing work in Kubernetes?"
     answer: "Yes. Deploy MockServer as a sidecar proxy, egress proxy, or reverse proxy in your Kubernetes cluster and attach chaos profiles to inject faults into the traffic flowing through it. MockServer operates at the HTTP layer (L7) and requires explicit routing (e.g. HTTP_PROXY environment variable or Service rewrite)."
+  - question: "How do I make a mock fail the first few requests then recover?"
+    answer: "Use the succeedFirst and failRequestCount fields on the chaos profile. Set succeedFirst to 0 (or omit it) and failRequestCount to the number of requests that should fail. For example, failRequestCount of 2 with errorStatus 503 and errorProbability 1.0 makes the first 2 matching requests return 503, and all subsequent requests return the normal response. This is useful for testing retry logic and backoff strategies."
 ---
 
 <p>MockServer's chaos testing feature lets you inject realistic faults into HTTP responses — both <strong>mocked responses</strong> and <strong>forwarded/proxied upstream responses</strong> — so you can verify that your application handles errors, latency, and outages gracefully.</p>
@@ -80,6 +82,18 @@ schema_faq:
             <td>integer</td>
             <td>A fixed seed for the random number generator used by <code class="inline code">errorProbability</code>. When set, the same seed + probability always yields the same inject/skip outcome, making tests reproducible. Note: a fixed seed produces the <em>same</em> decision on every request (always inject or always skip for a given probability), so it is most useful for making a known-fractional probability deterministic in a specific test.</td>
             <td>any long integer</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">succeedFirst</code></td>
+            <td>integer</td>
+            <td>The first N matching requests bypass chaos (normal response). Requests 1..N succeed; chaos becomes eligible from request N+1. Combine with <code class="inline code">failRequestCount</code> for a finite fault window.</td>
+            <td>&ge; 0 (default: omitted = 0)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">failRequestCount</code></td>
+            <td>integer</td>
+            <td>After the <code class="inline code">succeedFirst</code> window, the next M matching requests receive chaos; after <code class="inline code">succeedFirst</code> + M matches the expectation recovers (normal responses). Omit for unlimited faults after the succeed window.</td>
+            <td>&ge; 1 (default: omitted = unlimited)</td>
         </tr>
     </tbody>
 </table>
@@ -215,6 +229,31 @@ schema_faq:
 
 <p>MockServer operates at the <strong>HTTP layer (L7)</strong> and requires explicit routing — it does not transparently intercept traffic at the network layer. See <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for detailed proxy deployment patterns.</p>
 
+<a id="stateful_count_based_faults" class="anchor" href="#stateful_count_based_faults">&nbsp;</a>
+
+<h2>Stateful / Count-Based Faults</h2>
+
+<p>The <code class="inline code">succeedFirst</code> and <code class="inline code">failRequestCount</code> fields let you define a <strong>window</strong> of request numbers where chaos is active. This enables deterministic, count-based fault patterns without writing custom test logic.</p>
+
+<p><strong>How the window works:</strong> MockServer tracks the 1-based match count for each expectation. For every matched request, the chaos profile checks whether the current match count falls within the eligible window:</p>
+
+<ol>
+    <li><strong>Requests 1 .. succeedFirst</strong> &mdash; normal response (chaos is suppressed)</li>
+    <li><strong>Requests (succeedFirst + 1) .. (succeedFirst + failRequestCount)</strong> &mdash; chaos is eligible (subject to <code class="inline code">errorProbability</code>)</li>
+    <li><strong>Requests beyond succeedFirst + failRequestCount</strong> &mdash; normal response (recovery)</li>
+</ol>
+
+<p>When both fields are omitted, every request is eligible for chaos (backward compatible with the original probabilistic-only behaviour).</p>
+
+<p><strong>Canonical patterns:</strong></p>
+<ul>
+    <li><strong>Fail first N then recover</strong> (retry/backoff testing) &mdash; <code class="inline code">succeedFirst: 0</code>, <code class="inline code">failRequestCount: N</code>. The first N requests receive the chaos error; subsequent requests succeed normally.</li>
+    <li><strong>Succeed first N then fail</strong> (delayed failure testing) &mdash; <code class="inline code">succeedFirst: N</code>, <code class="inline code">failRequestCount</code> omitted. Requests 1..N succeed; every request after N receives the chaos error.</li>
+    <li><strong>Fail only the Nth request</strong> (single-fault testing) &mdash; <code class="inline code">succeedFirst: N-1</code>, <code class="inline code">failRequestCount: 1</code>. Only request N gets the error; requests before and after succeed normally.</li>
+</ul>
+
+<p>The count window composes with <code class="inline code">errorProbability</code>: a request must be within the window <strong>and</strong> pass the probability check to receive a fault. Latency injection follows the same window &mdash; chaos latency is only applied to requests within the eligible window.</p>
+
 <a id="interaction_notes" class="anchor" href="#interaction_notes">&nbsp;</a>
 
 <h2>Interaction with Other Features</h2>
@@ -233,7 +272,7 @@ schema_faq:
 <p>The following chaos features are planned for future releases:</p>
 <ul>
     <li><strong>Connection drop injection</strong> — probabilistic connection drops (wiring to the existing <code class="inline code">httpError.dropConnection</code> capability)</li>
-    <li><strong>Stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills), nth-request faults, circuit-breaker windows, and gradual degradation ramps</li>
+    <li><strong>Advanced stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills), circuit-breaker windows, and gradual degradation ramps</li>
     <li><strong>Chaos observability</strong> — Prometheus / OpenTelemetry metrics for injected faults (<code class="inline code">mockserver_http_chaos_injected_total</code>)</li>
 </ul>
 
@@ -270,4 +309,9 @@ schema_faq:
 <button id="button_faq_kubernetes" class="accordion">Does MockServer chaos testing work in Kubernetes?</button>
 <div class="panel">
     <p>Yes. Deploy MockServer as a sidecar proxy, egress proxy, or reverse proxy in your Kubernetes cluster and attach chaos profiles to inject faults into the traffic flowing through it. MockServer operates at the HTTP layer (L7) and requires explicit routing (e.g. <code class="inline code">HTTP_PROXY</code> environment variable or Service rewrite). See the <a href="#chaos_proxy">Chaos Proxy</a> section above and <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for proxy deployment patterns.</p>
+</div>
+
+<button id="button_faq_fail_then_recover" class="accordion">How do I make a mock fail the first few requests then recover?</button>
+<div class="panel">
+    <p>Use the <code class="inline code">succeedFirst</code> and <code class="inline code">failRequestCount</code> fields on the chaos profile. Set <code class="inline code">succeedFirst</code> to <code class="inline code">0</code> (or omit it) and <code class="inline code">failRequestCount</code> to the number of requests that should fail. For example, <code class="inline code">failRequestCount: 2</code> with <code class="inline code">errorStatus: 503</code> and <code class="inline code">errorProbability: 1.0</code> makes the first 2 matching requests return 503, and all subsequent requests return the normal response. This is useful for testing retry logic and backoff strategies. See the <a href="#button_chaos_fail_then_recover">fail-then-recover example</a> and the <a href="#stateful_count_based_faults">Stateful / Count-Based Faults</a> section above.</p>
 </div>

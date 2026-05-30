@@ -227,6 +227,48 @@
     </div>
 </div>
 
+<button id="button_chaos_fail_then_recover" class="accordion">fail the first 2 requests then recover (retry/backoff testing)</button>
+<div class="panel">
+    <p>Use <code class="inline code">failRequestCount</code> to make the first N requests fail, then recover automatically. This is ideal for testing that your client retries and eventually succeeds. In this example the first 2 matching requests return a 503 error; from request 3 onward the normal 200 response is returned.</p>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withPath("/api/service")
+    )
+    .withChaos(
+        httpChaosProfile()
+            .withErrorStatus(503)
+            .withErrorProbability(1.0)
+            .withFailRequestCount(2)
+    )
+    .respond(
+        response()
+            .withStatusCode(200)
+            .withBody("{\"status\":\"ok\"}")
+    );</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+    "httpRequest": {
+        "path": "/api/service"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "body": "{\"status\":\"ok\"}"
+    },
+    "chaos": {
+        "errorStatus": 503,
+        "errorProbability": 1.0,
+        "failRequestCount": 2
+    }
+}'</code></pre>
+        <p>See <a href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+</div>
+
 <button id="button_chaos_deterministic_outage" class="accordion">simulate a complete outage (deterministic)</button>
 <div class="panel">
     <p>Setting <code class="inline code">errorProbability</code> to <code class="inline code">1.0</code> makes every matched request return the error. This simulates a complete outage of the downstream service — useful for game-day exercises and verifying circuit-breaker behaviour.</p>
