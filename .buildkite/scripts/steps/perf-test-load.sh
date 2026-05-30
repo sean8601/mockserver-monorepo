@@ -15,10 +15,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 K6_IMAGE="grafana/k6:1.7.1@sha256:4fd3a694926b064d3491d9b02b01cde886583c4931f1223816e3d9a7bdfa7e0f"
 MOCKSERVER_IMAGE="${MOCKSERVER_IMAGE:-mockserver/mockserver:mockserver-snapshot}"
-NETWORK="mockserver-perf-${BUILDKITE_BUILD_ID:-local}-$$"
+RUN_ID="${BUILDKITE_BUILD_ID:-local}-$$"
+NETWORK="mockserver-perf-${RUN_ID}"
+CONTAINER="mockserver-perf-${RUN_ID}"  # also the hostname k6 connects to on the network
 
 cleanup() {
-  docker rm -f mockserver-perf >/dev/null 2>&1 || true
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -26,7 +28,7 @@ trap cleanup EXIT
 docker network create "$NETWORK" >/dev/null
 
 echo "--- starting MockServer ($MOCKSERVER_IMAGE)"
-docker run -d --rm --name mockserver-perf --network "$NETWORK" \
+docker run -d --rm --name "$CONTAINER" --network "$NETWORK" \
   -e MOCKSERVER_LOG_LEVEL=ERROR \
   -e MOCKSERVER_DISABLE_SYSTEM_OUT=true \
   -e MOCKSERVER_METRICS_ENABLED=true \
@@ -35,7 +37,7 @@ docker run -d --rm --name mockserver-perf --network "$NETWORK" \
 echo "--- waiting for MockServer to be ready"
 ready=false
 for _ in $(seq 1 60); do
-  status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' mockserver-perf 2>/dev/null || echo missing)"
+  status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$CONTAINER" 2>/dev/null || echo missing)"
   case "$status" in
     healthy) echo "MockServer healthy"; ready=true; break ;;
     nohealth) echo "image has no HEALTHCHECK; applying 10s warmup"; sleep 10; ready=true; break ;;
@@ -45,7 +47,7 @@ for _ in $(seq 1 60); do
 done
 if [ "$ready" = false ]; then
   echo "ERROR: MockServer did not become ready" >&2
-  docker logs mockserver-perf 2>&1 | tail -20 >&2 || true
+  docker logs "$CONTAINER" 2>&1 | tail -20 >&2 || true
   exit 1
 fi
 
@@ -57,7 +59,7 @@ echo "--- running k6 load test (thresholds are the gate)"
 # fires; `set -e` propagates k6's non-zero exit (threshold failure) after it.
 docker run --rm --network "$NETWORK" \
   -v "$REPO_ROOT/mockserver-performance-test/k6:/k6:ro" \
-  -e BASE_URL=http://mockserver-perf:1080 \
+  -e "BASE_URL=http://${CONTAINER}:1080" \
   -e K6_RAMP_UP="${K6_RAMP_UP:-10s}" \
   -e K6_HOLD="${K6_HOLD:-20s}" \
   -e K6_RAMP_DOWN="${K6_RAMP_DOWN:-5s}" \
