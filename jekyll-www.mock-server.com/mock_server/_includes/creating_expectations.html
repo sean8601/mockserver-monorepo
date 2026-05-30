@@ -846,7 +846,7 @@ new MockServerClient("localhost", 1080)
 
 <p>An <strong>LLM response action</strong> (<span class="inline_code">httpLlmResponse</span>) returns a provider-correct response from a high-level description of what the model should say. Instead of hand-assembling Anthropic or OpenAI response JSON, you describe the <em>intent</em> (text, tool calls, usage, stop reason) and MockServer produces the byte-correct wire format.</p>
 
-<p>Seven providers are supported: <strong>ANTHROPIC</strong>, <strong>OPENAI</strong> (Chat Completions), <strong>OPENAI_RESPONSES</strong>, <strong>GEMINI</strong>, <strong>BEDROCK</strong>, <strong>AZURE_OPENAI</strong>, and <strong>OLLAMA</strong>. At this milestone, ANTHROPIC and OPENAI have full codec support; the remaining providers are in progress and will return a structured 400 response with a list of currently supported providers.</p>
+<p>Seven providers have full codec support: <strong>ANTHROPIC</strong>, <strong>OPENAI</strong> (Chat Completions), <strong>OPENAI_RESPONSES</strong>, <strong>GEMINI</strong>, <strong>BEDROCK</strong>, <strong>AZURE_OPENAI</strong>, and <strong>OLLAMA</strong> — each produces the byte-correct wire format for both single completions and streaming. A request naming an unrecognised provider returns a structured 400 response listing the supported providers.</p>
 
 <h4>Java Client Example</h4>
 
@@ -939,6 +939,47 @@ llmMock("/v1/embeddings")
             .deterministicFromInput()
     )
     .applyTo(mockServerClient);</code></pre>
+
+<h4>Structured-Output Validation</h4>
+
+<p>Attach an <span class="inline_code">outputSchema</span> (a JSON Schema) to a completion and MockServer validates the response <span class="inline_code">text</span> against it as the response is encoded. Validation is <strong>fail-soft</strong>: a mismatch never changes the response body &mdash; it adds an <span class="inline_code">x-mockserver-structured-output-invalid</span> response header and logs a warning, so a malformed structured-output fixture is surfaced without breaking the test (a blank or invalid schema, or a missing <span class="inline_code">text</span>, is a no-op). To assert schema conformance over already-recorded traffic instead, use the <a href="/mock_server/ai_mcp_tools.html#verify_structured_output"><span class="inline_code">verify_structured_output</span></a> tool.</p>
+
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.client.LlmMockBuilder.llmMock;
+import static org.mockserver.model.Completion.completion;
+import static org.mockserver.model.Provider.ANTHROPIC;
+
+llmMock("/v1/messages")
+    .withProvider(ANTHROPIC)
+    .respondingWith(
+        completion()
+            .withText("{\"city\":\"Paris\",\"country\":\"France\"}")
+            .withOutputSchema("{\"type\":\"object\",\"required\":[\"city\",\"country\"]}")
+    )
+    .applyTo(mockServerClient);</code></pre>
+
+<h4>Fault Injection &amp; Rate-Limit Quota</h4>
+
+<p>A <span class="inline_code">chaos</span> block on the LLM response injects faults for resilience testing: probabilistic provider errors (e.g. 429/529 with a <span class="inline_code">Retry-After</span> header), mid-stream truncation, malformed SSE, and a <strong>stateful request quota</strong>. The quota is a deterministic fixed-window rate limit &mdash; expectations sharing a <span class="inline_code">quotaName</span> share one counter, so requests past <span class="inline_code">quotaLimit</span> within <span class="inline_code">quotaWindowMillis</span> are rejected with <span class="inline_code">quotaErrorStatus</span> (default 429) and the <span class="inline_code">retryAfter</span> header (the count resets when the window elapses and on server reset). The <span class="inline_code">chaos</span> block is set via the JSON definition (below) or the <a href="/mock_server/ai_mcp_tools.html#mock_llm_completion"><span class="inline_code">mock_llm_completion</span></a> MCP tool, where the full field reference lives.</p>
+
+<pre class="prettyprint lang-java code"><code class="code">{
+    "httpRequest": {
+        "method": "POST",
+        "path": "/v1/messages"
+    },
+    "httpLlmResponse": {
+        "provider": "ANTHROPIC",
+        "completion": {
+            "text": "The capital of France is Paris."
+        },
+        "chaos": {
+            "quotaName": "anthropic-account",
+            "quotaLimit": 100,
+            "quotaWindowMillis": 60000,
+            "quotaErrorStatus": 429,
+            "retryAfter": "30"
+        }
+    }
+}</code></pre>
 
 <p>For multi-turn LLM conversations with stateful scenario progression, see the <a href="#llm_conversation_example">LLM Conversation</a> example in the <a href="#stateful_scenarios">Stateful Scenarios</a> section.</p>
 
