@@ -101,6 +101,23 @@ histogram_quantile(0.95, sum by (le) (rate(mock_server_request_duration_seconds_
 
 It is registered (once) when `metricsEnabled`. Timing is captured per `NettyResponseWriter` (one is created per request, so there is no cross-request race) and **only when metrics are enabled** — `Metrics.observeRequestDurationSeconds(...)` is a no-op otherwise, so the request hot path pays nothing when metrics are off.
 
+### HTTP Chaos Fault Counter
+
+`mock_server_http_chaos_injected_total` is a Prometheus `Counter` with a `fault_type` label (values: `"error"` or `"latency"`) that tracks every HTTP chaos fault injected by the chaos profile subsystem. It is registered once when `metricsEnabled` is `true`.
+
+| Label Value | Incremented When |
+|-------------|------------------|
+| `error` | A chaos profile injects an HTTP error status instead of the normal response |
+| `latency` | A chaos profile injects artificial latency into a response |
+
+`Metrics.incrementHttpChaosInjected(faultType)` is a static no-op when metrics are disabled (the counter is `null`). This counter is surfaced on the dashboard Metrics view as an "HTTP Chaos Faults" section (visible only when the metric is present and has non-zero data).
+
+Example PromQL:
+
+```promql
+rate(mock_server_http_chaos_injected_total{fault_type="error"}[5m])
+```
+
 ### How Metrics Are Incremented
 
 - `HttpActionHandler` calls `metrics.increment(action.getType())` after dispatching each action, which maps the `Action.Type` enum to the corresponding `*_ACTIONS_COUNT` gauge

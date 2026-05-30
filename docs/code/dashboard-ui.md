@@ -133,7 +133,10 @@ graph TB
 
 It renders:
 - summary stat cards (requests received, matched, not-matched, forwarded) with inline-SVG sparklines (`Sparkline.tsx`),
-- a derived requests-per-second throughput chart (Δcount / Δt between scrapes, since the metrics are monotonic gauges), and
+- a derived requests-per-second throughput chart (Δcount / Δt between scrapes, since the metrics are monotonic gauges),
+- request latency percentiles (p50/p95/p99) from the `mock_server_request_duration_seconds` histogram (shown only when present),
+- an **HTTP Chaos Faults** section showing cumulative `mock_server_http_chaos_injected_total` split by `fault_type` (`error` vs `latency`) with a two-line time-series chart (shown only when the metric is present and has non-zero data),
+- JVM heap memory, thread count, and GC stats (shown only when JVM metrics are present), and
 - a per-action breakdown of the `*_actions_count` gauges, plus the served MockServer version from `mock_server_build_info`.
 
 There is **no charting dependency** (inline SVG) and no server change required. Because metrics are off by default, a 404 is treated as a first-class `disabled` state that shows the user how to enable them (`metricsEnabled`) rather than an error.

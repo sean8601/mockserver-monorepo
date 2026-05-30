@@ -265,6 +265,40 @@ schema_faq:
     <li><strong>maxSocketTimeout</strong> — latency that exceeds <code class="inline code">maxSocketTimeout</code> will be cut off by the socket timeout.</li>
 </ul>
 
+<a id="chaos_observability" class="anchor" href="#chaos_observability">&nbsp;</a>
+
+<h2>Observability</h2>
+
+<p>When <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>, MockServer exposes a Prometheus counter that tracks every chaos fault injected:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Metric</th>
+            <th>Type</th>
+            <th>Labels</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mock_server_http_chaos_injected_total</code></td>
+            <td>Counter</td>
+            <td><code class="inline code">fault_type</code> = <code class="inline code">error</code> | <code class="inline code">latency</code></td>
+            <td>Cumulative count of HTTP chaos faults injected, split by fault type</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>This counter is also surfaced in the <a href="/mock_server/mockserver_ui.html">dashboard UI</a> Metrics view as an "HTTP Chaos Faults" section (visible only when the metric has non-zero data).</p>
+
+<p>Example PromQL queries:</p>
+<pre class="code"><code class="code"># Rate of error faults injected over the last 5 minutes
+rate(mock_server_http_chaos_injected_total{fault_type="error"}[5m])
+
+# Total latency faults injected
+mock_server_http_chaos_injected_total{fault_type="latency"}</code></pre>
+
 <a id="coming_soon" class="anchor" href="#coming_soon">&nbsp;</a>
 
 <h2>Roadmap</h2>
@@ -273,7 +307,6 @@ schema_faq:
 <ul>
     <li><strong>Connection drop injection</strong> — probabilistic connection drops (wiring to the existing <code class="inline code">httpError.dropConnection</code> capability)</li>
     <li><strong>Advanced stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills), circuit-breaker windows, and gradual degradation ramps</li>
-    <li><strong>Chaos observability</strong> — Prometheus / OpenTelemetry metrics for injected faults (<code class="inline code">mockserver_http_chaos_injected_total</code>)</li>
 </ul>
 
 <a id="chaos_examples" class="anchor" href="#chaos_examples">&nbsp;</a>
