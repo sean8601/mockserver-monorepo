@@ -2,12 +2,15 @@
 
 ## Supported Versions
 
-MockServer maintains support for Java 11 as the minimum supported version to ensure broad compatibility. Currently supported versions:
+MockServer requires **Java 17** as the minimum supported runtime (raised from Java 11 in the 6.x line as part of the Jakarta EE 10 / Spring 7 platform modernisation). Currently supported versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 6.1.x  | :white_check_mark: |
-| < 5.15  | :x:                |
+| 6.1.x   | :white_check_mark: |
+| 6.0.x   | :white_check_mark: |
+| < 6.0   | :x:                |
+
+The latest minor in the current major line receives fixes; older minors are best-effort. The `5.15.x` line is the last Java 11-compatible release and no longer receives security updates.
 
 ## Security Posture
 
@@ -15,23 +18,20 @@ MockServer maintains support for Java 11 as the minimum supported version to ens
 
 **Important:** MockServer is designed for **development, testing, and QA environments only**. It should **never** be deployed in production or exposed to untrusted networks.
 
-### Java 11 Compatibility vs Security Updates
+### Java 17 Platform and Security Updates
 
-MockServer prioritizes **broad compatibility** over addressing all security vulnerabilities:
+MockServer targets **Java 17** as the minimum supported runtime. The 6.x line completed the Jakarta EE 10 / Servlet 6 modernisation, so the dependency stack now tracks current, actively-patched major versions:
 
-- **Minimum Java version:** Java 11 (approximately 23% of Java projects still use Java 11)
-- **Spring Framework:** 5.3.x (latest Java 11-compatible version)
-- **Spring Boot:** 2.7.x (latest Java 11-compatible version)
+- **Minimum Java version:** Java 17
+- **Spring Framework:** 7.x
+- **Spring Boot:** 4.x
+- **Jetty:** 12.x · **Tomcat embed:** 11.x · **Jersey:** 4.x
 
-Many security fixes require **Spring 6.x** or **Spring Boot 3.x**, which mandate **Java 17+**. Upgrading would break compatibility for users on Java 11.
+Because these are current major lines, security fixes that previously required dropping Java 11 are now available and applied through normal dependency upgrades. The earlier Java-11 ceiling — which had pinned Spring to 5.3.x and Jetty to 9.4.x and blocked roughly 20 security fixes — no longer applies; those ignores have been removed from the [`.snyk`](.snyk) policy.
 
 ### Dependabot Alerts
 
-You may see multiple Dependabot security alerts for MockServer. Here's why:
-
-1. **Spring 5.3.x is in maintenance mode** - Most security fixes target Spring 6.x only (requires Java 17+)
-2. **No patch available** - Many alerts show `fixed_version: null`, meaning no fix exists for Spring 5.3.x
-3. **Upgrade requires Java 17+** - Fixing these would break Java 11 compatibility
+Dependency alerts are now resolved through normal upgrades rather than suppressed for compatibility. The only remaining version ceiling is `com.puppycrawl.tools:checkstyle < 13.0.0` (checkstyle 13.x requires a Java 21 runtime); it is build-tooling only, not shipped in any artifact. See [docs/operations/security.md](docs/operations/security.md) for the full scanning and triage workflow.
 
 ### Risk Assessment
 
@@ -291,11 +291,12 @@ We will respond within **7 days** and work with you to understand and address th
 
 ## Upgrade Path
 
-If you require a fully patched Spring framework:
+MockServer 6.x requires **Java 17 or later**. If you are still on Java 11:
 
-1. **Upgrade to Java 17 or later** in your environment
-2. **Open an issue** requesting Java 17+ support - if enough users need this, we may create a separate Java 17+ branch
-3. Consider using **alternative mocking tools** that already require Java 17+
+1. **Upgrade your environment to Java 17+** to run MockServer 6.x (and pick up the patched Spring 7 / Jetty 12 dependency stack).
+2. If you cannot move off Java 11 yet, **pin to MockServer 5.15.x** (the last Java 11-compatible line) — note it no longer receives security updates.
+
+See the [Java 17 / Jakarta EE 10 upgrade guide](docs/operations/migration-java17-jakarta.md) for the consumer-facing breaking changes (servlet namespace, container requirements, removed shaded classifier).
 
 ## Further Reading
 

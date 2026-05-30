@@ -32,18 +32,20 @@ Results appear in the [GitHub Security tab](https://github.com/mock-server/mocks
 
 Dependabot monitors **8 package ecosystems** across the monorepo for outdated and vulnerable dependencies:
 
-| Ecosystem | Directory | PR Limit |
-|-----------|-----------|:--------:|
-| Maven | `/mockserver` | 10 |
-| Maven | `/mockserver/mockserver-maven-plugin` | 5 |
-| npm | `/mockserver-ui` | 5 |
-| npm | `/mockserver-client-node` | 5 |
-| npm | `/mockserver-node` | 5 |
-| pip | `/mockserver-client-python` | 5 |
-| Bundler | `/mockserver-client-ruby` | 5 |
-| GitHub Actions | `/` | 5 |
+| Ecosystem | Directory(ies) | PR Limit |
+|-----------|----------------|:--------:|
+| Maven | `/mockserver` | 20 |
+| Maven | `/mockserver/mockserver-maven-plugin` | 10 |
+| npm | `/mockserver-ui`, `/mockserver-client-node`, `/mockserver-node`, `/.opencode` | 10 |
+| pip | `/mockserver-client-python` | 10 |
+| Bundler | `/mockserver-client-ruby`, `/jekyll-www.mock-server.com` | 10 |
+| GitHub Actions | `/` | 10 |
+| Docker | `/docker` + subdirs, `/docker_build/*` | 10 |
+| Terraform | `/terraform/*` | 10 |
 
-Dependabot runs **weekly on Mondays** and opens pull requests for version updates and security patches.
+The Docker and Terraform directory columns are summarised; Dependabot has no glob support, so each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (8 Docker dirs, 4 Terraform dirs). When you add a new Docker/Terraform directory, add it there too or it will not be scanned.
+
+Dependabot runs **daily** and opens pull requests for version updates and security patches. Minor and patch updates are **grouped per ecosystem** (e.g. `maven-minor-and-patch`) so related bumps land in a single PR instead of many.
 
 ### Namespace Migration Status
 
@@ -71,9 +73,13 @@ Snyk provides a second layer of vulnerability scanning, independent of Dependabo
 
 - **PR status checks:** Two Snyk integrations (`security/snyk (mockserver)` and `security/snyk (jamesdbloom)`) run on every pull request
 - **Dashboard:** [app.snyk.io/org/mockserver/projects](https://app.snyk.io/org/mockserver/projects)
-- **Policy file:** [`.snyk`](../../.snyk) documents vulnerability IDs that are explicitly ignored, with expiry dates that trigger periodic review
+- **Policy file:** [`.snyk`](../../.snyk) documents any vulnerability IDs that are explicitly ignored, along with the rationale and a review date
 
-The `.snyk` policy file excludes `mockserver-examples` (sample code, not shipped) and documents the rationale for each ignored vulnerability. All ignores expire periodically (currently 2026-08-11) to force re-evaluation as the dependency landscape evolves.
+The `.snyk` policy file excludes `mockserver-examples` (sample code, not shipped). As of the Java 17 / Jakarta EE 10 modernisation the ignore list is **empty** — the Java-11-era ignores (which suppressed ~20 Spring/Jetty/Boot/OkHttp/Reactor CVEs whose only fix required Java 17+) were removed once those vulnerable versions left the dependency tree. Vulnerabilities are now resolved through normal upgrades; add a new, dated ignore only when a deliberate constraint genuinely blocks a fix.
+
+### Renewing Snyk ignores
+
+When an ignore **is** added, give it a dated `expires:` (convention: 3 months out) so it cannot silently outlive its rationale. Renewal is a manual checkpoint: before the expiry date, re-run the Snyk scan, confirm the constraint still holds, and either remove the ignore (if the fix is now available) or refresh the `expires:` date with an updated reason. An empty ignore list (the current state) needs no renewal.
 
 See [Snyk Security](snyk-security.md) for the full triage workflow, CLI commands, and vulnerability status by module.
 

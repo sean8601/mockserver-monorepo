@@ -44,7 +44,7 @@ Most contributions touch one of these areas. Skim the linked docs before opening
 | Java client API or JUnit/Spring integrations | `mockserver/mockserver-client-java`, `mockserver-junit-*`, `mockserver-spring-test-listener` | [docs/code/client-and-integrations.md](docs/code/client-and-integrations.md) |
 | Non-Java client (Python / Ruby / Node) | `mockserver-client-python/`, `mockserver-client-ruby/`, `mockserver-client-node/` | [docs/code/client-and-integrations.md](docs/code/client-and-integrations.md) |
 | MCP / A2A mocking | Server handler: `mockserver/mockserver-netty/src/main/java/org/mockserver/netty/mcp/`. Builders: `McpMockBuilder` and `A2aMockBuilder` in `mockserver/mockserver-client-java/src/main/java/org/mockserver/client/` | [docs/code/ai-protocol-mocking.md](docs/code/ai-protocol-mocking.md) |
-| Build / Maven / dependency upgrade | `mockserver/pom.xml` + child poms + `scripts/buildkite_*.sh` | [docs/operations/build-system.md](docs/operations/build-system.md), Java 11 ceiling in [AGENTS.md](AGENTS.md#java-compatibility-policy) |
+| Build / Maven / dependency upgrade | `mockserver/pom.xml` + child poms + `scripts/buildkite_*.sh` | [docs/operations/build-system.md](docs/operations/build-system.md), Java 17 floor in [AGENTS.md](AGENTS.md#java-compatibility-policy) |
 | Docker image (server or CI base) | `docker/`, `docker_build/` | [docs/infrastructure/docker.md](docs/infrastructure/docker.md) |
 | Helm chart / Kubernetes deployment | `helm/mockserver/`, `helm/mockserver-config/` | [docs/infrastructure/helm.md](docs/infrastructure/helm.md) |
 | CI/CD pipeline (Buildkite, GitHub Actions) | `.buildkite/`, `.github/workflows/` | [docs/infrastructure/ci-cd.md](docs/infrastructure/ci-cd.md) |
