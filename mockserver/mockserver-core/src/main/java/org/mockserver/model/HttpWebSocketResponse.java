@@ -8,6 +8,7 @@ public class HttpWebSocketResponse extends Action<HttpWebSocketResponse> {
     private int hashCode;
     private String subprotocol;
     private List<WebSocketMessage> messages;
+    private List<WebSocketMessageMatcher> matchers;
     private Boolean closeConnection;
 
     public static HttpWebSocketResponse webSocketResponse() {
@@ -49,6 +50,31 @@ public class HttpWebSocketResponse extends Action<HttpWebSocketResponse> {
         return messages;
     }
 
+    public HttpWebSocketResponse withMatchers(List<WebSocketMessageMatcher> matchers) {
+        this.matchers = matchers;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public HttpWebSocketResponse withMatchers(WebSocketMessageMatcher... matchers) {
+        this.matchers = new ArrayList<>(Arrays.asList(matchers));
+        this.hashCode = 0;
+        return this;
+    }
+
+    public HttpWebSocketResponse withMatcher(WebSocketMessageMatcher matcher) {
+        if (this.matchers == null) {
+            this.matchers = new ArrayList<>();
+        }
+        this.matchers.add(matcher);
+        this.hashCode = 0;
+        return this;
+    }
+
+    public List<WebSocketMessageMatcher> getMatchers() {
+        return matchers;
+    }
+
     public HttpWebSocketResponse withCloseConnection(Boolean closeConnection) {
         this.closeConnection = closeConnection;
         this.hashCode = 0;
@@ -82,13 +108,14 @@ public class HttpWebSocketResponse extends Action<HttpWebSocketResponse> {
         HttpWebSocketResponse that = (HttpWebSocketResponse) o;
         return Objects.equals(subprotocol, that.subprotocol) &&
             Objects.equals(messages, that.messages) &&
+            Objects.equals(matchers, that.matchers) &&
             Objects.equals(closeConnection, that.closeConnection);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), subprotocol, messages, closeConnection);
+            hashCode = Objects.hash(super.hashCode(), subprotocol, messages, matchers, closeConnection);
         }
         return hashCode;
     }

@@ -1590,6 +1590,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/diff", "/diff")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, handleDiff(request), true);
+                }
+                canHandle.complete(true);
+
             } else {
 
                 canHandle.complete(false);
@@ -2319,6 +2326,48 @@ public class HttpState {
         } catch (Exception e) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get gRPC health status\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleDiff(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body required with 'expected' and 'actual' fields\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            if (!node.hasNonNull("expected") || !node.hasNonNull("actual")) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"both 'expected' and 'actual' HttpRequest fields are required\"}", MediaType.JSON_UTF_8);
+            }
+            RequestDefinition expectedDef = getRequestDefinitionSerializer().deserialize(
+                objectMapper.writeValueAsString(node.get("expected")));
+            RequestDefinition actualDef = getRequestDefinitionSerializer().deserialize(
+                objectMapper.writeValueAsString(node.get("actual")));
+
+            if (!(expectedDef instanceof HttpRequest) || !(actualDef instanceof HttpRequest)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"both 'expected' and 'actual' must be HttpRequest objects\"}", MediaType.JSON_UTF_8);
+            }
+
+            org.mockserver.mock.diff.TrafficDiffEngine diffEngine = new org.mockserver.mock.diff.TrafficDiffEngine();
+            java.util.List<org.mockserver.mock.diff.FieldDiff> diffs = diffEngine.diff(
+                (HttpRequest) expectedDef, (HttpRequest) actualDef);
+
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("diffCount", diffs.size());
+            result.put("identical", diffs.isEmpty());
+            com.fasterxml.jackson.databind.node.ArrayNode diffsArray = result.putArray("diffs");
+            for (org.mockserver.mock.diff.FieldDiff diff : diffs) {
+                diffsArray.add(objectMapper.valueToTree(diff));
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to diff requests: " + e.getMessage() + "\"}", MediaType.JSON_UTF_8);
         }
     }
 

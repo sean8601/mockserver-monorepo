@@ -144,6 +144,12 @@ classDiagram
         +validateResponse: Boolean
         +validationMode: ValidationMode
     }
+    class HttpForwardWithFallback {
+        +httpForward: HttpForward
+        +fallbackResponse: HttpResponse
+        +fallbackOnStatusCodes: List~Integer~
+        +fallbackOnTimeout: Boolean
+    }
     class HttpSseResponse {
         +statusCode: Integer
         +headers: Headers
@@ -153,7 +159,13 @@ classDiagram
     class HttpWebSocketResponse {
         +subprotocol: String
         +messages: List~WebSocketMessage~
+        +matchers: List~WebSocketMessageMatcher~
         +closeConnection: Boolean
+    }
+    class WebSocketMessageMatcher {
+        +frameType: WebSocketFrameType
+        +textMatcher: NottableString
+        +responses: List~WebSocketMessage~
     }
 
     class BinaryResponse {
@@ -231,6 +243,7 @@ classDiagram
 
     Action <|-- HttpError
     Action <|-- HttpForwardValidateAction
+    Action <|-- HttpForwardWithFallback
     Action <|-- HttpSseResponse
     Action <|-- HttpWebSocketResponse
     Action <|-- GrpcStreamResponse
@@ -438,6 +451,22 @@ An expectation can specify `afterActions` — a `List<AfterAction>` executed aft
 
 Setting one target clears the others. After-actions are dispatched in `HttpActionHandler` as secondary actions following the primary response.
 
+#### Bidirectional WebSocket Matching (`WebSocketMessageMatcher`)
+
+`HttpWebSocketResponse` supports bidirectional WebSocket mocking via `matchers` -- a list of `WebSocketMessageMatcher` objects that evaluate incoming WebSocket frames and send configured response messages when matched.
+
+Each `WebSocketMessageMatcher` specifies:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `frameType` | `WebSocketFrameType` | Frame type to match: `TEXT`, `BINARY`, `PING`, `PONG`, or `ANY` (default) |
+| `textMatcher` | `NottableString` | Text pattern to match against text frame content (exact or regex) |
+| `responses` | `List<WebSocketMessage>` | Response messages to send when the matcher matches |
+
+Matchers are evaluated in order; the first match wins and sends its responses. If no matcher matches, the frame is passed through to the next pipeline handler. When matchers are present, the connection remains open after initial messages are sent, enabling request-response patterns over WebSocket.
+
+The `BidirectionalWebSocketFrameHandler` (a Netty `SimpleChannelInboundHandler<WebSocketFrame>`) is installed in the pipeline after the WebSocket handshake completes, only when the `HttpWebSocketResponse` has matchers configured.
+
 #### Forward Validate Action (`HttpForwardValidateAction`)
 
 `HttpForwardValidateAction` forwards requests to a target server and validates the request and/or response against an OpenAPI specification. It combines forwarding with contract validation.
@@ -453,6 +482,19 @@ Setting one target clears the others. After-actions are dispatched in `HttpActio
 | `validationMode` | `ValidationMode` | `STRICT` | `STRICT` fails the request on validation error; `LOG_ONLY` logs but still returns the response |
 
 Static factory: `HttpForwardValidateAction.forwardValidate()`
+
+#### Forward with Fallback (`HttpForwardWithFallback`)
+
+`HttpForwardWithFallback` forwards requests to an upstream host but returns a pre-configured fallback mock response when the upstream returns an error status code (default 500-599) or the request times out / connection fails. This combines MockServer's proxy and mock capabilities for resilience testing scenarios.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `httpForward` | `HttpForward` | — | The upstream target (host, port, scheme) |
+| `fallbackResponse` | `HttpResponse` | — | The mock response to return when fallback triggers |
+| `fallbackOnStatusCodes` | `List<Integer>` | `500-599` | HTTP status codes that trigger the fallback |
+| `fallbackOnTimeout` | `Boolean` | `true` | Whether to fall back on connection errors/timeouts |
+
+Static factory: `HttpForwardWithFallback.forwardWithFallback()`
 
 #### Match Count
 

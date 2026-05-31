@@ -54,11 +54,12 @@ public class HttpWebSocketResponseActionHandler {
             try {
                 if (future.isSuccess()) {
                     removePipelineHandlers(ctx);
+                    installBidirectionalHandler(ctx, httpWebSocketResponse, handshaker);
 
                     List<WebSocketMessage> messages = httpWebSocketResponse.getMessages();
                     if (messages != null && !messages.isEmpty()) {
                         scheduleMessages(messages, 0, ctx, httpWebSocketResponse, request, handshaker);
-                    } else {
+                    } else if (httpWebSocketResponse.getMatchers() == null || httpWebSocketResponse.getMatchers().isEmpty()) {
                         finishWebSocket(ctx, httpWebSocketResponse, handshaker);
                     }
                 } else {
@@ -100,7 +101,10 @@ public class HttpWebSocketResponseActionHandler {
                                   HttpWebSocketResponse httpWebSocketResponse, org.mockserver.model.HttpRequest request,
                                   WebSocketServerHandshaker handshaker) {
         if (index >= messages.size() || !ctx.channel().isActive()) {
-            finishWebSocket(ctx, httpWebSocketResponse, handshaker);
+            boolean hasMatchers = httpWebSocketResponse.getMatchers() != null && !httpWebSocketResponse.getMatchers().isEmpty();
+            if (!hasMatchers) {
+                finishWebSocket(ctx, httpWebSocketResponse, handshaker);
+            }
             return;
         }
 
@@ -181,6 +185,34 @@ public class HttpWebSocketResponseActionHandler {
             if (httpWebSocketResponse.getCloseConnection() == null || httpWebSocketResponse.getCloseConnection()) {
                 handshaker.close(ctx.channel(), new CloseWebSocketFrame());
             }
+        }
+    }
+
+    private void installBidirectionalHandler(ChannelHandlerContext ctx, HttpWebSocketResponse httpWebSocketResponse,
+                                             WebSocketServerHandshaker handshaker) {
+        List<WebSocketMessageMatcher> matchers = httpWebSocketResponse.getMatchers();
+        if (matchers != null && !matchers.isEmpty()) {
+            BidirectionalWebSocketFrameHandler.FrameSender frameSender = (senderCtx, message) -> {
+                if (!senderCtx.channel().isActive()) {
+                    return;
+                }
+                WebSocketFrame frame;
+                if (message.getBinary() != null) {
+                    frame = new BinaryWebSocketFrame(Unpooled.copiedBuffer(message.getBinary()));
+                } else if (message.getText() != null) {
+                    frame = new TextWebSocketFrame(message.getText());
+                } else {
+                    return;
+                }
+                Delay delay = message.getDelay();
+                if (delay != null) {
+                    scheduler.schedule(() -> senderCtx.writeAndFlush(frame), false, delay);
+                } else {
+                    senderCtx.writeAndFlush(frame);
+                }
+            };
+            ctx.pipeline().addLast("bidirectionalWebSocketHandler",
+                new BidirectionalWebSocketFrameHandler(matchers, frameSender));
         }
     }
 

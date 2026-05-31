@@ -394,6 +394,54 @@ curl -s -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES
 
 <p>To enable AI-powered generation, configure a runtime LLM backend using the standard MockServer LLM properties (<code class="code inline">mockserver.llmProvider</code>, <code class="code inline">mockserver.llmApiKey</code>, etc.) or environment variables (<code class="code inline">OPENAI_API_KEY</code>, <code class="code inline">ANTHROPIC_API_KEY</code>, etc.). When configured, the LLM uses existing expectations as context to infer the API style and generates more realistic responses. Without an LLM backend, the endpoint still works using simple template generation (appropriate status codes for each HTTP method, with a generic JSON body).</p>
 
+<h2>Request Diffing</h2>
+
+<p>The <code class="code inline">PUT /mockserver/diff</code> endpoint compares two HTTP requests field-by-field and returns the differences. This is useful for regression testing — record a session baseline and compare it against a later session to detect changes in method, path, headers, query parameters, cookies, or body.</p>
+
+<h3>Request Format</h3>
+
+<p>Send a JSON body with <code class="code inline">expected</code> and <code class="code inline">actual</code> fields, each containing a serialized HttpRequest:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -X PUT 'http://localhost:1080/mockserver/diff' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "expected": {
+      "method": "GET",
+      "path": "/api/users",
+      "headers": [{"name": "Accept", "values": ["application/json"]}]
+    },
+    "actual": {
+      "method": "POST",
+      "path": "/api/users",
+      "headers": [{"name": "Accept", "values": ["text/html"]}]
+    }
+  }'</code></pre>
+
+<h3>Response Format</h3>
+
+<p>The response contains a <code class="code inline">diffCount</code>, an <code class="code inline">identical</code> boolean, and a <code class="code inline">diffs</code> array with one entry per field difference:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "diffCount": 2,
+  "identical": false,
+  "diffs": [
+    {
+      "field": "method",
+      "expectedValue": "GET",
+      "actualValue": "POST",
+      "diffType": "CHANGED"
+    },
+    {
+      "field": "header.accept",
+      "expectedValue": "application/json",
+      "actualValue": "text/html",
+      "diffType": "CHANGED"
+    }
+  ]
+}</code></pre>
+
+<p>Each diff entry includes a <code class="code inline">diffType</code> of <code class="code inline">ADDED</code> (field only in actual), <code class="code inline">REMOVED</code> (field only in expected), or <code class="code inline">CHANGED</code> (field present in both but different). Fields that are identical are omitted from the response.</p>
+
 <h2>Related Pages</h2>
 
 <ul>
