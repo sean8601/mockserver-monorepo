@@ -574,14 +574,14 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         )}
       </Paper>
 
-      {/* gRPC Health Status */}
+      {/* gRPC Health Chaos */}
       <Paper variant="outlined" sx={{ p: 1.25 }}>
         <Box
           sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
           onClick={() => setGrpcExpanded((v) => !v)}
         >
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-            gRPC Health Status
+            gRPC Health Chaos
           </Typography>
           <Chip size="small" label={`${grpcServices.length} services`} variant="outlined" />
           <Box sx={{ flex: 1 }} />
@@ -591,6 +591,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         </Box>
         <Collapse in={grpcExpanded}>
           <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Force a service&apos;s gRPC health-check response (e.g. NOT_SERVING) to simulate an
+              unhealthy or degraded service — exercising how clients and orchestrators
+              (Kubernetes readiness/liveness probes) react to a failing dependency.
+            </Typography>
             {/* Set status form */}
             <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <TextField

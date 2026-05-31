@@ -18,6 +18,10 @@
  *                            normalization block) and a chaos profile.
  *   - Service chaos          a few service-scoped chaos registrations (varied fault
  *                            types, two with an auto-revert TTL) for the Chaos tab.
+ *   - TCP chaos              a few TCP-layer chaos registrations (raw byte-stream
+ *                            faults, two with an auto-revert TTL) for the Chaos tab.
+ *   - gRPC health chaos      a few forced gRPC health-check serving statuses
+ *                            (NOT_SERVING / SERVICE_UNKNOWN / SERVING) for the Chaos tab.
  *
  * It talks to MockServer over its plain REST API (no extra dependencies — uses
  * the built-in global fetch in Node 18+). Safe to re-run: it resets first.
@@ -26,6 +30,8 @@
  *   node scripts/populate-demo-data.mjs [--url http://localhost:1080] [--quiet]
  *   MOCKSERVER_URL=http://localhost:1080 node scripts/populate-demo-data.mjs
  */
+
+import http from 'node:http';
 
 // ---------------------------------------------------------------------------
 // Configuration & tiny CLI parsing
@@ -59,7 +65,7 @@ const SELF_HOST = TARGET.hostname;
 const SELF_PORT = Number(TARGET.port || (TARGET.protocol === 'https:' ? 443 : 80));
 const SELF_SCHEME = TARGET.protocol === 'https:' ? 'HTTPS' : 'HTTP';
 
-const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0 };
+const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, drift: 0 };
 function log(msg) { if (!quiet) console.log(msg); }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +465,164 @@ async function serviceChaosExamples() {
   }
 }
 
+// TCP-layer chaos registrations (Chaos tab → "TCP-Layer Chaos" section). These exercise
+// the raw byte-stream fault types (Toxiproxy-style) keyed by upstream host, distinct from
+// the HTTP-semantic faults above. Two carry an auto-revert TTL so the countdown is visible.
+const TCP_CHAOS = [
+  {
+    host: 'db.primary.svc',
+    chaos: { latencyMs: 800, bandwidthBytesPerSec: 65536 },
+    ttlMillis: 600000,
+  },
+  {
+    host: 'cache.svc',
+    chaos: { resetPeer: true },
+    ttlMillis: 300000,
+  },
+  {
+    host: 'queue.svc',
+    chaos: { timeout: true },
+  },
+  {
+    host: 'upload.svc',
+    chaos: { slicerChunkSize: 128, limitDataBytes: 1048576, slowClose: true },
+  },
+];
+
+async function tcpChaosExamples() {
+  log('\n→ TCP-layer chaos (Chaos tab)');
+  for (const entry of TCP_CHAOS) {
+    const res = await api('PUT', '/mockserver/tcpChaos', entry);
+    if (!res.ok) throw new Error(`Failed to register TCP chaos for "${entry.host}": HTTP ${res.status}`);
+    counts.tcpChaos++;
+    log(`   ~ tcp chaos      ${entry.host}${entry.ttlMillis ? `  (ttl ${entry.ttlMillis}ms)` : ''}`);
+  }
+}
+
+// gRPC health-check chaos (Chaos tab → "gRPC Health Chaos" section). Forcing a service's
+// health-check serving status simulates an unhealthy/degraded dependency so client and
+// orchestrator (K8s readiness/liveness) reactions can be exercised. Empty service name
+// sets the default status for all services.
+const GRPC_HEALTH = [
+  { service: 'payments.v1.PaymentService', status: 'NOT_SERVING' },
+  { service: 'inventory.v1.InventoryService', status: 'SERVICE_UNKNOWN' },
+  { service: 'catalog.v1.CatalogService', status: 'SERVING' },
+];
+
+async function grpcHealthExamples() {
+  log('\n→ gRPC health chaos (Chaos tab)');
+  for (const entry of GRPC_HEALTH) {
+    const res = await api('PUT', '/mockserver/grpc/health', entry);
+    if (!res.ok) throw new Error(`Failed to set gRPC health for "${entry.service}": HTTP ${res.status}`);
+    counts.grpcHealth++;
+    log(`   ~ grpc health    ${entry.service}  → ${entry.status}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3e. Mock drift detection (Drift tab)
+// ---------------------------------------------------------------------------
+
+// Drift records are only produced by the proxy-forward path: MockServer compares
+// the real upstream response against a matching response-type stub ("baseline").
+// To generate examples self-contained, we spin up a throwaway local upstream that
+// returns responses deliberately diverging from the baseline stubs, register a
+// high-priority forward (to the upstream) plus a low-priority baseline stub for the
+// same path, then send one request per scenario so the DriftAnalyzer records the
+// divergence. The upstream is torn down immediately afterwards.
+//
+// Each scenario: { path, baseline (status/headers/body the stub claims), real
+// (status/headers/body the upstream actually returns) } — chosen to exercise the
+// status / schema-added / schema-removed / type-changed / header drift types.
+const DRIFT_SCENARIOS = [
+  {
+    path: '/drift/users',
+    note: 'status drift (200 → 503)',
+    baseline: { statusCode: 200, body: { id: 1, name: 'Alice', active: true } },
+    real: { statusCode: 503, body: { error: 'service unavailable' } },
+  },
+  {
+    path: '/drift/orders',
+    note: 'schema fields added (currency, tax)',
+    baseline: { statusCode: 200, body: { id: 7, total: 42 } },
+    real: { statusCode: 200, body: { id: 7, total: 42, currency: 'USD', tax: 3 } },
+  },
+  {
+    path: '/drift/profile',
+    note: 'schema field removed (role) + type changed (age number→string)',
+    baseline: { statusCode: 200, body: { id: 3, name: 'Bob', role: 'admin', age: 30 } },
+    real: { statusCode: 200, body: { id: 3, name: 'Bob', age: '30' } },
+  },
+  {
+    path: '/drift/inventory',
+    note: 'header drift (x-api-version v1 → v2)',
+    baseline: { statusCode: 200, headers: { 'x-api-version': ['v1'] }, body: { sku: 'A-1', qty: 5 } },
+    real: { statusCode: 200, headers: { 'x-api-version': 'v2' }, body: { sku: 'A-1', qty: 5 } },
+  },
+];
+
+async function driftExamples() {
+  log('\n→ Mock drift detection (Drift tab)');
+
+  // Throwaway upstream returning the deliberately-divergent "real" responses.
+  const byPath = new Map(DRIFT_SCENARIOS.map((s) => [s.path, s.real]));
+  const upstream = http.createServer((req, res) => {
+    const real = byPath.get((req.url || '').split('?')[0]);
+    if (!real) {
+      res.writeHead(404).end();
+      return;
+    }
+    const headers = { 'content-type': 'application/json', ...(real.headers || {}) };
+    res.writeHead(real.statusCode, headers);
+    res.end(JSON.stringify(real.body));
+  });
+
+  await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+  const upstreamPort = upstream.address().port;
+
+  try {
+    for (const s of DRIFT_SCENARIOS) {
+      // High-priority forward to the throwaway upstream (this is what actually serves).
+      const fwd = await api('PUT', '/mockserver/expectation', {
+        priority: 10,
+        httpRequest: { method: 'GET', path: s.path },
+        httpForward: { host: '127.0.0.1', port: upstreamPort, scheme: 'HTTP' },
+      });
+      if (!fwd.ok) throw new Error(`drift forward setup failed for ${s.path}: HTTP ${fwd.status}`);
+
+      // Low-priority baseline stub — never serves (forward wins) but is the drift
+      // comparison baseline that the real upstream response is diffed against.
+      const base = await api('PUT', '/mockserver/expectation', {
+        priority: 0,
+        httpRequest: { method: 'GET', path: s.path },
+        httpResponse: {
+          statusCode: s.baseline.statusCode,
+          headers: s.baseline.headers,
+          body: { type: 'JSON', json: s.baseline.body },
+        },
+      });
+      if (!base.ok) throw new Error(`drift baseline setup failed for ${s.path}: HTTP ${base.status}`);
+
+      // Send the request → forwarded to the upstream → DriftAnalyzer records divergence.
+      await api('GET', s.path);
+      counts.drift++;
+      log(`   ~ drift          ${s.path}  (${s.note})`);
+    }
+    // Drift analysis runs asynchronously on a scheduler thread after each forward
+    // completes, so give those tasks a moment to record before we remove the baseline
+    // stubs they compare against (clearing too early would race the analysis and could
+    // drop records). A short settle delay makes the seeding deterministic.
+    await new Promise((resolve) => setTimeout(resolve, 750));
+
+    // The /drift/* forward+baseline expectations are throwaway scaffolding (the forward
+    // target is about to close); the drift records persist independently in the DriftStore,
+    // so clear the scaffolding to keep the Library/expectations view clean.
+    await api('PUT', '/mockserver/clear?type=expectations', { path: '/drift/.*' });
+  } finally {
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 4. Recorded traffic (Traffic view, token/cost, unmatched diagnostics)
 // ---------------------------------------------------------------------------
@@ -567,6 +731,9 @@ async function main() {
   await llmExpectations();
   await conversationExpectations();
   await serviceChaosExamples();
+  await tcpChaosExamples();
+  await grpcHealthExamples();
+  await driftExamples();
   await plainHttpTraffic();
   await proxyTraffic();
   await llmTraffic();
@@ -578,12 +745,16 @@ async function main() {
   log(` Expectations created : ${counts.expectations}`);
   log(` Requests sent        : ${counts.requests} (incl. ~${counts.unmatched} intentionally unmatched)`);
   log(` Service chaos hosts  : ${counts.serviceChaos} (2 with an auto-revert TTL countdown)`);
+  log(` TCP chaos hosts      : ${counts.tcpChaos} (2 with an auto-revert TTL countdown)`);
+  log(` gRPC health statuses : ${counts.grpcHealth} (NOT_SERVING / SERVICE_UNKNOWN / SERVING)`);
+  log(` Drift scenarios      : ${counts.drift} (status / schema-added / schema-removed+type / header)`);
   log('');
   log(' Try these views in the dashboard:');
   log('   Dashboard / Library — active expectations (HTTP, forward, LLM, conversation pills)');
   log('   Traffic            — recorded + proxied (forwarded) requests, incl. a lane per LLM provider + token/cost');
   log('   Sessions           — agent-001 / agent-002 loops + their call graphs');
-  log('   Chaos              — service-scoped chaos registrations (fault chips + live TTL countdown)');
+  log('   Chaos              — HTTP service chaos + TCP-layer chaos (fault chips + live TTL countdown) + gRPC health chaos');
+  log('   Drift              — schema / status / header drift records from proxied-vs-stub comparison');
   log('');
 }
 
