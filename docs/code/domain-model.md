@@ -748,4 +748,68 @@ When `dnsEnabled` is `true`, MockServer starts a UDP DNS server on the specified
 | `grpcProtoDirectory` | `String` | `null` | Directory of `.proto` files to compile at startup |
 | `grpcProtocPath` | `String` | `"protoc"` | Path to the `protoc` compiler binary |
 
-When `grpcEnabled` is `true` (the default) and descriptors are loaded (via directory config or runtime API upload), MockServer inserts `GrpcToHttpRequestHandler` and `GrpcToHttpResponseHandler` into the HTTP/2 pipeline to intercept and convert gRPC requests. The `GrpcProtoDescriptorStore` is initialized in `HttpState` and provides method descriptors for protobuf↔JSON conversion.
+When `grpcEnabled` is `true` (the default) and descriptors are loaded (via directory config or runtime API upload), MockServer inserts `GrpcToHttpRequestHandler` and `GrpcToHttpResponseHandler` into the HTTP/2 pipeline to intercept and convert gRPC requests. The `GrpcProtoDescriptorStore` is initialized in `HttpState` and provides method descriptors for protobuf-to-JSON conversion.
+
+## Cross-Protocol Session Correlation
+
+Cross-protocol session correlation allows protocol events (DNS queries, WebSocket connects, gRPC requests, HTTP requests) to trigger scenario state transitions, enabling multi-protocol test flows.
+
+### Model
+
+| Class | Package | Description |
+|-------|---------|-------------|
+| `CrossProtocolTrigger` | `org.mockserver.model` | Enum: `DNS_QUERY`, `WEBSOCKET_CONNECT`, `GRPC_REQUEST`, `HTTP_REQUEST` |
+| `CrossProtocolScenario` | `org.mockserver.model` | Binds a trigger + optional match pattern to a scenario name and target state |
+| `CrossProtocolEventBus` | `org.mockserver.mock` | Singleton event bus: listeners register scenario transitions, `fire()` advances matching scenarios |
+
+### How It Works
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Handler as Protocol Handler
+    participant Bus as CrossProtocolEventBus
+    participant SM as ScenarioManager
+    participant Matcher as RequestMatchers
+
+    Client->>Handler: DNS query / WS connect / gRPC / HTTP
+    Handler->>Bus: fire(trigger, identifier)
+    Bus->>SM: setState(scenarioName, targetState)
+    Note over SM: Scenario state advanced
+    Client->>Handler: Subsequent HTTP request
+    Handler->>Matcher: firstMatchingExpectation(request)
+    Note over Matcher: Matches expectation gated on new scenario state
+```
+
+### Configuration
+
+Cross-protocol scenarios are configured on expectations via the `crossProtocolScenarios` field:
+
+```json
+{
+  "httpRequest": { "path": "/api/users" },
+  "httpResponse": { "statusCode": 200 },
+  "crossProtocolScenarios": [
+    {
+      "trigger": "DNS_QUERY",
+      "matchPattern": "api.example.com",
+      "scenarioName": "DnsFlow",
+      "targetState": "DnsObserved"
+    }
+  ]
+}
+```
+
+Convenience builders are provided for common patterns:
+
+- `CrossProtocolScenario.onDnsQuery(queryName, scenarioName, targetState)`
+- `CrossProtocolScenario.onWebSocketConnect(scenarioName, targetState)`
+- `CrossProtocolScenario.onGrpcRequest(serviceName, scenarioName, targetState)`
+- `CrossProtocolScenario.onHttpPath(pathPattern, scenarioName, targetState)`
+
+### Event Bus Lifecycle
+
+- **Registration**: scenarios are registered with `CrossProtocolEventBus.getInstance()` when expectations are added (via `ExpectationDTO.buildObject()`)
+- **Firing**: protocol handlers call `fire(trigger, identifier)` on successful events
+- **Reset**: `HttpState.reset()` calls `CrossProtocolEventBus.getInstance().reset()` to clear all listeners
+- **Pattern matching**: if `matchPattern` is set, the event identifier must contain the pattern; if unset, all events of that trigger type match
