@@ -25,6 +25,7 @@ import PostAddIcon from '@mui/icons-material/PostAdd';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
 import SpeedIcon from '@mui/icons-material/Speed';
 import BoltIcon from '@mui/icons-material/Bolt';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import { useState } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
 import type { ConnectionStatus } from '../types';
@@ -155,6 +156,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           <ToggleButton value="chaos" aria-label="Service chaos view">
             <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Chaos
+          </ToggleButton>
+          <ToggleButton value="drift" aria-label="Drift detection view">
+            <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Drift
           </ToggleButton>
           <ToggleButton value="metrics" aria-label="Metrics view">
             <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />

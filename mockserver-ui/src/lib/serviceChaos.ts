@@ -96,6 +96,20 @@ export async function removeServiceChaos(params: ConnectionParams, host: string)
   await ensureOk(res);
 }
 
+/** Patch (partially update) the chaos profile for a host. */
+export async function patchServiceChaos(
+  params: ConnectionParams,
+  host: string,
+  partial: Partial<HttpChaosProfileDTO>,
+): Promise<void> {
+  const res = await fetch(endpoint(params), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ host, chaos: partial }),
+  });
+  await ensureOk(res);
+}
+
 /** Clear all service-scoped chaos registrations. */
 export async function clearServiceChaos(params: ConnectionParams): Promise<void> {
   const res = await fetch(endpoint(params), {

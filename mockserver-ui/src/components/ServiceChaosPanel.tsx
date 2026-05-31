@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
+import Collapse from '@mui/material/Collapse';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
@@ -7,22 +8,41 @@ import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import EditIcon from '@mui/icons-material/Edit';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import RestoreIcon from '@mui/icons-material/Restore';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   fetchServiceChaos,
   registerServiceChaos,
   removeServiceChaos,
   clearServiceChaos,
+  patchServiceChaos,
   summarizeChaosProfile,
   formatTtl,
   type HttpChaosProfileDTO,
   type ServiceChaosResponse,
 } from '../lib/serviceChaos';
+import {
+  fetchGrpcHealth,
+  setGrpcHealth,
+  resetGrpcHealth,
+  type ServingStatus,
+} from '../lib/grpcHealth';
 
 interface ServiceChaosPanelProps {
   connectionParams: ConnectionParams;
@@ -97,6 +117,24 @@ function validateForm(form: FormState): string | null {
   return null;
 }
 
+interface EditFormState {
+  errorStatus: string;
+  errorProbability: string;
+  dropProbability: string;
+  latencyMs: string;
+}
+
+const SERVING_STATUSES: ServingStatus[] = ['SERVING', 'NOT_SERVING', 'UNKNOWN', 'SERVICE_UNKNOWN'];
+
+function servingStatusColor(status: ServingStatus): 'success' | 'error' | 'default' | 'warning' {
+  switch (status) {
+    case 'SERVING': return 'success';
+    case 'NOT_SERVING': return 'error';
+    case 'UNKNOWN': return 'default';
+    case 'SERVICE_UNKNOWN': return 'warning';
+  }
+}
+
 export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPanelProps) {
   const [data, setData] = useState<ServiceChaosResponse>({ services: {} });
   const [polledAt, setPolledAt] = useState(0);
@@ -106,6 +144,16 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [refreshTick, setRefreshTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+
+  // Edit inline form state
+  const [editingHost, setEditingHost] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditFormState>({ errorStatus: '', errorProbability: '', dropProbability: '', latencyMs: '' });
+
+  // gRPC health state
+  const [grpcHealth, setGrpcHealthState] = useState<Record<string, ServingStatus>>({});
+  const [grpcExpanded, setGrpcExpanded] = useState(false);
+  const [grpcNewService, setGrpcNewService] = useState('');
+  const [grpcNewStatus, setGrpcNewStatus] = useState<ServingStatus>('NOT_SERVING');
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
@@ -143,6 +191,32 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Poll gRPC health status when the section is expanded.
+  useEffect(() => {
+    if (!grpcExpanded) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll(): Promise<void> {
+      try {
+        const result = await fetchGrpcHealth(connectionParams, controller.signal);
+        if (!cancelled) setGrpcHealthState(result);
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) timer = setTimeout(() => void poll(), 10000);
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [connectionParams, grpcExpanded, refreshTick]);
 
   const hosts = useMemo(() => Object.keys(data.services).sort(), [data.services]);
 
@@ -186,6 +260,61 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
 
   const setField = (field: keyof FormState) => (e: ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleStartEdit = useCallback((host: string) => {
+    const profile = data.services[host] ?? {};
+    setEditForm({
+      errorStatus: profile.errorStatus != null ? String(profile.errorStatus) : '',
+      errorProbability: profile.errorProbability != null ? String(profile.errorProbability) : '',
+      dropProbability: profile.dropConnectionProbability != null ? String(profile.dropConnectionProbability) : '',
+      latencyMs: profile.latency?.value != null ? String(profile.latency.value) : '',
+    });
+    setEditingHost(host);
+  }, [data.services]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingHost(null);
+  }, []);
+
+  const handleApplyEdit = useCallback(() => {
+    if (!editingHost) return;
+    const partial: Partial<HttpChaosProfileDTO> = {};
+    const errorStatus = num(editForm.errorStatus);
+    if (errorStatus != null) {
+      partial.errorStatus = errorStatus;
+      const ep = num(editForm.errorProbability);
+      if (ep != null) partial.errorProbability = ep;
+    }
+    const dp = num(editForm.dropProbability);
+    if (dp != null) partial.dropConnectionProbability = dp;
+    const lm = num(editForm.latencyMs);
+    if (lm != null) partial.latency = { timeUnit: 'MILLISECONDS', value: lm };
+
+    const host = editingHost;
+    void runAction(async () => {
+      await patchServiceChaos(connectionParams, host, partial);
+      setEditingHost(null);
+    });
+  }, [connectionParams, editingHost, editForm, runAction]);
+
+  const setEditField = (field: keyof EditFormState) => (e: ChangeEvent<HTMLInputElement>) =>
+    setEditForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleSetGrpcHealth = useCallback(() => {
+    if (!grpcNewService.trim()) return;
+    void runAction(async () => {
+      await setGrpcHealth(connectionParams, grpcNewService.trim(), grpcNewStatus);
+      setGrpcNewService('');
+    });
+  }, [connectionParams, grpcNewService, grpcNewStatus, runAction]);
+
+  const handleResetGrpcHealth = useCallback((service: string) => {
+    void runAction(async () => {
+      await resetGrpcHealth(connectionParams, service);
+    });
+  }, [connectionParams, runAction]);
+
+  const grpcServices = useMemo(() => Object.keys(grpcHealth).sort(), [grpcHealth]);
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -252,7 +381,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       </Paper>
 
       {/* Active registrations */}
-      <Paper variant="outlined" sx={{ p: 1.25 }}>
+      <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
         <Typography variant="caption" color="text.secondary">Active registrations</Typography>
         {hosts.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -262,34 +391,153 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
           <Box sx={{ mt: 0.5 }}>
             {hosts.map((host) => {
               const ttl = remainingTtl(host);
+              const isEditing = editingHost === host;
               return (
-                <Box key={host} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
-                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
-                    {summarizeChaosProfile(data.services[host] ?? {}).map((part) => (
-                      <Chip key={part} size="small" label={part} variant="outlined" />
-                    ))}
+                <Box key={host}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+                      {summarizeChaosProfile(data.services[host] ?? {}).map((part) => (
+                        <Chip key={part} size="small" label={part} variant="outlined" />
+                      ))}
+                    </Box>
+                    {ttl != null && (
+                      <Chip size="small" color="warning" label={`auto-revert in ${formatTtl(ttl)}`} />
+                    )}
+                    <Tooltip title="Edit chaos profile for this host">
+                      <span>
+                        <IconButton
+                          size="small"
+                          aria-label={`Edit chaos for ${host}`}
+                          disabled={busy}
+                          onClick={() => isEditing ? handleCancelEdit() : handleStartEdit(host)}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="Remove chaos for this host">
+                      <span>
+                        <IconButton
+                          size="small"
+                          aria-label={`Remove chaos for ${host}`}
+                          disabled={busy}
+                          onClick={() => void runAction(() => removeServiceChaos(connectionParams, host))}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                   </Box>
-                  {ttl != null && (
-                    <Chip size="small" color="warning" label={`auto-revert in ${formatTtl(ttl)}`} />
+                  {isEditing && (
+                    <Box sx={{ display: 'flex', gap: 1, py: 0.75, pl: 2, flexWrap: 'wrap', alignItems: 'flex-start', bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
+                      <TextField size="small" label="Error status" value={editForm.errorStatus} onChange={setEditField('errorStatus')} sx={{ width: 110 }} />
+                      <TextField size="small" label="Error prob" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: 100 }} />
+                      <TextField size="small" label="Drop prob" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: 100 }} />
+                      <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: 100 }} />
+                      <Button size="small" variant="contained" disabled={busy} onClick={handleApplyEdit}>Apply</Button>
+                      <Button size="small" onClick={handleCancelEdit}>Cancel</Button>
+                    </Box>
                   )}
-                  <Tooltip title="Remove chaos for this host">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label={`Remove chaos for ${host}`}
-                        disabled={busy}
-                        onClick={() => void runAction(() => removeServiceChaos(connectionParams, host))}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
                 </Box>
               );
             })}
           </Box>
         )}
+      </Paper>
+
+      {/* gRPC Health Status */}
+      <Paper variant="outlined" sx={{ p: 1.25 }}>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
+          onClick={() => setGrpcExpanded((v) => !v)}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            gRPC Health Status
+          </Typography>
+          <Chip size="small" label={`${grpcServices.length} services`} variant="outlined" />
+          <Box sx={{ flex: 1 }} />
+          <IconButton size="small" aria-label={grpcExpanded ? 'Collapse gRPC health' : 'Expand gRPC health'}>
+            {grpcExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+          </IconButton>
+        </Box>
+        <Collapse in={grpcExpanded}>
+          <Box sx={{ mt: 1 }}>
+            {/* Set status form */}
+            <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <TextField
+                size="small"
+                label="Service name"
+                placeholder="my.grpc.Service"
+                value={grpcNewService}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setGrpcNewService(e.target.value)}
+                sx={{ minWidth: 200 }}
+              />
+              <Select
+                size="small"
+                value={grpcNewStatus}
+                onChange={(e) => setGrpcNewStatus(e.target.value as ServingStatus)}
+                sx={{ minWidth: 160 }}
+              >
+                {SERVING_STATUSES.map((s) => (
+                  <MenuItem key={s} value={s}>{s}</MenuItem>
+                ))}
+              </Select>
+              <Button size="small" variant="contained" disabled={busy || !grpcNewService.trim()} onClick={handleSetGrpcHealth}>
+                Set Status
+              </Button>
+            </Box>
+            {/* Service list */}
+            {grpcServices.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                No gRPC health overrides set.
+              </Typography>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Service</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {grpcServices.map((svc) => (
+                      <TableRow key={svc}>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{svc}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={grpcHealth[svc]}
+                            color={servingStatusColor(grpcHealth[svc]!)}
+                            sx={{ height: 20, fontSize: '0.65rem' }}
+                          />
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Reset health override">
+                            <span>
+                              <IconButton
+                                size="small"
+                                aria-label={`Reset health for ${svc}`}
+                                disabled={busy}
+                                onClick={() => handleResetGrpcHealth(svc)}
+                              >
+                                <RestoreIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Box>
+        </Collapse>
       </Paper>
     </Box>
   );
