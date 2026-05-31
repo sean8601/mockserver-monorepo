@@ -24,6 +24,7 @@ import org.slf4j.event.Level;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -127,12 +128,15 @@ public class EchoServer implements Stoppable {
     }
 
     public void withNextResponse(HttpResponse... httpResponses) {
-        // WARNING: this logic is only for unit tests that run in series and is NOT thread safe!!!
+        // nextResponse is a ConcurrentLinkedQueue and lastRequest an AtomicReference, so these
+        // mutations are individually thread-safe. NOTE: sharing a single EchoServer instance across
+        // test classes that run concurrently can still cause LOGICAL interleaving (one class's queued
+        // responses observed by another) - tests that need isolation must use their own instance.
         nextResponse.httpResponse.addAll(Arrays.asList(httpResponses));
     }
 
     public void clear() {
-        // WARNING: this logic is only for unit tests that run in series and is NOT thread safe!!!
+        // see withNextResponse: structurally thread-safe, but not isolated across shared instances
         nextResponse.httpResponse.clear();
         lastRequest.httpRequest.set(new CompletableFuture<>());
     }
@@ -173,7 +177,7 @@ public class EchoServer implements Stoppable {
     }
 
     public static class NextResponse {
-        public final Queue<HttpResponse> httpResponse = new LinkedList<>();
+        public final Queue<HttpResponse> httpResponse = new ConcurrentLinkedQueue<>();
     }
 
     public static class LastRequest {

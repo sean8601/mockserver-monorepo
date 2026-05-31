@@ -55,9 +55,12 @@ public class EchoServerHandler extends SimpleChannelInboundHandler<HttpRequest> 
             lastRequest.httpRequest.get().complete(request);
         }
 
-        if (!nextResponse.httpResponse.isEmpty()) {
-            // WARNING: this logic is only for unit tests that run in series and is NOT thread safe!!!
-            DefaultHttpObject httpResponse = new MockServerHttpResponseToFullHttpResponse(mockServerLogger).mapMockServerResponseToNettyResponse(nextResponse.httpResponse.remove()).get(0);
+        // poll() atomically takes-or-returns-null, so this is safe even though the response queue is
+        // shared; it replaces a non-atomic isEmpty()+remove() that could throw NoSuchElementException
+        // if the queue drained between the two calls.
+        HttpResponse queuedResponse = nextResponse.httpResponse.poll();
+        if (queuedResponse != null) {
+            DefaultHttpObject httpResponse = new MockServerHttpResponseToFullHttpResponse(mockServerLogger).mapMockServerResponseToNettyResponse(queuedResponse).get(0);
             ctx.writeAndFlush(httpResponse);
         } else {
             HttpResponse httpResponse =

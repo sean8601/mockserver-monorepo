@@ -3,7 +3,9 @@ package org.mockserver.persistence;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
@@ -40,6 +42,9 @@ import static org.mockserver.model.HttpResponse.response;
  */
 public class ExpectationFileWatcherTest {
 
+    @Rule
+    public TemporaryFolder temporaryFolder = new TemporaryFolder();
+
     private final ExpectationSerializer expectationSerializer = new ExpectationSerializer(new MockServerLogger());
     private MockServerLogger mockServerLogger;
     private RequestMatchers requestMatchers;
@@ -71,9 +76,8 @@ public class ExpectationFileWatcherTest {
     public void shouldDetectModifiedInitialiserJsonInWorkingDirectoryThatDoesNotInitiallyExist() throws Exception {
         ExpectationFileWatcher expectationFileWatcher = null;
         try {
-            // given - configuration
-            File mockserverInitialization = new File("mockserverInitialization" + UUIDService.getUUID() + ".json");
-            mockserverInitialization.deleteOnExit();
+            // given - configuration (TemporaryFolder deletes the file after the test, so no deleteOnExit needed)
+            File mockserverInitialization = new File(temporaryFolder.getRoot(), "mockserverInitialization" + UUIDService.getUUID() + ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitialization.getPath())
                 .watchInitializationJson(true);

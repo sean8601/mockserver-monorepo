@@ -1,8 +1,9 @@
 package org.mockserver.socket;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author jamesdbloom
@@ -39,22 +40,39 @@ public class PortFactory {
     }
 
     private static int[] findAvailablePorts(int number) {
+        // Hold all sockets open simultaneously before closing any, so the OS cannot recycle a port
+        // number to a second socket in the same batch (they are bound sequentially but all kept open
+        // until every port is recorded), then release them in a finally block. SO_REUSEADDR is set so
+        // a caller can re-bind a just-released port without waiting for lingering TIME_WAIT state.
+        // There is deliberately no sleep after closing: a delay between releasing the ports and
+        // returning them only widens the window in which another process can claim a port, so callers
+        // must still handle BindException - binding the real socket directly is the only fully
+        // race-free option.
         int arraySize = number + random.nextInt(60);
         int[] port = new int[arraySize];
         ServerSocket[] serverSockets = new ServerSocket[arraySize];
         try {
-            for (int i = port.length - 1; i >= 0; i--) {
-                serverSockets[i] = new ServerSocket(0);
-                port[i] = serverSockets[i].getLocalPort();
+            for (int i = arraySize - 1; i >= 0; i--) {
+                ServerSocket serverSocket = new ServerSocket();
+                // store immediately so the finally block closes it even if setReuseAddress/bind throws
+                serverSockets[i] = serverSocket;
+                serverSocket.setReuseAddress(true);
+                serverSocket.bind(new InetSocketAddress(0));
+                port[i] = serverSocket.getLocalPort();
             }
-            for (ServerSocket serverSocket : serverSockets) {
-                serverSocket.close();
-            }
-            // allow time for the socket to be released
-            TimeUnit.MILLISECONDS.sleep(250);
-        } catch (Exception e) {
+            return port;
+        } catch (IOException e) {
             throw new RuntimeException("Exception while trying to find a free port", e);
+        } finally {
+            for (ServerSocket serverSocket : serverSockets) {
+                if (serverSocket != null) {
+                    try {
+                        serverSocket.close();
+                    } catch (IOException ignore) {
+                        // best effort - the port has already been recorded
+                    }
+                }
+            }
         }
-        return port;
     }
 }

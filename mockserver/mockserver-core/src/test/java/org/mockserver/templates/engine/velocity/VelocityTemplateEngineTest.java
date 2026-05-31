@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.hamcrest.Matcher;
 import org.junit.*;
 import org.junit.rules.ExpectedException;
+import org.junit.rules.TemporaryFolder;
 import org.mockserver.time.FixedTime;
 import org.mockito.Mock;
 import org.mockserver.configuration.Configuration;
@@ -63,6 +64,9 @@ public class VelocityTemplateEngineTest {
 
     @Rule
     public final ExpectedException exception = ExpectedException.none();
+
+    @Rule
+    public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Mock
     private MockServerLogger mockServerLogger;
@@ -567,44 +571,33 @@ public class VelocityTemplateEngineTest {
     }
 
     @Test
-    public void shouldHandleHttpRequestsWithVelocityTemplateWithImportTool() {
-        File testInputFile = new File("testInputFile.txt");
+    public void shouldHandleHttpRequestsWithVelocityTemplateWithImportTool() throws Exception {
+        // write the imported file into a per-test temp folder (not the working directory) so parallel
+        // test classes cannot collide on a shared CWD file; reference it by absolute path in the template
+        File testInputFile = new File(temporaryFolder.getRoot(), "testInputFile.txt");
         String testInputFileContent = "This file content will be part of the response body";
-        try {
-            // given
-            String template = "{" + NEW_LINE +
-                "    'statusCode': 200," + NEW_LINE +
-                "    'body': \"$import.read('testInputFile.txt')\"" + NEW_LINE +
-                "}";
-            HttpRequest request = request()
-                .withPath("/somePath")
-                .withMethod("POST")
-                .withHeader(HOST.toString(), "mock-server.com")
-                .withBody("some_body".getBytes(StandardCharsets.UTF_8));
+        Files.write(Paths.get(testInputFile.getAbsolutePath()), testInputFileContent.getBytes());
 
-            try {
-                testInputFile = new File("testInputFile.txt");
-                testInputFile.delete();
-                testInputFile.createNewFile();
-                Files.write(Paths.get(testInputFile.getAbsolutePath()), testInputFileContent.getBytes());
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
+        // given
+        String template = "{" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': \"$import.read('" + testInputFile.getAbsolutePath().replace("\\", "\\\\") + "')\"" + NEW_LINE +
+            "}";
+        HttpRequest request = request()
+            .withPath("/somePath")
+            .withMethod("POST")
+            .withHeader(HOST.toString(), "mock-server.com")
+            .withBody("some_body".getBytes(StandardCharsets.UTF_8));
 
-            // when
-            HttpResponse actualHttpResponse = new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+        // when
+        HttpResponse actualHttpResponse = new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
 
-            // then
-            assertThat(actualHttpResponse, is(
-                response()
-                    .withStatusCode(200)
-                    .withBody(testInputFileContent)
-            ));
-        } finally {
-            if (testInputFile != null) {
-                testInputFile.delete();
-            }
-        }
+        // then
+        assertThat(actualHttpResponse, is(
+            response()
+                .withStatusCode(200)
+                .withBody(testInputFileContent)
+        ));
     }
 
     @Test
