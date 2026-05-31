@@ -1852,9 +1852,4 @@ public class HttpActionHandler {
             }
         });
     }
-
-    // Stub for cross-protocol events (wired by the cross-protocol agent; needed for compilation)
-    private void fireCrossProtocolEventsIfPresent(Expectation expectation, HttpRequest request) {
-        // no-op — placeholder until cross-protocol event support is implemented
-    }
 }
