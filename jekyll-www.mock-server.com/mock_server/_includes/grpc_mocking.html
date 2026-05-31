@@ -306,6 +306,75 @@ client.when(
     <li><strong>Bidirectional streaming RPC</strong> — not yet supported</li>
 </ul>
 
+<a id="grpc_health_check" class="anchor" href="#grpc_health_check">&nbsp;</a>
+
+<h2>gRPC Health Checking Protocol</h2>
+
+<p>Kubernetes readiness and liveness probes commonly use the <a href="https://github.com/grpc/grpc/blob/master/doc/health-checking.md">gRPC Health Checking Protocol</a> (<code class="inline code">grpc.health.v1.Health/Check</code>) to verify that a service is ready to receive traffic. MockServer auto-responds to this well-known method <strong>without requiring a proto descriptor</strong> — protobuf encoding and decoding is handled manually so health checks work out of the box even when no descriptors have been loaded.</p>
+
+<p>Health checks are enabled by default (<code class="inline code">grpcHealthCheckEnabled=true</code>). The default serving status for all services is <code class="inline code">SERVING</code>. You can override the status for individual services or for the global default via a REST endpoint.</p>
+
+<h3>ServingStatus values</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Value</th>
+            <th>Proto code</th>
+            <th>Meaning</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">SERVING</code></td>
+            <td>1</td>
+            <td>The service is healthy and ready to accept requests (default)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">NOT_SERVING</code></td>
+            <td>2</td>
+            <td>The service is temporarily unavailable (probe will fail)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">UNKNOWN</code></td>
+            <td>0</td>
+            <td>Status is unknown</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">SERVICE_UNKNOWN</code></td>
+            <td>3</td>
+            <td>The named service is not known to this server</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>REST API</h3>
+
+<p><strong>Override the status for a named service:</strong></p>
+<pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/grpc/health" \
+  -H "Content-Type: application/json" \
+  -d '{"service": "my.payments.PaymentService", "status": "NOT_SERVING"}'</code></pre>
+
+<p>Set <code class="inline code">service</code> to the fully-qualified gRPC service name. Use an empty string (<code class="inline code">""</code>) to override the default status that applies to <em>all</em> services without an explicit override. The response confirms the registration:</p>
+
+<pre class="prettyprint code"><code class="code">{ "status": "registered", "service": "my.payments.PaymentService", "servingStatus": "NOT_SERVING" }</code></pre>
+
+<p><strong>Read all current status overrides:</strong></p>
+<pre class="prettyprint code"><code class="code">curl -v "http://localhost:1080/mockserver/grpc/health"</code></pre>
+
+<p>Returns a JSON object mapping service names to their current status. The empty string key (<code class="inline code">"_default"</code>) shows the global default:</p>
+
+<pre class="prettyprint code"><code class="code">{
+  "_default": "SERVING",
+  "my.payments.PaymentService": "NOT_SERVING"
+}</code></pre>
+
+<p>All status overrides are cleared on server reset. The <code class="inline code">GET</code> endpoint returns only services that have had their status explicitly set, plus the global default.</p>
+
+<h3>How it works</h3>
+
+<p>When MockServer receives a request whose path is exactly <code class="inline code">/grpc.health.v1.Health/Check</code>, the request is intercepted in <code class="inline code">GrpcToHttpRequestHandler</code> before descriptor lookup — no proto descriptor for the health service is needed. <code class="inline code">GrpcHealthCheckHandler</code> decodes the 5-byte gRPC frame header and then manually parses the protobuf <code class="inline code">HealthCheckRequest</code> (field 1 = service name string). It looks up the serving status in <code class="inline code">GrpcHealthRegistry</code>, which falls back to the default status when no per-service override is registered. The response is a manually-encoded gRPC-framed <code class="inline code">HealthCheckResponse</code> (field 1 = status enum varint). The whole path bypasses the expectation matching engine so health checks always respond, even with no expectations registered.</p>
+
 <a id="grpc_configuration_link" class="anchor" href="#grpc_configuration_link">&nbsp;</a>
 
 <h2>Configuration</h2>

@@ -392,6 +392,31 @@ GET /mockserver/serviceChaos</code></pre>
 
 <p>Because the control plane is a single HTTP call with a built-in TTL safety timer, it is also the integration point for external chaos orchestrators — register the fault at the start of an experiment, verify the application copes, and let the TTL revert it even if the orchestrator never sends the clear. See <a href="/mock_server/chaos_testing_orchestrators.html">Driving MockServer from Chaos Orchestrators</a> for Chaos Toolkit, AWS FIS, Azure Chaos Studio and LitmusChaos recipes.</p>
 
+<a id="live_chaos_tuning" class="anchor" href="#live_chaos_tuning">&nbsp;</a>
+
+<h2>Live Tuning of Service Chaos (PATCH)</h2>
+
+<p>Once a service-scoped chaos profile is registered, you can update individual fields without replacing the whole profile and without restarting MockServer. Use <code class="inline code">PATCH /mockserver/serviceChaos</code> to apply <strong>JSON Merge Patch</strong> semantics: only non-null fields in the request body are updated; all other fields and the current TTL are preserved.</p>
+
+<p>This is useful when you want to adjust a live experiment's fault rates mid-run — for example, ramp error probability up or down while the application is running — without having to recreate the profile or lose the TTL countdown on an active time-boxed registration.</p>
+
+<pre class="code"><code class="code">// Increase the error probability on an already-active profile without touching latency or TTL
+PATCH /mockserver/serviceChaos
+{ "host": "payments.svc", "chaos": { "errorProbability": 0.9 } }
+
+// Switch from error injection to connection-drop injection mid-experiment
+PATCH /mockserver/serviceChaos
+{ "host": "payments.svc", "chaos": { "errorProbability": 0.0, "dropConnectionProbability": 0.5 } }
+
+// Add latency to an existing error-injection profile
+PATCH /mockserver/serviceChaos
+{ "host": "payments.svc", "chaos": { "latency": { "timeUnit": "MILLISECONDS", "value": 2000 } } }</code></pre>
+
+<p><strong>Semantics:</strong> the <code class="inline code">PATCH</code> request requires a <code class="inline code">host</code> field and a <code class="inline code">chaos</code> object containing at least one field to update. Only the fields you supply are changed — unspecified fields in the existing profile are left unchanged. If no profile exists yet for the host, the partial is registered as a new profile with no TTL. The TTL of an existing timed registration is always preserved; <code class="inline code">PATCH</code> cannot change or extend it. To replace a profile entirely, use <code class="inline code">PUT /mockserver/serviceChaos</code>.</p>
+
+<p>The response body echoes the host and the resulting merged chaos profile:</p>
+<pre class="code"><code class="code">{ "status": "patched", "host": "payments.svc", "chaos": { "errorStatus": 503, "errorProbability": 0.9, "latency": { ... } } }</code></pre>
+
 <a id="gradual_degradation" class="anchor" href="#gradual_degradation">&nbsp;</a>
 
 <h2>Gradual Degradation</h2>
@@ -623,6 +648,64 @@ PATCH /mockserver/tcpChaos
 <p>The API follows the same patterns as <a href="#service_scoped_chaos">service-scoped HTTP chaos</a>: host matching is case-insensitive and ignores port suffixes, registrations support optional TTL-based auto-expiry, and all registrations are cleared on server reset.</p>
 
 <p><strong>Difference from HTTP chaos:</strong> TCP chaos operates at the raw byte level before HTTP decoding. This means it can simulate faults that are impossible to reproduce with HTTP-level chaos, such as TCP RST, connection timeouts (never sending FIN), bandwidth throttling, and data fragmentation. HTTP chaos operates on decoded HTTP requests/responses and can inject application-level faults like error status codes, body corruption, and rate limiting.</p>
+
+<a id="replay_under_chaos" class="anchor" href="#replay_under_chaos">&nbsp;</a>
+
+<h2>Replay Under Chaos (foundational)</h2>
+
+<p>MockServer can retrieve recorded proxy traffic and replay it with an optional HTTP chaos overlay so you can compare how a service behaves under fault conditions against its known baseline. This is useful for a "record once, stress under chaos" workflow: record normal traffic through MockServer in proxy mode, then replay that traffic with errors or latency injected and inspect the per-request comparison report.</p>
+
+<p><strong>Note:</strong> replay is a foundational capability. The report tracking, rate limiting, and chaos overlay infrastructure are complete, but the underlying network sender is a placeholder pending lifecycle wiring — replayed requests currently complete immediately with an error result. The API contract and report shape are stable and described here so you can plan integrations.</p>
+
+<h3>Starting a replay</h3>
+
+<pre class="code"><code class="code">PUT /mockserver/replay
+{
+  "ratePerSecond": 10,
+  "chaosProfile": {
+    "errorStatus": 503,
+    "errorProbability": 0.3
+  }
+}</code></pre>
+
+<p>Fields:</p>
+<ul>
+    <li><code class="inline code">ratePerSecond</code> — maximum requests per second to send; <code class="inline code">0</code> means unlimited (all requests sent as fast as possible)</li>
+    <li><code class="inline code">chaosProfile</code> — optional <a href="#chaos_profile_fields">chaos profile</a> applied as a service-scoped overlay for all hosts seen in the recorded traffic; uses a 5-minute TTL that auto-clears after the replay window</li>
+</ul>
+
+<p>MockServer reads all previously-recorded <code class="inline code">FORWARDED_REQUEST</code> log entries as the traffic source. The request returns immediately with a <code class="inline code">201 Created</code> response containing a <code class="inline code">replayId</code> and the total count of requests to replay:</p>
+
+<pre class="code"><code class="code">{ "replayId": "a3f2...", "totalRequests": 42, "status": "RUNNING" }</code></pre>
+
+<h3>Polling the replay report</h3>
+
+<pre class="code"><code class="code">GET /mockserver/replay/{replayId}</code></pre>
+
+<p>Returns a <code class="inline code">ReplayReport</code> object:</p>
+
+<pre class="code"><code class="code">{
+  "replayId": "a3f2...",
+  "status": "RUNNING",          // RUNNING | COMPLETED | FAILED
+  "totalRequests": 42,
+  "completedRequests": 17,
+  "successCount": 14,
+  "failureCount": 3,
+  "results": [
+    {
+      "method": "GET",
+      "path": "/api/orders",
+      "baselineStatusCode": 200,
+      "replayStatusCode": 503,
+      "baselineLatencyMs": 45,
+      "replayLatencyMs": 38,
+      "latencyDeltaMs": -7,
+      "statusMatch": false
+    }
+  ]
+}</code></pre>
+
+<p>A result entry is added for each completed request. <code class="inline code">statusMatch</code> is <code class="inline code">true</code> when the replayed HTTP status code equals the baseline. <code class="inline code">latencyDeltaMs</code> is positive when the replay was slower than baseline, negative when faster. When the replay finishes, <code class="inline code">status</code> changes to <code class="inline code">COMPLETED</code> and the full <code class="inline code">results</code> array is available. An unknown <code class="inline code">replayId</code> returns 404.</p>
 
 <a id="coming_soon" class="anchor" href="#coming_soon">&nbsp;</a>
 

@@ -431,6 +431,71 @@ curl -X PUT http://localhost:1080/mockserver/scenario/DeployFlow/trigger \
 
 <p>Timed transitions are guarded: the transition only fires if the scenario is still in the expected <span class="inline_code">currentState</span> when the timer expires. If the scenario has already moved to a different state (e.g. via an external trigger or expectation match), the timed transition becomes a no-op. Scheduling a new transition for the same scenario cancels any pending one.</p>
 
+<a id="cross_protocol_scenario_correlation" class="anchor" href="#cross_protocol_scenario_correlation">&nbsp;</a>
+
+<h4>Cross-Protocol Scenario Correlation</h4>
+
+<p>Scenario state transitions are not limited to HTTP request matches. A DNS query, WebSocket connection, gRPC request, or HTTP request can drive a scenario forward via a <strong>cross-protocol trigger</strong>. This lets you model multi-protocol test flows — for example: "when a WebSocket connects, advance scenario X so the next HTTP expectation for that state becomes active."</p>
+
+<p>Add a <span class="inline_code">crossProtocolScenarios</span> array to an expectation. Each entry specifies:</p>
+<ul>
+    <li><strong>trigger</strong> — the protocol event that fires the transition: <span class="inline_code">DNS_QUERY</span>, <span class="inline_code">WEBSOCKET_CONNECT</span>, <span class="inline_code">GRPC_REQUEST</span>, or <span class="inline_code">HTTP_REQUEST</span></li>
+    <li><strong>matchPattern</strong> — optional substring filter on the event identifier (DNS query name, gRPC service name, HTTP path, or WebSocket URL); if omitted, all events of that type match</li>
+    <li><strong>scenarioName</strong> — the name of the scenario to advance</li>
+    <li><strong>targetState</strong> — the state to transition the scenario to</li>
+</ul>
+
+<p><strong>Example — WebSocket connect advances an HTTP scenario:</strong> When any WebSocket connection is established, the "ConnectionFlow" scenario transitions to "WsConnected", activating the HTTP expectation that requires that state.</p>
+
+<pre class="prettyprint lang-java code"><code class="code">// Expectation 1: dummy WebSocket endpoint that fires the cross-protocol transition
+{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/ws/events"
+    },
+    "httpResponse": {
+        "statusCode": 101
+    },
+    "crossProtocolScenarios": [
+        {
+            "trigger": "WEBSOCKET_CONNECT",
+            "scenarioName": "ConnectionFlow",
+            "targetState": "WsConnected"
+        }
+    ]
+}
+
+// Expectation 2: only active after the WebSocket has connected
+{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/api/status"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "body": "{\"status\": \"connected\"}"
+    },
+    "scenarioName": "ConnectionFlow",
+    "scenarioState": "WsConnected"
+}</code></pre>
+
+<p><strong>Example — DNS query activates a downstream-failure scenario:</strong> When a DNS query for <span class="inline_code">payments.svc</span> is observed, advance the scenario to "DnsObserved" so a chaos-injecting HTTP expectation becomes active.</p>
+
+<pre class="prettyprint lang-java code"><code class="code">{
+    "httpRequest": { "method": "GET", "path": "/_internal/dns-trigger" },
+    "httpResponse": { "statusCode": 200 },
+    "crossProtocolScenarios": [
+        {
+            "trigger": "DNS_QUERY",
+            "matchPattern": "payments.svc",
+            "scenarioName": "PaymentsFlow",
+            "targetState": "DnsObserved"
+        }
+    ]
+}</code></pre>
+
+<p>The <span class="inline_code">matchPattern</span> is a substring match against the event identifier. For <span class="inline_code">DNS_QUERY</span> it is the query name; for <span class="inline_code">GRPC_REQUEST</span> it is the gRPC service name; for <span class="inline_code">HTTP_REQUEST</span> it is the request path; for <span class="inline_code">WEBSOCKET_CONNECT</span> it is the WebSocket URL. When <span class="inline_code">matchPattern</span> is omitted, all events of that trigger type match. Multiple entries in <span class="inline_code">crossProtocolScenarios</span> are evaluated independently — a single event can advance several scenarios in one fire.</p>
+
 <a id="sequential_responses" class="anchor" href="#sequential_responses">&nbsp;</a>
 
 <h4>Sequential / Cycling Responses</h4>

@@ -1480,7 +1480,7 @@ public class HttpState {
             } else if (request.matches("PUT", PATH_PREFIX + "/grpc/health", "/grpc/health")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleGrpcHealthPut(request), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleGrpcHealthPut(request)), true);
                 }
                 canHandle.complete(true);
 
@@ -1503,9 +1503,9 @@ public class HttpState {
                             byte[] bodyBytes = request.getBodyAsRawBytes();
                             if (bodyBytes != null && bodyBytes.length > 0) {
                                 org.mockserver.wasm.WasmStore.getInstance().put(moduleName, bodyBytes);
-                                responseWriter.writeResponse(request, response()
+                                responseWriter.writeResponse(request, withDashboardCORS(request, response()
                                     .withStatusCode(CREATED.code())
-                                    .withBody("{\"status\":\"loaded\",\"moduleName\":\"" + moduleName + "\"}", MediaType.JSON_UTF_8), true);
+                                    .withBody("{\"status\":\"loaded\",\"moduleName\":\"" + moduleName + "\"}", MediaType.JSON_UTF_8)), true);
                             } else {
                                 responseWriter.writeResponse(request, BAD_REQUEST, "WASM module body is empty", MediaType.create("text", "plain").toString());
                             }
@@ -1613,7 +1613,7 @@ public class HttpState {
             } else if (request.matches("PUT", PATH_PREFIX + "/generateExpectation", "/generateExpectation")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleGenerateExpectation(request), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleGenerateExpectation(request)), true);
                 }
                 canHandle.complete(true);
 
@@ -1623,14 +1623,14 @@ public class HttpState {
                     || request.getPath().getValue().startsWith("/scenario/"))) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleScenarioPut(request), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleScenarioPut(request)), true);
                 }
                 canHandle.complete(true);
 
             } else if (request.matches("PUT", PATH_PREFIX + "/diff", "/diff")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleDiff(request), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleDiff(request)), true);
                 }
                 canHandle.complete(true);
 
@@ -1647,7 +1647,7 @@ public class HttpState {
             } else if (request.matches("PUT", PATH_PREFIX + "/replay", "/replay")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleReplayStart(request), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleReplayStart(request)), true);
                 }
                 canHandle.complete(true);
 
@@ -1698,9 +1698,9 @@ public class HttpState {
                         for (String name : org.mockserver.wasm.WasmStore.getInstance().listNames()) {
                             modulesArray.add(name);
                         }
-                        responseWriter.writeResponse(request, response()
+                        responseWriter.writeResponse(request, withDashboardCORS(request, response()
                             .withStatusCode(OK.code())
-                            .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(modulesArray), MediaType.JSON_UTF_8), true);
+                            .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(modulesArray), MediaType.JSON_UTF_8)), true);
                     } catch (Exception e) {
                         responseWriter.writeResponse(request, BAD_REQUEST, "failed to list WASM modules: " + e.getMessage(), MediaType.create("text", "plain").toString());
                     }
@@ -1730,7 +1730,7 @@ public class HttpState {
                 && (request.getPath().getValue().startsWith(PATH_PREFIX + "/scenario/")
                     || request.getPath().getValue().startsWith("/scenario/"))) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleScenarioGet(request), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleScenarioGet(request)), true);
                 }
                 return true;
             }
@@ -1742,7 +1742,7 @@ public class HttpState {
                     String pathValue = request.getPath().getValue();
                     String prefix = pathValue.startsWith(PATH_PREFIX) ? PATH_PREFIX + "/replay/" : "/replay/";
                     String replayId = pathValue.substring(prefix.length());
-                    responseWriter.writeResponse(request, handleReplayGet(replayId), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleReplayGet(replayId)), true);
                 }
                 return true;
             }
@@ -1773,7 +1773,7 @@ public class HttpState {
                         responseWriter.writeResponse(request, BAD_REQUEST, "query parameter 'name' is required", MediaType.create("text", "plain").toString());
                     } else if (org.mockserver.wasm.WasmStore.getInstance().contains(moduleName)) {
                         org.mockserver.wasm.WasmStore.getInstance().remove(moduleName);
-                        responseWriter.writeResponse(request, OK);
+                        responseWriter.writeResponse(request, withDashboardCORS(request, response().withStatusCode(OK.code())), true);
                     } else {
                         responseWriter.writeResponse(request, NOT_FOUND, "WASM module '" + moduleName + "' not found", MediaType.create("text", "plain").toString());
                     }
