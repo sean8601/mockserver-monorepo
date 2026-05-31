@@ -11,14 +11,16 @@ sitemap:
   lastmod: 2026-05-27T00:00:00+01:00
 ---
 
-<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Five views are available from the navigation bar at the top of the page:</p>
+<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Seven views are available from the navigation bar at the top of the page:</p>
 
 <ul>
     <li><strong><a href="#ui_dashboard_section">Dashboard</a></strong> — four panels showing log messages, active expectations, received requests, and proxied requests</li>
     <li><strong><a href="#ui_traffic_section">Traffic</a></strong> — every captured request in a master list, with a rich detail pane on the right for LLM and MCP traffic</li>
-    <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes</li>
+    <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes, plus a <strong>Compare</strong> tab for diffing two captured runs side-by-side</li>
     <li><strong><a href="#ui_composer_section">Composer</a></strong> — create or edit expectations without writing any code</li>
-    <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files, compare captured runs, and export traffic</li>
+    <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files and export traffic</li>
+    <li><strong>Metrics</strong> — JVM, request-latency, and chaos metrics charts (shown when metrics are enabled)</li>
+    <li><strong>Chaos</strong> — configure and inject service-wide HTTP faults (added latency, error responses, dropped connections) that apply to all matched requests, with a TTL so chaos auto-expires</li>
 </ul>
 
 <p>The dashboard connects to MockServer via WebSocket and updates in real time — any changes to expectations, new requests, or log events appear automatically without refreshing the page.</p>
@@ -262,6 +264,10 @@ sitemap:
 
 <p>Sessions are most useful when you have set up <a href="/mock_server/ai_mocking.html">LLM conversation mocks with per-session isolation</a>. Each unique session identifier (header, query parameter, or cookie value) gets its own swim-lane, so you can trace multiple concurrent test sessions independently.</p>
 
+<h3>Compare</h3>
+
+<p>The Sessions view has a second tab, <strong>Compare</strong>, for comparing two captured conversation runs side-by-side. Pick <strong>Run A</strong> and <strong>Run B</strong> from the available sessions and the view shows a structural trajectory diff: the tool-call chain for each run and a per-turn token usage table. This makes it easy to spot regressions in agent behaviour between test runs.</p>
+
 <a id="ui_composer_section" class="anchor" href="#ui_composer_section">&nbsp;</a>
 
 <h2>Composer</h2>
@@ -308,7 +314,7 @@ sitemap:
 
 <h2>Library</h2>
 
-<p>The Library view consolidates fixture file management and traffic export. It has three sub-tabs: <strong>Cassettes</strong>, <strong>Runs</strong>, and <strong>Export</strong>.</p>
+<p>The Library view consolidates fixture file management and traffic export. It has two sub-tabs: <strong>Export</strong> and <strong>Cassettes</strong>.</p>
 
 <img class="ui_image" src="/images/MockServerLibrary.png" alt="MockServer Library">
 
@@ -317,10 +323,6 @@ sitemap:
 <p>The Cassettes sub-tab lets you record the current MockServer state into a JSON cassette file and load one back. A recorded cassette file contains all captured LLM/MCP traffic as mock expectations, with sensitive headers (API keys, auth tokens, cookies) automatically redacted. The file can be committed to version control and loaded in tests for deterministic, offline replay.</p>
 
 <p>To record: set the output file path and click <strong>Record</strong>. To load a cassette for replay: enter the file path and click <strong>Load</strong>. These operations call the <code>record_llm_fixtures</code> and <code>load_expectations_from_file</code> <a href="/mock_server/ai_mcp_tools.html">MCP tools</a> on your behalf.</p>
-
-<h3>Runs</h3>
-
-<p>The Runs sub-tab lets you compare two captured conversation sessions side-by-side. Pick <strong>Run A</strong> and <strong>Run B</strong> from the available sessions and the view shows a structural trajectory diff: the tool-call chain for each run and a per-turn token usage table. This makes it easy to spot regressions in agent behaviour between test runs.</p>
 
 <h3>Export</h3>
 
