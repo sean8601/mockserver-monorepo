@@ -61,8 +61,27 @@ find_jar() {
 }
 
 if [ "$REBUILD" = true ] || ! find_jar >/dev/null; then
-  echo "→ Building MockServer JAR (this can take a few minutes)..."
-  (cd "$REPO_ROOT/mockserver" && ./mvnw -q clean install -DskipTests -pl mockserver-netty-no-dependencies -am)
+  BUILD_LOG="$UI_DIR/mockserver-build.log"
+  echo "→ Building MockServer JAR (this can take a few minutes)"
+  echo "  cmd: (cd mockserver && ./mvnw clean install -DskipTests -pl mockserver-netty-no-dependencies -am)"
+  echo "  full log: $BUILD_LOG"
+  echo "  progress (Maven reactor — one line per module + result):"
+  # Stream the full build to a log, but surface only the reactor "Building <module>
+  # [N/M]" progress lines, the BUILD result, and any errors so it is clear the build
+  # is advancing rather than hung — without flooding the terminal with full output.
+  # PIPESTATUS captures the real Maven exit code (grep/tee would otherwise mask it).
+  set +e
+  ( cd "$REPO_ROOT/mockserver" && ./mvnw clean install -DskipTests -pl mockserver-netty-no-dependencies -am ) 2>&1 \
+    | tee "$BUILD_LOG" \
+    | grep --line-buffered -E '\[INFO\] Building |\[INFO\] BUILD (SUCCESS|FAILURE)|\[ERROR\]'
+  build_rc=${PIPESTATUS[0]}
+  set -e
+  if [ "$build_rc" -ne 0 ]; then
+    echo "ERROR: MockServer build failed (exit $build_rc) — last 40 log lines:"
+    tail -40 "$BUILD_LOG"
+    exit 1
+  fi
+  echo "✓ Build complete"
 fi
 MOCKSERVER_JAR="$(find_jar)" || { echo "ERROR: MockServer JAR not found after build"; exit 1; }
 echo "✓ MockServer JAR: $(basename "$MOCKSERVER_JAR")"
