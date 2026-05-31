@@ -152,13 +152,13 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Library
           </ToggleButton>
-          <ToggleButton value="metrics" aria-label="Metrics view">
-            <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Metrics
-          </ToggleButton>
           <ToggleButton value="chaos" aria-label="Service chaos view">
             <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Chaos
+          </ToggleButton>
+          <ToggleButton value="metrics" aria-label="Metrics view">
+            <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Metrics
           </ToggleButton>
         </ToggleButtonGroup>
         <Box sx={{ flex: 1 }} />
