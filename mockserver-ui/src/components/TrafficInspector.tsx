@@ -11,6 +11,7 @@ import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import SearchIcon from '@mui/icons-material/Search';
+import ReplayIcon from '@mui/icons-material/Replay';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import { useDashboardStore } from '../store';
 import { useConnectionParams } from '../hooks/useConnectionParams';
@@ -28,6 +29,7 @@ import {
 import type { ScriptedTurn } from './ConversationView';
 import type { JsonListItem } from '../types';
 import { isLlmTraffic } from '../lib/expectationFromCapture';
+import ReplayDialog from './ReplayDialog';
 import {
   summarizeTraffic,
   getModelLabel,
@@ -851,6 +853,7 @@ export default function TrafficInspector() {
   const setSelectedIndex = useDashboardStore((s) => s.setSelectedTrafficIndex);
   const connectionParams = useConnectionParams();
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
+  const [replayDialogOpen, setReplayDialogOpen] = useState(false);
 
   // Gather scripted turns from active expectations
   const scriptedTurns = useMemo(
@@ -935,6 +938,16 @@ export default function TrafficInspector() {
               sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
             />
           )}
+          <Tooltip title="Replay recorded traffic under optional chaos">
+            <Button
+              size="small"
+              startIcon={<ReplayIcon sx={{ fontSize: '0.875rem' }} />}
+              onClick={() => setReplayDialogOpen(true)}
+              sx={{ ml: 'auto', fontSize: '0.7rem', textTransform: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              Replay
+            </Button>
+          </Tooltip>
           <TextField
             id="traffic-inspector-search"
             size="small"
@@ -951,7 +964,6 @@ export default function TrafficInspector() {
               },
             }}
             sx={{
-              ml: 'auto',
               maxWidth: 200,
               '& .MuiInputBase-root': { height: 28, fontSize: '0.75rem' },
               '& .MuiSvgIcon-root': { fontSize: '0.875rem' },
@@ -1009,6 +1021,13 @@ export default function TrafficInspector() {
           connectionParams={connectionParams}
         />
       )}
+
+      {/* Replay dialog */}
+      <ReplayDialog
+        open={replayDialogOpen}
+        onClose={() => setReplayDialogOpen(false)}
+        connectionParams={connectionParams}
+      />
     </Box>
   );
 }

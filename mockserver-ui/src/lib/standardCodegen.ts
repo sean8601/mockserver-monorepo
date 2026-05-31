@@ -16,9 +16,11 @@ export type StandardActionType =
   | 'static'
   | 'forward'
   | 'forward_override'
+  | 'forward_fallback'
   | 'callback'
   | 'template'
-  | 'error';
+  | 'error'
+  | 'websocket';
 
 export interface StandardMatcher {
   id: string;
@@ -30,6 +32,8 @@ export interface StandardMatcher {
   pathParams: string;
   body: string;
   bodyBinary: boolean;
+  bodyMatcherType: BodyMatcherType;
+  graphqlOptions?: GraphQLMatcherOptions;
   secure: boolean;
   priority: number;
   times: number;
@@ -73,6 +77,40 @@ export interface StandardErrorState {
   delayUnit: 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
 }
 
+export type SelectionSetMatchType = 'NORMALISED_STRING' | 'AST_EXACT' | 'AST_SUBSET';
+
+export type BodyMatcherType = 'string' | 'graphql' | 'binary';
+
+export interface GraphQLMatcherOptions {
+  selectionSetMatchType: SelectionSetMatchType;
+  fields: string; // comma-separated field names
+}
+
+export interface StandardForwardFallbackState {
+  scheme: 'HTTP' | 'HTTPS';
+  host: string;
+  port: number;
+  fallbackStatusCode: number;
+  fallbackBody: string;
+  fallbackOnStatusCodes: string; // comma-separated, e.g. "500,502,503"
+  fallbackOnTimeout: boolean;
+}
+
+export type WebSocketFrameType = 'TEXT' | 'BINARY' | 'PING' | 'PONG' | 'ANY';
+
+export interface WebSocketMatcherDraft {
+  frameType: WebSocketFrameType;
+  textMatcher: string;
+  responses: string; // one message per line
+}
+
+export interface StandardWebSocketState {
+  subprotocol: string;
+  messages: string; // one message per line (text frames)
+  closeConnection: boolean;
+  matchers: WebSocketMatcherDraft[];
+}
+
 export type ChaosDelayUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
 
 /**
@@ -95,9 +133,11 @@ export interface StandardActionPayload {
   static?: StandardStaticState;
   forward?: StandardForwardState;
   forwardOverride?: StandardForwardOverrideState;
+  forwardFallback?: StandardForwardFallbackState;
   callback?: StandardCallbackState;
   template?: StandardTemplateState;
   error?: StandardErrorState;
+  websocket?: StandardWebSocketState;
   chaos?: StandardChaosDraft;
 }
 
@@ -162,9 +202,24 @@ export function buildExpectationJson(
   if (pathParams) httpRequest['pathParameters'] = pathParams;
 
   if (matcher.body.trim()) {
-    httpRequest['body'] = matcher.bodyBinary
-      ? { type: 'BINARY', base64Bytes: matcher.body.trim() }
-      : matcher.body;
+    if (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) {
+      httpRequest['body'] = { type: 'BINARY', base64Bytes: matcher.body.trim() };
+    } else if (matcher.bodyMatcherType === 'graphql') {
+      const gqlBody: Record<string, unknown> = { type: 'GRAPHQL', graphql: matcher.body.trim() };
+      if (matcher.graphqlOptions) {
+        if (matcher.graphqlOptions.selectionSetMatchType !== 'NORMALISED_STRING') {
+          gqlBody['selectionSetMatchType'] = matcher.graphqlOptions.selectionSetMatchType;
+        }
+        const fields = matcher.graphqlOptions.fields
+          .split(',')
+          .map((f) => f.trim())
+          .filter(Boolean);
+        if (fields.length > 0) gqlBody['fields'] = fields;
+      }
+      httpRequest['body'] = gqlBody;
+    } else {
+      httpRequest['body'] = matcher.body;
+    }
   }
   if (matcher.secure) httpRequest['secure'] = true;
 
@@ -229,6 +284,48 @@ export function buildExpectationJson(
           payload['delay'] = { timeUnit: action.error.delayUnit, value: action.error.delayValue };
         }
         out['httpError'] = payload;
+      }
+      break;
+    case 'forward_fallback':
+      if (action.forwardFallback) {
+        const fb = action.forwardFallback;
+        const fwdPayload: Record<string, unknown> = {
+          httpForward: { scheme: fb.scheme, host: fb.host, port: fb.port },
+        };
+        const fallbackResp: Record<string, unknown> = { statusCode: fb.fallbackStatusCode };
+        if (fb.fallbackBody.trim()) fallbackResp['body'] = fb.fallbackBody;
+        fwdPayload['fallbackResponse'] = fallbackResp;
+        const codes = fb.fallbackOnStatusCodes
+          .split(',')
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => !isNaN(n));
+        if (codes.length > 0) fwdPayload['fallbackOnStatusCodes'] = codes;
+        if (fb.fallbackOnTimeout) fwdPayload['fallbackOnTimeout'] = true;
+        out['httpForwardWithFallback'] = fwdPayload;
+      }
+      break;
+    case 'websocket':
+      if (action.websocket) {
+        const ws = action.websocket;
+        const wsPayload: Record<string, unknown> = {};
+        if (ws.subprotocol.trim()) wsPayload['subprotocol'] = ws.subprotocol.trim();
+        const msgLines = ws.messages.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        if (msgLines.length > 0) {
+          wsPayload['messages'] = msgLines.map((text) => ({ text }));
+        }
+        if (ws.closeConnection) wsPayload['closeConnection'] = true;
+        if (ws.matchers.length > 0) {
+          wsPayload['matchers'] = ws.matchers.map((m) => {
+            const matcherObj: Record<string, unknown> = { frameType: m.frameType };
+            if (m.textMatcher.trim()) matcherObj['textMatcher'] = m.textMatcher.trim();
+            const respLines = m.responses.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+            if (respLines.length > 0) {
+              matcherObj['responses'] = respLines.map((text) => ({ text }));
+            }
+            return matcherObj;
+          });
+        }
+        out['httpWebSocketResponse'] = wsPayload;
       }
       break;
   }
@@ -338,8 +435,18 @@ function matcherToJava(matcher: StandardMatcher): string {
   }
 
   if (matcher.body.trim()) {
-    if (matcher.bodyBinary) {
+    if (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) {
       lines.push(`    .withBody(binary(Base64.getDecoder().decode("${escapeJava(matcher.body.trim())}")))`);
+    } else if (matcher.bodyMatcherType === 'graphql') {
+      let gql = `graphQL("${escapeJava(matcher.body.trim())}")`;
+      if (matcher.graphqlOptions && matcher.graphqlOptions.selectionSetMatchType !== 'NORMALISED_STRING') {
+        gql += `\n        .withSelectionSetMatchType(SelectionSetMatchType.${matcher.graphqlOptions.selectionSetMatchType})`;
+        const fields = matcher.graphqlOptions.fields.split(',').map((f) => f.trim()).filter(Boolean);
+        if (fields.length > 0) {
+          gql += `\n        .withFields(${fields.map((f) => `"${escapeJava(f)}"`).join(', ')})`;
+        }
+      }
+      lines.push(`    .withBody(${gql})`);
     } else {
       lines.push(`    .withBody("${escapeJava(matcher.body)}")`);
     }
@@ -432,6 +539,31 @@ function actionToJava(action: StandardActionPayload): string {
       lines.push(')');
       return lines.join('\n');
     }
+    case 'forward_fallback': {
+      const fb = action.forwardFallback;
+      if (!fb) return '.forward(forwardWithFallback())';
+      const lines = ['.forward(', '    forwardWithFallback()'];
+      lines.push(`        .withForward(forward().withScheme(Scheme.${fb.scheme}).withHost("${escapeJava(fb.host)}").withPort(${fb.port}))`);
+      const respParts = [`response().withStatusCode(${fb.fallbackStatusCode})`];
+      if (fb.fallbackBody.trim()) respParts.push(`.withBody("${escapeJava(fb.fallbackBody)}")`);
+      lines.push(`        .withFallback(${respParts.join('')})`);
+      const codes = fb.fallbackOnStatusCodes.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+      if (codes.length > 0) lines.push(`        .withFallbackOnStatusCodes(${codes.join(', ')})`);
+      if (fb.fallbackOnTimeout) lines.push('        .withFallbackOnTimeout(true)');
+      lines.push(')');
+      return lines.join('\n');
+    }
+    case 'websocket': {
+      const ws = action.websocket;
+      if (!ws) return '.respond(webSocketResponse())';
+      const lines = ['.respond(', '    webSocketResponse()'];
+      if (ws.subprotocol.trim()) lines.push(`        .withSubprotocol("${escapeJava(ws.subprotocol.trim())}")`);
+      const msgLines = ws.messages.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      for (const msg of msgLines) lines.push(`        .withMessage(webSocketMessage("${escapeJava(msg)}"))`);
+      if (ws.closeConnection) lines.push('        .withCloseConnection(true)');
+      lines.push(')');
+      return lines.join('\n');
+    }
   }
 }
 
@@ -458,17 +590,24 @@ export function standardToJava(matcher: StandardMatcher, action: StandardActionP
   const hasChaos = action.chaos && buildChaosJson(action.chaos);
   const lines: string[] = [];
   lines.push('import static org.mockserver.model.HttpRequest.request;');
-  if (action.type === 'static' || action.type === 'callback' || action.type === 'template') {
+  if (action.type === 'static' || action.type === 'callback' || action.type === 'template' || action.type === 'forward_fallback') {
     lines.push('import static org.mockserver.model.HttpResponse.response;');
   }
-  if (action.type === 'forward' || action.type === 'forward_override') {
+  if (action.type === 'forward' || action.type === 'forward_override' || action.type === 'forward_fallback') {
     lines.push('import static org.mockserver.model.HttpForward.forward;');
   }
   if (action.type === 'forward_override') {
     lines.push('import static org.mockserver.model.HttpOverrideForwardedRequest.forwardOverriddenRequest;');
   }
+  if (action.type === 'forward_fallback') {
+    lines.push('import static org.mockserver.model.HttpForwardWithFallback.forwardWithFallback;');
+  }
   if (action.type === 'error') {
     lines.push('import static org.mockserver.model.HttpError.error;');
+  }
+  if (action.type === 'websocket') {
+    lines.push('import static org.mockserver.model.HttpWebSocketResponse.webSocketResponse;');
+    lines.push('import static org.mockserver.model.WebSocketMessage.webSocketMessage;');
   }
   const chaosHasLatency = hasChaos && action.chaos?.latencyValue != null;
   if ((action.type === 'error' && action.error?.delayValue) || chaosHasLatency) {

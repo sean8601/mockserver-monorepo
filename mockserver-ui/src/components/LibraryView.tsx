@@ -1,8 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
 import Paper from '@mui/material/Paper';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
@@ -13,9 +20,18 @@ import FormLabel from '@mui/material/FormLabel';
 import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
+import Tooltip from '@mui/material/Tooltip';
+import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { CassetteManagerBody } from './CassetteManager';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
+import {
+  listWasmModules,
+  uploadWasmModule,
+  deleteWasmModule,
+} from '../lib/wasm';
 
 // ---------------------------------------------------------------------------
 // Export sub-tab — download captured content in various formats
@@ -235,14 +251,199 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
 }
 
 // ---------------------------------------------------------------------------
-// Main view — tab strip across Export / Cassettes
+// WASM Modules tab
+// ---------------------------------------------------------------------------
+
+const WASM_POLL_INTERVAL_MS = 8000;
+
+function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionParams }) {
+  const [modules, setModules] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uploadName, setUploadName] = useState('');
+  const [refreshTick, setRefreshTick] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Poll modules list
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll(): Promise<void> {
+      try {
+        const result = await listWasmModules(connectionParams, controller.signal);
+        if (cancelled) return;
+        setModules(result);
+        setError(null);
+        setLoading(false);
+      } catch (e) {
+        if (cancelled || controller.signal.aborted) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setLoading(false);
+      } finally {
+        if (!cancelled) timer = setTimeout(() => void poll(), WASM_POLL_INTERVAL_MS);
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [connectionParams, refreshTick]);
+
+  const handleUpload = useCallback(async () => {
+    if (!uploadName.trim()) {
+      setActionError('Module name is required');
+      return;
+    }
+    const input = fileInputRef.current;
+    if (!input?.files?.length) {
+      setActionError('Select a .wasm file to upload');
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      const file = input.files[0]!;
+      const bytes = await file.arrayBuffer();
+      await uploadWasmModule(connectionParams, uploadName.trim(), bytes);
+      setUploadName('');
+      if (input) input.value = '';
+      setRefreshTick((t) => t + 1);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [connectionParams, uploadName]);
+
+  const handleDelete = useCallback(async (name: string) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await deleteWasmModule(connectionParams, name);
+      setRefreshTick((t) => t + 1);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [connectionParams]);
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
+      <Typography variant="body2" color="text.secondary">
+        Upload and manage WASM custom rule modules. Each module can be referenced
+        by name in expectation actions.
+      </Typography>
+
+      {/* Upload form */}
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <TextField
+          size="small"
+          label="Module name"
+          placeholder="my-rule"
+          value={uploadName}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setUploadName(e.target.value)}
+          sx={{ minWidth: 180 }}
+        />
+        <Button
+          size="small"
+          variant="outlined"
+          component="label"
+          startIcon={<UploadFileIcon sx={{ fontSize: '0.875rem' }} />}
+        >
+          Select .wasm
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".wasm"
+            hidden
+          />
+        </Button>
+        <Button
+          variant="contained"
+          size="small"
+          disabled={busy}
+          onClick={() => void handleUpload()}
+        >
+          Upload
+        </Button>
+        <Tooltip title="Refresh module list">
+          <IconButton size="small" onClick={() => setRefreshTick((t) => t + 1)} aria-label="Refresh WASM modules">
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {actionError && (
+        <Alert severity="warning" onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
+
+      {error && (
+        <Alert severity="error" variant="outlined">{error}</Alert>
+      )}
+
+      {/* Modules table */}
+      {loading ? (
+        <Typography variant="body2" color="text.secondary">Loading...</Typography>
+      ) : modules.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">No WASM modules loaded.</Typography>
+      ) : (
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Module Name</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {modules.map((name) => (
+                <TableRow key={name}>
+                  <TableCell>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{name}</Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="Delete module">
+                      <span>
+                        <IconButton
+                          size="small"
+                          aria-label={`Delete WASM module ${name}`}
+                          disabled={busy}
+                          onClick={() => void handleDelete(name)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main view — tab strip across Export / Cassettes / WASM Modules
 // ---------------------------------------------------------------------------
 
 export interface LibraryViewProps {
   connectionParams: ConnectionParams;
 }
 
-const TABS = ['Export', 'Cassettes'];
+const TABS = ['Export', 'Cassettes', 'WASM Modules'];
 
 export default function LibraryView({ connectionParams }: LibraryViewProps) {
   const [tab, setTab] = useState(0);
@@ -262,6 +463,7 @@ export default function LibraryView({ connectionParams }: LibraryViewProps) {
         <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
           {tab === 0 && <ExportTab connectionParams={connectionParams} />}
           {tab === 1 && <CassetteManagerBody connectionParams={connectionParams} />}
+          {tab === 2 && <WasmModulesTab connectionParams={connectionParams} />}
         </Box>
       </Paper>
     </Box>

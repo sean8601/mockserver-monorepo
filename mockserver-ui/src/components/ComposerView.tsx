@@ -25,6 +25,11 @@ import {
   type StandardActionPayload,
   type StandardChaosDraft,
   type ChaosDelayUnit,
+  type BodyMatcherType,
+  type SelectionSetMatchType,
+  type GraphQLMatcherOptions,
+  type StandardForwardFallbackState,
+  type WebSocketFrameType,
 } from '../lib/standardCodegen';
 
 // ---------------------------------------------------------------------------
@@ -37,9 +42,11 @@ type ActionType =
   | 'static'
   | 'forward'
   | 'forward_override'
+  | 'forward_fallback'
   | 'callback'
   | 'template'
-  | 'error';
+  | 'error'
+  | 'websocket';
 
 interface ActionTypeMeta {
   value: ActionType;
@@ -51,9 +58,11 @@ const ACTION_TYPES: ActionTypeMeta[] = [
   { value: 'static', label: 'Static HTTP response', description: 'Return a fixed status / headers / body for matching requests.' },
   { value: 'forward', label: 'Forward to upstream', description: 'Proxy the request to a configured scheme://host:port.' },
   { value: 'forward_override', label: 'Forward with override', description: 'Forward upstream while rewriting host / scheme / path on the outgoing request.' },
+  { value: 'forward_fallback', label: 'Forward with fallback', description: 'Forward upstream; if it returns a configured error status or times out, return a fallback mock response.' },
   { value: 'callback', label: 'Class callback', description: 'Invoke a server-side class FQCN to build the response dynamically.' },
   { value: 'template', label: 'Response template', description: 'Velocity / JavaScript / Mustache templates for dynamic responses.' },
   { value: 'error', label: 'Error / fault injection', description: 'Drop the connection mid-request or send arbitrary bytes as the response.' },
+  { value: 'websocket', label: 'WebSocket response', description: 'Upgrade to a WebSocket connection and send messages, with optional bidirectional frame matchers.' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -102,6 +111,8 @@ interface MatcherState {
   pathParams: string;    // "name=value" lines, "!" prefix negates (for /users/{id} style)
   body: string;
   bodyBinary: boolean;   // when true, body is base64-encoded raw bytes
+  bodyMatcherType: BodyMatcherType;
+  graphqlOptions: GraphQLMatcherOptions;
   secure: boolean;
   priority: number;
   times: number;         // 0 = unlimited
@@ -118,6 +129,8 @@ function emptyMatcher(): MatcherState {
     pathParams: '',
     body: '',
     bodyBinary: false,
+    bodyMatcherType: 'string',
+    graphqlOptions: { selectionSetMatchType: 'NORMALISED_STRING', fields: '' },
     secure: false,
     priority: 0,
     times: 0,
@@ -228,28 +241,90 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
         />
       </Box>
       <Box>
+        <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
+          <TextField
+            label="Body type"
+            size="small"
+            select
+            value={matcher.bodyMatcherType}
+            onChange={(e) => {
+              const newType = e.target.value as BodyMatcherType;
+              setMatcher({
+                ...matcher,
+                bodyMatcherType: newType,
+                bodyBinary: newType === 'binary',
+              });
+            }}
+            sx={{ width: 160 }}
+          >
+            <MenuItem value="string">String / JSON</MenuItem>
+            <MenuItem value="graphql">GraphQL</MenuItem>
+            <MenuItem value="binary">Binary (base64)</MenuItem>
+          </TextField>
+        </Box>
         <TextField
-          label={matcher.bodyBinary ? 'Body matcher (base64 bytes)' : 'Body matcher (string or JSON)'}
+          label={
+            matcher.bodyMatcherType === 'binary'
+              ? 'Body matcher (base64 bytes)'
+              : matcher.bodyMatcherType === 'graphql'
+                ? 'GraphQL query'
+                : 'Body matcher (string or JSON)'
+          }
           fullWidth
           multiline
           minRows={2}
           maxRows={10}
           value={matcher.body}
           onChange={(e) => setMatcher({ ...matcher, body: e.target.value })}
-          placeholder={matcher.bodyBinary ? 'SGVsbG8sIFdvcmxkIQ==' : 'e.g. {"foo":"bar"}'}
+          placeholder={
+            matcher.bodyMatcherType === 'binary'
+              ? 'SGVsbG8sIFdvcmxkIQ=='
+              : matcher.bodyMatcherType === 'graphql'
+                ? '{ hero { name } }'
+                : 'e.g. {"foo":"bar"}'
+          }
           slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
         />
-        <FormControlLabel
-          control={
-            <Switch
+        {matcher.bodyMatcherType === 'graphql' && (
+          <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <TextField
+              label="Selection set match type"
               size="small"
-              checked={matcher.bodyBinary}
-              onChange={(e) => setMatcher({ ...matcher, bodyBinary: e.target.checked })}
-            />
-          }
-          label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Body is binary (base64)</Typography>}
-          sx={{ mt: 0.5 }}
-        />
+              select
+              value={matcher.graphqlOptions.selectionSetMatchType}
+              onChange={(e) =>
+                setMatcher({
+                  ...matcher,
+                  graphqlOptions: {
+                    ...matcher.graphqlOptions,
+                    selectionSetMatchType: e.target.value as SelectionSetMatchType,
+                  },
+                })
+              }
+              sx={{ width: 260 }}
+            >
+              <MenuItem value="NORMALISED_STRING">Normalised string (default)</MenuItem>
+              <MenuItem value="AST_EXACT">AST exact</MenuItem>
+              <MenuItem value="AST_SUBSET">AST subset</MenuItem>
+            </TextField>
+            {(matcher.graphqlOptions.selectionSetMatchType === 'AST_EXACT' ||
+              matcher.graphqlOptions.selectionSetMatchType === 'AST_SUBSET') && (
+              <TextField
+                label="Fields (comma-separated, optional)"
+                size="small"
+                value={matcher.graphqlOptions.fields}
+                onChange={(e) =>
+                  setMatcher({
+                    ...matcher,
+                    graphqlOptions: { ...matcher.graphqlOptions, fields: e.target.value },
+                  })
+                }
+                placeholder="hero, name, friends"
+                slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              />
+            )}
+          </Box>
+        )}
       </Box>
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         <FormControlLabel
@@ -317,6 +392,8 @@ function matcherFromExpectation(item: JsonListItem): MatcherState {
   const rawBody = req['body'];
   let bodyText = '';
   let bodyBinary = false;
+  let bodyMatcherType: BodyMatcherType = 'string';
+  const graphqlOptions: GraphQLMatcherOptions = { selectionSetMatchType: 'NORMALISED_STRING', fields: '' };
   if (typeof rawBody === 'string') {
     bodyText = rawBody;
   } else if (rawBody && typeof rawBody === 'object') {
@@ -324,6 +401,17 @@ function matcherFromExpectation(item: JsonListItem): MatcherState {
     if (b['type'] === 'BINARY' && typeof b['base64Bytes'] === 'string') {
       bodyText = b['base64Bytes'] as string;
       bodyBinary = true;
+      bodyMatcherType = 'binary';
+    } else if (b['type'] === 'GRAPHQL' && typeof b['graphql'] === 'string') {
+      bodyText = b['graphql'] as string;
+      bodyMatcherType = 'graphql';
+      const ssmt = b['selectionSetMatchType'];
+      if (ssmt === 'AST_EXACT' || ssmt === 'AST_SUBSET') {
+        graphqlOptions.selectionSetMatchType = ssmt;
+      }
+      if (Array.isArray(b['fields'])) {
+        graphqlOptions.fields = (b['fields'] as string[]).join(', ');
+      }
     } else if (typeof b['string'] === 'string') {
       bodyText = b['string'];
     } else if (b['json'] != null) {
@@ -343,6 +431,8 @@ function matcherFromExpectation(item: JsonListItem): MatcherState {
     pathParams: mapToLines(req['pathParameters'], '='),
     body: bodyText,
     bodyBinary,
+    bodyMatcherType,
+    graphqlOptions,
     secure: req['secure'] === true,
     priority: typeof v['priority'] === 'number' ? (v['priority'] as number) : 0,
     times:
@@ -362,9 +452,11 @@ interface ActionPrefill {
   staticState?: StaticState;
   forwardState?: ForwardState;
   forwardOverrideState?: ForwardOverrideState;
+  forwardFallbackState?: ForwardFallbackState;
   callbackState?: CallbackState;
   templateState?: TemplateState;
   errorState?: ErrorState;
+  websocketState?: WebSocketState;
 }
 
 function unwrapBody(body: unknown): string {
@@ -500,6 +592,55 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
           delay?.['timeUnit'] === 'SECONDS' ? 'SECONDS'
           : delay?.['timeUnit'] === 'MINUTES' ? 'MINUTES'
           : 'MILLISECONDS',
+      },
+    };
+  }
+
+  // Forward with fallback
+  if (v['httpForwardWithFallback'] && typeof v['httpForwardWithFallback'] === 'object') {
+    const fwf = v['httpForwardWithFallback'] as Record<string, unknown>;
+    const fwd = (fwf['httpForward'] as Record<string, unknown> | undefined) ?? {};
+    const fbResp = (fwf['fallbackResponse'] as Record<string, unknown> | undefined) ?? {};
+    const codes = Array.isArray(fwf['fallbackOnStatusCodes'])
+      ? (fwf['fallbackOnStatusCodes'] as number[]).join(',')
+      : '';
+    return {
+      type: 'forward_fallback',
+      forwardFallbackState: {
+        scheme: fwd['scheme'] === 'HTTP' ? 'HTTP' : 'HTTPS',
+        host: typeof fwd['host'] === 'string' ? (fwd['host'] as string) : '',
+        port: typeof fwd['port'] === 'number' ? (fwd['port'] as number) : 443,
+        fallbackStatusCode: typeof fbResp['statusCode'] === 'number' ? (fbResp['statusCode'] as number) : 200,
+        fallbackBody: unwrapBody(fbResp['body']),
+        fallbackOnStatusCodes: codes,
+        fallbackOnTimeout: fwf['fallbackOnTimeout'] === true,
+      },
+    };
+  }
+
+  // WebSocket response
+  if (v['httpWebSocketResponse'] && typeof v['httpWebSocketResponse'] === 'object') {
+    const ws = v['httpWebSocketResponse'] as Record<string, unknown>;
+    const msgs = Array.isArray(ws['messages'])
+      ? (ws['messages'] as Record<string, unknown>[]).map((m) => typeof m['text'] === 'string' ? m['text'] as string : '').join('\n')
+      : '';
+    const rawMatchers = Array.isArray(ws['matchers']) ? (ws['matchers'] as Record<string, unknown>[]) : [];
+    const matchers: WebSocketMatcherRow[] = rawMatchers.map((m) => ({
+      frameType: (['TEXT', 'BINARY', 'PING', 'PONG', 'ANY'].includes(m['frameType'] as string)
+        ? m['frameType'] as WebSocketFrameType
+        : 'ANY'),
+      textMatcher: typeof m['textMatcher'] === 'string' ? (m['textMatcher'] as string) : '',
+      responses: Array.isArray(m['responses'])
+        ? (m['responses'] as Record<string, unknown>[]).map((r) => typeof r['text'] === 'string' ? r['text'] as string : '').join('\n')
+        : '',
+    }));
+    return {
+      type: 'websocket',
+      websocketState: {
+        subprotocol: typeof ws['subprotocol'] === 'string' ? (ws['subprotocol'] as string) : '',
+        messages: msgs,
+        closeConnection: ws['closeConnection'] === true,
+        matchers,
       },
     };
   }
@@ -886,6 +1027,246 @@ function ErrorPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Forward with fallback
+// ---------------------------------------------------------------------------
+
+type ForwardFallbackState = StandardForwardFallbackState;
+
+function ForwardFallbackPanel({
+  state,
+  setState,
+}: {
+  state: ForwardFallbackState;
+  setState: (s: ForwardFallbackState) => void;
+}) {
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="body2" color="text.secondary">
+        Forward the matched request to an upstream host. If the upstream returns one of the
+        configured status codes or times out, MockServer returns the fallback response instead.
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mt: 0.5 }}>
+        Forward target
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <TextField
+          label="Scheme"
+          size="small"
+          select
+          value={state.scheme}
+          onChange={(e) => setState({ ...state, scheme: e.target.value as 'HTTP' | 'HTTPS' })}
+          sx={{ width: 130 }}
+        >
+          <MenuItem value="HTTP">HTTP</MenuItem>
+          <MenuItem value="HTTPS">HTTPS</MenuItem>
+        </TextField>
+        <TextField
+          label="Host"
+          size="small"
+          sx={{ flex: 1 }}
+          value={state.host}
+          onChange={(e) => setState({ ...state, host: e.target.value })}
+          placeholder="api.example.com"
+        />
+        <TextField
+          label="Port"
+          size="small"
+          type="number"
+          sx={{ width: 110 }}
+          value={state.port}
+          onChange={(e) => setState({ ...state, port: Number(e.target.value) || 0 })}
+        />
+      </Box>
+      <Divider sx={{ my: 0.5 }} />
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+        Fallback response
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <TextField
+          label="Status code"
+          size="small"
+          type="number"
+          value={state.fallbackStatusCode}
+          onChange={(e) => setState({ ...state, fallbackStatusCode: Number(e.target.value) || 200 })}
+          sx={{ width: 130 }}
+        />
+        <TextField
+          label="Fallback on status codes (comma-separated)"
+          size="small"
+          sx={{ flex: 1 }}
+          value={state.fallbackOnStatusCodes}
+          onChange={(e) => setState({ ...state, fallbackOnStatusCodes: e.target.value })}
+          placeholder="500,502,503"
+          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        />
+      </Box>
+      <TextField
+        label="Fallback body"
+        multiline
+        minRows={3}
+        maxRows={10}
+        value={state.fallbackBody}
+        onChange={(e) => setState({ ...state, fallbackBody: e.target.value })}
+        placeholder='{"error":"upstream unavailable"}'
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={state.fallbackOnTimeout}
+            onChange={(e) => setState({ ...state, fallbackOnTimeout: e.target.checked })}
+          />
+        }
+        label={
+          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+            Fallback on timeout / connection error
+          </Typography>
+        }
+      />
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket response
+// ---------------------------------------------------------------------------
+
+interface WebSocketMatcherRow {
+  frameType: WebSocketFrameType;
+  textMatcher: string;
+  responses: string; // one message per line
+}
+
+interface WebSocketState {
+  subprotocol: string;
+  messages: string; // one message per line
+  closeConnection: boolean;
+  matchers: WebSocketMatcherRow[];
+}
+
+function WebSocketPanel({
+  state,
+  setState,
+}: {
+  state: WebSocketState;
+  setState: (s: WebSocketState) => void;
+}) {
+  const addMatcher = () => {
+    setState({
+      ...state,
+      matchers: [...state.matchers, { frameType: 'ANY', textMatcher: '', responses: '' }],
+    });
+  };
+  const removeMatcher = (idx: number) => {
+    setState({ ...state, matchers: state.matchers.filter((_, i) => i !== idx) });
+  };
+  const updateMatcher = (idx: number, patch: Partial<WebSocketMatcherRow>) => {
+    setState({
+      ...state,
+      matchers: state.matchers.map((m, i) => (i === idx ? { ...m, ...patch } : m)),
+    });
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="body2" color="text.secondary">
+        Upgrade the connection to a WebSocket and send initial messages. Optionally add
+        bidirectional frame matchers that respond to incoming frames.
+      </Typography>
+      <TextField
+        label="Subprotocol (optional)"
+        size="small"
+        value={state.subprotocol}
+        onChange={(e) => setState({ ...state, subprotocol: e.target.value })}
+        placeholder="graphql-ws"
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <TextField
+        label="Initial messages (one per line)"
+        multiline
+        minRows={3}
+        maxRows={10}
+        value={state.messages}
+        onChange={(e) => setState({ ...state, messages: e.target.value })}
+        placeholder={'{"type":"connection_ack"}\n{"type":"ka"}'}
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={state.closeConnection}
+            onChange={(e) => setState({ ...state, closeConnection: e.target.checked })}
+          />
+        }
+        label={
+          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+            Close connection after messages
+          </Typography>
+        }
+      />
+
+      <Divider sx={{ my: 0.5 }} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          Bidirectional frame matchers
+        </Typography>
+        <Button size="small" variant="outlined" onClick={addMatcher}>
+          Add matcher
+        </Button>
+      </Box>
+      {state.matchers.map((m, idx) => (
+        <Paper key={idx} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <TextField
+              label="Frame type"
+              size="small"
+              select
+              value={m.frameType}
+              onChange={(e) => updateMatcher(idx, { frameType: e.target.value as WebSocketFrameType })}
+              sx={{ width: 130 }}
+            >
+              {(['TEXT', 'BINARY', 'PING', 'PONG', 'ANY'] as const).map((ft) => (
+                <MenuItem key={ft} value={ft}>{ft}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Text matcher"
+              size="small"
+              sx={{ flex: 1 }}
+              value={m.textMatcher}
+              onChange={(e) => updateMatcher(idx, { textMatcher: e.target.value })}
+              placeholder='e.g. {"type":"ping"}'
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            />
+            <Button
+              size="small"
+              color="error"
+              variant="outlined"
+              onClick={() => removeMatcher(idx)}
+              sx={{ minWidth: 'auto', px: 1 }}
+            >
+              Remove
+            </Button>
+          </Box>
+          <TextField
+            label="Responses (one message per line)"
+            multiline
+            minRows={2}
+            maxRows={6}
+            value={m.responses}
+            onChange={(e) => updateMatcher(idx, { responses: e.target.value })}
+            placeholder={'{"type":"pong"}\n{"type":"ka"}'}
+            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          />
+        </Paper>
+      ))}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Chaos / fault injection panel (optional, cross-cutting across action types)
 // ---------------------------------------------------------------------------
 
@@ -1034,6 +1415,21 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
     delayValue: 0,
     delayUnit: 'MILLISECONDS',
   });
+  const [forwardFallbackState, setForwardFallbackState] = useState<ForwardFallbackState>({
+    scheme: 'HTTPS',
+    host: '',
+    port: 443,
+    fallbackStatusCode: 200,
+    fallbackBody: '',
+    fallbackOnStatusCodes: '500,502,503',
+    fallbackOnTimeout: true,
+  });
+  const [websocketState, setWebsocketState] = useState<WebSocketState>({
+    subprotocol: '',
+    messages: '',
+    closeConnection: false,
+    matchers: [],
+  });
 
   // Chaos profile — cross-cutting, applies regardless of action type
   // (except httpError which is already a fault action).
@@ -1085,9 +1481,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       if (prefill.staticState) setStaticState(prefill.staticState);
       if (prefill.forwardState) setForwardState(prefill.forwardState);
       if (prefill.forwardOverrideState) setForwardOverrideState(prefill.forwardOverrideState);
+      if (prefill.forwardFallbackState) setForwardFallbackState(prefill.forwardFallbackState);
       if (prefill.callbackState) setCallbackState(prefill.callbackState);
       if (prefill.templateState) setTemplateState(prefill.templateState);
       if (prefill.errorState) setErrorState(prefill.errorState);
+      if (prefill.websocketState) setWebsocketState(prefill.websocketState);
 
       // Repopulate chaos panel from an existing expectation
       const existingChaos = chaosFromExpectation(item.value);
@@ -1306,6 +1704,12 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               {actionType === 'error' && (
                 <ErrorPanel state={errorState} setState={setErrorState} />
               )}
+              {actionType === 'forward_fallback' && (
+                <ForwardFallbackPanel state={forwardFallbackState} setState={setForwardFallbackState} />
+              )}
+              {actionType === 'websocket' && (
+                <WebSocketPanel state={websocketState} setState={setWebsocketState} />
+              )}
             </Paper>
 
             {/* Chaos / fault injection — optional, cross-cutting. Not shown
@@ -1346,9 +1750,16 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               if (actionType === 'static') currentAction.static = staticState;
               if (actionType === 'forward') currentAction.forward = forwardState;
               if (actionType === 'forward_override') currentAction.forwardOverride = forwardOverrideState;
+              if (actionType === 'forward_fallback') currentAction.forwardFallback = forwardFallbackState;
               if (actionType === 'callback') currentAction.callback = callbackState;
               if (actionType === 'template') currentAction.template = templateState;
               if (actionType === 'error') currentAction.error = errorState;
+              if (actionType === 'websocket') currentAction.websocket = {
+                subprotocol: websocketState.subprotocol,
+                messages: websocketState.messages,
+                closeConnection: websocketState.closeConnection,
+                matchers: websocketState.matchers,
+              };
               if (chaosEnabled && actionType !== 'error') currentAction.chaos = chaosState;
 
               const dispatchRegister = () => void handleRegister(currentAction);
@@ -1369,10 +1780,13 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                       forwardOverrideState.overrideHeaders.trim().length > 0 ||
                       forwardOverrideState.overrideBody.trim().length > 0
                     );
+                  case 'forward_fallback':
+                    return forwardFallbackState.host.trim().length > 0 && forwardFallbackState.port > 0;
                   case 'callback': return callbackState.callbackClass.trim().length > 0;
                   case 'template': return templateState.template.trim().length > 0;
                   case 'error':
                     return errorState.dropConnection || errorState.responseBytesB64.trim().length > 0;
+                  case 'websocket': return true;
                 }
               })();
 

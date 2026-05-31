@@ -18,6 +18,8 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Switch from '@mui/material/Switch';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import EditIcon from '@mui/icons-material/Edit';
@@ -43,6 +45,15 @@ import {
   resetGrpcHealth,
   type ServingStatus,
 } from '../lib/grpcHealth';
+import {
+  fetchTcpChaos,
+  registerTcpChaos,
+  removeTcpChaos,
+  clearTcpChaos,
+  summarizeTcpChaosProfile,
+  type TcpChaosProfileDTO,
+  type TcpChaosResponse,
+} from '../lib/tcpChaos';
 
 interface ServiceChaosPanelProps {
   connectionParams: ConnectionParams;
@@ -124,6 +135,62 @@ interface EditFormState {
   latencyMs: string;
 }
 
+// --- TCP chaos form state ---
+
+interface TcpFormState {
+  host: string;
+  latencyMs: string;
+  bandwidthBytesPerSec: string;
+  down: boolean;
+  resetPeer: boolean;
+  slowClose: boolean;
+  timeout: boolean;
+  slicerChunkSize: string;
+  limitDataBytes: string;
+  ttlMs: string;
+}
+
+const EMPTY_TCP_FORM: TcpFormState = {
+  host: '',
+  latencyMs: '',
+  bandwidthBytesPerSec: '',
+  down: false,
+  resetPeer: false,
+  slowClose: false,
+  timeout: false,
+  slicerChunkSize: '',
+  limitDataBytes: '',
+  ttlMs: '',
+};
+
+function buildTcpChaosProfile(form: TcpFormState): TcpChaosProfileDTO {
+  const profile: TcpChaosProfileDTO = {};
+  const latMs = num(form.latencyMs);
+  if (latMs != null) profile.latencyMs = latMs;
+  const bw = num(form.bandwidthBytesPerSec);
+  if (bw != null) profile.bandwidthBytesPerSec = bw;
+  if (form.down) profile.down = true;
+  if (form.resetPeer) profile.resetPeer = true;
+  if (form.slowClose) profile.slowClose = true;
+  if (form.timeout) profile.timeout = true;
+  const slicer = num(form.slicerChunkSize);
+  if (slicer != null) profile.slicerChunkSize = slicer;
+  const limit = num(form.limitDataBytes);
+  if (limit != null) profile.limitDataBytes = limit;
+  return profile;
+}
+
+function validateTcpForm(form: TcpFormState): string | null {
+  if (form.host.trim() === '') return 'Host is required';
+  const profile = buildTcpChaosProfile(form);
+  if (summarizeTcpChaosProfile(profile).length === 0) {
+    return 'Set at least one fault (latency, bandwidth, down, reset, etc.)';
+  }
+  const ttl = num(form.ttlMs);
+  if (ttl != null && (!Number.isInteger(ttl) || ttl < 1)) return 'TTL must be a whole number of milliseconds >= 1';
+  return null;
+}
+
 const SERVING_STATUSES: ServingStatus[] = ['SERVING', 'NOT_SERVING', 'UNKNOWN', 'SERVICE_UNKNOWN'];
 
 function servingStatusColor(status: ServingStatus): 'success' | 'error' | 'default' | 'warning' {
@@ -154,6 +221,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [grpcExpanded, setGrpcExpanded] = useState(false);
   const [grpcNewService, setGrpcNewService] = useState('');
   const [grpcNewStatus, setGrpcNewStatus] = useState<ServingStatus>('NOT_SERVING');
+
+  // TCP chaos state
+  const [tcpExpanded, setTcpExpanded] = useState(false);
+  const [tcpData, setTcpData] = useState<TcpChaosResponse>({ hosts: {} });
+  const [tcpForm, setTcpForm] = useState<TcpFormState>(EMPTY_TCP_FORM);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
@@ -217,6 +289,32 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       if (timer) clearTimeout(timer);
     };
   }, [connectionParams, grpcExpanded, refreshTick]);
+
+  // Poll TCP chaos status when the section is expanded.
+  useEffect(() => {
+    if (!tcpExpanded) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll(): Promise<void> {
+      try {
+        const result = await fetchTcpChaos(connectionParams, controller.signal);
+        if (!cancelled) setTcpData(result);
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [connectionParams, tcpExpanded, refreshTick]);
 
   const hosts = useMemo(() => Object.keys(data.services).sort(), [data.services]);
 
@@ -315,6 +413,36 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   }, [connectionParams, runAction]);
 
   const grpcServices = useMemo(() => Object.keys(grpcHealth).sort(), [grpcHealth]);
+
+  // TCP chaos helpers
+  const tcpHosts = useMemo(() => Object.keys(tcpData.hosts).sort(), [tcpData.hosts]);
+
+  const tcpRemainingTtl = (host: string): number | undefined => {
+    const atPoll = tcpData.ttlRemainingMillis?.[host];
+    if (atPoll == null) return undefined;
+    return Math.max(0, atPoll - (now - polledAt));
+  };
+
+  const setTcpField = (field: keyof TcpFormState) => (e: ChangeEvent<HTMLInputElement>) =>
+    setTcpForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const setTcpToggle = (field: keyof TcpFormState) => (_e: ChangeEvent<HTMLInputElement>, checked: boolean) =>
+    setTcpForm((prev) => ({ ...prev, [field]: checked }));
+
+  const handleRegisterTcp = useCallback(() => {
+    const validationError = validateTcpForm(tcpForm);
+    if (validationError !== null) {
+      setActionError(validationError);
+      return;
+    }
+    const host = tcpForm.host.trim();
+    const profile = buildTcpChaosProfile(tcpForm);
+    const ttl = num(tcpForm.ttlMs);
+    void runAction(async () => {
+      await registerTcpChaos(connectionParams, host, profile, ttl);
+      setTcpForm(EMPTY_TCP_FORM);
+    });
+  }, [connectionParams, tcpForm, runAction]);
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -535,6 +663,107 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   </TableBody>
                 </Table>
               </TableContainer>
+            )}
+          </Box>
+        </Collapse>
+      </Paper>
+
+      {/* TCP-Layer Chaos */}
+      <Paper variant="outlined" sx={{ p: 1.25, mt: 1.5 }}>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
+          onClick={() => setTcpExpanded((v) => !v)}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            TCP-Layer Chaos
+          </Typography>
+          <Chip size="small" label={`${tcpHosts.length} hosts`} color={tcpHosts.length > 0 ? 'warning' : 'default'} variant="outlined" />
+          <Box sx={{ flex: 1 }} />
+          <Tooltip title="Clear all TCP chaos">
+            <span>
+              <Button
+                size="small"
+                color="error"
+                startIcon={<DeleteSweepIcon fontSize="small" />}
+                disabled={busy || tcpHosts.length === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runAction(() => clearTcpChaos(connectionParams));
+                }}
+              >
+                Clear TCP
+              </Button>
+            </span>
+          </Tooltip>
+          <IconButton size="small" aria-label={tcpExpanded ? 'Collapse TCP chaos' : 'Expand TCP chaos'}>
+            {tcpExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+          </IconButton>
+        </Box>
+        <Collapse in={tcpExpanded} unmountOnExit>
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Register one TCP chaos profile per upstream host; faults are applied at the raw
+              byte level before HTTP decoding (latency, bandwidth, reset, timeout, etc.).
+            </Typography>
+
+            {/* TCP Register form */}
+            <Paper variant="outlined" sx={{ p: 1, mb: 1 }}>
+              <Typography variant="caption" color="text.secondary">Register TCP chaos for a host</Typography>
+              <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <TextField size="small" label="Host" placeholder="upstream.svc" value={tcpForm.host} onChange={setTcpField('host')} sx={{ minWidth: 160 }} />
+                <TextField size="small" label="Latency ms" placeholder="200" value={tcpForm.latencyMs} onChange={setTcpField('latencyMs')} sx={{ width: 100 }} />
+                <TextField size="small" label="Bandwidth B/s" placeholder="1024" value={tcpForm.bandwidthBytesPerSec} onChange={setTcpField('bandwidthBytesPerSec')} sx={{ width: 120 }} />
+                <TextField size="small" label="Slicer bytes" placeholder="64" value={tcpForm.slicerChunkSize} onChange={setTcpField('slicerChunkSize')} sx={{ width: 100 }} />
+                <TextField size="small" label="Limit bytes" placeholder="4096" value={tcpForm.limitDataBytes} onChange={setTcpField('limitDataBytes')} sx={{ width: 100 }} />
+                <TextField size="small" label="TTL ms" placeholder="60000" value={tcpForm.ttlMs} onChange={setTcpField('ttlMs')} sx={{ width: 100 }} />
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                <FormControlLabel control={<Switch size="small" checked={tcpForm.down} onChange={setTcpToggle('down')} />} label="Down" />
+                <FormControlLabel control={<Switch size="small" checked={tcpForm.resetPeer} onChange={setTcpToggle('resetPeer')} />} label="Reset peer" />
+                <FormControlLabel control={<Switch size="small" checked={tcpForm.slowClose} onChange={setTcpToggle('slowClose')} />} label="Slow close" />
+                <FormControlLabel control={<Switch size="small" checked={tcpForm.timeout} onChange={setTcpToggle('timeout')} />} label="Timeout" />
+                <Button variant="contained" size="small" disabled={busy} onClick={handleRegisterTcp} sx={{ ml: 'auto' }}>
+                  Register
+                </Button>
+              </Box>
+            </Paper>
+
+            {/* TCP Active registrations */}
+            {tcpHosts.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                No TCP-layer chaos registered.
+              </Typography>
+            ) : (
+              <Box>
+                {tcpHosts.map((host) => {
+                  const ttl = tcpRemainingTtl(host);
+                  return (
+                    <Box key={host} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+                        {summarizeTcpChaosProfile(tcpData.hosts[host] ?? {}).map((part) => (
+                          <Chip key={part} size="small" label={part} variant="outlined" />
+                        ))}
+                      </Box>
+                      {ttl != null && (
+                        <Chip size="small" color="warning" label={`auto-revert in ${formatTtl(ttl)}`} />
+                      )}
+                      <Tooltip title="Remove TCP chaos for this host">
+                        <span>
+                          <IconButton
+                            size="small"
+                            aria-label={`Remove TCP chaos for ${host}`}
+                            disabled={busy}
+                            onClick={() => void runAction(() => removeTcpChaos(connectionParams, host))}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Box>
+                  );
+                })}
+              </Box>
             )}
           </Box>
         </Collapse>
