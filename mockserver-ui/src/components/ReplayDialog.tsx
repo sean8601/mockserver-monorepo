@@ -31,7 +31,6 @@ const POLL_INTERVAL_MS = 2000;
 export default function ReplayDialog({ open, onClose, connectionParams }: ReplayDialogProps) {
   const [ratePerSecond, setRatePerSecond] = useState('10');
   const [chaosEnabled, setChaosEnabled] = useState(false);
-  const [chaosHost, setChaosHost] = useState('');
   const [errorStatus, setErrorStatus] = useState('');
   const [errorProbability, setErrorProbability] = useState('');
   const [latencyMs, setLatencyMs] = useState('');
@@ -166,14 +165,6 @@ export default function ReplayDialog({ open, onClose, connectionParams }: Replay
             />
             {chaosEnabled && (
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <TextField
-                  size="small"
-                  label="Chaos host"
-                  placeholder="upstream.svc"
-                  value={chaosHost}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setChaosHost(e.target.value)}
-                  sx={{ minWidth: 160 }}
-                />
                 <TextField
                   size="small"
                   label="Error status"
