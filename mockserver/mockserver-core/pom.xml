@@ -393,6 +393,7 @@
                         <exclude>**/ExpectationTest.java</exclude>
                         <exclude>**/HttpActionHandlerChaosTest.java</exclude>
                         <exclude>**/HttpActionHandlerForwardChaosTest.java</exclude>
+                        <exclude>**/ServiceChaosRegistryTest.java</exclude>
                         <exclude>**/MetricsTest.java</exclude>
                         <exclude>**/MetricsHandlerTest.java</exclude>
                         <exclude>**/HttpRequestsPropertiesMatcherTest.java</exclude>
@@ -427,6 +428,7 @@
                                 <include>**/ExpectationTest.java</include>
                                 <include>**/HttpActionHandlerChaosTest.java</include>
                                 <include>**/HttpActionHandlerForwardChaosTest.java</include>
+                                <include>**/ServiceChaosRegistryTest.java</include>
                                 <include>**/MetricsTest.java</include>
                                 <include>**/MetricsHandlerTest.java</include>
                                 <include>**/HttpRequestsPropertiesMatcherTest.java</include>
