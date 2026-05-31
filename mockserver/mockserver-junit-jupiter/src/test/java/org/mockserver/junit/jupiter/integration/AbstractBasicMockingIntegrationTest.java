@@ -1769,7 +1769,7 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
             "" + NEW_LINE +
             " schema validation errors:" + NEW_LINE +
             "" + NEW_LINE +
-            "  20 errors:\n" +
+            "  21 errors:\n" +
             "   - $.binaryResponse: is missing but it is required\n" +
             "   - $.dnsResponse: is missing but it is required\n" +
             "   - $.grpcStreamResponse: is missing, but is required, if specifying action of type GrpcStreamResponse\n" +
@@ -1779,6 +1779,7 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
             "   - $.httpForwardObjectCallback: is missing, but is required, if specifying action of type ForwardObjectCallback\n" +
             "   - $.httpForwardTemplate: is missing, but is required, if specifying action of type ForwardTemplate\n" +
             "   - $.httpForwardValidateAction: is missing, but is required, if specifying action of type ForwardValidateAction\n" +
+            "   - $.httpForwardWithFallback: is missing, but is required, if specifying action of type ForwardWithFallback\n" +
             "   - $.httpLlmResponse: is missing, but is required, if specifying action of type LlmResponse\n" +
             "   - $.httpOverrideForwardedRequest: is missing, but is required, if specifying action of type OverrideForwardedRequest\n" +
             "   - $.httpResponse: is missing, but is required, if specifying action of type Response\n" +
