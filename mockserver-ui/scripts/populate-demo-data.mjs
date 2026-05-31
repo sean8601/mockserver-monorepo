@@ -16,6 +16,8 @@
  *   - Predicate pills        a showcase conversation expectation exercising every
  *                            predicate type (incl. semanticMatchAgainst + a
  *                            normalization block) and a chaos profile.
+ *   - Service chaos          a few service-scoped chaos registrations (varied fault
+ *                            types, two with an auto-revert TTL) for the Chaos tab.
  *
  * It talks to MockServer over its plain REST API (no extra dependencies — uses
  * the built-in global fetch in Node 18+). Safe to re-run: it resets first.
@@ -57,7 +59,7 @@ const SELF_HOST = TARGET.hostname;
 const SELF_PORT = Number(TARGET.port || (TARGET.protocol === 'https:' ? 443 : 80));
 const SELF_SCHEME = TARGET.protocol === 'https:' ? 'HTTPS' : 'HTTP';
 
-const counts = { expectations: 0, requests: 0, unmatched: 0 };
+const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0 };
 function log(msg) { if (!quiet) console.log(msg); }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +420,46 @@ async function conversationExpectations() {
 }
 
 // ---------------------------------------------------------------------------
+// 3b. Service-scoped chaos (Chaos tab)
+// ---------------------------------------------------------------------------
+
+// Registered against the control-plane /mockserver/serviceChaos endpoint so the
+// dashboard's Chaos tab has example data: a mix of fault types, and two TTL-bearing
+// registrations so the live auto-revert countdown is visible. These are applied to
+// the matched-forward path keyed by Host, so they do not affect the demo's own
+// traffic — they exist to populate the Chaos tab's "active registrations" view.
+const SERVICE_CHAOS = [
+  {
+    host: 'payments.svc',
+    chaos: { errorStatus: 503, errorProbability: 0.3, latency: { timeUnit: 'MILLISECONDS', value: 500 } },
+    ttlMillis: 600000,
+  },
+  {
+    host: 'checkout.svc',
+    chaos: { errorStatus: 429, retryAfter: '30', errorProbability: 1.0 },
+    ttlMillis: 300000,
+  },
+  {
+    host: 'inventory.svc',
+    chaos: { dropConnectionProbability: 0.25 },
+  },
+  {
+    host: 'recommendations.svc',
+    chaos: { latency: { timeUnit: 'MILLISECONDS', value: 1200 } },
+  },
+];
+
+async function serviceChaosExamples() {
+  log('\n→ Service-scoped chaos (Chaos tab)');
+  for (const entry of SERVICE_CHAOS) {
+    const res = await api('PUT', '/mockserver/serviceChaos', entry);
+    if (!res.ok) throw new Error(`Failed to register service chaos for "${entry.host}": HTTP ${res.status}`);
+    counts.serviceChaos++;
+    log(`   ~ service chaos  ${entry.host}${entry.ttlMillis ? `  (ttl ${entry.ttlMillis}ms)` : ''}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 4. Recorded traffic (Traffic view, token/cost, unmatched diagnostics)
 // ---------------------------------------------------------------------------
 
@@ -524,6 +566,7 @@ async function main() {
   await proxyExpectations();
   await llmExpectations();
   await conversationExpectations();
+  await serviceChaosExamples();
   await plainHttpTraffic();
   await proxyTraffic();
   await llmTraffic();
@@ -534,11 +577,13 @@ async function main() {
   log('========================================');
   log(` Expectations created : ${counts.expectations}`);
   log(` Requests sent        : ${counts.requests} (incl. ~${counts.unmatched} intentionally unmatched)`);
+  log(` Service chaos hosts  : ${counts.serviceChaos} (2 with an auto-revert TTL countdown)`);
   log('');
   log(' Try these views in the dashboard:');
   log('   Dashboard / Library — active expectations (HTTP, forward, LLM, conversation pills)');
   log('   Traffic            — recorded + proxied (forwarded) requests, incl. a lane per LLM provider + token/cost');
   log('   Sessions           — agent-001 / agent-002 loops + their call graphs');
+  log('   Chaos              — service-scoped chaos registrations (fault chips + live TTL countdown)');
   log('');
 }
 
