@@ -216,6 +216,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [editingHost, setEditingHost] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>({ errorStatus: '', errorProbability: '', dropProbability: '', latencyMs: '' });
 
+  // HTTP service chaos section expand state (the primary section — open by default,
+  // but collapsible for consistency with the gRPC and TCP sections).
+  const [httpExpanded, setHttpExpanded] = useState(true);
+
   // gRPC health state
   const [grpcHealth, setGrpcHealthState] = useState<Record<string, ServingStatus>>({});
   const [grpcExpanded, setGrpcExpanded] = useState(false);
@@ -452,32 +456,13 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
           Service Chaos
         </Typography>
-        <Chip size="small" label={`${hosts.length} active`} color={hosts.length > 0 ? 'warning' : 'default'} variant="outlined" />
         <Box sx={{ flex: 1 }} />
-        <Tooltip title="Clear all service-scoped chaos">
-          <span>
-            <Button
-              size="small"
-              color="error"
-              startIcon={<DeleteSweepIcon fontSize="small" />}
-              disabled={busy || hosts.length === 0}
-              onClick={() => void runAction(() => clearServiceChaos(connectionParams))}
-            >
-              Clear all
-            </Button>
-          </span>
-        </Tooltip>
         <Tooltip title="Refresh now">
           <IconButton size="small" onClick={refresh} aria-label="Refresh service chaos">
             <RefreshIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       </Box>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        Register one HTTP chaos profile per upstream host; it is applied to every matched forward to that host.
-        Add a TTL to auto-revert the fault after a bounded window (a dead-man&apos;s switch).
-      </Typography>
 
       {loadError && (
         <Alert severity="error" sx={{ mb: 1.5 }} action={
@@ -494,86 +479,124 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         </Alert>
       )}
 
-      {/* Register form */}
+      {/* HTTP Service Chaos */}
       <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
-        <Typography variant="caption" color="text.secondary">Register chaos for a host</Typography>
-        <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          <TextField size="small" label="Host" placeholder="upstream.svc" value={form.host} onChange={setField('host')} sx={{ minWidth: 180 }} />
-          <TextField size="small" label="Error status" placeholder="503" value={form.errorStatus} onChange={setField('errorStatus')} sx={{ width: 110 }} />
-          <TextField size="small" label="Error prob" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: 100 }} />
-          <TextField size="small" label="Drop prob" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: 100 }} />
-          <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: 100 }} />
-          <TextField size="small" label="TTL ms" placeholder="60000" value={form.ttlMs} onChange={setField('ttlMs')} sx={{ width: 110 }} />
-          <Button variant="contained" size="small" disabled={busy} onClick={handleRegister} sx={{ mt: 0.25 }}>
-            Register
-          </Button>
-        </Box>
-      </Paper>
-
-      {/* Active registrations */}
-      <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
-        <Typography variant="caption" color="text.secondary">Active registrations</Typography>
-        {hosts.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            No service-scoped chaos registered.
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
+          onClick={() => setHttpExpanded((v) => !v)}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            HTTP Service Chaos
           </Typography>
-        ) : (
-          <Box sx={{ mt: 0.5 }}>
-            {hosts.map((host) => {
-              const ttl = remainingTtl(host);
-              const isEditing = editingHost === host;
-              return (
-                <Box key={host}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
-                      {summarizeChaosProfile(data.services[host] ?? {}).map((part) => (
-                        <Chip key={part} size="small" label={part} variant="outlined" />
-                      ))}
+          <Chip size="small" label={`${hosts.length} active`} color={hosts.length > 0 ? 'warning' : 'default'} variant="outlined" />
+          <Box sx={{ flex: 1 }} />
+          <Tooltip title="Clear all service-scoped chaos">
+            <span>
+              <Button
+                size="small"
+                color="error"
+                startIcon={<DeleteSweepIcon fontSize="small" />}
+                disabled={busy || hosts.length === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runAction(() => clearServiceChaos(connectionParams));
+                }}
+              >
+                Clear all
+              </Button>
+            </span>
+          </Tooltip>
+          <IconButton size="small" aria-label={httpExpanded ? 'Collapse HTTP chaos' : 'Expand HTTP chaos'}>
+            {httpExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+          </IconButton>
+        </Box>
+        <Collapse in={httpExpanded}>
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Register one HTTP chaos profile per upstream host; it is applied to every matched forward to that host.
+              Add a TTL to auto-revert the fault after a bounded window (a dead-man&apos;s switch).
+            </Typography>
+
+            {/* Register form */}
+            <Paper variant="outlined" sx={{ p: 1, mb: 1 }}>
+              <Typography variant="caption" color="text.secondary">Register chaos for a host</Typography>
+              <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <TextField size="small" label="Host" placeholder="upstream.svc" value={form.host} onChange={setField('host')} sx={{ minWidth: 180 }} />
+                <TextField size="small" label="Error status" placeholder="503" value={form.errorStatus} onChange={setField('errorStatus')} sx={{ width: 110 }} />
+                <TextField size="small" label="Error prob" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: 100 }} />
+                <TextField size="small" label="Drop prob" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: 100 }} />
+                <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: 100 }} />
+                <TextField size="small" label="TTL ms" placeholder="60000" value={form.ttlMs} onChange={setField('ttlMs')} sx={{ width: 110 }} />
+                <Button variant="contained" size="small" disabled={busy} onClick={handleRegister} sx={{ mt: 0.25 }}>
+                  Register
+                </Button>
+              </Box>
+            </Paper>
+
+            {/* Active registrations */}
+            {hosts.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                No service-scoped chaos registered.
+              </Typography>
+            ) : (
+              <Box>
+                {hosts.map((host) => {
+                  const ttl = remainingTtl(host);
+                  const isEditing = editingHost === host;
+                  return (
+                    <Box key={host}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+                          {summarizeChaosProfile(data.services[host] ?? {}).map((part) => (
+                            <Chip key={part} size="small" label={part} variant="outlined" />
+                          ))}
+                        </Box>
+                        {ttl != null && (
+                          <Chip size="small" color="warning" label={`auto-revert in ${formatTtl(ttl)}`} />
+                        )}
+                        <Tooltip title="Edit chaos profile for this host">
+                          <span>
+                            <IconButton
+                              size="small"
+                              aria-label={`Edit chaos for ${host}`}
+                              disabled={busy}
+                              onClick={() => isEditing ? handleCancelEdit() : handleStartEdit(host)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Remove chaos for this host">
+                          <span>
+                            <IconButton
+                              size="small"
+                              aria-label={`Remove chaos for ${host}`}
+                              disabled={busy}
+                              onClick={() => void runAction(() => removeServiceChaos(connectionParams, host))}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
+                      {isEditing && (
+                        <Box sx={{ display: 'flex', gap: 1, py: 0.75, pl: 2, flexWrap: 'wrap', alignItems: 'flex-start', bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <TextField size="small" label="Error status" value={editForm.errorStatus} onChange={setEditField('errorStatus')} sx={{ width: 110 }} />
+                          <TextField size="small" label="Error prob" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: 100 }} />
+                          <TextField size="small" label="Drop prob" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: 100 }} />
+                          <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: 100 }} />
+                          <Button size="small" variant="contained" disabled={busy} onClick={handleApplyEdit}>Apply</Button>
+                          <Button size="small" onClick={handleCancelEdit}>Cancel</Button>
+                        </Box>
+                      )}
                     </Box>
-                    {ttl != null && (
-                      <Chip size="small" color="warning" label={`auto-revert in ${formatTtl(ttl)}`} />
-                    )}
-                    <Tooltip title="Edit chaos profile for this host">
-                      <span>
-                        <IconButton
-                          size="small"
-                          aria-label={`Edit chaos for ${host}`}
-                          disabled={busy}
-                          onClick={() => isEditing ? handleCancelEdit() : handleStartEdit(host)}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title="Remove chaos for this host">
-                      <span>
-                        <IconButton
-                          size="small"
-                          aria-label={`Remove chaos for ${host}`}
-                          disabled={busy}
-                          onClick={() => void runAction(() => removeServiceChaos(connectionParams, host))}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Box>
-                  {isEditing && (
-                    <Box sx={{ display: 'flex', gap: 1, py: 0.75, pl: 2, flexWrap: 'wrap', alignItems: 'flex-start', bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
-                      <TextField size="small" label="Error status" value={editForm.errorStatus} onChange={setEditField('errorStatus')} sx={{ width: 110 }} />
-                      <TextField size="small" label="Error prob" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: 100 }} />
-                      <TextField size="small" label="Drop prob" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: 100 }} />
-                      <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: 100 }} />
-                      <Button size="small" variant="contained" disabled={busy} onClick={handleApplyEdit}>Apply</Button>
-                      <Button size="small" onClick={handleCancelEdit}>Cancel</Button>
-                    </Box>
-                  )}
-                </Box>
-              );
-            })}
+                  );
+                })}
+              </Box>
+            )}
           </Box>
-        )}
+        </Collapse>
       </Paper>
 
       {/* gRPC Health Chaos */}
