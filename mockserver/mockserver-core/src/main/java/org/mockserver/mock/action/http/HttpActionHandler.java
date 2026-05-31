@@ -14,6 +14,7 @@ import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.httpclient.SocketCommunicationException;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.CrossProtocolEventBus;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.crud.CrudDispatcher;
@@ -235,6 +236,8 @@ public class HttpActionHandler {
      * action-type switch and secondary-action fan-out live here.
      */
     private void dispatchPrimaryAction(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable expectationPostProcessor) {
+        // fire cross-protocol scenario transitions when this expectation has them
+        fireCrossProtocolEvents(expectation, request);
         final Action action = expectation.getAction();
         // capture matchCount before scheduling to avoid race with concurrent requests
         final int capturedMatchCount = expectation.getMatchCount();
@@ -781,6 +784,18 @@ public class HttpActionHandler {
         return false;
     }
 
+    /**
+     * If the matched expectation carries cross-protocol scenario triggers,
+     * fire the HTTP_REQUEST event so registered listeners can advance
+     * scenario state.
+     */
+    private void fireCrossProtocolEvents(Expectation expectation, HttpRequest request) {
+        if (expectation.getCrossProtocolScenarios() != null && !expectation.getCrossProtocolScenarios().isEmpty()) {
+            String path = request.getPath() != null ? request.getPath().getValue() : "/";
+            CrossProtocolEventBus.getInstance().fire(CrossProtocolTrigger.HTTP_REQUEST, path);
+        }
+    }
+
     private void handleAnyException(HttpRequest request, ResponseWriter responseWriter, boolean synchronous, Action action, Runnable processAction, Runnable postProcessor) {
         try {
             processAction.run();
@@ -1308,7 +1323,9 @@ public class HttpActionHandler {
     void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx) {
         scheduler.submit(responseFuture, () -> {
             try {
+                long forwardStartNanos = System.nanoTime();
                 HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+                long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
 
                 // chaos: drop connection takes priority over error and latency
                 if (shouldDropConnection(chaos, matchCount)) {
@@ -1342,7 +1359,8 @@ public class HttpActionHandler {
 
                 // Drift detection: asynchronously compare the real upstream response against
                 // any response-type stub expectations matching this request.
-                analyseDrift(request, response);
+                // responseTimeMs already captured at line above via nanoTime delta.
+                analyseDrift(request, response, responseTimeMs);
 
                 // Factor the write (streaming vs non-streaming) into a single command so
                 // it can be dispatched either directly or via the non-blocking scheduler.
@@ -1795,5 +1813,48 @@ public class HttpActionHandler {
         if (ctx != null && ctx.channel() != null) {
             ctx.channel().attr(REMOTE_SOCKET).set(inetSocketAddress);
         }
+    }
+
+    /**
+     * Asynchronously compares a forwarded upstream response against any response-type
+     * stub expectations that match the same request, recording structural drift
+     * (status, headers, JSON schema) and performance drift into the
+     * {@link org.mockserver.mock.drift.DriftStore}.
+     */
+    private void analyseDrift(final HttpRequest request, final HttpResponse realResponse, final long responseTimeMs) {
+        if (realResponse == null) {
+            return;
+        }
+        scheduler.submit(() -> {
+            try {
+                List<Expectation> matching = httpStateHandler.allMatchingExpectation(request);
+                org.mockserver.mock.drift.DriftAnalyzer analyzer = org.mockserver.mock.drift.DriftAnalyzer.getInstance();
+                for (Expectation expectation : matching) {
+                    if (expectation.getAction() instanceof HttpResponse) {
+                        analyzer.analyse(expectation, realResponse);
+                        // Record response time and check for performance drift
+                        org.mockserver.mock.drift.PercentileTracker.getInstance()
+                            .record(expectation.getId(), responseTimeMs);
+                        analyzer.checkPerformanceDrift(expectation.getId(), responseTimeMs,
+                            org.mockserver.time.TimeService.currentTimeMillis());
+                    }
+                }
+            } catch (Exception e) {
+                if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(TRACE)
+                            .setHttpRequest(request)
+                            .setMessageFormat("exception during drift analysis - " + e.getMessage())
+                            .setThrowable(e)
+                    );
+                }
+            }
+        });
+    }
+
+    // Stub for cross-protocol events (wired by the cross-protocol agent; needed for compilation)
+    private void fireCrossProtocolEventsIfPresent(Expectation expectation, HttpRequest request) {
+        // no-op — placeholder until cross-protocol event support is implemented
     }
 }

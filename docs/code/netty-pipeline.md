@@ -108,13 +108,40 @@ Configuration: `ConfigurationProperties.connectionDelayMillis(long millis)`, sys
 
 **Warning:** The delay blocks the Netty I/O thread. For large delays or high connection rates, this may impact server throughput.
 
+### TCP Chaos Handler
+
+When TCP-layer chaos is active (at least one host registered in `TcpChaosRegistry`), a `TcpChaosHandler` is inserted at the front of the pipeline before HTTP codecs. This handler operates on raw `ByteBuf` data and can inject transport-layer faults that mirror Toxiproxy's named toxics:
+
+| Fault Type | Field | Behaviour |
+|-----------|-------|-----------|
+| latency | `latencyMs` | Delays all inbound data by the configured milliseconds |
+| down | `down` | Silently drops all inbound data (service appears down) |
+| bandwidth | `bandwidthBytesPerSec` | Throttles inbound data to the configured bytes/sec |
+| slow_close | `slowClose` | Delays the TCP FIN by 2 seconds on close |
+| timeout | `timeout` | Never sends FIN; connection hangs on close |
+| reset_peer | `resetPeer` | Sends TCP RST and closes immediately |
+| slicer | `slicerChunkSize` | Fragments inbound data into chunks of the configured size |
+| limit_data | `limitDataBytes` | Closes the connection after the configured bytes received |
+
+The handler is **not sharable** (each channel gets its own instance) because it maintains per-connection state (`bytesConsumed` for `limitData`).
+
+Profiles are managed via the REST API:
+
+- `PUT /mockserver/tcpChaos` -- register, remove, or clear TCP chaos profiles
+- `GET /mockserver/tcpChaos` -- list all active TCP chaos profiles
+- `PATCH /mockserver/tcpChaos` -- merge-patch an existing profile
+
+Profiles support optional TTL-based auto-expiry (dead-man's switch), identical to the `ServiceChaosRegistry` pattern.
+
 ### Protocol-Specific Pipelines
 
 #### HTTP/1.1 Pipeline
 
 ```mermaid
 graph LR
-    A[HttpServerCodec] --> B[PreserveHeadersNettyRemoves]
+    TCH["TcpChaosHandler
+(conditional)"] --> A[HttpServerCodec]
+    A --> B[PreserveHeadersNettyRemoves]
     B --> C[HttpContentDecompressor]
     C --> D[HttpContentLengthRemover]
     D --> EMH[EarlyMatchingHandler]
@@ -129,6 +156,7 @@ graph LR
 
 | Handler | Class | Purpose |
 |---------|-------|---------|
+| TcpChaosHandler | `o.m.netty.unification` | (Conditional) Injects TCP-layer faults (latency, down, bandwidth, slicer, etc.) on raw bytes before HTTP decoding. Only added when `TcpChaosRegistry` has active entries |
 | HttpServerCodec | Netty built-in | HTTP/1.1 request decoding / response encoding |
 | PreserveHeadersNettyRemoves | `o.m.codec` | Preserves `Host`, `Content-Length`, and `Transfer-Encoding` headers that Netty's HTTP codec would otherwise strip or modify during decode/encode |
 | HttpContentDecompressor | Netty built-in | Decompresses gzipped request bodies |
@@ -145,7 +173,9 @@ graph LR
 
 ```mermaid
 graph LR
-    SSL[SslHandler] --> H2C["HttpToHttp2ConnectionHandler
+    SSL[SslHandler] --> TCH["TcpChaosHandler
+(conditional)"]
+    TCH --> H2C["HttpToHttp2ConnectionHandler
 with InboundHttp2ToHttpAdapter"]
     H2C --> F[CallbackWebSocketServerHandler]
     F --> G[DashboardWebSocketHandler]

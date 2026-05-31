@@ -40,6 +40,8 @@ public class Configuration {
     private Boolean metricsEnabled;
     private Long slowRequestThresholdMillis;
     private Boolean metricsRequestDurationRouteLabels;
+    private Boolean otelPropagateTraceContext;
+    private Boolean otelGenerateTraceId;
     private Boolean mcpEnabled;
     private String grpcDescriptorDirectory;
     private String grpcProtoDirectory;
@@ -79,6 +81,8 @@ public class Configuration {
     private Integer maxRequestBodySize;
     private Integer maxResponseBodySize;
     private Integer maxLlmConversationBodySize;
+    private Boolean driftSemanticAnalysisEnabled;
+    private Long driftResponseTimeThresholdMs;
     private Boolean useSemicolonAsQueryParameterSeparator;
     private Boolean assumeAllRequestsAreHttp;
     private Boolean http2Enabled;
@@ -367,6 +371,42 @@ public class Configuration {
      */
     public Configuration metricsRequestDurationRouteLabels(Boolean metricsRequestDurationRouteLabels) {
         this.metricsRequestDurationRouteLabels = metricsRequestDurationRouteLabels;
+        return this;
+    }
+
+    public Boolean otelPropagateTraceContext() {
+        if (otelPropagateTraceContext == null) {
+            return ConfigurationProperties.otelPropagateTraceContext();
+        }
+        return otelPropagateTraceContext;
+    }
+
+    /**
+     * When true, MockServer copies the incoming W3C traceparent and tracestate
+     * headers into mock responses. Off by default.
+     *
+     * @param otelPropagateTraceContext enable trace context propagation to responses
+     */
+    public Configuration otelPropagateTraceContext(Boolean otelPropagateTraceContext) {
+        this.otelPropagateTraceContext = otelPropagateTraceContext;
+        return this;
+    }
+
+    public Boolean otelGenerateTraceId() {
+        if (otelGenerateTraceId == null) {
+            return ConfigurationProperties.otelGenerateTraceId();
+        }
+        return otelGenerateTraceId;
+    }
+
+    /**
+     * When true, MockServer generates a new W3C trace ID for incoming requests
+     * that do not carry a traceparent header. Off by default.
+     *
+     * @param otelGenerateTraceId enable trace ID generation for requests without traceparent
+     */
+    public Configuration otelGenerateTraceId(Boolean otelGenerateTraceId) {
+        this.otelGenerateTraceId = otelGenerateTraceId;
         return this;
     }
 
@@ -893,6 +933,45 @@ public class Configuration {
      */
     public Configuration maxLlmConversationBodySize(Integer maxLlmConversationBodySize) {
         this.maxLlmConversationBodySize = maxLlmConversationBodySize;
+        return this;
+    }
+
+    public Boolean driftSemanticAnalysisEnabled() {
+        if (driftSemanticAnalysisEnabled == null) {
+            return ConfigurationProperties.driftSemanticAnalysisEnabled();
+        }
+        return driftSemanticAnalysisEnabled;
+    }
+
+    /**
+     * Whether to enable LLM-powered semantic drift analysis. When enabled and
+     * a runtime LLM backend is available, each structural drift record is enriched
+     * with a severity classification (BREAKING/WARNING/INFORMATIONAL) and an
+     * explanation. Default false (opt-in).
+     *
+     * @param driftSemanticAnalysisEnabled true to enable semantic drift analysis
+     */
+    public Configuration driftSemanticAnalysisEnabled(Boolean driftSemanticAnalysisEnabled) {
+        this.driftSemanticAnalysisEnabled = driftSemanticAnalysisEnabled;
+        return this;
+    }
+
+    public Long driftResponseTimeThresholdMs() {
+        if (driftResponseTimeThresholdMs == null) {
+            return ConfigurationProperties.driftResponseTimeThresholdMs();
+        }
+        return driftResponseTimeThresholdMs;
+    }
+
+    /**
+     * p95 response time threshold (in milliseconds) for performance drift detection.
+     * When positive, a PERFORMANCE drift record is emitted whenever the p95 response
+     * time for an expectation exceeds this threshold. Default 0 (disabled).
+     *
+     * @param driftResponseTimeThresholdMs threshold in milliseconds, 0 to disable
+     */
+    public Configuration driftResponseTimeThresholdMs(Long driftResponseTimeThresholdMs) {
+        this.driftResponseTimeThresholdMs = driftResponseTimeThresholdMs;
         return this;
     }
 

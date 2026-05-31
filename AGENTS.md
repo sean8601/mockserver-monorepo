@@ -34,6 +34,7 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/code/tls-and-security.md](docs/code/tls-and-security.md) | Before modifying TLS, mTLS, certificates, or authentication |
 | [docs/code/client-and-integrations.md](docs/code/client-and-integrations.md) | Before modifying client library, JUnit rules, or Spring integration |
 | [docs/code/drift-detection.md](docs/code/drift-detection.md) | Before modifying mock drift detection, DriftAnalyzer, DriftStore, or the /drift endpoint |
+| [docs/code/telemetry.md](docs/code/telemetry.md) | Before modifying OpenTelemetry integration, OTLP export, GenAI spans, or W3C trace context propagation |
 | [docs/operations/build-system.md](docs/operations/build-system.md) | Before changing Maven config, plugins, or build scripts |
 | [docs/infrastructure/ci-cd.md](docs/infrastructure/ci-cd.md) | Before modifying Buildkite or GitHub Actions pipelines |
 | [docs/infrastructure/aws-infrastructure.md](docs/infrastructure/aws-infrastructure.md) | Before investigating AWS, Terraform, or Buildkite agent issues |

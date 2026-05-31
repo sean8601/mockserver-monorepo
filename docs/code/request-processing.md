@@ -651,3 +651,51 @@ When no expectation matches and a 404 is returned, `HttpActionHandler.returnNotF
 | `MatchDifference` | `mockserver-core/.../matchers/` | Stores per-field match failure details (pre-existing) |
 | `MatchFailureHints` | `mockserver-core/.../matchers/` | Generates actionable suggestions for common mismatches (pre-existing) |
 | `MismatchRemediation` | `mockserver-core/.../matchers/` | Produces one-line remediation hints from `MatchDifference.Field` and diff messages (e.g., "use method POST not GET", "add trailing slash") |
+
+## Replay Under Chaos
+
+The replay-under-chaos feature lets operators record a session's proxy traffic, replay it at a configurable rate with an optional HTTP chaos overlay, and compare outcomes (latency, status codes) against the original baseline.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    CLIENT["PUT /mockserver/replay"] --> HS["HttpState.handleReplayStart"]
+    HS --> RETRIEVE["retrieveRecordedRequests\n(FORWARDED_REQUEST log entries)"]
+    HS --> CHAOS{"chaosProfile\nin body?"}
+    CHAOS -->|Yes| REGISTER["ServiceChaosRegistry.put\nfor each target host\n(5 min TTL)"]
+    CHAOS -->|No| SKIP["No chaos overlay"]
+    REGISTER --> ORCH["ReplayOrchestrator.startReplay"]
+    SKIP --> ORCH
+    ORCH --> THREAD["Background thread\nrate-limited replay"]
+    THREAD --> SENDER["Sender callback\n(netty layer)"]
+    SENDER --> RESULT["ReplayResult\n(status + latency comparison)"]
+    RESULT --> REPORT["ReplayReport\n(RUNNING -> COMPLETED)"]
+
+    POLL["GET /mockserver/replay/{id}"] --> GET_REPORT["ReplayOrchestrator.getReport"]
+    GET_REPORT --> REPORT
+```
+
+### REST Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `PUT` | `/mockserver/replay` | Start a replay session. Body: `{ "ratePerSecond": 10, "chaosProfile": { ... } }` |
+| `GET` | `/mockserver/replay/{replayId}` | Poll the replay report (progress + per-request comparison results) |
+
+### Key Classes
+
+| Class | Location | Purpose |
+|-------|----------|---------|
+| `ReplayOrchestrator` | `mockserver-core/.../mock/replay/` | Manages replay sessions in a `ConcurrentHashMap`; runs each replay on a daemon thread |
+| `ReplayReport` | `mockserver-core/.../mock/replay/` | Tracks progress (RUNNING/COMPLETED) and per-request results |
+| `ReplayResult` | `mockserver-core/.../mock/replay/` | Single request comparison: baseline vs. replay status code and latency |
+| `RecordedRequest` | `mockserver-core/.../mock/replay/` | Wraps an `HttpRequest` with baseline status code and latency |
+| `ReplayResultCallback` | `mockserver-core/.../mock/replay/` | Functional interface for the sender to report completion |
+
+### Design Decisions
+
+1. **Callback-based sender**: `ReplayOrchestrator` lives in `mockserver-core` but the actual HTTP sending requires `NettyHttpClient` in `mockserver-netty`. A `BiConsumer<HttpRequest, ReplayResultCallback>` callback bridges this boundary.
+2. **Rate limiting**: Uses simple `Thread.sleep(1000/ratePerSec)` between requests. Zero means unlimited.
+3. **Chaos overlay**: When a `chaosProfile` is provided in the replay request body, it is registered in `ServiceChaosRegistry` for each target host found in the recorded traffic, with a 5-minute TTL that auto-clears even if the replay is never stopped.
+4. **Reset**: `ReplayOrchestrator.reset()` is called from `HttpState.reset()` to clear all replay state on server reset.

@@ -95,12 +95,16 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_BASE_URL = "mockserver.llmBaseUrl";
     private static final String MOCKSERVER_LLM_BACKENDS_CONFIG = "mockserver.llmBackendsConfig";
     private static final String MOCKSERVER_LLM_REQUEST_TIMEOUT_MILLIS = "mockserver.llmRequestTimeoutMillis";
+    private static final String MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED = "mockserver.driftSemanticAnalysisEnabled";
+    private static final String MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS = "mockserver.driftResponseTimeThresholdMs";
     private static final String MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS = "mockserver.fixtureBodyRedactFields";
     private static final String MOCKSERVER_LLM_VCR_STRICT = "mockserver.llmVcrStrict";
     private static final String MOCKSERVER_OTEL_METRICS_ENABLED = "mockserver.otelMetricsEnabled";
     private static final String MOCKSERVER_OTEL_TRACES_ENABLED = "mockserver.otelTracesEnabled";
     private static final String MOCKSERVER_OTEL_ENDPOINT = "mockserver.otelEndpoint";
     private static final String MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS = "mockserver.otelMetricsExportIntervalSeconds";
+    private static final String MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT = "mockserver.otelPropagateTraceContext";
+    private static final String MOCKSERVER_OTEL_GENERATE_TRACE_ID = "mockserver.otelGenerateTraceId";
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
@@ -1097,6 +1101,35 @@ public class ConfigurationProperties {
     }
 
     /**
+     * Whether to enable LLM-powered semantic drift analysis. When enabled and a
+     * runtime LLM backend is available, each structural drift record is enriched
+     * with a severity classification (BREAKING / WARNING / INFORMATIONAL) and an
+     * explanation from the LLM. Default false (opt-in).
+     */
+    public static boolean driftSemanticAnalysisEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(
+            PROPERTIES, MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED, "MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED", "false"));
+    }
+
+    public static void driftSemanticAnalysisEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED, "" + enabled);
+    }
+
+    /**
+     * p95 response time threshold (in milliseconds) for performance drift detection.
+     * When set to a positive value, a PERFORMANCE drift record is emitted whenever
+     * the p95 response time for an expectation exceeds this threshold. Default 0
+     * (disabled).
+     */
+    public static long driftResponseTimeThresholdMs() {
+        return readLongProperty(MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS, "MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS", 0L);
+    }
+
+    public static void driftResponseTimeThresholdMs(long thresholdMs) {
+        setProperty(MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS, "" + thresholdMs);
+    }
+
+    /**
      * Comma-separated JSON field names whose values are redacted from recorded
      * fixture request/response bodies (in addition to the always-redacted
      * sensitive headers). Empty by default. Used by {@code record_llm_fixtures}.
@@ -1174,6 +1207,31 @@ public class ConfigurationProperties {
 
     public static void otelMetricsExportIntervalSeconds(long seconds) {
         setProperty(MOCKSERVER_OTEL_METRICS_EXPORT_INTERVAL_SECONDS, "" + seconds);
+    }
+
+    /**
+     * When true, MockServer copies the incoming W3C {@code traceparent} and
+     * {@code tracestate} headers into mock responses. Off by default so
+     * responses are not modified unless the user opts in.
+     */
+    public static boolean otelPropagateTraceContext() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT, "MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT", "" + false));
+    }
+
+    public static void otelPropagateTraceContext(boolean enabled) {
+        setProperty(MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT, "" + enabled);
+    }
+
+    /**
+     * When true, MockServer generates a new W3C trace ID for incoming requests
+     * that do not carry a {@code traceparent} header. Off by default.
+     */
+    public static boolean otelGenerateTraceId() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_GENERATE_TRACE_ID, "MOCKSERVER_OTEL_GENERATE_TRACE_ID", "" + false));
+    }
+
+    public static void otelGenerateTraceId(boolean enabled) {
+        setProperty(MOCKSERVER_OTEL_GENERATE_TRACE_ID, "" + enabled);
     }
 
     /**

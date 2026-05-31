@@ -53,6 +53,11 @@ public class HttpWebSocketResponseActionHandler {
         handshaker.handshake(ctx.channel(), nettyRequest).addListener(future -> {
             try {
                 if (future.isSuccess()) {
+                    // fire cross-protocol event for WebSocket connect
+                    org.mockserver.mock.CrossProtocolEventBus.getInstance().fire(
+                        CrossProtocolTrigger.WEBSOCKET_CONNECT,
+                        request.getPath() != null ? request.getPath().getValue() : "/"
+                    );
                     removePipelineHandlers(ctx);
                     installBidirectionalHandler(ctx, httpWebSocketResponse, handshaker);
 

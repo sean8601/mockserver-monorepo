@@ -7,6 +7,7 @@ import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.ResponseMode;
+import org.mockserver.mock.CrossProtocolEventBus;
 import org.mockserver.model.*;
 
 import java.util.List;
@@ -51,6 +52,8 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private String scenarioName;
     private String scenarioState;
     private String newScenarioState;
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<CrossProtocolScenario> crossProtocolScenarios;
 
     public ExpectationDTO(Expectation expectation) {
         if (expectation != null) {
@@ -169,6 +172,9 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             if (expectation.getNewScenarioState() != null) {
                 this.newScenarioState = expectation.getNewScenarioState();
             }
+            if (expectation.getCrossProtocolScenarios() != null && !expectation.getCrossProtocolScenarios().isEmpty()) {
+                this.crossProtocolScenarios = expectation.getCrossProtocolScenarios();
+            }
         }
     }
 
@@ -274,7 +280,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
         } else {
             priority = 0;
         }
-        return new Expectation(httpRequest, times, timeToLive, priority)
+        Expectation expectation = new Expectation(httpRequest, times, timeToLive, priority)
             .withId(this.id)
             .withPercentage(this.percentage)
             .withChaos(this.chaos != null ? this.chaos.buildObject() : null)
@@ -301,7 +307,14 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .thenError(httpError)
             .withAfterActions(afterActionList)
             .thenRespond(this.httpResponses != null ? this.httpResponses.stream().map(HttpResponseDTO::buildObject).collect(Collectors.toList()) : null)
-            .withResponseMode(this.responseMode);
+            .withResponseMode(this.responseMode)
+            .withCrossProtocolScenarios(this.crossProtocolScenarios);
+        if (this.crossProtocolScenarios != null) {
+            for (CrossProtocolScenario scenario : this.crossProtocolScenarios) {
+                CrossProtocolEventBus.getInstance().register(scenario);
+            }
+        }
+        return expectation;
     }
 
     public String getId() {
@@ -582,6 +595,16 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
 
     public ExpectationDTO setNewScenarioState(String newScenarioState) {
         this.newScenarioState = newScenarioState;
+        return this;
+    }
+
+    public List<CrossProtocolScenario> getCrossProtocolScenarios() {
+        return crossProtocolScenarios;
+    }
+
+    @JsonSetter("crossProtocolScenarios")
+    public ExpectationDTO setCrossProtocolScenarios(List<CrossProtocolScenario> crossProtocolScenarios) {
+        this.crossProtocolScenarios = crossProtocolScenarios;
         return this;
     }
 

@@ -28,6 +28,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mappers.MockServerHttpResponseToFullHttpResponse;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.mock.action.http.TcpChaosRegistry;
 import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
@@ -294,6 +295,10 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
 
             ChannelPipeline pipeline = ctx.pipeline();
 
+            if (TcpChaosRegistry.getInstance().activeCount() > 0) {
+                pipeline.addLast("tcp-chaos", new TcpChaosHandler());
+            }
+
             final Http2Connection connection = new DefaultHttp2Connection(true);
             final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
                 .frameListener(
@@ -316,6 +321,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
             }
             addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, false, null, ctx.channel().localAddress()));
+            addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
             if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
                 addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
                 addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
@@ -334,6 +340,10 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             http2Enabled(ctx.channel());
 
             ChannelPipeline pipeline = ctx.pipeline();
+
+            if (TcpChaosRegistry.getInstance().activeCount() > 0) {
+                pipeline.addLast("tcp-chaos", new TcpChaosHandler());
+            }
 
             final Http2Connection connection = new DefaultHttp2Connection(true);
             final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
@@ -358,6 +368,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
             }
             addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
+            addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
             if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
                 addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
                 addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
@@ -378,6 +389,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
 
             ChannelPipeline pipeline = ctx.pipeline();
 
+            if (TcpChaosRegistry.getInstance().activeCount() > 0) {
+                pipeline.addLast("tcp-chaos", new TcpChaosHandler());
+            }
             addLastIfNotPresent(pipeline, new HttpServerCodec(
                 configuration.maxInitialLineLength(),
                 configuration.maxHeaderSize(),
@@ -416,6 +430,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
                 }
                 addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
+                addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
                 addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
                 pipeline.remove(this);
 

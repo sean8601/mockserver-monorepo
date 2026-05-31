@@ -163,6 +163,7 @@ public class HttpState {
                 this.expectationFileWatcher = new ExpectationFileWatcher(configuration, mockServerLogger, requestMatchers, expectationInitializerLoader);
             }
         }
+        CrossProtocolEventBus.getInstance().setScenarioManager(requestMatchers.getScenarioManager());
         this.memoryMonitoring = new MemoryMonitoring(configuration, this.mockServerLog, this.requestMatchers);
         if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(
@@ -298,6 +299,7 @@ public class HttpState {
     public void reset() {
         requestMatchers.reset();
         requestMatchers.getScenarioManager().cancelAllPendingTransitions();
+        CrossProtocolEventBus.getInstance().reset();
         mockServerLog.reset();
         webSocketClientRegistry.reset();
         crudDispatcher.reset();
@@ -305,7 +307,10 @@ public class HttpState {
         org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
         org.mockserver.mock.action.http.HttpQuotaRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
+        org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
+        org.mockserver.mock.drift.DriftStore.getInstance().clear();
+        org.mockserver.mock.replay.ReplayOrchestrator.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -1325,6 +1330,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/tcpChaos", "/tcpChaos")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleTcpChaosPut(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/debugMismatch", "/debugMismatch")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -1597,6 +1609,23 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/drift/clear", "/drift/clear")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    org.mockserver.mock.drift.DriftStore.getInstance().clear();
+                    responseWriter.writeResponse(request, response()
+                        .withStatusCode(OK.code())
+                        .withBody("{\"status\":\"cleared\"}", MediaType.JSON_UTF_8), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/replay", "/replay")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, handleReplayStart(request), true);
+                }
+                canHandle.complete(true);
+
             } else {
 
                 canHandle.complete(false);
@@ -1630,6 +1659,18 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/tcpChaos", "/tcpChaos")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleTcpChaosGet()), true);
+                }
+                return true;
+            }
+            if (request.matches("GET", PATH_PREFIX + "/drift", "/drift")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, handleDriftGet(request), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/grpc/health", "/grpc/health")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, handleGrpcHealthGet(), true);
@@ -1645,6 +1686,18 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET") && request.getPath() != null
+                && request.getPath().getValue() != null
+                && (request.getPath().getValue().startsWith(PATH_PREFIX + "/replay/")
+                    || request.getPath().getValue().startsWith("/replay/"))) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    String pathValue = request.getPath().getValue();
+                    String prefix = pathValue.startsWith(PATH_PREFIX) ? PATH_PREFIX + "/replay/" : "/replay/";
+                    String replayId = pathValue.substring(prefix.length());
+                    responseWriter.writeResponse(request, handleReplayGet(replayId), true);
+                }
+                return true;
+            }
             return false;
 
         } else if (request.matches("PATCH")) {
@@ -1652,6 +1705,12 @@ public class HttpState {
             if (request.matches("PATCH", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleServiceChaosPatch(request)), true);
+                }
+                return true;
+            }
+            if (request.matches("PATCH", PATH_PREFIX + "/tcpChaos", "/tcpChaos")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleTcpChaosPatch(request)), true);
                 }
                 return true;
             }
@@ -1939,6 +1998,153 @@ public class HttpState {
         } catch (Exception jsonError) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to process service chaos request\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    // --- TCP Chaos endpoint helpers ---
+
+    private HttpResponse handleTcpChaosPut(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return tcpChaosError(objectMapper, "request body is required with a 'host' field (and a 'chaos' object), or 'clear':true to clear all");
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            boolean clearAll = node.path("clear").asBoolean(false);
+            String host = node.path("host").asText(null);
+            org.mockserver.mock.action.http.TcpChaosRegistry registry = org.mockserver.mock.action.http.TcpChaosRegistry.getInstance();
+            if (clearAll && !isBlank(host)) {
+                return tcpChaosError(objectMapper, "cannot specify both 'clear' and 'host'");
+            }
+            if (clearAll) {
+                registry.reset();
+                logTcpChaos(request, "cleared all TCP-layer chaos", null);
+                com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+                result.put("status", "cleared");
+                return response().withStatusCode(OK.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+            }
+            if (isBlank(host)) {
+                return tcpChaosError(objectMapper, "'host' field is required");
+            }
+            if (node.path("remove").asBoolean(false) || !node.hasNonNull("chaos")) {
+                registry.remove(host);
+                logTcpChaos(request, "removed TCP-layer chaos for host:{}", host);
+                com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+                result.put("status", "removed");
+                result.put("host", host);
+                return response().withStatusCode(OK.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+            }
+            long ttlMillis = 0L;
+            if (node.hasNonNull("ttlMillis")) {
+                ttlMillis = node.path("ttlMillis").asLong(0L);
+                if (ttlMillis < 1) {
+                    return tcpChaosError(objectMapper, "'ttlMillis' must be >= 1 when supplied");
+                }
+            }
+            org.mockserver.serialization.model.TcpChaosProfileDTO dto =
+                objectMapper.treeToValue(node.get("chaos"), org.mockserver.serialization.model.TcpChaosProfileDTO.class);
+            org.mockserver.model.TcpChaosProfile profile = dto.buildObject();
+            registry.put(host, profile, ttlMillis);
+            logTcpChaos(request, ttlMillis > 0
+                ? "registered TCP-layer chaos (ttl " + ttlMillis + "ms) for host:{}"
+                : "registered TCP-layer chaos for host:{}", host);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "registered");
+            result.put("host", host);
+            if (ttlMillis > 0) {
+                result.put("ttlMillis", ttlMillis);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return tcpChaosError(objectMapper, "invalid TCP chaos profile: " + e.getMessage());
+        } catch (Exception e) {
+            return tcpChaosError(objectMapper, "failed to process TCP chaos request: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleTcpChaosPatch(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return tcpChaosError(objectMapper, "request body is required with 'host' and 'chaos' fields");
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String host = node.path("host").asText(null);
+            if (isBlank(host)) {
+                return tcpChaosError(objectMapper, "'host' field is required");
+            }
+            if (!node.hasNonNull("chaos")) {
+                return tcpChaosError(objectMapper, "'chaos' field is required with at least one field to patch");
+            }
+            org.mockserver.serialization.model.TcpChaosProfileDTO dto =
+                objectMapper.treeToValue(node.get("chaos"), org.mockserver.serialization.model.TcpChaosProfileDTO.class);
+            org.mockserver.model.TcpChaosProfile partial = dto.buildObject();
+            org.mockserver.mock.action.http.TcpChaosRegistry registry = org.mockserver.mock.action.http.TcpChaosRegistry.getInstance();
+            org.mockserver.model.TcpChaosProfile updated = registry.patch(host, partial);
+            logTcpChaos(request, "patched TCP-layer chaos for host:{}", host);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "patched");
+            result.put("host", host);
+            if (updated != null) {
+                result.set("chaos", objectMapper.valueToTree(new org.mockserver.serialization.model.TcpChaosProfileDTO(updated)));
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return tcpChaosError(objectMapper, "invalid TCP chaos profile: " + e.getMessage());
+        } catch (Exception e) {
+            return tcpChaosError(objectMapper, "failed to process TCP chaos patch: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleTcpChaosGet() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.TcpChaosRegistry registry = org.mockserver.mock.action.http.TcpChaosRegistry.getInstance();
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ObjectNode hosts = result.putObject("hosts");
+            registry.entries().forEach((host, profile) ->
+                hosts.set(host, objectMapper.valueToTree(new org.mockserver.serialization.model.TcpChaosProfileDTO(profile))));
+            java.util.Map<String, Long> ttlRemaining = registry.ttlRemainingMillis();
+            if (!ttlRemaining.isEmpty()) {
+                com.fasterxml.jackson.databind.node.ObjectNode ttlNode = result.putObject("ttlRemainingMillis");
+                ttlRemaining.forEach((h, ms) -> ttlNode.put(h, ms.longValue()));
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get TCP chaos\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private void logTcpChaos(HttpRequest request, String messageFormat, String host) {
+        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            LogEntry entry = new LogEntry()
+                .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                .setLogLevel(Level.INFO)
+                .setHttpRequest(request)
+                .setMessageFormat(messageFormat);
+            if (host != null) {
+                entry.setArguments(host);
+            }
+            mockServerLogger.logEvent(entry);
+        }
+    }
+
+    private HttpResponse tcpChaosError(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String message) {
+        try {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                    objectMapper.createObjectNode().put("error", message)), MediaType.JSON_UTF_8);
+        } catch (Exception jsonError) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to process TCP chaos request\"}", MediaType.JSON_UTF_8);
         }
     }
 
@@ -2329,6 +2535,34 @@ public class HttpState {
         }
     }
 
+    private HttpResponse handleDriftGet(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String expectationId = request.getFirstQueryStringParameter("expectationId");
+            int limit = 50;
+            String limitParam = request.getFirstQueryStringParameter("limit");
+            if (limitParam != null && !limitParam.isEmpty()) {
+                try {
+                    limit = Math.min(500, Integer.parseInt(limitParam));
+                } catch (NumberFormatException ignored) {
+                    // use default
+                }
+            }
+            org.mockserver.mock.drift.DriftStore store = org.mockserver.mock.drift.DriftStore.getInstance();
+            List<org.mockserver.mock.drift.DriftRecord> records = (expectationId != null && !expectationId.isEmpty())
+                ? store.getByExpectationId(expectationId)
+                : store.getRecent(limit);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("count", records.size());
+            result.set("drifts", objectMapper.valueToTree(records));
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to retrieve drift records\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
     private HttpResponse handleDiff(HttpRequest request) {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
         try {
@@ -2576,5 +2810,114 @@ public class HttpState {
         }
         builder.append(NEW_LINE);
         return builder.toString();
+    }
+
+    // --- Replay Under Chaos handlers ---
+
+    private HttpResponse handleReplayStart(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body required with 'ratePerSecond' and optional 'chaosProfile'\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            int ratePerSec = node.path("ratePerSecond").asInt(0);
+
+            // Retrieve recorded forwarded requests from event log
+            List<org.mockserver.mock.replay.RecordedRequest> recorded = retrieveRecordedRequests();
+            if (recorded.isEmpty()) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"no recorded proxy traffic found to replay\"}", MediaType.JSON_UTF_8);
+            }
+
+            // Apply optional chaos overlay
+            if (node.hasNonNull("chaosProfile")) {
+                try {
+                    org.mockserver.serialization.model.HttpChaosProfileDTO dto =
+                        objectMapper.treeToValue(node.get("chaosProfile"), org.mockserver.serialization.model.HttpChaosProfileDTO.class);
+                    org.mockserver.model.HttpChaosProfile chaosProfile = dto.buildObject();
+                    org.mockserver.mock.action.http.ServiceChaosRegistry registry = org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance();
+                    for (org.mockserver.mock.replay.RecordedRequest r : recorded) {
+                        String host = r.getRequest().getFirstHeader("host");
+                        if (!isBlank(host)) {
+                            registry.put(host, chaosProfile, 300_000L); // 5 min TTL auto-clears
+                        }
+                    }
+                } catch (Exception e) {
+                    // chaos overlay is optional -- continue without it
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setMessageFormat("failed to apply chaos overlay for replay, continuing without it:{}")
+                            .setArguments(e.getMessage())
+                    );
+                }
+            }
+
+            String replayId = org.mockserver.mock.replay.ReplayOrchestrator.getInstance()
+                .startReplay(recorded, ratePerSec, (req, callback) -> {
+                    // Placeholder sender -- real implementation requires wiring through NettyHttpClient
+                    // via LifeCycle. The replay infrastructure (report tracking, rate limiting, chaos
+                    // overlay) is complete; the actual network send is pending lifecycle wiring.
+                    callback.onResult(null, new UnsupportedOperationException("replay sender not configured"));
+                });
+
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("replayId", replayId);
+            result.put("totalRequests", recorded.size());
+            result.put("status", "RUNNING");
+            return response().withStatusCode(CREATED.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to start replay: " + e.getMessage() + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleReplayGet(String replayId) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.replay.ReplayReport report = org.mockserver.mock.replay.ReplayOrchestrator.getInstance().getReport(replayId);
+            if (report == null) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody("{\"error\":\"replay not found: " + replayId + "\"}", MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(report), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get replay report: " + e.getMessage() + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private List<org.mockserver.mock.replay.RecordedRequest> retrieveRecordedRequests() {
+        List<org.mockserver.mock.replay.RecordedRequest> result = new ArrayList<>();
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        mockServerLog.retrieveRecordedExpectationLogEntries(null, logEntries -> {
+            for (LogEntry entry : logEntries) {
+                RequestDefinition[] requests = entry.getHttpRequests();
+                if (requests != null) {
+                    for (RequestDefinition reqDef : requests) {
+                        if (reqDef instanceof HttpRequest) {
+                            HttpRequest httpReq = (HttpRequest) reqDef;
+                            int statusCode = 200;
+                            if (entry.getHttpResponse() != null && entry.getHttpResponse().getStatusCode() != null) {
+                                statusCode = entry.getHttpResponse().getStatusCode();
+                            }
+                            result.add(new org.mockserver.mock.replay.RecordedRequest(httpReq, statusCode, 0L));
+                        }
+                    }
+                }
+            }
+            latch.countDown();
+        });
+        try {
+            latch.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return result;
     }
 }

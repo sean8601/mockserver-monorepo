@@ -39,6 +39,7 @@ keywords: mock drift detection, stub validation, proxy mode, schema drift, contr
     <tr><td><code>HEADER_ADDED</code></td><td>HTTP header present in real response but not in stub</td><td>0.9</td></tr>
     <tr><td><code>HEADER_REMOVED</code></td><td>HTTP header present in stub but missing from real response</td><td>0.9</td></tr>
     <tr><td><code>HEADER_CHANGED</code></td><td>HTTP header value differs between stub and real response</td><td>0.85</td></tr>
+    <tr><td><code>PERFORMANCE</code></td><td>p95 response time exceeds the configured threshold</td><td>0.8</td></tr>
   </tbody>
 </table>
 
@@ -95,3 +96,45 @@ keywords: mock drift detection, stub validation, proxy mode, schema drift, contr
 <h2>Storage</h2>
 
 <p>Drift records are stored in an in-memory LRU (least recently used) buffer with a maximum capacity of 1000 entries. When the buffer is full, the oldest records are evicted to make room for new ones.</p>
+
+<h2>Semantic drift analysis (LLM-powered)</h2>
+
+<p>When you have a runtime LLM backend configured (see <a href="/mock_server/configuration_properties.html">Configuration Properties</a>), you can enable semantic drift analysis to automatically classify each structural drift as <strong>BREAKING</strong>, <strong>WARNING</strong>, or <strong>INFORMATIONAL</strong>.</p>
+
+<p>Enable it with:</p>
+
+<pre><code>-Dmockserver.driftSemanticAnalysisEnabled=true</code></pre>
+
+<p>When enabled, MockServer sends the drift details along with truncated stub and real response bodies to your configured LLM. The LLM classifies each drift and provides a one-sentence explanation. These are added to the drift records as <code>semanticSeverity</code> and <code>semanticExplanation</code> fields.</p>
+
+<p>Semantic analysis is best-effort: if the LLM is unavailable or returns an error, drift records are stored with their original structural data only.</p>
+
+<h3>Example response with semantic fields</h3>
+
+<pre><code>{
+  "count": 1,
+  "drifts": [
+    {
+      "expectationId": "abc-123",
+      "driftType": "SCHEMA_FIELD_REMOVED",
+      "field": "$.role",
+      "expectedValue": "admin",
+      "confidence": 0.95,
+      "epochTimeMs": 1717145600000,
+      "semanticSeverity": "BREAKING",
+      "semanticExplanation": "Removing the role field will break clients that depend on it for authorization"
+    }
+  ]
+}</code></pre>
+
+<h2>Performance drift detection</h2>
+
+<p>MockServer can track response times per expectation and alert you when the p95 (95th percentile) response time exceeds a threshold. This helps detect performance regressions in upstream services.</p>
+
+<p>Enable it by setting a threshold in milliseconds:</p>
+
+<pre><code>-Dmockserver.driftResponseTimeThresholdMs=500</code></pre>
+
+<p>When the p95 response time for any expectation exceeds 500ms, a <code>PERFORMANCE</code> drift record is emitted. MockServer uses a sliding window of the last 100 response time observations per expectation to calculate percentiles.</p>
+
+<p>Set to <code>0</code> (the default) to disable performance drift detection.</p>

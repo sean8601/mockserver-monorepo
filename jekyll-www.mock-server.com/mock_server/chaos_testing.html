@@ -522,6 +522,108 @@ mock_server_active_service_chaos{fault_type="drop"}</code></pre>
 
 <p>Chaos profiles can be configured directly from the <a href="/mock_server/mockserver_ui.html">MockServer dashboard</a> when composing a standard HTTP expectation. Toggle the <strong>Inject fault / chaos</strong> switch in the expectation composer to reveal fields for all seven chaos profile properties. The dashboard generates the correct JSON payload (with <code class="inline code">chaos</code> as a top-level expectation field) and the equivalent Java client and curl snippets. Active expectations that have a chaos profile display a <strong>Chaos</strong> summary chip in the expectations panel.</p>
 
+<a id="tcp_layer_chaos" class="anchor" href="#tcp_layer_chaos">&nbsp;</a>
+
+<h2>TCP-Layer Chaos</h2>
+
+<p>In addition to HTTP-level chaos (which operates on decoded HTTP requests and responses), MockServer supports <strong>TCP-layer chaos</strong> that operates on raw bytes <em>before</em> HTTP decoding. This enables transport-layer fault injection that mirrors <a href="https://github.com/Shopify/toxiproxy">Toxiproxy's</a> named toxics.</p>
+
+<p>TCP-layer chaos is managed separately from HTTP chaos profiles. It is registered against a <strong>host</strong> and applied to all connections from that host at the raw byte level.</p>
+
+<h3>TCP Chaos Fault Types</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Fault type</th>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>latency</strong></td>
+            <td><code class="inline code">latencyMs</code></td>
+            <td>long</td>
+            <td>Delays all inbound data by the specified milliseconds before it reaches the HTTP decoder</td>
+        </tr>
+        <tr>
+            <td><strong>down</strong></td>
+            <td><code class="inline code">down</code></td>
+            <td>boolean</td>
+            <td>Silently drops all inbound data so the service appears completely down</td>
+        </tr>
+        <tr>
+            <td><strong>bandwidth</strong></td>
+            <td><code class="inline code">bandwidthBytesPerSec</code></td>
+            <td>long</td>
+            <td>Throttles inbound data to the specified bytes per second</td>
+        </tr>
+        <tr>
+            <td><strong>slow_close</strong></td>
+            <td><code class="inline code">slowClose</code></td>
+            <td>boolean</td>
+            <td>Delays the TCP FIN by 2 seconds on close, simulating a slow connection teardown</td>
+        </tr>
+        <tr>
+            <td><strong>timeout</strong></td>
+            <td><code class="inline code">timeout</code></td>
+            <td>boolean</td>
+            <td>Never sends FIN on close; the connection hangs indefinitely</td>
+        </tr>
+        <tr>
+            <td><strong>reset_peer</strong></td>
+            <td><code class="inline code">resetPeer</code></td>
+            <td>boolean</td>
+            <td>Sends a TCP RST and closes the connection immediately on first data</td>
+        </tr>
+        <tr>
+            <td><strong>slicer</strong></td>
+            <td><code class="inline code">slicerChunkSize</code></td>
+            <td>integer</td>
+            <td>Fragments inbound data into chunks of the specified size (bytes)</td>
+        </tr>
+        <tr>
+            <td><strong>limit_data</strong></td>
+            <td><code class="inline code">limitDataBytes</code></td>
+            <td>long</td>
+            <td>Closes the connection after the specified total bytes have been received</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>When multiple fault types are configured on the same profile, they are evaluated in priority order: <strong>down &gt; reset_peer &gt; limit_data &gt; slicer &gt; bandwidth &gt; latency</strong>.</p>
+
+<h3>TCP Chaos REST API</h3>
+
+<pre class="code"><code class="code">// register a TCP chaos profile for a host
+PUT /mockserver/tcpChaos
+{ "host": "upstream.svc", "chaos": { "latencyMs": 500, "slicerChunkSize": 64 } }
+
+// register with a TTL (auto-revert after 5 minutes)
+PUT /mockserver/tcpChaos
+{ "host": "upstream.svc", "chaos": { "down": true }, "ttlMillis": 300000 }
+
+// remove the profile for a host
+PUT /mockserver/tcpChaos
+{ "host": "upstream.svc", "remove": true }
+
+// clear all TCP chaos profiles
+PUT /mockserver/tcpChaos
+{ "clear": true }
+
+// read all active TCP chaos profiles
+GET /mockserver/tcpChaos
+
+// merge-patch an existing profile (only update specified fields)
+PATCH /mockserver/tcpChaos
+{ "host": "upstream.svc", "chaos": { "down": true } }</code></pre>
+
+<p>The API follows the same patterns as <a href="#service_scoped_chaos">service-scoped HTTP chaos</a>: host matching is case-insensitive and ignores port suffixes, registrations support optional TTL-based auto-expiry, and all registrations are cleared on server reset.</p>
+
+<p><strong>Difference from HTTP chaos:</strong> TCP chaos operates at the raw byte level before HTTP decoding. This means it can simulate faults that are impossible to reproduce with HTTP-level chaos, such as TCP RST, connection timeouts (never sending FIN), bandwidth throttling, and data fragmentation. HTTP chaos operates on decoded HTTP requests/responses and can inject application-level faults like error status codes, body corruption, and rate limiting.</p>
+
 <a id="coming_soon" class="anchor" href="#coming_soon">&nbsp;</a>
 
 <h2>Roadmap</h2>

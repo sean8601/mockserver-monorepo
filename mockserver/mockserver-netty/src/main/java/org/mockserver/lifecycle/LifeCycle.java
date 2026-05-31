@@ -63,6 +63,8 @@ public abstract class LifeCycle implements Stoppable {
         this.genAiSpanExporter = org.mockserver.telemetry.GenAiSpanExporter.startIfEnabled();
         installSemanticMatchingIfEnabled(this.workerGroup);
         installLlmCompletionServiceIfAvailable(this.workerGroup);
+        installSemanticDriftIfEnabled(this.workerGroup);
+        installPerformanceDriftThreshold();
     }
 
     /**
@@ -119,6 +121,51 @@ public abstract class LifeCycle implements Stoppable {
             // fail-soft — stub generation endpoint will use template fallback
             org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
                 .warn("failed to install LLM completion service ({}); stub generation will use template fallback", e.getMessage());
+        }
+    }
+
+    /**
+     * When semantic drift analysis is enabled and a runtime LLM backend resolves,
+     * create a {@link org.mockserver.mock.drift.SemanticDriftExtension} and install
+     * it on the global {@link org.mockserver.mock.drift.DriftAnalyzer}. Fail-soft.
+     */
+    private void installSemanticDriftIfEnabled(EventLoopGroup eventLoopGroup) {
+        if (!configuration.driftSemanticAnalysisEnabled()) {
+            return;
+        }
+        try {
+            java.util.Optional<org.mockserver.llm.client.LlmBackend> backend =
+                new org.mockserver.llm.client.LlmBackendResolver().resolveDefault();
+            if (!backend.isPresent()) {
+                org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                    .info("semantic drift analysis enabled but no LLM backend available; feature disabled");
+                return;
+            }
+            org.mockserver.httpclient.NettyHttpClient httpClient =
+                new org.mockserver.httpclient.NettyHttpClient(configuration, mockServerLogger, eventLoopGroup, null, false);
+            org.mockserver.llm.client.LlmCompletionService service =
+                new org.mockserver.llm.client.LlmCompletionService(new org.mockserver.llm.client.NettyHttpClientLlmTransport(httpClient));
+            org.mockserver.mock.drift.SemanticDriftExtension extension =
+                new org.mockserver.mock.drift.SemanticDriftExtension(service, backend.get());
+            org.mockserver.mock.drift.DriftAnalyzer.getInstance().setSemanticExtension(extension);
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .info("semantic drift analysis enabled (backend: {})", backend.get().provider());
+        } catch (Exception e) {
+            // fail-soft — semantic drift analysis stays off
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .warn("failed to enable semantic drift analysis ({}); continuing without it", e.getMessage());
+        }
+    }
+
+    /**
+     * Apply the configured p95 response time threshold for performance drift detection.
+     */
+    private void installPerformanceDriftThreshold() {
+        long threshold = configuration.driftResponseTimeThresholdMs();
+        if (threshold > 0) {
+            org.mockserver.mock.drift.DriftAnalyzer.getInstance().setResponseTimeThresholdMs(threshold);
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .info("performance drift detection enabled (p95 threshold: {} ms)", threshold);
         }
     }
 

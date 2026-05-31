@@ -15,6 +15,8 @@ public class DriftRecord extends ObjectWithReflectiveEqualsHashCodeToString {
     private String actualValue;
     private double confidence;
     private long epochTimeMs;
+    private SemanticSeverity semanticSeverity;
+    private String semanticExplanation;
 
     public String getExpectationId() {
         return expectationId;
@@ -76,6 +78,24 @@ public class DriftRecord extends ObjectWithReflectiveEqualsHashCodeToString {
 
     public DriftRecord setEpochTimeMs(long epochTimeMs) {
         this.epochTimeMs = epochTimeMs;
+        return this;
+    }
+
+    public SemanticSeverity getSemanticSeverity() {
+        return semanticSeverity;
+    }
+
+    public DriftRecord setSemanticSeverity(SemanticSeverity semanticSeverity) {
+        this.semanticSeverity = semanticSeverity;
+        return this;
+    }
+
+    public String getSemanticExplanation() {
+        return semanticExplanation;
+    }
+
+    public DriftRecord setSemanticExplanation(String semanticExplanation) {
+        this.semanticExplanation = semanticExplanation;
         return this;
     }
 }

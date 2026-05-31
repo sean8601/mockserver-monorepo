@@ -894,7 +894,32 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmVcrStrict="true"</code></pre>
 </div>
 
-<button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry Export (Metrics &amp; GenAI Spans)</strong></button>
+<button id="button_configuration_drift" class="accordion title"><strong>Drift Detection</strong></button>
+<div class="panel title">
+    <p>Controls for mock drift detection and semantic drift analysis. See <a href="/mock_server/drift_detection.html">Drift Detection</a> for full details.</p>
+    <p><strong>Semantic drift analysis</strong> &mdash; when <code>true</code> and a runtime LLM backend is configured, each structural drift record is enriched with an LLM-classified severity (BREAKING, WARNING, or INFORMATIONAL) and a one-sentence explanation. Off by default (opt-in). Enrichment is best-effort: if the LLM is unavailable, drift records are stored with structural data only.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftSemanticAnalysisEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftSemanticAnalysisEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftSemanticAnalysisEnabled="true"</code></pre>
+    <p><strong>Performance drift threshold</strong> &mdash; p95 response time threshold in milliseconds. When set to a positive value, a <code>PERFORMANCE</code> drift record is emitted whenever the p95 response time for an expectation exceeds this threshold. MockServer tracks the last 100 response times per expectation in a sliding window. Set to <code>0</code> to disable.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">0</span> (disabled)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftResponseTimeThresholdMs(long thresholdMs)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftResponseTimeThresholdMs=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftResponseTimeThresholdMs="500"</code></pre>
+</div>
+
+<button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>
     <p><strong>1. Metrics export</strong> &mdash; push MockServer's explicitly-defined metrics (request counts, expectation-match counts, action counts including the LLM and chaos counters) to OTLP, as an alternative to the Prometheus endpoint. Implemented as observable gauges reading the current values, so the Prometheus and OTLP views stay consistent. It does <strong>not</strong> add tracing or automatic instrumentation.</p>
@@ -912,6 +937,17 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelEndpoint=... &nbsp; MOCKSERVER_OTEL_ENDPOINT=...</code></pre>
     <p>Example (both signals to a collector):</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelMetricsEnabled="true" -Dmockserver.otelTracesEnabled="true" -Dmockserver.otelEndpoint="http://otel-collector:4318"</code></pre>
+    <p><strong>3. W3C Trace Context propagation</strong> &mdash; extract the W3C <span class="inline_code">traceparent</span> and <span class="inline_code">tracestate</span> headers from incoming requests and optionally copy them to mock responses. This lets callers correlate request-response pairs within a distributed trace when MockServer sits in a service mesh or test harness. The handler is always present in the pipeline but is a no-op unless enabled.</p>
+    <p><strong>Propagate trace context to responses</strong> &mdash; when enabled, the <span class="inline_code">traceparent</span> (and <span class="inline_code">tracestate</span>, if present) headers from the incoming request are added to the mock response.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.otelPropagateTraceContext(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelPropagateTraceContext=... &nbsp; MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT=...</code></pre>
+    <p><strong>Generate trace ID</strong> &mdash; when enabled, MockServer generates a new random W3C trace ID for incoming requests that do not carry a <span class="inline_code">traceparent</span> header. Useful for test harnesses that want every request to have a trace context.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.otelGenerateTraceId(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelGenerateTraceId=... &nbsp; MOCKSERVER_OTEL_GENERATE_TRACE_ID=...</code></pre>
+    <p>Example (propagate trace context and generate IDs for untraced requests):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.otelPropagateTraceContext="true" -Dmockserver.otelGenerateTraceId="true"</code></pre>
 </div>
 
 <button id="button_configuration_stream_idle_timeout_seconds" class="accordion title"><strong>Streaming Response Idle Timeout</strong></button>

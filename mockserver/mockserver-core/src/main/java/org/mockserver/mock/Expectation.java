@@ -59,6 +59,7 @@ public class Expectation extends ObjectWithJsonToString {
     private List<AfterAction> afterActions;
     private List<HttpResponse> httpResponses;
     private ResponseMode responseMode;
+    private List<CrossProtocolScenario> crossProtocolScenarios;
     private String scenarioName;
     private String scenarioState;
     private String newScenarioState;
@@ -534,6 +535,25 @@ public class Expectation extends ObjectWithJsonToString {
         return newScenarioState;
     }
 
+    public List<CrossProtocolScenario> getCrossProtocolScenarios() {
+        return crossProtocolScenarios;
+    }
+
+    public Expectation withCrossProtocolScenario(CrossProtocolScenario scenario) {
+        if (crossProtocolScenarios == null) {
+            crossProtocolScenarios = new ArrayList<>();
+        }
+        crossProtocolScenarios.add(scenario);
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Expectation withCrossProtocolScenarios(List<CrossProtocolScenario> scenarios) {
+        this.crossProtocolScenarios = scenarios;
+        this.hashCode = 0;
+        return this;
+    }
+
     @JsonIgnore
     public Action getAction() {
         return getPrimaryAction();
@@ -908,6 +928,9 @@ public class Expectation extends ObjectWithJsonToString {
         if (afterActions != null) {
             clone.afterActions = new ArrayList<>(afterActions);
         }
+        if (crossProtocolScenarios != null) {
+            clone.crossProtocolScenarios = new ArrayList<>(crossProtocolScenarios);
+        }
         return clone;
     }
 
@@ -958,13 +981,14 @@ public class Expectation extends ObjectWithJsonToString {
             Objects.equals(responseMode, that.responseMode) &&
             Objects.equals(scenarioName, that.scenarioName) &&
             Objects.equals(scenarioState, that.scenarioState) &&
-            Objects.equals(newScenarioState, that.newScenarioState);
+            Objects.equals(newScenarioState, that.newScenarioState) &&
+            Objects.equals(crossProtocolScenarios, that.crossProtocolScenarios);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, binaryResponse, dnsResponse, httpError, afterActions, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState);
+            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, binaryResponse, dnsResponse, httpError, afterActions, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios);
         }
         return hashCode;
     }
