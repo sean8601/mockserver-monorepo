@@ -154,16 +154,45 @@ public class ServiceChaosRegistryTest {
     }
 
     @Test
-    public void activeCountExcludesExpiredEntries() {
+    public void activeCountByFaultTypeCountsEachFaultAndExcludesExpired() {
         FakeClock clock = new FakeClock();
         ServiceChaosRegistry registry = new ServiceChaosRegistry(clock::get);
-        registry.put("ephemeral", httpChaosProfile().withErrorStatus(503), 5_000L);
-        registry.put("persistent", httpChaosProfile().withErrorStatus(500)); // no ttl
+        // ephemeral injects error + latency; persistent injects error + drop
+        registry.put("ephemeral", httpChaosProfile().withErrorStatus(503)
+            .withLatency(org.mockserver.model.Delay.milliseconds(200)), 5_000L);
+        registry.put("persistent", httpChaosProfile().withErrorStatus(500).withDropConnectionProbability(0.5));
 
-        assertThat("both live", registry.activeCount(), is(2));
+        java.util.Map<String, Integer> counts = registry.activeCountByFaultType();
+        assertThat("both inject error", counts.get("error"), is(2));
+        assertThat("one injects latency", counts.get("latency"), is(1));
+        assertThat("one injects drop", counts.get("drop"), is(1));
+        assertThat("none inject quota", counts.get("quota"), is(0));
+        assertThat("all fault types reported", counts.keySet(), is(new java.util.LinkedHashSet<>(ServiceChaosRegistry.FAULT_TYPES)));
 
-        clock.advance(5_000L); // ephemeral expires (still present in the map until lazily evicted)
-        assertThat("expired entry not counted", registry.activeCount(), is(1));
+        clock.advance(5_000L); // ephemeral expires (still in the map until lazily evicted)
+        java.util.Map<String, Integer> afterExpiry = registry.activeCountByFaultType();
+        assertThat("expired entry not counted for error", afterExpiry.get("error"), is(1));
+        assertThat("expired entry not counted for latency", afterExpiry.get("latency"), is(0));
+        assertThat("persistent drop still counted", afterExpiry.get("drop"), is(1));
+    }
+
+    @Test
+    public void activeCountByFaultTypeRequiresCompleteSlowAndQuotaConfig() {
+        ServiceChaosRegistry registry = new ServiceChaosRegistry(() -> 0L);
+        // incomplete (no-op) configs that cannot actually fire are not counted
+        registry.put("a", httpChaosProfile().withSlowResponseChunkSize(8)); // no chunk delay
+        registry.put("b", httpChaosProfile().withQuotaName("acct")); // no limit / window
+        java.util.Map<String, Integer> partial = registry.activeCountByFaultType();
+        assertThat("slow needs a chunk delay", partial.get("slow"), is(0));
+        assertThat("quota needs a limit + window", partial.get("quota"), is(0));
+
+        // complete configs are counted
+        registry.put("c", httpChaosProfile().withSlowResponseChunkSize(8)
+            .withSlowResponseChunkDelay(org.mockserver.model.Delay.milliseconds(50)));
+        registry.put("d", httpChaosProfile().withQuotaName("acct").withQuotaLimit(100).withQuotaWindowMillis(60_000L));
+        java.util.Map<String, Integer> complete = registry.activeCountByFaultType();
+        assertThat("complete slow counted", complete.get("slow"), is(1));
+        assertThat("complete quota counted", complete.get("quota"), is(1));
     }
 
     @Test

@@ -87,10 +87,16 @@ export default function MetricsView({ connectionParams }: MetricsViewProps) {
   const chaosFaultTotals = latest
     ? chaosFaultTypes.map((ft) => ({ faultType: ft, value: metricValueByLabel(latest.samples, CHAOS_METRIC, 'fault_type', ft) }))
     : [];
-  const activeServiceChaos = latest ? metricValue(latest.samples, ACTIVE_CHAOS_METRIC) : 0;
-  const activeServiceChaosEnabled = latest ? hasMetric(latest.samples, ACTIVE_CHAOS_METRIC) : false;
+  // Active service-scoped chaos is a gauge labeled by fault_type (one series per
+  // type), so it is charted by type rather than shown as a single counter.
+  const activeChaosFaultTypes = latest ? orderedFaultTypes(labelValues(latest.samples, ACTIVE_CHAOS_METRIC, 'fault_type')) : [];
+  const activeServiceChaosEnabled = activeChaosFaultTypes.length > 0;
+  const activeChaosTotal = activeChaosFaultTypes.reduce(
+    (sum, ft) => sum + (latest ? metricValueByLabel(latest.samples, ACTIVE_CHAOS_METRIC, 'fault_type', ft) : 0),
+    0,
+  );
   const chaosEnabled = latest ? (hasMetric(latest.samples, CHAOS_METRIC) || activeServiceChaosEnabled) : false;
-  const chaosHasData = chaosFaultTotals.some((f) => f.value > 0) || activeServiceChaos > 0;
+  const chaosHasData = chaosFaultTotals.some((f) => f.value > 0) || activeChaosTotal > 0;
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -197,31 +203,39 @@ MOCKSERVER_METRICS_ENABLED=true`}
           {chaosEnabled && chaosHasData && (
             <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
               <Typography variant="caption" color="text.secondary">HTTP Chaos Faults</Typography>
-              <Box sx={{ display: 'flex', gap: 3, mt: 0.5, flexWrap: 'wrap' }}>
-                {activeServiceChaosEnabled && (
-                  <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                      {activeServiceChaos.toLocaleString()}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">active services</Typography>
-                  </Box>
-                )}
-                {chaosFaultTotals.map(({ faultType, value }) => (
-                  <Box key={faultType}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                      {value.toLocaleString()}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">{faultType} faults</Typography>
-                  </Box>
-                ))}
-              </Box>
+              {chaosFaultTotals.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 3, mt: 0.5, flexWrap: 'wrap' }}>
+                  {chaosFaultTotals.map(({ faultType, value }) => (
+                    <Box key={faultType}>
+                      <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                        {value.toLocaleString()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{faultType} faults</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
               {chaosFaultTypes.length > 0 && (
                 <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">Faults injected by type (cumulative)</Typography>
                   <MetricsLineChart
                     height={180}
                     valueFormatter={(v) => Math.round(v).toLocaleString()}
                     series={chaosFaultTypes.map((ft) => ({
                       data: gaugeSeriesByLabel(history, CHAOS_METRIC, 'fault_type', ft),
+                      label: chaosFaultLabel(ft),
+                    }))}
+                  />
+                </Box>
+              )}
+              {activeServiceChaosEnabled && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">Active service-scoped chaos by type</Typography>
+                  <MetricsLineChart
+                    height={180}
+                    valueFormatter={(v) => Math.round(v).toLocaleString()}
+                    series={activeChaosFaultTypes.map((ft) => ({
+                      data: gaugeSeriesByLabel(history, ACTIVE_CHAOS_METRIC, 'fault_type', ft),
                       label: chaosFaultLabel(ft),
                     }))}
                   />

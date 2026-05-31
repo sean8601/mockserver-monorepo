@@ -62,13 +62,17 @@ public class Metrics {
                 .help("Total HTTP chaos faults injected by type")
                 .labelNames("fault_type")
                 .register();
-            // Callback gauge: read the live registry at scrape time rather than
-            // tracking it imperatively, so TTL auto-revert (which removes a profile
-            // without a put/remove call) is reflected without any extra plumbing.
+            // Callback gauge, labeled by fault_type: read the live registry at scrape
+            // time rather than tracking it imperatively, so TTL auto-revert (which
+            // removes a profile without a put/remove call) is reflected without any
+            // extra plumbing. One series per fault type so it can be charted by type.
             GaugeWithCallback.builder()
                 .name("mock_server_active_service_chaos")
-                .help("Number of hosts with a currently-active service-scoped chaos profile")
-                .callback(callback -> callback.call(getActiveServiceChaosCount()))
+                .help("Number of active service-scoped chaos profiles configured with each fault type")
+                .labelNames("fault_type")
+                .callback(callback ->
+                    getActiveServiceChaosCountByFaultType().forEach((faultType, count) ->
+                        callback.call(count, faultType)))
                 .register();
             if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
                 requestDurationByMethodSeconds = Histogram.builder()
@@ -231,13 +235,13 @@ public class Metrics {
     }
 
     /**
-     * Number of hosts with a currently-active service-scoped chaos profile.
+     * Per-fault-type count of currently-active service-scoped chaos profiles.
      * Backs the {@code mock_server_active_service_chaos} Prometheus gauge and its
      * OTLP mirror; reads the registry directly (not gated on {@code metricsEnabled},
      * the gauge is only registered when metrics are on).
      */
-    public static long getActiveServiceChaosCount() {
-        return ServiceChaosRegistry.getInstance().activeCount();
+    public static Map<String, Integer> getActiveServiceChaosCountByFaultType() {
+        return ServiceChaosRegistry.getInstance().activeCountByFaultType();
     }
 
     public void increment(Name name) {

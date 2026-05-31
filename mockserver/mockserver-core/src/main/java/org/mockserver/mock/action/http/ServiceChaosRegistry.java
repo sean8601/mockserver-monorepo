@@ -163,25 +163,64 @@ public class ServiceChaosRegistry {
     }
 
     /**
-     * Number of hosts with a currently-active (non-expired) service-scoped chaos
-     * profile. Backs the {@code mock_server_active_service_chaos} gauge so an
-     * operator can alert on "chaos is still live" — the value drops to 0 as
-     * profiles are cleared or their TTLs lapse. Counts without allocating a
-     * snapshot map.
+     * The HTTP chaos fault types reported by {@link #activeCountByFaultType()},
+     * matching the {@code fault_type} label values of the
+     * {@code mock_server_http_chaos_injected} counter.
+     */
+    public static final java.util.List<String> FAULT_TYPES =
+        java.util.List.of("drop", "error", "latency", "truncate", "malformed", "slow", "quota");
+
+    /**
+     * For each fault type, the number of currently-active (non-expired)
+     * service-scoped registrations whose profile includes that fault. A profile
+     * carrying several faults (e.g. error + latency) is counted under each, so the
+     * per-type counts may sum to more than the number of registered hosts. Every
+     * fault type in {@link #FAULT_TYPES} is always present in the returned map (0
+     * when none), giving a stable, complete set of series for the
+     * {@code mock_server_active_service_chaos} gauge so an operator can see — and
+     * alert on — which kinds of chaos are live, dropping to 0 as profiles are
+     * cleared or their TTLs lapse.
      *
      * <p>Iterates the {@link ConcurrentHashMap} weakly-consistently, so under
-     * concurrent registration/removal the count may transiently reflect a mix of
+     * concurrent registration/removal the counts may transiently reflect a mix of
      * pre- and post-mutation state — acceptable for a gauge metric.
      */
-    public int activeCount() {
+    public Map<String, Integer> activeCountByFaultType() {
         long now = clock.getAsLong();
-        int count = 0;
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (String faultType : FAULT_TYPES) {
+            counts.put(faultType, 0);
+        }
         for (Entry entry : byHost.values()) {
-            if (!entry.isExpired(now)) {
-                count++;
+            if (entry.isExpired(now)) {
+                continue;
+            }
+            HttpChaosProfile profile = entry.profile;
+            if (profile.getDropConnectionProbability() != null) {
+                counts.merge("drop", 1, Integer::sum);
+            }
+            if (profile.getErrorStatus() != null) {
+                counts.merge("error", 1, Integer::sum);
+            }
+            if (profile.getLatency() != null) {
+                counts.merge("latency", 1, Integer::sum);
+            }
+            if (profile.getTruncateBodyAtFraction() != null) {
+                counts.merge("truncate", 1, Integer::sum);
+            }
+            if (Boolean.TRUE.equals(profile.getMalformedBody())) {
+                counts.merge("malformed", 1, Integer::sum);
+            }
+            // slow and quota only fire with their companion fields present, so an
+            // incomplete (no-op) config is not counted — matching HttpActionHandler.
+            if (profile.getSlowResponseChunkSize() != null && profile.getSlowResponseChunkDelay() != null) {
+                counts.merge("slow", 1, Integer::sum);
+            }
+            if (profile.getQuotaName() != null && profile.getQuotaLimit() != null && profile.getQuotaWindowMillis() != null) {
+                counts.merge("quota", 1, Integer::sum);
             }
         }
-        return count;
+        return counts;
     }
 
     /** Clear all service-scoped chaos. Called on server reset and for test isolation. */

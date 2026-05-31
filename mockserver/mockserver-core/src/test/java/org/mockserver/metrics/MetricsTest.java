@@ -113,27 +113,31 @@ public class MetricsTest {
     }
 
     @Test
-    public void activeServiceChaosGaugeReflectsLiveRegistry() {
+    public void activeServiceChaosGaugeReflectsLiveRegistryByFaultType() {
         new Metrics(configuration().metricsEnabled(true));
-        HttpChaosProfile profile = httpChaosProfile().withErrorStatus(503);
+        String metric = "mock_server_active_service_chaos";
 
-        assertThat("no chaos registered", scrapeGaugeValue("mock_server_active_service_chaos"), is(0.0));
+        assertThat("no chaos registered", scrapeGaugeValueByLabel(metric, "fault_type", "error"), is(0.0));
 
-        ServiceChaosRegistry.getInstance().put("upstream-a.svc", profile);
-        ServiceChaosRegistry.getInstance().put("upstream-b.svc", profile);
-        assertThat("scrape reads the live registry", scrapeGaugeValue("mock_server_active_service_chaos"), is(2.0));
+        // a.svc injects error + drop; b.svc injects error only
+        ServiceChaosRegistry.getInstance().put("a.svc", httpChaosProfile().withErrorStatus(503).withDropConnectionProbability(0.5));
+        ServiceChaosRegistry.getInstance().put("b.svc", httpChaosProfile().withErrorStatus(500));
+        assertThat("two profiles inject error", scrapeGaugeValueByLabel(metric, "fault_type", "error"), is(2.0));
+        assertThat("one profile injects drop", scrapeGaugeValueByLabel(metric, "fault_type", "drop"), is(1.0));
+        assertThat("no profile injects latency", scrapeGaugeValueByLabel(metric, "fault_type", "latency"), is(0.0));
 
-        ServiceChaosRegistry.getInstance().remove("upstream-a.svc");
-        assertThat("gauge follows removals", scrapeGaugeValue("mock_server_active_service_chaos"), is(1.0));
+        ServiceChaosRegistry.getInstance().remove("a.svc");
+        assertThat("error follows removals", scrapeGaugeValueByLabel(metric, "fault_type", "error"), is(1.0));
+        assertThat("drop follows removals", scrapeGaugeValueByLabel(metric, "fault_type", "drop"), is(0.0));
 
         ServiceChaosRegistry.getInstance().reset();
-        assertThat("gauge drops to zero when cleared", scrapeGaugeValue("mock_server_active_service_chaos"), is(0.0));
+        assertThat("drops to zero when cleared", scrapeGaugeValueByLabel(metric, "fault_type", "error"), is(0.0));
     }
 
     @Test
-    public void getActiveServiceChaosCountDoesNotThrowWhenDisabled() {
+    public void getActiveServiceChaosCountByFaultTypeDoesNotThrowWhenDisabled() {
         // safe to call regardless of whether metrics are enabled (reads the registry directly)
-        assertThat(Metrics.getActiveServiceChaosCount(), is(0L));
+        assertThat(Metrics.getActiveServiceChaosCountByFaultType().get("error"), is(0));
     }
 
     private static boolean scrapeContains(String name) {
@@ -146,12 +150,14 @@ public class MetricsTest {
         return false;
     }
 
-    private static double scrapeGaugeValue(String name) {
+    private static double scrapeGaugeValueByLabel(String name, String labelName, String labelValue) {
         MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
         for (MetricSnapshot snapshot : snapshots) {
             if (snapshot.getMetadata().getName().equals(name) && snapshot instanceof GaugeSnapshot gaugeSnapshot) {
                 for (GaugeSnapshot.GaugeDataPointSnapshot dataPoint : gaugeSnapshot.getDataPoints()) {
-                    return dataPoint.getValue();
+                    if (labelValue.equals(dataPoint.getLabels().get(labelName))) {
+                        return dataPoint.getValue();
+                    }
                 }
             }
         }

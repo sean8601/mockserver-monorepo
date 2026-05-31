@@ -144,19 +144,22 @@ describe('MetricsView', () => {
     }
   });
 
-  it('renders the active service-scoped chaos gauge', async () => {
+  it('charts active service-scoped chaos by fault type', async () => {
     stubFetch(
       200,
       [
         'requests_received_count 10.0',
-        'mock_server_active_service_chaos 2.0',
+        'mock_server_active_service_chaos{fault_type="error"} 2.0',
+        'mock_server_active_service_chaos{fault_type="latency"} 1.0',
+        'mock_server_active_service_chaos{fault_type="drop"} 0.0',
         '',
       ].join('\n'),
     );
     render(<MetricsView connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('HTTP Chaos Faults')).toBeInTheDocument());
-    expect(screen.getByText('active services')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
+    // rendered as a by-type chart, not a single "active services" counter
+    expect(screen.getByText('Active service-scoped chaos by type')).toBeInTheDocument();
+    expect(screen.queryByText('active services')).not.toBeInTheDocument();
   });
 
   it('hides the HTTP Chaos Faults section when no chaos metric is present', async () => {
@@ -173,7 +176,8 @@ describe('MetricsView', () => {
         'requests_received_count 5.0',
         'mock_server_http_chaos_injected_total{fault_type="error"} 0.0',
         'mock_server_http_chaos_injected_total{fault_type="latency"} 0.0',
-        'mock_server_active_service_chaos 0.0',
+        'mock_server_active_service_chaos{fault_type="error"} 0.0',
+        'mock_server_active_service_chaos{fault_type="drop"} 0.0',
         '',
       ].join('\n'),
     );
