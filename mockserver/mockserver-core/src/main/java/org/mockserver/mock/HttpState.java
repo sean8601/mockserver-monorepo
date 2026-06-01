@@ -156,6 +156,7 @@ public class HttpState {
         LocalCallbackRegistry.setMaxWebSocketExpectations(configuration.maxWebSocketExpectations());
         this.mockServerLog = new MockServerEventLog(configuration, mockServerLogger, scheduler, true);
         this.requestMatchers = new RequestMatchers(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
+        Metrics.setActiveExpectationsSupplier(() -> requestMatchers.retrieveActiveExpectations(null));
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers);
         }

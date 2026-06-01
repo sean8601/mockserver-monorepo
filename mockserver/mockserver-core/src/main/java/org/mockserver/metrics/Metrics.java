@@ -8,13 +8,14 @@ import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.Expectation;
 import org.mockserver.mock.action.http.ServiceChaosRegistry;
 import org.mockserver.model.Action;
 
-import java.util.Arrays;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.mockserver.log.model.LogEntry.LogMessageType.EXCEPTION;
 
@@ -36,6 +37,12 @@ public class Metrics {
     private static volatile Counter slowRequestTotal;
     // Counter for HTTP chaos faults injected (error or latency). Null until metrics are enabled.
     private static volatile Counter httpChaosInjectedTotal;
+    // Counter for MCP tool calls, labeled by tool name. Null until metrics are enabled.
+    private static volatile Counter mcpToolCallsTotal;
+    // Supplier of active expectations, set by HttpState at startup so the
+    // expectations-by-type GaugeWithCallback can read live state at scrape time
+    // without a core->netty dependency.
+    private static final AtomicReference<Supplier<List<Expectation>>> activeExpectationsSupplier = new AtomicReference<>();
     // OTel histogram for OTLP export. Set by OtelMetricsExporter when enabled; null otherwise.
     private static volatile io.opentelemetry.api.metrics.DoubleHistogram otelRequestDurationHistogram;
 
@@ -61,6 +68,21 @@ public class Metrics {
                 .name("mock_server_http_chaos_injected")
                 .help("Total HTTP chaos faults injected by type")
                 .labelNames("fault_type")
+                .register();
+            mcpToolCallsTotal = Counter.builder()
+                .name("mock_server_mcp_tool_calls")
+                .help("Total MCP tool calls by tool name")
+                .labelNames("tool")
+                .register();
+            // Callback gauge, labeled by action_type: read active expectations at
+            // scrape time and group by action type, so no imperative tracking is needed.
+            GaugeWithCallback.builder()
+                .name("mock_server_expectations_by_type")
+                .help("Number of active expectations grouped by action type")
+                .labelNames("action_type")
+                .callback(callback ->
+                    getActiveExpectationCountByType().forEach((actionType, count) ->
+                        callback.call(count, actionType)))
                 .register();
             // Callback gauge, labeled by fault_type: read the live registry at scrape
             // time rather than tracking it imperatively, so TTL auto-revert (which
@@ -124,7 +146,9 @@ public class Metrics {
         requestDurationByMethodSeconds = null;
         slowRequestTotal = null;
         httpChaosInjectedTotal = null;
+        mcpToolCallsTotal = null;
         otelRequestDurationHistogram = null;
+        activeExpectationsSupplier.set(null);
         metrics.clear();
         PrometheusRegistry.defaultRegistry.clear();
     }
@@ -232,6 +256,74 @@ public class Metrics {
         if (counter != null && faultType != null) {
             counter.labelValues(faultType).inc();
         }
+    }
+
+    /**
+     * Increment the MCP tool call counter for the given tool name.
+     * No-op when metrics are disabled (counter not registered) or toolName is null.
+     * Counts each completed tool invocation (called after the tool handler returns).
+     *
+     * @param toolName the name of the MCP tool invoked (from the bounded tool registry)
+     */
+    public static void incrementMcpToolCall(String toolName) {
+        Counter counter = mcpToolCallsTotal;
+        if (counter != null && toolName != null) {
+            counter.labelValues(toolName).inc();
+        }
+    }
+
+    /**
+     * Return the current MCP tool call count for the given tool name, or 0 if
+     * metrics are disabled.
+     */
+    public static long getMcpToolCallCount(String toolName) {
+        Counter counter = mcpToolCallsTotal;
+        if (counter == null || toolName == null) {
+            return 0L;
+        }
+        try {
+            return (long) counter.labelValues(toolName).get();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Set the supplier of active expectations. Called by HttpState at startup
+     * so the expectations-by-type GaugeWithCallback can read live state at
+     * scrape time without a core-to-netty dependency.
+     *
+     * @param supplier returns the list of currently-active expectations
+     */
+    public static void setActiveExpectationsSupplier(Supplier<List<Expectation>> supplier) {
+        activeExpectationsSupplier.set(supplier);
+    }
+
+    /**
+     * Per-action-type count of currently-active expectations.
+     * Backs the {@code mock_server_expectations_by_type} Prometheus gauge;
+     * reads the live expectation list at scrape time via the registered supplier.
+     */
+    public static Map<String, Integer> getActiveExpectationCountByType() {
+        Map<String, Integer> counts = new HashMap<>();
+        Supplier<List<Expectation>> supplier = activeExpectationsSupplier.get();
+        if (supplier != null) {
+            try {
+                List<Expectation> expectations = supplier.get();
+                if (expectations != null) {
+                    for (Expectation expectation : expectations) {
+                        Action<?> action = expectation.getAction();
+                        if (action != null) {
+                            String typeName = action.getType().name();
+                            counts.merge(typeName, 1, Integer::sum);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // fail-soft: return whatever has been accumulated
+            }
+        }
+        return counts;
     }
 
     /**
