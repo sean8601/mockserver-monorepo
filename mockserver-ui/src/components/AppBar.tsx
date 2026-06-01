@@ -26,9 +26,25 @@ import Inventory2Icon from '@mui/icons-material/Inventory2';
 import SpeedIcon from '@mui/icons-material/Speed';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import { useState } from 'react';
+import Select from '@mui/material/Select';
+import type { SelectChangeEvent } from '@mui/material/Select';
+import BuildIcon from '@mui/icons-material/Build';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import DownloadIcon from '@mui/icons-material/Download';
+import { useState, useEffect } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
 import type { ConnectionStatus } from '../types';
+import { useConnectionParams } from '../hooks/useConnectionParams';
+import {
+  fetchMode,
+  setMode as setServerMode,
+  MOCK_SERVER_MODES,
+  MODE_DESCRIPTIONS,
+  type MockServerMode,
+} from '../lib/mockServerMode';
+import WsdlImportDialog from './WsdlImportDialog';
+import PactExportDialog from './PactExportDialog';
 
 function statusColor(status: ConnectionStatus): 'success' | 'warning' | 'error' | 'default' {
   switch (status) {
@@ -81,6 +97,35 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const view = useDashboardStore((s) => s.view);
   const setView = useDashboardStore((s) => s.setView);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+  const connectionParams = useConnectionParams();
+  const [mode, setModeState] = useState<MockServerMode | null>(null);
+  const [toolsAnchorEl, setToolsAnchorEl] = useState<null | HTMLElement>(null);
+  const [wsdlOpen, setWsdlOpen] = useState(false);
+  const [pactOpen, setPactOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMode(connectionParams)
+      .then((r) => {
+        if (!cancelled) setModeState(r.mode);
+      })
+      .catch(() => {
+        /* mode endpoint unavailable (older server) — hide the control */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionParams]);
+
+  const handleModeChange = (event: SelectChangeEvent) => {
+    const next = event.target.value as MockServerMode;
+    const previous = mode;
+    setModeState(next);
+    void setServerMode(connectionParams, next)
+      .then((r) => setModeState(r.mode))
+      .catch(() => setModeState(previous)); // revert on failure
+  };
 
   return (
     <MuiAppBar position="static" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -165,6 +210,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Metrics
           </ToggleButton>
+          <ToggleButton value="mcp-tools" aria-label="MCP tools view">
+            <SmartToyIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            MCP
+          </ToggleButton>
         </ToggleButtonGroup>
         <Box sx={{ flex: 1 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
@@ -178,6 +227,39 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
         <Tooltip title={`Switch to ${themeMode === 'dark' ? 'light' : 'dark'} mode`}>
           <IconButton size="small" color="inherit" onClick={toggleTheme}>
             {themeMode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+        {mode !== null && (
+          <Tooltip title={MODE_DESCRIPTIONS[mode]}>
+            <Select
+              value={mode}
+              onChange={handleModeChange}
+              size="small"
+              aria-label="Operating mode"
+              sx={{
+                color: 'inherit',
+                fontSize: '0.7rem',
+                height: 28,
+                '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+                '.MuiSvgIcon-root': { color: 'inherit' },
+              }}
+            >
+              {MOCK_SERVER_MODES.map((m) => (
+                <MenuItem key={m} value={m} sx={{ fontSize: '0.8rem' }}>
+                  {m}
+                </MenuItem>
+              ))}
+            </Select>
+          </Tooltip>
+        )}
+        <Tooltip title="Import / export">
+          <IconButton
+            size="small"
+            color="inherit"
+            aria-label="Import / export tools"
+            onClick={(e) => setToolsAnchorEl(e.currentTarget)}
+          >
+            <BuildIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Clear">
@@ -222,6 +304,40 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <ListItemText>Reset server (all)</ListItemText>
           </MenuItem>
         </Menu>
+        <Menu
+          anchorEl={toolsAnchorEl}
+          open={Boolean(toolsAnchorEl)}
+          onClose={() => setToolsAnchorEl(null)}
+        >
+          <MenuItem
+            onClick={() => {
+              setWsdlOpen(true);
+              setToolsAnchorEl(null);
+            }}
+          >
+            <ListItemIcon><UploadFileIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Import WSDL…</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setPactOpen(true);
+              setToolsAnchorEl(null);
+            }}
+          >
+            <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Export Pact…</ListItemText>
+          </MenuItem>
+        </Menu>
+        <WsdlImportDialog
+          open={wsdlOpen}
+          onClose={() => setWsdlOpen(false)}
+          connectionParams={connectionParams}
+        />
+        <PactExportDialog
+          open={pactOpen}
+          onClose={() => setPactOpen(false)}
+          connectionParams={connectionParams}
+        />
       </Toolbar>
     </MuiAppBar>
   );
