@@ -3066,6 +3066,10 @@ public class HttpState {
         if (expectationFileWatcher != null) {
             expectationFileWatcher.stop();
         }
+        // Stop any active AsyncAPI broker connections (Kafka consumers, MQTT clients)
+        // so they are not leaked on shutdown; no-op when the async module is absent
+        // or nothing is loaded.
+        org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         getMockServerLog().stop();
     }
 
