@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
+import org.mockserver.llm.StreamingFormat;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Delay;
@@ -29,13 +30,20 @@ public class HttpSseResponseActionHandler {
     }
 
     public void handle(HttpSseResponse httpSseResponse, ChannelHandlerContext ctx, org.mockserver.model.HttpRequest request) {
+        handle(httpSseResponse, ctx, request, StreamingFormat.SSE);
+    }
+
+    public void handle(HttpSseResponse httpSseResponse, ChannelHandlerContext ctx, org.mockserver.model.HttpRequest request, StreamingFormat format) {
         int statusCode = httpSseResponse.getStatusCode() != null ? httpSseResponse.getStatusCode() : 200;
         DefaultHttpResponse initialResponse = new DefaultHttpResponse(
             HttpVersion.HTTP_1_1,
             HttpResponseStatus.valueOf(statusCode)
         );
 
-        initialResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/event-stream");
+        String defaultContentType = format == StreamingFormat.NDJSON
+            ? "application/x-ndjson"
+            : "text/event-stream";
+        initialResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, defaultContentType);
         initialResponse.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-cache");
         initialResponse.headers().set(HttpHeaderNames.CONNECTION, "keep-alive");
         initialResponse.headers().set(HttpHeaderNames.TRANSFER_ENCODING, "chunked");
@@ -43,7 +51,7 @@ public class HttpSseResponseActionHandler {
         if (httpSseResponse.getHeaders() != null) {
             httpSseResponse.getHeaders().getEntries().forEach(header ->
                 header.getValues().forEach(value ->
-                    initialResponse.headers().add(header.getName().getValue(), value.getValue())
+                    initialResponse.headers().set(header.getName().getValue(), value.getValue())
                 )
             );
         }
@@ -52,13 +60,13 @@ public class HttpSseResponseActionHandler {
 
         List<SseEvent> events = httpSseResponse.getEvents();
         if (events != null && !events.isEmpty()) {
-            scheduleEvents(events, 0, ctx, httpSseResponse, request);
+            scheduleEvents(events, 0, ctx, httpSseResponse, request, format);
         } else {
             finishStream(ctx, httpSseResponse);
         }
     }
 
-    private void scheduleEvents(List<SseEvent> events, int index, ChannelHandlerContext ctx, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request) {
+    private void scheduleEvents(List<SseEvent> events, int index, ChannelHandlerContext ctx, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request, StreamingFormat format) {
         if (index >= events.size() || !ctx.channel().isActive()) {
             finishStream(ctx, httpSseResponse);
             return;
@@ -72,9 +80,9 @@ public class HttpSseResponseActionHandler {
                 if (!ctx.channel().isActive()) {
                     return;
                 }
-                String sseData = formatSseEvent(event);
+                String chunkData = formatChunk(event, format);
                 DefaultHttpContent content = new DefaultHttpContent(
-                    Unpooled.copiedBuffer(sseData, StandardCharsets.UTF_8)
+                    Unpooled.copiedBuffer(chunkData, StandardCharsets.UTF_8)
                 );
                 ctx.writeAndFlush(content).addListener(future -> {
                     if (future.isSuccess()) {
@@ -85,11 +93,11 @@ public class HttpSseResponseActionHandler {
                                     .setLogLevel(Level.DEBUG)
                                     .setCorrelationId(request.getLogCorrelationId())
                                     .setHttpRequest(request)
-                                    .setMessageFormat("sent SSE event {} of {} for request:{}")
+                                    .setMessageFormat("sent streaming chunk {} of {} for request:{}")
                                     .setArguments(index + 1, events.size(), request)
                             );
                         }
-                        scheduleEvents(events, index + 1, ctx, httpSseResponse, request);
+                        scheduleEvents(events, index + 1, ctx, httpSseResponse, request, format);
                     } else {
                         if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                             mockServerLogger.logEvent(
@@ -97,7 +105,7 @@ public class HttpSseResponseActionHandler {
                                     .setLogLevel(Level.WARN)
                                     .setCorrelationId(request.getLogCorrelationId())
                                     .setHttpRequest(request)
-                                    .setMessageFormat("async write failure for SSE event {} for request:{}")
+                                    .setMessageFormat("async write failure for streaming chunk {} for request:{}")
                                     .setArguments(index + 1, request)
                                     .setThrowable(future.cause())
                             );
@@ -112,7 +120,7 @@ public class HttpSseResponseActionHandler {
                             .setLogLevel(Level.WARN)
                             .setCorrelationId(request.getLogCorrelationId())
                             .setHttpRequest(request)
-                            .setMessageFormat("exception sending SSE event {} for request:{}")
+                            .setMessageFormat("exception sending streaming chunk {} for request:{}")
                             .setArguments(index + 1, request)
                             .setThrowable(e)
                     );
@@ -136,6 +144,31 @@ public class HttpSseResponseActionHandler {
                 }
             });
         }
+    }
+
+    /**
+     * Format a chunk for the given streaming format. SSE uses standard
+     * {@code data:}/{@code event:} framing; NDJSON emits the raw data
+     * payload followed by a single newline.
+     */
+    private String formatChunk(SseEvent event, StreamingFormat format) {
+        if (format == StreamingFormat.NDJSON) {
+            return formatNdjsonLine(event);
+        }
+        return formatSseEvent(event);
+    }
+
+    /**
+     * Format a single NDJSON line: the raw JSON data followed by {@code \n}.
+     * Ignores SSE-specific fields (event, id, retry) which have no NDJSON
+     * equivalent.
+     */
+    private String formatNdjsonLine(SseEvent event) {
+        String data = event.getData();
+        if (data == null) {
+            return "\n";
+        }
+        return data + "\n";
     }
 
     private String sanitizeSseFieldValue(String value) {

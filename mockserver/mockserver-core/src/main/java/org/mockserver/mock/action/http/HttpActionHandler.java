@@ -377,12 +377,16 @@ public class HttpActionHandler {
                                     || Boolean.TRUE.equals(llmAction.getChaos().getMalformedSse()))) {
                                     metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
                                 }
+                                org.mockserver.llm.StreamingFormat streamingFormat = getHttpLlmResponseActionHandler().streamingFormatFor(llmAction.getProvider());
+                                String contentType = streamingFormat == org.mockserver.llm.StreamingFormat.NDJSON
+                                    ? "application/x-ndjson"
+                                    : "text/event-stream";
                                 HttpSseResponse sseResponse = HttpSseResponse.sseResponse()
                                     .withStatusCode(200)
-                                    .withHeader("content-type", "text/event-stream")
+                                    .withHeader("content-type", contentType)
                                     .withHeader("cache-control", "no-cache")
                                     .withEvents(sseEvents);
-                                getHttpSseResponseActionHandler().handle(sseResponse, ctx, request);
+                                getHttpSseResponseActionHandler().handle(sseResponse, ctx, request, streamingFormat);
                             } catch (Throwable throwable) {
                                 if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                                     mockServerLogger.logEvent(
