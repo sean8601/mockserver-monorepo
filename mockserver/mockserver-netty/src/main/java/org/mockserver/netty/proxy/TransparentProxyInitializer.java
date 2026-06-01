@@ -4,18 +4,21 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 
 /**
- * Enables transparent HTTP proxy mode -- all connections are treated as
- * proxy requests using the Host header as the forwarding target.
- * This enables iptables REDIRECT-based interception without CONNECT.
+ * Utility for transparent HTTP proxy mode — provides Host-header parsing helpers
+ * and an {@link #isEnabled()} configuration check.
+ * <p>
+ * <b>Production path:</b> The actual original-destination resolution and
+ * channel attribute setup is performed by {@link TransparentProxyHandler}, which
+ * fires on {@code channelActive} and writes the {@code REMOTE_SOCKET} attribute
+ * consumed by the forward path. This class provides supplementary Host-header
+ * parsing utilities.
  */
 public class TransparentProxyInitializer {
 
     private final Configuration configuration;
-    private final MockServerLogger logger;
 
     public TransparentProxyInitializer(Configuration configuration, MockServerLogger logger) {
         this.configuration = configuration;
-        this.logger = logger;
     }
 
     public boolean isEnabled() {

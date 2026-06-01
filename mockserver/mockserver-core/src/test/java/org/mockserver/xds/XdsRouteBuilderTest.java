@@ -96,4 +96,91 @@ public class XdsRouteBuilderTest {
         Map<String, Object> match = (Map<String, Object>) routes.get(0).get("match");
         assertThat(match.get("path"), is("/health"));
     }
+
+    // --- Protobuf encoding tests ---
+
+    @Test
+    public void shouldBuildProtobufRouteConfigurationFromExpectations() {
+        // given
+        Expectation expectation = new Expectation(request().withMethod("GET").withPath("/api/users"));
+
+        // when
+        byte[] protoBytes = builder.buildRouteConfigurationProto(List.of(expectation));
+
+        // then - decode and verify
+        XdsProtoMessages.RouteConfiguration rc = XdsProtoMessages.RouteConfiguration.decode(protoBytes);
+        assertThat(rc.getName(), is("mockserver_routes"));
+        assertThat(rc.getVirtualHosts(), hasSize(1));
+
+        XdsProtoMessages.VirtualHost vh = rc.getVirtualHosts().get(0);
+        assertThat(vh.getName(), is("mockserver"));
+        assertThat(vh.getDomains(), contains("*"));
+        assertThat(vh.getRoutes(), hasSize(1));
+
+        XdsProtoMessages.Route route = vh.getRoutes().get(0);
+        assertThat(route.getMatch().getPath(), is("/api/users"));
+        assertThat(route.getRouteAction().getCluster(), is("mockserver"));
+    }
+
+    @Test
+    public void shouldBuildProtobufWithMultipleRoutes() {
+        // given
+        Expectation e1 = new Expectation(request().withMethod("GET").withPath("/api/users"));
+        Expectation e2 = new Expectation(request().withMethod("POST").withPath("/api/orders"));
+
+        // when
+        byte[] protoBytes = builder.buildRouteConfigurationProto(List.of(e1, e2));
+
+        // then
+        XdsProtoMessages.RouteConfiguration rc = XdsProtoMessages.RouteConfiguration.decode(protoBytes);
+        assertThat(rc.getVirtualHosts().get(0).getRoutes(), hasSize(2));
+
+        XdsProtoMessages.Route route1 = rc.getVirtualHosts().get(0).getRoutes().get(0);
+        assertThat(route1.getMatch().getPath(), is("/api/users"));
+
+        XdsProtoMessages.Route route2 = rc.getVirtualHosts().get(0).getRoutes().get(1);
+        assertThat(route2.getMatch().getPath(), is("/api/orders"));
+    }
+
+    @Test
+    public void shouldBuildProtobufEmptyRoutes() {
+        // when
+        byte[] protoBytes = builder.buildRouteConfigurationProto(Collections.emptyList());
+
+        // then
+        XdsProtoMessages.RouteConfiguration rc = XdsProtoMessages.RouteConfiguration.decode(protoBytes);
+        assertThat(rc.getName(), is("mockserver_routes"));
+        assertThat(rc.getVirtualHosts(), hasSize(1));
+        assertThat(rc.getVirtualHosts().get(0).getRoutes(), is(empty()));
+    }
+
+    @Test
+    public void shouldUsePathExactMatchWhenPathIsSet() {
+        // given
+        Expectation expectation = new Expectation(request().withPath("/exact/path"));
+
+        // when
+        byte[] protoBytes = builder.buildRouteConfigurationProto(List.of(expectation));
+
+        // then
+        XdsProtoMessages.RouteConfiguration rc = XdsProtoMessages.RouteConfiguration.decode(protoBytes);
+        XdsProtoMessages.RouteMatch match = rc.getVirtualHosts().get(0).getRoutes().get(0).getMatch();
+        assertThat(match.getPath(), is("/exact/path"));
+        assertThat(match.getPrefix(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldUsePrefixMatchWhenPathIsNull() {
+        // given - expectation without a path defaults to prefix "/"
+        Expectation expectation = new Expectation(request().withMethod("GET"));
+
+        // when
+        byte[] protoBytes = builder.buildRouteConfigurationProto(List.of(expectation));
+
+        // then
+        XdsProtoMessages.RouteConfiguration rc = XdsProtoMessages.RouteConfiguration.decode(protoBytes);
+        XdsProtoMessages.RouteMatch match = rc.getVirtualHosts().get(0).getRoutes().get(0).getMatch();
+        assertThat(match.getPrefix(), is("/"));
+        assertThat(match.getPath(), is(nullValue()));
+    }
 }

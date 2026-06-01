@@ -23,6 +23,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.dns.DnsRequestHandler;
 import org.mockserver.netty.http3.Http3Server;
+import org.mockserver.netty.xds.XdsDiscoveryServer;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
@@ -50,6 +51,7 @@ public class MockServer extends LifeCycle {
     private volatile org.mockserver.netty.mcp.McpSessionManager mcpSessionManager;
     private volatile io.netty.channel.Channel dnsChannel;
     private volatile Http3Server http3Server;
+    private volatile XdsDiscoveryServer xdsServer;
 
     /**
      * Start the instance using the ports provided
@@ -239,6 +241,14 @@ public class MockServer extends LifeCycle {
             startHttp3Server(configuration, initializer.getActionHandler(), http3Port);
         }
 
+        // start xDS RDS gRPC server when configured (xdsEnabled=true and xdsPort>0)
+        if (Boolean.TRUE.equals(configuration.xdsEnabled())) {
+            Integer xdsPort = configuration.xdsPort();
+            if (xdsPort != null && xdsPort > 0) {
+                startXdsServer(xdsPort);
+            }
+        }
+
         // Register the AsyncAPI control-plane if mockserver-async is on the classpath.
         // Uses reflection to avoid a hard compile-time dependency — when the module is
         // absent the endpoint gracefully responds 501 (Not Implemented).
@@ -314,6 +324,39 @@ public class MockServer extends LifeCycle {
         return server != null ? server.getPort() : -1;
     }
 
+    /**
+     * Returns the bound xDS RDS gRPC server port, or -1 if the xDS server is
+     * not running.
+     */
+    public int getXdsPort() {
+        XdsDiscoveryServer server = xdsServer;
+        return server != null ? server.getPort() : -1;
+    }
+
+    private void startXdsServer(int xdsPort) {
+        try {
+            XdsDiscoveryServer server = new XdsDiscoveryServer(httpState);
+            int boundPort = server.start(xdsPort);
+            this.xdsServer = server;
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("xDS RDS gRPC server started on port: {}")
+                    .setArguments(boundPort)
+            );
+        } catch (Throwable throwable) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("exception starting xDS RDS server on port {} - xDS disabled")
+                    .setArguments(xdsPort)
+                    .setThrowable(throwable)
+            );
+        }
+    }
+
     private void startHttp3Server(Configuration configuration, HttpActionHandler actionHandler, int http3Port) {
         if (!Http3Server.isQuicAvailable()) {
             mockServerLogger.logEvent(
@@ -350,6 +393,10 @@ public class MockServer extends LifeCycle {
 
     @Override
     public CompletableFuture<String> stopAsync() {
+        if (xdsServer != null) {
+            xdsServer.stop();
+            xdsServer = null;
+        }
         if (http3Server != null) {
             http3Server.stop();
             http3Server = null;
