@@ -22,6 +22,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.dns.DnsRequestHandler;
+import org.mockserver.netty.http3.Http3Server;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
@@ -48,6 +49,7 @@ public class MockServer extends LifeCycle {
     private InetSocketAddress remoteSocket;
     private volatile org.mockserver.netty.mcp.McpSessionManager mcpSessionManager;
     private volatile io.netty.channel.Channel dnsChannel;
+    private volatile Http3Server http3Server;
 
     /**
      * Start the instance using the ports provided
@@ -231,6 +233,12 @@ public class MockServer extends LifeCycle {
             }
         }
 
+        // start HTTP/3 (QUIC) server when configured (http3Port > 0)
+        Integer http3Port = configuration.http3Port();
+        if (http3Port != null && http3Port > 0) {
+            startHttp3Server(configuration, initializer.getActionHandler(), http3Port);
+        }
+
         startedServer(getLocalPorts());
     }
 
@@ -279,8 +287,55 @@ public class MockServer extends LifeCycle {
         return -1;
     }
 
+    /**
+     * Returns the bound HTTP/3 (QUIC) UDP port, or -1 if the HTTP/3 server is
+     * not running.
+     */
+    public int getHttp3Port() {
+        Http3Server server = http3Server;
+        return server != null ? server.getPort() : -1;
+    }
+
+    private void startHttp3Server(Configuration configuration, HttpActionHandler actionHandler, int http3Port) {
+        if (!Http3Server.isQuicAvailable()) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("native QUIC transport not available on this platform - HTTP/3 server disabled (http3Port was set to {})")
+                    .setArguments(http3Port)
+            );
+            return;
+        }
+        try {
+            Http3Server server = new Http3Server(configuration, mockServerLogger, httpState, actionHandler);
+            int boundPort = server.start(http3Port);
+            this.http3Server = server;
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("HTTP/3 (QUIC) server started on UDP port: {}")
+                    .setArguments(boundPort)
+            );
+        } catch (Throwable throwable) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("exception starting HTTP/3 server on port {} - HTTP/3 disabled")
+                    .setArguments(http3Port)
+                    .setThrowable(throwable)
+            );
+        }
+    }
+
     @Override
     public CompletableFuture<String> stopAsync() {
+        if (http3Server != null) {
+            http3Server.stop();
+            http3Server = null;
+        }
         if (dnsChannel != null) {
             dnsChannel.close();
         }

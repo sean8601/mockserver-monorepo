@@ -33,6 +33,10 @@ public class MockServerUnificationInitializer extends ChannelHandlerAdapter {
         return mcpSessionManager;
     }
 
+    public HttpActionHandler getActionHandler() {
+        return actionHandler;
+    }
+
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
         ctx.pipeline().replace(this, null, new PortUnificationHandler(configuration, server, httpState, actionHandler, nettySslContextFactory, mcpSessionManager));

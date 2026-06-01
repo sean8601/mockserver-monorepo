@@ -2,15 +2,19 @@
 
 ## Status
 
-**EXPERIMENTAL** -- this feature is an MVP (Minimum Viable Product) that proves the
-HTTP/3 stack can serve requests. It is off by default and must be explicitly enabled.
+**EXPERIMENTAL** -- HTTP/3 support is fully integrated with MockServer's request
+pipeline (expectation matching, actions, recording, proxy forwarding). It is off
+by default and must be explicitly enabled. The "experimental" label reflects the
+fact that the underlying QUIC codec is a Netty incubator dependency
+(`io.netty.incubator:netty-incubator-codec-http3`), which is a pre-release
+artifact whose API may change in future releases.
 
 ## Overview
 
-MockServer can optionally listen for HTTP/3 requests over QUIC (UDP). This uses
-the [netty-incubator-codec-http3](https://github.com/netty/netty-incubator-codec-http3)
-library which provides an HTTP/3 codec on top of Netty's QUIC transport (backed by
-BoringSSL native libraries).
+MockServer can optionally listen for HTTP/3 requests over QUIC (UDP). HTTP/3
+requests are routed through the same expectation matching, action handling,
+recording, and proxy forwarding pipeline used by HTTP/1.1 and HTTP/2, providing
+full protocol parity.
 
 ```mermaid
 flowchart LR
@@ -18,9 +22,10 @@ flowchart LR
     UDP["UDP Socket"]
     QUIC["QUIC Transport\n(BoringSSL native)"]
     H3["HTTP/3 Codec"]
-    Echo["Echo Handler\n(MVP)"]
+    Bridge["Http3MockServerHandler\n(frame-to-model bridge)"]
+    Pipeline["HttpState +\nHttpActionHandler\n(shared pipeline)"]
 
-    Client --> UDP --> QUIC --> H3 --> Echo
+    Client --> UDP --> QUIC --> H3 --> Bridge --> Pipeline
 ```
 
 ## How to Enable
@@ -43,38 +48,70 @@ has zero impact on the existing TCP/HTTP server.
 | Class | Module | Purpose |
 |-------|--------|---------|
 | `Http3Server` | `mockserver-netty` | Bootstraps the QUIC/HTTP3 server, manages lifecycle |
-| `Http3EchoRequestHandler` | `mockserver-netty` | MVP request handler (inner class of Http3Server) |
+| `Http3MockServerHandler` | `mockserver-netty` | Per-stream handler: accumulates HTTP/3 frames, converts to HttpRequest, routes through the shared pipeline |
+| `Http3RequestBridge` | `mockserver-netty` | Pure conversion helpers: HTTP/3 frames to/from HttpRequest/HttpResponse |
+| `Http3ResponseWriter` | `mockserver-netty` | ResponseWriter subclass that serialises HttpResponse as HTTP/3 frames |
 | `Configuration.http3Port()` | `mockserver-core` | Configuration property |
 | `ConfigurationProperties.http3Port()` | `mockserver-core` | Static/system-property access |
 
+### Request Processing
+
+HTTP/3 requests flow through the same pipeline as HTTP/1.1 and HTTP/2:
+
+```mermaid
+sequenceDiagram
+    participant C as HTTP/3 Client
+    participant H as Http3MockServerHandler
+    participant B as Http3RequestBridge
+    participant S as HttpState
+    participant A as HttpActionHandler
+    participant W as Http3ResponseWriter
+
+    C->>H: Http3HeadersFrame + Http3DataFrame(s)
+    H->>B: parseHeaders() + accumulateBody()
+    B->>H: HttpRequest
+    H->>S: handle(request, responseWriter)
+    alt Control plane (expectations API, status, etc.)
+        S->>W: writeResponse(HttpResponse)
+    else Data plane
+        H->>A: processAction(request, responseWriter, ...)
+        A->>W: writeResponse(HttpResponse)
+    end
+    W->>C: Http3HeadersFrame + Http3DataFrame
+```
+
+Key design points:
+- **Same matching**: uses `HttpState.firstMatchingExpectation()` and `HttpActionHandler.processAction()` -- identical to HTTP/1.1 and HTTP/2
+- **Same recording**: requests are logged in `MockServerEventLog` for verification
+- **Same proxy forwarding**: unmatched requests can be forwarded when configured
+- **Body handling**: text content types (JSON, XML, HTML, etc.) are stored as string bodies for correct expectation matching; binary content is stored as binary bodies
+
+### Lifecycle Integration
+
+The HTTP/3 server is started automatically by `MockServer.createServerBootstrap()`
+when `http3Port > 0`. It is stopped during `MockServer.stopAsync()`. The lifecycle
+mirrors how the DNS mock server is conditionally started.
+
+**Fail-soft startup**: if the native QUIC transport is not available on the platform,
+MockServer logs a warning and continues without HTTP/3. The existing TCP/HTTP server
+is never affected by HTTP/3 startup failures.
+
+The bound HTTP/3 port is accessible via `MockServer.getHttp3Port()`.
+
 ### TLS
 
-The HTTP/3 server generates a self-signed EC certificate at startup (using
-BouncyCastle, which is already a MockServer dependency). This is suitable for
-testing but would need to be replaced with configurable certificates for
-production use.
+The HTTP/3 server uses MockServer's configured TLS certificate material -- the same
+private key and certificate chain used by the HTTPS server. This is obtained via
+`KeyAndCertificateFactoryFactory.createKeyAndCertificateFactory()`, which respects
+the `privateKeyPath`, `x509CertificatePath`, and other TLS configuration properties.
 
-### Request Handling (MVP)
+If no configuration is provided (legacy/echo mode), the server falls back to
+generating a self-signed EC certificate at startup using BouncyCastle.
 
-The current implementation uses a simple echo handler that:
+### Metrics
 
-1. Reads the `:method` and `:path` pseudo-headers from the HTTP/3 request
-2. Returns a `200 OK` response with a text body echoing those values
-
-**Full mock-pipeline bridging** (routing HTTP/3 requests through `HttpState` and
-`ActionHandler` for expectation matching, recording, and proxying) is a planned
-follow-up. The echo handler proves the transport layer works without risking
-entanglement with the existing TCP pipeline.
-
-### Lifecycle
-
-`Http3Server` is a standalone class with `start(port)` and `stop()` methods.
-It creates its own `NioEventLoopGroup` for the UDP channel. It is **not** wired
-into MockServer's `LifeCycle` class to avoid any risk to the existing boot path.
-
-Integration into `MockServer.createServerBootstrap()` (similar to how the DNS
-mock server is conditionally started) is straightforward when the feature
-matures.
+When metrics are enabled, HTTP/3 requests increment the `REQUESTS_RECEIVED_COUNT`
+counter, consistent with HTTP/1.1 and HTTP/2 request counting.
 
 ## Native QUIC Platform Requirement
 
@@ -102,7 +139,7 @@ are included for the target platform.
 
 The `Http3ServerTest` checks `Quic.isAvailable()` at test startup and uses
 JUnit 4's `Assume.assumeTrue(...)` to skip gracefully on platforms where the
-native library cannot be loaded. The test will **never fail the build** due to
+native library cannot be loaded. The tests will **never fail the build** due to
 platform incompatibility.
 
 ## Dependencies
@@ -113,26 +150,28 @@ platform incompatibility.
 | `io.netty.incubator:netty-incubator-codec-native-quic` | `0.0.62.Final` (transitive) | runtime |
 | `io.netty.incubator:netty-incubator-codec-classes-quic` | `0.0.62.Final` (transitive) | compile |
 
-## MVP Boundaries and Risks
-
-### What works now
+## What Works
 
 - QUIC server binds to a UDP port and negotiates TLS 1.3 with ALPN `h3`
-- HTTP/3 request streams are decoded and an echo response is returned
-- Server starts and stops cleanly with proper resource cleanup
-- Test proves end-to-end HTTP/3 request/response over QUIC
+- HTTP/3 requests are decoded and routed through the full expectation pipeline
+- Expectation matching, response actions, template actions, and proxy forwarding
+- Request body reading (text and binary content types)
+- Request recording for verification via the standard event log
+- MockServer TLS certificate reuse (same key/cert as HTTPS)
+- Lifecycle integration: start/stop with MockServer
+- Fail-soft startup when native QUIC is unavailable
+- Metrics: HTTP/3 requests counted in `REQUESTS_RECEIVED_COUNT`
+- Unit-tested frame conversion (no native QUIC needed for bridge tests)
+- Integration-tested pipeline parity (expectation matching via HTTP/3)
 
-### What is NOT implemented (follow-up work)
+## What is NOT Implemented (follow-up work)
 
-- Full mock-pipeline bridging (HttpState, ActionHandler, expectation matching)
-- Configurable TLS certificates (currently self-signed only)
-- Integration into MockServer's `LifeCycle` and `MockServer` startup
-- HTTP/3 proxy support
+- Streaming/SSE response bodies (logged as WARN, falls back to static response)
 - QPACK header compression tuning
-- Metrics and logging integration
 - Dashboard UI visibility for HTTP/3 connections
+- HTTP/3 specific proxy mode (CONNECT-UDP / MASQUE)
 
-### Risks
+## Risks
 
 - **Native library compatibility**: the QUIC native (BoringSSL) must be available
   for the target platform. Missing natives will prevent the HTTP/3 server from starting.
@@ -141,3 +180,17 @@ platform incompatibility.
 - **Netty version coupling**: the incubator codec must be compatible with the
   project's Netty version (`4.2.14.Final`). Version updates may require
   coordinated upgrades.
+- **InsecureQuicTokenHandler**: the QUIC server uses `InsecureQuicTokenHandler`
+  which performs no source-address validation (no Retry token). This is acceptable
+  for a test/mock tool but means the server does not protect against address
+  spoofing. A production deployment behind a real network would need a proper
+  token handler.
+- **Fixed QUIC transport parameters**: transport parameters (`maxIdleTimeout`,
+  `initialMaxData`, `initialMaxStreamDataBidirectional*`, `initialMaxStreamsBidirectional`)
+  are hardcoded in `Http3Server.start()`. These defaults are generous for testing
+  but are not tuneable via configuration. If a use case needs different flow-control
+  limits, the values must be changed in code.
+- **Streaming/SSE responses not supported**: `StreamingBody` (SSE / chunked
+  streaming) responses are not supported over HTTP/3. If an expectation returns a
+  streaming body, `Http3ResponseWriter` logs a WARN and sends only the headers and
+  any static body bytes. This is a known limitation documented in the consumer docs.
