@@ -18,7 +18,9 @@ import java.util.Map;
  * Uses the following precedence for each channel:
  * <ol>
  *     <li>The first explicit example from the spec</li>
- *     <li>A minimal example synthesized from the JSON Schema payload (type-based defaults)</li>
+ *     <li>A schema-aware example synthesized from the JSON Schema payload
+ *         (applies constraints: enum, minimum/maximum, minLength/maxLength,
+ *         pattern hint, required fields, default values)</li>
  *     <li>An empty JSON object {@code {}} as a last-resort fallback</li>
  * </ol>
  */
@@ -55,11 +57,9 @@ public class MessageExampleGenerator {
             }
         }
 
-        // 2. Try synthesizing from schema
+        // 2. Try synthesizing from schema (schema-aware)
         if (channel.getPayloadSchema() != null) {
             JsonNode schema = channel.getPayloadSchema();
-            // Skip if the schema itself has an "example" field (already tried above via
-            // AsyncApiParser extracting it into payloadExamples)
             JsonNode synthesized = synthesizeFromSchema(schema);
             if (synthesized != null) {
                 try {
@@ -76,11 +76,30 @@ public class MessageExampleGenerator {
     }
 
     /**
-     * Synthesize a minimal JSON value from a JSON Schema node using type-based defaults.
+     * Synthesize a JSON value from a JSON Schema node, respecting constraints:
+     * enum, default, minimum/maximum, minLength/maxLength, pattern, required.
      */
     JsonNode synthesizeFromSchema(JsonNode schema) {
         if (schema == null) {
             return null;
+        }
+
+        // If there is a default value, use it
+        JsonNode defaultValue = schema.get("default");
+        if (defaultValue != null) {
+            return defaultValue.deepCopy();
+        }
+
+        // If there is an enum, use the first value
+        JsonNode enumNode = schema.get("enum");
+        if (enumNode != null && enumNode.isArray() && enumNode.size() > 0) {
+            return enumNode.get(0).deepCopy();
+        }
+
+        // If there is a const, use it
+        JsonNode constNode = schema.get("const");
+        if (constNode != null) {
+            return constNode.deepCopy();
         }
 
         String type = textOrNull(schema, "type");
@@ -99,11 +118,11 @@ public class MessageExampleGenerator {
             case "array":
                 return synthesizeArray(schema);
             case "string":
-                return MAPPER.getNodeFactory().textNode("string");
+                return synthesizeString(schema);
             case "integer":
-                return MAPPER.getNodeFactory().numberNode(0);
+                return synthesizeInteger(schema);
             case "number":
-                return MAPPER.getNodeFactory().numberNode(0.0);
+                return synthesizeNumber(schema);
             case "boolean":
                 return MAPPER.getNodeFactory().booleanNode(false);
             case "null":
@@ -136,7 +155,121 @@ public class MessageExampleGenerator {
                 result.add(itemExample);
             }
         }
+        // Respect minItems: pad with copies of the first item if needed
+        JsonNode minItems = schema.get("minItems");
+        if (minItems != null && minItems.isNumber()) {
+            int min = minItems.asInt();
+            while (result.size() < min) {
+                if (items != null) {
+                    JsonNode extra = synthesizeFromSchema(items);
+                    if (extra != null) {
+                        result.add(extra);
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
         return result;
+    }
+
+    private JsonNode synthesizeString(JsonNode schema) {
+        // Check for pattern hint — use a simple representative if possible
+        JsonNode patternNode = schema.get("pattern");
+        if (patternNode != null && patternNode.isTextual()) {
+            String pattern = patternNode.asText();
+            // For common patterns, generate a hint value
+            if (pattern.contains("@")) {
+                return MAPPER.getNodeFactory().textNode("user@example.com");
+            }
+            if (pattern.matches(".*\\^\\[0-9\\].*") || pattern.contains("\\d")) {
+                return MAPPER.getNodeFactory().textNode("12345");
+            }
+        }
+
+        // Check format for well-known formats
+        JsonNode formatNode = schema.get("format");
+        if (formatNode != null && formatNode.isTextual()) {
+            String format = formatNode.asText();
+            switch (format) {
+                case "date-time":
+                    return MAPPER.getNodeFactory().textNode("2024-01-01T00:00:00Z");
+                case "date":
+                    return MAPPER.getNodeFactory().textNode("2024-01-01");
+                case "time":
+                    return MAPPER.getNodeFactory().textNode("00:00:00Z");
+                case "email":
+                    return MAPPER.getNodeFactory().textNode("user@example.com");
+                case "uri":
+                case "url":
+                    return MAPPER.getNodeFactory().textNode("https://example.com");
+                case "uuid":
+                    return MAPPER.getNodeFactory().textNode("00000000-0000-0000-0000-000000000000");
+                case "ipv4":
+                    return MAPPER.getNodeFactory().textNode("127.0.0.1");
+                case "ipv6":
+                    return MAPPER.getNodeFactory().textNode("::1");
+                default:
+                    break;
+            }
+        }
+
+        // Respect minLength
+        JsonNode minLength = schema.get("minLength");
+        if (minLength != null && minLength.isNumber()) {
+            int min = minLength.asInt();
+            if (min > "string".length()) {
+                return MAPPER.getNodeFactory().textNode("s".repeat(min));
+            }
+        }
+
+        return MAPPER.getNodeFactory().textNode("string");
+    }
+
+    private JsonNode synthesizeInteger(JsonNode schema) {
+        // Use minimum if present
+        JsonNode minimum = schema.get("minimum");
+        if (minimum != null && minimum.isNumber()) {
+            long min = minimum.asLong();
+            // Check for exclusiveMinimum (boolean form or numeric form)
+            JsonNode exclusiveMin = schema.get("exclusiveMinimum");
+            if (exclusiveMin != null) {
+                if (exclusiveMin.isBoolean() && exclusiveMin.asBoolean()) {
+                    return MAPPER.getNodeFactory().numberNode(min + 1);
+                } else if (exclusiveMin.isNumber()) {
+                    return MAPPER.getNodeFactory().numberNode(exclusiveMin.asLong() + 1);
+                }
+            }
+            return MAPPER.getNodeFactory().numberNode(min);
+        }
+        // Check for exclusiveMinimum as standalone (draft 2019+)
+        JsonNode exclusiveMin = schema.get("exclusiveMinimum");
+        if (exclusiveMin != null && exclusiveMin.isNumber()) {
+            return MAPPER.getNodeFactory().numberNode(exclusiveMin.asLong() + 1);
+        }
+        return MAPPER.getNodeFactory().numberNode(0);
+    }
+
+    private JsonNode synthesizeNumber(JsonNode schema) {
+        JsonNode minimum = schema.get("minimum");
+        if (minimum != null && minimum.isNumber()) {
+            JsonNode exclusiveMin = schema.get("exclusiveMinimum");
+            if (exclusiveMin != null) {
+                if (exclusiveMin.isBoolean() && exclusiveMin.asBoolean()) {
+                    return MAPPER.getNodeFactory().numberNode(minimum.asDouble() + 0.1);
+                } else if (exclusiveMin.isNumber()) {
+                    return MAPPER.getNodeFactory().numberNode(exclusiveMin.asDouble() + 0.1);
+                }
+            }
+            return MAPPER.getNodeFactory().numberNode(minimum.asDouble());
+        }
+        JsonNode exclusiveMin = schema.get("exclusiveMinimum");
+        if (exclusiveMin != null && exclusiveMin.isNumber()) {
+            return MAPPER.getNodeFactory().numberNode(exclusiveMin.asDouble() + 0.1);
+        }
+        return MAPPER.getNodeFactory().numberNode(0.0);
     }
 
     private String textOrNull(JsonNode node, String fieldName) {

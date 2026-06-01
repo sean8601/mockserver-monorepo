@@ -31,9 +31,10 @@ public class AsyncApiMockOrchestrator {
     }
 
     /**
-     * Package-private constructor for testing with a custom generator.
+     * Constructor for use with a custom generator (used by the control-plane implementation
+     * and tests).
      */
-    AsyncApiMockOrchestrator(AsyncApiSpec spec, MessagePublisher publisher, MessageExampleGenerator generator) {
+    public AsyncApiMockOrchestrator(AsyncApiSpec spec, MessagePublisher publisher, MessageExampleGenerator generator) {
         this.spec = spec;
         this.publisher = publisher;
         this.generator = generator;

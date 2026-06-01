@@ -27,6 +27,15 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-core</artifactId>
         </dependency>
+        <!-- AsyncAPI messaging module — optional feature; wired into the
+             running server so the PUT/GET /mockserver/asyncapi control-plane
+             endpoints are functional. The module self-registers via
+             AsyncApiControlPlaneImpl.registerIfAvailable() at startup. -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>mockserver-async</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-integration-testing</artifactId>

@@ -1,6 +1,6 @@
 ---
 title: AsyncAPI Broker Mocking
-description: Publish example messages derived from AsyncAPI 2.x/3.x specifications to Kafka or MQTT brokers for integration testing without a real service.
+description: Mock Kafka and MQTT brokers using AsyncAPI 2.x/3.x specs — publish examples, subscribe to record messages, validate against JSON Schema, all via REST or Java API.
 shortTitle: AsyncAPI Messaging
 layout: page
 pageOrder: 11.5
@@ -9,26 +9,85 @@ subsection: true
 sitemap:
   priority: 0.7
   changefreq: 'monthly'
-  lastmod: 2026-06-01T08:00:00+00:00
+  lastmod: 2026-06-01T14:00:00+00:00
 ---
 
-<div class="alert" style="background-color:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin-bottom:20px;">
-    <strong>EXPERIMENTAL</strong> &mdash; The <span class="inline_code">mockserver-async</span> module is an MVP library. It is not yet wired into the MockServer Docker image or REST control plane. See <a href="#asyncapi_mvp_scope">MVP scope and follow-ups</a> below.
-</div>
-
-<p>MockServer's <strong>AsyncAPI broker mocking</strong> lets you drive Kafka and MQTT brokers with realistic example messages, all derived directly from an <a target="_blank" href="https://www.asyncapi.com/" rel="noopener noreferrer">AsyncAPI</a> 2.x or 3.x specification. This is useful when you want to test a consumer service in isolation: instead of running the real producer, MockServer reads your AsyncAPI spec, generates example payloads for each channel, and publishes them to the broker on demand.</p>
+<p>MockServer's <strong>AsyncAPI broker mocking</strong> lets you drive Kafka and MQTT brokers with realistic example messages, all derived directly from an <a target="_blank" href="https://www.asyncapi.com/" rel="noopener noreferrer">AsyncAPI</a> 2.x or 3.x specification. MockServer can also <strong>subscribe</strong> to broker channels to record incoming messages for verification &mdash; mirroring how HTTP requests are recorded.</p>
 
 <a id="asyncapi_how_it_works" class="anchor" href="#asyncapi_how_it_works">&nbsp;</a>
 
 <h2>How it works</h2>
 
-<p>The module follows a three-step pipeline:</p>
-
 <ol>
     <li><strong>Parse</strong> &mdash; <span class="inline_code">AsyncApiParser</span> reads the AsyncAPI document (JSON or YAML, auto-detected) and builds an in-memory model of channels and their message schemas.</li>
-    <li><strong>Generate</strong> &mdash; <span class="inline_code">MessageExampleGenerator</span> produces a JSON example payload for each channel. It uses explicit <span class="inline_code">examples</span> from the spec when present; otherwise it synthesises a minimal valid example from the JSON Schema.</li>
-    <li><strong>Publish</strong> &mdash; <span class="inline_code">AsyncApiMockOrchestrator</span> sends each payload to the broker via a <span class="inline_code">MessagePublisher</span> adapter (<span class="inline_code">KafkaMessagePublisher</span> or <span class="inline_code">MqttMessagePublisher</span>). You can publish once or on a repeating schedule.</li>
+    <li><strong>Generate</strong> &mdash; <span class="inline_code">MessageExampleGenerator</span> produces a JSON example payload for each channel. It uses explicit <span class="inline_code">examples</span> from the spec when present; otherwise it synthesises a schema-aware example (respecting enum, default, format, minimum/maximum, minLength, and other JSON Schema constraints).</li>
+    <li><strong>Publish</strong> &mdash; <span class="inline_code">AsyncApiMockOrchestrator</span> sends each payload to the broker via a <span class="inline_code">MessagePublisher</span> adapter. Kafka publishing supports record keys and headers; MQTT supports configurable QoS (0/1/2) and binary payloads.</li>
+    <li><strong>Subscribe</strong> (optional) &mdash; <span class="inline_code">MessageSubscriber</span> implementations subscribe to broker channels and record incoming messages, including keys, headers, and schema validation results.</li>
 </ol>
+
+<a id="asyncapi_rest_api" class="anchor" href="#asyncapi_rest_api">&nbsp;</a>
+
+<h2>REST control-plane</h2>
+
+<p>Load an AsyncAPI spec and start mocking via the REST API:</p>
+
+<h3>Load a spec: <span class="inline_code">PUT /mockserver/asyncapi</span></h3>
+
+<p>The request body can be either a plain AsyncAPI spec (JSON or YAML) or a JSON wrapper with broker configuration:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "spec": {
+    "asyncapi": "2.6.0",
+    "info": { "title": "Orders API", "version": "1.0.0" },
+    "channels": {
+      "orders": {
+        "publish": {
+          "message": {
+            "payload": {
+              "type": "object",
+              "properties": {
+                "orderId": { "type": "integer" },
+                "status": { "type": "string", "enum": ["pending", "shipped"] }
+              },
+              "required": ["orderId"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "brokerConfig": {
+    "kafkaBootstrapServers": "localhost:9092",
+    "publishOnLoad": true,
+    "consume": true
+  }
+}</code></pre>
+
+<h4>Broker configuration options</h4>
+
+<table class="table-standard">
+    <thead>
+        <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">kafkaBootstrapServers</span></td><td>string</td><td>null</td><td>Kafka bootstrap servers (e.g. <span class="inline_code">localhost:9092</span>)</td></tr>
+        <tr><td><span class="inline_code">kafkaGroupId</span></td><td>string</td><td><span class="inline_code">mockserver-async-consumer</span></td><td>Consumer group ID for Kafka subscribers</td></tr>
+        <tr><td><span class="inline_code">mqttBrokerUrl</span></td><td>string</td><td>null</td><td>MQTT broker URL (e.g. <span class="inline_code">tcp://localhost:1883</span>)</td></tr>
+        <tr><td><span class="inline_code">mqttClientId</span></td><td>string</td><td>auto-generated</td><td>MQTT client ID prefix</td></tr>
+        <tr><td><span class="inline_code">mqttQos</span></td><td>int</td><td>1</td><td>MQTT QoS level (0, 1, or 2)</td></tr>
+        <tr><td><span class="inline_code">publishOnLoad</span></td><td>boolean</td><td>true</td><td>Publish example messages immediately when spec is loaded</td></tr>
+        <tr><td><span class="inline_code">publishIntervalMillis</span></td><td>long</td><td>0 (disabled)</td><td>Publish examples periodically at this interval</td></tr>
+        <tr><td><span class="inline_code">consume</span></td><td>boolean</td><td>false</td><td>Subscribe to channels and record incoming messages</td></tr>
+    </tbody>
+</table>
+
+<h3>Check status: <span class="inline_code">GET /mockserver/asyncapi</span></h3>
+
+<p>Returns the loaded spec info, active channels, publisher/subscriber counts, and recorded messages (including per-message schema validation).</p>
+
+<h3>Reset</h3>
+
+<p>All async mocking state is cleared when you call <span class="inline_code">PUT /mockserver/reset</span>.</p>
 
 <a id="asyncapi_supported_specs" class="anchor" href="#asyncapi_supported_specs">&nbsp;</a>
 
@@ -52,13 +111,26 @@ sitemap:
     </tbody>
 </table>
 
-<p>Both JSON and YAML spec formats are accepted. Missing or incomplete structures are tolerated gracefully &mdash; channels with no message definition appear with empty examples and are skipped during publishing.</p>
+<p>Both JSON and YAML spec formats are accepted. Missing or incomplete structures are tolerated gracefully.</p>
+
+<a id="asyncapi_schema_validation" class="anchor" href="#asyncapi_schema_validation">&nbsp;</a>
+
+<h2>Schema validation</h2>
+
+<p>When a channel's message definition includes a JSON Schema (<span class="inline_code">payload</span>), MockServer validates:</p>
+
+<ul>
+    <li><strong>Generated examples</strong> before publishing &mdash; warnings are logged and reported if a generated example does not conform to the schema</li>
+    <li><strong>Recorded messages</strong> from subscriptions &mdash; each recorded message in the status response includes a <span class="inline_code">schemaValid</span> field and any <span class="inline_code">schemaErrors</span></li>
+</ul>
+
+<p>Schema validation supports JSON Schema Draft 4 through Draft 2019-09, including constraints like <span class="inline_code">required</span>, <span class="inline_code">enum</span>, <span class="inline_code">minimum</span>/<span class="inline_code">maximum</span>, <span class="inline_code">pattern</span>, and <span class="inline_code">format</span>.</p>
 
 <a id="asyncapi_java_usage" class="anchor" href="#asyncapi_java_usage">&nbsp;</a>
 
 <h2>Java usage</h2>
 
-<p>Add the <span class="inline_code">mockserver-async</span> dependency to your project, then wire the three components together:</p>
+<p>Add the <span class="inline_code">mockserver-async</span> dependency to your project, then wire the components together:</p>
 
 <pre class="prettyprint lang-java code"><code class="code">import org.mockserver.async.AsyncApiMockOrchestrator;
 import org.mockserver.async.asyncapi.AsyncApiParser;
@@ -84,7 +156,22 @@ orchestrator.stop();
 // Always close the publisher to release broker connections
 publisher.close();</code></pre>
 
-<p>The channel name in the AsyncAPI spec maps directly to the Kafka topic name (or MQTT topic path). No additional mapping configuration is needed.</p>
+<p>For subscribing to record messages:</p>
+
+<pre class="prettyprint lang-java code"><code class="code">import org.mockserver.async.subscribe.KafkaMessageSubscriber;
+import org.mockserver.async.subscribe.RecordedMessage;
+
+KafkaMessageSubscriber subscriber = new KafkaMessageSubscriber("localhost:9092", "test-group");
+subscriber.subscribe("orders");
+
+// ... wait for messages ...
+
+List&lt;RecordedMessage&gt; messages = subscriber.getRecordedMessages("orders");
+for (RecordedMessage msg : messages) {
+    System.out.println("Key: " + msg.getKey() + ", Payload: " + msg.getPayload());
+}
+
+subscriber.close();</code></pre>
 
 <a id="asyncapi_brokers" class="anchor" href="#asyncapi_brokers">&nbsp;</a>
 
@@ -92,33 +179,33 @@ publisher.close();</code></pre>
 
 <table class="table-standard">
     <thead>
-        <tr><th>Broker</th><th>Publisher class</th><th>Channel mapping</th></tr>
+        <tr><th>Broker</th><th>Publisher</th><th>Subscriber</th><th>Features</th></tr>
     </thead>
     <tbody>
         <tr>
             <td>Kafka</td>
             <td><span class="inline_code">KafkaMessagePublisher</span></td>
-            <td>Channel name &rarr; Kafka topic</td>
+            <td><span class="inline_code">KafkaMessageSubscriber</span></td>
+            <td>Record keys, headers, consumer group</td>
         </tr>
         <tr>
             <td>MQTT</td>
             <td><span class="inline_code">MqttMessagePublisher</span></td>
-            <td>Channel name &rarr; MQTT topic</td>
+            <td><span class="inline_code">MqttMessageSubscriber</span></td>
+            <td>QoS 0/1/2, binary payloads</td>
         </tr>
     </tbody>
 </table>
 
-<a id="asyncapi_mvp_scope" class="anchor" href="#asyncapi_mvp_scope">&nbsp;</a>
+<a id="asyncapi_deferred" class="anchor" href="#asyncapi_deferred">&nbsp;</a>
 
-<h2>MVP scope and planned follow-ups</h2>
-
-<p>The current release is a <strong>library-level MVP</strong>. The following capabilities are planned but not yet available:</p>
+<h2>Not yet supported</h2>
 
 <ul>
-    <li><strong>REST control-plane endpoint</strong> &mdash; no <span class="inline_code">PUT /mockserver/asyncapi</span> endpoint exists yet; the module must be used programmatically from Java.</li>
-    <li><strong>Docker image integration</strong> &mdash; the module is not bundled into the MockServer Docker image.</li>
-    <li><strong>Consumer/subscriber mocking</strong> &mdash; only the publish side is implemented; asserting messages received by MockServer as a consumer is not yet supported.</li>
-    <li><strong>Live-broker integration tests</strong> &mdash; the test suite uses mocked producers; no live Kafka or MQTT broker is required to build or test the module.</li>
-    <li><strong>Advanced AsyncAPI features</strong> &mdash; broker bindings, security schemes, correlation IDs, and channels with multiple messages beyond the first are not yet supported.</li>
-    <li><strong>Dashboard UI</strong> &mdash; async messaging state is not yet visible in the MockServer dashboard.</li>
+    <li><strong>Dashboard UI</strong> &mdash; async messaging state is not yet visible in the MockServer dashboard</li>
+    <li><strong>Advanced AsyncAPI bindings</strong> &mdash; channel-specific binding configurations (e.g. Kafka partition assignment, MQTT retain flag) are not parsed or applied</li>
+    <li><strong>Security schemes</strong> &mdash; AsyncAPI security scheme definitions (SASL, TLS client certs) are not applied to broker connections; configure broker security via standard client properties</li>
+    <li><strong>Correlation IDs</strong> &mdash; AsyncAPI correlation ID definitions are not tracked</li>
+    <li><strong>Multi-message channels</strong> &mdash; only the first message definition per channel is used</li>
+    <li><strong>Dedicated verification endpoint</strong> &mdash; recorded messages are available via <span class="inline_code">GET /mockserver/asyncapi</span> but there is no <span class="inline_code">PUT /mockserver/verify</span> equivalent for async messages yet</li>
 </ul>

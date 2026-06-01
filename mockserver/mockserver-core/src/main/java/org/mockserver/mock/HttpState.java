@@ -318,6 +318,7 @@ public class HttpState {
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
         org.mockserver.mock.replay.ReplayOrchestrator.getInstance().reset();
+        org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -1464,6 +1465,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/asyncapi", "/asyncapi")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleAsyncApiPut(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/debugMismatch", "/debugMismatch")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -1850,6 +1858,12 @@ public class HttpState {
                     } catch (Exception e) {
                         responseWriter.writeResponse(request, BAD_REQUEST, "failed to list WASM modules: " + e.getMessage(), MediaType.create("text", "plain").toString());
                     }
+                }
+                return true;
+            }
+            if (request.matches("GET", PATH_PREFIX + "/asyncapi", "/asyncapi")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleAsyncApiGet()), true);
                 }
                 return true;
             }
@@ -3301,5 +3315,48 @@ public class HttpState {
             Thread.currentThread().interrupt();
         }
         return result;
+    }
+
+    // ---- AsyncAPI control-plane ----
+
+    private HttpResponse handleAsyncApiPut(HttpRequest request) {
+        try {
+            org.mockserver.async.AsyncApiControlPlaneRegistry registry = org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance();
+            if (!registry.isAvailable()) {
+                return response().withStatusCode(NOT_IMPLEMENTED.code())
+                    .withBody("{\"error\":\"AsyncAPI messaging module is not available — mockserver-async is not on the classpath\"}", MediaType.JSON_UTF_8);
+            }
+            String body = request.getBodyAsString();
+            if (body == null || body.isBlank()) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body must contain an AsyncAPI spec (JSON/YAML) or {spec, brokerConfig}\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode result = registry.load(body);
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            return response().withStatusCode(CREATED.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            String message = String.valueOf(e.getMessage());
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to load AsyncAPI spec: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleAsyncApiGet() {
+        try {
+            org.mockserver.async.AsyncApiControlPlaneRegistry registry = org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance();
+            if (!registry.isAvailable()) {
+                return response().withStatusCode(NOT_IMPLEMENTED.code())
+                    .withBody("{\"error\":\"AsyncAPI messaging module is not available — mockserver-async is not on the classpath\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode result = registry.status();
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            String message = String.valueOf(e.getMessage());
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get AsyncAPI status: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
     }
 }

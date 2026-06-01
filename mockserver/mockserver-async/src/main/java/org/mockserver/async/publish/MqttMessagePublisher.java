@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 /**
  * A {@link MessagePublisher} that delegates to an MQTT {@link MqttClient}.
  * The channel name maps directly to an MQTT topic.
+ * <p>
+ * Supports configurable QoS (0, 1, or 2) and both text and binary payloads.
  */
 public class MqttMessagePublisher implements MessagePublisher {
 
@@ -21,16 +23,30 @@ public class MqttMessagePublisher implements MessagePublisher {
     private final int qos;
 
     /**
-     * Create a publisher connected to the given MQTT broker.
+     * Create a publisher connected to the given MQTT broker with default QoS (1).
      *
      * @param brokerUrl the MQTT broker URL (e.g. {@code tcp://localhost:1883})
      * @param clientId  the client identifier
      */
     public MqttMessagePublisher(String brokerUrl, String clientId) {
+        this(brokerUrl, clientId, DEFAULT_QOS);
+    }
+
+    /**
+     * Create a publisher connected to the given MQTT broker with a specific QoS.
+     *
+     * @param brokerUrl the MQTT broker URL (e.g. {@code tcp://localhost:1883})
+     * @param clientId  the client identifier
+     * @param qos       the MQTT QoS level (0, 1, or 2)
+     */
+    public MqttMessagePublisher(String brokerUrl, String clientId, int qos) {
+        if (qos < 0 || qos > 2) {
+            throw new IllegalArgumentException("MQTT QoS must be 0, 1, or 2; got: " + qos);
+        }
         try {
             this.client = new MqttClient(brokerUrl, clientId);
             this.client.connect();
-            this.qos = DEFAULT_QOS;
+            this.qos = qos;
         } catch (MqttException e) {
             throw new RuntimeException("Failed to connect to MQTT broker: " + brokerUrl, e);
         }
@@ -46,14 +62,32 @@ public class MqttMessagePublisher implements MessagePublisher {
 
     @Override
     public void publish(String channel, String payload) {
+        publishBytes(channel, payload.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Publish a binary payload to the given channel. Supports binary message
+     * formats as specified in AsyncAPI channel bindings.
+     *
+     * @param channel the MQTT topic name
+     * @param payload the raw binary payload
+     */
+    public void publishBytes(String channel, byte[] payload) {
         try {
-            LOG.debug("Publishing to MQTT topic '{}': {}", channel, payload);
-            MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
+            LOG.debug("Publishing to MQTT topic '{}': {} bytes", channel, payload.length);
+            MqttMessage message = new MqttMessage(payload);
             message.setQos(qos);
             client.publish(channel, message);
         } catch (MqttException e) {
             throw new RuntimeException("Failed to publish to MQTT topic: " + channel, e);
         }
+    }
+
+    /**
+     * @return the configured QoS level for this publisher
+     */
+    public int getQos() {
+        return qos;
     }
 
     @Override

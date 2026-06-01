@@ -239,6 +239,24 @@ public class MockServer extends LifeCycle {
             startHttp3Server(configuration, initializer.getActionHandler(), http3Port);
         }
 
+        // Register the AsyncAPI control-plane if mockserver-async is on the classpath.
+        // Uses reflection to avoid a hard compile-time dependency — when the module is
+        // absent the endpoint gracefully responds 501 (Not Implemented).
+        try {
+            Class<?> asyncCp = Class.forName("org.mockserver.async.controlplane.AsyncApiControlPlaneImpl");
+            java.lang.reflect.Method register = asyncCp.getMethod("registerIfAvailable");
+            register.invoke(null);
+        } catch (ClassNotFoundException ignored) {
+            // mockserver-async not on classpath — AsyncAPI endpoints will return 501
+        } catch (Exception e) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("failed to register AsyncAPI control-plane: " + e.getMessage())
+            );
+        }
+
         startedServer(getLocalPorts());
     }
 
