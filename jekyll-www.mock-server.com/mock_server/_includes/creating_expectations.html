@@ -1127,7 +1127,7 @@ llmMock("/v1/messages")
 
 <h4>Streaming with Realistic Timing</h4>
 
-<p>When <span class="inline_code">streaming</span> is enabled, MockServer expands the completion into provider-correct SSE events (e.g. <span class="inline_code">message_start</span> through <span class="inline_code">message_stop</span> for Anthropic, <span class="inline_code">chat.completion.chunk</span> deltas for OpenAI) with configurable timing physics.</p>
+<p>When <span class="inline_code">streaming</span> is enabled, MockServer expands the completion into provider-correct streaming events with configurable timing physics. Most providers use SSE (Server-Sent Events with <span class="inline_code">text/event-stream</span>) &mdash; for example, <span class="inline_code">message_start</span> through <span class="inline_code">message_stop</span> for Anthropic, and <span class="inline_code">chat.completion.chunk</span> deltas for OpenAI. <strong>Ollama</strong> is the exception: it uses native <strong>NDJSON</strong> (newline-delimited JSON with <span class="inline_code">application/x-ndjson</span>), where each streaming chunk is a single JSON object followed by a newline character. MockServer emits the correct wire format automatically based on the provider.</p>
 
 <pre class="prettyprint lang-java code"><code class="code">import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.mockserver.client.Llm.jitter;

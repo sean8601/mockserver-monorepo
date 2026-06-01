@@ -131,6 +131,12 @@ Content-Type: application/json
             <td>200</td>
         </tr>
         <tr>
+            <td><span class="inline_code">PATCH</span></td>
+            <td><span class="inline_code">{basePath}/{id}</span></td>
+            <td>Partially update an item by id. Only the fields present in the request body are merged into the existing item (shallow merge). The id field cannot be changed via PATCH. Returns 404 if not found.</td>
+            <td>200</td>
+        </tr>
+        <tr>
             <td><span class="inline_code">DELETE</span></td>
             <td><span class="inline_code">{basePath}/{id}</span></td>
             <td>Delete an item by id. Returns 404 if not found.</td>
@@ -173,10 +179,16 @@ curl -s http://localhost:1080/users
 curl -s http://localhost:1080/users/1
 # -> {"id":1,"name":"Alice","email":"alice@example.com"}
 
-# Update
+# Update (full replace)
 curl -s -X PUT http://localhost:1080/users/1 \
   -H 'Content-Type: application/json' \
   -d '{"name":"Alice Smith","email":"alice@example.com"}'
+
+# Partial update (PATCH - only change the email, keep the name)
+curl -s -X PATCH http://localhost:1080/users/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice.smith@example.com"}'
+# -> {"id":1,"name":"Alice Smith","email":"alice.smith@example.com"}
 
 # Delete
 curl -s -X DELETE http://localhost:1080/users/1</code></pre>

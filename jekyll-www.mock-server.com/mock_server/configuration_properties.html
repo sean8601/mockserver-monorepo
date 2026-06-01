@@ -1021,6 +1021,60 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.livenessHttpGetPath="/liveness/probe"</code></pre>
 </div>
 
+<a id="async_messaging_configuration" class="anchor" href="#async_messaging_configuration">&nbsp;</a>
+
+<h2>Async Messaging Configuration:</h2>
+
+<p>These properties configure server-wide defaults for <a href="/mock_server/asyncapi_messaging.html">AsyncAPI broker mocking</a>. Per-request <span class="inline_code">brokerConfig</span> values in the <span class="inline_code">PUT /mockserver/asyncapi</span> request body override these defaults.</p>
+
+<button id="button_configuration_async_kafka_bootstrap_servers" class="accordion title"><strong>Default Kafka Bootstrap Servers</strong></button>
+<div class="panel title">
+    <p>Default Kafka bootstrap servers used when a <span class="inline_code">PUT /mockserver/asyncapi</span> request body does not include <span class="inline_code">brokerConfig.kafkaBootstrapServers</span>. When unset (empty string), the broker must be specified per-request.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncKafkaBootstrapServers(String servers)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncKafkaBootstrapServers=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncKafkaBootstrapServers=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncKafkaBootstrapServers="localhost:9092"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_broker_url" class="accordion title"><strong>Default MQTT Broker URL</strong></button>
+<div class="panel title">
+    <p>Default MQTT broker URL used when a <span class="inline_code">PUT /mockserver/asyncapi</span> request body does not include <span class="inline_code">brokerConfig.mqttBrokerUrl</span>. When unset (empty string), the broker must be specified per-request.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttBrokerUrl(String url)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttBrokerUrl=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_BROKER_URL=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttBrokerUrl=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttBrokerUrl="tcp://localhost:1883"</code></pre>
+</div>
+
+<button id="button_configuration_async_recorded_message_max_entries" class="accordion title"><strong>Maximum Recorded Messages Per Channel</strong></button>
+<div class="panel title">
+    <p>Maximum number of recorded messages retained per channel in async messaging subscribers. When the cap is reached, the oldest messages are evicted (FIFO). This prevents unbounded memory growth when consuming high-volume topics.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">1000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncRecordedMessageMaxEntries(int maxEntries)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncRecordedMessageMaxEntries=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncRecordedMessageMaxEntries=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncRecordedMessageMaxEntries="5000"</code></pre>
+</div>
+
 {% include_subpage _includes/mcp_configuration.html %}
 
 {% include_subpage _includes/wasm_configuration.html %}
