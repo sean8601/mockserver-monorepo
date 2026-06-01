@@ -39,7 +39,7 @@ AWS accounts, CI/CD pipelines, container images, and Kubernetes deployment.
 | [CI/CD](infrastructure/ci-cd.md) | Buildkite pipelines and GitHub Actions workflows |
 | [Docker](infrastructure/docker.md) | Docker images, variants, multi-arch builds, and Compose examples |
 | [Helm & Kubernetes](infrastructure/helm.md) | Helm charts, deployment templates, and Kind-based testing |
-| [Service Mesh / Sidecar](infrastructure/service-mesh.md) | Transparent HTTP interception, xDS route discovery, and Kubernetes sidecar deployment |
+| [Service Mesh / Sidecar](infrastructure/service-mesh.md) | Transparent HTTP interception and Kubernetes sidecar deployment |
 | [AWS SES Email Forwarding](infrastructure/aws-ses-email-forwarding.md) | SES catch-all email forwarding for mock-server.com |
 
 ### Operations

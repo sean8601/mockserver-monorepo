@@ -219,8 +219,6 @@ public class Configuration {
 
     // service mesh / sidecar
     private Boolean transparentProxyEnabled;
-    private Boolean xdsEnabled;
-    private Integer xdsPort;
 
 
     public Level logLevel() {
@@ -2629,45 +2627,6 @@ public class Configuration {
      */
     public Configuration transparentProxyEnabled(Boolean transparentProxyEnabled) {
         this.transparentProxyEnabled = transparentProxyEnabled;
-        return this;
-    }
-
-    public Boolean xdsEnabled() {
-        if (xdsEnabled == null) {
-            return ConfigurationProperties.xdsEnabled();
-        }
-        return xdsEnabled;
-    }
-
-    /**
-     * Enable the xDS route discovery endpoint at GET /mockserver/xds/routes which
-     * returns active expectations as a simplified xDS RouteConfiguration JSON structure.
-     * <p>
-     * The default is false
-     *
-     * @param xdsEnabled enable xDS route discovery endpoint
-     */
-    public Configuration xdsEnabled(Boolean xdsEnabled) {
-        this.xdsEnabled = xdsEnabled;
-        return this;
-    }
-
-    public Integer xdsPort() {
-        if (xdsPort == null) {
-            return ConfigurationProperties.xdsPort();
-        }
-        return xdsPort;
-    }
-
-    /**
-     * The port used for the xDS route discovery endpoint.
-     * <p>
-     * The default is 18000
-     *
-     * @param xdsPort port for xDS endpoint
-     */
-    public Configuration xdsPort(Integer xdsPort) {
-        this.xdsPort = xdsPort;
         return this;
     }
 

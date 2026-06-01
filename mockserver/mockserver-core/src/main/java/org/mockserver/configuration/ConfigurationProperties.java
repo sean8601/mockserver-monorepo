@@ -251,8 +251,6 @@ public class ConfigurationProperties {
 
     // service mesh / sidecar
     private static final String MOCKSERVER_TRANSPARENT_PROXY_ENABLED = "mockserver.transparentProxyEnabled";
-    private static final String MOCKSERVER_XDS_ENABLED = "mockserver.xdsEnabled";
-    private static final String MOCKSERVER_XDS_PORT = "mockserver.xdsPort";
 
     // properties file
     private static final String MOCKSERVER_PROPERTY_FILE = "mockserver.propertyFile";
@@ -572,22 +570,6 @@ public class ConfigurationProperties {
 
     public static void transparentProxyEnabled(boolean enable) {
         setProperty(MOCKSERVER_TRANSPARENT_PROXY_ENABLED, "" + enable);
-    }
-
-    public static boolean xdsEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_XDS_ENABLED, "MOCKSERVER_XDS_ENABLED", "" + false));
-    }
-
-    public static void xdsEnabled(boolean enable) {
-        setProperty(MOCKSERVER_XDS_ENABLED, "" + enable);
-    }
-
-    public static int xdsPort() {
-        return readIntegerProperty(MOCKSERVER_XDS_PORT, "MOCKSERVER_XDS_PORT", 18000);
-    }
-
-    public static void xdsPort(int port) {
-        setProperty(MOCKSERVER_XDS_PORT, "" + port);
     }
 
     public static Map<String, String> logLevelOverrides() {

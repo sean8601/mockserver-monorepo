@@ -56,7 +56,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | gRPC | `grpcEnabled`, `grpcDescriptorDirectory`, `grpcProtoDirectory`, `grpcProtocPath` |
 | DNS | `dnsEnabled`, `dnsPort` |
 | HTTP/3 (QUIC) | `http3Port` |
-| Service mesh / xDS / transparent proxy | `transparentProxyEnabled`, `xdsEnabled`, `xdsPort` |
+| Service mesh / transparent proxy | `transparentProxyEnabled` |
 | OpenTelemetry | `otelMetricsEnabled`, `otelTracesEnabled`, `otelEndpoint`, `otelMetricsExportIntervalSeconds`, `otelPropagateTraceContext`, `otelGenerateTraceId` |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs` |
 

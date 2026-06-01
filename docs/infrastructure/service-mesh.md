@@ -1,6 +1,6 @@
-# Service Mesh / Sidecar Mode
+# Transparent Proxy / Sidecar Mode
 
-MockServer can run as a Kubernetes sidecar proxy with transparent HTTP interception and a simplified xDS route discovery endpoint. This enables service mesh integration patterns where MockServer intercepts traffic destined for external services.
+MockServer can run as a Kubernetes sidecar proxy with transparent HTTP interception. This enables service mesh integration patterns where MockServer intercepts traffic destined for external services.
 
 ## Architecture
 
@@ -61,72 +61,6 @@ initContainers:
 
 The `excludeUid` must match `app.runAsUser` (default 65534). The Helm chart configures this via `sidecar.iptables.excludeUid`.
 
-## xDS Route Discovery
-
-When `xdsEnabled=true`, MockServer provides two route discovery mechanisms:
-
-1. **REST endpoint** -- a JSON snapshot of the route table at `GET /mockserver/xds/routes`
-2. **gRPC RDS server** -- a real Envoy-compatible Route Discovery Service on `xdsPort` (default 18000)
-
-### REST Endpoint
-
-`GET /mockserver/xds/routes`
-
-Returns active expectations as a simplified xDS RouteConfiguration JSON:
-
-```json
-{
-  "name": "mockserver_routes",
-  "virtual_hosts": [
-    {
-      "name": "mockserver",
-      "domains": ["*"],
-      "routes": [
-        {
-          "match": {
-            "path": "/api/users",
-            "method": "GET"
-          },
-          "expectationId": "abc-123"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### gRPC RDS Server
-
-When `xdsEnabled=true` and `xdsPort > 0`, MockServer starts a standalone HTTP/2 (H2C) gRPC server that implements the Envoy v3 Route Discovery Service. This allows a real Envoy or Istio data plane to fetch routes from MockServer.
-
-**Supported gRPC methods:**
-
-- `/envoy.service.route.v3.RouteDiscoveryService/StreamRoutes` (server-streaming; one full-state response per request)
-- `/envoy.service.route.v3.RouteDiscoveryService/FetchRoutes` (unary)
-
-The server responds with a `DiscoveryResponse` containing a single `RouteConfiguration` resource wrapped in a `google.protobuf.Any`. Each MockServer expectation with a path becomes an Envoy Route with an exact path match and cluster name "mockserver". Expectations without a path use a prefix "/" match.
-
-**Protobuf approach:** The xDS protobuf messages are hand-coded using minimal wire-format encoding/decoding (`ProtoWriter`/`ProtoReader`) to avoid heavyweight dependencies on `grpc-java` or `io.envoyproxy.controlplane:api`. Only the subset of messages needed for RDS is implemented.
-
-**Lifecycle:** The gRPC server starts during `MockServer.createServerBootstrap()` (fail-soft: a bind failure logs a warning but does not crash the main server) and stops during `MockServer.stopAsync()`.
-
-### Configuration
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `xdsEnabled` | `false` | Enable xDS route discovery (REST endpoint and gRPC RDS server) |
-| `xdsPort` | `18000` | TCP port for the gRPC RDS server (plaintext H2C) |
-
-Environment variables: `MOCKSERVER_XDS_ENABLED`, `MOCKSERVER_XDS_PORT`
-
-### Not Implemented
-
-- **Delta/incremental xDS** -- only State of the World (SotW) responses are supported
-- **Watch-on-change** -- no server push when expectations change; clients must re-request
-- **LDS, CDS, EDS, ADS** -- only RDS is implemented
-- **TLS on xDS port** -- the gRPC server uses plaintext HTTP/2 (H2C) only
-- **Resource filtering** -- `resource_names` in the DiscoveryRequest are acknowledged but all routes are returned regardless
-
 ## Helm Chart
 
 The Helm chart includes sidecar configuration under the `sidecar` key:
@@ -135,16 +69,12 @@ The Helm chart includes sidecar configuration under the `sidecar` key:
 sidecar:
   enabled: false
   transparentProxy: false
-  xdsEnabled: false
-  xdsPort: 18000
   iptables:
     enabled: false
     excludeUid: 65534   # must match app.runAsUser to prevent redirect loop
 ```
 
 When `sidecar.transparentProxy` is true, the `MOCKSERVER_TRANSPARENT_PROXY_ENABLED` environment variable is set in the deployment.
-
-When `sidecar.xdsEnabled` is true, both `MOCKSERVER_XDS_ENABLED` and `MOCKSERVER_XDS_PORT` are set.
 
 ## Implementation
 
@@ -154,12 +84,6 @@ When `sidecar.xdsEnabled` is true, both `MOCKSERVER_XDS_ENABLED` and `MOCKSERVER
 | Transparent proxy logic | `mockserver-netty/.../proxy/TransparentProxyInitializer.java` |
 | SO_ORIGINAL_DST / conntrack | `mockserver-netty/.../proxy/SoOriginalDstHelper.java` |
 | Pipeline handler (sets REMOTE_SOCKET) | `mockserver-netty/.../proxy/TransparentProxyHandler.java` |
-| Protobuf wire helpers | `mockserver-core/.../xds/ProtoWriter.java`, `ProtoReader.java` |
-| xDS protobuf messages | `mockserver-core/.../xds/XdsProtoMessages.java` |
-| xDS route builder (JSON + protobuf) | `mockserver-core/.../xds/XdsRouteBuilder.java` |
-| REST endpoint | `HttpState.java` (GET /mockserver/xds/routes) |
-| gRPC RDS server | `mockserver-netty/.../xds/XdsDiscoveryServer.java` |
-| Lifecycle wiring | `MockServer.java` (startXdsServer / stopAsync) |
 | Helm values | `helm/mockserver/values.yaml` |
 | Helm deployment | `helm/mockserver/templates/deployment.yaml` |
 
@@ -197,10 +121,6 @@ This approach:
 
 ## Limitations
 
-- **SotW only**: The gRPC RDS server returns full-state responses; delta/incremental xDS is not supported.
-- **RDS only**: LDS, CDS, EDS, and ADS are not implemented.
-- **No watch-on-change**: The server does not push updates when expectations change; clients must re-request.
-- **Plaintext H2C**: The xDS gRPC port uses cleartext HTTP/2; TLS is not supported on the xDS port.
 - **Conntrack lookup is O(n) with a cap**: The `/proc/net/nf_conntrack` parsing scans the conntrack table per connection, capped at 200,000 lines to bound CPU cost. If the table exceeds this limit, MockServer falls back to Host-header resolution. For high-connection-rate production deployments, a JNI-based `getsockopt(SO_ORIGINAL_DST)` would be more efficient (not yet implemented).
 - **Linux only**: conntrack-based original-destination resolution requires Linux with `nf_conntrack`. On other OSes, the transparent proxy falls back to Host-header resolution, which works for HTTP traffic but requires the Host header to be correct.
 - **iptables required for interception**: The transparent proxy itself does not set up iptables rules. An init container or external mechanism must configure traffic redirection.

@@ -156,13 +156,9 @@ affinity: {}
 # init container redirects outbound TCP to MockServer so application traffic is
 # transparently intercepted without code changes.
 #
-# When `xdsEnabled` is set MockServer also runs an Envoy-compatible xDS RDS gRPC
-# server on `xdsPort`, exposing active expectations as RouteConfiguration.
 sidecar:
   enabled: false
   transparentProxy: false
-  xdsEnabled: false
-  xdsPort: 18000
   # Add the NET_ADMIN capability (required for SO_ORIGINAL_DST / iptables). Only
   # applied when transparentProxy is true.
   netAdmin: true

@@ -1874,12 +1874,6 @@ public class HttpState {
                 }
                 return true;
             }
-            if (request.matches("GET", PATH_PREFIX + "/xds/routes", "/xds/routes")) {
-                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, handleXdsRoutes(), true);
-                }
-                return true;
-            }
             if (request.matches("GET", PATH_PREFIX + "/grpc/health", "/grpc/health")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleGrpcHealthGet()), true);
@@ -2912,23 +2906,6 @@ public class HttpState {
         } catch (Exception e) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get gRPC health status\"}", MediaType.JSON_UTF_8);
-        }
-    }
-
-    private HttpResponse handleXdsRoutes() {
-        if (!Boolean.TRUE.equals(configuration.xdsEnabled())) {
-            return response().withStatusCode(NOT_FOUND.code())
-                .withBody("{\"error\":\"xDS is not enabled (set xdsEnabled=true)\"}", MediaType.JSON_UTF_8);
-        }
-        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
-        try {
-            List<Expectation> active = requestMatchers.retrieveActiveExpectations(null);
-            java.util.Map<String, Object> config = new org.mockserver.xds.XdsRouteBuilder().buildRouteConfiguration(active);
-            return response().withStatusCode(OK.code())
-                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config), MediaType.JSON_UTF_8);
-        } catch (Exception e) {
-            return response().withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"failed to build xDS route configuration\"}", MediaType.JSON_UTF_8);
         }
     }
 

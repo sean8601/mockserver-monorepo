@@ -1,7 +1,7 @@
 ---
-title: Service Mesh / Sidecar Mode
-shortTitle: Service Mesh
-description: Run MockServer as a Kubernetes sidecar with transparent proxy interception and xDS route discovery for service mesh integration.
+title: Transparent Proxy / Sidecar Mode
+shortTitle: Transparent Proxy
+description: Run MockServer as a Kubernetes sidecar with transparent proxy interception for service mesh integration.
 layout: page
 pageOrder: 3
 section: 'Chaos Testing'
@@ -9,11 +9,11 @@ subsection: true
 sitemap:
   priority: 0.7
   changefreq: 'monthly'
-  lastmod: 2026-05-31T08:00:00+00:00
-keywords: service mesh, sidecar proxy, transparent proxy, xds, istio, envoy, kubernetes sidecar, iptables redirect, mockserver sidecar
+  lastmod: 2026-06-01T08:00:00+00:00
+keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirect, mockserver sidecar, conntrack
 ---
 
-<p>MockServer can run as a <strong>Kubernetes sidecar</strong> with transparent HTTP proxy interception and a simplified xDS route discovery endpoint. This enables service mesh integration patterns where MockServer intercepts traffic destined for external services without any application code changes.</p>
+<p>MockServer can run as a <strong>Kubernetes sidecar</strong> with transparent HTTP proxy interception. This enables service mesh integration patterns where MockServer intercepts traffic destined for external services without any application code changes.</p>
 
 <h2>Transparent Proxy Mode</h2>
 
@@ -69,64 +69,6 @@ keywords: service mesh, sidecar proxy, transparent proxy, xds, istio, envoy, kub
         iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-port 1080
         iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-port 1080</code></pre>
 
-<h2>xDS Route Discovery</h2>
-
-<p>When <code class="inline code">xdsEnabled</code> is set to <code class="inline code">true</code>, MockServer provides two route discovery mechanisms:</p>
-
-<ol>
-    <li><strong>REST endpoint</strong> -- a JSON snapshot at <code class="inline code">GET /mockserver/xds/routes</code></li>
-    <li><strong>gRPC RDS server</strong> -- a real Envoy-compatible Route Discovery Service on <code class="inline code">xdsPort</code></li>
-</ol>
-
-<h3>REST Endpoint</h3>
-
-<pre class="prettyprint code"><code class="code">GET /mockserver/xds/routes</code></pre>
-
-<p>Returns active expectations as a simplified xDS RouteConfiguration JSON:</p>
-
-<pre class="prettyprint lang-json code"><code class="code">{
-  "name" : "mockserver_routes",
-  "virtual_hosts" : [ {
-    "name" : "mockserver",
-    "domains" : [ "*" ],
-    "routes" : [ {
-      "match" : {
-        "path" : "/api/users",
-        "method" : "GET"
-      },
-      "expectationId" : "abc-123"
-    } ]
-  } ]
-}</code></pre>
-
-<h3>gRPC RDS Server</h3>
-
-<p>When <code class="inline code">xdsEnabled=true</code> and <code class="inline code">xdsPort > 0</code>, MockServer starts a standalone gRPC server (plaintext HTTP/2) that implements the Envoy v3 Route Discovery Service. This allows a real Envoy or Istio sidecar proxy to fetch routes directly from MockServer.</p>
-
-<p>Supported gRPC methods:</p>
-<ul>
-    <li><code class="inline code">/envoy.service.route.v3.RouteDiscoveryService/StreamRoutes</code> (server-streaming)</li>
-    <li><code class="inline code">/envoy.service.route.v3.RouteDiscoveryService/FetchRoutes</code> (unary)</li>
-</ul>
-
-<p>Each MockServer expectation with a path becomes an Envoy Route with an exact path match and a fixed cluster name <code class="inline code">"mockserver"</code>. Expectations without a path use a prefix <code class="inline code">"/"</code> match (match-all).</p>
-
-<p>The gRPC server starts automatically during MockServer startup and stops during shutdown. If the xDS port is already in use, the main MockServer continues without the xDS server (fail-soft).</p>
-
-<h3>Configuration</h3>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Property</th><th>Default</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-        <tr><td><code class="inline code">xdsEnabled</code></td><td><code class="inline code">false</code></td><td>Enable xDS route discovery (REST endpoint and gRPC RDS server)</td></tr>
-        <tr><td><code class="inline code">xdsPort</code></td><td><code class="inline code">18000</code></td><td>TCP port for the gRPC RDS server (plaintext HTTP/2)</td></tr>
-    </tbody>
-</table>
-
-<p>Environment variables: <code class="inline code">MOCKSERVER_XDS_ENABLED</code>, <code class="inline code">MOCKSERVER_XDS_PORT</code></p>
-
 <h2>Helm Chart</h2>
 
 <p>The MockServer Helm chart includes sidecar configuration values:</p>
@@ -134,8 +76,6 @@ keywords: service mesh, sidecar proxy, transparent proxy, xds, istio, envoy, kub
 <pre class="prettyprint lang-yaml code"><code class="code">sidecar:
   enabled: false
   transparentProxy: false
-  xdsEnabled: false
-  xdsPort: 18000
   iptables:
     enabled: false
     excludeUid: 65534   # must match app.runAsUser to prevent redirect loop</code></pre>
@@ -143,8 +83,6 @@ keywords: service mesh, sidecar proxy, transparent proxy, xds, istio, envoy, kub
 <p>When <code class="inline code">sidecar.transparentProxy</code> is <code class="inline code">true</code>, the chart sets <code class="inline code">MOCKSERVER_TRANSPARENT_PROXY_ENABLED=true</code> in the deployment.</p>
 
 <p>When <code class="inline code">sidecar.iptables.enabled</code> is <code class="inline code">true</code>, the chart renders an init container that adds a UID-based RETURN rule (to exclude MockServer's own egress) before any REDIRECT rules, preventing an infinite redirect loop. The <code class="inline code">excludeUid</code> must match <code class="inline code">app.runAsUser</code> (both default to 65534).</p>
-
-<p>When <code class="inline code">sidecar.xdsEnabled</code> is <code class="inline code">true</code>, the chart sets both <code class="inline code">MOCKSERVER_XDS_ENABLED=true</code> and <code class="inline code">MOCKSERVER_XDS_PORT</code>.</p>
 
 <h2>Original Destination Resolution (SO_ORIGINAL_DST)</h2>
 
@@ -163,10 +101,6 @@ keywords: service mesh, sidecar proxy, transparent proxy, xds, istio, envoy, kub
 <h2>Limitations</h2>
 
 <ul>
-    <li><strong>RDS only</strong> -- MockServer implements Route Discovery Service (RDS). LDS, CDS, EDS, and ADS are not supported.</li>
-    <li><strong>Full-state responses</strong> -- the gRPC server returns the complete route table on each request (State of the World). Delta/incremental xDS is not supported.</li>
-    <li><strong>No watch-on-change</strong> -- when expectations change, clients must re-request routes; the server does not push updates.</li>
-    <li><strong>Plaintext only</strong> -- the xDS gRPC port uses cleartext HTTP/2 (H2C). TLS on the xDS port is not supported.</li>
     <li><strong>Conntrack lookup is O(n) with a cap</strong> -- the <code class="inline code">/proc/net/nf_conntrack</code> file is parsed per connection, capped at 200,000 lines. If the conntrack table exceeds this limit, MockServer falls back to Host-header resolution. For high-throughput production use, consider a dedicated transparent proxy.</li>
     <li><strong>Linux only for conntrack</strong> -- original-destination resolution via conntrack requires Linux. On other OSes, the transparent proxy falls back to Host-header resolution.</li>
     <li><strong>iptables not automatic</strong> -- an init container or external mechanism must configure traffic redirection.</li>
