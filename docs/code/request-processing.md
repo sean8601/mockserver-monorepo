@@ -74,7 +74,7 @@ required?"}
 | Endpoint | Action |
 |----------|--------|
 | `PUT /mockserver/expectation` | Deserialize + add/update expectations |
-| `PUT /mockserver/openapi` | Convert OpenAPI spec to expectations |
+| `PUT /mockserver/openapi` | Convert OpenAPI spec to expectations (idempotent/incremental sync) |
 | `PUT /mockserver/wsdl` | Convert a WSDL 1.1 document (SOAP 1.1/1.2) to expectations |
 | `PUT /mockserver/pact` | Export active response expectations as a Pact v3 consumer contract (`?consumer=&provider=`) |
 | `PUT/GET /mockserver/mode` | Get/set the operating mode (`?mode=SIMULATE\|SPY\|CAPTURE`) — toggles proxy-on-no-match for record/spy workflows |
@@ -645,6 +645,27 @@ Limitations in v1:
 - Runtime expression placeholders are not dynamically resolved — they are passed through as literal text
 - Only `post`, `put`, `patch`, `get`, and `delete` callback methods are supported
 - Callback request bodies use the first available media type schema
+
+## Incremental OpenAPI Sync
+
+The `PUT /mockserver/openapi` endpoint performs **idempotent, incremental synchronization** when re-importing an OpenAPI specification. Each generated expectation receives a stable, deterministic id of the form `openapi:<specKey>:<operationId>` (with `:<n>` appended only to disambiguate multiple expectations for the same operation, e.g. different response codes).
+
+The `specKey` is derived from the parsed `info.title` field of the OpenAPI spec (lowercased, non-alphanumeric characters replaced with `_`). If the title is blank, a short hex hash of the raw spec payload/URL is used instead.
+
+When the endpoint processes an import:
+
+1. `OpenAPIConverter.buildExpectations()` generates expectations with stable ids
+2. `HttpState.add(OpenAPIExpectation)` identifies the namespace prefixes (e.g. `openapi:swagger_petstore:`) covered by the new expectations
+3. Existing expectations whose id starts with a covered prefix but is **not** in the new id set are **pruned** (removed)
+4. The new expectations are upserted (added or updated in place by id)
+
+This means:
+- **Re-importing the same spec** is a no-op (same ids, same content)
+- **Adding an operation** to the spec creates a new expectation without affecting existing ones
+- **Removing an operation** from the spec prunes the corresponding expectation
+- **Other specs and manually created expectations** are never affected (different namespace or no `openapi:` prefix)
+
+The prune logic is encapsulated in `OpenApiSyncPlanner.idsToPrune()` for testability.
 
 ## Detailed Verification Failures (Diff Mode)
 

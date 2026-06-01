@@ -26,6 +26,7 @@ import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier.Cause;
 import org.mockserver.model.*;
 import org.mockserver.openapi.OpenAPIConverter;
+import org.mockserver.openapi.OpenApiSyncPlanner;
 import org.mockserver.persistence.ExpectationFileSystemPersistence;
 import org.mockserver.persistence.ExpectationFileWatcher;
 import org.mockserver.responsewriter.ResponseWriter;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -343,7 +345,41 @@ public class HttpState {
     }
 
     public List<Expectation> add(OpenAPIExpectation openAPIExpectation) {
-        return getOpenAPIConverter().buildExpectations(openAPIExpectation.getSpecUrlOrPayload(), openAPIExpectation.getOperationsAndResponses(), openAPIExpectation.getContextPathPrefix()).stream().map(this::add).flatMap(List::stream).collect(Collectors.toList());
+        List<Expectation> newExpectations = getOpenAPIConverter().buildExpectations(
+            openAPIExpectation.getSpecUrlOrPayload(),
+            openAPIExpectation.getOperationsAndResponses(),
+            openAPIExpectation.getContextPathPrefix()
+        );
+
+        // Incremental sync: determine the namespace prefixes covered by this
+        // import, find stale expectations in those namespaces, and prune them.
+        Set<String> newIds = newExpectations.stream()
+            .map(Expectation::getId)
+            .collect(Collectors.toSet());
+        Set<String> namespacePrefixes = newIds.stream()
+            .filter(id -> id.startsWith(OpenApiSyncPlanner.OPENAPI_ID_PREFIX))
+            .map(id -> {
+                // Extract "openapi:<specKey>:" prefix — everything up to and including the second ':'
+                int secondColon = id.indexOf(':', OpenApiSyncPlanner.OPENAPI_ID_PREFIX.length());
+                return secondColon >= 0 ? id.substring(0, secondColon + 1) : id + ":";
+            })
+            .collect(Collectors.toSet());
+        if (!namespacePrefixes.isEmpty()) {
+            List<String> existingIds = requestMatchers.retrieveActiveExpectations(null).stream()
+                .map(Expectation::getId)
+                .collect(Collectors.toList());
+            Set<String> toPrune = OpenApiSyncPlanner.idsToPrune(existingIds, newIds, namespacePrefixes);
+            String logCorrelationId = UUIDService.getUUID();
+            for (String pruneId : toPrune) {
+                requestMatchers.clear(ExpectationId.expectationId(pruneId), logCorrelationId);
+            }
+        }
+
+        // Upsert the new expectations (add() does upsert-by-id)
+        return newExpectations.stream()
+            .map(this::add)
+            .flatMap(List::stream)
+            .collect(Collectors.toList());
     }
 
     public List<Expectation> add(Expectation... expectations) {
