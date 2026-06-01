@@ -1494,6 +1494,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/pact/verify", "/pact/verify")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, handlePactVerify(request), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/pact", "/pact")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -3463,6 +3470,32 @@ public class HttpState {
             String message = String.valueOf(e.getMessage());
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get AsyncAPI status: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handlePactVerify(HttpRequest request) {
+        try {
+            String body = request.getBodyAsString();
+            if (body == null || body.isBlank()) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"Pact contract JSON must not be empty\"}", MediaType.JSON_UTF_8);
+            }
+            org.mockserver.mock.pact.PactVerifier verifier = new org.mockserver.mock.pact.PactVerifier();
+            org.mockserver.mock.pact.PactVerifier.PactVerificationResult result = verifier.verify(body, requestMatchers);
+            if (result.isVerified()) {
+                return response().withStatusCode(ACCEPTED.code())
+                    .withBody(result.toJson(), MediaType.JSON_UTF_8);
+            } else {
+                return response().withStatusCode(NOT_ACCEPTABLE.code())
+                    .withBody(result.toJson(), MediaType.JSON_UTF_8);
+            }
+        } catch (IllegalArgumentException e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            String message = String.valueOf(e.getMessage());
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to verify Pact contract: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
         }
     }
 

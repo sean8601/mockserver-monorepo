@@ -3489,4 +3489,107 @@ public class HttpStateTest {
         assertThat(responseWriter.response.getBodyAsString(), containsString("unable to auto-detect"));
     }
 
+    // ---- Pact Verify Endpoint Tests ----
+
+    @Test
+    public void shouldHandlePactVerifyReturning202WhenAllInteractionsPass() {
+        // given — register an expectation
+        httpState.add(new Expectation(
+            request().withMethod("GET").withPath("/health")
+        ).thenRespond(
+            response().withStatusCode(200)
+        ));
+
+        String pactContract = "{\n"
+            + "  \"consumer\": {\"name\": \"test\"},\n"
+            + "  \"provider\": {\"name\": \"provider\"},\n"
+            + "  \"interactions\": [{\n"
+            + "    \"description\": \"health check\",\n"
+            + "    \"request\": {\"method\": \"GET\", \"path\": \"/health\"},\n"
+            + "    \"response\": {\"status\": 200}\n"
+            + "  }],\n"
+            + "  \"metadata\": {\"pactSpecification\": {\"version\": \"3.0.0\"}}\n"
+            + "}";
+
+        HttpRequest verifyRequest = request("/mockserver/pact/verify")
+            .withMethod("PUT")
+            .withBody(pactContract);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(verifyRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(202));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("\"verified\" : true"));
+    }
+
+    @Test
+    public void shouldHandlePactVerifyReturning406WhenInteractionFails() {
+        // given — register an expectation with status 200
+        httpState.add(new Expectation(
+            request().withMethod("GET").withPath("/health")
+        ).thenRespond(
+            response().withStatusCode(200)
+        ));
+
+        // Pact expects status 204 — mismatch
+        String pactContract = "{\n"
+            + "  \"consumer\": {\"name\": \"test\"},\n"
+            + "  \"provider\": {\"name\": \"provider\"},\n"
+            + "  \"interactions\": [{\n"
+            + "    \"description\": \"health check\",\n"
+            + "    \"request\": {\"method\": \"GET\", \"path\": \"/health\"},\n"
+            + "    \"response\": {\"status\": 204}\n"
+            + "  }],\n"
+            + "  \"metadata\": {\"pactSpecification\": {\"version\": \"3.0.0\"}}\n"
+            + "}";
+
+        HttpRequest verifyRequest = request("/mockserver/pact/verify")
+            .withMethod("PUT")
+            .withBody(pactContract);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(verifyRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(406));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("\"verified\" : false"));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("status code mismatch"));
+    }
+
+    @Test
+    public void shouldHandlePactVerifyReturning400OnEmptyBody() {
+        HttpRequest verifyRequest = request("/mockserver/pact/verify")
+            .withMethod("PUT")
+            .withBody("");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(verifyRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("must not be empty"));
+    }
+
+    @Test
+    public void shouldHandlePactVerifyReturning400OnMalformedJson() {
+        HttpRequest verifyRequest = request("/mockserver/pact/verify")
+            .withMethod("PUT")
+            .withBody("not json at all {{{");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(verifyRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+    }
+
 }
