@@ -104,6 +104,7 @@
         <module>mockserver-spring-test-listener</module>
         <module>mockserver-spring-test-listener-no-dependencies</module>
         <module>mockserver-examples</module>
+        <module>mockserver-async</module>
     </modules>
 
     <dependencyManagement>
