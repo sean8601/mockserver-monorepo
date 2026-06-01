@@ -5,6 +5,7 @@ import io.netty.util.AttributeKey;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.telemetry.TraceContextAttributes;
 import org.mockserver.telemetry.W3CTraceContext;
 
 import java.util.UUID;
@@ -24,8 +25,12 @@ import java.util.UUID;
 @ChannelHandler.Sharable
 public class TraceContextHandler extends ChannelDuplexHandler {
 
+    /**
+     * Delegates to the shared constant in {@code mockserver-core} so both the
+     * Netty handler and the core action handler use the same attribute key.
+     */
     public static final AttributeKey<W3CTraceContext> TRACE_CONTEXT =
-        AttributeKey.valueOf("mockserver_trace_context");
+        TraceContextAttributes.TRACE_CONTEXT;
 
     private final Configuration configuration;
 

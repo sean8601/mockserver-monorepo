@@ -94,3 +94,29 @@ flowchart LR
     C -- "stores" --> H["Channel Attribute\nTRACE_CONTEXT"]
     E -- "reads" --> H
 ```
+
+## Request-Level Spans (`RequestSpans`)
+
+When `otelTracesEnabled` is set, MockServer emits a `SERVER`-kind OpenTelemetry span
+for each served HTTP request/response (in addition to the GenAI spans produced by
+`GenAiSpans`). The emitter is `org.mockserver.telemetry.RequestSpans`, which mirrors the
+`GenAiSpans` pattern: a static `volatile Tracer` installed by `GenAiSpanExporter`, an
+`isEnabled()` short-circuit, and a fully fail-soft `recordRequest(...)` (telemetry never
+affects the served response).
+
+Span attributes (OpenTelemetry semantic conventions where applicable):
+
+| Attribute | Source |
+|-----------|--------|
+| `http.request.method` | request method |
+| `http.route` | matched expectation path (else request path) |
+| `http.response.status_code` | response status code |
+| `mockserver.expectation_id` | matched expectation id (when an expectation matched) |
+| `mockserver.response_time_ms` | forward path response time (omitted on mocked path) |
+
+The span parent is taken from the inbound W3C trace context when present. The
+`AttributeKey<W3CTraceContext>` is defined once in `org.mockserver.telemetry.TraceContextAttributes`
+(in `mockserver-core`) so both the core `HttpActionHandler` (which reads the channel attribute
+to find the parent context) and the netty `TraceContextHandler` (which sets it) share one key
+without `mockserver-core` depending on `mockserver-netty`. Emission happens at the mocked-response
+and forwarded-response write points in `HttpActionHandler`, each guarded by `RequestSpans.isEnabled()`.

@@ -27,6 +27,9 @@ import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
 import org.mockserver.socket.tls.NettySslContextFactory;
+import org.mockserver.telemetry.RequestSpans;
+import org.mockserver.telemetry.TraceContextAttributes;
+import org.mockserver.telemetry.W3CTraceContext;
 import org.slf4j.event.Level;
 
 import java.net.InetSocketAddress;
@@ -1296,6 +1299,7 @@ public class HttpActionHandler {
                 );
                 validateOpenAPIResponse(effectiveResponse, request, action, requestDefinition);
                 responseWriter.writeResponse(request, effectiveResponse, false);
+                emitRequestSpan(request, effectiveResponse, action, ctx, 0);
             } finally {
                 if (postProcessor != null) {
                     postProcessor.run();
@@ -1428,6 +1432,9 @@ public class HttpActionHandler {
                 // any response-type stub expectations matching this request.
                 // responseTimeMs already captured at line above via nanoTime delta.
                 analyseDrift(request, response, responseTimeMs);
+
+                // OpenTelemetry: emit a request-level span for the forwarded request
+                emitRequestSpan(request, effectiveResponse, action, ctx, responseTimeMs);
 
                 // Factor the write (streaming vs non-streaming) into a single command so
                 // it can be dispatched either directly or via the non-blocking scheduler.
@@ -1918,5 +1925,31 @@ public class HttpActionHandler {
                 }
             }
         });
+    }
+
+    /**
+     * Emit an OpenTelemetry SERVER span for a served HTTP request when
+     * {@link RequestSpans} is enabled. Fail-soft: telemetry must never
+     * affect the served response. The span is parented to the inbound
+     * W3C trace context when available on the channel.
+     */
+    private void emitRequestSpan(HttpRequest request, HttpResponse response, Action action,
+                                 ChannelHandlerContext ctx, long responseTimeMs) {
+        if (!RequestSpans.isEnabled()) {
+            return;
+        }
+        try {
+            String method = request.getMethod() != null ? request.getMethod().getValue() : null;
+            String path = request.getPath() != null ? request.getPath().getValue() : null;
+            Integer statusCode = response != null ? response.getStatusCode() : null;
+            String expectationId = action != null ? action.getExpectationId() : null;
+            W3CTraceContext parentContext = null;
+            if (ctx != null) {
+                parentContext = ctx.channel().attr(TraceContextAttributes.TRACE_CONTEXT).get();
+            }
+            RequestSpans.recordRequest(method, path, statusCode, expectationId, responseTimeMs, parentContext);
+        } catch (Exception e) {
+            // fail-soft: telemetry must never affect the served response
+        }
     }
 }

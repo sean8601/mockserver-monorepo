@@ -406,6 +406,8 @@
                         <exclude>**/MetricsHandlerTest.java</exclude>
                         <exclude>**/HttpRequestsPropertiesMatcherTest.java</exclude>
                         <exclude>**/HttpRequestPropertiesMatcherLogTest.java</exclude>
+                        <exclude>**/GenAiSpansTest.java</exclude>
+                        <exclude>**/RequestSpansTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -442,6 +444,8 @@
                                 <include>**/MetricsHandlerTest.java</include>
                                 <include>**/HttpRequestsPropertiesMatcherTest.java</include>
                                 <include>**/HttpRequestPropertiesMatcherLogTest.java</include>
+                                <include>**/GenAiSpansTest.java</include>
+                                <include>**/RequestSpansTest.java</include>
                             </includes>
                         </configuration>
                     </execution>
