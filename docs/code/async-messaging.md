@@ -25,6 +25,7 @@ flowchart LR
 flowchart TD
     Client["HTTP Client"] -->|PUT /mockserver/asyncapi| HS["HttpState\n(mockserver-core)"]
     Client -->|GET /mockserver/asyncapi| HS
+    Client -->|PUT /mockserver/asyncapi/verify| HS
     HS --> REG["AsyncApiControlPlaneRegistry\n(SPI holder in core)"]
     REG --> IMPL["AsyncApiControlPlaneImpl\n(mockserver-async)"]
     IMPL --> Parser["AsyncApiParser"]
@@ -41,7 +42,7 @@ The control-plane uses an **SPI/registry pattern** (Option A from the design spe
 |-------|---------|----------------|
 | `AsyncApiControlPlane` | `o.m.async` (core) | SPI interface for the control-plane |
 | `AsyncApiControlPlaneRegistry` | `o.m.async` (core) | Singleton holder; routes HttpState calls to the implementation |
-| `AsyncApiControlPlaneImpl` | `o.m.async.controlplane` | Full implementation: load, status, reset, broker lifecycle |
+| `AsyncApiControlPlaneImpl` | `o.m.async.controlplane` | Full implementation: load, status, reset, verify, broker lifecycle |
 | `AsyncApiParser` | `o.m.async.asyncapi` | Parses AsyncAPI 2.x/3.x JSON or YAML into an `AsyncApiSpec` model |
 | `AsyncApiSpec` | `o.m.async.asyncapi` | Immutable model: version, title, list of `AsyncApiChannel` |
 | `AsyncApiChannel` | `o.m.async.asyncapi` | A channel name, payload examples, and optional JSON Schema |
@@ -115,6 +116,47 @@ Returns current status including loaded spec info, active channels, and recorded
       "schemaValid": true
     }
   ]
+}
+```
+
+### `PUT /mockserver/asyncapi/verify`
+
+Verify that recorded messages match the given criteria. Mirrors the semantics of `PUT /mockserver/verify` for HTTP requests.
+
+**Request body** (JSON):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `channel` | string | yes | The channel/topic to check |
+| `payloadSubstring` | string | no | Payload must contain this substring |
+| `payloadJsonPath` | string | no | Dot-notation JSON path to extract from the payload (e.g. `user.name`) |
+| `expectedValue` | string | no | Expected value at the JSON path (used with `payloadJsonPath`) |
+| `count` | object | no | Count constraints: `{atLeast, atMost, exactly}`. Default: `{atLeast: 1}` |
+
+**Responses:**
+
+| Status | Meaning |
+|--------|---------|
+| 202 Accepted | Verification passed |
+| 406 Not Acceptable | Verification failed (body contains human-readable failure reason) |
+| 400 Bad Request | Malformed request (missing channel, invalid JSON) |
+| 501 Not Implemented | mockserver-async module is not on the classpath |
+
+**Example — verify at least 1 message on "orders" with a specific user name:**
+```json
+{
+  "channel": "orders",
+  "payloadJsonPath": "user.name",
+  "expectedValue": "Alice",
+  "count": { "atLeast": 1 }
+}
+```
+
+**Example — verify exactly 0 messages on a channel (negative assertion):**
+```json
+{
+  "channel": "errors",
+  "count": { "exactly": 0 }
 }
 ```
 
@@ -210,7 +252,8 @@ The `mockserver-async` module is wired into the running server:
 | `MqttMessageSubscriberTest` | MQTT subscribing, message recording, bounded eviction (mocked client) |
 | `AsyncApiSchemaValidatorTest` | Schema validation (required, type, enum, min/max, pattern) |
 | `AsyncApiControlPlaneImplTest` | Control-plane load/status/reset lifecycle (no real broker) |
-| `AsyncApiControlPlaneRegistryTest` | SPI holder delegation and not-available responses (in core) |
+| `AsyncApiControlPlaneVerifyTest` | Message verification: count semantics (atLeast/atMost/exactly), payload substring, JSON path matching, error cases |
+| `AsyncApiControlPlaneRegistryTest` | SPI holder delegation (including verify) and not-available responses (in core) |
 
 ## Deferred (Honest List)
 
@@ -222,6 +265,5 @@ The following items are **not yet implemented**:
 - **Correlation IDs**: AsyncAPI correlation ID definitions are not tracked
 - **Multi-message channels**: only the first message definition per channel is used
 - **Live-broker integration tests**: all tests use mocked producers/consumers; Testcontainers-based live-broker tests are a documented follow-up (testcontainers is not currently a test dependency)
-- **Message verification endpoint**: recorded messages are available via GET status but there is no dedicated verification endpoint (like `PUT /mockserver/verify` for HTTP)
-- **Client library helpers**: `mockserver-client-java` has no asyncapi helper methods yet (load/status must be called via raw HTTP PUT/GET)
+- **Client library helpers**: `mockserver-client-java` has no asyncapi helper methods yet (load/status/verify must be called via raw HTTP PUT/GET)
 - **ConfigurationProperties for async defaults**: async settings (recorded-message cap, broker defaults) are configured via the request body, not via `ConfigurationProperties`

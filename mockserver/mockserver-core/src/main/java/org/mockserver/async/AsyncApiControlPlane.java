@@ -41,4 +41,24 @@ public interface AsyncApiControlPlane {
      * Called from {@link org.mockserver.mock.HttpState#reset()}.
      */
     void reset();
+
+    /**
+     * Verify that recorded messages match the given criteria.
+     * <p>
+     * The verification request is a JSON string with fields:
+     * <ul>
+     *   <li>{@code channel} (required) — the channel/topic to check</li>
+     *   <li>{@code payloadSubstring} (optional) — payload must contain this substring</li>
+     *   <li>{@code payloadJsonPath} (optional) — a dot-notation JSON path to extract</li>
+     *   <li>{@code expectedValue} (optional) — the expected value at the JSON path</li>
+     *   <li>{@code count} (optional) — object with {@code atLeast}, {@code atMost}, or
+     *       {@code exactly} fields; defaults to {@code atLeast: 1}</li>
+     * </ul>
+     *
+     * @param verificationJson the JSON verification request
+     * @return {@code null} or empty string if the verification passes;
+     *         a human-readable failure description if it does not
+     * @throws IllegalArgumentException if the request is malformed
+     */
+    String verify(String verificationJson);
 }

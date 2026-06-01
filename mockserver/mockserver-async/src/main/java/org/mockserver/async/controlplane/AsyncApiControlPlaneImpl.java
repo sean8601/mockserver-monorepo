@@ -274,6 +274,142 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
     }
 
     @Override
+    public String verify(String verificationJson) {
+        if (verificationJson == null || verificationJson.isBlank()) {
+            throw new IllegalArgumentException("verification request body must not be empty");
+        }
+
+        JsonNode request;
+        try {
+            request = MAPPER.readTree(verificationJson);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("invalid JSON in verification request: " + e.getMessage(), e);
+        }
+
+        if (request == null || !request.has("channel")) {
+            throw new IllegalArgumentException("verification request must contain a 'channel' field");
+        }
+
+        String channel = request.get("channel").asText();
+        String payloadSubstring = textOrNull(request, "payloadSubstring");
+        String payloadJsonPath = textOrNull(request, "payloadJsonPath");
+        String expectedValue = textOrNull(request, "expectedValue");
+
+        // Parse count semantics — default is atLeast: 1
+        int atLeast = -1;
+        int atMost = -1;
+        int exactly = -1;
+        JsonNode countNode = request.get("count");
+        if (countNode != null && countNode.isObject()) {
+            if (countNode.has("atLeast")) {
+                atLeast = countNode.get("atLeast").asInt();
+            }
+            if (countNode.has("atMost")) {
+                atMost = countNode.get("atMost").asInt();
+            }
+            if (countNode.has("exactly")) {
+                exactly = countNode.get("exactly").asInt();
+            }
+        }
+        // Default: atLeast 1 when no count specified
+        if (atLeast < 0 && atMost < 0 && exactly < 0) {
+            atLeast = 1;
+        }
+
+        // Collect matching messages from all active subscribers
+        int matchingCount = 0;
+        for (MessageSubscriber subscriber : activeSubscribers) {
+            for (RecordedMessage msg : subscriber.getRecordedMessages(channel)) {
+                if (matchesPayloadCriteria(msg, payloadSubstring, payloadJsonPath, expectedValue)) {
+                    matchingCount++;
+                }
+            }
+        }
+
+        // Check count constraints
+        return checkCount(channel, matchingCount, atLeast, atMost, exactly,
+            payloadSubstring, payloadJsonPath, expectedValue);
+    }
+
+    private boolean matchesPayloadCriteria(RecordedMessage msg, String payloadSubstring,
+                                           String payloadJsonPath, String expectedValue) {
+        String payload = msg.getPayload();
+        if (payload == null) {
+            payload = "";
+        }
+
+        // Substring match
+        if (payloadSubstring != null && !payload.contains(payloadSubstring)) {
+            return false;
+        }
+
+        // JSON path match (simple dot-notation extraction)
+        if (payloadJsonPath != null && expectedValue != null) {
+            String actualValue = extractJsonPath(payload, payloadJsonPath);
+            if (!expectedValue.equals(actualValue)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Simple dot-notation JSON path extractor (e.g. "user.name" extracts from
+     * {@code {"user":{"name":"Alice"}}}). Handles string, number, boolean, and null values.
+     * Returns {@code null} if the path does not resolve.
+     */
+    private String extractJsonPath(String payload, String path) {
+        try {
+            JsonNode node = MAPPER.readTree(payload);
+            for (String segment : path.split("\\.")) {
+                if (node == null || !node.has(segment)) {
+                    return null;
+                }
+                node = node.get(segment);
+            }
+            if (node == null || node.isNull()) {
+                return null;
+            }
+            return node.isTextual() ? node.asText() : node.toString();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private String checkCount(String channel, int actual, int atLeast, int atMost, int exactly,
+                              String payloadSubstring, String payloadJsonPath, String expectedValue) {
+        StringBuilder criteria = new StringBuilder();
+        criteria.append("channel '").append(channel).append("'");
+        if (payloadSubstring != null) {
+            criteria.append(" with payload containing '").append(payloadSubstring).append("'");
+        }
+        if (payloadJsonPath != null && expectedValue != null) {
+            criteria.append(" with ").append(payloadJsonPath).append("='").append(expectedValue).append("'");
+        }
+
+        if (exactly >= 0) {
+            if (actual != exactly) {
+                return "expected exactly " + exactly + " message(s) matching " + criteria
+                    + " but found " + actual;
+            }
+        }
+        if (atLeast >= 0) {
+            if (actual < atLeast) {
+                return "expected at least " + atLeast + " message(s) matching " + criteria
+                    + " but found " + actual;
+            }
+        }
+        if (atMost >= 0) {
+            if (actual > atMost) {
+                return "expected at most " + atMost + " message(s) matching " + criteria
+                    + " but found " + actual;
+            }
+        }
+        return null; // verification passed
+    }
+
+    @Override
     public void reset() {
         resetInternal();
         LOG.info("AsyncAPI control-plane reset");
@@ -307,6 +443,14 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         validationIssues.clear();
         loadedSpec = null;
         activeBrokerConfig = null;
+    }
+
+    /**
+     * Package-private: add a subscriber for testing purposes only.
+     * Allows unit tests to inject mock/stub subscribers without needing a real broker.
+     */
+    void addSubscriberForTesting(MessageSubscriber subscriber) {
+        activeSubscribers.add(subscriber);
     }
 
     /**

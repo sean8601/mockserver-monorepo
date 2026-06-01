@@ -1583,6 +1583,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/asyncapi/verify", "/asyncapi/verify")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleAsyncApiVerify(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/asyncapi", "/asyncapi")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -3456,6 +3463,35 @@ public class HttpState {
             String message = String.valueOf(e.getMessage());
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get AsyncAPI status: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleAsyncApiVerify(HttpRequest request) {
+        try {
+            org.mockserver.async.AsyncApiControlPlaneRegistry registry = org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance();
+            if (!registry.isAvailable()) {
+                return response().withStatusCode(NOT_IMPLEMENTED.code())
+                    .withBody("{\"error\":\"AsyncAPI messaging module is not available — mockserver-async is not on the classpath\"}", MediaType.JSON_UTF_8);
+            }
+            String body = request.getBodyAsString();
+            if (body == null || body.isBlank()) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"verification request body must not be empty\"}", MediaType.JSON_UTF_8);
+            }
+            String result = registry.verify(body);
+            if (isEmpty(result)) {
+                return response().withStatusCode(ACCEPTED.code());
+            } else {
+                return response().withStatusCode(NOT_ACCEPTABLE.code())
+                    .withBody(result, MediaType.create("text", "plain"));
+            }
+        } catch (IllegalArgumentException e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            String message = String.valueOf(e.getMessage());
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to verify async messages: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
         }
     }
 }

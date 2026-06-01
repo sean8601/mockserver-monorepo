@@ -74,6 +74,19 @@ public class AsyncApiControlPlaneRegistry {
         }
     }
 
+    /**
+     * Delegate verify to the registered implementation, or return a not-available message.
+     *
+     * @return {@code null} if verification passes; a failure description if it fails;
+     *         a not-available message if no implementation is registered
+     */
+    public String verify(String verificationJson) {
+        if (delegate == null) {
+            return "AsyncAPI messaging module is not available — mockserver-async is not on the classpath";
+        }
+        return delegate.verify(verificationJson);
+    }
+
     private JsonNode notAvailableResponse() {
         ObjectNode node = MAPPER.createObjectNode();
         node.put("error", "AsyncAPI messaging module is not available — mockserver-async is not on the classpath");

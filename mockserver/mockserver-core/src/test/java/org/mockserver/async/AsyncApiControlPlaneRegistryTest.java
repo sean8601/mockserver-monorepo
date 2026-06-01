@@ -33,6 +33,10 @@ public class AsyncApiControlPlaneRegistryTest {
 
         JsonNode statusResult = registry.status();
         assertThat(statusResult.get("error").asText(), containsString("not available"));
+
+        String verifyResult = registry.verify("{\"channel\":\"test\"}");
+        assertThat(verifyResult, is(notNullValue()));
+        assertThat(verifyResult, containsString("not available"));
     }
 
     @Test
@@ -55,6 +59,12 @@ public class AsyncApiControlPlaneRegistryTest {
             public void reset() {
                 // no-op
             }
+
+            @Override
+            public String verify(String verificationJson) {
+                // Simulate: pass when channel is "ok", fail otherwise
+                return verificationJson.contains("\"ok\"") ? null : "verification failed";
+            }
         });
 
         assertThat(registry.isAvailable(), is(true));
@@ -64,6 +74,10 @@ public class AsyncApiControlPlaneRegistryTest {
 
         JsonNode statusResult = registry.status();
         assertThat(statusResult.get("status").asText(), is("ok"));
+
+        // Verify delegates correctly
+        assertThat(registry.verify("{\"channel\":\"ok\"}"), is(nullValue()));
+        assertThat(registry.verify("{\"channel\":\"fail\"}"), is("verification failed"));
     }
 
     @Test
