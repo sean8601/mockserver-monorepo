@@ -104,11 +104,22 @@ public class PostmanCollectionImporterTest {
     }
 
     @Test
+    public void everyExpectationHasAUniqueId() {
+        // Regression guard: a single Postman request ("Get User") has two saved example
+        // responses. Their generated ids MUST be distinct, otherwise the second silently
+        // overwrites the first on upsert.
+        List<Expectation> expectations = importer.importExpectations(POSTMAN_COLLECTION);
+
+        long distinctIds = expectations.stream().map(Expectation::getId).distinct().count();
+        assertThat((int) distinctIds, is(expectations.size()));
+    }
+
+    @Test
     public void firstExampleHasCorrectRequestMatcher() {
         List<Expectation> expectations = importer.importExpectations(POSTMAN_COLLECTION);
         Expectation first = expectations.get(0);
 
-        assertThat(first.getId(), is("postman-get-user"));
+        assertThat(first.getId(), is("postman-0-get-user"));
 
         HttpRequest request = (HttpRequest) first.getHttpRequest();
         assertThat(request.getMethod().getValue(), is("GET"));
@@ -146,7 +157,7 @@ public class PostmanCollectionImporterTest {
         List<Expectation> expectations = importer.importExpectations(POSTMAN_COLLECTION);
         Expectation healthCheck = expectations.get(2);
 
-        assertThat(healthCheck.getId(), is("postman-health-check"));
+        assertThat(healthCheck.getId(), is("postman-2-health-check"));
 
         HttpRequest request = (HttpRequest) healthCheck.getHttpRequest();
         assertThat(request.getMethod().getValue(), is("GET"));

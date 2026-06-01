@@ -158,11 +158,13 @@ public class PostmanCollectionImporter {
             httpResponse.withBody(responseBody);
         }
 
-        // Build ID
-        String idBase = (itemName != null && !itemName.isEmpty())
+        // Build ID. The per-example index is ALWAYS included to guarantee uniqueness:
+        // a single request item can have multiple saved example responses, and without
+        // the index they would collide and silently overwrite each other on upsert.
+        String suffix = (itemName != null && !itemName.isEmpty())
             ? sanitizeForId(itemName)
-            : String.valueOf(index);
-        String id = "postman-" + idBase;
+            : "item";
+        String id = "postman-" + index + "-" + suffix;
 
         return new Expectation(httpRequest)
             .withId(id)
