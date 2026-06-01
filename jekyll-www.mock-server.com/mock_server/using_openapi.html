@@ -705,6 +705,23 @@ mockServerClient("localhost", 1080).openAPIExpectation({
     </div>
 </div>
 
+<a id="openapi_incremental_sync" class="anchor" href="#openapi_incremental_sync">&nbsp;</a>
+
+<h2>Incremental / Idempotent Re-import</h2>
+
+<p>Calling <span class="inline_code">PUT /mockserver/openapi</span> with a spec you have already imported is safe and idempotent. MockServer performs an <strong>incremental sync</strong> rather than duplicating expectations:</p>
+
+<ul>
+    <li><strong>Updated in place</strong> &mdash; operations that already exist are replaced with the latest generated response.</li>
+    <li><strong>New operations added</strong> &mdash; operations added to the spec since the last import are created.</li>
+    <li><strong>Removed operations pruned</strong> &mdash; expectations for operations that are no longer present in the spec are automatically deleted.</li>
+    <li><strong>Other expectations untouched</strong> &mdash; manually created expectations and expectations from other specs are never affected.</li>
+</ul>
+
+<p>Incremental sync is scoped by <strong>spec identity</strong>. MockServer assigns each OpenAPI-generated expectation a stable id of the form <span class="inline_code">openapi:&lt;specKey&gt;:&lt;operationId&gt;</span>, where <span class="inline_code">specKey</span> is derived from the spec title (lowercased, non-alphanumeric characters replaced with <span class="inline_code">_</span>) or, when no title is present, from an 8-character hash of the spec URL or payload. Re-importing a spec with the same title updates exactly those expectations; importing a differently titled spec creates a separate namespace of expectations and does not affect the first.</p>
+
+<p>This means you can safely call <span class="inline_code">PUT /mockserver/openapi</span> on every test run or CI build &mdash; you will always end up with a consistent set of mock expectations matching the current spec, with no stale duplicates.</p>
+
 <a id="openapi_callbacks" class="anchor" href="#openapi_callbacks">&nbsp;</a>
 
 <h2>OpenAPI Callbacks (Webhooks)</h2>

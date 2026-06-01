@@ -383,6 +383,35 @@ client.when(
 
 <p>When MockServer receives a request whose path is exactly <code class="inline code">/grpc.health.v1.Health/Check</code>, the request is intercepted in <code class="inline code">GrpcToHttpRequestHandler</code> before descriptor lookup — no proto descriptor for the health service is needed. <code class="inline code">GrpcHealthCheckHandler</code> decodes the 5-byte gRPC frame header and then manually parses the protobuf <code class="inline code">HealthCheckRequest</code> (field 1 = service name string). It looks up the serving status in <code class="inline code">GrpcHealthRegistry</code>, which falls back to the default status when no per-service override is registered. The response is a manually-encoded gRPC-framed <code class="inline code">HealthCheckResponse</code> (field 1 = status enum varint). The whole path bypasses the expectation matching engine so health checks always respond, even with no expectations registered.</p>
 
+<a id="grpc_server_reflection" class="anchor" href="#grpc_server_reflection">&nbsp;</a>
+
+<h2>Server Reflection</h2>
+
+<p>MockServer supports the <strong>gRPC Server Reflection Protocol</strong> out of the box. Tools such as <span class="inline_code">grpcurl</span> and <span class="inline_code">grpcui</span> can use reflection to discover services and describe message types without needing a local <span class="inline_code">.proto</span> file.</p>
+
+<p>Both the v1 and v1alpha reflection service paths are supported:</p>
+<ul>
+    <li><span class="inline_code">/grpc.reflection.v1.ServerReflection/ServerReflectionInfo</span></li>
+    <li><span class="inline_code">/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo</span></li>
+</ul>
+
+<p>The reflection service answers from the proto descriptors already loaded into MockServer (via <span class="inline_code">grpcDescriptorDirectory</span>, <span class="inline_code">grpcProtoDirectory</span>, or the REST API upload). No additional configuration is required.</p>
+
+<h3>Example: listing services with grpcurl</h3>
+
+<pre class="prettyprint code"><code class="code"># List all services known to MockServer
+grpcurl -plaintext localhost:1080 list
+
+# Describe a specific service
+grpcurl -plaintext localhost:1080 describe com.example.grpc.GreetingService
+
+# Describe a message type
+grpcurl -plaintext localhost:1080 describe com.example.grpc.HelloRequest</code></pre>
+
+<h3>Limitation</h3>
+
+<p>MockServer's gRPC path is buffered-unary: each HTTP/2 request carries exactly one gRPC message. The reflection handler therefore processes a single <span class="inline_code">ServerReflectionRequest</span> per call. This is sufficient for <span class="inline_code">grpcurl list</span>, single symbol lookups, and single file lookups. Fully interactive bidirectional-streaming reflection (a long-lived stream with multiple back-and-forth messages) is not supported by the current pipeline.</p>
+
 <a id="grpc_configuration_link" class="anchor" href="#grpc_configuration_link">&nbsp;</a>
 
 <h2>Configuration</h2>

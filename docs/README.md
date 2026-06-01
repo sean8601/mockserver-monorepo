@@ -26,6 +26,8 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [Configuration Reference](code/configuration-reference.md) | Low | Property mechanism, resolution order, four equivalent forms, how to add a property |
 | [Drift Detection](code/drift-detection.md) | Low | Mock drift detection: comparing forwarded responses against stub expectations |
 | [WASM Rules](code/wasm-rules.md) | Low | WASM custom rule engine: chicory interpreter, module ABI, REST endpoints, configuration |
+| [Async Messaging](code/async-messaging.md) | Low | AsyncAPI broker mocking: spec parsing, example generation, Kafka/MQTT publisher adapters, orchestrator |
+| [HTTP/3 (QUIC)](code/http3.md) | Low | Experimental HTTP/3 support: Http3Server, QUIC native dependency, MVP boundaries |
 
 ### Infrastructure
 
@@ -100,7 +102,7 @@ mockserver-monorepo/
 ├── terraform/                      # Terraform IaC (Buildkite agents + pipelines)
 ├── scripts/                        # Build, deploy, and utility scripts
 └── docs/                           # This documentation (you are here)
-    ├── code/                       #   Code architecture (12 docs)
+    ├── code/                       #   Code architecture (14 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm (5 docs)
     ├── operations/                 #   Build, release, deps, security, website, perf (11 docs)
     ├── plans/                      #   Active plans and RFCs (3 docs)
