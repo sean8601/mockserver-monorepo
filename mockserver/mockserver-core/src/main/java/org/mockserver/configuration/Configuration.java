@@ -51,6 +51,7 @@ public class Configuration {
     private String grpcProtocPath;
     private Boolean dnsEnabled;
     private Integer dnsPort;
+    private Integer http3Port;
     private Map<String, String> logLevelOverrides;
     private Boolean compactLogFormat;
 
@@ -524,6 +525,18 @@ public class Configuration {
 
     public Configuration dnsPort(Integer dnsPort) {
         this.dnsPort = dnsPort;
+        return this;
+    }
+
+    public Integer http3Port() {
+        if (http3Port == null) {
+            return ConfigurationProperties.http3Port();
+        }
+        return http3Port;
+    }
+
+    public Configuration http3Port(Integer http3Port) {
+        this.http3Port = http3Port;
         return this;
     }
 

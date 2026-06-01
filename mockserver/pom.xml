@@ -372,6 +372,13 @@
                 <version>${netty.version}</version>
             </dependency>
 
+            <!-- HTTP/3 (QUIC) — experimental; native QUIC transport required at runtime -->
+            <dependency>
+                <groupId>io.netty.incubator</groupId>
+                <artifactId>netty-incubator-codec-http3</artifactId>
+                <version>0.0.28.Final</version>
+            </dependency>
+
             <!-- protobuf (gRPC support) -->
             <dependency>
                 <groupId>com.google.protobuf</groupId>

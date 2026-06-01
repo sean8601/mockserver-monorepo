@@ -76,6 +76,15 @@
             <artifactId>netty-tcnative-boringssl-static</artifactId>
         </dependency>
 
+        <!-- HTTP/3 (QUIC) — experimental; the native QUIC library is bundled
+             transitively by netty-incubator-codec-http3 for supported platforms.
+             CI/CD must run on a platform where the native is available (linux-x86_64,
+             osx-x86_64, osx-aarch_64) or the HTTP/3 feature will be unavailable. -->
+        <dependency>
+            <groupId>io.netty.incubator</groupId>
+            <artifactId>netty-incubator-codec-http3</artifactId>
+        </dependency>
+
         <!-- commons & guava -->
         <dependency>
             <groupId>commons-io</groupId>

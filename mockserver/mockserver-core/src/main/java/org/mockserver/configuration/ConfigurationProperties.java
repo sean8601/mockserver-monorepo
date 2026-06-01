@@ -128,6 +128,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_GRPC_PROTOC_PATH = "mockserver.grpcProtocPath";
     private static final String MOCKSERVER_DNS_ENABLED = "mockserver.dnsEnabled";
     private static final String MOCKSERVER_DNS_PORT = "mockserver.dnsPort";
+    private static final String MOCKSERVER_HTTP3_PORT = "mockserver.http3Port";
 
     // non http proxying
     private static final String MOCKSERVER_FORWARD_BINARY_REQUESTS_WITHOUT_WAITING_FOR_RESPONSE = "mockserver.forwardBinaryRequestsWithoutWaitingForResponse";
@@ -551,6 +552,16 @@ public class ConfigurationProperties {
 
     public static void dnsPort(int port) {
         setProperty(MOCKSERVER_DNS_PORT, "" + port);
+    }
+
+    // experimental HTTP/3 (QUIC)
+
+    public static int http3Port() {
+        return readIntegerProperty(MOCKSERVER_HTTP3_PORT, "MOCKSERVER_HTTP3_PORT", 0);
+    }
+
+    public static void http3Port(int port) {
+        setProperty(MOCKSERVER_HTTP3_PORT, "" + port);
     }
 
     // service mesh / sidecar
