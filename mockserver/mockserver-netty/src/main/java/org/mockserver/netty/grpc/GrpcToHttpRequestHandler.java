@@ -9,6 +9,7 @@ import org.mockserver.grpc.GrpcHealthCheckHandler;
 import org.mockserver.grpc.GrpcHealthRegistry;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
+import org.mockserver.grpc.GrpcServerReflectionHandler;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.ServingStatus;
 import org.mockserver.mock.action.http.GrpcChaosDecision;
@@ -30,6 +31,7 @@ public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRe
     private final MockServerLogger mockServerLogger;
     private final GrpcProtoDescriptorStore descriptorStore;
     private final GrpcHealthCheckHandler healthCheckHandler;
+    private final GrpcServerReflectionHandler reflectionHandler;
     private final GrpcChaosRegistry grpcChaosRegistry;
     private final HttpQuotaRegistry quotaRegistry;
 
@@ -49,6 +51,7 @@ public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRe
         this.mockServerLogger = mockServerLogger;
         this.descriptorStore = descriptorStore;
         this.healthCheckHandler = healthCheckHandler;
+        this.reflectionHandler = new GrpcServerReflectionHandler(descriptorStore);
         this.grpcChaosRegistry = grpcChaosRegistry;
         this.quotaRegistry = quotaRegistry;
     }
@@ -69,6 +72,37 @@ public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRe
                     .withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, "0")
                     .withBody(responseBody);
                 ctx.writeAndFlush(healthResponse);
+                return;
+            }
+        }
+        // Handle gRPC Server Reflection without requiring user-defined expectations
+        if (GrpcStatusMapper.isGrpcContentType(contentType) && reflectionHandler != null && descriptorStore.hasServices()) {
+            String path = request.getPath() != null ? request.getPath().getValue() : "";
+            if (reflectionHandler.isReflectionRequest(path)) {
+                try {
+                    byte[] responseBody = reflectionHandler.handleReflectionRequest(request.getBodyAsRawBytes());
+                    org.mockserver.model.HttpResponse reflectionResponse = org.mockserver.model.HttpResponse.response()
+                        .withStatusCode(200)
+                        .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+                        .withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, "0")
+                        .withBody(responseBody);
+                    ctx.writeAndFlush(reflectionResponse);
+                } catch (Exception e) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setMessageFormat("gRPC reflection request error:{}:{}")
+                            .setArguments(request.getPath(), e.getMessage())
+                    );
+                    org.mockserver.model.HttpResponse errorResponse = org.mockserver.model.HttpResponse.response()
+                        .withStatusCode(200)
+                        .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+                        .withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER,
+                            String.valueOf(GrpcStatusMapper.GrpcStatusCode.INTERNAL.getCode()))
+                        .withHeader(GrpcStatusMapper.GRPC_MESSAGE_HEADER,
+                            "reflection request failed: " + e.getMessage());
+                    ctx.writeAndFlush(errorResponse);
+                }
                 return;
             }
         }
