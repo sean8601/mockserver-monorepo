@@ -3344,4 +3344,149 @@ public class HttpStateTest {
         assertThat(responseWriter.response.getStatusCode(), is(400));
     }
 
+    // --- PUT /import tests ---
+
+    @Test
+    public void shouldHandleImportHarAutoDetected() {
+        // given
+        String har = "{\"log\":{\"entries\":[" +
+            "{\"request\":{\"method\":\"GET\",\"url\":\"http://example.com/api/test\"}," +
+            "\"response\":{\"status\":200,\"content\":{\"text\":\"{\\\"ok\\\":true}\"}}}" +
+            "]}}";
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody(har);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+
+        // Verify the expectation is now matchable
+        Expectation match = httpState.firstMatchingExpectation(
+            request("/api/test").withMethod("GET")
+        );
+        assertThat(match, is(notNullValue()));
+        assertThat(match.getHttpResponse().getStatusCode(), is(200));
+    }
+
+    @Test
+    public void shouldHandleImportPostmanAutoDetected() {
+        // given
+        String postman = "{\"info\":{\"name\":\"Test\"},\"item\":[" +
+            "{\"name\":\"Get Health\",\"request\":{\"method\":\"GET\",\"url\":\"http://example.com/health\"}," +
+            "\"response\":[{\"code\":200,\"body\":\"{\\\"status\\\":\\\"up\\\"}\"}]}" +
+            "]}";
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody(postman);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+    }
+
+    @Test
+    public void shouldHandleImportWithFormatQueryParam() {
+        // given — use ?format=har
+        String har = "{\"log\":{\"entries\":[" +
+            "{\"request\":{\"method\":\"GET\",\"url\":\"http://example.com/data\"}," +
+            "\"response\":{\"status\":200}}" +
+            "]}}";
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withBody(har);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+    }
+
+    @Test
+    public void shouldHandleImportMalformedJson() {
+        // given
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody("{not valid json");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+    }
+
+    @Test
+    public void shouldHandleImportEmptyBody() {
+        // given
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody("");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+    }
+
+    @Test
+    public void shouldHandleImportUnsupportedFormat() {
+        // given
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "insomnia")
+            .withBody("{\"some\":\"json\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("unsupported import format"));
+    }
+
+    @Test
+    public void shouldHandleImportUnrecognisedAutoDetect() {
+        // given — JSON that is neither HAR nor Postman
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody("{\"something\":\"else\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("unable to auto-detect"));
+    }
+
 }
