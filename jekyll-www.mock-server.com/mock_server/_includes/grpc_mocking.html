@@ -463,6 +463,40 @@ grpcurl -plaintext localhost:1080 describe com.example.grpc.HelloRequest</code><
 
 <p>MockServer's gRPC path is buffered-unary: each HTTP/2 request carries exactly one gRPC message. The reflection handler therefore processes a single <span class="inline_code">ServerReflectionRequest</span> per call. This is sufficient for <span class="inline_code">grpcurl list</span>, single symbol lookups, and single file lookups. Fully interactive bidirectional-streaming reflection (a long-lived stream with multiple back-and-forth messages) is not supported by the current pipeline.</p>
 
+<a id="grpc_web_link" class="anchor" href="#grpc_web_link">&nbsp;</a>
+
+<h2>gRPC-Web Support</h2>
+
+<p>MockServer supports <a href="https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-WEB.md">gRPC-Web</a>, the variant of gRPC designed for browser clients and environments that cannot use HTTP/2 trailers. gRPC-Web requests are automatically detected and translated to standard gRPC for matching against existing expectations, so no additional configuration or separate expectations are needed.</p>
+
+<h3>Supported Content Types</h3>
+
+<ul>
+    <li><span class="inline_code">application/grpc-web</span> and <span class="inline_code">application/grpc-web+proto</span> &mdash; binary gRPC-Web (same length-prefixed framing as standard gRPC)</li>
+    <li><span class="inline_code">application/grpc-web-text</span> and <span class="inline_code">application/grpc-web-text+proto</span> &mdash; base64-encoded gRPC-Web (the entire request/response body is base64-encoded)</li>
+</ul>
+
+<h3>How It Works</h3>
+
+<p>When MockServer receives a request with a gRPC-Web content type:</p>
+
+<ol>
+    <li>The request body is decoded (base64-decoded for the <span class="inline_code">-text</span> variant) and the content type is translated to <span class="inline_code">application/grpc</span></li>
+    <li>The request is processed through the normal gRPC pipeline &mdash; descriptor lookup, protobuf-to-JSON conversion, and expectation matching all work unchanged</li>
+    <li>The response is re-framed as gRPC-Web: the message frame(s) are followed by a trailer frame (flag byte <span class="inline_code">0x80</span>) containing <span class="inline_code">grpc-status</span> and <span class="inline_code">grpc-message</span> as ASCII lines in the body, instead of HTTP/2 trailers</li>
+    <li>For the <span class="inline_code">-text</span> variant, the entire response body is base64-encoded</li>
+</ol>
+
+<p>gRPC-Web works over both HTTP/1.1 and HTTP/2, making it suitable for browser-based gRPC clients such as <a href="https://github.com/nicholasgasior/grpc-web">grpc-web</a> and <a href="https://github.com/nicholasgasior/grpc-web">Improbable grpc-web</a>.</p>
+
+<h3>Built-in Services via gRPC-Web</h3>
+
+<p>The built-in gRPC health check (<span class="inline_code">/grpc.health.v1.Health/Check</span>), server reflection, and chaos fault injection all work transparently via gRPC-Web. No special configuration is needed.</p>
+
+<h3>Connect Protocol (connectrpc)</h3>
+
+<p>The <a href="https://connectrpc.com/docs/protocol/">Connect protocol</a> (used by <span class="inline_code">connectrpc</span>) is not currently supported. Connect uses a different framing format (JSON or proto over standard HTTP POST with <span class="inline_code">application/connect+proto</span> content type and trailers in a JSON envelope) that is distinct from gRPC-Web. If you need Connect support, please open a feature request.</p>
+
 <a id="grpc_configuration_link" class="anchor" href="#grpc_configuration_link">&nbsp;</a>
 
 <h2>Configuration</h2>

@@ -431,6 +431,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 }
                 addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
                 addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
+                // gRPC-Web works over HTTP/1.1, so add gRPC handlers here too
+                if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
+                    addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
+                    addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
+                }
                 addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
                 pipeline.remove(this);
 

@@ -348,6 +348,32 @@ The handlers are placed after `MockServerHttpServerCodec` so they operate on Moc
 
 `GrpcToHttpResponseHandler` is an outbound encoder that intercepts `HttpResponse` objects with `x-grpc-service` header, encodes the JSON body back to protobuf binary with gRPC framing, and appends `grpc-status` / `grpc-message` trailers.
 
+### gRPC-Web Support
+
+gRPC-Web is a variant of gRPC designed for browser clients that cannot use HTTP/2 trailers. MockServer supports gRPC-Web as a translation layer in front of the existing gRPC pipeline:
+
+**Content types:** `application/grpc-web`, `application/grpc-web+proto` (binary), `application/grpc-web-text`, `application/grpc-web-text+proto` (base64-encoded).
+
+**Request path:**
+1. `GrpcToHttpRequestHandler` detects gRPC-Web content types and calls `translateGrpcWebRequest()` before any gRPC processing
+2. For the `-text` variant, the body is base64-decoded
+3. The content-type is replaced with `application/grpc` and the original content-type is stored in `x-grpc-web-content-type` header
+4. The translated request passes through the normal gRPC pipeline unchanged
+
+**Response path:**
+1. `GrpcToHttpResponseHandler.encode()` checks for the `x-grpc-web-content-type` header on outbound responses
+2. If present, `convertToGrpcWebResponse()` re-frames the response: `grpc-status`/`grpc-message` headers are removed and embedded in a trailer frame (flag byte `0x80`) appended to the message body
+3. For the `-text` variant, the entire body (message frames + trailer frame) is base64-encoded
+4. The response content-type is set to the matching gRPC-Web type
+
+**Pipeline placement:** gRPC handlers are added to the HTTP/1.1 pipeline (in `switchToHttp()`) in addition to the HTTP/2 pipelines, since gRPC-Web works over both HTTP/1.1 and HTTP/2.
+
+**Core class:** `GrpcWebTranslator` (`mockserver-core`, `org.mockserver.grpc`) provides the encoding/decoding utilities (trailer frame construction, base64 handling, content-type detection). The handler modifications in `mockserver-netty` are localized to the existing `GrpcToHttpRequestHandler` and `GrpcToHttpResponseHandler`.
+
+**Content-type discrimination:** `GrpcStatusMapper.isGrpcContentType()` explicitly excludes `application/grpc-*` prefixes (e.g. `application/grpc-web`) so that gRPC-Web requests are not misrouted through the standard gRPC path.
+
+**Connect protocol:** Not supported. Connect uses a fundamentally different framing format (JSON/proto over standard HTTP POST with a JSON trailer envelope).
+
 ### h2c Detection
 
 `PortUnificationHandler.decode()` includes `isH2cPreface()` which detects the HTTP/2 connection preface (`PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`) on cleartext connections. When detected, `switchToH2c()` assembles the HTTP/2 pipeline with gRPC handlers, enabling gRPC over plaintext HTTP/2.
@@ -592,7 +618,7 @@ All overrides are cleared on `HttpState.reset()`. An empty `service` string sets
 | `SseEventDTO`, `HttpSseResponseDTO`, `JsonRpcBodyDTO` | `mockserver-core` | `org.mockserver.serialization.model` |
 | `HttpRequestTemplateObject` (jsonRpc fields) | `mockserver-core` | `org.mockserver.templates.engine.model` |
 | `GrpcStreamMessage`, `GrpcStreamResponse` | `mockserver-core` | `org.mockserver.model` |
-| `GrpcFrameCodec`, `GrpcJsonMessageConverter`, `GrpcProtoDescriptorStore`, `GrpcProtoFileCompiler`, `GrpcStatusMapper`, `GrpcException` | `mockserver-core` | `org.mockserver.grpc` |
+| `GrpcFrameCodec`, `GrpcJsonMessageConverter`, `GrpcProtoDescriptorStore`, `GrpcProtoFileCompiler`, `GrpcStatusMapper`, `GrpcWebTranslator`, `GrpcException` | `mockserver-core` | `org.mockserver.grpc` |
 | `GrpcHealthRegistry`, `GrpcHealthCheckHandler`, `ServingStatus` | `mockserver-core` | `org.mockserver.grpc` |
 | `GrpcChaosProfile` | `mockserver-core` | `org.mockserver.model` |
 | `GrpcChaosRegistry` | `mockserver-core` | `org.mockserver.mock.action.http` |
@@ -628,9 +654,11 @@ All overrides are cleared on `HttpState.reset()`. An empty `service` string sets
 | `GrpcFrameCodecTest` | core | 6 | Unit |
 | `GrpcJsonMessageConverterTest` | core | 7 | Unit |
 | `GrpcProtoDescriptorStoreTest` | core | 7 | Unit |
-| `GrpcStatusMapperTest` | core | 7 | Unit |
+| `GrpcStatusMapperTest` | core | 9 | Unit |
+| `GrpcWebTranslatorTest` | core | 20 | Unit |
 | `GrpcStreamResponseDTOTest` | core | 3 | Unit |
 | `GrpcIntegrationTest` | netty | 11 | Integration |
+| `GrpcWebHandlerTest` | netty | 12 | Handler |
 
 ## Client Library Support
 
