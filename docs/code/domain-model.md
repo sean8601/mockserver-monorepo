@@ -438,18 +438,26 @@ These endpoints are handled in `HttpState.handleScenarioPut()` and `HttpState.ha
 
 An expectation can return multiple responses by setting `httpResponses` (a `List<HttpResponse>`) instead of `httpResponse`. Each match returns the next response, cycling back to the first after the last. The `responseMode` field (`ResponseMode.SEQUENTIAL` or `ResponseMode.RANDOM`) controls selection. Sequential mode uses `(matchCount - 1) % size` because `matchCount` is incremented in `consumeMatch()` before `getPrimaryAction()` is called.
 
-#### After-Actions (`afterActions`)
+#### Before & After Actions (`beforeActions` / `afterActions`)
 
-An expectation can specify `afterActions` — a `List<AfterAction>` executed after the primary response is sent. Each `AfterAction` can fire one of three targets (mutually exclusive):
+An expectation can carry two optional ordered side-effect lists, both `List<AfterAction>`: `beforeActions` run before the primary response (and can gate it), `afterActions` run after it (fire-and-forget). Each `AfterAction` fires one of three mutually-exclusive targets, with an optional delay:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `httpRequest` | `HttpRequest` | A fire-and-forget HTTP request to send |
+| `httpRequest` | `HttpRequest` | An HTTP request (webhook) to send |
 | `httpClassCallback` | `HttpClassCallback` | A Java class callback to invoke |
 | `httpObjectCallback` | `HttpObjectCallback` | A WebSocket object callback to invoke |
-| `delay` | `Delay` | Optional delay before executing the after-action |
+| `delay` | `Delay` | Optional delay before executing the action |
 
-Setting one target clears the others. After-actions are dispatched in `HttpActionHandler` as secondary actions following the primary response.
+Setting one target clears the others. `AfterAction` also carries three optional controls that are meaningful only for before-actions (after-actions ignore them):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `blocking` | `Boolean` | `true` (when null) | Whether the response waits for the action to complete |
+| `timeout` | `Delay` | `maxSocketTimeout` | Max wait for a blocking action; on expiry the action is treated as failed |
+| `failurePolicy` | `FailurePolicy` | `BEST_EFFORT` | `FAIL_FAST` aborts with `502` (primary action skipped); `BEST_EFFORT` logs and continues |
+
+Both lists are additive and optional (an expectation without them is unchanged), serialised via `AfterActionDTO`/`ExpectationDTO`, and validated against the shared `afterAction` JSON schema definition. Dispatch is handled in `HttpActionHandler` (`runBeforeActions` / `dispatchSideAction`) — see [request-processing.md](request-processing.md) for the before/after dispatch flow.
 
 #### Bidirectional WebSocket Matching (`WebSocketMessageMatcher`)
 
