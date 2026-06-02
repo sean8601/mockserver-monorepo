@@ -320,7 +320,6 @@ public class HttpState {
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
-        org.mockserver.mock.replay.ReplayOrchestrator.getInstance().reset();
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
@@ -1912,13 +1911,6 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
-            } else if (request.matches("PUT", PATH_PREFIX + "/replay", "/replay")) {
-
-                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, withDashboardCORS(request, handleReplayStart(request)), true);
-                }
-                canHandle.complete(true);
-
             } else {
 
                 canHandle.complete(false);
@@ -2019,18 +2011,6 @@ public class HttpState {
                     || request.getPath().getValue().startsWith("/scenario/"))) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleScenarioGet(request)), true);
-                }
-                return true;
-            }
-            if (request.matches("GET") && request.getPath() != null
-                && request.getPath().getValue() != null
-                && (request.getPath().getValue().startsWith(PATH_PREFIX + "/replay/")
-                    || request.getPath().getValue().startsWith("/replay/"))) {
-                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    String pathValue = request.getPath().getValue();
-                    String prefix = pathValue.startsWith(PATH_PREFIX) ? PATH_PREFIX + "/replay/" : "/replay/";
-                    String replayId = pathValue.substring(prefix.length());
-                    responseWriter.writeResponse(request, withDashboardCORS(request, handleReplayGet(replayId)), true);
                 }
                 return true;
             }
@@ -3321,115 +3301,6 @@ public class HttpState {
         }
         builder.append(NEW_LINE);
         return builder.toString();
-    }
-
-    // --- Replay Under Chaos handlers ---
-
-    private HttpResponse handleReplayStart(HttpRequest request) {
-        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
-        try {
-            String body = request.getBodyAsJsonOrXmlString();
-            if (isBlank(body)) {
-                return response().withStatusCode(BAD_REQUEST.code())
-                    .withBody("{\"error\":\"request body required with 'ratePerSecond' and optional 'chaosProfile'\"}", MediaType.JSON_UTF_8);
-            }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
-            int ratePerSec = node.path("ratePerSecond").asInt(0);
-
-            // Retrieve recorded forwarded requests from event log
-            List<org.mockserver.mock.replay.RecordedRequest> recorded = retrieveRecordedRequests();
-            if (recorded.isEmpty()) {
-                return response().withStatusCode(BAD_REQUEST.code())
-                    .withBody("{\"error\":\"no recorded proxy traffic found to replay\"}", MediaType.JSON_UTF_8);
-            }
-
-            // Apply optional chaos overlay
-            if (node.hasNonNull("chaosProfile")) {
-                try {
-                    org.mockserver.serialization.model.HttpChaosProfileDTO dto =
-                        objectMapper.treeToValue(node.get("chaosProfile"), org.mockserver.serialization.model.HttpChaosProfileDTO.class);
-                    org.mockserver.model.HttpChaosProfile chaosProfile = dto.buildObject();
-                    org.mockserver.mock.action.http.ServiceChaosRegistry registry = org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance();
-                    for (org.mockserver.mock.replay.RecordedRequest r : recorded) {
-                        String host = r.getRequest().getFirstHeader("host");
-                        if (!isBlank(host)) {
-                            registry.put(host, chaosProfile, 300_000L); // 5 min TTL auto-clears
-                        }
-                    }
-                } catch (Exception e) {
-                    // chaos overlay is optional -- continue without it
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setLogLevel(Level.WARN)
-                            .setMessageFormat("failed to apply chaos overlay for replay, continuing without it:{}")
-                            .setArguments(e.getMessage())
-                    );
-                }
-            }
-
-            String replayId = org.mockserver.mock.replay.ReplayOrchestrator.getInstance()
-                .startReplay(recorded, ratePerSec, (req, callback) -> {
-                    // Placeholder sender -- real implementation requires wiring through NettyHttpClient
-                    // via LifeCycle. The replay infrastructure (report tracking, rate limiting, chaos
-                    // overlay) is complete; the actual network send is pending lifecycle wiring.
-                    callback.onResult(null, new UnsupportedOperationException("replay sender not configured"));
-                });
-
-            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
-            result.put("replayId", replayId);
-            result.put("totalRequests", recorded.size());
-            result.put("status", "RUNNING");
-            return response().withStatusCode(CREATED.code())
-                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
-        } catch (Exception e) {
-            return response().withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"failed to start replay: " + e.getMessage() + "\"}", MediaType.JSON_UTF_8);
-        }
-    }
-
-    private HttpResponse handleReplayGet(String replayId) {
-        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
-        try {
-            org.mockserver.mock.replay.ReplayReport report = org.mockserver.mock.replay.ReplayOrchestrator.getInstance().getReport(replayId);
-            if (report == null) {
-                return response().withStatusCode(NOT_FOUND.code())
-                    .withBody("{\"error\":\"replay not found: " + replayId + "\"}", MediaType.JSON_UTF_8);
-            }
-            return response().withStatusCode(OK.code())
-                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(report), MediaType.JSON_UTF_8);
-        } catch (Exception e) {
-            return response().withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"failed to get replay report: " + e.getMessage() + "\"}", MediaType.JSON_UTF_8);
-        }
-    }
-
-    private List<org.mockserver.mock.replay.RecordedRequest> retrieveRecordedRequests() {
-        List<org.mockserver.mock.replay.RecordedRequest> result = new ArrayList<>();
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-        mockServerLog.retrieveRecordedExpectationLogEntries(null, logEntries -> {
-            for (LogEntry entry : logEntries) {
-                RequestDefinition[] requests = entry.getHttpRequests();
-                if (requests != null) {
-                    for (RequestDefinition reqDef : requests) {
-                        if (reqDef instanceof HttpRequest) {
-                            HttpRequest httpReq = (HttpRequest) reqDef;
-                            int statusCode = 200;
-                            if (entry.getHttpResponse() != null && entry.getHttpResponse().getStatusCode() != null) {
-                                statusCode = entry.getHttpResponse().getStatusCode();
-                            }
-                            result.add(new org.mockserver.mock.replay.RecordedRequest(httpReq, statusCode, 0L));
-                        }
-                    }
-                }
-            }
-            latch.countDown();
-        });
-        try {
-            latch.await(5, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        return result;
     }
 
     // ---- AsyncAPI control-plane ----
