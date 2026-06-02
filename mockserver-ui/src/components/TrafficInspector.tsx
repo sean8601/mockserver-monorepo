@@ -107,7 +107,9 @@ function gatherScriptedTurns(expectations: JsonListItem[]): ScriptedTurn[] {
   for (const exp of expectations) {
     const llm = exp.value['httpLlmResponse'] as Record<string, unknown> | undefined;
     if (!llm) continue;
-    const scenarioName = llm['scenarioName'] as string | undefined;
+    // scenarioName is a top-level Expectation field (ExpectationDTO), not nested inside
+    // httpLlmResponse — read it from the top level (consistent with sessionGrouping).
+    const scenarioName = exp.value['scenarioName'] as string | undefined;
     if (!scenarioName) continue;
     if (!scenarioGroups.has(scenarioName)) {
       scenarioGroups.set(scenarioName, []);
@@ -128,12 +130,10 @@ function gatherScriptedTurns(expectations: JsonListItem[]): ScriptedTurn[] {
     });
     if (!hasPredicates && group.length < 2) continue;
 
-    // Sort by scenario state transition order
+    // Sort by scenario state transition order. scenarioState is a top-level Expectation field.
     const sorted = [...group].sort((a, b) => {
-      const aLlm = a.value['httpLlmResponse'] as Record<string, unknown>;
-      const bLlm = b.value['httpLlmResponse'] as Record<string, unknown>;
-      const aState = (aLlm['scenarioState'] as string | undefined) ?? 'Started';
-      const bState = (bLlm['scenarioState'] as string | undefined) ?? 'Started';
+      const aState = (a.value['scenarioState'] as string | undefined) ?? 'Started';
+      const bState = (b.value['scenarioState'] as string | undefined) ?? 'Started';
       return scenarioStateSortKey(aState) - scenarioStateSortKey(bState);
     });
 
@@ -153,10 +153,12 @@ function gatherScriptedTurns(expectations: JsonListItem[]): ScriptedTurn[] {
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           stopReason: (completion['stopReason'] as string | undefined)
             ?? (llm['stopReason'] as string | undefined),
-          streaming: (llm['streaming'] as boolean | undefined),
+          // streaming lives inside completion (Completion.streaming), not at the llm top level.
+          streaming: (completion['streaming'] as boolean | undefined),
         },
-        scenarioState: (llm['scenarioState'] as string | undefined) ?? 'Started',
-        newScenarioState: (llm['newScenarioState'] as string | undefined) ?? '__done',
+        // scenarioState / newScenarioState are top-level Expectation fields.
+        scenarioState: (exp.value['scenarioState'] as string | undefined) ?? 'Started',
+        newScenarioState: (exp.value['newScenarioState'] as string | undefined) ?? '__done',
         scenarioName,
       };
     });
