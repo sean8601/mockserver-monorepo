@@ -395,7 +395,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
 
       {/* Modules table */}
       {loading ? (
-        <Typography variant="body2" color="text.secondary">Loading...</Typography>
+        <Typography variant="body2" color="text.secondary">Loading…</Typography>
       ) : modules.length === 0 ? (
         <Typography variant="body2" color="text.secondary">No WASM modules loaded.</Typography>
       ) : (

@@ -292,7 +292,7 @@ function LoadTab({
         disabled={loading || !filePath.trim()}
         sx={{ alignSelf: 'flex-start' }}
       >
-        {loading ? 'Loading...' : 'Load Expectations'}
+        {loading ? 'Loading…' : 'Load Expectations'}
       </Button>
       {error && <Alert severity="error">{error}</Alert>}
       {success && <Alert severity="success">{success}</Alert>}
