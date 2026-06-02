@@ -533,4 +533,42 @@ public class GraphQLSubscriptionHandlerTest {
 
         channel.finishAndReleaseAll();
     }
+
+    // --- regression: explicit fields preserved when selectionSetMatchType is null ---
+
+    @Test
+    public void shouldPreserveExplicitFieldsWhenSelectionSetMatchTypeNull() {
+        GraphQLBody body = GraphQLBody.graphQL("subscription { userUpdated { id } }")
+            .withFields(List.of("userUpdated"));
+        // precondition: no explicit match type
+        assertNull(body.getSelectionSetMatchType());
+
+        GraphQLBody normalised = GraphQLSubscriptionHandler.normaliseSubscriptionBody(body);
+
+        // defaults to AST_SUBSET but MUST keep the explicitly-configured fields
+        assertThat(normalised.getSelectionSetMatchType(), is(SelectionSetMatchType.AST_SUBSET));
+        assertThat(normalised.getFields(), is(List.of("userUpdated")));
+    }
+
+    // --- regression: subscribe before connection_init is ignored ---
+
+    @Test
+    public void shouldNotProcessSubscribeBeforeConnectionInit() {
+        RecordingFrameSender sender = new RecordingFrameSender();
+        GraphQLSubscriptionHandler handler = createHandler(
+            "subscription { userUpdated { id } }",
+            List.of(webSocketMessage("{\"v\":1}")),
+            sender
+        );
+        EmbeddedChannel channel = createChannel(handler);
+
+        // subscribe WITHOUT a prior connection_init handshake
+        String subscribeMsg = "{\"id\":\"s1\",\"type\":\"subscribe\",\"payload\":{\"query\":\"subscription { userUpdated { id } }\"}}";
+        channel.writeInbound(new TextWebSocketFrame(subscribeMsg));
+
+        // the guard short-circuits: no next/error frames are emitted
+        assertThat(sender.sentMessages, is(empty()));
+
+        channel.finishAndReleaseAll();
+    }
 }

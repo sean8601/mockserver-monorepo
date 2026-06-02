@@ -91,15 +91,25 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
     }
 
     private static GraphQLAstMatcher createMatcher(GraphQLBody body) {
+        return new GraphQLAstMatcher(normaliseSubscriptionBody(body));
+    }
+
+    /**
+     * Normalises the subscription filter body: when no {@code selectionSetMatchType}
+     * is supplied, default to {@code AST_SUBSET} (forgiving) while PRESERVING any
+     * explicitly-configured {@code fields}. Package-private for testing.
+     */
+    static GraphQLBody normaliseSubscriptionBody(GraphQLBody body) {
         if (body.getSelectionSetMatchType() == null) {
-            // Default to AST_SUBSET for subscription matching -- more forgiving than exact
+            // Capture the original fields BEFORE reassigning `body`, otherwise they are lost.
+            List<String> originalFields = body.getFields();
             body = new GraphQLBody(body.getQuery(), body.getOperationName(), body.getVariablesSchema())
                 .withSelectionSetMatchType(SelectionSetMatchType.AST_SUBSET);
-            if (body.getFields() != null) {
-                body.withFields(body.getFields());
+            if (originalFields != null) {
+                body.withFields(originalFields);
             }
         }
-        return new GraphQLAstMatcher(body);
+        return body;
     }
 
     @Override
@@ -141,6 +151,13 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
     }
 
     void handleSubscribe(ChannelHandlerContext ctx, JsonNode message) {
+        // Per graphql-transport-ws, a client must not send subscribe before the
+        // connection_init/connection_ack handshake; close the connection if it does.
+        if (!connectionInitialised) {
+            closeConnection(ctx);
+            return;
+        }
+
         String id = message.has("id") ? message.get("id").asText() : null;
         if (id == null || id.isEmpty()) {
             closeConnection(ctx);
@@ -278,7 +295,7 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
     }
 
     private void closeConnection(ChannelHandlerContext ctx) {
-        if (ctx.channel().isActive()) {
+        if (handshaker != null && ctx.channel().isActive()) {
             handshaker.close(ctx.channel(), new CloseWebSocketFrame());
         }
     }
