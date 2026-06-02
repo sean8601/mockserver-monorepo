@@ -10,7 +10,7 @@ sitemap:
   priority: 0.7
   changefreq: 'monthly'
   lastmod: 2026-06-01T08:00:00+00:00
-keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirect, mockserver sidecar, conntrack
+keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirect, mockserver sidecar, conntrack, proxy protocol, GWLB, HAProxy
 ---
 
 <p>MockServer can run as a <strong>Kubernetes sidecar</strong> with transparent HTTP proxy interception. This enables service mesh integration patterns where MockServer intercepts traffic destined for external services without any application code changes.</p>
@@ -25,11 +25,12 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
 
 <ol>
     <li>An init container sets up iptables rules to redirect outbound HTTP/HTTPS traffic to MockServer's port</li>
-    <li>MockServer resolves the original destination:
-        <ul>
-            <li><strong>On Linux</strong>: reads the original destination from the kernel conntrack table (<code class="inline code">/proc/net/nf_conntrack</code>), which records the pre-REDIRECT destination. This works even when the Host header is missing or incorrect.</li>
-            <li><strong>Fallback</strong>: if conntrack is unavailable (non-Linux, module not loaded, or entry flushed), MockServer falls back to reading the <code class="inline code">Host</code> header.</li>
-        </ul>
+    <li>MockServer resolves the original destination using a multi-strategy chain (first match wins):
+        <ol>
+            <li><strong>PROXY protocol v1</strong>: if the first bytes on the connection are a PROXY v1 header (e.g., sent by AWS GWLB, HAProxy, or nginx), MockServer parses the destination address from the header and consumes it. No configuration is needed -- detection is automatic.</li>
+            <li><strong>Linux conntrack</strong>: reads the original destination from the kernel conntrack table (<code class="inline code">/proc/net/nf_conntrack</code>), which records the pre-REDIRECT destination. This works even when the Host header is missing or incorrect.</li>
+            <li><strong>Host header fallback</strong>: if no other strategy resolves the destination, MockServer reads the <code class="inline code">Host</code> header from the HTTP request.</li>
+        </ol>
     </li>
     <li>If an expectation matches, MockServer returns the mock response</li>
     <li>Otherwise, MockServer forwards the request to the original target</li>
@@ -84,19 +85,67 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
 
 <p>When <code class="inline code">sidecar.iptables.enabled</code> is <code class="inline code">true</code>, the chart renders an init container that adds a UID-based RETURN rule (to exclude MockServer's own egress) before any REDIRECT rules, preventing an infinite redirect loop. The <code class="inline code">excludeUid</code> must match <code class="inline code">app.runAsUser</code> (both default to 65534).</p>
 
-<h2>Original Destination Resolution (SO_ORIGINAL_DST)</h2>
+<h2>Original Destination Resolution</h2>
+
+<p>MockServer uses a pluggable, ordered chain of strategies to resolve the original destination of transparently intercepted connections. The first strategy that returns a result wins; if none do, MockServer falls back to the <code class="inline code">Host</code> header.</p>
+
+<h3>Strategy 1: PROXY Protocol v1</h3>
+
+<p>When MockServer is deployed behind a load balancer that prepends PROXY protocol v1 headers (e.g., AWS Gateway Load Balancer, HAProxy with <code class="inline code">send-proxy</code>, nginx with <code class="inline code">proxy_protocol on</code>), MockServer automatically detects and parses the header to extract the original destination address.</p>
+
+<p>The PROXY protocol v1 header is a single ASCII line prepended to the TCP connection:</p>
+<pre class="prettyprint code"><code class="code">PROXY TCP4 192.168.1.1 93.184.216.34 56324 80\r\n
+PROXY TCP6 2001:db8::1 2001:db8::2 56324 443\r\n
+PROXY UNKNOWN\r\n</code></pre>
+
+<p><strong>Key points:</strong></p>
+<ul>
+    <li><strong>No configuration needed</strong> -- detection is automatic when <code class="inline code">transparentProxyEnabled</code> is <code class="inline code">true</code></li>
+    <li><strong>No new dependencies</strong> -- the v1 text format is hand-parsed (no <code class="inline code">netty-codec-haproxy</code> needed)</li>
+    <li><strong>Fail-safe</strong> -- if the first bytes are not a PROXY header, they pass through unchanged</li>
+    <li>Only PROXY protocol v1 (text format) is supported; v2 (binary) is not yet implemented</li>
+</ul>
+
+<h3>Strategy 2: Linux Conntrack</h3>
 
 <p>On Linux with the <code class="inline code">nf_conntrack</code> kernel module loaded, MockServer reads the original destination of intercepted connections from <code class="inline code">/proc/net/nf_conntrack</code>. This provides accurate target resolution even when the Host header is absent or incorrect.</p>
 
 <p><strong>Requirements:</strong></p>
 <ul>
-    <li><strong>Linux only</strong> -- on other OSes, MockServer gracefully falls back to Host-header resolution</li>
+    <li><strong>Linux only</strong> -- on other OSes, MockServer gracefully falls back to the next strategy</li>
     <li><strong>nf_conntrack module</strong> -- must be loaded and <code class="inline code">/proc/net/nf_conntrack</code> must be readable</li>
     <li><strong>iptables REDIRECT</strong> -- the rule must use <code class="inline code">-j REDIRECT</code></li>
     <li><strong>NET_ADMIN capability</strong> -- required for the iptables init container</li>
 </ul>
 
-<p>If conntrack is unavailable, MockServer automatically falls back to Host-header-based resolution with no configuration change needed.</p>
+<h3>Strategy 3: Host Header Fallback</h3>
+
+<p>If no other strategy resolves the destination, MockServer reads the <code class="inline code">Host</code> header from the HTTP request. This always works but requires a valid Host header.</p>
+
+<h3>Future Strategies (Not Yet Implemented)</h3>
+
+<p>The resolver chain is designed to be extended with additional strategies that require native/JNI code:</p>
+<ul>
+    <li><strong>SO_ORIGINAL_DST getsockopt</strong> -- direct socket option read via JNI (O(1) vs conntrack's O(n))</li>
+    <li><strong>TPROXY (IP_TRANSPARENT)</strong> -- the TPROXY iptables target preserves the original destination as the socket's local address</li>
+    <li><strong>eBPF socket metadata</strong> -- an eBPF program stores original destination in a BPF map</li>
+</ul>
+
+<h2>Deployment Contexts</h2>
+
+<p>The resolver chain supports multiple deployment patterns:</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Context</th><th>Resolution Strategy</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Kubernetes sidecar with iptables REDIRECT</td><td>Conntrack, then Host header</td><td>Standard sidecar pattern</td></tr>
+        <tr><td>Behind AWS GWLB / HAProxy (PROXY protocol)</td><td>PROXY protocol v1</td><td>Automatic detection, no config needed</td></tr>
+        <tr><td>OS-level transparent proxy</td><td>Conntrack, then Host header</td><td>iptables on host</td></tr>
+        <tr><td>Cloud route-based interception</td><td>Host header fallback</td><td>When original-dst is not available</td></tr>
+    </tbody>
+</table>
 
 <h2>Limitations</h2>
 
@@ -104,4 +153,6 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
     <li><strong>Conntrack lookup is O(n) with a cap</strong> -- the <code class="inline code">/proc/net/nf_conntrack</code> file is parsed per connection, capped at 200,000 lines. If the conntrack table exceeds this limit, MockServer falls back to Host-header resolution. For high-throughput production use, consider a dedicated transparent proxy.</li>
     <li><strong>Linux only for conntrack</strong> -- original-destination resolution via conntrack requires Linux. On other OSes, the transparent proxy falls back to Host-header resolution.</li>
     <li><strong>iptables not automatic</strong> -- an init container or external mechanism must configure traffic redirection.</li>
+    <li><strong>PROXY protocol v1 only</strong> -- the binary v2 format is not yet supported. Most load balancers support v1.</li>
+    <li><strong>Native strategies deferred</strong> -- SO_ORIGINAL_DST getsockopt, TPROXY, and eBPF require native/JNI code and are not yet implemented.</li>
 </ul>

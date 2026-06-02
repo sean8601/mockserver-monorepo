@@ -8,6 +8,7 @@ import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.mcp.McpSessionManager;
+import org.mockserver.netty.proxy.ProxyProtocolOriginalDestinationHandler;
 import org.mockserver.netty.proxy.TransparentProxyHandler;
 import org.mockserver.netty.unification.PortUnificationHandler;
 import org.mockserver.socket.tls.NettySslContextFactory;
@@ -40,11 +41,13 @@ public class MockServerUnificationInitializer extends ChannelHandlerAdapter {
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
-        // When transparent proxy mode is enabled, add the handler that resolves
-        // the original destination (via conntrack on Linux) before any HTTP
-        // processing occurs. This must be first in the pipeline so it fires on
-        // channelActive before data is read.
+        // When transparent proxy mode is enabled, add:
+        // 1. PROXY protocol v1 handler (reads first inbound bytes for PROXY header)
+        // 2. Transparent proxy handler (resolves via conntrack at channelActive)
+        // The PROXY protocol handler is first so it can detect and parse headers
+        // before the transparent proxy handler fires its channel-level resolution.
         if (Boolean.TRUE.equals(configuration.transparentProxyEnabled())) {
+            ctx.pipeline().addLast("proxy-protocol", new ProxyProtocolOriginalDestinationHandler(httpState.getMockServerLogger()));
             ctx.pipeline().addLast("transparent-proxy", new TransparentProxyHandler(configuration, httpState.getMockServerLogger()));
         }
         ctx.pipeline().replace(this, null, new PortUnificationHandler(configuration, server, httpState, actionHandler, nettySslContextFactory, mcpSessionManager));

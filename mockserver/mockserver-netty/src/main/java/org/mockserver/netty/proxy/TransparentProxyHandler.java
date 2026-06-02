@@ -19,13 +19,25 @@ import static org.mockserver.netty.HttpRequestHandler.PROXYING;
  * channel attribute. The downstream proxy/forward logic in {@code HttpActionHandler}
  * then uses this address instead of requiring the Host header to determine the target.
  * <p>
+ * Resolution is performed by a pluggable {@link OriginalDestinationResolver} strategy
+ * (typically a {@link CompositeOriginalDestinationResolver} chain). The default chain
+ * contains only the conntrack resolver; additional channel-level strategies (SO_ORIGINAL_DST
+ * getsockopt, TPROXY, eBPF) can be added when native support is available.
+ * <p>
  * Resolution strategy (in order):
  * <ol>
- *   <li>If the OS supports it (Linux), attempt to read the original destination
- *       via the conntrack table ({@link SoOriginalDstHelper#getOriginalDestination}).</li>
- *   <li>If that fails or is unsupported, fall back to Host-header resolution
- *       (deferred to later pipeline handlers -- no REMOTE_SOCKET is set, so
- *       the existing Host-based forwarding logic applies).</li>
+ *   <li><b>PROXY protocol v1</b> — handled by
+ *       {@link ProxyProtocolOriginalDestinationHandler} earlier in the pipeline
+ *       (reads inbound bytes, not channel metadata). If a PROXY header is present,
+ *       the REMOTE_SOCKET is set before this handler fires.</li>
+ *   <li><b>Channel-level chain</b> (this handler, at {@code channelActive}):
+ *       <ul>
+ *         <li>{@link ConntrackOriginalDestinationResolver} — Linux conntrack table</li>
+ *         <li>(future) SO_ORIGINAL_DST getsockopt, TPROXY, eBPF</li>
+ *       </ul>
+ *   </li>
+ *   <li><b>Host header fallback</b> — if no strategy resolves the destination,
+ *       the existing Host-based forwarding logic in {@code HttpActionHandler} applies.</li>
  * </ol>
  * <p>
  * This handler is only added to the pipeline when
@@ -61,10 +73,14 @@ public class TransparentProxyHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Default resolver that delegates to {@link SoOriginalDstHelper}.
+     * Default resolver: a composite chain that tries [conntrack] in order.
+     * This produces identical behaviour to the original single-resolver default
+     * while allowing the chain to be extended with additional strategies.
+     *
+     * @see CompositeOriginalDestinationResolver#defaultChain()
      */
     private static final OriginalDestinationResolver DEFAULT_RESOLVER =
-        SoOriginalDstHelper::getOriginalDestination;
+        CompositeOriginalDestinationResolver.defaultChain();
 
     public TransparentProxyHandler(Configuration configuration, MockServerLogger logger) {
         this(configuration, logger, DEFAULT_RESOLVER);
@@ -89,14 +105,24 @@ public class TransparentProxyHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void resolveAndSetOriginalDestination(ChannelHandlerContext ctx) {
+        // If PROXY protocol handler already resolved the destination (it runs
+        // earlier in the pipeline on first inbound bytes), skip the channel-level chain.
+        if (Boolean.TRUE.equals(ctx.channel().attr(TRANSPARENT_ORIGINAL_DST_RESOLVED).get())) {
+            if (logger != null && logger.isEnabledForInstance(Level.DEBUG)) {
+                logger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.DEBUG)
+                        .setMessageFormat("transparent proxy: original destination already resolved (e.g. PROXY protocol) for channel {}, skipping channel-level resolution")
+                        .setArguments(ctx.channel())
+                );
+            }
+            return;
+        }
+
         InetSocketAddress originalDst = null;
-        boolean resolvedViaConntrack = false;
 
         try {
             originalDst = resolver.resolve(ctx.channel());
-            if (originalDst != null) {
-                resolvedViaConntrack = true;
-            }
         } catch (UnsupportedOperationException e) {
             // Expected on non-Linux; fall through to Host-header fallback
             if (logger != null && logger.isEnabledForInstance(Level.DEBUG)) {
@@ -129,7 +155,7 @@ public class TransparentProxyHandler extends ChannelInboundHandlerAdapter {
                 logger.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.DEBUG)
-                        .setMessageFormat("transparent proxy: resolved original destination {} for channel {} via conntrack")
+                        .setMessageFormat("transparent proxy: resolved original destination {} for channel {} via resolver chain")
                         .setArguments(originalDst, ctx.channel())
                 );
             }

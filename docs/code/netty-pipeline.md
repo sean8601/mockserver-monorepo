@@ -44,11 +44,30 @@ sequenceDiagram
 | `TLS_ENABLED_DOWNSTREAM` | `Boolean` | TLS needed for upstream connections |
 | `HTTP_ENABLED` | `Boolean` | HTTP pipeline configured |
 | `HTTP2_ENABLED` | `Boolean` | HTTP/2 pipeline configured |
+| `TRANSPARENT_ORIGINAL_DST_RESOLVED` | `Boolean` | Whether original-dst was resolved (conntrack/PROXY protocol) |
 | `NETTY_SSL_CONTEXT_FACTORY` | `NettySslContextFactory` | SSL context for this channel |
 
 ## Channel Initializer
 
 `MockServerUnificationInitializer` is a `@Sharable` `ChannelHandlerAdapter` that replaces itself with a `PortUnificationHandler` on `handlerAdded()`. This thin adapter ensures each new channel gets its own `PortUnificationHandler` instance (since the decoder maintains per-channel state).
+
+When `transparentProxyEnabled` is true, the initializer adds two handlers before the port unification handler:
+
+1. **`ProxyProtocolOriginalDestinationHandler`** (`"proxy-protocol"`) — inspects the first inbound bytes for a PROXY protocol v1 header. If found, sets `REMOTE_SOCKET` + `PROXYING` + `TRANSPARENT_ORIGINAL_DST_RESOLVED`, consumes the header bytes, and removes itself. If not found, removes itself and passes bytes through unchanged.
+2. **`TransparentProxyHandler`** (`"transparent-proxy"`) — fires at `channelActive` and runs the pluggable `CompositeOriginalDestinationResolver` chain (default: [conntrack]). Skips resolution if `TRANSPARENT_ORIGINAL_DST_RESOLVED` is already set (e.g., by the PROXY protocol handler).
+
+### Original Destination Resolver Chain
+
+The `CompositeOriginalDestinationResolver` tries strategies in order (first non-null wins):
+
+| Order | Strategy | Class | Status |
+|-------|----------|-------|--------|
+| 1 | Linux conntrack table | `ConntrackOriginalDestinationResolver` | Implemented |
+| 2 | SO_ORIGINAL_DST getsockopt | (future) | Requires JNI |
+| 3 | TPROXY (IP_TRANSPARENT) | (future) | Requires JNI + TPROXY rules |
+| 4 | eBPF socket metadata | (future) | Requires JNI + eBPF program |
+
+Note: PROXY protocol is handled separately in the pipeline (it reads bytes, not channel metadata).
 
 ## Port Unification Handler
 
