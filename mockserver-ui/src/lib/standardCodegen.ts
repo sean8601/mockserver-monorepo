@@ -63,12 +63,38 @@ export interface StandardDnsMatcher {
   dnsClass: DnsRecordClass | '';
 }
 
+/**
+ * Response connection-level controls (httpResponse.connectionOptions). Tri-state booleans use
+ * undefined = "leave to the server default". Mirrors the common ConnectionOptions fields.
+ */
+export interface StandardConnectionOptions {
+  keepAliveOverride?: boolean;
+  closeSocket?: boolean;
+  contentLengthHeaderOverride?: number;
+  suppressContentLengthHeader?: boolean;
+  suppressConnectionHeader?: boolean;
+}
+
 export interface StandardStaticState {
   statusCode: number;
   body: string;
   contentType: string;
   /** Additional response headers as "Name: value" lines, beyond Content-Type. */
   headers?: string;
+  /** Connection-level response controls (keep-alive, close socket, Content-Length override, …). */
+  connectionOptions?: StandardConnectionOptions;
+}
+
+/** Build the connectionOptions JSON object, or undefined when nothing is set. */
+function buildConnectionOptionsJson(co: StandardConnectionOptions | undefined): Record<string, unknown> | undefined {
+  if (!co) return undefined;
+  const out: Record<string, unknown> = {};
+  if (co.keepAliveOverride != null) out['keepAliveOverride'] = co.keepAliveOverride;
+  if (co.closeSocket != null) out['closeSocket'] = co.closeSocket;
+  if (co.contentLengthHeaderOverride != null) out['contentLengthHeaderOverride'] = co.contentLengthHeaderOverride;
+  if (co.suppressContentLengthHeader) out['suppressContentLengthHeader'] = true;
+  if (co.suppressConnectionHeader) out['suppressConnectionHeader'] = true;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export interface StandardForwardState {
@@ -451,6 +477,8 @@ export function buildExpectationJson(
         if (Object.keys(staticHeaders).length > 0) {
           payload['headers'] = staticHeaders;
         }
+        const connectionOptions = buildConnectionOptionsJson(action.static.connectionOptions);
+        if (connectionOptions) payload['connectionOptions'] = connectionOptions;
         out['httpResponse'] = payload;
       }
       break;
@@ -930,6 +958,19 @@ function actionToJava(action: StandardActionPayload): string {
         }
       }
       if (s.body) lines.push(`        .withBody("${escapeJava(s.body)}")`);
+      const co = s.connectionOptions;
+      if (buildConnectionOptionsJson(co) && co) {
+        const coParts: string[] = ['connectionOptions()'];
+        if (co.keepAliveOverride != null) coParts.push(`.withKeepAliveOverride(${co.keepAliveOverride})`);
+        if (co.closeSocket != null) coParts.push(`.withCloseSocket(${co.closeSocket})`);
+        if (co.contentLengthHeaderOverride != null) coParts.push(`.withContentLengthHeaderOverride(${co.contentLengthHeaderOverride})`);
+        if (co.suppressContentLengthHeader) coParts.push('.withSuppressContentLengthHeader(true)');
+        if (co.suppressConnectionHeader) coParts.push('.withSuppressConnectionHeader(true)');
+        lines.push('        .withConnectionOptions(');
+        lines.push(`            ${coParts[0]}`);
+        for (const part of coParts.slice(1)) lines.push(`                ${part}`);
+        lines.push('        )');
+      }
       lines.push(')');
       return lines.join('\n');
     }
@@ -1201,6 +1242,9 @@ function collectJavaImports(
   switch (action.type) {
     case 'static':
       imp.add('import static org.mockserver.model.HttpResponse.response;');
+      if (buildConnectionOptionsJson(action.static?.connectionOptions)) {
+        imp.add('import static org.mockserver.model.ConnectionOptions.connectionOptions;');
+      }
       break;
     case 'forward':
       imp.add('import static org.mockserver.model.HttpForward.forward;');

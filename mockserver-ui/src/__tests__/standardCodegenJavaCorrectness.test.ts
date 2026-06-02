@@ -120,6 +120,32 @@ describe('Java/JSON parity additions', () => {
   });
 });
 
+describe('static response connectionOptions', () => {
+  const action: StandardActionPayload = {
+    type: 'static',
+    static: { statusCode: 200, body: '', contentType: '', connectionOptions: { keepAliveOverride: false, contentLengthHeaderOverride: 999, suppressConnectionHeader: true } },
+  };
+
+  it('emits connectionOptions in the httpResponse JSON (only set fields)', () => {
+    const resp = buildExpectationJson(httpMatcher(), action)['httpResponse'] as Record<string, unknown>;
+    expect(resp['connectionOptions']).toEqual({ keepAliveOverride: false, contentLengthHeaderOverride: 999, suppressConnectionHeader: true });
+  });
+
+  it('emits .withConnectionOptions(...) in Java with the import', () => {
+    const java = standardToJava(httpMatcher(), action);
+    expect(java).toContain('.withConnectionOptions(');
+    expect(java).toContain('.withKeepAliveOverride(false)');
+    expect(java).toContain('.withContentLengthHeaderOverride(999)');
+    expect(java).toContain('.withSuppressConnectionHeader(true)');
+    expect(java).toContain('import static org.mockserver.model.ConnectionOptions.connectionOptions;');
+  });
+
+  it('omits connectionOptions when nothing is set', () => {
+    const resp = buildExpectationJson(httpMatcher(), { type: 'static', static: { statusCode: 200, body: '', contentType: '' } })['httpResponse'] as Record<string, unknown>;
+    expect(resp).not.toHaveProperty('connectionOptions');
+  });
+});
+
 describe('expectation timeToLive', () => {
   const ttlAction: StandardActionPayload = { type: 'static', static: { statusCode: 200, body: '', contentType: '' } };
 

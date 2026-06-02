@@ -53,6 +53,7 @@ import {
   type SideEffectPosition,
   type SideEffectDelayUnit,
   type SideEffectFailurePolicy,
+  type StandardConnectionOptions,
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
 import ImportForm from './ImportForm';
@@ -833,6 +834,19 @@ function headersToText(headers: unknown, exclude?: string): string {
   return lines.join('\n');
 }
 
+/** Parse an httpResponse.connectionOptions object back into the composer's draft shape. */
+function connectionOptionsFromValue(raw: unknown): StandardConnectionOptions | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const co: StandardConnectionOptions = {};
+  if (typeof r['keepAliveOverride'] === 'boolean') co.keepAliveOverride = r['keepAliveOverride'];
+  if (typeof r['closeSocket'] === 'boolean') co.closeSocket = r['closeSocket'];
+  if (typeof r['contentLengthHeaderOverride'] === 'number') co.contentLengthHeaderOverride = r['contentLengthHeaderOverride'];
+  if (r['suppressContentLengthHeader'] === true) co.suppressContentLengthHeader = true;
+  if (r['suppressConnectionHeader'] === true) co.suppressConnectionHeader = true;
+  return Object.keys(co).length > 0 ? co : undefined;
+}
+
 function paramsToText(params: unknown): string {
   if (!params || typeof params !== 'object') return '';
   const lines: string[] = [];
@@ -863,6 +877,7 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
           : typeof contentType === 'string' ? contentType : 'application/json',
         // Preserve any non-content-type response headers so editing in place does not drop them.
         headers: headersToText(r['headers'], 'content-type'),
+        connectionOptions: connectionOptionsFromValue(r['connectionOptions']),
       },
     };
   }
@@ -1097,6 +1112,16 @@ interface StaticState {
   contentType: string;
   /** Additional response headers as "Name: value" lines, beyond Content-Type. */
   headers: string;
+  /** Connection-level response controls; undefined fields use the server default. */
+  connectionOptions?: StandardConnectionOptions;
+}
+
+/** '' (default) | 'true' | 'false' tri-state mapping for an optional boolean connection option. */
+function triValue(v: boolean | undefined): '' | 'true' | 'false' {
+  return v == null ? '' : v ? 'true' : 'false';
+}
+function triParse(v: string): boolean | undefined {
+  return v === '' ? undefined : v === 'true';
 }
 
 function StaticHttpPanel({
@@ -1145,6 +1170,55 @@ function StaticHttpPanel({
         placeholder='{"ok":true}'
         slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
       />
+      <ConnectionOptionsFields
+        value={state.connectionOptions}
+        onChange={(co) => setState({ ...state, connectionOptions: co })}
+      />
+    </Box>
+  );
+}
+
+/** Connection-level response controls (keep-alive, close socket, Content-Length, header suppression). */
+function ConnectionOptionsFields({
+  value,
+  onChange,
+}: {
+  value: StandardConnectionOptions | undefined;
+  onChange: (co: StandardConnectionOptions | undefined) => void;
+}) {
+  const co = value ?? {};
+  const update = (patch: Partial<StandardConnectionOptions>) => {
+    const next = { ...co, ...patch };
+    // Drop keys that are undefined so an all-default object becomes undefined (omitted).
+    (Object.keys(next) as (keyof StandardConnectionOptions)[]).forEach((k) => { if (next[k] == null) delete next[k]; });
+    onChange(Object.keys(next).length > 0 ? next : undefined);
+  };
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">Connection options (advanced)</Typography>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mt: 0.5 }}>
+        <TextField select size="small" label="Keep-alive" sx={{ width: 130 }} value={triValue(co.keepAliveOverride)}
+          onChange={(e) => update({ keepAliveOverride: triParse(e.target.value) })}>
+          <MenuItem value="">Default</MenuItem>
+          <MenuItem value="true">Keep alive</MenuItem>
+          <MenuItem value="false">Close</MenuItem>
+        </TextField>
+        <TextField select size="small" label="Close socket" sx={{ width: 130 }} value={triValue(co.closeSocket)}
+          onChange={(e) => update({ closeSocket: triParse(e.target.value) })}>
+          <MenuItem value="">Default</MenuItem>
+          <MenuItem value="true">Yes</MenuItem>
+          <MenuItem value="false">No</MenuItem>
+        </TextField>
+        <TextField size="small" type="number" label="Content-Length override" sx={{ width: 180 }}
+          value={co.contentLengthHeaderOverride ?? ''}
+          onChange={(e) => update({ contentLengthHeaderOverride: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} />
+        <FormControlLabel control={<Switch size="small" checked={co.suppressContentLengthHeader === true}
+          onChange={(e) => update({ suppressContentLengthHeader: e.target.checked || undefined })} />}
+          label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Suppress Content-Length</Typography>} />
+        <FormControlLabel control={<Switch size="small" checked={co.suppressConnectionHeader === true}
+          onChange={(e) => update({ suppressConnectionHeader: e.target.checked || undefined })} />}
+          label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Suppress Connection</Typography>} />
+      </Box>
     </Box>
   );
 }
