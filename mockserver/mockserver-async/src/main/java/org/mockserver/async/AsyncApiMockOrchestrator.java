@@ -1,13 +1,14 @@
 package org.mockserver.async;
 
 import org.mockserver.async.asyncapi.AsyncApiChannel;
+import org.mockserver.async.asyncapi.AsyncApiMessage;
 import org.mockserver.async.asyncapi.AsyncApiSpec;
 import org.mockserver.async.publish.MessagePublisher;
 import org.mockserver.async.publish.PublishOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -43,33 +44,41 @@ public class AsyncApiMockOrchestrator {
     }
 
     /**
-     * Publish the generated example message for each channel once,
+     * Publish the generated example message for each message in each channel,
      * threading any AsyncAPI bindings (MQTT qos/retain, Kafka key) as
      * {@link PublishOptions}.
+     * <p>
+     * Multi-message channels (v3 multiple {@code messages}, v2 {@code oneOf})
+     * result in one publish call per message. Single-message channels behave
+     * identically to the previous single-publish behavior.
      */
     public void publishAll() {
-        Map<String, String> examples = generator.generateExamples(spec);
-        for (Map.Entry<String, String> entry : examples.entrySet()) {
-            String channel = entry.getKey();
-            String payload = entry.getValue();
-            PublishOptions options = resolvePublishOptions(channel);
-            LOG.info("Publishing example to channel '{}': {}", channel, payload);
-            publisher.publish(channel, payload, options);
+        for (AsyncApiChannel ch : spec.getChannels()) {
+            List<AsyncApiMessage> messages = ch.getMessages();
+            for (AsyncApiMessage msg : messages) {
+                String payload = generator.generateExample(msg);
+                if (payload == null || payload.isBlank()) {
+                    continue;
+                }
+                PublishOptions options = buildPublishOptions(ch, msg);
+                LOG.info("Publishing example to channel '{}': {}", ch.getName(), payload);
+                publisher.publish(ch.getName(), payload, options);
+            }
         }
     }
 
     /**
-     * Look up the {@link AsyncApiChannel} by name and return its
-     * {@link PublishOptions}. Returns {@code PublishOptions.none()} when
-     * the channel is not found or has no bindings.
+     * Build {@link PublishOptions} from per-message Kafka key and channel-level
+     * MQTT qos/retain bindings.
      */
-    private PublishOptions resolvePublishOptions(String channelName) {
-        for (AsyncApiChannel ch : spec.getChannels()) {
-            if (ch.getName().equals(channelName)) {
-                return ch.toPublishOptions();
-            }
+    private PublishOptions buildPublishOptions(AsyncApiChannel channel, AsyncApiMessage message) {
+        String kafkaKey = message.getKafkaKey();
+        Integer mqttQos = channel.getMqttQos();
+        Boolean mqttRetain = channel.getMqttRetain();
+        if (kafkaKey == null && mqttQos == null && mqttRetain == null) {
+            return PublishOptions.none();
         }
-        return PublishOptions.none();
+        return new PublishOptions(kafkaKey, mqttQos, mqttRetain);
     }
 
     /**

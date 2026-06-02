@@ -45,8 +45,9 @@ The control-plane uses an **SPI/registry pattern** (Option A from the design spe
 | `AsyncApiControlPlaneImpl` | `o.m.async.controlplane` | Full implementation: load, status, reset, verify, broker lifecycle |
 | `AsyncApiParser` | `o.m.async.asyncapi` | Parses AsyncAPI 2.x/3.x JSON or YAML into an `AsyncApiSpec` model |
 | `AsyncApiSpec` | `o.m.async.asyncapi` | Immutable model: version, title, list of `AsyncApiChannel` |
-| `AsyncApiChannel` | `o.m.async.asyncapi` | A channel name, payload examples, optional JSON Schema, and parsed bindings (MQTT qos/retain, Kafka key) |
-| `MessageExampleGenerator` | `o.m.async` | Schema-aware example generation (enum, default, format, min/max, minLength, const) |
+| `AsyncApiChannel` | `o.m.async.asyncapi` | A channel name, payload examples, optional JSON Schema, parsed bindings (MQTT qos/retain, Kafka key), and optional multi-message list |
+| `AsyncApiMessage` | `o.m.async.asyncapi` | A single message definition: name, payload schema, payload examples, Kafka key binding |
+| `MessageExampleGenerator` | `o.m.async` | Schema-aware example generation (enum, default, format, min/max, minLength, const); per-channel and per-message |
 | `AsyncApiSchemaValidator` | `o.m.async.validation` | Validates payloads against channel JSON Schemas using core's `JsonSchemaValidator` |
 | `PublishOptions` | `o.m.async.publish` | Immutable carrier for per-message publish-time options: Kafka key, MQTT qos, MQTT retain |
 | `MessagePublisher` | `o.m.async.publish` | Interface: `publish(channel, payload)`, `publish(channel, key, payload, headers)`, `publish(channel, payload, options)`, `close()` |
@@ -171,10 +172,27 @@ All async mocking state (publishers, subscribers, recorded messages) is cleared 
 
 The parser auto-detects JSON vs YAML (by leading `{` character) and supports:
 
-- **AsyncAPI 2.x**: `channels.<name>.publish|subscribe.message.payload` for schema; `.payload.example` for inline examples; `.message.examples[].payload` for the examples array
-- **AsyncAPI 3.x**: `channels.<name>.messages.<msgName>.payload` for schema; `.examples[].payload` for examples; basic `$ref` resolution to `#/components/messages/<name>`
+- **AsyncAPI 2.x**: `channels.<name>.publish|subscribe.message.payload` for schema; `.payload.example` for inline examples; `.message.examples[].payload` for the examples array; **`message.oneOf`** for multi-message channels (each variant becomes a separate `AsyncApiMessage`)
+- **AsyncAPI 3.x**: `channels.<name>.messages.<msgName>.payload` for schema; `.examples[].payload` for examples; basic `$ref` resolution to `#/components/messages/<name>`; **all messages** under `channels.<name>.messages` are parsed (not just the first)
 
 Missing or incomplete structures are tolerated gracefully (channels appear with empty examples).
+
+### Multi-Message Channels
+
+A channel may define multiple message types:
+
+- **AsyncAPI 3.x**: multiple entries under `channels.<name>.messages` (e.g. `userCreated`, `orderPlaced`)
+- **AsyncAPI 2.x**: `message.oneOf` array in the operation (e.g. `publish.message.oneOf: [{...}, {...}]`)
+
+When a channel has multiple messages:
+
+1. Each message is parsed into an `AsyncApiMessage` with its own payload schema, examples, and Kafka key binding
+2. The channel's `getMessages()` method returns the full list of `AsyncApiMessage` instances
+3. The orchestrator publishes **one example per message** (not just one per channel)
+4. Per-message `PublishOptions` combine the message's Kafka key with the channel-level MQTT qos/retain
+5. Legacy single-message accessors (`getPayloadExamples()`, `getPayloadSchema()`, `getKafkaKey()`) continue to return the **first** message's values for backward compatibility
+
+For single-message channels, `getMessages()` synthesizes a single-element list from the channel's existing fields, so all callers can use the uniform per-message API without conditional logic.
 
 ## Example Generation (Schema-Aware)
 
@@ -243,7 +261,7 @@ The Kafka key binding (`bindings.kafka.key`) can be:
 
 ### PublishOptions Threading
 
-The `AsyncApiMockOrchestrator` looks up each channel's `AsyncApiChannel` by name, calls `toPublishOptions()` to build a `PublishOptions`, and passes it to `publisher.publish(channel, payload, options)`. Publishers that do not override the `publish(channel, payload, options)` method fall back to the default implementation which ignores the options, preserving backward compatibility.
+The `AsyncApiMockOrchestrator` iterates each channel's messages via `channel.getMessages()`, generates an example for each message, and builds per-message `PublishOptions` combining the message's Kafka key with the channel-level MQTT qos/retain. Each message results in a separate `publisher.publish(channel, payload, options)` call. For single-message channels, this is equivalent to the previous one-publish-per-channel behavior. Publishers that do not override the `publish(channel, payload, options)` method fall back to the default implementation which ignores the options, preserving backward compatibility.
 
 ### Limitations
 
@@ -405,5 +423,4 @@ The following items are **not yet implemented**:
 - **Dashboard UI**: no UI panel for async messaging state (deferred to a future UI enhancement)
 - **Advanced AsyncAPI bindings (remaining)**: Kafka topic-config bindings (partitions, replicas) and v3 operation-level MQTT binding navigation are not yet implemented. MQTT qos/retain and Kafka message key bindings are supported (see [AsyncAPI Channel Bindings](#asyncapi-channel-bindings))
 - **Correlation IDs**: AsyncAPI correlation ID definitions are not tracked
-- **Multi-message channels**: only the first message definition per channel is used
 - **Live-broker integration tests**: all tests use mocked producers/consumers; Testcontainers-based live-broker tests are a documented follow-up (testcontainers is not currently a test dependency)

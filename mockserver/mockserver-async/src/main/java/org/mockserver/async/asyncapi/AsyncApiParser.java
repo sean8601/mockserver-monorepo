@@ -86,39 +86,111 @@ public class AsyncApiParser {
                 continue;
             }
 
-            List<JsonNode> examples = new ArrayList<>();
-            JsonNode payloadSchema = null;
-
-            JsonNode payload = messageNode.get("payload");
-            if (payload != null) {
-                payloadSchema = payload;
-                // Check for inline example on payload
-                JsonNode payloadExample = payload.get("example");
-                if (payloadExample != null) {
-                    examples.add(payloadExample);
-                }
-            }
-
-            // Check for message-level examples array (AsyncAPI 2.x extended)
-            JsonNode messageExamples = messageNode.get("examples");
-            if (messageExamples != null && messageExamples.isArray()) {
-                for (JsonNode ex : messageExamples) {
-                    JsonNode exPayload = ex.get("payload");
-                    if (exPayload != null) {
-                        examples.add(exPayload);
-                    }
-                }
-            }
-
-            // Parse MQTT operation bindings (qos, retain)
+            // Parse MQTT operation bindings (qos, retain) — channel-level
             Integer mqttQos = parseMqttQos(operationNode);
             Boolean mqttRetain = parseMqttRetain(operationNode);
 
-            // Parse Kafka message key binding
-            String kafkaKey = parseKafkaKeyFromMessage(messageNode);
+            // Check for oneOf (multi-message in AsyncAPI 2.x)
+            JsonNode oneOf = messageNode.get("oneOf");
+            if (oneOf != null && oneOf.isArray() && oneOf.size() > 1) {
+                List<AsyncApiMessage> allMessages = new ArrayList<>();
+                List<JsonNode> firstExamples = null;
+                JsonNode firstPayloadSchema = null;
+                String firstKafkaKey = null;
+                boolean isFirst = true;
 
-            result.add(new AsyncApiChannel(channelName, examples, payloadSchema,
-                mqttQos, mqttRetain, kafkaKey));
+                for (JsonNode variant : oneOf) {
+                    if (variant == null || !variant.isObject()) {
+                        continue;
+                    }
+                    List<JsonNode> variantExamples = new ArrayList<>();
+                    JsonNode variantSchema = null;
+
+                    JsonNode payload = variant.get("payload");
+                    if (payload != null) {
+                        variantSchema = payload;
+                        JsonNode payloadExample = payload.get("example");
+                        if (payloadExample != null) {
+                            variantExamples.add(payloadExample);
+                        }
+                    }
+
+                    JsonNode variantMsgExamples = variant.get("examples");
+                    if (variantMsgExamples != null && variantMsgExamples.isArray()) {
+                        for (JsonNode ex : variantMsgExamples) {
+                            JsonNode exPayload = ex.get("payload");
+                            if (exPayload != null) {
+                                variantExamples.add(exPayload);
+                            }
+                        }
+                    }
+
+                    String variantKafkaKey = parseKafkaKeyFromMessage(variant);
+
+                    // Use the message name if available (e.g. from messageId or name field)
+                    String msgName = textOrNull(variant, "name");
+                    allMessages.add(new AsyncApiMessage(msgName, variantSchema, variantExamples, variantKafkaKey));
+
+                    if (isFirst) {
+                        firstExamples = variantExamples;
+                        firstPayloadSchema = variantSchema;
+                        firstKafkaKey = variantKafkaKey;
+                        isFirst = false;
+                    }
+                }
+
+                if (!allMessages.isEmpty()) {
+                    List<AsyncApiMessage> explicitMessages = allMessages.size() > 1 ? allMessages : null;
+                    result.add(new AsyncApiChannel(channelName,
+                        firstExamples != null ? firstExamples : List.of(),
+                        firstPayloadSchema,
+                        mqttQos, mqttRetain, firstKafkaKey, explicitMessages));
+                } else {
+                    // All oneOf entries were malformed — fall through to empty channel
+                    result.add(new AsyncApiChannel(channelName, List.of(), null,
+                        mqttQos, mqttRetain, null));
+                }
+            } else {
+                // Single message (no oneOf, or oneOf with 0-1 entries)
+                JsonNode singleMsg = messageNode;
+                // If oneOf has exactly 1 entry, use that entry
+                if (oneOf != null && oneOf.isArray() && oneOf.size() == 1) {
+                    JsonNode single = oneOf.get(0);
+                    if (single != null && single.isObject()) {
+                        singleMsg = single;
+                    }
+                }
+
+                List<JsonNode> examples = new ArrayList<>();
+                JsonNode payloadSchema = null;
+
+                JsonNode payload = singleMsg.get("payload");
+                if (payload != null) {
+                    payloadSchema = payload;
+                    // Check for inline example on payload
+                    JsonNode payloadExample = payload.get("example");
+                    if (payloadExample != null) {
+                        examples.add(payloadExample);
+                    }
+                }
+
+                // Check for message-level examples array (AsyncAPI 2.x extended)
+                JsonNode messageExamples = singleMsg.get("examples");
+                if (messageExamples != null && messageExamples.isArray()) {
+                    for (JsonNode ex : messageExamples) {
+                        JsonNode exPayload = ex.get("payload");
+                        if (exPayload != null) {
+                            examples.add(exPayload);
+                        }
+                    }
+                }
+
+                // Parse Kafka message key binding
+                String kafkaKey = parseKafkaKeyFromMessage(singleMsg);
+
+                result.add(new AsyncApiChannel(channelName, examples, payloadSchema,
+                    mqttQos, mqttRetain, kafkaKey));
+            }
         }
 
         return result;
@@ -162,40 +234,11 @@ public class AsyncApiParser {
                 continue;
             }
 
-            // Take the first message definition
             Iterator<Map.Entry<String, JsonNode>> msgFields = messagesNode.fields();
             if (!msgFields.hasNext()) {
                 result.add(new AsyncApiChannel(channelName, List.of(), null));
                 continue;
             }
-
-            Map.Entry<String, JsonNode> firstMessage = msgFields.next();
-            JsonNode msgDef = firstMessage.getValue();
-
-            // Resolve $ref if present
-            msgDef = resolveRef(root, msgDef);
-
-            List<JsonNode> examples = new ArrayList<>();
-            JsonNode payloadSchema = null;
-
-            JsonNode payload = msgDef.get("payload");
-            if (payload != null) {
-                payloadSchema = payload;
-            }
-
-            // Check for examples array
-            JsonNode msgExamples = msgDef.get("examples");
-            if (msgExamples != null && msgExamples.isArray()) {
-                for (JsonNode ex : msgExamples) {
-                    JsonNode exPayload = ex.get("payload");
-                    if (exPayload != null) {
-                        examples.add(exPayload);
-                    }
-                }
-            }
-
-            // Parse Kafka message key binding from the message definition
-            String kafkaKey = parseKafkaKeyFromMessage(msgDef);
 
             // Parse MQTT bindings: in v3, operation bindings live in the
             // top-level 'operations' section (not on channels). As a
@@ -204,8 +247,59 @@ public class AsyncApiParser {
             Integer mqttQos = parseMqttQos(channelDef);
             Boolean mqttRetain = parseMqttRetain(channelDef);
 
-            result.add(new AsyncApiChannel(channelName, examples, payloadSchema,
-                mqttQos, mqttRetain, kafkaKey));
+            // Iterate ALL message definitions in this channel
+            List<AsyncApiMessage> allMessages = new ArrayList<>();
+            List<JsonNode> firstExamples = null;
+            JsonNode firstPayloadSchema = null;
+            String firstKafkaKey = null;
+            boolean isFirst = true;
+
+            while (msgFields.hasNext()) {
+                Map.Entry<String, JsonNode> msgEntry = msgFields.next();
+                String msgName = msgEntry.getKey();
+                JsonNode msgDef = msgEntry.getValue();
+
+                // Resolve $ref if present
+                msgDef = resolveRef(root, msgDef);
+
+                List<JsonNode> examples = new ArrayList<>();
+                JsonNode payloadSchema = null;
+
+                JsonNode payload = msgDef.get("payload");
+                if (payload != null) {
+                    payloadSchema = payload;
+                }
+
+                // Check for examples array
+                JsonNode msgExamples = msgDef.get("examples");
+                if (msgExamples != null && msgExamples.isArray()) {
+                    for (JsonNode ex : msgExamples) {
+                        JsonNode exPayload = ex.get("payload");
+                        if (exPayload != null) {
+                            examples.add(exPayload);
+                        }
+                    }
+                }
+
+                // Parse Kafka message key binding from the message definition
+                String kafkaKey = parseKafkaKeyFromMessage(msgDef);
+
+                allMessages.add(new AsyncApiMessage(msgName, payloadSchema, examples, kafkaKey));
+
+                // Preserve first message's fields for backward compatibility
+                if (isFirst) {
+                    firstExamples = examples;
+                    firstPayloadSchema = payloadSchema;
+                    firstKafkaKey = kafkaKey;
+                    isFirst = false;
+                }
+            }
+
+            // Build the channel: use explicit messages list only when >1 message
+            List<AsyncApiMessage> explicitMessages = allMessages.size() > 1 ? allMessages : null;
+
+            result.add(new AsyncApiChannel(channelName, firstExamples, firstPayloadSchema,
+                mqttQos, mqttRetain, firstKafkaKey, explicitMessages));
         }
 
         return result;

@@ -600,6 +600,271 @@ public class AsyncApiParserTest {
         assertThat(opts.isEmpty(), is(true));
     }
 
+    // ---- Multi-message channels (v3) ----
+
+    @Test
+    public void shouldParseV3ChannelWithMultipleMessages() throws IOException {
+        String spec = "{\n" +
+            "  \"asyncapi\": \"3.0.0\",\n" +
+            "  \"info\": { \"title\": \"Multi-Message V3\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"events\": {\n" +
+            "      \"messages\": {\n" +
+            "        \"userCreated\": {\n" +
+            "          \"payload\": {\n" +
+            "            \"type\": \"object\",\n" +
+            "            \"properties\": { \"userId\": { \"type\": \"string\" } }\n" +
+            "          },\n" +
+            "          \"examples\": [{ \"payload\": { \"userId\": \"u1\" } }],\n" +
+            "          \"bindings\": { \"kafka\": { \"key\": \"user-key\" } }\n" +
+            "        },\n" +
+            "        \"orderPlaced\": {\n" +
+            "          \"payload\": {\n" +
+            "            \"type\": \"object\",\n" +
+            "            \"properties\": { \"orderId\": { \"type\": \"integer\" } }\n" +
+            "          },\n" +
+            "          \"examples\": [{ \"payload\": { \"orderId\": 42 } }],\n" +
+            "          \"bindings\": { \"kafka\": { \"key\": \"order-key\" } }\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        assertThat(parsed.getChannels(), hasSize(1));
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+        assertThat(channel.getName(), is("events"));
+
+        // getMessages() should return both messages
+        assertThat(channel.getMessages(), hasSize(2));
+        assertThat(channel.getMessages().get(0).getName(), is("userCreated"));
+        assertThat(channel.getMessages().get(0).getPayloadExamples(), hasSize(1));
+        assertThat(channel.getMessages().get(0).getPayloadExamples().get(0).get("userId").asText(), is("u1"));
+        assertThat(channel.getMessages().get(0).getKafkaKey(), is("user-key"));
+        assertThat(channel.getMessages().get(1).getName(), is("orderPlaced"));
+        assertThat(channel.getMessages().get(1).getPayloadExamples(), hasSize(1));
+        assertThat(channel.getMessages().get(1).getPayloadExamples().get(0).get("orderId").asInt(), is(42));
+        assertThat(channel.getMessages().get(1).getKafkaKey(), is("order-key"));
+
+        // Back-compat: legacy accessors reflect the FIRST message
+        assertThat(channel.getPayloadExamples(), hasSize(1));
+        assertThat(channel.getPayloadExamples().get(0).get("userId").asText(), is("u1"));
+        assertThat(channel.getKafkaKey(), is("user-key"));
+        assertThat(channel.getPayloadSchema(), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldParseV3SingleMessageChannelGetMessagesReturnsOne() throws IOException {
+        String spec = "{\n" +
+            "  \"asyncapi\": \"3.0.0\",\n" +
+            "  \"info\": { \"title\": \"Single V3\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"topic\": {\n" +
+            "      \"messages\": {\n" +
+            "        \"singleMsg\": {\n" +
+            "          \"payload\": { \"type\": \"object\" },\n" +
+            "          \"examples\": [{ \"payload\": { \"a\": 1 } }]\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+
+        // Single message — getMessages() synthesizes from channel fields
+        assertThat(channel.getMessages(), hasSize(1));
+        assertThat(channel.getMessages().get(0).getPayloadExamples(), hasSize(1));
+        assertThat(channel.getMessages().get(0).getPayloadExamples().get(0).get("a").asInt(), is(1));
+
+        // Legacy accessors unchanged
+        assertThat(channel.getPayloadExamples(), hasSize(1));
+    }
+
+    @Test
+    public void shouldParseV3MultiMessageWithRef() throws IOException {
+        String spec = "{\n" +
+            "  \"asyncapi\": \"3.0.0\",\n" +
+            "  \"info\": { \"title\": \"Ref Multi\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"alerts\": {\n" +
+            "      \"messages\": {\n" +
+            "        \"alert1\": { \"$ref\": \"#/components/messages/AlertA\" },\n" +
+            "        \"alert2\": {\n" +
+            "          \"payload\": { \"type\": \"object\", \"properties\": { \"level\": { \"type\": \"integer\" } } },\n" +
+            "          \"examples\": [{ \"payload\": { \"level\": 5 } }]\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  },\n" +
+            "  \"components\": {\n" +
+            "    \"messages\": {\n" +
+            "      \"AlertA\": {\n" +
+            "        \"payload\": { \"type\": \"object\", \"properties\": { \"severity\": { \"type\": \"string\" } } },\n" +
+            "        \"examples\": [{ \"payload\": { \"severity\": \"high\" } }]\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+
+        assertThat(channel.getMessages(), hasSize(2));
+        assertThat(channel.getMessages().get(0).getPayloadExamples().get(0).get("severity").asText(), is("high"));
+        assertThat(channel.getMessages().get(1).getPayloadExamples().get(0).get("level").asInt(), is(5));
+    }
+
+    // ---- Multi-message channels (v2 oneOf) ----
+
+    @Test
+    public void shouldParseV2ChannelWithOneOfMultiMessage() throws IOException {
+        String spec = "{\n" +
+            "  \"asyncapi\": \"2.6.0\",\n" +
+            "  \"info\": { \"title\": \"OneOf V2\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"events\": {\n" +
+            "      \"publish\": {\n" +
+            "        \"message\": {\n" +
+            "          \"oneOf\": [\n" +
+            "            {\n" +
+            "              \"name\": \"UserEvent\",\n" +
+            "              \"payload\": {\n" +
+            "                \"type\": \"object\",\n" +
+            "                \"properties\": { \"user\": { \"type\": \"string\" } },\n" +
+            "                \"example\": { \"user\": \"alice\" }\n" +
+            "              },\n" +
+            "              \"bindings\": { \"kafka\": { \"key\": \"user-k\" } }\n" +
+            "            },\n" +
+            "            {\n" +
+            "              \"name\": \"OrderEvent\",\n" +
+            "              \"payload\": {\n" +
+            "                \"type\": \"object\",\n" +
+            "                \"properties\": { \"orderId\": { \"type\": \"integer\" } },\n" +
+            "                \"example\": { \"orderId\": 99 }\n" +
+            "              },\n" +
+            "              \"bindings\": { \"kafka\": { \"key\": \"order-k\" } }\n" +
+            "            }\n" +
+            "          ]\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        assertThat(parsed.getChannels(), hasSize(1));
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+        assertThat(channel.getName(), is("events"));
+
+        // getMessages() should return both oneOf variants
+        assertThat(channel.getMessages(), hasSize(2));
+        assertThat(channel.getMessages().get(0).getName(), is("UserEvent"));
+        assertThat(channel.getMessages().get(0).getPayloadExamples(), hasSize(1));
+        assertThat(channel.getMessages().get(0).getPayloadExamples().get(0).get("user").asText(), is("alice"));
+        assertThat(channel.getMessages().get(0).getKafkaKey(), is("user-k"));
+        assertThat(channel.getMessages().get(1).getName(), is("OrderEvent"));
+        assertThat(channel.getMessages().get(1).getPayloadExamples(), hasSize(1));
+        assertThat(channel.getMessages().get(1).getPayloadExamples().get(0).get("orderId").asInt(), is(99));
+        assertThat(channel.getMessages().get(1).getKafkaKey(), is("order-k"));
+
+        // Back-compat: legacy accessors reflect the FIRST oneOf entry
+        assertThat(channel.getPayloadExamples(), hasSize(1));
+        assertThat(channel.getPayloadExamples().get(0).get("user").asText(), is("alice"));
+        assertThat(channel.getKafkaKey(), is("user-k"));
+    }
+
+    @Test
+    public void shouldParseV2SingleMessageNoOneOfGetMessagesReturnsOne() throws IOException {
+        // No oneOf — standard single-message; getMessages() should still return 1
+        String spec = "{\n" +
+            "  \"asyncapi\": \"2.6.0\",\n" +
+            "  \"info\": { \"title\": \"Single V2\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"topic\": {\n" +
+            "      \"publish\": {\n" +
+            "        \"message\": {\n" +
+            "          \"payload\": { \"type\": \"object\", \"example\": { \"x\": 1 } }\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+
+        assertThat(channel.getMessages(), hasSize(1));
+        assertThat(channel.getPayloadExamples(), hasSize(1));
+        assertThat(channel.getPayloadExamples().get(0).get("x").asInt(), is(1));
+    }
+
+    @Test
+    public void shouldParseV2OneOfWithMqttBindingsAtOperationLevel() throws IOException {
+        String spec = "{\n" +
+            "  \"asyncapi\": \"2.6.0\",\n" +
+            "  \"info\": { \"title\": \"OneOf MQTT\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"sensors\": {\n" +
+            "      \"publish\": {\n" +
+            "        \"bindings\": { \"mqtt\": { \"qos\": 2, \"retain\": true } },\n" +
+            "        \"message\": {\n" +
+            "          \"oneOf\": [\n" +
+            "            {\n" +
+            "              \"payload\": { \"type\": \"object\", \"example\": { \"temp\": 22 } }\n" +
+            "            },\n" +
+            "            {\n" +
+            "              \"payload\": { \"type\": \"object\", \"example\": { \"humidity\": 60 } }\n" +
+            "            }\n" +
+            "          ]\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+
+        // MQTT bindings are channel-level
+        assertThat(channel.getMqttQos(), is(2));
+        assertThat(channel.getMqttRetain(), is(true));
+
+        // Two messages
+        assertThat(channel.getMessages(), hasSize(2));
+    }
+
+    @Test
+    public void shouldTolerateV2OneOfWithSingleEntry() throws IOException {
+        String spec = "{\n" +
+            "  \"asyncapi\": \"2.6.0\",\n" +
+            "  \"info\": { \"title\": \"OneOf Single\", \"version\": \"1.0.0\" },\n" +
+            "  \"channels\": {\n" +
+            "    \"topic\": {\n" +
+            "      \"publish\": {\n" +
+            "        \"message\": {\n" +
+            "          \"oneOf\": [\n" +
+            "            {\n" +
+            "              \"payload\": { \"type\": \"object\", \"example\": { \"v\": 1 } }\n" +
+            "            }\n" +
+            "          ]\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        AsyncApiSpec parsed = parser.parse(spec);
+        AsyncApiChannel channel = parsed.getChannels().get(0);
+
+        // Single entry oneOf — behaves as single message
+        assertThat(channel.getMessages(), hasSize(1));
+        assertThat(channel.getPayloadExamples(), hasSize(1));
+        assertThat(channel.getPayloadExamples().get(0).get("v").asInt(), is(1));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void shouldRejectNullDocument() throws IOException {
         parser.parse(null);

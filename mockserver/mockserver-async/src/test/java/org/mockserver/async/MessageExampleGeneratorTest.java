@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import org.mockserver.async.asyncapi.AsyncApiChannel;
+import org.mockserver.async.asyncapi.AsyncApiMessage;
 import org.mockserver.async.asyncapi.AsyncApiSpec;
 
 import java.util.List;
@@ -130,5 +131,49 @@ public class MessageExampleGeneratorTest {
         JsonNode result = MAPPER.readTree(payload);
         assertThat(result.has("name"), is(true));
         assertThat(result.get("name").asText(), is("string"));
+    }
+
+    // ---- generateExample(AsyncApiMessage) ----
+
+    @Test
+    public void shouldGenerateExampleFromMessageWithExplicitExample() throws Exception {
+        JsonNode example = MAPPER.readTree("{\"userId\": \"abc123\"}");
+        AsyncApiMessage message = new AsyncApiMessage("testMsg", null, List.of(example), null);
+
+        String payload = generator.generateExample(message);
+        JsonNode result = MAPPER.readTree(payload);
+        assertThat(result.get("userId").asText(), is("abc123"));
+    }
+
+    @Test
+    public void shouldGenerateExampleFromMessageWithSchema() throws Exception {
+        JsonNode schema = MAPPER.readTree(
+            "{\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}}}"
+        );
+        AsyncApiMessage message = new AsyncApiMessage("testMsg", schema, List.of(), null);
+
+        String payload = generator.generateExample(message);
+        JsonNode result = MAPPER.readTree(payload);
+        assertThat(result.get("name").asText(), is("string"));
+    }
+
+    @Test
+    public void shouldGenerateEmptyObjectFromMessageWithNoSchemaOrExample() {
+        AsyncApiMessage message = new AsyncApiMessage("empty", null, List.of(), null);
+        String payload = generator.generateExample(message);
+        assertThat(payload, is("{}"));
+    }
+
+    @Test
+    public void shouldPreferExplicitExampleOverSchemaForMessage() throws Exception {
+        JsonNode example = MAPPER.readTree("{\"orderId\": 42}");
+        JsonNode schema = MAPPER.readTree(
+            "{\"type\": \"object\", \"properties\": {\"orderId\": {\"type\": \"integer\"}}}"
+        );
+        AsyncApiMessage message = new AsyncApiMessage("msg", schema, List.of(example), null);
+
+        String payload = generator.generateExample(message);
+        JsonNode result = MAPPER.readTree(payload);
+        assertThat(result.get("orderId").asInt(), is(42));
     }
 }

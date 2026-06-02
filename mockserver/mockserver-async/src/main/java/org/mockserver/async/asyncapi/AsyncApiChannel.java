@@ -20,6 +20,7 @@ public class AsyncApiChannel {
     private final Integer mqttQos;
     private final Boolean mqttRetain;
     private final String kafkaKey;
+    private final List<AsyncApiMessage> explicitMessages;
 
     /**
      * Backward-compatible constructor — no bindings.
@@ -40,6 +41,23 @@ public class AsyncApiChannel {
      */
     public AsyncApiChannel(String name, List<JsonNode> payloadExamples, JsonNode payloadSchema,
                            Integer mqttQos, Boolean mqttRetain, String kafkaKey) {
+        this(name, payloadExamples, payloadSchema, mqttQos, mqttRetain, kafkaKey, null);
+    }
+
+    /**
+     * Full constructor with optional binding fields and explicit multi-message list.
+     *
+     * @param name              the channel / topic name
+     * @param payloadExamples   explicit payload examples from the spec (first message's examples for back-compat)
+     * @param payloadSchema     the JSON Schema for the payload (first message's schema for back-compat)
+     * @param mqttQos           MQTT QoS level from operation bindings (may be null)
+     * @param mqttRetain        MQTT retain flag from operation bindings (may be null)
+     * @param kafkaKey          Kafka message key from first message's bindings (may be null)
+     * @param explicitMessages  the list of all messages in this channel (null or empty for single-message channels)
+     */
+    public AsyncApiChannel(String name, List<JsonNode> payloadExamples, JsonNode payloadSchema,
+                           Integer mqttQos, Boolean mqttRetain, String kafkaKey,
+                           List<AsyncApiMessage> explicitMessages) {
         this.name = name;
         this.payloadExamples = payloadExamples != null
             ? Collections.unmodifiableList(new ArrayList<>(payloadExamples))
@@ -48,6 +66,9 @@ public class AsyncApiChannel {
         this.mqttQos = mqttQos;
         this.mqttRetain = mqttRetain;
         this.kafkaKey = kafkaKey;
+        this.explicitMessages = (explicitMessages != null && !explicitMessages.isEmpty())
+            ? Collections.unmodifiableList(new ArrayList<>(explicitMessages))
+            : null;
     }
 
     public String getName() {
@@ -88,6 +109,23 @@ public class AsyncApiChannel {
      */
     public String getKafkaKey() {
         return kafkaKey;
+    }
+
+    /**
+     * Returns all messages for this channel as a uniform list.
+     * <p>
+     * If this channel was parsed with multiple explicit messages (v3 multi-message
+     * or v2 oneOf), returns that list. Otherwise, synthesizes a single-element list
+     * from this channel's existing payload schema, examples, and kafka key fields,
+     * providing a uniform per-message view for both single- and multi-message channels.
+     *
+     * @return an unmodifiable list of at least one {@link AsyncApiMessage}
+     */
+    public List<AsyncApiMessage> getMessages() {
+        if (explicitMessages != null) {
+            return explicitMessages;
+        }
+        return List.of(new AsyncApiMessage(null, payloadSchema, payloadExamples, kafkaKey));
     }
 
     /**

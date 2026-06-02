@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockserver.async.asyncapi.AsyncApiChannel;
+import org.mockserver.async.asyncapi.AsyncApiMessage;
 import org.mockserver.async.asyncapi.AsyncApiSpec;
 import org.mockserver.async.publish.MessagePublisher;
 import org.mockserver.async.publish.PublishOptions;
@@ -158,5 +159,83 @@ public class AsyncApiMockOrchestratorTest {
         verify(publisher).publish(eq("plain"), eq("{\"v\":1}"), optionsCaptor.capture());
 
         assertThat(optionsCaptor.getValue().isEmpty(), is(true));
+    }
+
+    // ---- Multi-message channel tests ----
+
+    @Test
+    public void shouldPublishOnePerMessageForMultiMessageChannel() throws Exception {
+        JsonNode example1 = MAPPER.readTree("{\"userId\": \"u1\"}");
+        JsonNode example2 = MAPPER.readTree("{\"orderId\": 42}");
+        JsonNode schema1 = MAPPER.readTree("{\"type\": \"object\", \"properties\": {\"userId\": {\"type\": \"string\"}}}");
+        JsonNode schema2 = MAPPER.readTree("{\"type\": \"object\", \"properties\": {\"orderId\": {\"type\": \"integer\"}}}");
+
+        AsyncApiMessage msg1 = new AsyncApiMessage("userEvent", schema1, List.of(example1), "user-key");
+        AsyncApiMessage msg2 = new AsyncApiMessage("orderEvent", schema2, List.of(example2), "order-key");
+
+        AsyncApiChannel channel = new AsyncApiChannel("events", List.of(example1), schema1,
+            null, null, "user-key", List.of(msg1, msg2));
+        AsyncApiSpec spec = new AsyncApiSpec("3.0.0", "Test", List.of(channel));
+
+        AsyncApiMockOrchestrator orchestrator = new AsyncApiMockOrchestrator(spec, publisher);
+        orchestrator.publishAll();
+
+        // Should have 2 publishes — one per message
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<PublishOptions> optionsCaptor = ArgumentCaptor.forClass(PublishOptions.class);
+        verify(publisher, times(2)).publish(eq("events"), payloadCaptor.capture(), optionsCaptor.capture());
+
+        List<String> payloads = payloadCaptor.getAllValues();
+        assertThat(payloads.get(0), is("{\"userId\":\"u1\"}"));
+        assertThat(payloads.get(1), is("{\"orderId\":42}"));
+
+        List<PublishOptions> options = optionsCaptor.getAllValues();
+        assertThat(options.get(0).getKey(), is("user-key"));
+        assertThat(options.get(1).getKey(), is("order-key"));
+    }
+
+    @Test
+    public void shouldPublishMultiMessageWithChannelLevelMqttBindings() throws Exception {
+        JsonNode example1 = MAPPER.readTree("{\"temp\": 22}");
+        JsonNode example2 = MAPPER.readTree("{\"humidity\": 60}");
+
+        AsyncApiMessage msg1 = new AsyncApiMessage("tempMsg", null, List.of(example1), null);
+        AsyncApiMessage msg2 = new AsyncApiMessage("humidMsg", null, List.of(example2), null);
+
+        // Channel has MQTT bindings; messages have no kafka key
+        AsyncApiChannel channel = new AsyncApiChannel("sensors", List.of(example1), null,
+            2, true, null, List.of(msg1, msg2));
+        AsyncApiSpec spec = new AsyncApiSpec("3.0.0", "Test", List.of(channel));
+
+        AsyncApiMockOrchestrator orchestrator = new AsyncApiMockOrchestrator(spec, publisher);
+        orchestrator.publishAll();
+
+        ArgumentCaptor<PublishOptions> optionsCaptor = ArgumentCaptor.forClass(PublishOptions.class);
+        verify(publisher, times(2)).publish(eq("sensors"), any(String.class), optionsCaptor.capture());
+
+        // Both publishes should carry the channel-level MQTT bindings
+        for (PublishOptions opts : optionsCaptor.getAllValues()) {
+            assertThat(opts.getQos(), is(2));
+            assertThat(opts.getRetain(), is(true));
+            assertThat(opts.getKey(), is(nullValue()));
+        }
+    }
+
+    @Test
+    public void shouldPublishSingleMessageFromChannelWithNoExplicitMessages() throws Exception {
+        // A channel without explicit messages — getMessages() synthesizes one
+        JsonNode example = MAPPER.readTree("{\"v\": 1}");
+        AsyncApiChannel channel = new AsyncApiChannel("single", List.of(example), null,
+            null, null, "single-key");
+        AsyncApiSpec spec = new AsyncApiSpec("2.6.0", "Test", List.of(channel));
+
+        AsyncApiMockOrchestrator orchestrator = new AsyncApiMockOrchestrator(spec, publisher);
+        orchestrator.publishAll();
+
+        // Exactly one publish
+        ArgumentCaptor<PublishOptions> optionsCaptor = ArgumentCaptor.forClass(PublishOptions.class);
+        verify(publisher, times(1)).publish(eq("single"), eq("{\"v\":1}"), optionsCaptor.capture());
+        assertThat(optionsCaptor.getValue().getKey(), is("single-key"));
+        verifyNoMoreInteractions(publisher);
     }
 }

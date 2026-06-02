@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.async.asyncapi.AsyncApiChannel;
+import org.mockserver.async.asyncapi.AsyncApiMessage;
 import org.mockserver.async.asyncapi.AsyncApiSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class MessageExampleGenerator {
 
     /**
      * Generate an example payload for a single channel.
+     * Uses the channel's first message's examples and schema (backward compatible).
      */
     public String generateExample(AsyncApiChannel channel) {
         // 1. Try explicit example
@@ -67,6 +69,41 @@ public class MessageExampleGenerator {
                 } catch (Exception e) {
                     LOG.warn("Failed to serialize synthesized example for channel {}: {}",
                         channel.getName(), e.getMessage());
+                }
+            }
+        }
+
+        // 3. Fallback: empty object
+        return "{}";
+    }
+
+    /**
+     * Generate an example payload for a single {@link AsyncApiMessage}.
+     * Follows the same precedence as {@link #generateExample(AsyncApiChannel)}:
+     * explicit example first, then schema synthesis, then empty object fallback.
+     */
+    public String generateExample(AsyncApiMessage message) {
+        // 1. Try explicit example
+        if (!message.getPayloadExamples().isEmpty()) {
+            JsonNode example = message.getPayloadExamples().get(0);
+            try {
+                return MAPPER.writeValueAsString(example);
+            } catch (Exception e) {
+                LOG.warn("Failed to serialize payload example for message {}: {}",
+                    message.getName(), e.getMessage());
+            }
+        }
+
+        // 2. Try synthesizing from schema (schema-aware)
+        if (message.getPayloadSchema() != null) {
+            JsonNode schema = message.getPayloadSchema();
+            JsonNode synthesized = synthesizeFromSchema(schema);
+            if (synthesized != null) {
+                try {
+                    return MAPPER.writeValueAsString(synthesized);
+                } catch (Exception e) {
+                    LOG.warn("Failed to serialize synthesized example for message {}: {}",
+                        message.getName(), e.getMessage());
                 }
             }
         }
