@@ -54,6 +54,21 @@ public class GrpcHealthRegistry {
         return result;
     }
 
+    /**
+     * Remove the override for a specific service so it reverts to the default. An empty service
+     * name resets the default status itself back to SERVING.
+     */
+    public void removeStatus(String serviceName) {
+        if (serviceName == null) {
+            return;
+        }
+        if (serviceName.isEmpty()) {
+            defaultStatus = ServingStatus.SERVING;
+        } else {
+            statusByService.remove(serviceName);
+        }
+    }
+
     public void reset() {
         statusByService.clear();
         defaultStatus = ServingStatus.SERVING;

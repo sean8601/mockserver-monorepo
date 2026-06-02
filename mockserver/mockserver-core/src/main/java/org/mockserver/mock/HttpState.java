@@ -2982,6 +2982,21 @@ public class HttpState {
             }
             com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
             String service = node.path("service").asText("");
+            // The GET response exposes the default (empty-name) override under the "_default"
+            // sentinel; map it back so removing/resetting the default row works.
+            if ("_default".equals(service)) {
+                service = "";
+            }
+            // A { service, remove: true } request clears that service's override (reverting it to
+            // the default; an empty service resets the default itself) — used by the UI Reset button.
+            if (node.path("remove").asBoolean(false)) {
+                org.mockserver.grpc.GrpcHealthRegistry.getInstance().removeStatus(service);
+                com.fasterxml.jackson.databind.node.ObjectNode removed = objectMapper.createObjectNode();
+                removed.put("status", "removed");
+                removed.put("service", service);
+                return response().withStatusCode(OK.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(removed), MediaType.JSON_UTF_8);
+            }
             String statusStr = node.path("status").asText(null);
             if (isBlank(statusStr)) {
                 return response().withStatusCode(BAD_REQUEST.code())
