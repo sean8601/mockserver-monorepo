@@ -255,7 +255,7 @@ const GRPC_STATUS_CODES = [
   'INTERNAL', 'UNAVAILABLE', 'DATA_LOSS', 'UNAUTHENTICATED',
 ] as const;
 
-interface GrpcChaosFormState {
+export interface GrpcChaosFormState {
   service: string;
   errorStatusCode: string;
   errorProbability: string;
@@ -274,7 +274,7 @@ interface GrpcChaosFormState {
   abortAfterMessages: string;
 }
 
-const EMPTY_GRPC_CHAOS_FORM: GrpcChaosFormState = {
+export const EMPTY_GRPC_CHAOS_FORM: GrpcChaosFormState = {
   service: '',
   errorStatusCode: 'UNAVAILABLE',
   errorProbability: '',
@@ -308,11 +308,17 @@ function parseCustomTrailers(raw: string): Record<string, string> | undefined {
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function buildGrpcChaosProfile(form: GrpcChaosFormState): GrpcChaosProfileDTO {
+export function buildGrpcChaosProfile(form: GrpcChaosFormState): GrpcChaosProfileDTO {
   const profile: GrpcChaosProfileDTO = {};
-  if (form.errorStatusCode) profile.errorStatusCode = form.errorStatusCode;
   const errorProbability = num(form.errorProbability);
-  if (errorProbability != null) profile.errorProbability = errorProbability;
+  if (form.errorStatusCode) {
+    profile.errorStatusCode = form.errorStatusCode;
+    // gRPC fault injection only fires when errorProbability > 0; default to always-inject when
+    // a status code is chosen but no probability is given, so error-status-only is not a no-op.
+    profile.errorProbability = errorProbability ?? 1;
+  } else if (errorProbability != null) {
+    profile.errorProbability = errorProbability;
+  }
   const errorMessage = form.errorMessage.trim();
   if (errorMessage) profile.errorMessage = errorMessage;
   const seed = num(form.seed);
@@ -787,8 +793,8 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <TextField size="small" label="Host" placeholder="upstream.svc" value={form.host} onChange={setField('host')} sx={{ minWidth: 180 }} />
                 <TextField size="small" label="Error status" placeholder="503" value={form.errorStatus} onChange={setField('errorStatus')} sx={{ width: 110 }} />
-                <TextField size="small" label="Error prob" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: 100 }} />
-                <TextField size="small" label="Drop prob" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: 100 }} />
+                <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: 100 }} />
+                <TextField size="small" label="Drop prob (0–1)" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: 100 }} />
                 <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: 100 }} />
                 <TextField size="small" label="TTL ms" placeholder="60000" value={form.ttlMs} onChange={setField('ttlMs')} sx={{ width: 110 }} />
               </Box>
@@ -869,8 +875,8 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                         <Box sx={{ py: 0.75, pl: 2, bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
                           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                             <TextField size="small" label="Error status" value={editForm.errorStatus} onChange={setEditField('errorStatus')} sx={{ width: 110 }} />
-                            <TextField size="small" label="Error prob" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: 100 }} />
-                            <TextField size="small" label="Drop prob" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: 100 }} />
+                            <TextField size="small" label="Error prob (0–1)" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: 100 }} />
+                            <TextField size="small" label="Drop prob (0–1)" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: 100 }} />
                             <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: 100 }} />
                             <TextField size="small" label="Seed" value={editForm.seed} onChange={setEditField('seed')} sx={{ width: 90 }} />
                             <TextField size="small" label="Succeed first" value={editForm.succeedFirst} onChange={setEditField('succeedFirst')} sx={{ width: 110 }} />
@@ -1076,7 +1082,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                           <MenuItem key={code} value={code}>{code}</MenuItem>
                         ))}
                       </Select>
-                      <TextField size="small" label="Error prob" placeholder="0.5" value={grpcChaosForm.errorProbability} onChange={setGrpcChaosField('errorProbability')} sx={{ width: 100 }} />
+                      <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={grpcChaosForm.errorProbability} onChange={setGrpcChaosField('errorProbability')} sx={{ width: 100 }} />
                       <TextField size="small" label="Error message" placeholder="service unavailable" value={grpcChaosForm.errorMessage} onChange={setGrpcChaosField('errorMessage')} sx={{ width: 160 }} />
                       <TextField size="small" label="Latency ms" placeholder="200" value={grpcChaosForm.latencyMs} onChange={setGrpcChaosField('latencyMs')} sx={{ width: 100 }} />
                       <TextField size="small" label="TTL ms" placeholder="60000" value={grpcChaosForm.ttlMs} onChange={setGrpcChaosField('ttlMs')} sx={{ width: 110 }} />

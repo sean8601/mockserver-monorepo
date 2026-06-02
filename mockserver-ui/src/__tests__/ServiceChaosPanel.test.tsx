@@ -97,7 +97,7 @@ describe('ServiceChaosPanel', () => {
     await expandHttp(user);
     await user.type(screen.getByLabelText('Host'), 'pay.svc');
     await user.type(screen.getByLabelText('Error status'), '503');
-    await user.type(screen.getByLabelText('Error prob'), '0.5');
+    await user.type(screen.getByLabelText('Error prob (0–1)'), '0.5');
     await user.type(screen.getByLabelText('TTL ms'), '60000');
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
@@ -131,7 +131,7 @@ describe('ServiceChaosPanel', () => {
 
     await expandHttp(user);
     await user.type(screen.getByLabelText('Host'), 'pay.svc');
-    await user.type(screen.getByLabelText('Error prob'), '0.3');
+    await user.type(screen.getByLabelText('Error prob (0–1)'), '0.3');
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
     expect(await screen.findByText(/needs an error status/)).toBeInTheDocument();
