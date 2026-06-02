@@ -13,6 +13,8 @@ import ToggleButton from '@mui/material/ToggleButton';
 import Box from '@mui/material/Box';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import ClockDialog from './ClockDialog';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -104,6 +106,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const connectionParams = useConnectionParams();
   const [mode, setModeState] = useState<MockServerMode | null>(null);
   const [toolsAnchorEl, setToolsAnchorEl] = useState<null | HTMLElement>(null);
+  const [clockOpen, setClockOpen] = useState(false);
   const [wsdlOpen, setWsdlOpen] = useState(false);
   const [openApiOpen, setOpenApiOpen] = useState(false);
   const [pactOpen, setPactOpen] = useState(false);
@@ -225,6 +228,11 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           ⌘K search · ⌘L clear · Esc filter
         </Typography>
+        <Tooltip title="Server clock (freeze / advance time)">
+          <IconButton size="small" color="inherit" onClick={() => setClockOpen(true)} aria-label="Server clock">
+            <AccessTimeIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title={autoScroll ? 'Pause auto-scroll' : 'Resume auto-scroll'}>
           <IconButton size="small" color="inherit" onClick={toggleAutoScroll}>
             {autoScroll ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
@@ -368,6 +376,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           </Alert>
         </Snackbar>
       </Toolbar>
+      <ClockDialog open={clockOpen} onClose={() => setClockOpen(false)} connectionParams={connectionParams} />
     </MuiAppBar>
   );
 }
