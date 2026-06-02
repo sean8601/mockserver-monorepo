@@ -203,7 +203,7 @@ MOCKSERVER_METRICS_ENABLED=true`}
           {/* Request latency (only when the server exposes the duration histogram) */}
           {latencyEnabled && latest && (
             <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
-              <Typography variant="caption" color="text.secondary">Request latency (since start)</Typography>
+              <Typography variant="caption" color="text.secondary">Request latency — cumulative since server start</Typography>
               <Box sx={{ display: 'flex', gap: 3, mt: 0.5, flexWrap: 'wrap' }}>
                 {([['p50', 0.5], ['p95', 0.95], ['p99', 0.99]] as const).map(([label, q]) => {
                   const seconds = histogramQuantile(latest.samples, LATENCY_METRIC, q);
@@ -226,7 +226,7 @@ MOCKSERVER_METRICS_ENABLED=true`}
                       const seconds = histogramQuantile(snapshot.samples, LATENCY_METRIC, 0.95);
                       return seconds == null ? 0 : seconds * 1000;
                     }),
-                    label: 'p95 ms',
+                    label: 'p95 ms (cumulative)',
                   }]}
                 />
               </Box>

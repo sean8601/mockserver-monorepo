@@ -104,7 +104,7 @@ describe('MetricsView', () => {
       ].join('\n'),
     );
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Request latency (since start)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Request latency — cumulative since server start')).toBeInTheDocument());
     expect(screen.getByText('p95')).toBeInTheDocument();
   });
 
@@ -112,7 +112,7 @@ describe('MetricsView', () => {
     stubFetch(200, 'requests_received_count 5.0\n');
     render(<MetricsView connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
-    expect(screen.queryByText('Request latency (since start)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Request latency — cumulative since server start')).not.toBeInTheDocument();
   });
 
   it('renders a stat for every HTTP chaos fault type the server emits', async () => {
