@@ -42,25 +42,28 @@ import { buildBaseUrl } from '../lib/mcpClient';
 // chosen separately — a radio for the scope, a dropdown for the format — rather
 // than enumerating every scope×format pair in one long list.
 
-type ExportScope = 'expectations' | 'requests';
+type ExportScope = 'expectations' | 'recorded' | 'requests' | 'logs';
 type ExportFormat = 'json' | 'java' | 'har' | 'openapi' | 'postman' | 'bruno' | 'logentries' | 'curl';
 
 const SCOPES: { value: ExportScope; label: string; retrieveType: string }[] = [
   { value: 'requests', label: 'Recorded requests', retrieveType: 'REQUEST_RESPONSES' },
   { value: 'expectations', label: 'Active expectations', retrieveType: 'ACTIVE_EXPECTATIONS' },
+  { value: 'recorded', label: 'Recorded expectations', retrieveType: 'RECORDED_EXPECTATIONS' },
+  { value: 'logs', label: 'Server logs', retrieveType: 'LOGS' },
 ];
 
 // retrieveFormat is the server's Format enum name; scopes restricts which export
 // scopes the server accepts that format for (e.g. JAVA is expectations-only,
-// LOG_ENTRIES is requests-only — so the dropdown is filtered by the chosen scope).
+// LOG_ENTRIES is the only format for the raw log stream — so the dropdown is filtered
+// by the chosen scope).
 const FORMATS: { value: ExportFormat; label: string; retrieveFormat: string; scopes: ExportScope[] }[] = [
-  { value: 'json', label: 'MockServer JSON', retrieveFormat: 'JSON', scopes: ['expectations', 'requests'] },
-  { value: 'java', label: 'MockServer Java DSL', retrieveFormat: 'JAVA', scopes: ['expectations'] },
-  { value: 'har', label: 'HAR (HTTP Archive)', retrieveFormat: 'HAR', scopes: ['expectations', 'requests'] },
-  { value: 'openapi', label: 'OpenAPI 3 spec', retrieveFormat: 'OPENAPI', scopes: ['expectations', 'requests'] },
-  { value: 'postman', label: 'Postman collection v2.1', retrieveFormat: 'POSTMAN', scopes: ['expectations', 'requests'] },
-  { value: 'bruno', label: 'Bruno collection (.zip)', retrieveFormat: 'BRUNO', scopes: ['expectations', 'requests'] },
-  { value: 'logentries', label: 'Log entries (JSON)', retrieveFormat: 'LOG_ENTRIES', scopes: ['requests'] },
+  { value: 'json', label: 'MockServer JSON', retrieveFormat: 'JSON', scopes: ['expectations', 'recorded', 'requests'] },
+  { value: 'java', label: 'MockServer Java DSL', retrieveFormat: 'JAVA', scopes: ['expectations', 'recorded'] },
+  { value: 'har', label: 'HAR (HTTP Archive)', retrieveFormat: 'HAR', scopes: ['expectations', 'recorded', 'requests'] },
+  { value: 'openapi', label: 'OpenAPI 3 spec', retrieveFormat: 'OPENAPI', scopes: ['expectations', 'recorded', 'requests'] },
+  { value: 'postman', label: 'Postman collection v2.1', retrieveFormat: 'POSTMAN', scopes: ['expectations', 'recorded', 'requests'] },
+  { value: 'bruno', label: 'Bruno collection (.zip)', retrieveFormat: 'BRUNO', scopes: ['expectations', 'recorded', 'requests'] },
+  { value: 'logentries', label: 'Log entries (JSON)', retrieveFormat: 'LOG_ENTRIES', scopes: ['recorded', 'requests', 'logs'] },
   { value: 'curl', label: 'cURL commands', retrieveFormat: 'CURL', scopes: ['requests'] },
 ];
 
@@ -128,6 +131,42 @@ const DETAILS: Record<ExportScope, Partial<Record<ExportFormat, ExportDetail>>> 
       filename: 'mockserver-traffic.curl.sh',
     },
   },
+  recorded: {
+    json: {
+      description: 'Expectations auto-recorded while proxying in CAPTURE mode, as round-trippable JSON.',
+      filename: 'mockserver-recorded-expectations.json',
+    },
+    java: {
+      description: 'MockServer Java DSL recreating each recorded expectation.',
+      filename: 'mockserver-recorded-expectations.java',
+    },
+    har: {
+      description: 'HAR archive of each recorded expectation as a request/response pair.',
+      filename: 'mockserver-recorded-expectations.har',
+    },
+    openapi: {
+      description: 'OpenAPI spec derived from the recorded expectations.',
+      filename: 'mockserver-recorded-expectations.openapi.json',
+    },
+    postman: {
+      description: 'Postman collection of the recorded expectations.',
+      filename: 'mockserver-recorded-expectations.postman.json',
+    },
+    bruno: {
+      description: 'Bruno collection of the recorded expectations, packaged as a zip archive.',
+      filename: 'mockserver-recorded-expectations.bruno.zip',
+    },
+    logentries: {
+      description: 'Raw log events behind the recorded expectations (verbose JSON; mainly for debugging).',
+      filename: 'mockserver-recorded-expectations.log-entries.json',
+    },
+  },
+  logs: {
+    logentries: {
+      description: "The server's raw event log as JSON — the full request/response/expectation lifecycle, for debugging.",
+      filename: 'mockserver-logs.json',
+    },
+  },
 };
 
 function ExportTab({ connectionParams }: { connectionParams: ConnectionParams }) {
@@ -139,13 +178,13 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
   const scopeMeta = SCOPES.find((s) => s.value === scope)!;
   const availableFormats = FORMATS.filter((f) => f.scopes.includes(scope));
   const formatMeta = FORMATS.find((f) => f.value === format)!;
-  const detail = DETAILS[scope][format] ?? DETAILS[scope].json!;
+  const detail = DETAILS[scope][format] ?? { description: '', filename: `mockserver-${scope}` };
 
   // The export caveat depends on the scope: exporting the expectation graph to a
   // request-collection format is lossy (dynamic behaviour becomes placeholders),
   // whereas exporting observed traffic is just a snapshot of what was handled.
   let notice: string | null = null;
-  if (scope === 'expectations' && ['openapi', 'postman', 'bruno', 'har'].includes(format)) {
+  if ((scope === 'expectations' || scope === 'recorded') && ['openapi', 'postman', 'bruno', 'har'].includes(format)) {
     notice =
       'Best-effort export. Positive-string matchers round-trip cleanly, but NottableString ' +
       'negation, regex bodies, and dynamic actions (forward / template / callback / error / LLM) ' +
@@ -159,10 +198,12 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
 
   const handleScopeChange = (next: ExportScope) => {
     setScope(next);
-    // The chosen format may not be valid for the new scope (e.g. JAVA only
-    // applies to expectations) — fall back to JSON, which every scope supports.
+    // The chosen format may not be valid for the new scope (e.g. JAVA only applies to
+    // expectations; the Server logs scope only supports LOG_ENTRIES) — fall back to the first
+    // format the new scope supports.
     if (!FORMATS.some((f) => f.value === format && f.scopes.includes(next))) {
-      setFormat('json');
+      const firstValid = FORMATS.find((f) => f.scopes.includes(next));
+      if (firstValid) setFormat(firstValid.value);
     }
   };
 
