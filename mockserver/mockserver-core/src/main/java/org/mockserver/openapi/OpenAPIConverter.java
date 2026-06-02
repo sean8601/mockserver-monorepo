@@ -144,7 +144,10 @@ public class OpenAPIConverter {
                         String resolvedUrl = resolveCallbackUrl(callbackUrl);
                         org.mockserver.model.HttpRequest callbackRequest = org.mockserver.model.HttpRequest.request()
                             .withMethod(method.name());
-                        if (resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://")) {
+                        if (OpenApiRuntimeExpressionResolver.containsExpression(resolvedUrl)) {
+                            // URL contains runtime expressions — store verbatim for fire-time resolution
+                            callbackRequest.withPath(resolvedUrl);
+                        } else if (resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://")) {
                             URI uri = new URI(resolvedUrl);
                             callbackRequest
                                 .withPath(uri.getPath() != null ? uri.getPath() : "/")
@@ -183,13 +186,13 @@ public class OpenAPIConverter {
         return afterActions;
     }
 
+    /**
+     * Preserves OpenAPI runtime expressions verbatim in callback URLs.
+     * Expressions like {@code {$request.body#/callbackUrl}} are kept as-is and
+     * resolved at callback fire-time by {@link OpenApiRuntimeExpressionResolver}.
+     */
     private String resolveCallbackUrl(String callbackUrl) {
-        return callbackUrl
-            .replaceAll("\\{\\$request\\.body#[^}]*}", "")
-            .replaceAll("\\{\\$request\\.header\\.[^}]*}", "")
-            .replaceAll("\\{\\$request\\.query\\.[^}]*}", "")
-            .replaceAll("\\{\\$response\\.body#[^}]*}", "")
-            .replaceAll("\\{\\$url}", "");
+        return callbackUrl;
     }
 
     private HttpResponse buildHttpResponse(OpenAPI openAPI, ApiResponses apiResponses, String apiResponseKey) {

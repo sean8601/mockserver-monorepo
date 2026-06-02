@@ -728,7 +728,18 @@ mockServerClient("localhost", 1080).openAPIExpectation({
 
 <p>When an OpenAPI specification includes <a target="_blank" href="https://swagger.io/docs/specification/callbacks/" rel="noopener noreferrer"><strong>callbacks</strong></a> on an operation, MockServer automatically generates webhook expectations that send HTTP requests to the callback URLs after the main response is returned. This allows you to simulate webhook-style interactions where an API notifies the client asynchronously after processing a request.</p>
 
-<p>The callback URL, method, and request body are derived from the OpenAPI callback definition. Runtime expression placeholders (such as <code class="inline code">{$request.body#/callbackUrl}</code>) are currently passed through as literal strings.</p>
+<p>The callback URL, method, and request body are derived from the OpenAPI callback definition. OpenAPI <strong>runtime expressions</strong> (such as <code class="inline code">{$request.body#/callbackUrl}</code>) are resolved at callback fire-time using values from the triggering request. Supported expressions:</p>
+
+<ul>
+    <li><code class="inline code">{$request.body#/&lt;json-pointer&gt;}</code> — extracts a value from the triggering request body using a JSON Pointer</li>
+    <li><code class="inline code">{$request.query.&lt;name&gt;}</code> — query parameter value from the triggering request</li>
+    <li><code class="inline code">{$request.header.&lt;name&gt;}</code> — header value from the triggering request</li>
+    <li><code class="inline code">{$request.path.&lt;name&gt;}</code> — path parameter value (best-effort)</li>
+    <li><code class="inline code">{$request.method}</code> — HTTP method of the triggering request</li>
+    <li><code class="inline code">{$url}</code> — reconstructed URL of the triggering request</li>
+</ul>
+
+<p>Expressions that cannot be resolved (unknown format, missing values) are replaced with an empty string. Response-based expressions (<code class="inline code">{$response.body#/...}</code>) are not currently supported because the response is not available at after-action dispatch time.</p>
 
 <p>For example, given the following OpenAPI specification with a callback:</p>
 

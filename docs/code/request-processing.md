@@ -656,14 +656,25 @@ For each callback in the OpenAPI spec, `OpenAPIConverter.buildAfterActions()`:
 3. Extracts the request body schema and generates an example body
 4. Creates an `AfterAction` with a `HttpForward`-style webhook that fires after the main response
 
-The callback URL is resolved by `resolveCallbackUrl()`:
-- Runtime expressions like `{$request.body#/...}` are stripped of the expression wrapper in v1 (passed as literal strings)
-- Static URLs are used as-is
+Runtime expressions in callback URLs (e.g., `{$request.body#/callbackUrl}`) are preserved verbatim at spec-conversion time and resolved at callback fire-time by `OpenApiRuntimeExpressionResolver.resolve()`. The resolver is called in `HttpActionHandler.dispatchAfterAction()` and supports:
 
-Limitations in v1:
-- Runtime expression placeholders are not dynamically resolved — they are passed through as literal text
+- `{$request.body#/<json-pointer>}` — JSON Pointer into the triggering request body (via Jackson `JsonNode.at()`)
+- `{$request.query.<name>}` — query parameter value from the triggering request
+- `{$request.header.<name>}` — header value from the triggering request
+- `{$request.path.<name>}` — path parameter (best-effort; requires path parameters to be populated)
+- `{$request.method}` — HTTP method of the triggering request
+- `{$url}` — reconstructed URL of the triggering request
+
+Unresolvable expressions (unknown format, missing values) are replaced with empty string. Response-based expressions (`{$response.body#/...}`, `{$response.header.*}`) are out of scope because the response object is not available at after-action dispatch time — these are also replaced with empty string.
+
+The resolver guarantees a **strict no-op** when the after-action request contains no `{$...}` expressions: the original instance is returned without cloning or allocation. This ensures zero overhead for the vast majority of after-actions (plain webhooks).
+
+Static callback URLs are used as-is (parsed into path + Host header at conversion time).
+
+Remaining limitations:
 - Only `post`, `put`, `patch`, `get`, and `delete` callback methods are supported
 - Callback request bodies use the first available media type schema
+- Response-based expressions are not resolved (response not available at dispatch time)
 
 ## Incremental OpenAPI Sync
 

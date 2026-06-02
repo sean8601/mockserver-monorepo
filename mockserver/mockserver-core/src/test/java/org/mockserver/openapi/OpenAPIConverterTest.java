@@ -966,7 +966,7 @@ public class OpenAPIConverterTest {
             ImmutableMap.<String, Object>of("createSubscriptionWithRuntimeCallback", "201")
         );
 
-        // then
+        // then - runtime expression is preserved verbatim for fire-time resolution
         assertThat(actualExpectations.size(), is(1));
         Expectation expectation = actualExpectations.get(0);
         assertThat(expectation.getAfterActions(), is(notNullValue()));
@@ -974,7 +974,7 @@ public class OpenAPIConverterTest {
         AfterAction afterAction = expectation.getAfterActions().get(0);
         HttpRequest callbackRequest = afterAction.getHttpRequest();
         assertThat(callbackRequest.getMethod().getValue(), is("POST"));
-        assertThat(callbackRequest.getPath().getValue(), is("/events"));
+        assertThat(callbackRequest.getPath().getValue(), is("{$request.body#/callbackUrl}/events"));
     }
 
     @Test

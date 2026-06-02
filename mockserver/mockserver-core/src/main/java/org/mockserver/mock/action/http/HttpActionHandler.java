@@ -21,6 +21,7 @@ import org.mockserver.mock.crud.CrudDispatcher;
 import org.mockserver.model.*;
 import org.mockserver.model.StreamingBody;
 import org.mockserver.openapi.OpenAPIResponseValidator;
+import org.mockserver.openapi.OpenApiRuntimeExpressionResolver;
 import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.responsewriter.ResponseWriter;
@@ -922,7 +923,11 @@ public class HttpActionHandler {
         scheduler.submitAsync(() -> {
             try {
                 if (afterAction.getHttpRequest() != null) {
-                    httpClient.sendRequest(afterAction.getHttpRequest())
+                    // Resolve OpenAPI runtime expressions (no-op when none present)
+                    HttpRequest callbackRequest = OpenApiRuntimeExpressionResolver.resolve(
+                        afterAction.getHttpRequest(), request
+                    );
+                    httpClient.sendRequest(callbackRequest)
                         .whenComplete((response, throwable) -> {
                             if (throwable != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
                                 mockServerLogger.logEvent(
@@ -932,7 +937,7 @@ public class HttpActionHandler {
                                         .setCorrelationId(request.getLogCorrelationId())
                                         .setHttpRequest(request)
                                         .setMessageFormat("after-action webhook failed for request{} - " + throwable.getMessage())
-                                        .setArguments(afterAction.getHttpRequest())
+                                        .setArguments(callbackRequest)
                                         .setThrowable(throwable)
                                 );
                             }
