@@ -467,6 +467,50 @@ Matchers are evaluated in order; the first match wins and sends its responses. I
 
 The `BidirectionalWebSocketFrameHandler` (a Netty `SimpleChannelInboundHandler<WebSocketFrame>`) is installed in the pipeline after the WebSocket handshake completes, only when the `HttpWebSocketResponse` has matchers configured.
 
+#### GraphQL Subscriptions over WebSocket (`GraphQLSubscriptionHandler`)
+
+`HttpWebSocketResponse` supports GraphQL subscription mocking via the [graphql-transport-ws](https://github.com/enisdenjo/graphql-ws/blob/master/PROTOCOL.md) protocol. When the negotiated subprotocol is `graphql-transport-ws` (or the legacy `graphql-ws`) and a `graphqlSubscriptionFilter` is configured, the `GraphQLSubscriptionHandler` is installed in the pipeline instead of the `BidirectionalWebSocketFrameHandler`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `graphqlSubscriptionFilter` | `GraphQLBody` | Subscription query to match against incoming `subscribe` messages using `GraphQLAstMatcher` |
+
+The handler implements the full graphql-transport-ws protocol state machine:
+
+| Client Message | Server Response | Description |
+|----------------|-----------------|-------------|
+| `connection_init` | `connection_ack` | Connection handshake |
+| `ping` | `pong` | Keepalive |
+| `subscribe` (matching) | `next`... `complete` | Pushes configured `messages` as `next` payloads, then sends `complete` |
+| `subscribe` (non-matching) | `error` | Sends error with diagnostic message |
+| `complete` | (cancels stream) | Stops pending pushes for that subscription ID |
+
+The `messages` from `HttpWebSocketResponse` are wrapped in the protocol envelope: each message's `text` is embedded as the `data` field inside `{"id":"...","type":"next","payload":{"data":...}}`. Per-message `delay` settings from `WebSocketMessage` are respected.
+
+The `graphqlSubscriptionFilter` uses the existing `GraphQLAstMatcher` for query matching. If no `selectionSetMatchType` is set on the filter, it defaults to `AST_SUBSET` for forgiving matching. The filter supports all match types: `AST_EXACT`, `AST_SUBSET`, and `NORMALISED_STRING`.
+
+Example expectation shape:
+
+```json
+{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/graphql"
+    },
+    "httpWebSocketResponse": {
+        "subprotocol": "graphql-transport-ws",
+        "graphqlSubscriptionFilter": {
+            "query": "subscription { userUpdated { id name } }",
+            "selectionSetMatchType": "AST_SUBSET"
+        },
+        "messages": [
+            {"text": "{\"id\": \"1\", \"name\": \"Alice\"}"},
+            {"text": "{\"id\": \"2\", \"name\": \"Bob\"}", "delay": {"timeUnit": "MILLISECONDS", "value": 500}}
+        ]
+    }
+}
+```
+
 #### Forward Validate Action (`HttpForwardValidateAction`)
 
 `HttpForwardValidateAction` forwards requests to a target server and validates the request and/or response against an OpenAPI specification. It combines forwarding with contract validation.

@@ -10,6 +10,7 @@ public class HttpWebSocketResponse extends Action<HttpWebSocketResponse> {
     private List<WebSocketMessage> messages;
     private List<WebSocketMessageMatcher> matchers;
     private Boolean closeConnection;
+    private GraphQLBody graphqlSubscriptionFilter;
 
     public static HttpWebSocketResponse webSocketResponse() {
         return new HttpWebSocketResponse();
@@ -85,6 +86,25 @@ public class HttpWebSocketResponse extends Action<HttpWebSocketResponse> {
         return closeConnection;
     }
 
+    /**
+     * Set a GraphQL subscription filter for the graphql-transport-ws protocol.
+     * When the negotiated subprotocol is {@code graphql-transport-ws} or {@code graphql-ws},
+     * incoming {@code subscribe} messages will have their query matched against this filter.
+     * On match, the configured {@link #messages} are pushed as {@code next} payloads.
+     *
+     * @param filter the GraphQL body to match subscription queries against
+     * @return this instance for fluent chaining
+     */
+    public HttpWebSocketResponse withGraphqlSubscriptionFilter(GraphQLBody filter) {
+        this.graphqlSubscriptionFilter = filter;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public GraphQLBody getGraphqlSubscriptionFilter() {
+        return graphqlSubscriptionFilter;
+    }
+
     @Override
     @JsonIgnore
     public Type getType() {
@@ -109,13 +129,14 @@ public class HttpWebSocketResponse extends Action<HttpWebSocketResponse> {
         return Objects.equals(subprotocol, that.subprotocol) &&
             Objects.equals(messages, that.messages) &&
             Objects.equals(matchers, that.matchers) &&
-            Objects.equals(closeConnection, that.closeConnection);
+            Objects.equals(closeConnection, that.closeConnection) &&
+            Objects.equals(graphqlSubscriptionFilter, that.graphqlSubscriptionFilter);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), subprotocol, messages, matchers, closeConnection);
+            hashCode = Objects.hash(super.hashCode(), subprotocol, messages, matchers, closeConnection, graphqlSubscriptionFilter);
         }
         return hashCode;
     }

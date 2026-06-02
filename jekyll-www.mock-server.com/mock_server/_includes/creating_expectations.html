@@ -842,6 +842,77 @@ new MockServerClient("localhost", 1080)
     }
 }</code></pre>
 
+<a id="graphql_subscriptions" class="anchor" href="#graphql_subscriptions">&nbsp;</a>
+
+<h4>GraphQL Subscriptions over WebSocket</h4>
+
+<p>MockServer supports mocking <a target="_blank" href="https://github.com/enisdenjo/graphql-ws/blob/master/PROTOCOL.md" rel="noopener noreferrer">GraphQL subscriptions over WebSocket</a> using the <span class="inline_code">graphql-transport-ws</span> protocol (also accepts the legacy <span class="inline_code">graphql-ws</span> subprotocol). This allows testing GraphQL subscription clients without a real GraphQL server.</p>
+
+<p>The protocol flow is:</p>
+<ol>
+    <li>Client opens a WebSocket connection with <span class="inline_code">Sec-WebSocket-Protocol: graphql-transport-ws</span></li>
+    <li>Client sends <span class="inline_code">connection_init</span>, MockServer replies <span class="inline_code">connection_ack</span></li>
+    <li>Client sends <span class="inline_code">subscribe</span> with a GraphQL query; MockServer AST-matches the query against the configured filter</li>
+    <li>On match: MockServer pushes a sequence of <span class="inline_code">next</span> messages (with optional delays), then <span class="inline_code">complete</span></li>
+    <li>On no match: MockServer sends an <span class="inline_code">error</span> message</li>
+    <li>Client can send <span class="inline_code">complete</span> to cancel a subscription</li>
+    <li><span class="inline_code">ping</span>/<span class="inline_code">pong</span> keepalive is supported</li>
+</ol>
+
+<p>To configure a GraphQL subscription mock, use an <span class="inline_code">httpWebSocketResponse</span> with:</p>
+<ul>
+    <li><strong>subprotocol</strong> - set to <span class="inline_code">graphql-transport-ws</span> (or <span class="inline_code">graphql-ws</span>)</li>
+    <li><strong>graphqlSubscriptionFilter</strong> - a GraphQL body filter specifying the subscription query to match. Supports the same <span class="inline_code">selectionSetMatchType</span> options as <a href="#graphql_body_matching">GraphQL body matching</a></li>
+    <li><strong>messages</strong> - the sequence of payloads to push as <span class="inline_code">next</span> events. Each message's <span class="inline_code">text</span> is wrapped in the protocol envelope <span class="inline_code">{"id":"...","type":"next","payload":{"data":...}}</span></li>
+</ul>
+
+<p><strong>Example - mock a GraphQL subscription that pushes two events:</strong></p>
+<pre class="prettyprint lang-java code"><code class="code">{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/graphql"
+    },
+    "httpWebSocketResponse": {
+        "subprotocol": "graphql-transport-ws",
+        "graphqlSubscriptionFilter": {
+            "query": "subscription { userUpdated { id name } }",
+            "selectionSetMatchType": "AST_SUBSET"
+        },
+        "messages": [
+            {"text": "{\"id\": \"1\", \"name\": \"Alice\"}"},
+            {"text": "{\"id\": \"2\", \"name\": \"Bob\"}", "delay": {"timeUnit": "MILLISECONDS", "value": 500}}
+        ]
+    }
+}</code></pre>
+
+<p><strong>Example - Java API:</strong></p>
+<pre class="prettyprint lang-java code"><code class="code">mockServerClient.when(
+    request()
+        .withMethod("GET")
+        .withPath("/graphql")
+).respondWithWebSocket(
+    webSocketResponse()
+        .withSubprotocol("graphql-transport-ws")
+        .withGraphqlSubscriptionFilter(
+            GraphQLBody.graphQL("subscription { userUpdated { id name } }")
+                .withSelectionSetMatchType(SelectionSetMatchType.AST_SUBSET)
+        )
+        .withMessage(webSocketMessage("{\"id\": \"1\", \"name\": \"Alice\"}"))
+        .withMessage(webSocketMessage("{\"id\": \"2\", \"name\": \"Bob\"}"))
+);</code></pre>
+
+<p>When a client connects and sends:</p>
+<pre class="prettyprint lang-java code"><code class="code">{"type": "connection_init"}
+// MockServer replies: {"type": "connection_ack"}
+
+{"id": "1", "type": "subscribe", "payload": {"query": "subscription { userUpdated { id name } }"}}
+// MockServer replies:
+// {"id": "1", "type": "next", "payload": {"data": {"id": "1", "name": "Alice"}}}
+// {"id": "1", "type": "next", "payload": {"data": {"id": "2", "name": "Bob"}}}
+// {"id": "1", "type": "complete"}</code></pre>
+
+<p><strong>Note:</strong> The legacy <span class="inline_code">graphql-ws</span> subprotocol (used by the older <a target="_blank" href="https://github.com/apollographql/subscriptions-transport-ws" rel="noopener noreferrer">subscriptions-transport-ws</a> library) is also accepted. Both use the same message format in MockServer's implementation.</p>
+
 <button id="button_request" class="accordion title"><strong>Request Properties Matcher Code Examples</strong></button>
 <div class="panel title">
     {% include_subpage _includes/request_matcher_code_examples.html %}

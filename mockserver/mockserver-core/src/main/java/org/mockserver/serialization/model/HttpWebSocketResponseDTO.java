@@ -1,6 +1,7 @@
 package org.mockserver.serialization.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import org.mockserver.model.GraphQLBody;
 import org.mockserver.model.HttpWebSocketResponse;
 import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
 
@@ -13,6 +14,7 @@ public class HttpWebSocketResponseDTO extends ObjectWithReflectiveEqualsHashCode
     private List<WebSocketMessageModelDTO> messages;
     private List<WebSocketMessageMatcherDTO> matchers;
     private Boolean closeConnection;
+    private GraphQLBodyDTO graphqlSubscriptionFilter;
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean primary;
 
@@ -30,6 +32,9 @@ public class HttpWebSocketResponseDTO extends ObjectWithReflectiveEqualsHashCode
             if (httpWebSocketResponse.getMatchers() != null) {
                 matchers = new ArrayList<>();
                 httpWebSocketResponse.getMatchers().forEach(matcher -> matchers.add(new WebSocketMessageMatcherDTO(matcher)));
+            }
+            if (httpWebSocketResponse.getGraphqlSubscriptionFilter() != null) {
+                graphqlSubscriptionFilter = new GraphQLBodyDTO(httpWebSocketResponse.getGraphqlSubscriptionFilter());
             }
             primary = httpWebSocketResponse.isPrimary();
         }
@@ -49,6 +54,9 @@ public class HttpWebSocketResponseDTO extends ObjectWithReflectiveEqualsHashCode
         }
         if (matchers != null) {
             matchers.forEach(matcherDTO -> httpWebSocketResponse.withMatcher(matcherDTO.buildObject()));
+        }
+        if (graphqlSubscriptionFilter != null) {
+            httpWebSocketResponse.withGraphqlSubscriptionFilter(graphqlSubscriptionFilter.buildObject());
         }
         return httpWebSocketResponse;
     }
@@ -95,6 +103,15 @@ public class HttpWebSocketResponseDTO extends ObjectWithReflectiveEqualsHashCode
 
     public HttpWebSocketResponseDTO setCloseConnection(Boolean closeConnection) {
         this.closeConnection = closeConnection;
+        return this;
+    }
+
+    public GraphQLBodyDTO getGraphqlSubscriptionFilter() {
+        return graphqlSubscriptionFilter;
+    }
+
+    public HttpWebSocketResponseDTO setGraphqlSubscriptionFilter(GraphQLBodyDTO graphqlSubscriptionFilter) {
+        this.graphqlSubscriptionFilter = graphqlSubscriptionFilter;
         return this;
     }
 
