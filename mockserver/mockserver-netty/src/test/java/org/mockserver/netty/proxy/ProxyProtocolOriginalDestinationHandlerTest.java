@@ -379,4 +379,244 @@ public class ProxyProtocolOriginalDestinationHandlerTest {
 
         channel.close();
     }
+
+    // --- PROXY protocol v2 (binary) ---
+
+    /** The 12-byte PROXY v2 signature. */
+    private static final byte[] V2_SIG = {
+        0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A
+    };
+
+    /** Builds a PROXY v2 header: signature + verCmd + famTrans + uint16 length + address block. */
+    private static byte[] proxyV2(int verCmd, int famTrans, byte[] addrBlock) {
+        int len = addrBlock.length;
+        byte[] out = new byte[16 + len];
+        System.arraycopy(V2_SIG, 0, out, 0, 12);
+        out[12] = (byte) verCmd;
+        out[13] = (byte) famTrans;
+        out[14] = (byte) ((len >> 8) & 0xFF);
+        out[15] = (byte) (len & 0xFF);
+        System.arraycopy(addrBlock, 0, out, 16, len);
+        return out;
+    }
+
+    private static byte[] concat(byte[] a, byte[] b) {
+        byte[] out = new byte[a.length + b.length];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    @Test
+    public void shouldParseValidProxyV2Inet() {
+        // given — v2 + PROXY (0x21), AF_INET + STREAM (0x11); src 192.168.1.1, dst 10.0.0.1:443
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] addr = {
+            (byte) 192, (byte) 168, 1, 1,   // src
+            10, 0, 0, 1,                     // dst
+            (byte) 0xDC, 0x04,               // src port 56324
+            0x01, (byte) 0xBB                // dst port 443
+        };
+        byte[] header = proxyV2(0x21, 0x11, addr);
+        String httpRequest = "GET / HTTP/1.1\r\n\r\n";
+
+        // when
+        channel.writeInbound(Unpooled.wrappedBuffer(concat(header, httpRequest.getBytes(StandardCharsets.US_ASCII))));
+
+        // then
+        InetSocketAddress remoteSocket = channel.attr(REMOTE_SOCKET).get();
+        assertThat(remoteSocket, is(notNullValue()));
+        assertThat(remoteSocket.getAddress().getHostAddress(), is("10.0.0.1"));
+        assertThat(remoteSocket.getPort(), is(443));
+        assertThat(channel.attr(PROXYING).get(), is(Boolean.TRUE));
+        assertThat(channel.attr(TRANSPARENT_ORIGINAL_DST_RESOLVED).get(), is(Boolean.TRUE));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        ByteBuf remaining = channel.readInbound();
+        assertThat(remaining, is(notNullValue()));
+        assertThat(remaining.toString(StandardCharsets.US_ASCII), is(httpRequest));
+        remaining.release();
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldParseValidProxyV2Inet6() {
+        // given — v2 + PROXY (0x21), AF_INET6 + STREAM (0x21)
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] src = new byte[16];
+        byte[] dst = new byte[16];
+        dst[15] = 1; // ::1
+        byte[] addr = new byte[36];
+        System.arraycopy(src, 0, addr, 0, 16);
+        System.arraycopy(dst, 0, addr, 16, 16);
+        addr[32] = (byte) 0xDC; addr[33] = 0x04; // src port
+        addr[34] = 0x01; addr[35] = (byte) 0xBB; // dst port 443
+        byte[] header = proxyV2(0x21, 0x21, addr);
+
+        // when
+        channel.writeInbound(Unpooled.wrappedBuffer(header));
+
+        // then
+        InetSocketAddress remoteSocket = channel.attr(REMOTE_SOCKET).get();
+        assertThat(remoteSocket, is(notNullValue()));
+        assertThat(remoteSocket.getPort(), is(443));
+        assertThat(channel.attr(TRANSPARENT_ORIGINAL_DST_RESOLVED).get(), is(Boolean.TRUE));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldHandleProxyV2LocalCommandWithoutDestination() {
+        // given — v2 + LOCAL (0x20), AF_UNSPEC, no address block (health check)
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] header = proxyV2(0x20, 0x00, new byte[0]);
+        String httpRequest = "GET / HTTP/1.1\r\n\r\n";
+
+        // when
+        channel.writeInbound(Unpooled.wrappedBuffer(concat(header, httpRequest.getBytes(StandardCharsets.US_ASCII))));
+
+        // then — no destination (LOCAL), header consumed, handler removed, trailing bytes pass through
+        assertThat(channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        ByteBuf remaining = channel.readInbound();
+        assertThat(remaining, is(notNullValue()));
+        assertThat(remaining.toString(StandardCharsets.US_ASCII), is(httpRequest));
+        remaining.release();
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldConsumeProxyV2UnixFamilyWithoutDestination() {
+        // given — v2 + PROXY (0x21), AF_UNIX (0x31); 216-byte address block, no IP destination
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] header = proxyV2(0x21, 0x31, new byte[216]);
+        String httpRequest = "GET / HTTP/1.1\r\n\r\n";
+
+        // when
+        channel.writeInbound(Unpooled.wrappedBuffer(concat(header, httpRequest.getBytes(StandardCharsets.US_ASCII))));
+
+        // then — no IP destination, header consumed, trailing bytes pass through
+        assertThat(channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        ByteBuf remaining = channel.readInbound();
+        assertThat(remaining, is(notNullValue()));
+        assertThat(remaining.toString(StandardCharsets.US_ASCII), is(httpRequest));
+        remaining.release();
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldHandleFragmentedProxyV2Header() {
+        // given — v2 INET header split across two reads
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] addr = {(byte) 192, (byte) 168, 1, 1, 10, 0, 0, 1, (byte) 0xDC, 0x04, 0x01, (byte) 0xBB};
+        byte[] header = proxyV2(0x21, 0x11, addr); // 28 bytes total
+
+        // when — first chunk: signature only (12 bytes)
+        channel.writeInbound(Unpooled.wrappedBuffer(java.util.Arrays.copyOfRange(header, 0, 12)));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(notNullValue()));
+        assertThat(channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+
+        // when — second chunk: the rest
+        channel.writeInbound(Unpooled.wrappedBuffer(java.util.Arrays.copyOfRange(header, 12, header.length)));
+
+        // then
+        InetSocketAddress remoteSocket = channel.attr(REMOTE_SOCKET).get();
+        assertThat(remoteSocket, is(notNullValue()));
+        assertThat(remoteSocket.getAddress().getHostAddress(), is("10.0.0.1"));
+        assertThat(remoteSocket.getPort(), is(443));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldPassThroughWhenV2VersionNibbleIsNot2() {
+        // given — valid v2 signature but version nibble 3 (verCmd 0x31)
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] addr = {(byte) 192, (byte) 168, 1, 1, 10, 0, 0, 1, (byte) 0xDC, 0x04, 0x01, (byte) 0xBB};
+        byte[] header = proxyV2(0x31, 0x11, addr); // version 3 — unsupported
+
+        // when
+        channel.writeInbound(Unpooled.wrappedBuffer(header));
+
+        // then — pass through, no destination resolved
+        assertThat(channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        ByteBuf remaining = channel.readInbound();
+        assertThat(remaining, is(notNullValue()));
+        assertThat(remaining.readableBytes(), is(header.length));
+        remaining.release();
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldPassThroughWhenV2AddrLenExceedsMax() {
+        // given — valid v2 signature/version but declared address length > MAX (1024)
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] header = proxyV2(0x21, 0x11, new byte[0]); // 16-byte prefix, length 0
+        header[14] = 0x07; // overwrite length field with 2000 (> 1024)
+        header[15] = (byte) 0xD0;
+
+        // when — only the 16-byte prefix is supplied (the oversized length is rejected before waiting)
+        channel.writeInbound(Unpooled.wrappedBuffer(header));
+
+        // then — pass through, no destination
+        assertThat(channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        ByteBuf remaining = channel.readInbound();
+        assertThat(remaining, is(notNullValue()));
+        assertThat(remaining.readableBytes(), is(header.length));
+        remaining.release();
+
+        channel.close();
+    }
+
+    @Test
+    public void shouldPassThroughWhenV2FirstByteButNotFullSignature() {
+        // given — starts with 0x0D but is not the v2 signature
+        ProxyProtocolOriginalDestinationHandler handler = new ProxyProtocolOriginalDestinationHandler(logger);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+
+        byte[] notV2 = {0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42};
+
+        // when
+        channel.writeInbound(Unpooled.wrappedBuffer(notV2));
+
+        // then — pass through, no destination
+        assertThat(channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+        assertThat(channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+
+        ByteBuf remaining = channel.readInbound();
+        assertThat(remaining, is(notNullValue()));
+        byte[] result = new byte[remaining.readableBytes()];
+        remaining.readBytes(result);
+        assertThat(result, is(notV2));
+        remaining.release();
+
+        channel.close();
+    }
 }
