@@ -7,6 +7,8 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.mockserver.async.security.KafkaSecurity;
+import org.mockserver.async.security.KafkaSecurityProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +58,8 @@ public class KafkaMessageSubscriber implements MessageSubscriber {
     private final ExecutorService pollExecutor;
 
     /**
-     * Create a subscriber connected to the given Kafka bootstrap servers.
+     * Create a subscriber connected to the given Kafka bootstrap servers
+     * using plaintext (no security). Backward-compatible entry point.
      *
      * @param bootstrapServers comma-separated list of host:port pairs
      * @param groupId          the consumer group ID
@@ -69,13 +72,20 @@ public class KafkaMessageSubscriber implements MessageSubscriber {
      * Create a subscriber with a custom recorded-message cap per channel.
      */
     public KafkaMessageSubscriber(String bootstrapServers, String groupId, int maxRecordedMessages) {
-        Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+        this(bootstrapServers, groupId, maxRecordedMessages, null);
+    }
+
+    /**
+     * Create a subscriber with optional security configuration.
+     *
+     * @param bootstrapServers comma-separated list of host:port pairs
+     * @param groupId          the consumer group ID
+     * @param maxRecordedMessages maximum recorded messages per channel
+     * @param security         security configuration (may be null for plaintext)
+     */
+    public KafkaMessageSubscriber(String bootstrapServers, String groupId,
+                                  int maxRecordedMessages, KafkaSecurity security) {
+        Properties props = buildConsumerProperties(bootstrapServers, groupId, security);
         this.consumer = new KafkaConsumer<>(props);
         this.maxRecordedMessages = maxRecordedMessages;
         this.pollExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -103,6 +113,28 @@ public class KafkaMessageSubscriber implements MessageSubscriber {
             t.setDaemon(true);
             return t;
         });
+    }
+
+    /**
+     * Build the Kafka consumer properties with security applied.
+     * Package-private for direct unit-testing of the property assembly.
+     *
+     * @param bootstrapServers comma-separated list of host:port pairs
+     * @param groupId          the consumer group ID
+     * @param security         security configuration (may be null)
+     * @return the fully configured properties
+     */
+    static Properties buildConsumerProperties(String bootstrapServers, String groupId,
+                                              KafkaSecurity security) {
+        Properties props = new Properties();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+        KafkaSecurityProperties.applySecurity(props, security);
+        return props;
     }
 
     @Override

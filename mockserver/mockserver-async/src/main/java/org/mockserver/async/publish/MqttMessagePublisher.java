@@ -1,8 +1,11 @@
 package org.mockserver.async.publish;
 
 import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.mockserver.async.security.MqttSecurity;
+import org.mockserver.async.security.MqttSecurityOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +26,8 @@ public class MqttMessagePublisher implements MessagePublisher {
     private final int qos;
 
     /**
-     * Create a publisher connected to the given MQTT broker with default QoS (1).
+     * Create a publisher connected to the given MQTT broker with default QoS (1)
+     * and no security. Backward-compatible entry point.
      *
      * @param brokerUrl the MQTT broker URL (e.g. {@code tcp://localhost:1883})
      * @param clientId  the client identifier
@@ -33,19 +37,38 @@ public class MqttMessagePublisher implements MessagePublisher {
     }
 
     /**
-     * Create a publisher connected to the given MQTT broker with a specific QoS.
+     * Create a publisher connected to the given MQTT broker with a specific QoS
+     * and no security. Backward-compatible entry point.
      *
      * @param brokerUrl the MQTT broker URL (e.g. {@code tcp://localhost:1883})
      * @param clientId  the client identifier
      * @param qos       the MQTT QoS level (0, 1, or 2)
      */
     public MqttMessagePublisher(String brokerUrl, String clientId, int qos) {
+        this(brokerUrl, clientId, qos, null);
+    }
+
+    /**
+     * Create a publisher connected to the given MQTT broker with optional
+     * security configuration.
+     *
+     * @param brokerUrl the MQTT broker URL (e.g. {@code ssl://localhost:8883})
+     * @param clientId  the client identifier
+     * @param qos       the MQTT QoS level (0, 1, or 2)
+     * @param security  security configuration (may be null for plaintext)
+     */
+    public MqttMessagePublisher(String brokerUrl, String clientId, int qos, MqttSecurity security) {
         if (qos < 0 || qos > 2) {
             throw new IllegalArgumentException("MQTT QoS must be 0, 1, or 2; got: " + qos);
         }
         try {
             this.client = new MqttClient(brokerUrl, clientId);
-            this.client.connect();
+            MqttConnectOptions options = MqttSecurityOptions.buildConnectOptions(security);
+            if (options != null) {
+                this.client.connect(options);
+            } else {
+                this.client.connect();
+            }
             this.qos = qos;
         } catch (MqttException e) {
             throw new RuntimeException("Failed to connect to MQTT broker: " + brokerUrl, e);

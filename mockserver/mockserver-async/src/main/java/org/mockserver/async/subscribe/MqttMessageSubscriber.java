@@ -1,6 +1,8 @@
 package org.mockserver.async.subscribe;
 
 import org.eclipse.paho.client.mqttv3.*;
+import org.mockserver.async.security.MqttSecurity;
+import org.mockserver.async.security.MqttSecurityOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +30,8 @@ public class MqttMessageSubscriber implements MessageSubscriber {
     private final ConcurrentMap<String, BoundedMessageStore> recordedMessages = new ConcurrentHashMap<>();
 
     /**
-     * Create a subscriber connected to the given MQTT broker.
+     * Create a subscriber connected to the given MQTT broker with no security.
+     * Backward-compatible entry point.
      *
      * @param brokerUrl the MQTT broker URL (e.g. {@code tcp://localhost:1883})
      * @param clientId  the client identifier
@@ -38,19 +41,39 @@ public class MqttMessageSubscriber implements MessageSubscriber {
     }
 
     /**
-     * Create a subscriber with a specific QoS level.
+     * Create a subscriber with a specific QoS level and no security.
      */
     public MqttMessageSubscriber(String brokerUrl, String clientId, int qos) {
         this(brokerUrl, clientId, qos, BoundedMessageStore.DEFAULT_MAX_RECORDED_MESSAGES);
     }
 
     /**
-     * Create a subscriber with a specific QoS level and recorded-message cap.
+     * Create a subscriber with a specific QoS level and recorded-message cap,
+     * no security. Backward-compatible entry point.
      */
     public MqttMessageSubscriber(String brokerUrl, String clientId, int qos, int maxRecordedMessages) {
+        this(brokerUrl, clientId, qos, maxRecordedMessages, null);
+    }
+
+    /**
+     * Create a subscriber with optional security configuration.
+     *
+     * @param brokerUrl          the MQTT broker URL (e.g. {@code ssl://localhost:8883})
+     * @param clientId           the client identifier
+     * @param qos                the MQTT QoS level (0, 1, or 2)
+     * @param maxRecordedMessages maximum recorded messages per channel
+     * @param security           security configuration (may be null for plaintext)
+     */
+    public MqttMessageSubscriber(String brokerUrl, String clientId, int qos,
+                                 int maxRecordedMessages, MqttSecurity security) {
         try {
             this.client = new MqttClient(brokerUrl, clientId);
-            this.client.connect();
+            MqttConnectOptions options = MqttSecurityOptions.buildConnectOptions(security);
+            if (options != null) {
+                this.client.connect(options);
+            } else {
+                this.client.connect();
+            }
             this.qos = qos;
             this.maxRecordedMessages = maxRecordedMessages;
             installCallback();

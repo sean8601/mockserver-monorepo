@@ -14,6 +14,8 @@ import org.mockserver.async.asyncapi.AsyncApiSpec;
 import org.mockserver.async.publish.KafkaMessagePublisher;
 import org.mockserver.async.publish.MessagePublisher;
 import org.mockserver.async.publish.MqttMessagePublisher;
+import org.mockserver.async.security.KafkaSecurity;
+import org.mockserver.async.security.MqttSecurity;
 import org.mockserver.async.subscribe.KafkaMessageSubscriber;
 import org.mockserver.async.subscribe.MessageSubscriber;
 import org.mockserver.async.subscribe.MqttMessageSubscriber;
@@ -141,7 +143,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         int maxRecordedMessages = ConfigurationProperties.asyncRecordedMessageMaxEntries();
 
         if (brokerConfig.kafkaBootstrapServers != null) {
-            MessagePublisher publisher = new KafkaMessagePublisher(brokerConfig.kafkaBootstrapServers);
+            MessagePublisher publisher = new KafkaMessagePublisher(
+                brokerConfig.kafkaBootstrapServers, brokerConfig.kafkaSecurity);
             activePublishers.add(publisher);
 
             AsyncApiMockOrchestrator orchestrator = new AsyncApiMockOrchestrator(spec, publisher, generator);
@@ -161,7 +164,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                 String groupId = brokerConfig.kafkaGroupId != null
                     ? brokerConfig.kafkaGroupId : "mockserver-async-consumer";
                 KafkaMessageSubscriber subscriber = new KafkaMessageSubscriber(
-                    brokerConfig.kafkaBootstrapServers, groupId, maxRecordedMessages);
+                    brokerConfig.kafkaBootstrapServers, groupId, maxRecordedMessages,
+                    brokerConfig.kafkaSecurity);
                 activeSubscribers.add(subscriber);
                 for (AsyncApiChannel channel : spec.getChannels()) {
                     subscriber.subscribe(channel.getName());
@@ -174,7 +178,7 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                 ? brokerConfig.mqttClientId + "-pub" : "mockserver-mqtt-pub";
             int qos = brokerConfig.mqttQos >= 0 ? brokerConfig.mqttQos : 1;
             MessagePublisher publisher = new MqttMessagePublisher(
-                brokerConfig.mqttBrokerUrl, pubClientId, qos);
+                brokerConfig.mqttBrokerUrl, pubClientId, qos, brokerConfig.mqttSecurity);
             activePublishers.add(publisher);
 
             AsyncApiMockOrchestrator orchestrator = new AsyncApiMockOrchestrator(spec, publisher, generator);
@@ -192,7 +196,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                 String subClientId = brokerConfig.mqttClientId != null
                     ? brokerConfig.mqttClientId + "-sub" : "mockserver-mqtt-sub";
                 MqttMessageSubscriber subscriber = new MqttMessageSubscriber(
-                    brokerConfig.mqttBrokerUrl, subClientId, qos, maxRecordedMessages);
+                    brokerConfig.mqttBrokerUrl, subClientId, qos, maxRecordedMessages,
+                    brokerConfig.mqttSecurity);
                 activeSubscribers.add(subscriber);
                 for (AsyncApiChannel channel : spec.getChannels()) {
                     subscriber.subscribe(channel.getName());
@@ -515,7 +520,11 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         }
     }
 
-    private BrokerConfig parseBrokerConfig(JsonNode node) {
+    /**
+     * Parse the broker configuration from the request body JSON. Accessible
+     * at package level for unit testing.
+     */
+    BrokerConfig parseBrokerConfig(JsonNode node) {
         BrokerConfig config = new BrokerConfig();
         if (node != null) {
             config.kafkaBootstrapServers = textOrNull(node, "kafkaBootstrapServers");
@@ -526,6 +535,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
             config.consume = boolOrDefault(node, "consume", false);
             config.publishIntervalMillis = longOrDefault(node, "publishIntervalMillis", 0);
             config.mqttQos = intOrDefault(node, "mqttQos", 1);
+            config.kafkaSecurity = parseKafkaSecurity(node.get("kafkaSecurity"));
+            config.mqttSecurity = parseMqttSecurity(node.get("mqttSecurity"));
         }
         // Fall back to ConfigurationProperties defaults when request values are absent
         if (config.kafkaBootstrapServers == null) {
@@ -541,6 +552,76 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
             }
         }
         return config;
+    }
+
+    private KafkaSecurity parseKafkaSecurity(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        KafkaSecurity.Builder builder = KafkaSecurity.builder();
+        String securityProtocol = textOrNull(node, "securityProtocol");
+        if (securityProtocol != null) {
+            builder.securityProtocol(securityProtocol);
+        }
+        String saslMechanism = textOrNull(node, "saslMechanism");
+        if (saslMechanism != null) {
+            builder.saslMechanism(saslMechanism);
+        }
+        String saslJaasConfig = textOrNull(node, "saslJaasConfig");
+        if (saslJaasConfig != null) {
+            builder.saslJaasConfig(saslJaasConfig);
+        }
+        String sslTruststoreLocation = textOrNull(node, "sslTruststoreLocation");
+        if (sslTruststoreLocation != null) {
+            builder.sslTruststoreLocation(sslTruststoreLocation);
+        }
+        String sslTruststorePassword = textOrNull(node, "sslTruststorePassword");
+        if (sslTruststorePassword != null) {
+            builder.sslTruststorePassword(sslTruststorePassword);
+        }
+        String sslKeystoreLocation = textOrNull(node, "sslKeystoreLocation");
+        if (sslKeystoreLocation != null) {
+            builder.sslKeystoreLocation(sslKeystoreLocation);
+        }
+        String sslKeystorePassword = textOrNull(node, "sslKeystorePassword");
+        if (sslKeystorePassword != null) {
+            builder.sslKeystorePassword(sslKeystorePassword);
+        }
+        String sslKeyPassword = textOrNull(node, "sslKeyPassword");
+        if (sslKeyPassword != null) {
+            builder.sslKeyPassword(sslKeyPassword);
+        }
+        KafkaSecurity result = builder.build();
+        return result.isEmpty() ? null : result;
+    }
+
+    private MqttSecurity parseMqttSecurity(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        MqttSecurity.Builder builder = MqttSecurity.builder();
+        String username = textOrNull(node, "username");
+        if (username != null) {
+            builder.username(username);
+        }
+        String password = textOrNull(node, "password");
+        if (password != null) {
+            builder.password(password);
+        }
+        JsonNode sslPropsNode = node.get("sslProperties");
+        if (sslPropsNode != null && sslPropsNode.isObject()) {
+            Map<String, String> sslProps = new LinkedHashMap<>();
+            sslPropsNode.fields().forEachRemaining(entry -> {
+                if (entry.getValue().isTextual()) {
+                    sslProps.put(entry.getKey(), entry.getValue().asText());
+                }
+            });
+            if (!sslProps.isEmpty()) {
+                builder.sslProperties(sslProps);
+            }
+        }
+        MqttSecurity result = builder.build();
+        return result.isEmpty() ? null : result;
     }
 
     private AsyncApiChannel findChannel(String name) {
@@ -597,6 +678,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         boolean consume = false;
         long publishIntervalMillis = 0;
         int mqttQos = 1;
+        KafkaSecurity kafkaSecurity;
+        MqttSecurity mqttSecurity;
 
         static BrokerConfig defaultConfig() {
             return new BrokerConfig();

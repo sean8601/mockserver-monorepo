@@ -79,6 +79,8 @@ Broker configuration options (`brokerConfig`):
 | `publishOnLoad` | boolean | true | Publish examples immediately on load |
 | `publishIntervalMillis` | long | 0 | Schedule periodic publishing (0 = disabled) |
 | `consume` | boolean | false | Enable consumer/subscriber for each channel |
+| `kafkaSecurity` | object | null | Kafka SASL/SSL security config (see [Broker Security](#broker-security)) |
+| `mqttSecurity` | object | null | MQTT username/password/SSL security config (see [Broker Security](#broker-security)) |
 
 **Response** (201 Created):
 ```json
@@ -216,6 +218,79 @@ Recorded messages are stored in a **bounded** `BoundedMessageStore` per channel 
 - **MQTT**: `MqttMessagePublisher` supports configurable QoS (0, 1, or 2) and binary payloads via `publishBytes()`
 - **Kafka Consumer**: `KafkaMessageSubscriber` records message keys and headers from consumed records
 
+## Broker Security
+
+The `brokerConfig` supports optional security configuration for connecting to enterprise brokers that require SASL authentication and/or TLS. When security is absent or empty, the adapters use plaintext connections (backward compatible).
+
+### Kafka Security (`kafkaSecurity`)
+
+| Field | Kafka Config Key | Description |
+|-------|-----------------|-------------|
+| `securityProtocol` | `security.protocol` | Protocol: `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` |
+| `saslMechanism` | `sasl.mechanism` | SASL mechanism: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER` |
+| `saslJaasConfig` | `sasl.jaas.config` | JAAS login module configuration string |
+| `sslTruststoreLocation` | `ssl.truststore.location` | Path to the SSL truststore file |
+| `sslTruststorePassword` | `ssl.truststore.password` | Password for the SSL truststore |
+| `sslKeystoreLocation` | `ssl.keystore.location` | Path to the SSL keystore file (for mTLS) |
+| `sslKeystorePassword` | `ssl.keystore.password` | Password for the SSL keystore |
+| `sslKeyPassword` | `ssl.key.password` | Password for the private key in the keystore |
+
+Example:
+```json
+{
+  "kafkaBootstrapServers": "broker:9093",
+  "kafkaSecurity": {
+    "securityProtocol": "SASL_SSL",
+    "saslMechanism": "PLAIN",
+    "saslJaasConfig": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"user\" password=\"pass\";",
+    "sslTruststoreLocation": "/path/to/truststore.jks",
+    "sslTruststorePassword": "changeit"
+  }
+}
+```
+
+### MQTT Security (`mqttSecurity`)
+
+| Field | Description |
+|-------|-------------|
+| `username` | MQTT broker username |
+| `password` | MQTT broker password |
+| `sslProperties` | Map of SSL properties passed to Paho `MqttConnectOptions.setSSLProperties()` |
+
+Supported SSL property keys (Paho/IBM conventions):
+
+| Key | Description |
+|-----|-------------|
+| `com.ibm.ssl.keyStore` | Path to the client keystore |
+| `com.ibm.ssl.keyStorePassword` | Keystore password |
+| `com.ibm.ssl.trustStore` | Path to the truststore |
+| `com.ibm.ssl.trustStorePassword` | Truststore password |
+| `com.ibm.ssl.protocol` | SSL protocol (e.g. `TLSv1.2`) |
+
+Example:
+```json
+{
+  "mqttBrokerUrl": "ssl://broker:8883",
+  "mqttSecurity": {
+    "username": "user",
+    "password": "pass",
+    "sslProperties": {
+      "com.ibm.ssl.trustStore": "/path/to/truststore.jks",
+      "com.ibm.ssl.trustStorePassword": "changeit"
+    }
+  }
+}
+```
+
+### Implementation
+
+Security configuration is applied through testable utility classes:
+
+- `KafkaSecurityProperties.applySecurity(Properties, KafkaSecurity)` — sets the Kafka config keys on the client properties
+- `MqttSecurityOptions.buildConnectOptions(MqttSecurity)` — builds `MqttConnectOptions` with username/password/SSL (returns `null` when empty, preserving the no-arg `connect()` path)
+
+The security objects are parsed from the `brokerConfig` JSON in `AsyncApiControlPlaneImpl.parseBrokerConfig()` and threaded through to the publisher/subscriber constructors.
+
 ## Build/Docker Wiring
 
 The `mockserver-async` module is wired into the running server:
@@ -252,8 +327,13 @@ The `mockserver-async` module is wired into the running server:
 | `MqttMessageSubscriberTest` | MQTT subscribing, message recording, bounded eviction (mocked client) |
 | `AsyncApiSchemaValidatorTest` | Schema validation (required, type, enum, min/max, pattern) |
 | `AsyncApiControlPlaneImplTest` | Control-plane load/status/reset lifecycle (no real broker) |
+| `AsyncApiControlPlaneSecurityTest` | Security scheme parsing from `brokerConfig` JSON (kafkaSecurity, mqttSecurity, edge cases) |
 | `AsyncApiControlPlaneVerifyTest` | Message verification: count semantics (atLeast/atMost/exactly), payload substring, JSON path matching, error cases |
 | `AsyncApiControlPlaneRegistryTest` | SPI holder delegation (including verify) and not-available responses (in core) |
+| `KafkaSecurityPropertiesTest` | `KafkaSecurityProperties.applySecurity()`: all/partial/empty/null security, blank value skipping |
+| `KafkaMessagePublisherSecurityTest` | `buildProducerProperties()` with SASL_SSL, null, empty, and partial security |
+| `KafkaMessageSubscriberSecurityTest` | `buildConsumerProperties()` with SASL_SSL, SCRAM, null, empty security |
+| `MqttSecurityOptionsTest` | `MqttSecurityOptions.buildConnectOptions()`: username/password, SSL properties, null/empty security |
 
 ## Configuration Properties (Async Defaults)
 
@@ -291,7 +371,6 @@ The following items are **not yet implemented**:
 
 - **Dashboard UI**: no UI panel for async messaging state (deferred to a future UI enhancement)
 - **Advanced AsyncAPI bindings**: channel-specific binding configurations (e.g., Kafka partition assignment, MQTT retain flag) are not parsed or applied
-- **Security schemes**: AsyncAPI security scheme definitions (SASL, TLS client certs) are not applied to broker connections
 - **Correlation IDs**: AsyncAPI correlation ID definitions are not tracked
 - **Multi-message channels**: only the first message definition per channel is used
 - **Live-broker integration tests**: all tests use mocked producers/consumers; Testcontainers-based live-broker tests are a documented follow-up (testcontainers is not currently a test dependency)
