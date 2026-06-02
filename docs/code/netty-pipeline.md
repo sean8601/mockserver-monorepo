@@ -63,9 +63,12 @@ The `CompositeOriginalDestinationResolver` tries strategies in order (first non-
 | Order | Strategy | Class | Status |
 |-------|----------|-------|--------|
 | 1 | Linux conntrack table | `ConntrackOriginalDestinationResolver` | Implemented |
-| 2 | SO_ORIGINAL_DST getsockopt | (future) | Requires JNI |
-| 3 | TPROXY (IP_TRANSPARENT) | (future) | Requires JNI + TPROXY rules |
-| 4 | eBPF socket metadata | (future) | Requires JNI + eBPF program |
+| 2 | DNS-intent (recover hostname MockServer's DNS answered) | `DnsIntentOriginalDestinationResolver` | Implemented |
+| 3 | SO_ORIGINAL_DST getsockopt | (future) | Requires JNI |
+| 4 | TPROXY (IP_TRANSPARENT) | (future) | Requires JNI + TPROXY rules |
+| 5 | eBPF socket metadata | (future) | Requires JNI + eBPF program |
+
+The DNS-intent resolver consults `DnsIntentRegistry` (`mockserver-core`, `org.mockserver.mock.dns`), which records the `answeredIP → hostname` mappings MockServer's own DNS server hands out (A/AAAA answers). When a connection arrives at such an IP and conntrack returns nothing, the resolver returns an *unresolved* `InetSocketAddress` carrying the recovered hostname, so downstream forwarding/matching works by name (loop-prevention guards against a DNS-to-self loop). The registry is cleared by `HttpState.reset()`.
 
 Note: PROXY protocol is handled separately in the pipeline (it reads bytes, not channel metadata).
 

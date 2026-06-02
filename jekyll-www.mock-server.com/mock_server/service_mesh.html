@@ -29,6 +29,7 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
         <ol>
             <li><strong>PROXY protocol v1 / v2</strong>: if the first bytes on the connection are a PROXY protocol header -- either v1 (text) or v2 (binary), e.g. sent by AWS GWLB, HAProxy, or nginx -- MockServer parses the destination address from the header and consumes it. No configuration is needed -- detection is automatic.</li>
             <li><strong>Linux conntrack</strong>: reads the original destination from the kernel conntrack table (<code class="inline code">/proc/net/nf_conntrack</code>), which records the pre-REDIRECT destination. This works even when the Host header is missing or incorrect.</li>
+            <li><strong>DNS-intent</strong>: if the client resolved a hostname via MockServer's own DNS server and then connected to the returned IP, MockServer recovers the intended hostname from the DNS answer it handed out — so matching and forwarding work by name. Active only when the DNS server is enabled.</li>
             <li><strong>Host header fallback</strong>: if no other strategy resolves the destination, MockServer reads the <code class="inline code">Host</code> header from the HTTP request.</li>
         </ol>
     </li>
@@ -119,7 +120,13 @@ PROXY UNKNOWN\r\n</code></pre>
     <li><strong>NET_ADMIN capability</strong> -- required for the iptables init container</li>
 </ul>
 
-<h3>Strategy 3: Host Header Fallback</h3>
+<h3>Strategy 3: DNS-Intent</h3>
+
+<p>When MockServer's own DNS server is enabled and answers a query (an A/AAAA record mapping a hostname to an IP), it records that <code class="inline code">answered IP &rarr; hostname</code> mapping. If a client then connects to that IP (DNS-steering: the name was pointed at MockServer), this strategy recovers the intended hostname so expectation matching and forwarding work by name even though the client connected by IP.</p>
+
+<p>It runs after conntrack, so a real iptables-REDIRECT original destination always wins; DNS-intent only fills the gap when conntrack returns nothing. The recovered hostname is resolved by the downstream forwarding logic, and MockServer's existing loop-prevention header guards against a DNS-to-self loop.</p>
+
+<h3>Strategy 4: Host Header Fallback</h3>
 
 <p>If no other strategy resolves the destination, MockServer reads the <code class="inline code">Host</code> header from the HTTP request. This always works but requires a valid Host header.</p>
 

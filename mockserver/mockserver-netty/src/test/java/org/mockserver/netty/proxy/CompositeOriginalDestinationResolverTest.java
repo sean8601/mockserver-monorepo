@@ -118,12 +118,12 @@ public class CompositeOriginalDestinationResolverTest {
     }
 
     @Test
-    public void defaultChainShouldContainOneStrategy() {
+    public void defaultChainShouldContainTwoStrategies() {
         // when
         CompositeOriginalDestinationResolver resolver = CompositeOriginalDestinationResolver.defaultChain();
 
-        // then
-        assertThat(resolver.strategyCount(), is(1));
+        // then — [conntrack, dns-intent]
+        assertThat(resolver.strategyCount(), is(2));
     }
 
     @Test

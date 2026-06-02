@@ -4,6 +4,7 @@ import io.netty.channel.Channel;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -19,6 +20,8 @@ import java.util.List;
  * <b>Default chain</b> (constructed via {@link #defaultChain()}):
  * <ol>
  *   <li>{@link ConntrackOriginalDestinationResolver} — Linux conntrack table lookup</li>
+ *   <li>{@link DnsIntentOriginalDestinationResolver} — recovers the intended hostname
+ *       from MockServer's DNS answer cache (DNS-steering mode)</li>
  * </ol>
  * <p>
  * <b>Future strategies (not yet implemented — require native/JNI code):</b>
@@ -60,13 +63,19 @@ public class CompositeOriginalDestinationResolver implements TransparentProxyHan
     }
 
     /**
-     * Returns the default chain: [conntrack].
+     * Returns the default chain: [conntrack, dns-intent].
      * <p>
-     * This produces identical behaviour to the pre-chain single-resolver default.
+     * Conntrack (or SO_ORIGINAL_DST) is tried first because a real iptables-REDIRECT
+     * original destination is the most authoritative source. The DNS-intent resolver
+     * fills the gap when conntrack returns null — it recovers the hostname that
+     * MockServer's DNS server mapped to the connection's destination IP.
      */
     public static CompositeOriginalDestinationResolver defaultChain() {
         return new CompositeOriginalDestinationResolver(
-            Collections.singletonList(new ConntrackOriginalDestinationResolver())
+            Arrays.asList(
+                new ConntrackOriginalDestinationResolver(),
+                new DnsIntentOriginalDestinationResolver()
+            )
         );
     }
 
