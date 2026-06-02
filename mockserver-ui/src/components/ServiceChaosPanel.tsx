@@ -717,8 +717,14 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     });
   }, [connectionParams, grpcChaosForm, runAction]);
 
+  // Real gRPC health overrides: a named service, or the default if it is no longer SERVING.
+  // The GET always returns a "_default" SERVING entry, which is not an override on its own.
+  const grpcHealthOverrides = useMemo(
+    () => grpcServices.filter((svc) => svc !== '_default' || grpcHealth[svc] !== 'SERVING'),
+    [grpcServices, grpcHealth],
+  );
   // Combined gRPC active count (health overrides + fault injection services)
-  const grpcCombinedActiveCount = grpcServices.length + grpcChaosServices.length;
+  const grpcCombinedActiveCount = grpcHealthOverrides.length + grpcChaosServices.length;
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -922,16 +928,23 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
           </Typography>
           <Chip size="small" label={`${grpcCombinedActiveCount} active`} color={grpcCombinedActiveCount > 0 ? 'warning' : 'default'} variant="outlined" />
           <Box sx={{ flex: 1 }} />
-          <Tooltip title="Clear all gRPC fault injection chaos">
+          <Tooltip title="Clear all gRPC chaos: fault injection and health-status overrides">
             <span>
               <Button
                 size="small"
                 color="error"
                 startIcon={<DeleteSweepIcon fontSize="small" />}
-                disabled={busy || grpcChaosServices.length === 0}
+                disabled={busy || grpcCombinedActiveCount === 0}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void runAction(() => clearGrpcChaos(connectionParams));
+                  // Clear both fault injection and health overrides so the section fully empties
+                  // (parity with the HTTP/TCP panels); otherwise the "active" badge stays non-zero.
+                  void runAction(async () => {
+                    await clearGrpcChaos(connectionParams);
+                    for (const svc of grpcHealthOverrides) {
+                      await resetGrpcHealth(connectionParams, svc === '_default' ? '' : svc);
+                    }
+                  });
                 }}
               >
                 Clear gRPC
@@ -1119,6 +1132,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                         Register
                       </Button>
                     </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      Note: gRPC latency is applied on the fault path — pair it with an injected
+                      fault (error status, omit/corrupt grpc-status, or abort) rather than on its own.
+                    </Typography>
                   </Paper>
 
                   {/* gRPC Chaos Active registrations */}
