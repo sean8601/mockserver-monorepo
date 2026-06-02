@@ -2635,6 +2635,13 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                 are shown below after you register.
               </Alert>
             )}
+            {/* MCP kind: show the derived tools at the top so it is clear the MCP
+                radio is active, immediately above the request matcher. */}
+            {kind === 'mcp' && (
+              <Paper variant="outlined" sx={{ p: 0 }}>
+                <McpToolsPanel connectionParams={connectionParams} />
+              </Paper>
+            )}
             {/* Step 1: matcher — DNS uses a dedicated panel with dnsName /
                 dnsType / dnsClass instead of the HTTP method / path / headers
                 / body fields. */}
@@ -2889,12 +2896,6 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               );
             })()}
 
-            {/* MCP kind: show derived tools below the form */}
-            {kind === 'mcp' && (
-              <Paper variant="outlined" sx={{ p: 0 }}>
-                <McpToolsPanel connectionParams={connectionParams} />
-              </Paper>
-            )}
           </>
         )}
 
