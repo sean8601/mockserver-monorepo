@@ -286,8 +286,8 @@ describe('ComposerView kind-change default reset', () => {
 // Loading existing expectations infers the correct kind
 // ---------------------------------------------------------------------------
 
-describe('ComposerView load-existing kind inference', () => {
-  it('loading a dnsResponse expectation selects DNS kind and populates DNS matcher fields', async () => {
+describe('ComposerView load-existing via list', () => {
+  it('clicking a DNS mock row on the DNS kind populates DNS matcher fields', async () => {
     const user = userEvent.setup();
     useDashboardStore.setState({
       activeExpectations: [{
@@ -300,12 +300,14 @@ describe('ComposerView load-existing kind inference', () => {
       }],
     });
     renderComposer();
-    // The "Edit existing" dropdown should show the expectation
-    const select = screen.getByLabelText(/Edit existing or add new/) as HTMLSelectElement;
-    await user.selectOptions(select, 'dns-exp-001');
-    // Kind should now be DNS
-    const dnsKindRadio = screen.getByLabelText('DNS');
-    expect(dnsKindRadio).toBeChecked();
+    // Switch to DNS kind first — the list is scoped per kind
+    await user.click(screen.getByLabelText('DNS'));
+    // The list should show the DNS expectation
+    const listEl = screen.getByTestId('existing-mocks-list');
+    const row = within(listEl).getByText(/example\.com/);
+    await user.click(row);
+    // Kind stays DNS
+    expect(screen.getByLabelText('DNS')).toBeChecked();
     // Action type should be dns_response
     const respondSection = screen.getByText(/2 · Respond with/).closest('[class*="MuiPaper"]')!;
     const dnsActionRadio = within(respondSection as HTMLElement).getByLabelText(/DNS response/);
@@ -314,7 +316,7 @@ describe('ComposerView load-existing kind inference', () => {
     expect((screen.getByLabelText('DNS name') as HTMLInputElement).value).toBe('example.com');
   });
 
-  it('loading a grpcStreamResponse expectation selects gRPC kind', async () => {
+  it('clicking a gRPC mock row on the gRPC kind loads it', async () => {
     const user = userEvent.setup();
     useDashboardStore.setState({
       activeExpectations: [{
@@ -327,13 +329,14 @@ describe('ComposerView load-existing kind inference', () => {
       }],
     });
     renderComposer();
-    const select = screen.getByLabelText(/Edit existing or add new/) as HTMLSelectElement;
-    await user.selectOptions(select, 'grpc-exp-001');
-    const grpcKindRadio = screen.getByLabelText('gRPC');
-    expect(grpcKindRadio).toBeChecked();
+    await user.click(screen.getByLabelText('gRPC'));
+    const listEl = screen.getByTestId('existing-mocks-list');
+    const row = within(listEl).getByText(/\/pkg\.Service\/Method/);
+    await user.click(row);
+    expect(screen.getByLabelText('gRPC')).toBeChecked();
   });
 
-  it('loading an httpResponse expectation selects HTTP kind', async () => {
+  it('clicking an HTTP mock row on the HTTP kind loads it', async () => {
     const user = userEvent.setup();
     useDashboardStore.setState({
       activeExpectations: [{
@@ -346,10 +349,13 @@ describe('ComposerView load-existing kind inference', () => {
       }],
     });
     renderComposer();
-    const select = screen.getByLabelText(/Edit existing or add new/) as HTMLSelectElement;
-    await user.selectOptions(select, 'http-exp-001');
-    const httpKindRadio = screen.getByLabelText('HTTP');
-    expect(httpKindRadio).toBeChecked();
+    // HTTP is the default kind — the list should show the HTTP expectation
+    const listEl = screen.getByTestId('existing-mocks-list');
+    const row = within(listEl).getByText(/GET \/api\/test/);
+    await user.click(row);
+    expect(screen.getByLabelText('HTTP')).toBeChecked();
+    // Editing indicator should appear
+    expect(screen.getByText(/Editing http-exp-/)).toBeInTheDocument();
   });
 });
 
@@ -393,7 +399,7 @@ describe('ComposerView DNS matcher panel', () => {
     expect(screen.queryByLabelText('DNS name')).not.toBeInTheDocument();
   });
 
-  it('loading an existing DNS expectation with dnsName populates DNS matcher fields', async () => {
+  it('loading an existing DNS expectation via list populates DNS matcher fields', async () => {
     const user = userEvent.setup();
     useDashboardStore.setState({
       activeExpectations: [{
@@ -406,13 +412,262 @@ describe('ComposerView DNS matcher panel', () => {
       }],
     });
     renderComposer();
-    const select = screen.getByLabelText(/Edit existing or add new/) as HTMLSelectElement;
-    await user.selectOptions(select, 'dns-full-001');
+    // Switch to DNS kind to see DNS expectations in the list
+    await user.click(screen.getByLabelText('DNS'));
+    const listEl = screen.getByTestId('existing-mocks-list');
+    const row = within(listEl).getByText(/api\.example\.com/);
+    await user.click(row);
 
     // Kind should be DNS
     expect(screen.getByLabelText('DNS')).toBeChecked();
     // DNS matcher populated
     expect((screen.getByLabelText('DNS name') as HTMLInputElement).value).toBe('api.example.com');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Existing mocks list — replaces the old dropdown
+// ---------------------------------------------------------------------------
+
+describe('Existing mocks list', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({ activeExpectations: [] });
+  });
+
+  it('the old "Edit existing or add new" dropdown is gone', () => {
+    renderComposer();
+    expect(screen.queryByLabelText(/Edit existing or add new/)).not.toBeInTheDocument();
+  });
+
+  it('shows per-kind list with rows scoped to the selected kind', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [
+        {
+          key: 'http-001',
+          value: {
+            id: 'http-001',
+            httpRequest: { method: 'GET', path: '/users' },
+            httpResponse: { statusCode: 200, body: '[]' },
+          },
+        },
+        {
+          key: 'dns-001',
+          value: {
+            id: 'dns-001',
+            httpRequest: { dnsName: 'test.local', dnsType: 'A' },
+            dnsResponse: { responseCode: 'NOERROR', answerRecords: [] },
+          },
+        },
+        {
+          key: 'grpc-001',
+          value: {
+            id: 'grpc-001',
+            httpRequest: { method: 'POST', path: '/svc.Foo/Bar' },
+            grpcStreamResponse: { statusName: 'OK', messages: [] },
+          },
+        },
+      ],
+    });
+    renderComposer();
+
+    // On HTTP kind: should see the HTTP mock, not DNS or gRPC
+    const list = screen.getByTestId('existing-mocks-list');
+    expect(within(list).getByText(/GET \/users/)).toBeInTheDocument();
+    expect(within(list).queryByText(/test\.local/)).not.toBeInTheDocument();
+    expect(within(list).queryByText(/\/svc\.Foo\/Bar/)).not.toBeInTheDocument();
+
+    // Switch to DNS — should see DNS mock only
+    await user.click(screen.getByLabelText('DNS'));
+    const dnsList = screen.getByTestId('existing-mocks-list');
+    expect(within(dnsList).getByText(/test\.local/)).toBeInTheDocument();
+    expect(within(dnsList).queryByText(/GET \/users/)).not.toBeInTheDocument();
+
+    // Switch to gRPC — should see gRPC mock only
+    await user.click(screen.getByLabelText('gRPC'));
+    const grpcList = screen.getByTestId('existing-mocks-list');
+    expect(within(grpcList).getByText(/\/svc\.Foo\/Bar/)).toBeInTheDocument();
+    expect(within(grpcList).queryByText(/test\.local/)).not.toBeInTheDocument();
+  });
+
+  it('clicking a row loads the expectation and shows "Editing" indicator', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'http-load-001',
+        value: {
+          id: 'http-load-001',
+          httpRequest: { method: 'POST', path: '/submit' },
+          httpResponse: { statusCode: 201, body: '{"ok":true}' },
+        },
+      }],
+    });
+    renderComposer();
+    const list = screen.getByTestId('existing-mocks-list');
+    await user.click(within(list).getByText(/POST \/submit/));
+    // Editing indicator
+    expect(screen.getByText(/Editing http-load/)).toBeInTheDocument();
+    // Form should be populated with the loaded expectation
+    expect((screen.getByLabelText(/Expectation ID/) as HTMLInputElement).value).toBe('http-load-001');
+  });
+
+  it('"New / clear" button resets the form and deselects', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'http-clear-001',
+        value: {
+          id: 'http-clear-001',
+          httpRequest: { method: 'DELETE', path: '/remove' },
+          httpResponse: { statusCode: 204 },
+        },
+      }],
+    });
+    renderComposer();
+    const list = screen.getByTestId('existing-mocks-list');
+    // Click to load
+    await user.click(within(list).getByText(/DELETE \/remove/));
+    expect(screen.getByText(/Editing http-clear/)).toBeInTheDocument();
+    // Click "New / clear"
+    await user.click(screen.getByText('New / clear'));
+    // Editing indicator gone
+    expect(screen.queryByText(/Editing http-clear/)).not.toBeInTheDocument();
+    // Form should be reset
+    expect((screen.getByLabelText(/Expectation ID/) as HTMLInputElement).value).toBe('');
+  });
+
+  it('shows empty state when no mocks of the selected kind exist', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'http-only-001',
+        value: {
+          id: 'http-only-001',
+          httpRequest: { method: 'GET', path: '/data' },
+          httpResponse: { statusCode: 200 },
+        },
+      }],
+    });
+    renderComposer();
+    // HTTP list shows the expectation
+    expect(screen.getByText(/GET \/data/)).toBeInTheDocument();
+    // Switch to DNS — no DNS expectations exist
+    await user.click(screen.getByLabelText('DNS'));
+    expect(screen.getByText(/No DNS mocks yet/)).toBeInTheDocument();
+  });
+
+  it('MCP kind shows both the editable list and the McpToolsPanel', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'mcp-http-001',
+        value: {
+          id: 'mcp-http-001',
+          httpRequest: { method: 'GET', path: '/tool-endpoint' },
+          httpResponse: { statusCode: 200, body: '{"result":"ok"}' },
+        },
+      }],
+    });
+    renderComposer();
+    await user.click(screen.getByLabelText('MCP'));
+    // Editable list shows the HTTP response expectation
+    const list = screen.getByTestId('existing-mocks-list');
+    expect(within(list).getByText(/GET \/tool-endpoint/)).toBeInTheDocument();
+    // McpToolsPanel is also rendered
+    expect(screen.getByText('MCP Tools')).toBeInTheDocument();
+  });
+
+  it('clicking an MCP list row loads it WITHOUT switching away from the MCP kind', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'mcp-http-002',
+        value: {
+          id: 'mcp-http-002',
+          httpRequest: { method: 'GET', path: '/tool-endpoint' },
+          httpResponse: { statusCode: 200, body: '{"result":"ok"}' },
+        },
+      }],
+    });
+    renderComposer();
+    await user.click(screen.getByLabelText('MCP'));
+    const list = screen.getByTestId('existing-mocks-list');
+    await user.click(within(list).getByText(/GET \/tool-endpoint/));
+    // The MCP kind must stay selected (MCP is a view over standard HTTP responses)
+    expect(screen.getByLabelText('MCP')).toBeChecked();
+    // McpToolsPanel remains visible
+    expect(screen.getByText('MCP Tools')).toBeInTheDocument();
+  });
+
+  it('per-kind scoping: HTTP expectation does NOT appear in DNS list and vice versa', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [
+        {
+          key: 'http-scope-001',
+          value: {
+            id: 'http-scope-001',
+            httpRequest: { method: 'GET', path: '/health' },
+            httpResponse: { statusCode: 200 },
+          },
+        },
+        {
+          key: 'dns-scope-001',
+          value: {
+            id: 'dns-scope-001',
+            httpRequest: { dnsName: 'ns.example.com', dnsType: 'MX' },
+            dnsResponse: { responseCode: 'NOERROR', answerRecords: [] },
+          },
+        },
+      ],
+    });
+    renderComposer();
+
+    // On HTTP kind: only HTTP mock visible
+    const httpList = screen.getByTestId('existing-mocks-list');
+    expect(within(httpList).getByText(/GET \/health/)).toBeInTheDocument();
+    expect(within(httpList).queryByText(/ns\.example\.com/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Existing HTTP mocks \(1\)/)).toBeInTheDocument();
+
+    // On DNS kind: only DNS mock visible
+    await user.click(screen.getByLabelText('DNS'));
+    const dnsList = screen.getByTestId('existing-mocks-list');
+    expect(within(dnsList).getByText(/ns\.example\.com/)).toBeInTheDocument();
+    expect(within(dnsList).queryByText(/GET \/health/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Existing DNS mocks \(1\)/)).toBeInTheDocument();
+  });
+
+  it('list header shows the count of filtered mocks', () => {
+    useDashboardStore.setState({
+      activeExpectations: [
+        {
+          key: 'http-count-001',
+          value: {
+            id: 'http-count-001',
+            httpRequest: { method: 'GET', path: '/a' },
+            httpResponse: { statusCode: 200 },
+          },
+        },
+        {
+          key: 'http-count-002',
+          value: {
+            id: 'http-count-002',
+            httpRequest: { method: 'POST', path: '/b' },
+            httpResponse: { statusCode: 201, body: '' },
+          },
+        },
+        {
+          key: 'http-count-003',
+          value: {
+            id: 'http-count-003',
+            httpRequest: { method: 'PUT', path: '/c' },
+            httpResponse: { statusCode: 200 },
+          },
+        },
+      ],
+    });
+    renderComposer();
+    expect(screen.getByText(/Existing HTTP mocks \(3\)/)).toBeInTheDocument();
   });
 });
 

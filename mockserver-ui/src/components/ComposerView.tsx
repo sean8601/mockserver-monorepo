@@ -13,6 +13,9 @@ import Divider from '@mui/material/Divider';
 import Snackbar from '@mui/material/Snackbar';
 import Switch from '@mui/material/Switch';
 import Collapse from '@mui/material/Collapse';
+import List from '@mui/material/List';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemText from '@mui/material/ListItemText';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useDashboardStore } from '../store';
 import type { JsonListItem } from '../types';
@@ -137,6 +140,70 @@ function kindForActionType(at: ActionType): ActionKind {
   if (at === 'dns_response') return 'dns';
   if (at === 'grpc_stream') return 'grpc';
   return 'standard';
+}
+
+// ---------------------------------------------------------------------------
+// Per-expectation kind classification — used to scope the existing-mocks list
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify a raw expectation (from the store) into an ExpectationKind.
+ * LLM conversation expectations are detected by `httpLlmResponse`.
+ * DNS expectations are detected by `dnsResponse` action or `dnsName` in the request.
+ * gRPC expectations by `grpcStreamResponse`.
+ * MCP is a virtual kind — MCP tools are derived from HTTP static response
+ * expectations, so we classify them as 'standard' for the mocks list; MCP
+ * kind shows the same set of HTTP expectations filtered to static responses.
+ */
+function kindForExpectation(value: Record<string, unknown>): ExpectationKind {
+  // LLM conversation scenarios have httpLlmResponse
+  if (value['httpLlmResponse']) return 'llm_conversation';
+  // DNS — action is dnsResponse OR request has dnsName
+  if (value['dnsResponse']) return 'dns';
+  const req = value['httpRequest'] as Record<string, unknown> | undefined;
+  if (req && typeof req['dnsName'] === 'string' && (req['dnsName'] as string).length > 0) return 'dns';
+  // gRPC — action is grpcStreamResponse
+  if (value['grpcStreamResponse']) return 'grpc';
+  // Everything else is HTTP (standard). MCP is a view over HTTP static mocks.
+  return 'standard';
+}
+
+/**
+ * Build a short one-line summary string for an expectation, scoped by kind.
+ */
+function summaryForExpectation(value: Record<string, unknown>, expKind: ExpectationKind): string {
+  const req = (value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
+
+  if (expKind === 'dns') {
+    const dnsName = (typeof req['dnsName'] === 'string' ? req['dnsName'] : '(unknown)') as string;
+    const dnsType = typeof req['dnsType'] === 'string' ? ` (${req['dnsType']})` : '';
+    return `${dnsName}${dnsType}`;
+  }
+
+  if (expKind === 'grpc') {
+    const path = typeof req['path'] === 'string' ? (req['path'] as string) : '';
+    // gRPC paths are /package.Service/Method — show the path directly
+    return path || '(gRPC)';
+  }
+
+  // HTTP / MCP — METHOD /path
+  const method = typeof req['method'] === 'string' ? (req['method'] as string) : 'ANY';
+  const path = typeof req['path'] === 'string' ? (req['path'] as string) : '(no path)';
+  return `${method} ${path}`;
+}
+
+/**
+ * Human-readable kind label for display.
+ */
+function kindLabel(k: ExpectationKind): string {
+  switch (k) {
+    case 'standard': return 'HTTP';
+    case 'llm_conversation': return 'LLM';
+    case 'grpc': return 'gRPC';
+    case 'dns': return 'DNS';
+    case 'mcp': return 'MCP';
+    case 'import': return 'Import';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2034,6 +2101,127 @@ function GrpcStreamPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Existing mocks list — compact, scrollable list scoped to the selected kind
+// ---------------------------------------------------------------------------
+
+interface ExistingMocksListProps {
+  kind: ExpectationKind;
+  expectations: JsonListItem[];
+  selectedKey: string;
+  onSelect: (key: string) => void;
+  onClear: () => void;
+}
+
+function ExistingMocksList({
+  kind,
+  expectations,
+  selectedKey,
+  onSelect,
+  onClear,
+}: ExistingMocksListProps) {
+  // Filter expectations to the current kind. For MCP, show static HTTP
+  // response expectations (the ones that become MCP tools).
+  const filtered = useMemo(() => {
+    return expectations.filter((e) => {
+      const expKind = kindForExpectation(e.value);
+      if (kind === 'mcp') {
+        // MCP tools are derived from standard (HTTP) expectations with httpResponse
+        return expKind === 'standard' && e.value['httpResponse'] != null;
+      }
+      return expKind === kind;
+    });
+  }, [expectations, kind]);
+
+  const label = kind === 'mcp' ? 'MCP (HTTP response)' : kindLabel(kind);
+
+  return (
+    <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="existing-mocks-list">
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            color: 'text.secondary',
+          }}
+        >
+          Existing {label} mocks ({filtered.length})
+        </Typography>
+        {selectedKey && (
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={onClear}
+            sx={{ fontSize: '0.7rem', py: 0, px: 1, minHeight: 24 }}
+          >
+            New / clear
+          </Button>
+        )}
+      </Box>
+
+      {selectedKey && (
+        <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', py: 0, px: 1, mb: 0.5, '& .MuiAlert-message': { py: 0.3 } }}>
+          Editing {selectedKey.slice(0, 12)}... — changes update this expectation.
+        </Alert>
+      )}
+
+      {filtered.length === 0 ? (
+        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.78rem', fontStyle: 'italic', py: 1 }}>
+          No {kindLabel(kind)} mocks yet — fill in the form below to add one.
+        </Typography>
+      ) : (
+        <Box sx={{ maxHeight: 200, overflowY: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+          <List dense disablePadding>
+            {filtered.map((e) => {
+              const idShort = e.key.slice(0, 8);
+              const summary = summaryForExpectation(e.value, kind === 'mcp' ? 'standard' : kind);
+              return (
+                <ListItemButton
+                  key={e.key}
+                  selected={e.key === selectedKey}
+                  onClick={() => onSelect(e.key)}
+                  sx={{
+                    py: 0.25,
+                    px: 1,
+                    minHeight: 28,
+                    borderBottom: '1px solid',
+                    borderBottomColor: 'divider',
+                    '&:last-child': { borderBottom: 'none' },
+                  }}
+                >
+                  <ListItemText
+                    primary={
+                      <Typography
+                        component="span"
+                        sx={{ fontSize: '0.78rem', fontFamily: 'monospace' }}
+                      >
+                        <Box component="span" sx={{ color: 'text.secondary', mr: 0.5 }}>
+                          {idShort}...
+                        </Box>
+                        {summary}
+                      </Typography>
+                    }
+                    sx={{ m: 0 }}
+                  />
+                </ListItemButton>
+              );
+            })}
+          </List>
+        </Box>
+      )}
+
+      {!selectedKey && filtered.length > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.68rem' }}>
+          Select a mock to edit it, or fill in the form below to add a new one.
+        </Typography>
+      )}
+    </Paper>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main view
 // ---------------------------------------------------------------------------
 
@@ -2173,9 +2361,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       // Detect the action shape and prefill the matching panel + switch the radio.
       const prefill = actionFromExpectation(item);
       if (!prefill) return;
-      // Infer the correct kind from the action type and switch to it.
+      // Infer the correct kind from the action type and switch to it. MCP is a
+      // view over standard HTTP response expectations, so loading one from the
+      // MCP list must NOT switch the user away from the MCP kind.
       const inferredKind = kindForActionType(prefill.type);
-      setKind(inferredKind);
+      setKind((prevKind) => (prevKind === 'mcp' && inferredKind === 'standard') ? 'mcp' : inferredKind);
       setActionType(prefill.type);
       if (prefill.staticState) setStaticState(prefill.staticState);
       if (prefill.forwardState) setForwardState(prefill.forwardState);
@@ -2314,81 +2504,98 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
         </Paper>
 
         {(kind === 'standard' || kind === 'grpc' || kind === 'mcp' || kind === 'dns') && (
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
-                label="Edit existing or add new"
-                size="small"
-                select
-                sx={{ flex: 1 }}
-                value={loadFromKey}
-                onChange={(e) => handleLoadExisting(e.target.value)}
-                slotProps={{ select: { native: true, displayEmpty: true }, inputLabel: { shrink: true } }}
-              >
-                <option value="">— add new expectation —</option>
-                {standardExpectations.map((e) => {
-                  const req = (e.value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
-                  const m = (req['method'] as string | undefined) ?? '';
-                  const p = (req['path'] as string | undefined) ?? '';
-                  const idShort = e.key.slice(0, 8);
-                  return (
-                    <option key={e.key} value={e.key}>
-                      {idShort}… · {m || 'ANY'} {p || '(no path)'}
-                    </option>
-                  );
-                })}
-              </TextField>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  setLoadFromKey('');
-                  setMatcher(emptyMatcher());
-                }}
-              >
-                Reset
-              </Button>
-            </Box>
-            {loadFromKey && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
-                Matcher and response action are prefilled from the selected
-                expectation. Keep the Expectation ID to update in place; clear
-                it to create a new expectation.
-              </Typography>
-            )}
-          </Paper>
+          <ExistingMocksList
+            kind={kind}
+            expectations={standardExpectations}
+            selectedKey={loadFromKey}
+            onSelect={handleLoadExisting}
+            onClear={() => {
+              setLoadFromKey('');
+              setMatcher(emptyMatcher());
+              setDnsMatcher({ dnsName: '', dnsType: '', dnsClass: '' });
+              setChaosEnabled(false);
+              setChaosState({});
+            }}
+          />
         )}
 
         {kind === 'llm_conversation' && (
           <>
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                <TextField
-                  label="Edit existing or add new"
-                  size="small"
-                  select
-                  sx={{ flex: 1 }}
-                  value={llmScenarioName}
-                  onChange={(e) => setLlmScenarioName(e.target.value)}
-                  slotProps={{ select: { native: true, displayEmpty: true }, inputLabel: { shrink: true } }}
+            <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="existing-mocks-list">
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                    color: 'text.secondary',
+                  }}
                 >
-                  <option value="">— add new LLM conversation —</option>
-                  {llmScenarios.map((s) => (
-                    <option key={s.scenarioName} value={s.scenarioName}>
-                      {s.shortName} ({s.expectations.length} turn{s.expectations.length === 1 ? '' : 's'})
-                    </option>
-                  ))}
-                </TextField>
+                  Existing LLM scenarios ({llmScenarios.length})
+                </Typography>
                 {llmScenarioName && (
-                  <Button size="small" variant="outlined" onClick={() => setLlmScenarioName('')}>
-                    Reset
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setLlmScenarioName('')}
+                    sx={{ fontSize: '0.7rem', py: 0, px: 1, minHeight: 24 }}
+                  >
+                    New / clear
                   </Button>
                 )}
               </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
-                Editing preserves the existing expectation IDs so other clients
-                holding references keep working.
-              </Typography>
+
+              {llmScenarioName && (
+                <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', py: 0, px: 1, mb: 0.5, '& .MuiAlert-message': { py: 0.3 } }}>
+                  Editing {llmScenarioName.replace(/^__llm_conv_/, '').replace(/__iso=.*$/, '')} — changes update this scenario.
+                </Alert>
+              )}
+
+              {llmScenarios.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.78rem', fontStyle: 'italic', py: 1 }}>
+                  No LLM mocks yet — fill in the form below to add one.
+                </Typography>
+              ) : (
+                <Box sx={{ maxHeight: 200, overflowY: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                  <List dense disablePadding>
+                    {llmScenarios.map((s) => (
+                      <ListItemButton
+                        key={s.scenarioName}
+                        selected={s.scenarioName === llmScenarioName}
+                        onClick={() => setLlmScenarioName(s.scenarioName)}
+                        sx={{
+                          py: 0.25,
+                          px: 1,
+                          minHeight: 28,
+                          borderBottom: '1px solid',
+                          borderBottomColor: 'divider',
+                          '&:last-child': { borderBottom: 'none' },
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Typography
+                              component="span"
+                              sx={{ fontSize: '0.78rem', fontFamily: 'monospace' }}
+                            >
+                              {s.shortName} ({s.expectations.length} turn{s.expectations.length === 1 ? '' : 's'})
+                            </Typography>
+                          }
+                          sx={{ m: 0 }}
+                        />
+                      </ListItemButton>
+                    ))}
+                  </List>
+                </Box>
+              )}
+
+              {!llmScenarioName && llmScenarios.length > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.68rem' }}>
+                  Select a scenario to edit it, or fill in the form below to add a new one.
+                </Typography>
+              )}
             </Paper>
 
             {/* Inline LLM conversation form — remounts whenever the selected
