@@ -155,7 +155,9 @@ public class HttpState {
         this.webSocketClientRegistry = new WebSocketClientRegistry(configuration, mockServerLogger);
         LocalCallbackRegistry.setMaxWebSocketExpectations(configuration.maxWebSocketExpectations());
         this.mockServerLog = new MockServerEventLog(configuration, mockServerLogger, scheduler, true);
-        this.requestMatchers = new RequestMatchers(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
+        // G10 phase 1: obtain the expectation store via the pluggable factory (default = standard
+        // in-memory RequestMatchers; an optional clustered backend can register an alternative).
+        this.requestMatchers = ExpectationStoreFactory.create(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
         Metrics.setActiveExpectationsSupplier(() -> requestMatchers.retrieveActiveExpectations(null));
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers);
