@@ -89,14 +89,14 @@ describe('ComposerView kinds', () => {
   });
 
   it('switches to gRPC kind and shows info banner', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('gRPC'));
     expect(screen.getByText(/gRPC requests are transcoded to HTTP/i)).toBeInTheDocument();
   });
 
   it('switches to DNS kind and shows info banner', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('DNS'));
     expect(screen.getByText(/DNS expectations are served by the DNS handler/i)).toBeInTheDocument();
@@ -109,14 +109,14 @@ describe('ComposerView kinds', () => {
   });
 
   it('switches to MCP kind and shows info banner', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('MCP'));
     expect(screen.getByText(/MCP tools are generated automatically/i)).toBeInTheDocument();
   });
 
   it('MCP kind embeds the MCP tools section', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('MCP'));
     // McpToolsPanel renders an "MCP Tools" heading
@@ -158,7 +158,7 @@ describe('ComposerView action-type filtering', () => {
   });
 
   it('gRPC kind lists grpc_stream and static only', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('gRPC'));
     const labels = getActionRadioLabels();
@@ -171,7 +171,7 @@ describe('ComposerView action-type filtering', () => {
   });
 
   it('DNS kind lists dns_response only', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('DNS'));
     const labels = getActionRadioLabels();
@@ -180,7 +180,7 @@ describe('ComposerView action-type filtering', () => {
   });
 
   it('MCP kind lists static only', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('MCP'));
     const labels = getActionRadioLabels();
@@ -199,7 +199,7 @@ describe('ComposerView kind-change default reset', () => {
   });
 
   it('switching to gRPC defaults actionType to grpc_stream', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     // Start on HTTP, actionType defaults to 'static'
     await user.click(screen.getByLabelText('gRPC'));
@@ -216,7 +216,7 @@ describe('ComposerView kind-change default reset', () => {
   });
 
   it('switching from HTTP (forward selected) to DNS resets to dns_response', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     // Select "Forward to upstream" on HTTP kind
     await user.click(screen.getByLabelText(/Forward to upstream/));
@@ -228,7 +228,7 @@ describe('ComposerView kind-change default reset', () => {
   });
 
   it('switching from HTTP (static selected) to gRPC keeps static since it is valid', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     // 'static' is the default for HTTP and is also valid for gRPC
     await user.click(screen.getByLabelText('gRPC'));
@@ -238,7 +238,7 @@ describe('ComposerView kind-change default reset', () => {
   });
 
   it('switching from gRPC (grpc_stream selected) to HTTP resets to static', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('gRPC'));
     // Select grpc_stream
@@ -251,7 +251,7 @@ describe('ComposerView kind-change default reset', () => {
   });
 
   it('leaving gRPC clears the gRPC-shaped matcher path/method when not customised', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     // Selecting gRPC pre-shapes the matcher to POST /package.Service/Method
     await user.click(screen.getByLabelText('gRPC'));
@@ -271,7 +271,7 @@ describe('ComposerView kind-change default reset', () => {
   });
 
   it('preserves a user-customised path when leaving gRPC', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('gRPC'));
     const pathField = screen.getByLabelText('Path') as HTMLInputElement;
@@ -288,7 +288,7 @@ describe('ComposerView kind-change default reset', () => {
 
 describe('ComposerView load-existing via list', () => {
   it('clicking a DNS mock row on the DNS kind populates DNS matcher fields', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'dns-exp-001',
@@ -317,7 +317,7 @@ describe('ComposerView load-existing via list', () => {
   });
 
   it('clicking a gRPC mock row on the gRPC kind loads it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'grpc-exp-001',
@@ -337,7 +337,7 @@ describe('ComposerView load-existing via list', () => {
   });
 
   it('clicking an HTTP mock row on the HTTP kind loads it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'http-exp-001',
@@ -369,7 +369,7 @@ describe('ComposerView DNS matcher panel', () => {
   });
 
   it('DNS kind shows DNS name/type/class fields and does NOT show HTTP method/path/body fields', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('DNS'));
     // DNS-specific fields present
@@ -389,7 +389,7 @@ describe('ComposerView DNS matcher panel', () => {
   });
 
   it('switching from DNS to HTTP shows HTTP matcher fields again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderComposer();
     await user.click(screen.getByLabelText('DNS'));
     expect(screen.queryByLabelText('Method')).not.toBeInTheDocument();
@@ -400,7 +400,7 @@ describe('ComposerView DNS matcher panel', () => {
   });
 
   it('loading an existing DNS expectation via list populates DNS matcher fields', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'dns-full-001',
@@ -440,7 +440,7 @@ describe('Existing mocks list', () => {
   });
 
   it('shows per-kind list with rows scoped to the selected kind', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [
         {
@@ -491,7 +491,7 @@ describe('Existing mocks list', () => {
   });
 
   it('clicking a row loads the expectation and shows "Editing" indicator', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'http-load-001',
@@ -512,7 +512,7 @@ describe('Existing mocks list', () => {
   });
 
   it('"New / clear" button resets the form and deselects', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'http-clear-001',
@@ -537,7 +537,7 @@ describe('Existing mocks list', () => {
   });
 
   it('shows empty state when no mocks of the selected kind exist', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'http-only-001',
@@ -557,7 +557,7 @@ describe('Existing mocks list', () => {
   });
 
   it('MCP kind shows both the editable list and the McpToolsPanel', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'mcp-http-001',
@@ -578,7 +578,7 @@ describe('Existing mocks list', () => {
   });
 
   it('clicking an MCP list row loads it WITHOUT switching away from the MCP kind', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'mcp-http-002',
@@ -600,7 +600,7 @@ describe('Existing mocks list', () => {
   });
 
   it('per-kind scoping: HTTP expectation does NOT appear in DNS list and vice versa', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useDashboardStore.setState({
       activeExpectations: [
         {
