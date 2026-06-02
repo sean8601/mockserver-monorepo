@@ -55,7 +55,9 @@ import WsdlImportDialog from './WsdlImportDialog';
 import OpenApiImportDialog from './OpenApiImportDialog';
 import PactExportDialog from './PactExportDialog';
 import OidcDialog from './OidcDialog';
+import AsyncApiDialog from './AsyncApiDialog';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import HubIcon from '@mui/icons-material/Hub';
 
 function statusColor(status: ConnectionStatus): 'success' | 'warning' | 'error' | 'default' {
   switch (status) {
@@ -116,6 +118,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [configOpen, setConfigOpen] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
   const [oidcOpen, setOidcOpen] = useState(false);
+  const [asyncApiOpen, setAsyncApiOpen] = useState(false);
   const [wsdlOpen, setWsdlOpen] = useState(false);
   const [openApiOpen, setOpenApiOpen] = useState(false);
   const [pactOpen, setPactOpen] = useState(false);
@@ -378,6 +381,15 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <ListItemIcon><VpnKeyIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Mock OIDC provider…</ListItemText>
           </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setAsyncApiOpen(true);
+              setToolsAnchorEl(null);
+            }}
+          >
+            <ListItemIcon><HubIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Load AsyncAPI…</ListItemText>
+          </MenuItem>
         </Menu>
         <OpenApiImportDialog
           open={openApiOpen}
@@ -408,6 +420,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       <ConfigurationDialog open={configOpen} onClose={() => setConfigOpen(false)} connectionParams={connectionParams} />
       <ExplainUnmatchedDialog open={explainOpen} onClose={() => setExplainOpen(false)} connectionParams={connectionParams} />
       <OidcDialog open={oidcOpen} onClose={() => setOidcOpen(false)} connectionParams={connectionParams} />
+      <AsyncApiDialog open={asyncApiOpen} onClose={() => setAsyncApiOpen(false)} connectionParams={connectionParams} />
     </MuiAppBar>
   );
 }
