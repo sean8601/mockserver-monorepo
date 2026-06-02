@@ -12,7 +12,10 @@ import MenuItem from '@mui/material/MenuItem';
 import Divider from '@mui/material/Divider';
 import Snackbar from '@mui/material/Snackbar';
 import Switch from '@mui/material/Switch';
+import Checkbox from '@mui/material/Checkbox';
 import Collapse from '@mui/material/Collapse';
+import IconButton from '@mui/material/IconButton';
+import DeleteIcon from '@mui/icons-material/Delete';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
@@ -25,6 +28,7 @@ import StandardReview from './StandardReview';
 import {
   buildExpectationJson,
   chaosFromExpectation,
+  sideEffectsFromExpectation,
   type StandardActionPayload,
   type StandardChaosDraft,
   type ChaosDelayUnit,
@@ -44,6 +48,10 @@ import {
   type StandardDnsMatcher,
   type DnsRecordType,
   type DnsRecordClass,
+  type StandardSideEffectAction,
+  type SideEffectPosition,
+  type SideEffectDelayUnit,
+  type SideEffectFailurePolicy,
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
 import ImportForm from './ImportForm';
@@ -2101,6 +2109,194 @@ function GrpcStreamPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Side-effects (before / after actions) panel
+// ---------------------------------------------------------------------------
+
+function emptySideEffect(): StandardSideEffectAction {
+  return {
+    position: 'before',
+    method: '',
+    path: '',
+    host: '',
+    body: '',
+    delayValue: 0,
+    delayUnit: 'MILLISECONDS',
+    blocking: true,
+    timeoutValue: 0,
+    timeoutUnit: 'SECONDS',
+    failurePolicy: 'BEST_EFFORT',
+  };
+}
+
+function SideEffectsPanel({
+  sideEffects,
+  setSideEffects,
+}: {
+  sideEffects: StandardSideEffectAction[];
+  setSideEffects: (s: StandardSideEffectAction[]) => void;
+}) {
+  const addRow = () => setSideEffects([...sideEffects, emptySideEffect()]);
+  const removeRow = (idx: number) => setSideEffects(sideEffects.filter((_, i) => i !== idx));
+  const updateRow = (idx: number, patch: Partial<StandardSideEffectAction>) => {
+    setSideEffects(sideEffects.map((se, i) => (i === idx ? { ...se, ...patch } : se)));
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="body2" color="text.secondary">
+        Fire HTTP webhook requests before and/or after the main response action.
+        Before-actions can optionally block the response until the webhook completes.
+        {/* Future increment: class/object callback targets. */}
+      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          Actions ({sideEffects.length})
+        </Typography>
+        <Button size="small" variant="outlined" onClick={addRow} data-testid="add-side-effect">
+          Add action
+        </Button>
+      </Box>
+      {sideEffects.map((se, idx) => (
+        <Paper key={idx} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }} data-testid="side-effect-row">
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <TextField
+              label="Position"
+              size="small"
+              select
+              value={se.position}
+              onChange={(e) => updateRow(idx, { position: e.target.value as SideEffectPosition })}
+              sx={{ width: 120 }}
+            >
+              <MenuItem value="before">Before</MenuItem>
+              <MenuItem value="after">After</MenuItem>
+            </TextField>
+            <TextField
+              label="Method"
+              size="small"
+              value={se.method}
+              onChange={(e) => updateRow(idx, { method: e.target.value })}
+              placeholder="GET"
+              sx={{ width: 100 }}
+            />
+            <TextField
+              label="Path"
+              size="small"
+              sx={{ flex: 1 }}
+              value={se.path}
+              onChange={(e) => updateRow(idx, { path: e.target.value })}
+              placeholder="/webhook/notify"
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            />
+            <IconButton
+              size="small"
+              color="error"
+              onClick={() => removeRow(idx)}
+              aria-label="Remove side-effect"
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <TextField
+              label="Host (optional)"
+              size="small"
+              value={se.host}
+              onChange={(e) => updateRow(idx, { host: e.target.value })}
+              placeholder="auth.svc:8080"
+              sx={{ width: 200 }}
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            />
+            <TextField
+              label="Body (optional)"
+              size="small"
+              sx={{ flex: 1 }}
+              value={se.body}
+              onChange={(e) => updateRow(idx, { body: e.target.value })}
+              placeholder='{"event":"matched"}'
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            />
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+            <TextField
+              label="Delay"
+              size="small"
+              type="number"
+              value={se.delayValue}
+              onChange={(e) => updateRow(idx, { delayValue: Number(e.target.value) || 0 })}
+              sx={{ width: 120 }}
+              helperText="0 = no delay"
+            />
+            <TextField
+              label="Delay unit"
+              size="small"
+              select
+              value={se.delayUnit}
+              onChange={(e) => updateRow(idx, { delayUnit: e.target.value as SideEffectDelayUnit })}
+              sx={{ width: 150 }}
+            >
+              <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
+              <MenuItem value="SECONDS">seconds</MenuItem>
+              <MenuItem value="MINUTES">minutes</MenuItem>
+            </TextField>
+          </Box>
+          {/* Before-only fields: blocking, timeout, failurePolicy */}
+          {se.position === 'before' && (
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={se.blocking}
+                    onChange={(e) => updateRow(idx, { blocking: e.target.checked })}
+                  />
+                }
+                label={
+                  <Typography variant="body2" sx={{ fontSize: '0.78rem' }}>
+                    Blocking
+                  </Typography>
+                }
+              />
+              <TextField
+                label="Timeout"
+                size="small"
+                type="number"
+                value={se.timeoutValue}
+                onChange={(e) => updateRow(idx, { timeoutValue: Number(e.target.value) || 0 })}
+                sx={{ width: 110 }}
+                helperText="0 = none"
+              />
+              <TextField
+                label="Timeout unit"
+                size="small"
+                select
+                value={se.timeoutUnit}
+                onChange={(e) => updateRow(idx, { timeoutUnit: e.target.value as SideEffectDelayUnit })}
+                sx={{ width: 150 }}
+              >
+                <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
+                <MenuItem value="SECONDS">seconds</MenuItem>
+                <MenuItem value="MINUTES">minutes</MenuItem>
+              </TextField>
+              <TextField
+                label="Failure policy"
+                size="small"
+                select
+                value={se.failurePolicy}
+                onChange={(e) => updateRow(idx, { failurePolicy: e.target.value as SideEffectFailurePolicy })}
+                sx={{ width: 170 }}
+              >
+                <MenuItem value="BEST_EFFORT">BEST_EFFORT</MenuItem>
+                <MenuItem value="FAIL_FAST">FAIL_FAST</MenuItem>
+              </TextField>
+            </Box>
+          )}
+        </Paper>
+      ))}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Existing mocks list — compact, scrollable list scoped to the selected kind
 // ---------------------------------------------------------------------------
 
@@ -2318,6 +2514,10 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [chaosEnabled, setChaosEnabled] = useState(false);
   const [chaosState, setChaosState] = useState<StandardChaosDraft>({});
 
+  // Side-effect actions — before / after actions (webhook httpRequest targets)
+  const [sideEffectsEnabled, setSideEffectsEnabled] = useState(false);
+  const [sideEffects, setSideEffects] = useState<StandardSideEffectAction[]>([]);
+
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
@@ -2417,6 +2617,16 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       } else {
         setChaosEnabled(false);
         setChaosState({});
+      }
+
+      // Repopulate side-effects panel from an existing expectation
+      const existingSideEffects = sideEffectsFromExpectation(item.value);
+      if (existingSideEffects) {
+        setSideEffectsEnabled(true);
+        setSideEffects(existingSideEffects);
+      } else {
+        setSideEffectsEnabled(false);
+        setSideEffects([]);
       }
     },
     [activeExpectations],
@@ -2526,6 +2736,8 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               setDnsMatcher({ dnsName: '', dnsType: '', dnsClass: '' });
               setChaosEnabled(false);
               setChaosState({});
+              setSideEffectsEnabled(false);
+              setSideEffects([]);
             }}
           />
         )}
@@ -2798,6 +3010,33 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               </Paper>
             )}
 
+            {/* Side-effect actions (before / after) — optional, cross-cutting. */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={sideEffectsEnabled}
+                    onChange={(e) => {
+                      setSideEffectsEnabled(e.target.checked);
+                      if (!e.target.checked) setSideEffects([]);
+                    }}
+                  />
+                }
+                label={
+                  <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                    Before &amp; after actions (optional)
+                  </Typography>
+                }
+                sx={{ m: 0 }}
+              />
+              <Collapse in={sideEffectsEnabled} unmountOnExit>
+                <Box sx={{ mt: 1.5 }}>
+                  <SideEffectsPanel sideEffects={sideEffects} setSideEffects={setSideEffects} />
+                </Box>
+              </Collapse>
+            </Paper>
+
             {/* Step 4: review & register — shows the generated Java / JSON /
                 curl, then the single Register button (mirrors the
                 LLM Conversation form's review-and-register section). */}
@@ -2823,6 +3062,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               if (actionType === 'forward_class_callback') currentAction.forwardClassCallback = forwardClassCallbackState;
               if (actionType === 'grpc_stream') currentAction.grpcStream = grpcStreamState;
               if (chaosEnabled && actionType !== 'error') currentAction.chaos = chaosState;
+              if (sideEffectsEnabled && sideEffects.length > 0) currentAction.sideEffects = sideEffects;
 
               // Build the effective matcher: for DNS kind, attach the DNS
               // matcher fields so buildExpectationJson emits { dnsName, ... }

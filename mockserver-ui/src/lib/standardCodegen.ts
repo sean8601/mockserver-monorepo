@@ -218,6 +218,30 @@ export interface StandardGrpcStreamState {
 
 export type ChaosDelayUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
 
+// ---------------------------------------------------------------------------
+// Side-effect actions (before / after actions) — webhook (httpRequest) target
+// only in this increment. Class/object callbacks are a future increment.
+// ---------------------------------------------------------------------------
+
+export type SideEffectPosition = 'before' | 'after';
+export type SideEffectDelayUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
+export type SideEffectFailurePolicy = 'BEST_EFFORT' | 'FAIL_FAST';
+
+export interface StandardSideEffectAction {
+  position: SideEffectPosition;
+  method: string;
+  path: string;
+  host: string;
+  body: string;
+  delayValue: number;
+  delayUnit: SideEffectDelayUnit;
+  // before-only fields:
+  blocking: boolean;
+  timeoutValue: number;
+  timeoutUnit: SideEffectDelayUnit;
+  failurePolicy: SideEffectFailurePolicy;
+}
+
 /**
  * Draft state for the HTTP chaos profile panel. Maps 1:1 to the seven
  * HttpChaosProfile fields. `undefined` means "not set / omit from JSON".
@@ -250,6 +274,7 @@ export interface StandardActionPayload {
   forwardClassCallback?: StandardForwardClassCallbackState;
   grpcStream?: StandardGrpcStreamState;
   chaos?: StandardChaosDraft;
+  sideEffects?: StandardSideEffectAction[];
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +617,18 @@ export function buildExpectationJson(
     if (chaos) out['chaos'] = chaos;
   }
 
+  // Side-effect actions — beforeActions / afterActions
+  if (action.sideEffects && action.sideEffects.length > 0) {
+    const beforeActions = action.sideEffects
+      .filter((se) => se.position === 'before' && se.path.trim())
+      .map(buildSideEffectActionJson);
+    const afterActions = action.sideEffects
+      .filter((se) => se.position === 'after' && se.path.trim())
+      .map(buildSideEffectActionJson);
+    if (beforeActions.length > 0) out['beforeActions'] = beforeActions;
+    if (afterActions.length > 0) out['afterActions'] = afterActions;
+  }
+
   if (matcher.id.trim()) out['id'] = matcher.id.trim();
   if (matcher.priority !== 0) out['priority'] = matcher.priority;
   if (matcher.times > 0) {
@@ -644,6 +681,122 @@ export function chaosFromExpectation(value: Record<string, unknown>): StandardCh
   if (typeof c['failRequestCount'] === 'number') draft.failRequestCount = c['failRequestCount'] as number;
   // Only return if at least one field was populated
   return Object.keys(draft).length > 0 ? draft : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Side-effect actions — JSON helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a single side-effect action object for the JSON payload.
+ * Shared by beforeActions and afterActions emission.
+ */
+function buildSideEffectActionJson(
+  se: StandardSideEffectAction,
+): Record<string, unknown> {
+  const httpReq: Record<string, unknown> = { path: se.path };
+  if (se.method.trim()) httpReq['method'] = se.method.trim();
+  // the webhook destination is derived from the Host header (HttpRequest has no
+  // top-level host field); this matches the .withHeader("Host", ...) Java preview
+  if (se.host.trim()) httpReq['headers'] = { Host: [se.host.trim()] };
+  if (se.body.trim()) httpReq['body'] = se.body.trim();
+  const out: Record<string, unknown> = { httpRequest: httpReq };
+  if (se.delayValue > 0) {
+    out['delay'] = { timeUnit: se.delayUnit, value: se.delayValue };
+  }
+  if (se.position === 'before') {
+    // blocking defaults to true — only emit when false to keep JSON minimal
+    if (!se.blocking) out['blocking'] = false;
+    if (se.timeoutValue > 0) {
+      out['timeout'] = { timeUnit: se.timeoutUnit, value: se.timeoutValue };
+    }
+    // failurePolicy defaults to BEST_EFFORT — only emit when FAIL_FAST
+    if (se.failurePolicy === 'FAIL_FAST') out['failurePolicy'] = 'FAIL_FAST';
+  }
+  return out;
+}
+
+/**
+ * Round-trip: parse `beforeActions` and `afterActions` from an existing
+ * expectation back into `StandardSideEffectAction[]` for the composer.
+ * Normalises single-object and array forms. Ignores callback-only entries
+ * (no httpRequest).
+ */
+export function sideEffectsFromExpectation(
+  value: Record<string, unknown>,
+): StandardSideEffectAction[] | undefined {
+  const result: StandardSideEffectAction[] = [];
+
+  function normalise(raw: unknown): Record<string, unknown>[] {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw as Record<string, unknown>[];
+    if (typeof raw === 'object') return [raw as Record<string, unknown>];
+    return [];
+  }
+
+  function parseDelayUnit(unit: unknown): SideEffectDelayUnit {
+    if (unit === 'SECONDS') return 'SECONDS';
+    if (unit === 'MINUTES') return 'MINUTES';
+    return 'MILLISECONDS';
+  }
+
+  // the webhook destination is carried in the Host header; tolerate both the
+  // object form ({ Host: ["host:port"] }) and the name/values array form, plus
+  // a legacy top-level host field
+  function extractHost(r: Record<string, unknown>): string {
+    if (typeof r['host'] === 'string') return r['host'] as string;
+    const headers = r['headers'];
+    if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+      const h = headers as Record<string, unknown>;
+      const v = h['Host'] ?? h['host'];
+      if (Array.isArray(v) && typeof v[0] === 'string') return v[0] as string;
+      if (typeof v === 'string') return v;
+    } else if (Array.isArray(headers)) {
+      for (const entry of headers) {
+        if (entry && typeof entry === 'object') {
+          const e = entry as Record<string, unknown>;
+          const name = typeof e['name'] === 'string' ? (e['name'] as string) : '';
+          if (name.toLowerCase() === 'host') {
+            const values = e['values'];
+            if (Array.isArray(values) && typeof values[0] === 'string') return values[0] as string;
+          }
+        }
+      }
+    }
+    return '';
+  }
+
+  function parseOne(obj: Record<string, unknown>, position: SideEffectPosition): StandardSideEffectAction | null {
+    const req = obj['httpRequest'];
+    if (!req || typeof req !== 'object') return null;
+    const r = req as Record<string, unknown>;
+    const delay = obj['delay'] as Record<string, unknown> | undefined;
+    const timeout = obj['timeout'] as Record<string, unknown> | undefined;
+    return {
+      position,
+      method: typeof r['method'] === 'string' ? (r['method'] as string) : '',
+      path: typeof r['path'] === 'string' ? (r['path'] as string) : '',
+      host: extractHost(r),
+      body: typeof r['body'] === 'string' ? (r['body'] as string) : '',
+      delayValue: typeof delay?.['value'] === 'number' ? (delay['value'] as number) : 0,
+      delayUnit: parseDelayUnit(delay?.['timeUnit']),
+      blocking: obj['blocking'] !== false, // default true
+      timeoutValue: typeof timeout?.['value'] === 'number' ? (timeout['value'] as number) : 0,
+      timeoutUnit: parseDelayUnit(timeout?.['timeUnit']),
+      failurePolicy: obj['failurePolicy'] === 'FAIL_FAST' ? 'FAIL_FAST' : 'BEST_EFFORT',
+    };
+  }
+
+  for (const obj of normalise(value['beforeActions'])) {
+    const parsed = parseOne(obj, 'before');
+    if (parsed) result.push(parsed);
+  }
+  for (const obj of normalise(value['afterActions'])) {
+    const parsed = parseOne(obj, 'after');
+    if (parsed) result.push(parsed);
+  }
+
+  return result.length > 0 ? result : undefined;
 }
 
 export function standardToJson(matcher: StandardMatcher, action: StandardActionPayload): string {
@@ -1091,14 +1244,56 @@ function collectJavaImports(
     }
   }
 
+  // Side-effect (before / after) actions — webhook (httpRequest) target only this increment
+  const sideEffects = (action.sideEffects ?? []).filter((se) => se.path.trim());
+  const beforeActions = sideEffects.filter((se) => se.position === 'before');
+  const afterActions = sideEffects.filter((se) => se.position === 'after');
+  if (sideEffects.length > 0) imp.add('import static org.mockserver.model.HttpRequest.request;');
+  if (beforeActions.length > 0) imp.add('import static org.mockserver.model.AfterAction.beforeAction;');
+  if (afterActions.length > 0) imp.add('import static org.mockserver.model.AfterAction.afterAction;');
+  if (beforeActions.some((se) => se.failurePolicy === 'FAIL_FAST')) {
+    imp.add('import org.mockserver.model.FailurePolicy;');
+  }
+  if (sideEffects.some((se) => se.delayValue > 0) || beforeActions.some((se) => se.timeoutValue > 0)) {
+    imp.add('import org.mockserver.model.Delay;');
+    imp.add('import java.util.concurrent.TimeUnit;');
+  }
+
   const all = Array.from(imp);
   const statics = all.filter((i) => i.startsWith('import static ')).sort();
   const plains = all.filter((i) => !i.startsWith('import static ')).sort();
   return [...statics, ...plains];
 }
 
+function sideEffectToJava(se: StandardSideEffectAction): string {
+  const isBefore = se.position === 'before';
+  const factoryMethod = isBefore ? 'beforeAction' : 'afterAction';
+  const lines: string[] = [];
+  lines.push(`${factoryMethod}()`);
+  lines.push(`        .withHttpRequest(request()`);
+  if (se.method.trim()) lines.push(`            .withMethod("${escapeJava(se.method.trim())}")`);
+  lines.push(`            .withPath("${escapeJava(se.path)}")`);
+  if (se.host.trim()) lines.push(`            .withHeader("Host", "${escapeJava(se.host.trim())}")`);
+  if (se.body.trim()) lines.push(`            .withBody("${escapeJava(se.body.trim())}")`);
+  lines.push('        )');
+  if (se.delayValue > 0) {
+    lines.push(`        .withDelay(new Delay(TimeUnit.${se.delayUnit}, ${se.delayValue}))`);
+  }
+  if (isBefore) {
+    if (!se.blocking) lines.push('        .withBlocking(false)');
+    if (se.timeoutValue > 0) {
+      lines.push(`        .withTimeout(new Delay(TimeUnit.${se.timeoutUnit}, ${se.timeoutValue}))`);
+    }
+    if (se.failurePolicy === 'FAIL_FAST') lines.push('        .withFailurePolicy(FailurePolicy.FAIL_FAST)');
+  }
+  return lines.join('\n');
+}
+
 export function standardToJava(matcher: StandardMatcher, action: StandardActionPayload): string {
   const hasChaos = !!(action.chaos && buildChaosJson(action.chaos));
+  const sideEffects = (action.sideEffects ?? []).filter((se) => se.path.trim());
+  const beforeActions = sideEffects.filter((se) => se.position === 'before');
+  const afterActions = sideEffects.filter((se) => se.position === 'after');
   const lines: string[] = [];
   for (const imp of collectJavaImports(matcher, action, hasChaos)) lines.push(imp);
   lines.push('');
@@ -1110,6 +1305,17 @@ export function standardToJava(matcher: StandardMatcher, action: StandardActionP
   // BEFORE the terminal action (respond/forward/error), which returns Expectation[].
   if (hasChaos) {
     lines.push('  ' + chaosToJava(action.chaos!).split('\n').join('\n  '));
+  }
+  // before/after actions are also fluent on ForwardChainExpectation -> before the terminal action
+  for (const se of beforeActions) {
+    lines.push('  .withBeforeAction(');
+    lines.push('    ' + sideEffectToJava(se).split('\n').join('\n    '));
+    lines.push('  )');
+  }
+  for (const se of afterActions) {
+    lines.push('  .withAfterAction(');
+    lines.push('    ' + sideEffectToJava(se).split('\n').join('\n    '));
+    lines.push('  )');
   }
   lines.push('  ' + actionToJava(action).split('\n').join('\n  '));
   lines.push(';');

@@ -671,6 +671,79 @@ describe('Existing mocks list', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Side-effects (before & after actions) panel
+// ---------------------------------------------------------------------------
+
+describe('ComposerView side-effects panel', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({ activeExpectations: [] });
+  });
+
+  it('shows the "Before & after actions" toggle on the HTTP kind', () => {
+    renderComposer();
+    expect(screen.getByText(/Before & after actions/)).toBeInTheDocument();
+  });
+
+  it('toggling on shows the side-effects panel with "Add action" button', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderComposer();
+    // The panel content is collapsed by default
+    expect(screen.queryByTestId('add-side-effect')).not.toBeInTheDocument();
+    // Toggle it on
+    const toggle = screen.getByText(/Before & after actions/).closest('label')!.querySelector('input')!;
+    await user.click(toggle);
+    expect(screen.getByTestId('add-side-effect')).toBeInTheDocument();
+  });
+
+  it('adding a row shows the side-effect form fields', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderComposer();
+    // Toggle on
+    const toggle = screen.getByText(/Before & after actions/).closest('label')!.querySelector('input')!;
+    await user.click(toggle);
+    // Click "Add action"
+    await user.click(screen.getByTestId('add-side-effect'));
+    // The row should appear with Position, Method, Path fields
+    expect(screen.getByTestId('side-effect-row')).toBeInTheDocument();
+    expect(screen.getByLabelText('Position')).toBeInTheDocument();
+    // Before-only fields should show since default position is "before"
+    expect(screen.getByLabelText('Blocking')).toBeInTheDocument();
+    expect(screen.getByLabelText('Failure policy')).toBeInTheDocument();
+  });
+
+  it('loading an expectation with beforeActions populates the side-effects panel', async () => {
+    const user = userEvent.setup({ delay: null });
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'se-test-001',
+        value: {
+          id: 'se-test-001',
+          httpRequest: { method: 'GET', path: '/api/with-actions' },
+          httpResponse: { statusCode: 200 },
+          beforeActions: [
+            {
+              httpRequest: { method: 'GET', path: '/auth', host: 'auth.svc:8080' },
+              blocking: true,
+              timeout: { timeUnit: 'SECONDS', value: 2 },
+              failurePolicy: 'FAIL_FAST',
+            },
+          ],
+          afterActions: [
+            { httpRequest: { method: 'POST', path: '/audit' } },
+          ],
+        },
+      }],
+    });
+    renderComposer();
+    const list = screen.getByTestId('existing-mocks-list');
+    await user.click(within(list).getByText(/GET \/api\/with-actions/));
+    // The side-effects toggle should be enabled
+    const sideEffectRows = screen.getAllByTestId('side-effect-row');
+    expect(sideEffectRows).toHaveLength(2);
+  });
+});
+
 describe('Store view migration', () => {
   it('maps legacy "mcp-tools" view to "composer"', () => {
     // setView accepts string at runtime even though the type has changed
