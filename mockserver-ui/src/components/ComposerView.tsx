@@ -38,6 +38,9 @@ import {
   type StandardForwardTemplateState,
   type StandardForwardClassCallbackState,
   type StandardGrpcStreamState,
+  type StandardDnsMatcher,
+  type DnsRecordType,
+  type DnsRecordClass,
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
 import ImportForm from './ImportForm';
@@ -187,6 +190,8 @@ interface MatcherState {
   secure: boolean;
   priority: number;
   times: number;         // 0 = unlimited
+  /** DNS matcher — set when the expectation kind is 'dns'. */
+  dns?: StandardDnsMatcher;
 }
 
 function emptyMatcher(): MatcherState {
@@ -443,6 +448,95 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           }
           label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>HTTPS only</Typography>}
         />
+        <TextField
+          label="Priority (higher = wins)"
+          size="small"
+          type="number"
+          sx={{ width: 200 }}
+          value={matcher.priority}
+          onChange={(e) => setMatcher({ ...matcher, priority: Number(e.target.value) || 0 })}
+        />
+        <TextField
+          label="Times (0 = unlimited)"
+          size="small"
+          type="number"
+          sx={{ width: 170 }}
+          value={matcher.times}
+          onChange={(e) => setMatcher({ ...matcher, times: Math.max(0, Number(e.target.value) || 0) })}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DNS request matcher panel — shown instead of the HTTP MatcherPanel when
+// the expectation kind is 'dns'. DNS matching is based on dnsName / dnsType /
+// dnsClass, NOT method / path / headers / body.
+// ---------------------------------------------------------------------------
+
+function DnsMatcherPanel({
+  matcher,
+  setMatcher,
+  dnsMatcher,
+  setDnsMatcher,
+}: {
+  matcher: MatcherState;
+  setMatcher: (m: MatcherState) => void;
+  dnsMatcher: StandardDnsMatcher;
+  setDnsMatcher: (d: StandardDnsMatcher) => void;
+}) {
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <TextField
+          label="Expectation ID (optional)"
+          size="small"
+          sx={{ flex: 1 }}
+          value={matcher.id}
+          onChange={(e) => setMatcher({ ...matcher, id: e.target.value })}
+          placeholder="leave blank to auto-generate; reuse an ID to update an existing expectation"
+        />
+      </Box>
+      <TextField
+        label="DNS name"
+        size="small"
+        fullWidth
+        value={dnsMatcher.dnsName}
+        onChange={(e) => setDnsMatcher({ ...dnsMatcher, dnsName: e.target.value })}
+        placeholder="example.com"
+        helperText="required — the server routes to a DNS matcher when dnsName is present"
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <TextField
+          label="Record type"
+          size="small"
+          select
+          value={dnsMatcher.dnsType}
+          onChange={(e) => setDnsMatcher({ ...dnsMatcher, dnsType: e.target.value as DnsRecordType | '' })}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="">(any)</MenuItem>
+          {(['A', 'AAAA', 'CNAME', 'MX', 'SRV', 'TXT', 'PTR'] as const).map((t) => (
+            <MenuItem key={t} value={t}>{t}</MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          label="Record class"
+          size="small"
+          select
+          value={dnsMatcher.dnsClass}
+          onChange={(e) => setDnsMatcher({ ...dnsMatcher, dnsClass: e.target.value as DnsRecordClass | '' })}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="">(any)</MenuItem>
+          {(['IN', 'CH', 'HS', 'ANY'] as const).map((c) => (
+            <MenuItem key={c} value={c}>{c}</MenuItem>
+          ))}
+        </TextField>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         <TextField
           label="Priority (higher = wins)"
           size="small"
@@ -1953,6 +2047,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [kind, setKind] = useState<ExpectationKind>('standard');
   const [actionType, setActionType] = useState<ActionType>('static');
   const [matcher, setMatcher] = useState<MatcherState>(emptyMatcher);
+  const [dnsMatcher, setDnsMatcher] = useState<StandardDnsMatcher>({ dnsName: '', dnsType: '', dnsClass: '' });
   const [loadFromKey, setLoadFromKey] = useState('');
   const [llmScenarioName, setLlmScenarioName] = useState('');
 
@@ -2050,12 +2145,14 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   // exactly. Replaces six per-action register helpers that had drifted apart
   // from the codegen path.
   const handleRegister = useCallback(
-    async (action: StandardActionPayload) => {
+    async (action: StandardActionPayload, effectiveMatcher?: MatcherState) => {
+      const m = effectiveMatcher ?? matcher;
       setRegistering(true);
       setError(null);
       try {
-        await registerExpectation(connectionParams, matcher, action);
-        setSnackMessage(`Registered ${matcher.method || 'ANY'} ${matcher.path}`);
+        await registerExpectation(connectionParams, m, action);
+        const label = m.dns ? m.dns.dnsName : `${m.method || 'ANY'} ${m.path}`;
+        setSnackMessage(`Registered ${label}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -2094,6 +2191,22 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       if (prefill.forwardTemplateState) setForwardTemplateState(prefill.forwardTemplateState);
       if (prefill.forwardClassCallbackState) setForwardClassCallbackState(prefill.forwardClassCallbackState);
       if (prefill.grpcStreamState) setGrpcStreamState(prefill.grpcStreamState);
+
+      // Populate the DNS matcher fields from the httpRequest if this is a
+      // DNS expectation (the server serialises dnsName / dnsType / dnsClass
+      // inside the httpRequest object).
+      const req = (item.value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
+      if (typeof req['dnsName'] === 'string') {
+        const validTypes: string[] = ['A', 'AAAA', 'CNAME', 'MX', 'SRV', 'TXT', 'PTR'];
+        const validClasses: string[] = ['IN', 'CH', 'HS', 'ANY'];
+        setDnsMatcher({
+          dnsName: req['dnsName'] as string,
+          dnsType: validTypes.includes(req['dnsType'] as string) ? (req['dnsType'] as DnsRecordType) : '',
+          dnsClass: validClasses.includes(req['dnsClass'] as string) ? (req['dnsClass'] as DnsRecordClass) : '',
+        });
+      } else {
+        setDnsMatcher({ dnsName: '', dnsType: '', dnsClass: '' });
+      }
 
       // Repopulate chaos panel from an existing expectation
       const existingChaos = chaosFromExpectation(item.value);
@@ -2304,8 +2417,8 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
             {kind === 'dns' && (
               <Alert severity="info" variant="outlined" sx={{ fontSize: '0.78rem' }}>
                 DNS expectations are served by the DNS handler on the MockServer DNS port. The
-                request matcher matches the DNS query name; the action returns a DNS response with
-                a response code and answer records.
+                request matcher matches by DNS name, record type, and record class; the action
+                returns a DNS response with a response code and answer records.
               </Alert>
             )}
             {kind === 'mcp' && (
@@ -2315,20 +2428,38 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                 are shown below after you register.
               </Alert>
             )}
-            {/* Step 1: matcher */}
+            {/* Step 1: matcher — DNS uses a dedicated panel with dnsName /
+                dnsType / dnsClass instead of the HTTP method / path / headers
+                / body fields. */}
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                 1 · Match a request
               </Typography>
-              <MatcherPanel matcher={matcher} setMatcher={setMatcher} />
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
-                {kind === 'grpc'
-                  ? 'gRPC path convention: /package.Service/Method. gRPC clients send Content-Type: application/grpc — add it to the matcher headers to restrict to gRPC traffic only.'
-                  : kind === 'dns'
-                    ? 'DNS queries are matched by request path (the DNS name). Use the path field to specify the query name to match.'
-                    : 'Protocol (HTTP/1.1 vs HTTP/2), keep-alive, respond-before-body, the socket-address override, and client certificate chains are not yet exposed in the form — use the REST API or raw JSON for those.'}
-                {' '}Object callbacks (httpResponseObjectCallback / httpForwardObjectCallback) require live WebSocket registration and are not form-authorable.
-              </Typography>
+              {kind === 'dns' ? (
+                <>
+                  <DnsMatcherPanel
+                    matcher={matcher}
+                    setMatcher={setMatcher}
+                    dnsMatcher={dnsMatcher}
+                    setDnsMatcher={setDnsMatcher}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
+                    DNS queries are matched by dnsName (required), record type, and record class.
+                    Leave type and class empty to match any. The server routes to a DnsRequestDefinition
+                    when the request object contains a dnsName field.
+                  </Typography>
+                </>
+              ) : (
+                <>
+                  <MatcherPanel matcher={matcher} setMatcher={setMatcher} />
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
+                    {kind === 'grpc'
+                      ? 'gRPC path convention: /package.Service/Method. gRPC clients send Content-Type: application/grpc — add it to the matcher headers to restrict to gRPC traffic only.'
+                      : 'Protocol (HTTP/1.1 vs HTTP/2), keep-alive, respond-before-body, the socket-address override, and client certificate chains are not yet exposed in the form — use the REST API or raw JSON for those.'}
+                    {' '}Object callbacks (httpResponseObjectCallback / httpForwardObjectCallback) require live WebSocket registration and are not form-authorable.
+                  </Typography>
+                </>
+              )}
             </Paper>
 
             {/* Step 2: action type */}
@@ -2465,11 +2596,23 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               if (actionType === 'grpc_stream') currentAction.grpcStream = grpcStreamState;
               if (chaosEnabled && actionType !== 'error') currentAction.chaos = chaosState;
 
-              const dispatchRegister = () => void handleRegister(currentAction);
+              // Build the effective matcher: for DNS kind, attach the DNS
+              // matcher fields so buildExpectationJson emits { dnsName, ... }
+              // instead of the HTTP request matcher shape.
+              const effectiveMatcher = kind === 'dns'
+                ? { ...matcher, dns: dnsMatcher }
+                : matcher;
 
-              // Per-action validation
+              const dispatchRegister = () => void handleRegister(currentAction, effectiveMatcher);
+
+              // Per-action validation — DNS kind validates dnsName instead
+              // of matcher.path.
               const canRegister = (() => {
-                if (matcher.path.trim().length === 0) return false;
+                if (kind === 'dns') {
+                  if (dnsMatcher.dnsName.trim().length === 0) return false;
+                } else {
+                  if (matcher.path.trim().length === 0) return false;
+                }
                 switch (actionType) {
                   case 'static': return true;
                   case 'forward': return forwardState.host.trim().length > 0 && forwardState.port > 0;
@@ -2508,7 +2651,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   </Typography>
                   <Divider sx={{ mb: 1 }} />
                   <StandardReview
-                    matcher={matcher}
+                    matcher={effectiveMatcher}
                     action={currentAction}
                     baseUrl={baseUrl(connectionParams)}
                   />

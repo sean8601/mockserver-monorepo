@@ -398,3 +398,133 @@ describe('standardToCurl for new action types', () => {
     expect(curl).toContain('"grpcStreamResponse"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// DNS request matcher — emits httpRequest: { dnsName, dnsType?, dnsClass? }
+// instead of the HTTP method/path/headers/body matcher shape.
+// Verified against DnsRequestDefinitionDTO + RequestDefinitionDTODeserializer:
+// the server routes to DnsRequestDefinition when the httpRequest object
+// contains a dnsName field.
+// ---------------------------------------------------------------------------
+
+describe('buildExpectationJson DNS request matcher', () => {
+  it('emits httpRequest with dnsName, dnsType, dnsClass when dns matcher is set', () => {
+    const m = baseMatcher({
+      dns: { dnsName: 'example.com', dnsType: 'A', dnsClass: 'IN' },
+    });
+    const action: StandardActionPayload = {
+      type: 'dns_response',
+      dnsResponse: { responseCode: 'NOERROR', answerRecords: '' },
+    };
+    const result = buildExpectationJson(m, action);
+    const req = result['httpRequest'] as Record<string, unknown>;
+    expect(req['dnsName']).toBe('example.com');
+    expect(req['dnsType']).toBe('A');
+    expect(req['dnsClass']).toBe('IN');
+    // Must NOT contain HTTP matcher fields
+    expect(req['path']).toBeUndefined();
+    expect(req['method']).toBeUndefined();
+    expect(req['headers']).toBeUndefined();
+    expect(req['body']).toBeUndefined();
+  });
+
+  it('omits dnsType when empty', () => {
+    const m = baseMatcher({
+      dns: { dnsName: 'example.com', dnsType: '', dnsClass: 'IN' },
+    });
+    const action: StandardActionPayload = {
+      type: 'dns_response',
+      dnsResponse: { responseCode: 'NOERROR', answerRecords: '' },
+    };
+    const result = buildExpectationJson(m, action);
+    const req = result['httpRequest'] as Record<string, unknown>;
+    expect(req['dnsName']).toBe('example.com');
+    expect(req['dnsType']).toBeUndefined();
+    expect(req['dnsClass']).toBe('IN');
+  });
+
+  it('omits dnsClass when empty', () => {
+    const m = baseMatcher({
+      dns: { dnsName: 'example.com', dnsType: 'AAAA', dnsClass: '' },
+    });
+    const action: StandardActionPayload = {
+      type: 'dns_response',
+      dnsResponse: { responseCode: 'NOERROR', answerRecords: '' },
+    };
+    const result = buildExpectationJson(m, action);
+    const req = result['httpRequest'] as Record<string, unknown>;
+    expect(req['dnsName']).toBe('example.com');
+    expect(req['dnsType']).toBe('AAAA');
+    expect(req['dnsClass']).toBeUndefined();
+  });
+
+  it('emits only dnsName when both type and class are empty', () => {
+    const m = baseMatcher({
+      dns: { dnsName: 'minimal.example.com', dnsType: '', dnsClass: '' },
+    });
+    const action: StandardActionPayload = {
+      type: 'dns_response',
+      dnsResponse: { responseCode: 'NOERROR', answerRecords: '' },
+    };
+    const result = buildExpectationJson(m, action);
+    const req = result['httpRequest'] as Record<string, unknown>;
+    expect(req['dnsName']).toBe('minimal.example.com');
+    expect(req['dnsType']).toBeUndefined();
+    expect(req['dnsClass']).toBeUndefined();
+    expect(req['path']).toBeUndefined();
+    expect(req['method']).toBeUndefined();
+  });
+
+  it('falls back to HTTP matcher when dns.dnsName is empty', () => {
+    const m = baseMatcher({
+      dns: { dnsName: '', dnsType: 'A', dnsClass: 'IN' },
+    });
+    const action: StandardActionPayload = {
+      type: 'dns_response',
+      dnsResponse: { responseCode: 'NOERROR', answerRecords: '' },
+    };
+    const result = buildExpectationJson(m, action);
+    const req = result['httpRequest'] as Record<string, unknown>;
+    // Should fall back to HTTP matcher since dnsName is empty
+    expect(req['path']).toBe('/api/test');
+    expect(req['dnsName']).toBeUndefined();
+  });
+
+  it('HTTP kind matcher is unaffected when no dns field is set', () => {
+    const m = baseMatcher({ path: '/api/users', method: 'GET' });
+    const action: StandardActionPayload = {
+      type: 'static',
+      static: { statusCode: 200, body: '[]', contentType: 'application/json' },
+    };
+    const result = buildExpectationJson(m, action);
+    const req = result['httpRequest'] as Record<string, unknown>;
+    expect(req['path']).toBe('/api/users');
+    expect(req['method']).toBe('GET');
+    expect(req['dnsName']).toBeUndefined();
+  });
+
+  it('combines DNS matcher with dnsResponse action correctly', () => {
+    const records = JSON.stringify([
+      { name: 'example.com', type: 'A', value: '93.184.216.34', ttl: 300 },
+    ]);
+    const m = baseMatcher({
+      dns: { dnsName: 'example.com', dnsType: 'A', dnsClass: 'IN' },
+    });
+    const action: StandardActionPayload = {
+      type: 'dns_response',
+      dnsResponse: { responseCode: 'NOERROR', answerRecords: records },
+    };
+    const result = buildExpectationJson(m, action);
+    // Request side
+    const req = result['httpRequest'] as Record<string, unknown>;
+    expect(req['dnsName']).toBe('example.com');
+    expect(req['dnsType']).toBe('A');
+    expect(req['dnsClass']).toBe('IN');
+    // Response side
+    const dns = result['dnsResponse'] as Record<string, unknown>;
+    expect(dns['responseCode']).toBe('NOERROR');
+    expect(dns['answerRecords']).toEqual([
+      { name: 'example.com', type: 'A', value: '93.184.216.34', ttl: 300 },
+    ]);
+  });
+});

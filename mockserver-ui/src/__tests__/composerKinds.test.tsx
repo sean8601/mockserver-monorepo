@@ -100,6 +100,12 @@ describe('ComposerView kinds', () => {
     renderComposer();
     await user.click(screen.getByLabelText('DNS'));
     expect(screen.getByText(/DNS expectations are served by the DNS handler/i)).toBeInTheDocument();
+    // DNS kind shows DNS matcher fields instead of HTTP matcher fields
+    expect(screen.getByLabelText('DNS name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Record type')).toBeInTheDocument();
+    expect(screen.getByLabelText('Record class')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Method')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Path')).not.toBeInTheDocument();
   });
 
   it('switches to MCP kind and shows info banner', async () => {
@@ -250,8 +256,13 @@ describe('ComposerView kind-change default reset', () => {
     // Selecting gRPC pre-shapes the matcher to POST /package.Service/Method
     await user.click(screen.getByLabelText('gRPC'));
     expect((screen.getByLabelText('Path') as HTMLInputElement).value).toBe('/package.Service/Method');
-    // Switching to DNS must NOT leave the gRPC path/method behind
+    // Switching to DNS shows the DNS matcher panel (no Path field) — verify
+    // the DNS name field is shown instead.
     await user.click(screen.getByLabelText('DNS'));
+    expect(screen.getByLabelText('DNS name')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Path')).not.toBeInTheDocument();
+    // Switching from DNS to HTTP shows the cleared path (gRPC default was removed)
+    await user.click(screen.getByLabelText('HTTP'));
     expect((screen.getByLabelText('Path') as HTMLInputElement).value).toBe('');
     // And switching to MCP from gRPC likewise clears it
     await user.click(screen.getByLabelText('gRPC'));
@@ -276,14 +287,14 @@ describe('ComposerView kind-change default reset', () => {
 // ---------------------------------------------------------------------------
 
 describe('ComposerView load-existing kind inference', () => {
-  it('loading a dnsResponse expectation selects DNS kind', async () => {
+  it('loading a dnsResponse expectation selects DNS kind and populates DNS matcher fields', async () => {
     const user = userEvent.setup();
     useDashboardStore.setState({
       activeExpectations: [{
         key: 'dns-exp-001',
         value: {
           id: 'dns-exp-001',
-          httpRequest: { method: 'GET', path: '/example.com' },
+          httpRequest: { dnsName: 'example.com', dnsType: 'A', dnsClass: 'IN' },
           dnsResponse: { responseCode: 'NOERROR', answerRecords: [] },
         },
       }],
@@ -299,6 +310,8 @@ describe('ComposerView load-existing kind inference', () => {
     const respondSection = screen.getByText(/2 · Respond with/).closest('[class*="MuiPaper"]')!;
     const dnsActionRadio = within(respondSection as HTMLElement).getByLabelText(/DNS response/);
     expect(dnsActionRadio).toBeChecked();
+    // DNS matcher fields should be populated
+    expect((screen.getByLabelText('DNS name') as HTMLInputElement).value).toBe('example.com');
   });
 
   it('loading a grpcStreamResponse expectation selects gRPC kind', async () => {
@@ -337,6 +350,69 @@ describe('ComposerView load-existing kind inference', () => {
     await user.selectOptions(select, 'http-exp-001');
     const httpKindRadio = screen.getByLabelText('HTTP');
     expect(httpKindRadio).toBeChecked();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DNS kind — dedicated matcher panel (not HTTP matcher)
+// ---------------------------------------------------------------------------
+
+describe('ComposerView DNS matcher panel', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({ activeExpectations: [] });
+  });
+
+  it('DNS kind shows DNS name/type/class fields and does NOT show HTTP method/path/body fields', async () => {
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(screen.getByLabelText('DNS'));
+    // DNS-specific fields present
+    expect(screen.getByLabelText('DNS name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Record type')).toBeInTheDocument();
+    expect(screen.getByLabelText('Record class')).toBeInTheDocument();
+    // HTTP-specific fields absent
+    expect(screen.queryByLabelText('Method')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Path')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Headers/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Cookies/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Body type/)).not.toBeInTheDocument();
+    // Generic expectation-level fields still present
+    expect(screen.getByLabelText(/Expectation ID/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Priority/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Times/)).toBeInTheDocument();
+  });
+
+  it('switching from DNS to HTTP shows HTTP matcher fields again', async () => {
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(screen.getByLabelText('DNS'));
+    expect(screen.queryByLabelText('Method')).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText('HTTP'));
+    expect(screen.getByLabelText('Method')).toBeInTheDocument();
+    expect(screen.getByLabelText('Path')).toBeInTheDocument();
+    expect(screen.queryByLabelText('DNS name')).not.toBeInTheDocument();
+  });
+
+  it('loading an existing DNS expectation with dnsName populates DNS matcher fields', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({
+      activeExpectations: [{
+        key: 'dns-full-001',
+        value: {
+          id: 'dns-full-001',
+          httpRequest: { dnsName: 'api.example.com', dnsType: 'AAAA', dnsClass: 'CH' },
+          dnsResponse: { responseCode: 'NOERROR', answerRecords: [] },
+        },
+      }],
+    });
+    renderComposer();
+    const select = screen.getByLabelText(/Edit existing or add new/) as HTMLSelectElement;
+    await user.selectOptions(select, 'dns-full-001');
+
+    // Kind should be DNS
+    expect(screen.getByLabelText('DNS')).toBeChecked();
+    // DNS matcher populated
+    expect((screen.getByLabelText('DNS name') as HTMLInputElement).value).toBe('api.example.com');
   });
 });
 

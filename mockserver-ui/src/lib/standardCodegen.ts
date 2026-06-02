@@ -43,6 +43,22 @@ export interface StandardMatcher {
   secure: boolean;
   priority: number;
   times: number;
+  /** DNS-specific matcher fields — populated only when the expectation kind is 'dns'. */
+  dns?: StandardDnsMatcher;
+}
+
+// ---------------------------------------------------------------------------
+// DNS request matcher — the server routes to DnsRequestDefinition when
+// the httpRequest object contains a `dnsName` field.
+// ---------------------------------------------------------------------------
+
+export type DnsRecordType = 'A' | 'AAAA' | 'CNAME' | 'MX' | 'SRV' | 'TXT' | 'PTR';
+export type DnsRecordClass = 'IN' | 'CH' | 'HS' | 'ANY';
+
+export interface StandardDnsMatcher {
+  dnsName: string;
+  dnsType: DnsRecordType | '';
+  dnsClass: DnsRecordClass | '';
 }
 
 export interface StandardStaticState {
@@ -277,61 +293,73 @@ export function buildExpectationJson(
   matcher: StandardMatcher,
   action: StandardActionPayload,
 ): Record<string, unknown> {
-  const httpRequest: Record<string, unknown> = { path: matcher.path };
-  if (matcher.method) httpRequest['method'] = matcher.method;
+  // DNS expectations use a completely different request matcher shape:
+  // { dnsName: "...", dnsType?: "...", dnsClass?: "..." }
+  // The JSON key is still "httpRequest" (the server routes to
+  // DnsRequestDefinition when the object contains a dnsName field).
+  let httpRequest: Record<string, unknown>;
 
-  const headers = parseKeyValueLines(matcher.headers, ':');
-  if (headers) httpRequest['headers'] = headers;
+  if (matcher.dns && matcher.dns.dnsName.trim()) {
+    httpRequest = { dnsName: matcher.dns.dnsName.trim() };
+    if (matcher.dns.dnsType) httpRequest['dnsType'] = matcher.dns.dnsType;
+    if (matcher.dns.dnsClass) httpRequest['dnsClass'] = matcher.dns.dnsClass;
+  } else {
+    httpRequest = { path: matcher.path };
+    if (matcher.method) httpRequest['method'] = matcher.method;
 
-  const query = parseKeyValueLines(matcher.queryString, '=');
-  if (query) httpRequest['queryStringParameters'] = query;
+    const headers = parseKeyValueLines(matcher.headers, ':');
+    if (headers) httpRequest['headers'] = headers;
 
-  const cookies = parseKeyValueLines(matcher.cookies, '=');
-  if (cookies) {
-    const flat: Record<string, string> = {};
-    for (const [k, vs] of Object.entries(cookies)) flat[k] = vs[0] ?? '';
-    httpRequest['cookies'] = flat;
-  }
+    const query = parseKeyValueLines(matcher.queryString, '=');
+    if (query) httpRequest['queryStringParameters'] = query;
 
-  const pathParams = parseKeyValueLines(matcher.pathParams, '=');
-  if (pathParams) httpRequest['pathParameters'] = pathParams;
-
-  if (matcher.body.trim()) {
-    if (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) {
-      httpRequest['body'] = { type: 'BINARY', base64Bytes: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'graphql') {
-      const gqlBody: Record<string, unknown> = { type: 'GRAPHQL', graphql: matcher.body.trim() };
-      if (matcher.graphqlOptions) {
-        if (matcher.graphqlOptions.selectionSetMatchType !== 'NORMALISED_STRING') {
-          gqlBody['selectionSetMatchType'] = matcher.graphqlOptions.selectionSetMatchType;
-        }
-        const fields = matcher.graphqlOptions.fields
-          .split(',')
-          .map((f) => f.trim())
-          .filter(Boolean);
-        if (fields.length > 0) gqlBody['fields'] = fields;
-      }
-      httpRequest['body'] = gqlBody;
-    } else if (matcher.bodyMatcherType === 'json-schema') {
-      httpRequest['body'] = { type: 'JSON_SCHEMA', jsonSchema: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'json-path') {
-      httpRequest['body'] = { type: 'JSON_PATH', jsonPath: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'xml') {
-      httpRequest['body'] = { type: 'XML', xml: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'xml-schema') {
-      httpRequest['body'] = { type: 'XML_SCHEMA', xmlSchema: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'xpath') {
-      httpRequest['body'] = { type: 'XPATH', xpath: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'regex') {
-      httpRequest['body'] = { type: 'REGEX', regex: matcher.body.trim() };
-    } else if (matcher.bodyMatcherType === 'parameters') {
-      const params = parseKeyValueLines(matcher.body, '=');
-      httpRequest['body'] = { type: 'PARAMETERS', parameters: params ?? {} };
-    } else {
-      httpRequest['body'] = matcher.body;
+    const cookies = parseKeyValueLines(matcher.cookies, '=');
+    if (cookies) {
+      const flat: Record<string, string> = {};
+      for (const [k, vs] of Object.entries(cookies)) flat[k] = vs[0] ?? '';
+      httpRequest['cookies'] = flat;
     }
+
+    const pathParams = parseKeyValueLines(matcher.pathParams, '=');
+    if (pathParams) httpRequest['pathParameters'] = pathParams;
+
+    if (matcher.body.trim()) {
+      if (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) {
+        httpRequest['body'] = { type: 'BINARY', base64Bytes: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'graphql') {
+        const gqlBody: Record<string, unknown> = { type: 'GRAPHQL', graphql: matcher.body.trim() };
+        if (matcher.graphqlOptions) {
+          if (matcher.graphqlOptions.selectionSetMatchType !== 'NORMALISED_STRING') {
+            gqlBody['selectionSetMatchType'] = matcher.graphqlOptions.selectionSetMatchType;
+          }
+          const fields = matcher.graphqlOptions.fields
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean);
+          if (fields.length > 0) gqlBody['fields'] = fields;
+        }
+        httpRequest['body'] = gqlBody;
+      } else if (matcher.bodyMatcherType === 'json-schema') {
+        httpRequest['body'] = { type: 'JSON_SCHEMA', jsonSchema: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'json-path') {
+        httpRequest['body'] = { type: 'JSON_PATH', jsonPath: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'xml') {
+        httpRequest['body'] = { type: 'XML', xml: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'xml-schema') {
+        httpRequest['body'] = { type: 'XML_SCHEMA', xmlSchema: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'xpath') {
+        httpRequest['body'] = { type: 'XPATH', xpath: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'regex') {
+        httpRequest['body'] = { type: 'REGEX', regex: matcher.body.trim() };
+      } else if (matcher.bodyMatcherType === 'parameters') {
+        const params = parseKeyValueLines(matcher.body, '=');
+        httpRequest['body'] = { type: 'PARAMETERS', parameters: params ?? {} };
+      } else {
+        httpRequest['body'] = matcher.body;
+      }
+    }
+    if (matcher.secure) httpRequest['secure'] = true;
   }
-  if (matcher.secure) httpRequest['secure'] = true;
 
   const out: Record<string, unknown> = { httpRequest };
 
