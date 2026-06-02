@@ -38,7 +38,7 @@ Currently registered codecs:
 | OPENAI | `OpenAiChatCompletionsCodec` | Complete |
 | OPENAI_RESPONSES | `OpenAiResponsesCodec` | Complete |
 | GEMINI | `GeminiCodec` | Complete |
-| BEDROCK | `BedrockCodec` | Complete (delegates to `AnthropicCodec` for non-streaming; see security audit for binary-framing limitation) |
+| BEDROCK | `BedrockCodec` | Complete (delegates to `AnthropicCodec`; streaming uses `application/vnd.amazon.eventstream` binary framing via `BedrockEventStreamEncoder`; SigV4 signing is a follow-up) |
 | AZURE_OPENAI | `AzureOpenAiCodec` | Complete (delegates to `OpenAiChatCompletionsCodec`) |
 | OLLAMA | `OllamaCodec` | Complete (see security audit for NDJSON wire-format limitation) |
 
@@ -461,7 +461,8 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/codec/OpenAiChatCompletionsCodec.java` | OpenAI Chat Completions encoder/decoder |
 | `llm/codec/OpenAiResponsesCodec.java` | OpenAI Responses API encoder/decoder |
 | `llm/codec/GeminiCodec.java` | Gemini encoder/decoder |
-| `llm/codec/BedrockCodec.java` | Bedrock wrapper (delegates to Anthropic codec) |
+| `llm/codec/BedrockCodec.java` | Bedrock wrapper (delegates to Anthropic codec; streaming uses AWS event-stream framing) |
+| `llm/codec/BedrockEventStreamEncoder.java` | AWS event-stream binary framing encoder/decoder (`application/vnd.amazon.eventstream`) |
 | `llm/codec/AzureOpenAiCodec.java` | Azure OpenAI wrapper (delegates to OpenAI codec) |
 | `llm/codec/OllamaCodec.java` | Ollama encoder/decoder |
 | `llm/StreamingPhysicsExpander.java` | Converts `Completion` + `StreamingPhysics` to `List<SseEvent>` |

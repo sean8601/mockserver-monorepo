@@ -6,7 +6,7 @@
 
 ## Summary
 
-No vulnerabilities found. One known limitation documented (Ollama NDJSON). All checked categories passed.
+No vulnerabilities found. Previously known limitations (Ollama NDJSON, Bedrock binary framing) have been resolved. All checked categories passed.
 
 ## What was checked
 
@@ -72,23 +72,17 @@ The embedding `deterministicFromInput()` deliberately uses `java.util.Random` se
 
 ## Known limitations
 
-### Ollama NDJSON wire format
+### Ollama NDJSON wire format (RESOLVED)
 
-**Compatibility bug — actionable.**
+**Resolved.** `OllamaCodec` now declares `StreamingFormat.NDJSON` and the `HttpSseResponseActionHandler` emits raw `<json>\n` lines (no SSE `data:` prefix) for Ollama streaming responses.
 
-The `OllamaCodec` streaming path emits SSE events (`data: <json>\n\n`) instead of Ollama's native NDJSON format (`<json>\n`). Real Ollama clients that strictly parse newline-delimited JSON (not SSE) will silently receive no tokens or raise a parse error when the mock response is consumed.
-
-To fix: implement an NDJSON write path in `OllamaCodec.encodeStreaming()` that writes each chunk as `<json>\n` without the `data:` prefix, and select the path based on the inbound request's `Accept` header or a codec configuration flag. Non-streaming Ollama responses are already in the correct format; only the streaming path is affected.
-
-The limitation is documented in the `OllamaCodec` javadoc. Not a security issue.
-
-### BedrockCodec binary framing
+### BedrockCodec binary framing (RESOLVED)
 
 **Compatibility limitation — actionable for raw HTTP clients.**
 
-The `BedrockCodec` does not implement Bedrock's `InvokeModelWithResponseStream` binary chunk-wrapping envelope (`{"chunk":{"bytes":"<base64>"}}`), emitting plain Anthropic SSE events instead. Applications that use the AWS SDK for streaming invocations will work correctly because the SDK handles the envelope at the HTTP client layer. Raw HTTP clients that directly parse the binary frame protocol will not work.
+**Resolved** in G14. `BedrockCodec` now declares `StreamingFormat.AWS_EVENT_STREAM` and the `HttpSseResponseActionHandler` encodes each streaming chunk as a binary AWS event-stream message via `BedrockEventStreamEncoder`. Each message carries headers (`:event-type=chunk`, `:content-type=application/json`, `:message-type=event`), CRC32 integrity checks (prelude and message), and a payload of `{"bytes":"<base64(chunkJson)>"}` matching the `InvokeModelWithResponseStream` wire format. Raw (non-SDK) Bedrock streaming clients now work against MockServer.
 
-To fix: implement the `aws-chunked` / event stream encoding described in the Bedrock Streaming API reference. The binary envelope is straightforward: base64-encode each Anthropic SSE chunk, wrap it in `{"chunk":{"bytes":"..."}}`, and write with the correct content-type (`application/vnd.amazon.eventstream`). This is a non-trivial change requiring a new codec subclass or a framing wrapper.
+**Remaining follow-up:** automatic AWS SigV4 request signing for calling real Bedrock backends is not yet implemented. Callers supply auth via `LlmBackend.headers()` or a signing proxy.
 
 The limitation is documented in the `BedrockCodec` javadoc. Not a security concern.
 

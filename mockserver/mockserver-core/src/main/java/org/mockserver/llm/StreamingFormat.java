@@ -9,9 +9,15 @@ package org.mockserver.llm;
  *   <li>{@link #NDJSON} — Newline-Delimited JSON ({@code application/x-ndjson}):
  *       each chunk is a single JSON object followed by a newline character
  *       ({@code <json>\n}). Used by Ollama.</li>
+ *   <li>{@link #AWS_EVENT_STREAM} — AWS event-stream binary framing
+ *       ({@code application/vnd.amazon.eventstream}): each chunk is a binary
+ *       message with prelude CRC32, typed headers, a base64-wrapped JSON payload,
+ *       and a trailing message CRC32. Used by Bedrock
+ *       {@code InvokeModelWithResponseStream}.</li>
  * </ul>
  */
 public enum StreamingFormat {
     SSE,
-    NDJSON
+    NDJSON,
+    AWS_EVENT_STREAM
 }

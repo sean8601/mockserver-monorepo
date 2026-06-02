@@ -5,6 +5,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
 import org.mockserver.llm.StreamingFormat;
+import org.mockserver.llm.codec.BedrockEventStreamEncoder;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Delay;
@@ -40,9 +41,18 @@ public class HttpSseResponseActionHandler {
             HttpResponseStatus.valueOf(statusCode)
         );
 
-        String defaultContentType = format == StreamingFormat.NDJSON
-            ? "application/x-ndjson"
-            : "text/event-stream";
+        String defaultContentType;
+        switch (format) {
+            case NDJSON:
+                defaultContentType = "application/x-ndjson";
+                break;
+            case AWS_EVENT_STREAM:
+                defaultContentType = BedrockEventStreamEncoder.CONTENT_TYPE;
+                break;
+            default:
+                defaultContentType = "text/event-stream";
+                break;
+        }
         initialResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, defaultContentType);
         initialResponse.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-cache");
         initialResponse.headers().set(HttpHeaderNames.CONNECTION, "keep-alive");
@@ -80,9 +90,9 @@ public class HttpSseResponseActionHandler {
                 if (!ctx.channel().isActive()) {
                     return;
                 }
-                String chunkData = formatChunk(event, format);
+                byte[] chunkBytes = formatChunkBytes(event, format);
                 DefaultHttpContent content = new DefaultHttpContent(
-                    Unpooled.copiedBuffer(chunkData, StandardCharsets.UTF_8)
+                    Unpooled.wrappedBuffer(chunkBytes)
                 );
                 ctx.writeAndFlush(content).addListener(future -> {
                     if (future.isSuccess()) {
@@ -144,6 +154,22 @@ public class HttpSseResponseActionHandler {
                 }
             });
         }
+    }
+
+    /**
+     * Format a chunk as bytes for the given streaming format. SSE and NDJSON
+     * produce UTF-8 text; AWS_EVENT_STREAM produces a binary event-stream
+     * message wrapping the chunk data.
+     */
+    private byte[] formatChunkBytes(SseEvent event, StreamingFormat format) {
+        if (format == StreamingFormat.AWS_EVENT_STREAM) {
+            String data = event.getData();
+            if (data == null) {
+                data = "";
+            }
+            return BedrockEventStreamEncoder.encodeChunk(data);
+        }
+        return formatChunk(event, format).getBytes(StandardCharsets.UTF_8);
     }
 
     /**

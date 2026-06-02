@@ -188,12 +188,17 @@ public class HttpLlmResponseActionHandlerCodecTest {
     }
 
     @Test
-    public void shouldReturnSseFormatForNonOllamaProviders() {
+    public void shouldReturnAwsEventStreamFormatForBedrock() {
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        assertThat(handler.streamingFormatFor(Provider.BEDROCK), is(StreamingFormat.AWS_EVENT_STREAM));
+    }
+
+    @Test
+    public void shouldReturnSseFormatForNonOllamaAndNonBedrockProviders() {
         HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
         assertThat(handler.streamingFormatFor(Provider.ANTHROPIC), is(StreamingFormat.SSE));
         assertThat(handler.streamingFormatFor(Provider.OPENAI), is(StreamingFormat.SSE));
         assertThat(handler.streamingFormatFor(Provider.GEMINI), is(StreamingFormat.SSE));
-        assertThat(handler.streamingFormatFor(Provider.BEDROCK), is(StreamingFormat.SSE));
         assertThat(handler.streamingFormatFor(Provider.AZURE_OPENAI), is(StreamingFormat.SSE));
         assertThat(handler.streamingFormatFor(Provider.OPENAI_RESPONSES), is(StreamingFormat.SSE));
     }
