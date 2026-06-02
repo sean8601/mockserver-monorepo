@@ -523,12 +523,38 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             getHttpRequestMatchersCopy().forEach(httpRequestMatcher -> {
                 if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
                     scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
-                } else if (requestMatcher.matches(httpRequestMatcher.getExpectation().getHttpRequest())) {
-                    expectations.add(httpRequestMatcher.getExpectation());
+                } else {
+                    RequestDefinition expectationDefinition = httpRequestMatcher.getExpectation().getHttpRequest();
+                    if (notFilterableByRequest(requestDefinition, expectationDefinition) || requestMatcher.matches(expectationDefinition)) {
+                        expectations.add(httpRequestMatcher.getExpectation());
+                    }
                 }
             });
             return expectations;
         }
+    }
+
+    /**
+     * Determines whether an expectation should bypass reverse-match filtering because the
+     * supplied filter cannot describe it.
+     *
+     * <p>The dashboard UI and the {@code PUT /mockserver/retrieve} endpoint filter active
+     * expectations using an HTTP-shaped {@link RequestDefinition} — and when no filter is
+     * supplied they send an <em>empty</em> {@link HttpRequest} (matches everything) rather
+     * than {@code null}. An HTTP/OpenAPI filter has no vocabulary to express non-HTTP
+     * protocol expectations such as {@link DnsRequestDefinition} or
+     * {@link BinaryRequestDefinition}: reverse-matching it against them always fails (see
+     * {@code HttpRequestPropertiesMatcher#matches}). Filtering on that basis would silently
+     * hide every DNS and binary mock from "active expectations" listings (e.g. the Mocks
+     * page), even with no filter applied. Such expectations therefore bypass the filter and
+     * are always listed whenever the filter itself is HTTP/OpenAPI shaped. A filter of the
+     * matching protocol (e.g. a {@link DnsRequestDefinition} filter) still narrows normally.
+     */
+    private boolean notFilterableByRequest(RequestDefinition filter, RequestDefinition expectationDefinition) {
+        boolean httpStyleFilter = filter instanceof HttpRequest || filter instanceof OpenAPIDefinition;
+        boolean nonHttpExpectation = !(expectationDefinition instanceof HttpRequest)
+            && !(expectationDefinition instanceof OpenAPIDefinition);
+        return httpStyleFilter && nonHttpExpectation;
     }
 
     /**
@@ -575,8 +601,11 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             getHttpRequestMatchersCopy().forEach(httpRequestMatcher -> {
                 if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
                     scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
-                } else if (requestMatcher.matches(httpRequestMatcher.getExpectation().getHttpRequest())) {
-                    httpRequestMatchers.add(httpRequestMatcher);
+                } else {
+                    RequestDefinition expectationDefinition = httpRequestMatcher.getExpectation().getHttpRequest();
+                    if (notFilterableByRequest(requestDefinition, expectationDefinition) || requestMatcher.matches(expectationDefinition)) {
+                        httpRequestMatchers.add(httpRequestMatcher);
+                    }
                 }
             });
             return httpRequestMatchers;
