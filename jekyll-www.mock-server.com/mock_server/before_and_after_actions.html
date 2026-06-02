@@ -154,8 +154,8 @@ Content-Type: application/json
     "body" : "{ \"status\": \"created\" }"
   },
   "afterActions" : [
-    { "httpRequest" : { "method" : "POST", "path" : "/analytics", "host" : "analytics.svc:8080" } },
-    { "httpRequest" : { "method" : "POST", "path" : "/audit",     "host" : "audit.svc:8080" } }
+    { "httpRequest" : { "method" : "POST", "path" : "/analytics", "headers" : { "Host" : [ "analytics.svc:8080" ] } } },
+    { "httpRequest" : { "method" : "POST", "path" : "/audit",     "headers" : { "Host" : [ "audit.svc:8080" ] } } }
   ]
 }</code></pre>
 
@@ -179,7 +179,7 @@ Content-Type: application/json
   },
   "beforeActions" : [
     {
-      "httpRequest"   : { "method" : "GET", "path" : "/auth/check", "host" : "auth.svc:8080" },
+      "httpRequest"   : { "method" : "GET", "path" : "/auth/check", "headers" : { "Host" : [ "auth.svc:8080" ] } },
       "blocking"      : true,
       "timeout"       : { "timeUnit" : "SECONDS", "value" : 2 },
       "failurePolicy" : "FAIL_FAST"
@@ -199,13 +199,13 @@ Content-Type: application/json
     )
     .withBeforeAction(
         beforeAction()
-            .withHttpRequest(request().withMethod("GET").withPath("/auth/check"))
+            .withHttpRequest(request().withMethod("GET").withPath("/auth/check").withHeader("Host", "auth.svc:8080"))
             .withBlocking(true)
             .withTimeout(seconds(2))
             .withFailurePolicy(FailurePolicy.FAIL_FAST)
     )
     .withAfterAction(
-        afterAction().withHttpRequest(request().withMethod("POST").withPath("/audit"))
+        afterAction().withHttpRequest(request().withMethod("POST").withPath("/audit").withHeader("Host", "audit.svc:8080"))
     )
     .respond(
         response()
