@@ -133,7 +133,7 @@ describe('buildExpectationJson body matcher types', () => {
     expect((result['httpRequest'] as Record<string, unknown>)['body']).toBeUndefined();
   });
 
-  it('preserves existing graphql behaviour unchanged', () => {
+  it('emits graphql body with the server-canonical "query" key', () => {
     const m = baseMatcher({
       body: '{ hero { name } }',
       bodyMatcherType: 'graphql',
@@ -141,9 +141,10 @@ describe('buildExpectationJson body matcher types', () => {
     });
     const result = buildExpectationJson(m, baseAction());
     const body = (result['httpRequest'] as Record<string, unknown>)['body'] as Record<string, unknown>;
+    // The server's GraphQLBody DTO reads the query from the "query" key (not "graphql").
     expect(body).toEqual({
       type: 'GRAPHQL',
-      graphql: '{ hero { name } }',
+      query: '{ hero { name } }',
       selectionSetMatchType: 'AST_SUBSET',
       fields: ['hero', 'name'],
     });

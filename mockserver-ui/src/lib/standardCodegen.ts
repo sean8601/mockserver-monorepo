@@ -285,6 +285,44 @@ function escapeJava(s: string): string {
     .replace(/\t/g, '\\t');
 }
 
+interface ParsedDnsRecord {
+  name?: string;
+  type?: string;
+  dnsClass?: string;
+  ttl?: number;
+  value?: string;
+}
+
+/**
+ * Parse the DNS answer-records free-text JSON array (as entered in the composer) into
+ * structured records for Java codegen. Returns [] when the text is blank or not a JSON
+ * array of objects, so the Java snippet simply omits answer records rather than emitting
+ * something uncompilable.
+ */
+function parseDnsRecords(text: string): ParsedDnsRecord[] {
+  if (!text.trim()) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.trim());
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: ParsedDnsRecord[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    const rec: ParsedDnsRecord = {};
+    if (typeof e['name'] === 'string') rec.name = e['name'];
+    if (typeof e['type'] === 'string') rec.type = e['type'];
+    if (typeof e['dnsClass'] === 'string') rec.dnsClass = e['dnsClass'];
+    if (typeof e['ttl'] === 'number') rec.ttl = e['ttl'];
+    if (typeof e['value'] === 'string') rec.value = e['value'];
+    out.push(rec);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // JSON codegen — produces the exact payload PUT /mockserver/expectation
 // ---------------------------------------------------------------------------
@@ -327,7 +365,7 @@ export function buildExpectationJson(
       if (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) {
         httpRequest['body'] = { type: 'BINARY', base64Bytes: matcher.body.trim() };
       } else if (matcher.bodyMatcherType === 'graphql') {
-        const gqlBody: Record<string, unknown> = { type: 'GRAPHQL', graphql: matcher.body.trim() };
+        const gqlBody: Record<string, unknown> = { type: 'GRAPHQL', query: matcher.body.trim() };
         if (matcher.graphqlOptions) {
           if (matcher.graphqlOptions.selectionSetMatchType !== 'NORMALISED_STRING') {
             gqlBody['selectionSetMatchType'] = matcher.graphqlOptions.selectionSetMatchType;
@@ -617,6 +655,14 @@ export function standardToJson(matcher: StandardMatcher, action: StandardActionP
 // ---------------------------------------------------------------------------
 
 function matcherToJava(matcher: StandardMatcher): string {
+  // DNS expectations use a DnsRequestDefinition matcher, not an HttpRequest.
+  if (matcher.dns && matcher.dns.dnsName.trim()) {
+    const dnsLines: string[] = ['dnsRequest()'];
+    dnsLines.push(`    .withDnsName("${escapeJava(matcher.dns.dnsName.trim())}")`);
+    if (matcher.dns.dnsType) dnsLines.push(`    .withDnsType(DnsRecordType.${matcher.dns.dnsType})`);
+    if (matcher.dns.dnsClass) dnsLines.push(`    .withDnsClass(DnsRecordClass.${matcher.dns.dnsClass})`);
+    return dnsLines.join('\n');
+  }
   const lines: string[] = ['request()'];
   if (matcher.method) lines.push(`    .withMethod("${escapeJava(matcher.method)}")`);
   if (matcher.path) lines.push(`    .withPath("${escapeJava(matcher.path)}")`);
@@ -779,8 +825,8 @@ function actionToJava(action: StandardActionPayload): string {
     }
     case 'forward_fallback': {
       const fb = action.forwardFallback;
-      if (!fb) return '.forward(forwardWithFallback())';
-      const lines = ['.forward(', '    forwardWithFallback()'];
+      if (!fb) return '.forwardWithFallback(forwardWithFallback())';
+      const lines = ['.forwardWithFallback(', '    forwardWithFallback()'];
       lines.push(`        .withForward(forward().withScheme(Scheme.${fb.scheme}).withHost("${escapeJava(fb.host)}").withPort(${fb.port}))`);
       const respParts = [`response().withStatusCode(${fb.fallbackStatusCode})`];
       if (fb.fallbackBody.trim()) respParts.push(`.withBody("${escapeJava(fb.fallbackBody)}")`);
@@ -793,19 +839,26 @@ function actionToJava(action: StandardActionPayload): string {
     }
     case 'websocket': {
       const ws = action.websocket;
-      if (!ws) return '.respond(webSocketResponse())';
-      const lines = ['.respond(', '    webSocketResponse()'];
+      if (!ws) return '.respondWithWebSocket(webSocketResponse())';
+      const lines = ['.respondWithWebSocket(', '    webSocketResponse()'];
       if (ws.subprotocol.trim()) lines.push(`        .withSubprotocol("${escapeJava(ws.subprotocol.trim())}")`);
       const msgLines = ws.messages.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       for (const msg of msgLines) lines.push(`        .withMessage(webSocketMessage("${escapeJava(msg)}"))`);
+      for (const m of ws.matchers) {
+        let mChain = `webSocketMessageMatcher().withFrameType(WebSocketFrameType.${m.frameType})`;
+        if (m.textMatcher.trim()) mChain += `.withTextMatcher(string("${escapeJava(m.textMatcher.trim())}"))`;
+        const respLines = m.responses.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        for (const r of respLines) mChain += `.withResponse(webSocketMessage("${escapeJava(r)}"))`;
+        lines.push(`        .withMatcher(${mChain})`);
+      }
       if (ws.closeConnection) lines.push('        .withCloseConnection(true)');
       lines.push(')');
       return lines.join('\n');
     }
     case 'sse': {
       const sse = action.sse;
-      if (!sse) return '.respond(sseResponse())';
-      const lines = ['.respond(', '    sseResponse()'];
+      if (!sse) return '.respondWithSse(sseResponse())';
+      const lines = ['.respondWithSse(', '    sseResponse()'];
       if (sse.statusCode) lines.push(`        .withStatusCode(${sse.statusCode})`);
       for (const ev of sse.events) {
         if (ev.data.trim() || ev.event.trim()) {
@@ -813,6 +866,8 @@ function actionToJava(action: StandardActionPayload): string {
           if (ev.event.trim()) evChain += `.withEvent("${escapeJava(ev.event.trim())}")`;
           if (ev.data.trim()) evChain += `.withData("${escapeJava(ev.data.trim())}")`;
           if (ev.id.trim()) evChain += `.withId("${escapeJava(ev.id.trim())}")`;
+          const retryNum = parseInt(ev.retry, 10);
+          if (!isNaN(retryNum) && retryNum > 0) evChain += `.withRetry(${retryNum})`;
           lines.push(`        .withEvent(${evChain})`);
         }
       }
@@ -822,8 +877,8 @@ function actionToJava(action: StandardActionPayload): string {
     }
     case 'binary_response': {
       const bin = action.binaryResponse;
-      if (!bin) return '.respond(binaryResponse())';
-      const lines = ['.respond(', '    binaryResponse()'];
+      if (!bin) return '.respondWithBinary(binaryResponse())';
+      const lines = ['.respondWithBinary(', '    binaryResponse()'];
       if (bin.binaryData.trim()) {
         lines.push(`        .withBinaryData(Base64.getDecoder().decode("${escapeJava(bin.binaryData.trim())}"))`);
       }
@@ -832,9 +887,18 @@ function actionToJava(action: StandardActionPayload): string {
     }
     case 'dns_response': {
       const dns = action.dnsResponse;
-      if (!dns) return '.respond(dnsResponse())';
-      const lines = ['.respond(', '    dnsResponse()'];
+      if (!dns) return '.respondWithDns(dnsResponse())';
+      const lines = ['.respondWithDns(', '    dnsResponse()'];
       if (dns.responseCode) lines.push(`        .withResponseCode(DnsResponseCode.${dns.responseCode})`);
+      for (const rec of parseDnsRecords(dns.answerRecords)) {
+        let recChain = 'dnsRecord()';
+        if (rec.name) recChain += `.withName("${escapeJava(rec.name)}")`;
+        if (rec.type) recChain += `.withType(DnsRecordType.${rec.type})`;
+        if (rec.dnsClass) recChain += `.withDnsClass(DnsRecordClass.${rec.dnsClass})`;
+        if (rec.ttl != null) recChain += `.withTtl(${rec.ttl})`;
+        if (rec.value) recChain += `.withValue("${escapeJava(rec.value)}")`;
+        lines.push(`        .withAnswerRecord(${recChain})`);
+      }
       lines.push(')');
       return lines.join('\n');
     }
@@ -859,10 +923,17 @@ function actionToJava(action: StandardActionPayload): string {
     }
     case 'grpc_stream': {
       const grpc = action.grpcStream;
-      if (!grpc) return '.respond(grpcStreamResponse())';
-      const lines = ['.respond(', '    grpcStreamResponse()'];
+      if (!grpc) return '.respondWithGrpcStream(grpcStreamResponse())';
+      const lines = ['.respondWithGrpcStream(', '    grpcStreamResponse()'];
       if (grpc.statusName.trim()) lines.push(`        .withStatusName("${escapeJava(grpc.statusName.trim())}")`);
       if (grpc.statusMessage.trim()) lines.push(`        .withStatusMessage("${escapeJava(grpc.statusMessage.trim())}")`);
+      const grpcHeaders = parseKeyValueLines(grpc.headers, ':');
+      if (grpcHeaders) {
+        for (const [k, vs] of Object.entries(grpcHeaders)) {
+          const values = vs.map((v) => `"${escapeJava(v)}"`).join(', ');
+          lines.push(`        .withHeader("${escapeJava(k)}", ${values})`);
+        }
+      }
       const grpcMsgLines = grpc.messages.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       for (const msg of grpcMsgLines) lines.push(`        .withMessage("${escapeJava(msg)}")`);
       if (grpc.closeConnection) lines.push('        .withCloseConnection(true)');
@@ -891,63 +962,156 @@ function chaosToJava(chaos: StandardChaosDraft): string {
   return lines.join('\n');
 }
 
-export function standardToJava(matcher: StandardMatcher, action: StandardActionPayload): string {
-  const hasChaos = action.chaos && buildChaosJson(action.chaos);
-  const lines: string[] = [];
-  lines.push('import static org.mockserver.model.HttpRequest.request;');
-  if (action.type === 'static' || action.type === 'callback' || action.type === 'template' || action.type === 'forward_fallback') {
-    lines.push('import static org.mockserver.model.HttpResponse.response;');
+/**
+ * Compute the exact set of imports the generated Java snippet needs, based on the matcher
+ * and action actually emitted. Returned sorted (static imports first) and de-duplicated so
+ * the snippet compiles as a standalone paste.
+ */
+function collectJavaImports(
+  matcher: StandardMatcher,
+  action: StandardActionPayload,
+  hasChaos: boolean,
+): string[] {
+  const imp = new Set<string>();
+  const isDns = !!(matcher.dns && matcher.dns.dnsName.trim());
+
+  // Request matcher
+  if (isDns) {
+    imp.add('import static org.mockserver.model.DnsRequestDefinition.dnsRequest;');
+    if (matcher.dns!.dnsType) imp.add('import org.mockserver.model.DnsRecordType;');
+    if (matcher.dns!.dnsClass) imp.add('import org.mockserver.model.DnsRecordClass;');
+  } else {
+    imp.add('import static org.mockserver.model.HttpRequest.request;');
+    if (matcher.body.trim()) {
+      if (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) {
+        imp.add('import static org.mockserver.model.BinaryBody.binary;');
+        imp.add('import java.util.Base64;');
+      } else if (matcher.bodyMatcherType === 'graphql') {
+        imp.add('import static org.mockserver.model.GraphQLBody.graphQL;');
+        if (matcher.graphqlOptions && matcher.graphqlOptions.selectionSetMatchType !== 'NORMALISED_STRING') {
+          imp.add('import org.mockserver.model.SelectionSetMatchType;');
+        }
+      } else if (matcher.bodyMatcherType === 'json-schema') {
+        imp.add('import static org.mockserver.model.JsonSchemaBody.jsonSchema;');
+      } else if (matcher.bodyMatcherType === 'json-path') {
+        imp.add('import static org.mockserver.model.JsonPathBody.jsonPath;');
+      } else if (matcher.bodyMatcherType === 'xml') {
+        imp.add('import static org.mockserver.model.XmlBody.xml;');
+      } else if (matcher.bodyMatcherType === 'xml-schema') {
+        imp.add('import static org.mockserver.model.XmlSchemaBody.xmlSchema;');
+      } else if (matcher.bodyMatcherType === 'xpath') {
+        imp.add('import static org.mockserver.model.XPathBody.xpath;');
+      } else if (matcher.bodyMatcherType === 'regex') {
+        imp.add('import static org.mockserver.model.RegexBody.regex;');
+      } else if (matcher.bodyMatcherType === 'parameters') {
+        imp.add('import static org.mockserver.model.ParameterBody.params;');
+        imp.add('import static org.mockserver.model.Parameter.param;');
+      }
+    }
   }
-  if (action.type === 'forward' || action.type === 'forward_override' || action.type === 'forward_fallback') {
-    lines.push('import static org.mockserver.model.HttpForward.forward;');
+
+  // Action
+  switch (action.type) {
+    case 'static':
+      imp.add('import static org.mockserver.model.HttpResponse.response;');
+      break;
+    case 'forward':
+      imp.add('import static org.mockserver.model.HttpForward.forward;');
+      imp.add('import org.mockserver.model.HttpForward.Scheme;');
+      break;
+    case 'forward_override':
+      imp.add('import static org.mockserver.model.HttpOverrideForwardedRequest.forwardOverriddenRequest;');
+      imp.add('import static org.mockserver.model.HttpRequest.request;');
+      break;
+    case 'forward_fallback':
+      imp.add('import static org.mockserver.model.HttpForwardWithFallback.forwardWithFallback;');
+      imp.add('import static org.mockserver.model.HttpForward.forward;');
+      imp.add('import org.mockserver.model.HttpForward.Scheme;');
+      imp.add('import static org.mockserver.model.HttpResponse.response;');
+      break;
+    case 'callback':
+    case 'forward_class_callback':
+      imp.add('import static org.mockserver.model.HttpClassCallback.callback;');
+      break;
+    case 'template':
+    case 'forward_template':
+      imp.add('import static org.mockserver.model.HttpTemplate.template;');
+      imp.add('import org.mockserver.model.HttpTemplate.TemplateType;');
+      break;
+    case 'error':
+      imp.add('import static org.mockserver.model.HttpError.error;');
+      if (action.error?.responseBytesB64.trim()) imp.add('import java.util.Base64;');
+      if (action.error?.delayValue) {
+        imp.add('import org.mockserver.model.Delay;');
+        imp.add('import java.util.concurrent.TimeUnit;');
+      }
+      break;
+    case 'websocket':
+      imp.add('import static org.mockserver.model.HttpWebSocketResponse.webSocketResponse;');
+      imp.add('import static org.mockserver.model.WebSocketMessage.webSocketMessage;');
+      if (action.websocket && action.websocket.matchers.length > 0) {
+        imp.add('import static org.mockserver.model.WebSocketMessageMatcher.webSocketMessageMatcher;');
+        imp.add('import org.mockserver.model.WebSocketFrameType;');
+        if (action.websocket.matchers.some((m) => m.textMatcher.trim())) {
+          imp.add('import static org.mockserver.model.NottableString.string;');
+        }
+      }
+      break;
+    case 'sse':
+      imp.add('import static org.mockserver.model.HttpSseResponse.sseResponse;');
+      imp.add('import static org.mockserver.model.SseEvent.sseEvent;');
+      break;
+    case 'binary_response':
+      imp.add('import static org.mockserver.model.BinaryResponse.binaryResponse;');
+      imp.add('import java.util.Base64;');
+      break;
+    case 'dns_response':
+      imp.add('import static org.mockserver.model.DnsResponse.dnsResponse;');
+      imp.add('import org.mockserver.model.DnsResponseCode;');
+      if (action.dnsResponse) {
+        const recs = parseDnsRecords(action.dnsResponse.answerRecords);
+        if (recs.length > 0) {
+          imp.add('import static org.mockserver.model.DnsRecord.dnsRecord;');
+          if (recs.some((r) => r.type)) imp.add('import org.mockserver.model.DnsRecordType;');
+          if (recs.some((r) => r.dnsClass)) imp.add('import org.mockserver.model.DnsRecordClass;');
+        }
+      }
+      break;
+    case 'grpc_stream':
+      imp.add('import static org.mockserver.model.GrpcStreamResponse.grpcStreamResponse;');
+      break;
   }
-  if (action.type === 'forward_override') {
-    lines.push('import static org.mockserver.model.HttpOverrideForwardedRequest.forwardOverriddenRequest;');
-  }
-  if (action.type === 'forward_fallback') {
-    lines.push('import static org.mockserver.model.HttpForwardWithFallback.forwardWithFallback;');
-  }
-  if (action.type === 'error') {
-    lines.push('import static org.mockserver.model.HttpError.error;');
-  }
-  if (action.type === 'websocket') {
-    lines.push('import static org.mockserver.model.HttpWebSocketResponse.webSocketResponse;');
-    lines.push('import static org.mockserver.model.WebSocketMessage.webSocketMessage;');
-  }
-  if (action.type === 'sse') {
-    lines.push('import static org.mockserver.model.HttpSseResponse.sseResponse;');
-    lines.push('import static org.mockserver.model.SseEvent.sseEvent;');
-  }
-  if (action.type === 'binary_response') {
-    lines.push('import static org.mockserver.model.BinaryResponse.binaryResponse;');
-  }
-  if (action.type === 'dns_response') {
-    lines.push('import static org.mockserver.model.DnsResponse.dnsResponse;');
-    lines.push('import org.mockserver.model.DnsResponseCode;');
-  }
-  if (action.type === 'grpc_stream') {
-    lines.push('import static org.mockserver.model.GrpcStreamResponse.grpcStreamResponse;');
-  }
-  const chaosHasLatency = hasChaos && action.chaos?.latencyValue != null;
-  if ((action.type === 'error' && action.error?.delayValue) || chaosHasLatency) {
-    lines.push('import org.mockserver.model.Delay;');
-    lines.push('import java.util.concurrent.TimeUnit;');
-  }
+
+  // Chaos
   if (hasChaos) {
-    lines.push('import static org.mockserver.model.HttpChaosProfile.httpChaosProfile;');
+    imp.add('import static org.mockserver.model.HttpChaosProfile.httpChaosProfile;');
+    if (action.chaos?.latencyValue != null && action.chaos.latencyValue > 0) {
+      imp.add('import org.mockserver.model.Delay;');
+      imp.add('import java.util.concurrent.TimeUnit;');
+    }
   }
-  if ((action.type === 'error' && action.error?.responseBytesB64.trim()) || action.type === 'binary_response' || matcher.bodyBinary) {
-    lines.push('import java.util.Base64;');
-  }
+
+  const all = Array.from(imp);
+  const statics = all.filter((i) => i.startsWith('import static ')).sort();
+  const plains = all.filter((i) => !i.startsWith('import static ')).sort();
+  return [...statics, ...plains];
+}
+
+export function standardToJava(matcher: StandardMatcher, action: StandardActionPayload): string {
+  const hasChaos = !!(action.chaos && buildChaosJson(action.chaos));
+  const lines: string[] = [];
+  for (const imp of collectJavaImports(matcher, action, hasChaos)) lines.push(imp);
   lines.push('');
   lines.push('mockServerClient');
   lines.push('  .when(');
   lines.push('    ' + matcherToJava(matcher).split('\n').join('\n    '));
   lines.push('  )');
-  lines.push('  ' + actionToJava(action).split('\n').join('\n  '));
+  // Chaos is fluent on the ForwardChainExpectation returned by when(...), so it must come
+  // BEFORE the terminal action (respond/forward/error), which returns Expectation[].
   if (hasChaos) {
     lines.push('  ' + chaosToJava(action.chaos!).split('\n').join('\n  '));
   }
+  lines.push('  ' + actionToJava(action).split('\n').join('\n  '));
   lines.push(';');
   return lines.join('\n');
 }
