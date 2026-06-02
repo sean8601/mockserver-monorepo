@@ -386,9 +386,9 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     graphqlErrors: false, graphqlErrorMessage: '', graphqlErrorCode: '', graphqlNullifyData: true,
   });
 
-  // HTTP service chaos section expand state (the primary section -- open by default,
-  // but collapsible for consistency with the gRPC and TCP sections).
-  const [httpExpanded, setHttpExpanded] = useState(true);
+  // HTTP service chaos section expand state. Collapsed by default so all three
+  // chaos sections (HTTP, gRPC, TCP) start collapsed and the page opens compact.
+  const [httpExpanded, setHttpExpanded] = useState(false);
 
   // gRPC combined panel expand state
   const [grpcPanelExpanded, setGrpcPanelExpanded] = useState(false);
@@ -754,7 +754,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
           </Typography>
           <Chip size="small" label={`${hosts.length} active`} color={hosts.length > 0 ? 'warning' : 'default'} variant="outlined" />
           <Box sx={{ flex: 1 }} />
-          <Tooltip title="Clear all service-scoped chaos">
+          <Tooltip title="Clear all HTTP service-scoped chaos">
             <span>
               <Button
                 size="small"
@@ -766,7 +766,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   void runAction(() => clearServiceChaos(connectionParams));
                 }}
               >
-                Clear all
+                Clear HTTP
               </Button>
             </span>
           </Tooltip>
@@ -916,6 +916,22 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
           </Typography>
           <Chip size="small" label={`${grpcCombinedActiveCount} active`} color={grpcCombinedActiveCount > 0 ? 'warning' : 'default'} variant="outlined" />
           <Box sx={{ flex: 1 }} />
+          <Tooltip title="Clear all gRPC fault injection chaos">
+            <span>
+              <Button
+                size="small"
+                color="error"
+                startIcon={<DeleteSweepIcon fontSize="small" />}
+                disabled={busy || grpcChaosServices.length === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runAction(() => clearGrpcChaos(connectionParams));
+                }}
+              >
+                Clear gRPC
+              </Button>
+            </span>
+          </Tooltip>
           <IconButton size="small" aria-label={grpcPanelExpanded ? 'Collapse gRPC chaos' : 'Expand gRPC chaos'}>
             {grpcPanelExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
@@ -1033,22 +1049,6 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 </Typography>
                 <Chip size="small" label={`${grpcChaosServices.length} services`} color={grpcChaosServices.length > 0 ? 'warning' : 'default'} variant="outlined" />
                 <Box sx={{ flex: 1 }} />
-                <Tooltip title="Clear gRPC fault injection chaos">
-                  <span>
-                    <Button
-                      size="small"
-                      color="error"
-                      startIcon={<DeleteSweepIcon fontSize="small" />}
-                      disabled={busy || grpcChaosServices.length === 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void runAction(() => clearGrpcChaos(connectionParams));
-                      }}
-                    >
-                      Clear gRPC
-                    </Button>
-                  </span>
-                </Tooltip>
                 <IconButton size="small" aria-label={grpcFaultExpanded ? 'Collapse gRPC fault injection' : 'Expand gRPC fault injection'}>
                   {grpcFaultExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                 </IconButton>

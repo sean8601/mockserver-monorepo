@@ -9,6 +9,11 @@ interface PutCall {
   body: Record<string, unknown>;
 }
 
+/** Expand the HTTP Service Chaos section (collapsed by default). */
+async function expandHttp(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Expand HTTP chaos' }));
+}
+
 /**
  * Stateful fetch stub: GET returns the current registry snapshot (mutable via
  * the returned `state`), PUT records the call into `puts`.
@@ -89,6 +94,7 @@ describe('ServiceChaosPanel', () => {
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
 
+    await expandHttp(user);
     await user.type(screen.getByLabelText('Host'), 'pay.svc');
     await user.type(screen.getByLabelText('Error status'), '503');
     await user.type(screen.getByLabelText('Error prob'), '0.5');
@@ -109,6 +115,7 @@ describe('ServiceChaosPanel', () => {
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
 
+    await expandHttp(user);
     await user.type(screen.getByLabelText('Host'), 'pay.svc');
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
@@ -122,6 +129,7 @@ describe('ServiceChaosPanel', () => {
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
 
+    await expandHttp(user);
     await user.type(screen.getByLabelText('Host'), 'pay.svc');
     await user.type(screen.getByLabelText('Error prob'), '0.3');
     await user.click(screen.getByRole('button', { name: 'Register' }));
@@ -136,6 +144,7 @@ describe('ServiceChaosPanel', () => {
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
 
+    await expandHttp(user);
     await user.click(screen.getByRole('button', { name: 'Remove chaos for a.svc' }));
     await waitFor(() => expect(puts.length).toBeGreaterThan(0));
     expect(puts[0]?.body).toEqual({ host: 'a.svc', remove: true });
@@ -147,7 +156,7 @@ describe('ServiceChaosPanel', () => {
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
 
-    await user.click(screen.getByRole('button', { name: /Clear all/ }));
+    await user.click(screen.getByRole('button', { name: /Clear HTTP/ }));
     await waitFor(() => expect(puts.length).toBeGreaterThan(0));
     expect(puts[0]?.body).toEqual({ clear: true });
   });
@@ -162,9 +171,11 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('renders a remove button scoped to each host', async () => {
+    const user = userEvent.setup();
     stubServiceChaos({ services: { 'a.svc': { errorStatus: 503 }, 'b.svc': { errorStatus: 500 } } });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
+    await expandHttp(user);
     const rowA = screen.getByText('a.svc').closest('div');
     expect(rowA).not.toBeNull();
     expect(within(rowA!).getByText('error 503')).toBeInTheDocument();
@@ -214,6 +225,7 @@ describe('ServiceChaosPanel', () => {
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
 
+    await expandHttp(user);
     await user.type(screen.getByLabelText('Host'), 'graphql.svc');
     await user.type(screen.getByLabelText('Error status'), '200');
     // Enable GraphQL errors
@@ -233,6 +245,31 @@ describe('ServiceChaosPanel', () => {
         graphqlNullifyData: true,
       },
     });
+  });
+
+  it('starts with all three sections collapsed (Expand icons visible)', async () => {
+    stubServiceChaos({ services: {} });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    // All three expand buttons should be present (indicating collapsed state)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Expand HTTP chaos' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Expand gRPC chaos' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand TCP chaos' })).toBeInTheDocument();
+    // None of the "Collapse" variants should be present
+    expect(screen.queryByRole('button', { name: 'Collapse HTTP chaos' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Collapse gRPC chaos' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Collapse TCP chaos' })).not.toBeInTheDocument();
+    // The HTTP register form's Host field should not be accessible while collapsed
+    expect(screen.queryByRole('textbox', { name: 'Host' })).not.toBeInTheDocument();
+  });
+
+  it('has consistently named Clear buttons (Clear HTTP / Clear gRPC / Clear TCP)', async () => {
+    stubServiceChaos({ services: {} });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('HTTP Service Chaos')).toBeInTheDocument());
+    // All three clear buttons should be in the DOM with consistent naming
+    expect(screen.getByRole('button', { name: /Clear HTTP/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Clear gRPC/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Clear TCP/ })).toBeInTheDocument();
   });
 
   it('shows omit grpc-status chip for gRPC chaos with omitGrpcStatus', async () => {

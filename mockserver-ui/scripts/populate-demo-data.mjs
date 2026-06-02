@@ -24,6 +24,12 @@
  *                            (NOT_SERVING / SERVICE_UNKNOWN / SERVING) for the Chaos tab.
  *   - gRPC fault injection   a few gRPC fault-injection chaos registrations
  *                            (status errors + latency + quota) for the Chaos tab.
+ *   - gRPC mocks             server-streaming, unary, and error gRPC expectations
+ *                            (Mocks page · gRPC kind).
+ *   - DNS mocks              A / AAAA / CNAME / NXDOMAIN DNS expectations
+ *                            (Mocks page · DNS kind).
+ *   - WASM module            an example Rust WASM match module uploaded to the
+ *                            store + a WASM-body-matched expectation (Library page).
  *
  * It talks to MockServer over its plain REST API (no extra dependencies — uses
  * the built-in global fetch in Node 18+). Safe to re-run: it resets first.
@@ -34,6 +40,11 @@
  */
 
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Configuration & tiny CLI parsing
@@ -67,7 +78,7 @@ const SELF_HOST = TARGET.hostname;
 const SELF_PORT = Number(TARGET.port || (TARGET.protocol === 'https:' ? 443 : 80));
 const SELF_SCHEME = TARGET.protocol === 'https:' ? 'HTTPS' : 'HTTP';
 
-const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, grpcChaos: 0, drift: 0 };
+const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, grpcChaos: 0, drift: 0, wasmModules: 0 };
 function log(msg) { if (!quiet) console.log(msg); }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +590,168 @@ async function grpcChaosExamples() {
 }
 
 // ---------------------------------------------------------------------------
+// 3c. gRPC mock expectations (Mocks page -> gRPC kind)
+// ---------------------------------------------------------------------------
+
+// gRPC requests are transcoded to HTTP and matched by path /package.Service/Method.
+// A server-streaming RPC uses a grpcStreamResponse action (multiple messages, each
+// with an optional inter-message delay); a unary RPC is just a normal httpResponse
+// carrying the grpc-status trailer header. These show up in the Mocks page gRPC list.
+async function grpcMockExpectations() {
+  log('\n→ gRPC mock expectations (Mocks page · gRPC kind)');
+
+  // Server-streaming RPC: stream three greetings, the later two delayed.
+  await expectation('gRPC stream  greeter.v1.Greeter/ListGreetings', {
+    httpRequest: {
+      method: 'POST',
+      path: '/greeter.v1.Greeter/ListGreetings',
+      headers: {
+        'x-grpc-service': ['greeter.v1.Greeter'],
+        'x-grpc-method': ['ListGreetings'],
+      },
+    },
+    grpcStreamResponse: {
+      statusName: 'OK',
+      messages: [
+        { json: '{"greeting":"Hello Alice"}' },
+        { json: '{"greeting":"Hello Bob"}', delay: { timeUnit: 'MILLISECONDS', value: 100 } },
+        { json: '{"greeting":"Hello Charlie"}', delay: { timeUnit: 'MILLISECONDS', value: 200 } },
+      ],
+    },
+  });
+
+  // Unary RPC: single response with the gRPC OK status trailer.
+  await expectation('gRPC unary   greeter.v1.Greeter/SayHello', {
+    httpRequest: {
+      method: 'POST',
+      path: '/greeter.v1.Greeter/SayHello',
+      headers: {
+        'x-grpc-service': ['greeter.v1.Greeter'],
+        'x-grpc-method': ['SayHello'],
+      },
+    },
+    httpResponse: {
+      statusCode: 200,
+      headers: { 'grpc-status': ['0'], 'content-type': ['application/grpc+json'] },
+      body: '{"greeting":"Hello World"}',
+    },
+  });
+
+  // Unary RPC that returns a gRPC error status (NOT_FOUND = 5) with a message.
+  await expectation('gRPC error   pay.v1.PaymentService/GetReceipt (NOT_FOUND)', {
+    httpRequest: {
+      method: 'POST',
+      path: '/pay.v1.PaymentService/GetReceipt',
+      headers: {
+        'x-grpc-service': ['pay.v1.PaymentService'],
+        'x-grpc-method': ['GetReceipt'],
+      },
+    },
+    grpcStreamResponse: {
+      statusName: 'NOT_FOUND',
+      statusMessage: 'no receipt for the supplied transaction id',
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3d. DNS mock expectations (Mocks page -> DNS kind)
+// ---------------------------------------------------------------------------
+
+// DNS queries are matched by a DnsRequestDefinition (dnsName + record type + class),
+// carried in the request object via the dnsName key, and answered with a dnsResponse.
+async function dnsMockExpectations() {
+  log('\n→ DNS mock expectations (Mocks page · DNS kind)');
+
+  // A-record lookup.
+  await expectation('DNS A      api.example.com → 2 A records', {
+    httpRequest: { dnsName: 'api.example.com', dnsType: 'A', dnsClass: 'IN' },
+    dnsResponse: {
+      responseCode: 'NOERROR',
+      answerRecords: [
+        { name: 'api.example.com', type: 'A', ttl: 300, value: '93.184.216.34' },
+        { name: 'api.example.com', type: 'A', ttl: 300, value: '93.184.216.35' },
+      ],
+    },
+  });
+
+  // AAAA-record lookup.
+  await expectation('DNS AAAA   ipv6.example.com → AAAA record', {
+    httpRequest: { dnsName: 'ipv6.example.com', dnsType: 'AAAA', dnsClass: 'IN' },
+    dnsResponse: {
+      responseCode: 'NOERROR',
+      answerRecords: [
+        { name: 'ipv6.example.com', type: 'AAAA', ttl: 300, value: '2606:2800:220:1:248:1893:25c8:1946' },
+      ],
+    },
+  });
+
+  // CNAME alias.
+  await expectation('DNS CNAME  www.example.com → example.com', {
+    httpRequest: { dnsName: 'www.example.com', dnsType: 'CNAME', dnsClass: 'IN' },
+    dnsResponse: {
+      responseCode: 'NOERROR',
+      answerRecords: [
+        { name: 'www.example.com', type: 'CNAME', ttl: 600, value: 'example.com' },
+      ],
+    },
+  });
+
+  // NXDOMAIN: name that deliberately does not resolve.
+  await expectation('DNS NXDOMAIN  missing.example.com', {
+    httpRequest: { dnsName: 'missing.example.com', dnsType: 'A', dnsClass: 'IN' },
+    dnsResponse: { responseCode: 'NXDOMAIN' },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3d-bis. WASM module + WASM-matched expectation (Library page · WASM Modules)
+// ---------------------------------------------------------------------------
+
+// Upload one of the repo's example WASM modules (the Rust `match` example) so the
+// Library page's "WASM Modules" section is populated, then register an expectation
+// that matches its request body via that module. WASM evaluation requires the
+// server to be started with -Dmockserver.wasmEnabled=true (the demo launcher sets
+// this); the upload + listing work regardless.
+async function wasmModuleExample() {
+  log('\n→ WASM module (Library · WASM Modules)');
+  const moduleName = 'match-demo';
+  // examples/wasm/rust/match.wasm lives at the repo root, two levels up from mockserver-ui/scripts.
+  const wasmPath = join(SCRIPT_DIR, '..', '..', 'examples', 'wasm', 'rust', 'match.wasm');
+  let bytes;
+  try {
+    bytes = await readFile(wasmPath);
+  } catch (e) {
+    log(`   ! skipped WASM module — could not read ${wasmPath} (${e.code || e.message})`);
+    return;
+  }
+  // Raw binary upload — do NOT use the JSON api() helper (it forces a JSON content-type).
+  const res = await fetch(`${BASE}/mockserver/wasm/modules?name=${encodeURIComponent(moduleName)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/wasm' },
+    body: bytes,
+  });
+  await res.text().catch(() => undefined);
+  if (!res.ok) throw new Error(`Failed to upload WASM module "${moduleName}": HTTP ${res.status}`);
+  counts.wasmModules++;
+  log(`   + wasm module    ${moduleName}  (${bytes.length} bytes, from examples/wasm/rust/match.wasm)`);
+
+  // An expectation whose request body is matched by the uploaded WASM module.
+  await expectation('WASM body match  POST /wasm/echo', {
+    httpRequest: {
+      method: 'POST',
+      path: '/wasm/echo',
+      body: { type: 'WASM', moduleName },
+    },
+    httpResponse: {
+      statusCode: 200,
+      headers: { 'content-type': ['application/json'] },
+      body: '{"matched":"by-wasm-module","module":"match-demo"}',
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 3e. Mock drift detection (Drift tab)
 // ---------------------------------------------------------------------------
 
@@ -793,6 +966,9 @@ async function main() {
   await tcpChaosExamples();
   await grpcHealthExamples();
   await grpcChaosExamples();
+  await grpcMockExpectations();
+  await dnsMockExpectations();
+  await wasmModuleExample();
   await driftExamples();
   await plainHttpTraffic();
   await proxyTraffic();
@@ -808,10 +984,12 @@ async function main() {
   log(` TCP chaos hosts      : ${counts.tcpChaos} (2 with an auto-revert TTL countdown)`);
   log(` gRPC health statuses : ${counts.grpcHealth} (NOT_SERVING / SERVICE_UNKNOWN / SERVING)`);
   log(` gRPC chaos services  : ${counts.grpcChaos} (incl. streaming/trailer faults + auto-revert TTL)`);
+  log(` WASM modules         : ${counts.wasmModules} (example Rust match module + a WASM-matched expectation)`);
   log(` Drift scenarios      : ${counts.drift} (status / schema-added / schema-removed+type / header)`);
   log('');
   log(' Try these views in the dashboard:');
-  log('   Dashboard / Library — active expectations (HTTP, forward, LLM, conversation pills)');
+  log('   Dashboard / Library — active expectations (HTTP, forward, LLM, conversation pills) + WASM modules');
+  log('   Mocks              — HTTP, gRPC (stream/unary), DNS (A/AAAA/CNAME/NXDOMAIN) mocks listed per kind');
   log('   Traffic            — recorded + proxied (forwarded) requests, incl. a lane per LLM provider + token/cost');
   log('   Sessions           — agent-001 / agent-002 loops + their call graphs');
   log('   Chaos              — HTTP service chaos (incl. GraphQL-semantic) + gRPC chaos (health + fault injection with streaming/trailer faults) + TCP-layer chaos');

@@ -95,7 +95,7 @@ fi
 # --- start MockServer ------------------------------------------------------
 MOCKSERVER_LOG="$UI_DIR/mockserver-demo.log"
 echo "→ Starting MockServer on port $MOCKSERVER_PORT (log: $MOCKSERVER_LOG)..."
-java -Dmockserver.metricsEnabled=true -jar "$MOCKSERVER_JAR" -serverPort "$MOCKSERVER_PORT" -logLevel INFO > "$MOCKSERVER_LOG" 2>&1 &
+java -Dmockserver.metricsEnabled=true -Dmockserver.wasmEnabled=true -jar "$MOCKSERVER_JAR" -serverPort "$MOCKSERVER_PORT" -logLevel INFO > "$MOCKSERVER_LOG" 2>&1 &
 MOCKSERVER_PID=$!
 
 UI_PID=""
