@@ -23,6 +23,7 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useDashboardStore } from '../store';
 import type { JsonListItem } from '../types';
 import { listConversationScenarios } from '../lib/conversationCodegen';
+import { buildBaseUrl } from '../lib/mcpClient';
 import LlmConversationForm from './LlmConversationForm';
 import StandardReview from './StandardReview';
 import {
@@ -219,8 +220,7 @@ function kindLabel(k: ExpectationKind): string {
 // ---------------------------------------------------------------------------
 
 function baseUrl(p: ConnectionParams): string {
-  const protocol = p.secure ? 'https' : 'http';
-  return `${protocol}://${p.host}:${p.port}`;
+  return buildBaseUrl(p);
 }
 
 /**

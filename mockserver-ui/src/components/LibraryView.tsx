@@ -32,6 +32,7 @@ import {
   uploadWasmModule,
   deleteWasmModule,
 } from '../lib/wasm';
+import { buildBaseUrl } from '../lib/mcpClient';
 
 // ---------------------------------------------------------------------------
 // Export sub-tab — download captured content in various formats
@@ -169,8 +170,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
     setDownloading(true);
     setError(null);
     try {
-      const protocol = connectionParams.secure ? 'https' : 'http';
-      const base = `${protocol}://${connectionParams.host}:${connectionParams.port}`;
+      const base = buildBaseUrl(connectionParams);
       const path = `/mockserver/retrieve?type=${scopeMeta.retrieveType}&format=${formatMeta.retrieveFormat}`;
       const res = await fetch(`${base}${path}`, { method: 'PUT' });
       if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);

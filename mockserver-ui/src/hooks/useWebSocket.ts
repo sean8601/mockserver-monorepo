@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { ConnectionParams } from './useConnectionParams';
 import type { ClearType, RequestFilter, WebSocketMessage } from '../types';
 import { useDashboardStore } from '../store';
+import { buildBaseUrl } from '../lib/mcpClient';
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -19,13 +20,15 @@ export function useWebSocket(params: ConnectionParams) {
 
   const scheduleReconnect = useCallback(
     (filter: RequestFilter) => {
-      if (reconnectCountRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        setError('Max reconnection attempts reached. Refresh the page to retry.');
-        return;
-      }
+      // Keep retrying with a capped backoff rather than permanently giving up — a server that
+      // is down longer than the first few attempts (a deploy/restart) should still reconnect
+      // automatically once it comes back. onopen resets the counter and clears the error.
       reconnectCountRef.current += 1;
+      if (reconnectCountRef.current === MAX_RECONNECT_ATTEMPTS) {
+        setError('Connection lost — retrying automatically in the background…');
+      }
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      const delay = RECONNECT_DELAY_MS * Math.min(reconnectCountRef.current, 5);
+      const delay = RECONNECT_DELAY_MS * Math.min(reconnectCountRef.current, 5); // capped at 15s
       reconnectTimerRef.current = setTimeout(() => {
         connectRef.current(filter);
       }, delay);
@@ -49,8 +52,7 @@ export function useWebSocket(params: ConnectionParams) {
 
       setConnectionStatus('connecting');
       const protocol = params.secure ? 'wss' : 'ws';
-      const basePath = window.location.pathname.replace(/\/mockserver\/dashboard\/?$/, '').replace(/\/+$/, '');
-      const url = `${protocol}://${params.host}:${params.port}${basePath}/_mockserver_ui_websocket`;
+      const url = `${protocol}://${params.host}:${params.port}${params.basePath ?? ''}/_mockserver_ui_websocket`;
 
       const ws = new WebSocket(url);
       socketRef.current = ws;
@@ -116,8 +118,7 @@ export function useWebSocket(params: ConnectionParams) {
 
   const clearServer = useCallback(
     async (type: ClearType = 'all') => {
-      const protocol = params.secure ? 'https' : 'http';
-      const base = `${protocol}://${params.host}:${params.port}`;
+      const base = buildBaseUrl(params);
       try {
         const url =
           type === 'all'
