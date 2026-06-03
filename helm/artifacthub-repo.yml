@@ -17,7 +17,7 @@
 #
 # See docs/infrastructure/helm.md ("Artifact Hub") for the full procedure.
 
-repositoryID: ""  # fill in from Artifact Hub after registering the repository
+repositoryID: "a6ca1874-16c1-43c8-9924-9bf9c3a5a9ea"
 owners:
   - name: James D Bloom
     email: jamesdbloom+mockserver@gmail.com
