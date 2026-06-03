@@ -63,6 +63,7 @@ public class Configuration {
     private String memoryUsageCsvDirectory;
 
     // scalability
+    private Boolean useNativeTransport;
     private Integer nioEventLoopThreadCount;
     private Integer actionHandlerThreadCount;
     private Integer clientNioEventLoopThreadCount;
@@ -664,6 +665,27 @@ public class Configuration {
      */
     public Configuration memoryUsageCsvDirectory(String memoryUsageCsvDirectory) {
         this.memoryUsageCsvDirectory = memoryUsageCsvDirectory;
+        return this;
+    }
+
+    public Boolean useNativeTransport() {
+        if (useNativeTransport == null) {
+            return ConfigurationProperties.useNativeTransport();
+        }
+        return useNativeTransport;
+    }
+
+    /**
+     * If true (the default) MockServer will use the native epoll transport on Linux
+     * for higher performance and to enable transparent-proxy SO_ORIGINAL_DST resolution.
+     * Set to false to force the NIO transport on all platforms.
+     * <p>
+     * This property is read at start-up only.
+     *
+     * @param useNativeTransport enable native transport when available
+     */
+    public Configuration useNativeTransport(Boolean useNativeTransport) {
+        this.useNativeTransport = useNativeTransport;
         return this;
     }
 

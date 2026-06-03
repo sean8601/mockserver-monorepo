@@ -8,8 +8,6 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.socket.DatagramChannel;
-import io.netty.channel.socket.nio.NioDatagramChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import org.mockserver.authentication.ChainedAuthenticationHandler;
@@ -24,6 +22,7 @@ import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.dns.DnsRequestHandler;
 import org.mockserver.netty.http3.Http3Server;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
+import org.mockserver.socket.NettyTransport;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
 
@@ -197,7 +196,7 @@ public class MockServer extends LifeCycle {
         serverServerBootstrap = new ServerBootstrap()
             .group(bossGroup, workerGroup)
             .option(ChannelOption.SO_BACKLOG, 1024)
-            .channel(NioServerSocketChannel.class)
+            .channel(NettyTransport.serverSocketChannelClassFor(bossGroup))
             .childOption(ChannelOption.AUTO_READ, true)
             .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
             .option(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(8 * 1024, 32 * 1024))
@@ -274,7 +273,7 @@ public class MockServer extends LifeCycle {
         DnsRequestHandler dnsHandler = new DnsRequestHandler(mockServerLogger, httpState);
         Bootstrap dnsBootstrap = new Bootstrap()
             .group(workerGroup)
-            .channel(NioDatagramChannel.class)
+            .channel(NettyTransport.datagramChannelClassFor(workerGroup))
             .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
             .handler(new ChannelInitializer<DatagramChannel>() {
                 @Override

@@ -68,6 +68,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_MEMORY_USAGE_CSV_DIRECTORY = "mockserver.memoryUsageCsvDirectory";
 
     // scalability
+    private static final String MOCKSERVER_USE_NATIVE_TRANSPORT = "mockserver.useNativeTransport";
     private static final String MOCKSERVER_NIO_EVENT_LOOP_THREAD_COUNT = "mockserver.nioEventLoopThreadCount";
     private static final String MOCKSERVER_ACTION_HANDLER_THREAD_COUNT = "mockserver.actionHandlerThreadCount";
     private static final String MOCKSERVER_CLIENT_NIO_EVENT_LOOP_THREAD_COUNT = "mockserver.clientNioEventLoopThreadCount";
@@ -772,6 +773,23 @@ public class ConfigurationProperties {
     }
 
     // scalability
+
+    public static boolean useNativeTransport() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_USE_NATIVE_TRANSPORT, "MOCKSERVER_USE_NATIVE_TRANSPORT", "" + true));
+    }
+
+    /**
+     * If true (the default) MockServer will use the native epoll transport on Linux
+     * for higher performance and to enable transparent-proxy SO_ORIGINAL_DST resolution.
+     * Set to false to force the NIO transport on all platforms.
+     * <p>
+     * This property is read at start-up only.
+     *
+     * @param enable enable native transport when available
+     */
+    public static void useNativeTransport(boolean enable) {
+        setProperty(MOCKSERVER_USE_NATIVE_TRANSPORT, "" + enable);
+    }
 
     public static int nioEventLoopThreadCount() {
         return readIntegerProperty(MOCKSERVER_NIO_EVENT_LOOP_THREAD_COUNT, "MOCKSERVER_NIO_EVENT_LOOP_THREAD_COUNT", 5);

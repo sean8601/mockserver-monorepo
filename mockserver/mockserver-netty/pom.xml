@@ -91,6 +91,22 @@
             <groupId>io.netty</groupId>
             <artifactId>netty-transport-classes-epoll</artifactId>
         </dependency>
+        <!-- Epoll native .so — bundles the Linux-specific JNI library that activates
+             io.netty.channel.epoll.Epoll.isAvailable(). Runtime-only; on non-Linux
+             platforms these JARs are inert (no native to load). Both x86_64 and aarch64
+             are included so Docker images work on both AMD64 and ARM64 hosts. -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-transport-native-epoll</artifactId>
+            <classifier>linux-x86_64</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-transport-native-epoll</artifactId>
+            <classifier>linux-aarch_64</classifier>
+            <scope>runtime</scope>
+        </dependency>
         <!-- JNA — used by SoOriginalDstResolver for getsockopt(SO_ORIGINAL_DST)
              on Linux. On non-Linux platforms the JNA code path is never invoked;
              the resolver reports unsupported and falls through to conntrack. -->

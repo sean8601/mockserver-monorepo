@@ -75,6 +75,14 @@
             <groupId>io.netty</groupId>
             <artifactId>netty-tcnative-boringssl-static</artifactId>
         </dependency>
+        <!-- Epoll API classes (pure Java, no native classifier) — needed at compile
+             time for NettyTransport to reference EpollEventLoopGroup, EpollSocketChannel,
+             EpollServerSocketChannel, and Epoll.isAvailable(). The native .so is only
+             required at runtime on Linux (bundled in mockserver-netty). -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-transport-classes-epoll</artifactId>
+        </dependency>
 
         <!-- protobuf (gRPC support) -->
         <dependency>

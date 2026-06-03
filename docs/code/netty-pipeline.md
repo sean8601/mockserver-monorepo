@@ -9,12 +9,18 @@ sequenceDiagram
     participant CLI as Main.java / ClientAndServer
     participant MS as MockServer
     participant LC as LifeCycle
-    participant NIO as Netty NIO
+    participant NT as NettyTransport
+    participant NIO as Netty NIO / Epoll
 
     CLI->>MS: new MockServer(ports)
+    MS->>LC: super(configuration)
+    LC->>NT: newEventLoopGroup(useNativeTransport)
+    NT-->>LC: EpollEventLoopGroup (Linux) or NioEventLoopGroup (other)
     MS->>MS: createServerBootstrap()
+    MS->>NT: serverSocketChannelClass(useNativeTransport)
+    NT-->>MS: EpollServerSocketChannel or NioServerSocketChannel
     MS->>NIO: ServerBootstrap.group(bossGroup, workerGroup)
-    MS->>NIO: .channel(NioServerSocketChannel)
+    MS->>NIO: .channel(selected channel class)
     MS->>NIO: .childHandler(MockServerUnificationInitializer)
     MS->>LC: bindServerPorts(ports)
     LC->>NIO: serverBootstrap.bind(port) [per port, on dedicated thread]
@@ -22,13 +28,39 @@ sequenceDiagram
     LC->>MS: startedServer(boundPorts)
 ```
 
+### Transport Selection
+
+`NettyTransport` (`mockserver-core`, `org.mockserver.socket`) selects the highest-performance transport available at startup. On Linux with the native epoll library present and `useNativeTransport=true` (the default), it creates `EpollEventLoopGroup` and uses `EpollServerSocketChannel` / `EpollSocketChannel`. On all other platforms (macOS, Windows) or when the opt-out flag is set, it falls back to NIO transparently.
+
+The transport selection is consistent across the entire data path: server bootstrap (boss + worker groups), outbound HTTP client (`NettyHttpClient`), and relay connect handler (`RelayConnectHandler`). This ensures the EventLoopGroup type always matches the channel type (epoll group with epoll channels, NIO group with NIO channels).
+
+Epoll transport is required for transparent-proxy `SO_ORIGINAL_DST` resolution, which needs `EpollSocketChannel` children to extract the raw file descriptor.
+
+**Intentionally left on NIO:** `Http3Server` (QUIC/datagram, separate experimental transport with its own `NioEventLoopGroup`), `McpToolRegistry`'s internal client, and `EchoServer` (test infrastructure).
+
+| Property | Default | Env var | System property |
+|----------|---------|---------|-----------------|
+| `useNativeTransport` | `true` | `MOCKSERVER_USE_NATIVE_TRANSPORT` | `-Dmockserver.useNativeTransport` |
+
+#### CI Test Coverage
+
+On Linux CI the **full existing integration-test suite** exercises the epoll transport automatically because:
+
+1. `useNativeTransport` defaults to `true`
+2. The `netty-transport-native-epoll` JARs (linux-x86_64, linux-aarch_64) are declared as `runtime`-scoped dependencies in `mockserver-netty/pom.xml`, which Maven includes on the test classpath
+3. On Linux the native `.so` loads successfully, so `Epoll.isAvailable()` returns `true`
+
+To force NIO on Linux for comparison testing, set `useNativeTransport=false` via system property (`-Dmockserver.useNativeTransport=false`) or environment variable (`MOCKSERVER_USE_NATIVE_TRANSPORT=false`).
+
+Dedicated activation tests in `EpollTransportIntegrationTest` (`mockserver-netty`) verify the channel and event-loop-group types at runtime. These tests are gated by `Assume.assumeTrue(Epoll.isAvailable())` and skip cleanly on macOS/Windows.
+
 ### Key Bootstrap Configuration
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
-| Boss group | `NioEventLoopGroup(5)` | Accept connections |
-| Worker group | `NioEventLoopGroup(configurable)` | Handle I/O |
-| Channel | `NioServerSocketChannel` | Non-blocking server socket |
+| Boss group | `EpollEventLoopGroup(5)` or `NioEventLoopGroup(5)` | Accept connections |
+| Worker group | `EpollEventLoopGroup(configurable)` or `NioEventLoopGroup(configurable)` | Handle I/O |
+| Channel | `EpollServerSocketChannel` or `NioServerSocketChannel` | Server socket (transport-matched) |
 | SO_BACKLOG | 1024 | Connection queue depth |
 | AUTO_READ | true | Automatic read on new channels |
 | ALLOCATOR | `PooledByteBufAllocator.DEFAULT` | Memory-efficient buffer allocation |
@@ -64,7 +96,7 @@ The `CompositeOriginalDestinationResolver` tries strategies in order (first non-
 |-------|----------|-------|--------|
 | 1 | Linux conntrack table | `ConntrackOriginalDestinationResolver` | Implemented |
 | 2 | DNS-intent (recover hostname MockServer's DNS answered) | `DnsIntentOriginalDestinationResolver` | Implemented |
-| 3 | SO_ORIGINAL_DST getsockopt | (future) | Requires JNI |
+| 3 | SO_ORIGINAL_DST getsockopt | `SoOriginalDstResolver` | Implemented (JNA; requires epoll transport) |
 | 4 | TPROXY (IP_TRANSPARENT) | (future) | Requires JNI + TPROXY rules |
 | 5 | eBPF socket metadata | (future) | Requires JNI + eBPF program |
 
