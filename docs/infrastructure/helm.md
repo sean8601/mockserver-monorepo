@@ -333,8 +333,16 @@ To enable signing:
    the harness. Signing is non-fatal regardless, so a real release won't break if it fails (it just
    publishes unsigned).
 
-Once a signed version is on GHCR, Artifact Hub shows the Signed badge on its next scan. Users can
-verify with `cosign verify --key cosign.pub ghcr.io/mock-server/charts/mockserver:<version>`.
+Once a signed version is on GHCR, Artifact Hub shows the Signed badge on its next scan. The public
+key is published in the repo at `helm/mockserver/cosign.pub`, so users can verify a chart with:
+
+```bash
+cosign verify \
+  --key https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/helm/mockserver/cosign.pub \
+  ghcr.io/mock-server/charts/mockserver:<version>
+```
+
+(The private half lives only in the `mockserver-release/cosign-key` Secrets Manager secret.)
 
 > Hardening notes: the step fetches a SHA256-pinned cosign binary (v2.4.3) at release time and the
 > private key is mounted as a `0600` file rather than passed via the container's environment, so it
