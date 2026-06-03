@@ -78,6 +78,9 @@ _FIELD_MAP = {
     "id_field": "idField",
     "id_strategy": "idStrategy",
     "initial_data": "initialData",
+    "http_class_callback": "httpClassCallback",
+    "http_object_callback": "httpObjectCallback",
+    "failure_policy": "failurePolicy",
 }
 
 
@@ -1481,6 +1484,67 @@ class AfterAction:
 
 
 @dataclass
+class ExpectationStep:
+    """A single step in an ordered multi-action expectation pipeline.
+
+    Each step carries exactly ONE action target and a ``responder`` flag.
+    Steps without ``responder = True`` are side-effects (fire-and-forget
+    webhooks/callbacks). Exactly one step in the list must be marked as the
+    responder; that step's action produces the HTTP response.
+    """
+
+    # Action targets (exactly one must be set)
+    http_request: HttpRequest | None = None
+    http_class_callback: HttpClassCallback | None = None
+    http_object_callback: HttpObjectCallback | None = None
+    http_forward: HttpForward | None = None
+    http_override_forwarded_request: HttpOverrideForwardedRequest | None = None
+    http_response: HttpResponse | None = None
+    http_error: HttpError | None = None
+    # Step metadata
+    responder: bool | None = None
+    delay: Delay | None = None
+    blocking: bool | None = None
+    timeout: Delay | None = None
+    failure_policy: str | None = None
+
+    def to_dict(self) -> dict:
+        return _strip_none({
+            "httpRequest": self.http_request.to_dict() if self.http_request else None,
+            "httpClassCallback": self.http_class_callback.to_dict() if self.http_class_callback else None,
+            "httpObjectCallback": self.http_object_callback.to_dict() if self.http_object_callback else None,
+            "httpForward": self.http_forward.to_dict() if self.http_forward else None,
+            "httpOverrideForwardedRequest": self.http_override_forwarded_request.to_dict() if self.http_override_forwarded_request else None,
+            "httpResponse": self.http_response.to_dict() if self.http_response else None,
+            "httpError": self.http_error.to_dict() if self.http_error else None,
+            "responder": self.responder,
+            "delay": self.delay.to_dict() if self.delay else None,
+            "blocking": self.blocking,
+            "timeout": self.timeout.to_dict() if self.timeout else None,
+            "failurePolicy": self.failure_policy,
+        })
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ExpectationStep:
+        if data is None:
+            return None
+        return cls(
+            http_request=HttpRequest.from_dict(data.get("httpRequest")),
+            http_class_callback=HttpClassCallback.from_dict(data.get("httpClassCallback")),
+            http_object_callback=HttpObjectCallback.from_dict(data.get("httpObjectCallback")),
+            http_forward=HttpForward.from_dict(data.get("httpForward")),
+            http_override_forwarded_request=HttpOverrideForwardedRequest.from_dict(data.get("httpOverrideForwardedRequest")),
+            http_response=HttpResponse.from_dict(data.get("httpResponse")),
+            http_error=HttpError.from_dict(data.get("httpError")),
+            responder=data.get("responder"),
+            delay=Delay.from_dict(data.get("delay")),
+            blocking=data.get("blocking"),
+            timeout=Delay.from_dict(data.get("timeout")),
+            failure_policy=data.get("failurePolicy"),
+        )
+
+
+@dataclass
 class Expectation:
     id: str | None = None
     priority: int | None = None
@@ -1509,6 +1573,7 @@ class Expectation:
     after_actions: list[AfterAction] | None = None
     http_responses: list[HttpResponse] | None = None
     response_mode: str | None = None
+    steps: list[ExpectationStep] | None = None
     scenario_name: str | None = None
     scenario_state: str | None = None
     new_scenario_state: str | None = None
@@ -1542,6 +1607,7 @@ class Expectation:
             "afterActions": [a.to_dict() for a in self.after_actions] if self.after_actions else None,
             "httpResponses": [r.to_dict() for r in self.http_responses] if self.http_responses else None,
             "responseMode": self.response_mode,
+            "steps": [s.to_dict() for s in self.steps] if self.steps else None,
             "scenarioName": self.scenario_name,
             "scenarioState": self.scenario_state,
             "newScenarioState": self.new_scenario_state,
@@ -1585,6 +1651,7 @@ class Expectation:
             after_actions=[AfterAction.from_dict(a) for a in after_actions_data] if after_actions_data else None,
             http_responses=[HttpResponse.from_dict(r) for r in data["httpResponses"]] if data.get("httpResponses") else None,
             response_mode=data.get("responseMode"),
+            steps=[ExpectationStep.from_dict(s) for s in data["steps"]] if data.get("steps") else None,
             scenario_name=data.get("scenarioName"),
             scenario_state=data.get("scenarioState"),
             new_scenario_state=data.get("newScenarioState"),

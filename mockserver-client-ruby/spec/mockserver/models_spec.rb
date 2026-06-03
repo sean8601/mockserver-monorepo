@@ -2314,6 +2314,262 @@ RSpec.describe 'MockServer models' do
   end
 
   # -------------------------------------------------------------------
+  # ExpectationStep
+  # -------------------------------------------------------------------
+  describe MockServer::ExpectationStep do
+    it 'has nil defaults' do
+      s = MockServer::ExpectationStep.new
+      expect(s.http_request).to be_nil
+      expect(s.http_response).to be_nil
+      expect(s.http_forward).to be_nil
+      expect(s.http_error).to be_nil
+      expect(s.http_class_callback).to be_nil
+      expect(s.http_object_callback).to be_nil
+      expect(s.http_override_forwarded_request).to be_nil
+      expect(s.responder).to be_nil
+      expect(s.delay).to be_nil
+      expect(s.blocking).to be_nil
+      expect(s.timeout).to be_nil
+      expect(s.failure_policy).to be_nil
+    end
+
+    it 'serializes responder step with httpResponse' do
+      s = MockServer::ExpectationStep.new(
+        http_response: MockServer::HttpResponse.new(status_code: 200, body: 'ok'),
+        responder: true
+      )
+      h = s.to_h
+      expect(h).to eq({
+        'httpResponse' => { 'statusCode' => 200, 'body' => 'ok' },
+        'responder' => true
+      })
+    end
+
+    it 'serializes side-effect step with controls' do
+      s = MockServer::ExpectationStep.new(
+        http_request: MockServer::HttpRequest.new(method: 'POST', path: '/webhook'),
+        blocking: true,
+        timeout: MockServer::Delay.new(time_unit: 'SECONDS', value: 5),
+        failure_policy: 'FAIL_FAST'
+      )
+      h = s.to_h
+      expect(h['httpRequest']).to eq({ 'method' => 'POST', 'path' => '/webhook' })
+      expect(h['blocking']).to be true
+      expect(h['timeout']).to eq({ 'timeUnit' => 'SECONDS', 'value' => 5 })
+      expect(h['failurePolicy']).to eq('FAIL_FAST')
+      expect(h).not_to have_key('responder')
+    end
+
+    it 'serializes step with httpForward' do
+      s = MockServer::ExpectationStep.new(
+        http_forward: MockServer::HttpForward.new(host: 'example.com', port: 8080),
+        responder: true,
+        delay: MockServer::Delay.new(time_unit: 'MILLISECONDS', value: 100)
+      )
+      h = s.to_h
+      expect(h['httpForward']).to eq({ 'host' => 'example.com', 'port' => 8080 })
+      expect(h['responder']).to be true
+      expect(h['delay']).to eq({ 'timeUnit' => 'MILLISECONDS', 'value' => 100 })
+    end
+
+    it 'serializes step with httpClassCallback' do
+      s = MockServer::ExpectationStep.new(
+        http_class_callback: MockServer::HttpClassCallback.new(callback_class: 'com.example.Cb')
+      )
+      h = s.to_h
+      expect(h['httpClassCallback']).to eq({ 'callbackClass' => 'com.example.Cb' })
+    end
+
+    it 'serializes step with httpObjectCallback' do
+      s = MockServer::ExpectationStep.new(
+        http_object_callback: MockServer::HttpObjectCallback.new(client_id: 'ws-1')
+      )
+      h = s.to_h
+      expect(h['httpObjectCallback']).to eq({ 'clientId' => 'ws-1' })
+    end
+
+    it 'serializes step with httpOverrideForwardedRequest' do
+      s = MockServer::ExpectationStep.new(
+        http_override_forwarded_request: MockServer::HttpOverrideForwardedRequest.new(
+          http_request: MockServer::HttpRequest.new(path: '/override')
+        ),
+        responder: true
+      )
+      h = s.to_h
+      expect(h['httpOverrideForwardedRequest']).to eq({ 'httpRequest' => { 'path' => '/override' } })
+      expect(h['responder']).to be true
+    end
+
+    it 'serializes step with httpError' do
+      s = MockServer::ExpectationStep.new(
+        http_error: MockServer::HttpError.new(drop_connection: true),
+        responder: true
+      )
+      h = s.to_h
+      expect(h['httpError']).to eq({ 'dropConnection' => true })
+      expect(h['responder']).to be true
+    end
+
+    it 'strips nil values' do
+      s = MockServer::ExpectationStep.new(
+        http_response: MockServer::HttpResponse.new(status_code: 200),
+        responder: true
+      )
+      h = s.to_h
+      expect(h).not_to have_key('httpRequest')
+      expect(h).not_to have_key('httpForward')
+      expect(h).not_to have_key('blocking')
+      expect(h).not_to have_key('timeout')
+      expect(h).not_to have_key('failurePolicy')
+      expect(h).not_to have_key('delay')
+    end
+
+    it 'deserializes from hash' do
+      s = MockServer::ExpectationStep.from_hash({
+        'httpResponse' => { 'statusCode' => 200, 'body' => 'ok' },
+        'responder' => true,
+        'delay' => { 'timeUnit' => 'SECONDS', 'value' => 1 }
+      })
+      expect(s.http_response.status_code).to eq(200)
+      expect(s.responder).to be true
+      expect(s.delay.time_unit).to eq('SECONDS')
+      expect(s.delay.value).to eq(1)
+    end
+
+    it 'deserializes side-effect controls' do
+      s = MockServer::ExpectationStep.from_hash({
+        'httpRequest' => { 'path' => '/hook' },
+        'blocking' => true,
+        'timeout' => { 'timeUnit' => 'SECONDS', 'value' => 5 },
+        'failurePolicy' => 'FAIL_FAST'
+      })
+      expect(s.http_request.path).to eq('/hook')
+      expect(s.blocking).to be true
+      expect(s.timeout.value).to eq(5)
+      expect(s.failure_policy).to eq('FAIL_FAST')
+    end
+
+    it 'returns nil from_hash when data is nil' do
+      expect(MockServer::ExpectationStep.from_hash(nil)).to be_nil
+    end
+
+    it 'round-trips correctly' do
+      original = MockServer::ExpectationStep.new(
+        http_request: MockServer::HttpRequest.new(method: 'POST', path: '/webhook'),
+        blocking: true,
+        timeout: MockServer::Delay.new(time_unit: 'SECONDS', value: 3),
+        failure_policy: 'BEST_EFFORT',
+        delay: MockServer::Delay.new(time_unit: 'MILLISECONDS', value: 50)
+      )
+      roundtrip = MockServer::ExpectationStep.from_hash(original.to_h)
+      expect(roundtrip.to_h).to eq(original.to_h)
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # Expectation with steps
+  # -------------------------------------------------------------------
+  describe 'Expectation with steps' do
+    it 'serializes steps in to_h' do
+      exp = MockServer::Expectation.new(
+        http_request: MockServer::HttpRequest.new(path: '/api'),
+        steps: [
+          MockServer::ExpectationStep.new(
+            http_request: MockServer::HttpRequest.new(method: 'POST', path: '/webhook'),
+            blocking: true,
+            timeout: MockServer::Delay.new(time_unit: 'SECONDS', value: 5),
+            failure_policy: 'FAIL_FAST'
+          ),
+          MockServer::ExpectationStep.new(
+            http_response: MockServer::HttpResponse.new(status_code: 200, body: 'ok'),
+            responder: true
+          )
+        ]
+      )
+      h = exp.to_h
+      expect(h).to have_key('steps')
+      expect(h['steps'].length).to eq(2)
+      expect(h['steps'][0]['httpRequest']).to eq({ 'method' => 'POST', 'path' => '/webhook' })
+      expect(h['steps'][0]['blocking']).to be true
+      expect(h['steps'][0]['failurePolicy']).to eq('FAIL_FAST')
+      expect(h['steps'][1]['httpResponse']).to eq({ 'statusCode' => 200, 'body' => 'ok' })
+      expect(h['steps'][1]['responder']).to be true
+    end
+
+    it 'deserializes steps from hash' do
+      exp = MockServer::Expectation.from_hash({
+        'httpRequest' => { 'path' => '/api' },
+        'steps' => [
+          {
+            'httpRequest' => { 'method' => 'POST', 'path' => '/webhook' },
+            'blocking' => true,
+            'timeout' => { 'timeUnit' => 'SECONDS', 'value' => 5 },
+            'failurePolicy' => 'FAIL_FAST'
+          },
+          {
+            'httpResponse' => { 'statusCode' => 200, 'body' => 'ok' },
+            'responder' => true
+          }
+        ]
+      })
+      expect(exp.steps).not_to be_nil
+      expect(exp.steps.length).to eq(2)
+      expect(exp.steps[0].http_request.path).to eq('/webhook')
+      expect(exp.steps[0].blocking).to be true
+      expect(exp.steps[0].failure_policy).to eq('FAIL_FAST')
+      expect(exp.steps[1].http_response.status_code).to eq(200)
+      expect(exp.steps[1].responder).to be true
+    end
+
+    it 'omits steps from to_h when not set' do
+      exp = MockServer::Expectation.new(
+        http_request: MockServer::HttpRequest.new(path: '/test'),
+        http_response: MockServer::HttpResponse.new(status_code: 200)
+      )
+      h = exp.to_h
+      expect(h).not_to have_key('steps')
+    end
+
+    it 'deserializes nil steps' do
+      exp = MockServer::Expectation.from_hash({
+        'httpRequest' => { 'path' => '/test' },
+        'httpResponse' => { 'statusCode' => 200 }
+      })
+      expect(exp.steps).to be_nil
+    end
+
+    it 'round-trips with steps' do
+      original = MockServer::Expectation.new(
+        id: 'steps-test',
+        http_request: MockServer::HttpRequest.new(path: '/api'),
+        steps: [
+          MockServer::ExpectationStep.new(
+            http_request: MockServer::HttpRequest.new(method: 'POST', path: '/hook'),
+            delay: MockServer::Delay.new(time_unit: 'MILLISECONDS', value: 100),
+            blocking: true,
+            timeout: MockServer::Delay.new(time_unit: 'SECONDS', value: 3),
+            failure_policy: 'BEST_EFFORT'
+          ),
+          MockServer::ExpectationStep.new(
+            http_forward: MockServer::HttpForward.new(host: 'backend.local', port: 9090),
+            responder: true
+          )
+        ]
+      )
+      roundtrip = MockServer::Expectation.from_hash(original.to_h)
+      expect(roundtrip.id).to eq('steps-test')
+      expect(roundtrip.steps.length).to eq(2)
+      expect(roundtrip.steps[0].http_request.path).to eq('/hook')
+      expect(roundtrip.steps[0].delay.value).to eq(100)
+      expect(roundtrip.steps[0].blocking).to be true
+      expect(roundtrip.steps[0].timeout.value).to eq(3)
+      expect(roundtrip.steps[0].failure_policy).to eq('BEST_EFFORT')
+      expect(roundtrip.steps[1].http_forward.host).to eq('backend.local')
+      expect(roundtrip.steps[1].responder).to be true
+    end
+  end
+
+  # -------------------------------------------------------------------
   # Helper functions
   # -------------------------------------------------------------------
   describe 'MockServer.to_camel' do

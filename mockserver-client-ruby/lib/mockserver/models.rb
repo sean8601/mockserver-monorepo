@@ -78,7 +78,10 @@ module MockServer
     'quota_limit'                    => 'quotaLimit',
     'quota_window_millis'            => 'quotaWindowMillis',
     'quota_error_status'             => 'quotaErrorStatus',
-    'degradation_ramp_millis'        => 'degradationRampMillis'
+    'degradation_ramp_millis'        => 'degradationRampMillis',
+    'http_class_callback'            => 'httpClassCallback',
+    'http_object_callback'           => 'httpObjectCallback',
+    'failure_policy'                 => 'failurePolicy'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -1582,6 +1585,73 @@ module MockServer
     end
   end
 
+  # A single step in an ordered multi-action expectation pipeline.
+  #
+  # Each step carries exactly ONE action target and a +responder+ flag.
+  # Steps without +responder = true+ are side-effects (fire-and-forget
+  # webhooks/callbacks). Exactly one step in the list must be marked as the
+  # responder; that step's action produces the HTTP response.
+  class ExpectationStep
+    attr_accessor :http_request, :http_class_callback, :http_object_callback,
+                  :http_forward, :http_override_forwarded_request,
+                  :http_response, :http_error,
+                  :responder, :delay, :blocking, :timeout, :failure_policy
+
+    def initialize(http_request: nil, http_class_callback: nil, http_object_callback: nil,
+                   http_forward: nil, http_override_forwarded_request: nil,
+                   http_response: nil, http_error: nil,
+                   responder: nil, delay: nil, blocking: nil, timeout: nil, failure_policy: nil)
+      @http_request = http_request
+      @http_class_callback = http_class_callback
+      @http_object_callback = http_object_callback
+      @http_forward = http_forward
+      @http_override_forwarded_request = http_override_forwarded_request
+      @http_response = http_response
+      @http_error = http_error
+      @responder = responder
+      @delay = delay
+      @blocking = blocking
+      @timeout = timeout
+      @failure_policy = failure_policy
+    end
+
+    def to_h
+      MockServer.strip_none({
+        'httpRequest'                  => @http_request&.to_h,
+        'httpClassCallback'            => @http_class_callback&.to_h,
+        'httpObjectCallback'           => @http_object_callback&.to_h,
+        'httpForward'                  => @http_forward&.to_h,
+        'httpOverrideForwardedRequest' => @http_override_forwarded_request&.to_h,
+        'httpResponse'                 => @http_response&.to_h,
+        'httpError'                    => @http_error&.to_h,
+        'responder'                    => @responder,
+        'delay'                        => @delay&.to_h,
+        'blocking'                     => @blocking,
+        'timeout'                      => @timeout&.to_h,
+        'failurePolicy'                => @failure_policy
+      })
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      new(
+        http_request:                  HttpRequest.from_hash(data['httpRequest']),
+        http_class_callback:           HttpClassCallback.from_hash(data['httpClassCallback']),
+        http_object_callback:          HttpObjectCallback.from_hash(data['httpObjectCallback']),
+        http_forward:                  HttpForward.from_hash(data['httpForward']),
+        http_override_forwarded_request: HttpOverrideForwardedRequest.from_hash(data['httpOverrideForwardedRequest']),
+        http_response:                 HttpResponse.from_hash(data['httpResponse']),
+        http_error:                    HttpError.from_hash(data['httpError']),
+        responder:                     data['responder'],
+        delay:                         Delay.from_hash(data['delay']),
+        blocking:                      data['blocking'],
+        timeout:                       Delay.from_hash(data['timeout']),
+        failure_policy:                data['failurePolicy']
+      )
+    end
+  end
+
   class Expectation
     attr_accessor :id, :priority, :percentage, :http_request, :http_response,
                   :http_response_template, :http_response_class_callback,
@@ -1593,7 +1663,7 @@ module MockServer
                   :grpc_stream_response, :grpc_bidi_response,
                   :binary_response, :dns_response,
                   :before_actions, :after_actions,
-                  :http_responses, :response_mode,
+                  :http_responses, :response_mode, :steps,
                   :scenario_name, :scenario_state, :new_scenario_state
 
     def initialize(id: nil, priority: nil, percentage: nil, http_request: nil, http_response: nil,
@@ -1606,7 +1676,7 @@ module MockServer
                    grpc_stream_response: nil, grpc_bidi_response: nil,
                    binary_response: nil, dns_response: nil,
                    before_actions: nil, after_actions: nil,
-                   http_responses: nil, response_mode: nil,
+                   http_responses: nil, response_mode: nil, steps: nil,
                    scenario_name: nil, scenario_state: nil, new_scenario_state: nil)
       @id = id
       @priority = priority
@@ -1635,6 +1705,7 @@ module MockServer
       @after_actions = after_actions
       @http_responses = http_responses
       @response_mode = response_mode
+      @steps = steps
       @scenario_name = scenario_name
       @scenario_state = scenario_state
       @new_scenario_state = new_scenario_state
@@ -1680,6 +1751,7 @@ module MockServer
         'afterActions'                 => after_actions_h,
         'httpResponses'                => @http_responses&.map(&:to_h),
         'responseMode'                 => @response_mode,
+        'steps'                        => @steps&.map(&:to_h),
         'times'                        => @times&.to_h,
         'timeToLive'                   => @time_to_live&.to_h,
         'chaos'                        => @chaos&.to_h,
@@ -1731,6 +1803,7 @@ module MockServer
         after_actions:                   after_actions,
         http_responses:                  data['httpResponses']&.map { |r| HttpResponse.from_hash(r) },
         response_mode:                   data['responseMode'],
+        steps:                           data['steps']&.map { |s| ExpectationStep.from_hash(s) },
         times:                           Times.from_hash(data['times']),
         time_to_live:                    TimeToLive.from_hash(data['timeToLive']),
         chaos:                           HttpChaosProfile.from_hash(data['chaos']),

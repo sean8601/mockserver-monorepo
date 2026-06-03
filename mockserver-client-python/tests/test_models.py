@@ -2826,3 +2826,295 @@ class TestRequestDefinitionAlias:
         r = RequestDefinition.request("/alias")
         assert isinstance(r, HttpRequest)
         assert r.path == "/alias"
+
+
+class TestExpectationStep:
+    def test_defaults(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep()
+        assert s.http_request is None
+        assert s.http_response is None
+        assert s.http_forward is None
+        assert s.http_error is None
+        assert s.http_class_callback is None
+        assert s.http_object_callback is None
+        assert s.http_override_forwarded_request is None
+        assert s.responder is None
+        assert s.delay is None
+        assert s.blocking is None
+        assert s.timeout is None
+        assert s.failure_policy is None
+
+    def test_responder_step_with_http_response(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_response=HttpResponse(status_code=200, body="ok"),
+            responder=True,
+        )
+        result = s.to_dict()
+        assert result == {
+            "httpResponse": {"statusCode": 200, "body": "ok"},
+            "responder": True,
+        }
+
+    def test_side_effect_step_with_http_request(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_request=HttpRequest(method="POST", path="/webhook"),
+            blocking=True,
+            timeout=Delay(time_unit="SECONDS", value=5),
+            failure_policy="FAIL_FAST",
+        )
+        result = s.to_dict()
+        assert result["httpRequest"] == {"method": "POST", "path": "/webhook"}
+        assert result["blocking"] is True
+        assert result["timeout"] == {"timeUnit": "SECONDS", "value": 5}
+        assert result["failurePolicy"] == "FAIL_FAST"
+        assert "responder" not in result
+
+    def test_step_with_http_forward(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_forward=HttpForward(host="example.com", port=8080),
+            responder=True,
+            delay=Delay(time_unit="MILLISECONDS", value=100),
+        )
+        result = s.to_dict()
+        assert result["httpForward"] == {"host": "example.com", "port": 8080}
+        assert result["responder"] is True
+        assert result["delay"] == {"timeUnit": "MILLISECONDS", "value": 100}
+
+    def test_step_with_http_class_callback(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_class_callback=HttpClassCallback(callback_class="com.example.Cb"),
+        )
+        result = s.to_dict()
+        assert result["httpClassCallback"] == {"callbackClass": "com.example.Cb"}
+
+    def test_step_with_http_object_callback(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_object_callback=HttpObjectCallback(client_id="ws-1"),
+        )
+        result = s.to_dict()
+        assert result["httpObjectCallback"] == {"clientId": "ws-1"}
+
+    def test_step_with_http_override_forwarded_request(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_override_forwarded_request=HttpOverrideForwardedRequest(
+                http_request=HttpRequest(path="/override"),
+            ),
+            responder=True,
+        )
+        result = s.to_dict()
+        assert result["httpOverrideForwardedRequest"] == {"httpRequest": {"path": "/override"}}
+        assert result["responder"] is True
+
+    def test_step_with_http_error(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_error=HttpError(drop_connection=True),
+            responder=True,
+        )
+        result = s.to_dict()
+        assert result["httpError"] == {"dropConnection": True}
+        assert result["responder"] is True
+
+    def test_to_dict_strips_none(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_response=HttpResponse(status_code=200),
+            responder=True,
+        )
+        result = s.to_dict()
+        assert "httpRequest" not in result
+        assert "httpForward" not in result
+        assert "httpError" not in result
+        assert "blocking" not in result
+        assert "timeout" not in result
+        assert "failurePolicy" not in result
+        assert "delay" not in result
+
+    def test_to_dict_failure_policy_best_effort(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep(
+            http_request=HttpRequest(path="/hook"),
+            blocking=False,
+            failure_policy="BEST_EFFORT",
+        )
+        result = s.to_dict()
+        assert result["failurePolicy"] == "BEST_EFFORT"
+        assert result["blocking"] is False
+
+    def test_from_dict(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep.from_dict({
+            "httpResponse": {"statusCode": 200, "body": "ok"},
+            "responder": True,
+            "delay": {"timeUnit": "SECONDS", "value": 1},
+        })
+        assert s.http_response.status_code == 200
+        assert s.responder is True
+        assert s.delay.time_unit == "SECONDS"
+        assert s.delay.value == 1
+
+    def test_from_dict_with_side_effect_controls(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep.from_dict({
+            "httpRequest": {"path": "/hook"},
+            "blocking": True,
+            "timeout": {"timeUnit": "SECONDS", "value": 5},
+            "failurePolicy": "FAIL_FAST",
+        })
+        assert s.http_request.path == "/hook"
+        assert s.blocking is True
+        assert s.timeout.value == 5
+        assert s.failure_policy == "FAIL_FAST"
+
+    def test_from_dict_with_http_forward(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep.from_dict({
+            "httpForward": {"host": "example.com"},
+            "responder": True,
+        })
+        assert s.http_forward.host == "example.com"
+        assert s.responder is True
+
+    def test_from_dict_with_callbacks(self):
+        from mockserver.models import ExpectationStep
+        s = ExpectationStep.from_dict({
+            "httpClassCallback": {"callbackClass": "com.example.Cb"},
+        })
+        assert s.http_class_callback.callback_class == "com.example.Cb"
+
+    def test_from_dict_none(self):
+        from mockserver.models import ExpectationStep
+        assert ExpectationStep.from_dict(None) is None
+
+    def test_round_trip(self):
+        from mockserver.models import ExpectationStep
+        original = ExpectationStep(
+            http_request=HttpRequest(method="POST", path="/webhook"),
+            blocking=True,
+            timeout=Delay(time_unit="SECONDS", value=3),
+            failure_policy="BEST_EFFORT",
+            delay=Delay(time_unit="MILLISECONDS", value=50),
+        )
+        restored = ExpectationStep.from_dict(original.to_dict())
+        assert restored.http_request.method == "POST"
+        assert restored.http_request.path == "/webhook"
+        assert restored.blocking is True
+        assert restored.timeout.value == 3
+        assert restored.failure_policy == "BEST_EFFORT"
+        assert restored.delay.value == 50
+
+    def test_round_trip_responder(self):
+        from mockserver.models import ExpectationStep
+        original = ExpectationStep(
+            http_response=HttpResponse(status_code=201, body="created"),
+            responder=True,
+        )
+        restored = ExpectationStep.from_dict(original.to_dict())
+        assert restored.http_response.status_code == 201
+        assert restored.http_response.body == "created"
+        assert restored.responder is True
+
+
+class TestExpectationWithSteps:
+    def test_expectation_with_steps_to_dict(self):
+        from mockserver.models import ExpectationStep
+        e = Expectation(
+            http_request=HttpRequest(path="/api"),
+            steps=[
+                ExpectationStep(
+                    http_request=HttpRequest(method="POST", path="/webhook"),
+                    blocking=True,
+                    timeout=Delay(time_unit="SECONDS", value=5),
+                    failure_policy="FAIL_FAST",
+                ),
+                ExpectationStep(
+                    http_response=HttpResponse(status_code=200, body="ok"),
+                    responder=True,
+                ),
+            ],
+        )
+        result = e.to_dict()
+        assert "steps" in result
+        assert len(result["steps"]) == 2
+        assert result["steps"][0]["httpRequest"] == {"method": "POST", "path": "/webhook"}
+        assert result["steps"][0]["blocking"] is True
+        assert result["steps"][0]["failurePolicy"] == "FAIL_FAST"
+        assert result["steps"][1]["httpResponse"] == {"statusCode": 200, "body": "ok"}
+        assert result["steps"][1]["responder"] is True
+
+    def test_expectation_with_steps_from_dict(self):
+        from mockserver.models import ExpectationStep
+        e = Expectation.from_dict({
+            "httpRequest": {"path": "/api"},
+            "steps": [
+                {
+                    "httpRequest": {"method": "POST", "path": "/webhook"},
+                    "blocking": True,
+                    "timeout": {"timeUnit": "SECONDS", "value": 5},
+                    "failurePolicy": "FAIL_FAST",
+                },
+                {
+                    "httpResponse": {"statusCode": 200, "body": "ok"},
+                    "responder": True,
+                },
+            ],
+        })
+        assert e.steps is not None
+        assert len(e.steps) == 2
+        assert e.steps[0].http_request.path == "/webhook"
+        assert e.steps[0].blocking is True
+        assert e.steps[0].failure_policy == "FAIL_FAST"
+        assert e.steps[1].http_response.status_code == 200
+        assert e.steps[1].responder is True
+
+    def test_expectation_without_steps(self):
+        e = Expectation(
+            http_request=HttpRequest(path="/test"),
+            http_response=HttpResponse(status_code=200),
+        )
+        result = e.to_dict()
+        assert "steps" not in result
+
+    def test_expectation_from_dict_without_steps(self):
+        e = Expectation.from_dict({
+            "httpRequest": {"path": "/test"},
+            "httpResponse": {"statusCode": 200},
+        })
+        assert e.steps is None
+
+    def test_round_trip_with_steps(self):
+        from mockserver.models import ExpectationStep
+        original = Expectation(
+            id="steps-test",
+            http_request=HttpRequest(path="/api"),
+            steps=[
+                ExpectationStep(
+                    http_request=HttpRequest(method="POST", path="/hook"),
+                    delay=Delay(time_unit="MILLISECONDS", value=100),
+                    blocking=True,
+                    timeout=Delay(time_unit="SECONDS", value=3),
+                    failure_policy="BEST_EFFORT",
+                ),
+                ExpectationStep(
+                    http_forward=HttpForward(host="backend.local", port=9090),
+                    responder=True,
+                ),
+            ],
+        )
+        restored = Expectation.from_dict(original.to_dict())
+        assert restored.id == "steps-test"
+        assert len(restored.steps) == 2
+        assert restored.steps[0].http_request.path == "/hook"
+        assert restored.steps[0].delay.value == 100
+        assert restored.steps[0].blocking is True
+        assert restored.steps[0].timeout.value == 3
+        assert restored.steps[0].failure_policy == "BEST_EFFORT"
+        assert restored.steps[1].http_forward.host == "backend.local"
+        assert restored.steps[1].responder is True

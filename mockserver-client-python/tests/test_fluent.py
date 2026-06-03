@@ -340,6 +340,40 @@ class TestForwardWithClassCallback:
             await chain.forward_with_class_callback("not a callback")
 
 
+class TestWithSteps:
+    @pytest.mark.asyncio
+    async def test_with_steps(self, chain, mock_client):
+        from mockserver.models import ExpectationStep
+        steps = [
+            ExpectationStep(
+                http_request=HttpRequest(method="POST", path="/webhook"),
+                blocking=True,
+                timeout=Delay(time_unit="SECONDS", value=5),
+                failure_policy="FAIL_FAST",
+            ),
+            ExpectationStep(
+                http_response=HttpResponse(status_code=200, body="ok"),
+                responder=True,
+            ),
+        ]
+        result = await chain.with_steps(steps)
+        assert chain._expectation.steps is steps
+        assert len(chain._expectation.steps) == 2
+        assert chain._expectation.steps[0].http_request.path == "/webhook"
+        assert chain._expectation.steps[1].responder is True
+        mock_client.upsert.assert_called_once_with(chain._expectation)
+
+    @pytest.mark.asyncio
+    async def test_with_steps_invalid_type_raises(self, chain):
+        with pytest.raises(TypeError, match="Expected a list of ExpectationStep"):
+            await chain.with_steps("not a list")
+
+    @pytest.mark.asyncio
+    async def test_with_steps_invalid_items_raises(self, chain):
+        with pytest.raises(TypeError, match="Expected a list of ExpectationStep"):
+            await chain.with_steps([{"httpResponse": {"statusCode": 200}}])
+
+
 class TestChaining:
     @pytest.mark.asyncio
     async def test_chained_with_id_and_priority(self, chain, mock_client):

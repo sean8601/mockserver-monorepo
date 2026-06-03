@@ -193,5 +193,20 @@ module MockServer
       @expectation.http_forward_class_callback = class_callback
       @client.upsert(@expectation)
     end
+
+    # Set an ordered multi-action pipeline of steps.
+    #
+    # Exactly one step must have +responder: true+; that step produces the
+    # HTTP response. All other steps are side-effects executed in order.
+    # @param steps [Array<ExpectationStep>]
+    # @return [Array<Expectation>]
+    def with_steps(steps)
+      unless steps.is_a?(Array) && steps.all? { |s| s.is_a?(ExpectationStep) }
+        raise TypeError, 'Expected an Array of ExpectationStep objects'
+      end
+
+      @expectation.steps = steps
+      @client.upsert(@expectation)
+    end
   end
 end

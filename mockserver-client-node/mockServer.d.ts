@@ -46,6 +46,7 @@ export type Expectation = {
   afterActions?: AfterAction | AfterAction[];
   httpResponses?: HttpResponse[];
   responseMode?: "SEQUENTIAL" | "RANDOM";
+  steps?: ExpectationStep[];
   scenarioName?: string;
   scenarioState?: string;
   newScenarioState?: string;
@@ -400,6 +401,36 @@ export interface AfterAction {
   /** before-actions only: max wait for a blocking action */
   timeout?: Delay;
   /** before-actions only: outcome when a blocking action fails or times out */
+  failurePolicy?: "FAIL_FAST" | "BEST_EFFORT";
+}
+
+/**
+ * A single step in an ordered multi-action expectation pipeline.
+ *
+ * Each step carries exactly ONE action target and a {@link responder} flag.
+ * Steps without `responder = true` are side-effects (fire-and-forget webhooks/callbacks).
+ * Exactly one step in the list must be marked as the responder; that step's action
+ * produces the HTTP response.
+ */
+export interface ExpectationStep {
+  /** Side-effect / webhook target */
+  httpRequest?: HttpRequest;
+  httpClassCallback?: HttpClassCallback;
+  httpObjectCallback?: HttpObjectCallback;
+  /** Forward targets (usable as side-effect or responder) */
+  httpForward?: HttpForward;
+  httpOverrideForwardedRequest?: HttpOverrideForwardedRequest;
+  /** Response targets (responder only) */
+  httpResponse?: HttpResponse;
+  httpError?: HttpError;
+  /** When true, this step's action produces the HTTP response */
+  responder?: boolean;
+  delay?: Delay;
+  /** Side-effect steps only: when true (the default) the pipeline waits for completion */
+  blocking?: boolean;
+  /** Side-effect steps only: maximum time to wait for a blocking step */
+  timeout?: Delay;
+  /** Side-effect steps only: what to do when a blocking step fails or times out */
   failurePolicy?: "FAIL_FAST" | "BEST_EFFORT";
 }
 

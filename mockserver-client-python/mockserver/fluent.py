@@ -8,6 +8,7 @@ from mockserver.models import (
     Delay,
     DnsResponse,
     Expectation,
+    ExpectationStep,
     GrpcBidiResponse,
     GrpcStreamResponse,
     HttpChaosProfile,
@@ -170,5 +171,18 @@ class ForwardChainExpectation:
 
     async def error(self, error: HttpError) -> list[Expectation]:
         self._expectation.http_error = error
+        return await self._client.upsert(self._expectation)
+
+    async def with_steps(self, steps: list[ExpectationStep]) -> list[Expectation]:
+        """Set an ordered multi-action pipeline of steps.
+
+        Exactly one step must have ``responder=True``; that step produces the
+        HTTP response. All other steps are side-effects executed in order.
+        """
+        if not isinstance(steps, list) or not all(isinstance(s, ExpectationStep) for s in steps):
+            raise TypeError(
+                "Expected a list of ExpectationStep objects"
+            )
+        self._expectation.steps = steps
         return await self._client.upsert(self._expectation)
 
