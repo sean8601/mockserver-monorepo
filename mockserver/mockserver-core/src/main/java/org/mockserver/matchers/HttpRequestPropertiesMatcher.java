@@ -534,7 +534,18 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         if (httpRequest.getBody().getOptional() != null && httpRequest.getBody().getOptional() && request.getBody() == null) {
             bodyMatches = true;
         } else if (bodyMatcher instanceof BinaryMatcher) {
-            bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsRawBytes());
+            if (request.getOriginalBody() != null) {
+                // the request was compressed: a binary matcher may target either the decompressed body or
+                // the original compressed bytes, so accept a match against either representation
+                bodyMatches = matches(BODY, null, bodyMatcher, request.getBodyAsRawBytes())
+                    || matches(BODY, null, bodyMatcher, request.getOriginalBody());
+                if (!bodyMatches && context != null) {
+                    // record the difference against the primary (decompressed) representation
+                    matches(BODY, context, bodyMatcher, request.getBodyAsRawBytes());
+                }
+            } else {
+                bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsRawBytes());
+            }
         } else {
             if (bodyMatcher instanceof ExactStringMatcher ||
                 bodyMatcher instanceof SubStringMatcher ||

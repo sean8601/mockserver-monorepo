@@ -90,7 +90,6 @@ public class Configuration {
     private Long driftResponseTimeThresholdMs;
     private Boolean useSemicolonAsQueryParameterSeparator;
     private Boolean assumeAllRequestsAreHttp;
-    private Boolean decompressRequestBodies;
     private Boolean http2Enabled;
 
     // matcher safety — global only (ConfigurationProperties), no per-instance override:
@@ -1112,28 +1111,6 @@ public class Configuration {
      */
     public Configuration assumeAllRequestsAreHttp(Boolean assumeAllRequestsAreHttp) {
         this.assumeAllRequestsAreHttp = assumeAllRequestsAreHttp;
-        return this;
-    }
-
-    public Boolean decompressRequestBodies() {
-        if (decompressRequestBodies == null) {
-            return ConfigurationProperties.decompressRequestBodies();
-        }
-        return decompressRequestBodies;
-    }
-
-    /**
-     * If true (the default) request bodies sent with a Content-Encoding (e.g. gzip, deflate) are automatically
-     * decompressed before matching and recording. If false the request body is matched and recorded exactly as
-     * received on the wire (still compressed), the Content-Encoding header is preserved, and
-     * HttpRequest#getBodyAsRawBytes returns the original compressed bytes.
-     * <p>
-     * The default is true
-     *
-     * @param decompressRequestBodies if false request bodies are matched and recorded as received (still compressed)
-     */
-    public Configuration decompressRequestBodies(Boolean decompressRequestBodies) {
-        this.decompressRequestBodies = decompressRequestBodies;
         return this;
     }
 
