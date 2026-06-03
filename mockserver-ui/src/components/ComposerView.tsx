@@ -17,6 +17,8 @@ import Checkbox from '@mui/material/Checkbox';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
@@ -31,6 +33,10 @@ import {
   buildExpectationJson,
   chaosFromExpectation,
   sideEffectsFromExpectation,
+  stepsFromExpectation,
+  STEP_ACTION_TYPES,
+  STEP_ACTION_LABELS,
+  RESPONDER_CAPABLE_ACTIONS,
   type StandardActionPayload,
   type StandardChaosDraft,
   type ChaosDelayUnit,
@@ -55,6 +61,8 @@ import {
   type SideEffectDelayUnit,
   type SideEffectFailurePolicy,
   type StandardConnectionOptions,
+  type StandardExpectationStep,
+  type StepActionType,
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
 import ImportForm from './ImportForm';
@@ -2435,6 +2443,292 @@ function SideEffectsPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Steps panel — ordered multi-action pipeline (M1 increment-2)
+// ---------------------------------------------------------------------------
+
+function emptyStep(): StandardExpectationStep {
+  return {
+    actionType: 'httpResponse',
+    responder: false,
+    actionBody: '',
+    blocking: true,
+    delayValue: 0,
+    delayUnit: 'MILLISECONDS',
+    timeoutValue: 0,
+    timeoutUnit: 'SECONDS',
+    failurePolicy: 'BEST_EFFORT',
+  };
+}
+
+function StepsPanel({
+  steps,
+  setSteps,
+}: {
+  steps: StandardExpectationStep[];
+  setSteps: (s: StandardExpectationStep[]) => void;
+}) {
+  const addStep = () => setSteps([...steps, emptyStep()]);
+  const removeStep = (idx: number) => {
+    const next = steps.filter((_, i) => i !== idx);
+    // If the removed step was the responder and no other step is, auto-select
+    // the first response-capable step (if any).
+    if (steps[idx]?.responder && !next.some((s) => s.responder)) {
+      const respIdx = next.findIndex((s) => RESPONDER_CAPABLE_ACTIONS.has(s.actionType));
+      if (respIdx >= 0) next[respIdx] = { ...next[respIdx]!, responder: true };
+    }
+    setSteps(next);
+  };
+  const updateStep = (idx: number, patch: Partial<StandardExpectationStep>) => {
+    setSteps(steps.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  };
+  const moveStep = (idx: number, direction: -1 | 1) => {
+    const target = idx + direction;
+    if (target < 0 || target >= steps.length) return;
+    const next = [...steps];
+    [next[idx], next[target]] = [next[target]!, next[idx]!];
+    setSteps(next);
+  };
+
+  const setResponder = (idx: number) => {
+    setSteps(steps.map((s, i) => ({ ...s, responder: i === idx })));
+  };
+
+  const responderCount = steps.filter((s) => s.responder).length;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="body2" color="text.secondary">
+        Define an ordered pipeline of actions. Exactly one step must be the <strong>responder</strong>{' '}
+        (produces the HTTP response); all other steps are side-effects that run before or after it
+        in list order. Steps cannot be combined with top-level before/after actions.
+      </Typography>
+
+      {responderCount === 0 && steps.length > 0 && (
+        <Alert severity="warning" variant="outlined" sx={{ fontSize: '0.78rem' }} data-testid="steps-no-responder-warning">
+          No responder selected. Exactly one step must be marked as the responder.
+        </Alert>
+      )}
+      {responderCount > 1 && (
+        <Alert severity="error" variant="outlined" sx={{ fontSize: '0.78rem' }} data-testid="steps-multi-responder-error">
+          Multiple responders selected ({responderCount}). Only one step can be the responder.
+        </Alert>
+      )}
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          Steps ({steps.length})
+        </Typography>
+        <Button size="small" variant="outlined" onClick={addStep} data-testid="add-step">
+          Add step
+        </Button>
+      </Box>
+
+      {steps.map((step, idx) => (
+        <Paper
+          key={idx}
+          variant="outlined"
+          sx={{
+            p: 1.5,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            borderColor: step.responder ? 'primary.main' : undefined,
+            borderWidth: step.responder ? 2 : 1,
+          }}
+          data-testid="step-row"
+        >
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, minWidth: 24 }}>
+              #{idx + 1}
+            </Typography>
+            <TextField
+              label="Action type"
+              size="small"
+              select
+              value={step.actionType}
+              onChange={(e) => {
+                const newType = e.target.value as StepActionType;
+                // If the step is currently the responder and the new action type
+                // cannot serve as a responder, unset its responder flag AND
+                // auto-select the first other response-capable step as responder
+                // (mirrors removeStep), so the pipeline keeps exactly one responder.
+                if (step.responder && !RESPONDER_CAPABLE_ACTIONS.has(newType)) {
+                  const next = steps.map((s, i) =>
+                    i === idx ? { ...s, actionType: newType, responder: false } : s
+                  );
+                  if (!next.some((s) => s.responder)) {
+                    const respIdx = next.findIndex(
+                      (s, i) => i !== idx && RESPONDER_CAPABLE_ACTIONS.has(s.actionType)
+                    );
+                    if (respIdx >= 0) next[respIdx] = { ...next[respIdx]!, responder: true };
+                  }
+                  setSteps(next);
+                } else {
+                  updateStep(idx, { actionType: newType });
+                }
+              }}
+              sx={{ minWidth: 220 }}
+              data-testid="step-action-type"
+            >
+              {STEP_ACTION_TYPES.map((at) => (
+                <MenuItem key={at} value={at}>{STEP_ACTION_LABELS[at]}</MenuItem>
+              ))}
+            </TextField>
+
+            <Tooltip title={
+              !RESPONDER_CAPABLE_ACTIONS.has(step.actionType)
+                ? `${STEP_ACTION_LABELS[step.actionType]} cannot be a responder`
+                : step.responder
+                  ? 'This step produces the HTTP response'
+                  : 'Click to make this the responder'
+            }>
+              <span>
+                <FormControlLabel
+                  control={
+                    <Radio
+                      size="small"
+                      checked={step.responder}
+                      onChange={() => setResponder(idx)}
+                      disabled={!RESPONDER_CAPABLE_ACTIONS.has(step.actionType)}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ fontSize: '0.78rem', fontWeight: step.responder ? 600 : 400 }}>
+                      Responder
+                    </Typography>
+                  }
+                  sx={{ mr: 0 }}
+                />
+              </span>
+            </Tooltip>
+
+            <Box sx={{ ml: 'auto', display: 'flex', gap: 0.25 }}>
+              <IconButton
+                size="small"
+                onClick={() => moveStep(idx, -1)}
+                disabled={idx === 0}
+                aria-label="Move step up"
+                data-testid="step-move-up"
+              >
+                <ArrowUpwardIcon fontSize="small" />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={() => moveStep(idx, 1)}
+                disabled={idx === steps.length - 1}
+                aria-label="Move step down"
+                data-testid="step-move-down"
+              >
+                <ArrowDownwardIcon fontSize="small" />
+              </IconButton>
+              <IconButton
+                size="small"
+                color="error"
+                onClick={() => removeStep(idx)}
+                aria-label="Remove step"
+                data-testid="step-remove"
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+
+          <TextField
+            label={`${STEP_ACTION_LABELS[step.actionType]} payload (JSON)`}
+            multiline
+            minRows={3}
+            maxRows={12}
+            value={step.actionBody}
+            onChange={(e) => updateStep(idx, { actionBody: e.target.value })}
+            placeholder={stepPlaceholder(step.actionType)}
+            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          />
+
+          {/* Side-effect controls — only for non-responder steps */}
+          {!step.responder && (
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={step.blocking}
+                    onChange={(e) => updateStep(idx, { blocking: e.target.checked })}
+                  />
+                }
+                label={<Typography variant="body2" sx={{ fontSize: '0.78rem' }}>Blocking</Typography>}
+              />
+              <TextField
+                label="Delay"
+                size="small"
+                type="number"
+                value={step.delayValue}
+                onChange={(e) => updateStep(idx, { delayValue: Number(e.target.value) || 0 })}
+                sx={{ width: 100 }}
+              />
+              <TextField
+                label="Delay unit"
+                size="small"
+                select
+                value={step.delayUnit}
+                onChange={(e) => updateStep(idx, { delayUnit: e.target.value as SideEffectDelayUnit })}
+                sx={{ width: 140 }}
+              >
+                <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
+                <MenuItem value="SECONDS">seconds</MenuItem>
+                <MenuItem value="MINUTES">minutes</MenuItem>
+              </TextField>
+              <TextField
+                label="Timeout"
+                size="small"
+                type="number"
+                value={step.timeoutValue}
+                onChange={(e) => updateStep(idx, { timeoutValue: Number(e.target.value) || 0 })}
+                sx={{ width: 100 }}
+              />
+              <TextField
+                label="Timeout unit"
+                size="small"
+                select
+                value={step.timeoutUnit}
+                onChange={(e) => updateStep(idx, { timeoutUnit: e.target.value as SideEffectDelayUnit })}
+                sx={{ width: 140 }}
+              >
+                <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
+                <MenuItem value="SECONDS">seconds</MenuItem>
+                <MenuItem value="MINUTES">minutes</MenuItem>
+              </TextField>
+              <TextField
+                label="Failure policy"
+                size="small"
+                select
+                value={step.failurePolicy}
+                onChange={(e) => updateStep(idx, { failurePolicy: e.target.value as SideEffectFailurePolicy })}
+                sx={{ width: 150 }}
+              >
+                <MenuItem value="BEST_EFFORT">BEST_EFFORT</MenuItem>
+                <MenuItem value="FAIL_FAST">FAIL_FAST</MenuItem>
+              </TextField>
+            </Box>
+          )}
+        </Paper>
+      ))}
+    </Box>
+  );
+}
+
+/** Placeholder JSON for each step action type. */
+function stepPlaceholder(actionType: StepActionType): string {
+  switch (actionType) {
+    case 'httpResponse': return '{\n  "statusCode": 200,\n  "body": "{\\"ok\\":true}"\n}';
+    case 'httpForward': return '{\n  "scheme": "HTTPS",\n  "host": "api.example.com",\n  "port": 443\n}';
+    case 'httpOverrideForwardedRequest': return '{\n  "requestOverride": {\n    "path": "/v2/endpoint"\n  }\n}';
+    case 'httpError': return '{\n  "dropConnection": true\n}';
+    case 'httpRequest': return '{\n  "method": "POST",\n  "path": "/webhook/notify",\n  "body": "{\\"event\\":\\"matched\\"}"\n}';
+    case 'httpClassCallback': return '{\n  "callbackClass": "com.example.MyCallback"\n}';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Existing mocks list — compact, scrollable list scoped to the selected kind
 // ---------------------------------------------------------------------------
 
@@ -2657,6 +2951,12 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [sideEffectsEnabled, setSideEffectsEnabled] = useState(false);
   const [sideEffects, setSideEffects] = useState<StandardSideEffectAction[]>([]);
 
+  // Steps pipeline — ordered multi-action (M1 increment-2).
+  // When steps mode is enabled, the top-level action + before/after side-effects
+  // are ignored and the expectation uses the `steps` array instead.
+  const [stepsEnabled, setStepsEnabled] = useState(false);
+  const [stepsState, setStepsState] = useState<StandardExpectationStep[]>([]);
+
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
@@ -2766,6 +3066,19 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       } else {
         setSideEffectsEnabled(false);
         setSideEffects([]);
+      }
+
+      // Repopulate steps pipeline from an existing expectation
+      const existingSteps = stepsFromExpectation(item.value);
+      if (existingSteps) {
+        setStepsEnabled(true);
+        setStepsState(existingSteps);
+        // Steps mode overrides side-effects — turn them off
+        setSideEffectsEnabled(false);
+        setSideEffects([]);
+      } else {
+        setStepsEnabled(false);
+        setStepsState([]);
       }
     },
     [activeExpectations],
@@ -2877,6 +3190,8 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               setChaosState({});
               setSideEffectsEnabled(false);
               setSideEffects([]);
+              setStepsEnabled(false);
+              setStepsState([]);
             }}
           />
         )}
@@ -3149,29 +3464,74 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               </Paper>
             )}
 
-            {/* Side-effect actions (before / after) — optional, cross-cutting. */}
+            {/* Side-effect actions (before / after) — optional, cross-cutting.
+                Disabled when Steps mode is active (they conflict). */}
             <Paper variant="outlined" sx={{ p: 2 }}>
+              <Tooltip title={stepsEnabled ? 'Side-effects cannot be combined with steps mode' : ''}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={sideEffectsEnabled}
+                      disabled={stepsEnabled}
+                      onChange={(e) => {
+                        setSideEffectsEnabled(e.target.checked);
+                        if (!e.target.checked) setSideEffects([]);
+                      }}
+                    />
+                  }
+                  label={
+                    <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: stepsEnabled ? 'text.disabled' : 'text.secondary' }}>
+                      Before &amp; after actions (optional)
+                    </Typography>
+                  }
+                  sx={{ m: 0 }}
+                />
+              </Tooltip>
+              <Collapse in={sideEffectsEnabled && !stepsEnabled} unmountOnExit>
+                <Box sx={{ mt: 1.5 }}>
+                  <SideEffectsPanel sideEffects={sideEffects} setSideEffects={setSideEffects} />
+                </Box>
+              </Collapse>
+            </Paper>
+
+            {/* Steps pipeline — ordered multi-action (M1 increment-2).
+                When enabled, overrides both the top-level action and before/after actions. */}
+            <Paper variant="outlined" sx={{ p: 2 }} data-testid="steps-section">
               <FormControlLabel
                 control={
                   <Switch
                     size="small"
-                    checked={sideEffectsEnabled}
+                    checked={stepsEnabled}
                     onChange={(e) => {
-                      setSideEffectsEnabled(e.target.checked);
-                      if (!e.target.checked) setSideEffects([]);
+                      const enabled = e.target.checked;
+                      setStepsEnabled(enabled);
+                      if (enabled) {
+                        // Disable side-effects — steps replace both action + side-effects
+                        setSideEffectsEnabled(false);
+                        setSideEffects([]);
+                      } else {
+                        setStepsState([]);
+                      }
                     }}
                   />
                 }
                 label={
                   <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
-                    Before &amp; after actions (optional)
+                    Steps pipeline (advanced, optional)
                   </Typography>
                 }
                 sx={{ m: 0 }}
               />
-              <Collapse in={sideEffectsEnabled} unmountOnExit>
+              {stepsEnabled && (
+                <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', mt: 1, mb: 0.5 }}>
+                  Steps mode replaces the top-level response action and before/after side-effects
+                  with an ordered pipeline. The action type above is ignored when steps are active.
+                </Alert>
+              )}
+              <Collapse in={stepsEnabled} unmountOnExit>
                 <Box sx={{ mt: 1.5 }}>
-                  <SideEffectsPanel sideEffects={sideEffects} setSideEffects={setSideEffects} />
+                  <StepsPanel steps={stepsState} setSteps={setStepsState} />
                 </Box>
               </Collapse>
             </Paper>
@@ -3201,7 +3561,12 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               if (actionType === 'forward_class_callback') currentAction.forwardClassCallback = forwardClassCallbackState;
               if (actionType === 'grpc_stream') currentAction.grpcStream = grpcStreamState;
               if (chaosEnabled && actionType !== 'error') currentAction.chaos = chaosState;
-              if (sideEffectsEnabled && sideEffects.length > 0) currentAction.sideEffects = sideEffects;
+              // Steps override top-level side-effects
+              if (stepsEnabled && stepsState.length > 0) {
+                currentAction.steps = stepsState;
+              } else if (sideEffectsEnabled && sideEffects.length > 0) {
+                currentAction.sideEffects = sideEffects;
+              }
 
               // Build the effective matcher: for DNS kind, attach the DNS
               // matcher fields so buildExpectationJson emits { dnsName, ... }
@@ -3220,6 +3585,15 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   if (dnsMatcher.dnsName.trim().length === 0) return 'Enter a DNS name to match';
                 } else {
                   if (matcher.path.trim().length === 0) return 'Enter a request path to match';
+                }
+
+                // Steps mode validation — exactly one responder required
+                if (stepsEnabled) {
+                  if (stepsState.length === 0) return 'Add at least one step';
+                  const responderCount = stepsState.filter((s) => s.responder).length;
+                  if (responderCount === 0) return 'Exactly one step must be the responder';
+                  if (responderCount > 1) return 'Only one step can be the responder';
+                  return null;
                 }
                 switch (actionType) {
                   case 'static': return null;

@@ -287,6 +287,80 @@ export interface StandardChaosDraft {
   failRequestCount?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Expectation steps — ordered multi-action pipeline (M1 increment-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Action target types supported by ExpectationStep. Each step carries exactly
+ * ONE action target.
+ *
+ * Response-capable targets (can be the responder):
+ *   httpResponse, httpForward, httpOverrideForwardedRequest, httpError,
+ *   httpClassCallback, httpObjectCallback
+ *
+ * Side-effect-only targets:
+ *   httpRequest (webhook)
+ *
+ * Note: httpObjectCallback requires live WebSocket registration and is NOT
+ * form-authorable, so the UI does not offer it.
+ */
+export type StepActionType =
+  | 'httpResponse'
+  | 'httpForward'
+  | 'httpOverrideForwardedRequest'
+  | 'httpError'
+  | 'httpRequest'
+  | 'httpClassCallback';
+
+/** Which step action types can serve as responders (produce the HTTP response). */
+export const RESPONDER_CAPABLE_ACTIONS: ReadonlySet<StepActionType> = new Set<StepActionType>([
+  'httpResponse',
+  'httpForward',
+  'httpOverrideForwardedRequest',
+  'httpError',
+  'httpClassCallback',
+]);
+
+/** Human-readable labels for step action types. */
+export const STEP_ACTION_LABELS: Record<StepActionType, string> = {
+  httpResponse: 'Static HTTP response',
+  httpForward: 'Forward to upstream',
+  httpOverrideForwardedRequest: 'Forward with override',
+  httpError: 'Error / fault injection',
+  httpRequest: 'Webhook (HTTP request)',
+  httpClassCallback: 'Class callback',
+};
+
+/** All step action types exposed in the UI (excludes httpObjectCallback). */
+export const STEP_ACTION_TYPES: StepActionType[] = [
+  'httpResponse',
+  'httpForward',
+  'httpOverrideForwardedRequest',
+  'httpError',
+  'httpRequest',
+  'httpClassCallback',
+];
+
+/**
+ * Draft state for a single expectation step in the composer.
+ * Each step has an action type, a responder flag, and a free-text JSON body
+ * for the action payload.
+ */
+export interface StandardExpectationStep {
+  actionType: StepActionType;
+  responder: boolean;
+  /** Free-text JSON for the action payload (e.g. the httpResponse object body). */
+  actionBody: string;
+  /** Side-effect step controls (non-responder steps only). */
+  blocking: boolean;
+  delayValue: number;
+  delayUnit: SideEffectDelayUnit;
+  timeoutValue: number;
+  timeoutUnit: SideEffectDelayUnit;
+  failurePolicy: SideEffectFailurePolicy;
+}
+
 export interface StandardActionPayload {
   type: StandardActionType;
   static?: StandardStaticState;
@@ -305,6 +379,9 @@ export interface StandardActionPayload {
   grpcStream?: StandardGrpcStreamState;
   chaos?: StandardChaosDraft;
   sideEffects?: StandardSideEffectAction[];
+  /** When present, the expectation uses the `steps` pipeline instead of a
+   *  top-level action + before/after side-effects. */
+  steps?: StandardExpectationStep[];
 }
 
 // ---------------------------------------------------------------------------
@@ -674,6 +751,32 @@ export function buildExpectationJson(
     if (afterActions.length > 0) out['afterActions'] = afterActions;
   }
 
+  // Steps pipeline — when present, the `steps` array replaces the top-level
+  // action + beforeActions/afterActions. The server validates that exactly one
+  // step is the responder, but we enforce it client-side too.
+  if (action.steps && action.steps.length > 0) {
+    // When steps are used, remove the top-level action and side-effects
+    // that were already emitted above — they conflict with the steps model.
+    delete out['httpResponse'];
+    delete out['httpForward'];
+    delete out['httpOverrideForwardedRequest'];
+    delete out['httpResponseClassCallback'];
+    delete out['httpResponseTemplate'];
+    delete out['httpError'];
+    delete out['httpForwardWithFallback'];
+    delete out['httpWebSocketResponse'];
+    delete out['httpSseResponse'];
+    delete out['binaryResponse'];
+    delete out['dnsResponse'];
+    delete out['httpForwardTemplate'];
+    delete out['httpForwardClassCallback'];
+    delete out['grpcStreamResponse'];
+    delete out['beforeActions'];
+    delete out['afterActions'];
+
+    out['steps'] = action.steps.map(buildExpectationStepJson);
+  }
+
   if (matcher.id.trim()) out['id'] = matcher.id.trim();
   if (matcher.priority !== 0) out['priority'] = matcher.priority;
   if (matcher.times > 0) {
@@ -842,6 +945,118 @@ export function sideEffectsFromExpectation(
   for (const obj of normalise(value['afterActions'])) {
     const parsed = parseOne(obj, 'after');
     if (parsed) result.push(parsed);
+  }
+
+  return result.length > 0 ? result : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Expectation steps — JSON helpers (M1 increment-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a single ExpectationStep JSON object from the composer's draft state.
+ * The action payload is a free-text JSON string that the user enters; we parse
+ * it and embed it under the action-type key (e.g. `httpResponse`).
+ */
+function buildExpectationStepJson(step: StandardExpectationStep): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+
+  // Parse the free-text action body JSON. Fall back to an empty object.
+  let actionPayload: unknown = {};
+  if (step.actionBody.trim()) {
+    try {
+      actionPayload = JSON.parse(step.actionBody.trim());
+    } catch {
+      // If the JSON is invalid, send it as a string body for the server to reject.
+      actionPayload = step.actionBody.trim();
+    }
+  }
+
+  out[step.actionType] = actionPayload;
+
+  if (step.responder) {
+    out['responder'] = true;
+  }
+
+  // Side-effect step controls (only for non-responder steps)
+  if (!step.responder) {
+    if (step.delayValue > 0) {
+      out['delay'] = { timeUnit: step.delayUnit, value: step.delayValue };
+    }
+    // blocking defaults to true — only emit when false
+    if (!step.blocking) out['blocking'] = false;
+    if (step.timeoutValue > 0) {
+      out['timeout'] = { timeUnit: step.timeoutUnit, value: step.timeoutValue };
+    }
+    if (step.failurePolicy === 'FAIL_FAST') out['failurePolicy'] = 'FAIL_FAST';
+  }
+
+  return out;
+}
+
+/**
+ * The action-type keys that an ExpectationStep can carry, in priority order.
+ * Used for detecting which action a step JSON object contains.
+ */
+const STEP_ACTION_KEYS: StepActionType[] = [
+  'httpResponse',
+  'httpForward',
+  'httpOverrideForwardedRequest',
+  'httpError',
+  'httpRequest',
+  'httpClassCallback',
+];
+
+/**
+ * Round-trip: parse a `steps` array from an existing expectation back into
+ * `StandardExpectationStep[]` for the composer.
+ */
+export function stepsFromExpectation(
+  value: Record<string, unknown>,
+): StandardExpectationStep[] | undefined {
+  const raw = value['steps'];
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+
+  const result: StandardExpectationStep[] = [];
+
+  for (const entry of raw as Record<string, unknown>[]) {
+    if (!entry || typeof entry !== 'object') continue;
+
+    // Detect which action key is present
+    let actionType: StepActionType | null = null;
+    let actionPayload: unknown = {};
+    for (const key of STEP_ACTION_KEYS) {
+      if (key in entry) {
+        actionType = key;
+        actionPayload = entry[key];
+        break;
+      }
+    }
+    if (!actionType) continue;
+
+    const delay = entry['delay'] as Record<string, unknown> | undefined;
+    const timeout = entry['timeout'] as Record<string, unknown> | undefined;
+
+    function parseDelayUnit(unit: unknown): SideEffectDelayUnit {
+      if (unit === 'SECONDS') return 'SECONDS';
+      if (unit === 'MINUTES') return 'MINUTES';
+      return 'MILLISECONDS';
+    }
+
+    result.push({
+      actionType,
+      responder: entry['responder'] === true,
+      actionBody: typeof actionPayload === 'string'
+        ? actionPayload
+        : JSON.stringify(actionPayload, null, 2),
+      blocking: entry['blocking'] !== false,
+      delayValue: typeof delay?.['value'] === 'number' ? (delay['value'] as number) : 0,
+      delayUnit: parseDelayUnit(delay?.['timeUnit']),
+      timeoutValue: typeof timeout?.['value'] === 'number' ? (timeout['value'] as number) : 0,
+      timeoutUnit: parseDelayUnit(timeout?.['timeUnit']),
+      failurePolicy: entry['failurePolicy'] === 'FAIL_FAST' ? 'FAIL_FAST' : 'BEST_EFFORT',
+    });
   }
 
   return result.length > 0 ? result : undefined;
@@ -1337,6 +1552,36 @@ function collectJavaImports(
     imp.add('import java.util.concurrent.TimeUnit;');
   }
 
+  // Steps pipeline (M1 increment-2) — the steps Java codegen uses
+  // buildExpectationJson → standardToJson, so the Java snippet just shows
+  // a comment directing the user to the JSON tab; the steps builder API is
+  // complex and the Java client doesn't have a fluent steps builder yet.
+  // We still add the step() static import for the generated comment block.
+  if (action.steps && action.steps.length > 0) {
+    imp.add('import static org.mockserver.model.ExpectationStep.step;');
+    imp.add('import org.mockserver.model.ExpectationStep;');
+    // Import per-step action target factories
+    for (const step of action.steps) {
+      switch (step.actionType) {
+        case 'httpResponse': imp.add('import static org.mockserver.model.HttpResponse.response;'); break;
+        case 'httpForward': imp.add('import static org.mockserver.model.HttpForward.forward;'); break;
+        case 'httpOverrideForwardedRequest': imp.add('import static org.mockserver.model.HttpOverrideForwardedRequest.forwardOverriddenRequest;'); break;
+        case 'httpError': imp.add('import static org.mockserver.model.HttpError.error;'); break;
+        case 'httpRequest': imp.add('import static org.mockserver.model.HttpRequest.request;'); break;
+        case 'httpClassCallback': imp.add('import static org.mockserver.model.HttpClassCallback.callback;'); break;
+      }
+      if (!step.responder) {
+        if (step.delayValue > 0 || step.timeoutValue > 0) {
+          imp.add('import org.mockserver.model.Delay;');
+          imp.add('import java.util.concurrent.TimeUnit;');
+        }
+        if (step.failurePolicy === 'FAIL_FAST') {
+          imp.add('import org.mockserver.model.FailurePolicy;');
+        }
+      }
+    }
+  }
+
   const all = Array.from(imp);
   const statics = all.filter((i) => i.startsWith('import static ')).sort();
   const plains = all.filter((i) => !i.startsWith('import static ')).sort();
@@ -1367,8 +1612,38 @@ function sideEffectToJava(se: StandardSideEffectAction): string {
   return lines.join('\n');
 }
 
+function stepToJava(step: StandardExpectationStep): string {
+  const lines: string[] = ['step()'];
+  // Action target — for the Java preview, use a comment with the JSON body
+  // since each action type has its own builder and the free-text body may
+  // not be trivially representable as builder calls.
+  switch (step.actionType) {
+    case 'httpResponse': lines.push('        .withHttpResponse(response())'); break;
+    case 'httpForward': lines.push('        .withHttpForward(forward())'); break;
+    case 'httpOverrideForwardedRequest': lines.push('        .withHttpOverrideForwardedRequest(forwardOverriddenRequest(request()))'); break;
+    case 'httpError': lines.push('        .withHttpError(error())'); break;
+    case 'httpRequest': lines.push('        .withHttpRequest(request())'); break;
+    case 'httpClassCallback': lines.push('        .withHttpClassCallback(callback())'); break;
+  }
+  if (step.responder) {
+    lines.push('        .withResponder(true)');
+  }
+  if (!step.responder) {
+    if (!step.blocking) lines.push('        .withBlocking(false)');
+    if (step.delayValue > 0) {
+      lines.push(`        .withDelay(new Delay(TimeUnit.${step.delayUnit}, ${step.delayValue}))`);
+    }
+    if (step.timeoutValue > 0) {
+      lines.push(`        .withTimeout(new Delay(TimeUnit.${step.timeoutUnit}, ${step.timeoutValue}))`);
+    }
+    if (step.failurePolicy === 'FAIL_FAST') lines.push('        .withFailurePolicy(FailurePolicy.FAIL_FAST)');
+  }
+  return lines.join('\n');
+}
+
 export function standardToJava(matcher: StandardMatcher, action: StandardActionPayload): string {
   const hasChaos = !!(action.chaos && buildChaosJson(action.chaos));
+  const hasSteps = !!(action.steps && action.steps.length > 0);
   const sideEffects = (action.sideEffects ?? []).filter((se) => se.path.trim());
   const beforeActions = sideEffects.filter((se) => se.position === 'before');
   const afterActions = sideEffects.filter((se) => se.position === 'after');
@@ -1379,6 +1654,19 @@ export function standardToJava(matcher: StandardMatcher, action: StandardActionP
   lines.push('  .when(');
   lines.push('    ' + matcherToJava(matcher).split('\n').join('\n    '));
   lines.push('  )');
+
+  if (hasSteps) {
+    // Steps pipeline — emit .withSteps(step().with...(), step().with...(), ...)
+    lines.push('  .withSteps(');
+    const stepSnippets = action.steps!.map((s) => '    ' + stepToJava(s).split('\n').join('\n    '));
+    lines.push(stepSnippets.join(',\n'));
+    lines.push('  );');
+    lines.push('');
+    lines.push('// NOTE: the step action payloads are simplified in the Java preview.');
+    lines.push('// See the JSON tab for the full step bodies.');
+    return lines.join('\n');
+  }
+
   // Chaos is fluent on the ForwardChainExpectation returned by when(...), so it must come
   // BEFORE the terminal action (respond/forward/error), which returns Expectation[].
   if (hasChaos) {
