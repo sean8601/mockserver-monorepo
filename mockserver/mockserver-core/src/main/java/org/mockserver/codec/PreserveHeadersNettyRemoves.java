@@ -29,10 +29,9 @@ public class PreserveHeadersNettyRemoves extends MessageToMessageDecoder<HttpObj
             if (headers.contains(HttpHeaderNames.TRANSFER_ENCODING)) {
                 builder.add(new Header(HttpHeaderNames.TRANSFER_ENCODING.toString(), headers.getAll(HttpHeaderNames.TRANSFER_ENCODING)));
             }
-            ImmutableList<Header> preserved = builder.build();
-            if (!preserved.isEmpty()) {
-                ctx.channel().attr(PRESERVED_HEADERS).set(preserved);
-            }
+            // Always reset the preserved headers for each request, even when empty, so that
+            // stale values do not leak to later requests sharing the same (pooled) connection.
+            ctx.channel().attr(PRESERVED_HEADERS).set(builder.build());
         }
         ReferenceCountUtil.retain(httpObject);
         out.add(httpObject);
