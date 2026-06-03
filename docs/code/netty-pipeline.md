@@ -283,13 +283,15 @@ graph LR
     GRPC_REQ --> HANDLER[HttpRequestHandler]
 ```
 
-In Phase 0, `Http2StreamFrameToHttpObjectCodec` + `HttpObjectAggregator` re-aggregate stream frames into `FullHttpRequest`/`FullHttpResponse` objects, so the downstream handler chain sees the same objects as the connection-level adapter produces. This means behaviour is byte-for-byte equivalent to the default pipeline for unary and server-streaming RPCs. The flag defaults to `false`; when off, the existing connection-level adapter path is used unchanged.
+`Http2StreamFrameToHttpObjectCodec` + `HttpObjectAggregator` re-aggregate inbound stream frames into `FullHttpRequest` objects, so the downstream handler chain sees the same objects as the connection-level adapter produces. This means inbound behaviour is byte-for-byte equivalent to the default pipeline for unary RPCs. The flag defaults to `false`; when off, the existing connection-level adapter path is used unchanged.
+
+**Server-streaming:** `GrpcStreamResponseActionHandler` writes raw Netty HTTP objects (`DefaultHttpResponse`, per-message `DefaultHttpContent`, `DefaultLastHttpContent` with grpc-status/grpc-message trailers) directly to the `ChannelHandlerContext`. On the multiplex path, `Http2StreamFrameToHttpObjectCodec` is bidirectional and converts these outbound objects to HTTP/2 stream frames: initial HEADERS (with `Transfer-Encoding: chunked` automatically stripped by `HttpConversionUtil`), per-message DATA frames (byte-for-byte identical gRPC framing), and a trailing HEADERS frame with `grpc-status`/`grpc-message` and `endStream=true`. The `MockServerHttpServerCodec` encoder and `GrpcToHttpResponseHandler` do not intercept raw Netty objects (they only match `org.mockserver.model.HttpResponse`), so the objects pass through cleanly. No production code changes were needed -- the codec handles everything correctly.
 
 | Property | Default | Env var | System property |
 |----------|---------|---------|-----------------|
 | `grpcBidiStreamingEnabled` | `false` | `MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED` | `mockserver.grpcBidiStreamingEnabled` |
 
-Future phases will remove the re-aggregation and handle individual DATA frames for true client-streaming and bidirectional-streaming gRPC.
+Future phases will remove the inbound re-aggregation and handle individual DATA frames for true client-streaming and bidirectional-streaming gRPC.
 
 #### TLS Pipeline
 
