@@ -32,8 +32,28 @@ mcp-publisher login github
 mcp-publisher publish
 ```
 
-Keep `server.json`'s `version` (and the `packages[].version` image tag) in sync with each MockServer
-release — add a step to the release checklist, or automate it alongside the existing version bumps.
+Keep `server.json` in sync with each MockServer release — the OCI `identifier` tag
+(`docker.io/mockserver/mockserver:<version>`) must point at a released image.
+
+### Prerequisites the registry enforces at publish time (learned the hard way)
+
+`mcp-publisher validate` only checks the JSON schema; the registry applies extra rules on
+`mcp-publisher publish`:
+
+1. **Public org membership.** To publish under `io.github.mock-server/*`, the publishing GitHub
+   account must be a *public* member of the `mock-server` org. Re-run `mcp-publisher login github`
+   after changing membership visibility (the token caches namespaces at login time).
+2. **OCI package shape.** For `registryType: oci`: **no** `registryBaseUrl`, **no** package
+   `version` field — put the full canonical reference in `identifier`, e.g.
+   `docker.io/mockserver/mockserver:6.1.0`.
+3. **OCI image ownership label.** The referenced image **must** carry
+   `LABEL io.modelcontextprotocol.server.name="io.github.mock-server/mockserver"`. This is set in
+   `docker/Dockerfile`, so it ships on images built from that change onward — **but the publish only
+   succeeds once a release carrying the label is on Docker Hub** and `server.json`'s `identifier`
+   points at that tag. (Images built before the label — e.g. 6.1.0 — are rejected.)
+
+So to finish publishing: ship a labelled image (the next release, or a one-off labelled
+rebuild+push of the referenced tag), point `identifier` at it, then `mcp-publisher publish`.
 
 ## 2. Other registries
 

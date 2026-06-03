@@ -12,9 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "registryBaseUrl": "https://docker.io",
-      "identifier": "mockserver/mockserver",
-      "version": "mockserver-6.1.0",
+      "identifier": "docker.io/mockserver/mockserver:6.1.0",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:1080/mockserver/mcp"
