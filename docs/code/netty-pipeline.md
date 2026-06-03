@@ -291,7 +291,9 @@ graph LR
 |----------|---------|---------|-----------------|
 | `grpcBidiStreamingEnabled` | `false` | `MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED` | `mockserver.grpcBidiStreamingEnabled` |
 
-Future phases will remove the inbound re-aggregation and handle individual DATA frames for true client-streaming and bidirectional-streaming gRPC.
+**Client-streaming (collect-then-respond):** For client-streaming RPCs, a client sends HEADERS followed by N DATA frames (each containing a gRPC length-prefixed message) then END_STREAM. On the multiplex path, `Http2StreamFrameToHttpObjectCodec` + `HttpObjectAggregator` re-aggregate all DATA frame bytes into a single `FullHttpRequest` body (byte-for-byte concatenation). `GrpcToHttpRequestHandler.convertGrpcRequest()` then decodes the concatenated body via `GrpcFrameCodec.decode()` into N messages, producing a JSON array body with the `x-grpc-client-streaming: true` header. This is identical to how the connection-level adapter handles client-streaming. Single-message requests (unary) decode as a single JSON object with no client-streaming header, preserving the distinction. No production code changes were needed -- the existing re-aggregation + decode pipeline handles this correctly.
+
+Phase 3 will add true interleaved/reactive bidirectional streaming by removing the inbound re-aggregation and handling individual DATA frames with per-inbound-message reactive responses.
 
 #### TLS Pipeline
 

@@ -1,34 +1,22 @@
 package org.mockserver.netty.grpc;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObjectAggregator;
-import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
+import io.netty.handler.codec.http2.DefaultHttp2Headers;
+import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec;
 import org.junit.Test;
-import org.mockserver.codec.MockServerHttpServerCodec;
-import org.mockserver.configuration.Configuration;
-import org.mockserver.dashboard.DashboardWebSocketHandler;
-import org.mockserver.logging.MockServerLogger;
-import org.mockserver.mock.HttpState;
-import org.mockserver.netty.HttpRequestHandler;
-import org.mockserver.netty.unification.TraceContextHandler;
-import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
@@ -38,24 +26,25 @@ import static org.hamcrest.Matchers.notNullValue;
  * Verifies:
  * <ul>
  *   <li>The re-aggregation chain (Http2StreamFrameToHttpObjectCodec + HttpObjectAggregator)
- *       correctly produces a FullHttpRequest from standard HTTP objects (simulating what the
- *       frame-to-http codec emits for each HTTP/2 stream).</li>
- *   <li>Multiple DATA-frame equivalents are concatenated into a single body.</li>
- *   <li>Headers (method, path, content-type) are preserved through the re-aggregation.</li>
+ *       correctly produces a FullHttpRequest from real HTTP/2 frames (Http2HeadersFrame +
+ *       Http2DataFrame), genuinely exercising the codec's inbound decode path.</li>
+ *   <li>Multiple DATA frames are concatenated into a single body.</li>
+ *   <li>Headers (method, path, content-type) are preserved through the decode + re-aggregation.</li>
+ *   <li>The HttpObjectAggregator enforces max body size, rejecting oversized bodies.</li>
  * </ul>
  * <p>
- * These tests use EmbeddedChannel with just the re-aggregation handlers (not the full
- * Http2FrameCodec + Http2MultiplexHandler, which require a real transport). The full
- * integration of the multiplex pipeline into PortUnificationHandler is covered by
- * flag-off tests that verify the existing pipeline is unchanged when the flag is disabled.
+ * These tests feed real {@link DefaultHttp2HeadersFrame} and {@link DefaultHttp2DataFrame}
+ * objects so that {@link Http2StreamFrameToHttpObjectCodec#acceptInboundMessage} matches
+ * and the codec's decode method runs. Prior to this fix, HttpObject inputs bypassed the
+ * codec entirely (it only accepts Http2HeadersFrame/Http2DataFrame inbound).
  */
 public class GrpcMultiplexChildInitializerTest {
 
     /**
-     * Verifies that Http2StreamFrameToHttpObjectCodec(true) + HttpObjectAggregator re-aggregates
-     * a FullHttpRequest into the same FullHttpRequest (passthrough for already-aggregated objects).
-     * This mirrors Phase 0 behaviour where the multiplex pipeline re-aggregates to behave
-     * identically to InboundHttp2ToHttpAdapter.
+     * Verifies that Http2StreamFrameToHttpObjectCodec(true) + HttpObjectAggregator decodes
+     * a single Http2HeadersFrame (with endStream=true) into a FullHttpRequest with the
+     * correct method, path, and headers. The body is empty because no DATA frames follow.
+     * This exercises the codec's inbound path for a headers-only request.
      */
     @Test
     public void shouldReAggregateFullHttpRequestThroughPhase0Chain() {
@@ -67,22 +56,16 @@ public class GrpcMultiplexChildInitializerTest {
             capture
         );
 
-        // Build a gRPC-like FullHttpRequest
+        // Build a gRPC-like request as real HTTP/2 frames: HEADERS (not end-stream) + DATA (end-stream)
         byte[] bodyBytes = "test-grpc-body-content".getBytes(StandardCharsets.UTF_8);
-        DefaultFullHttpRequest request = new DefaultFullHttpRequest(
-            HttpVersion.HTTP_1_1,
-            HttpMethod.POST,
-            "/com.example.Service/Method",
-            Unpooled.wrappedBuffer(bodyBytes)
-        );
-        request.headers().set("content-type", "application/grpc");
-        request.headers().setInt("content-length", bodyBytes.length);
 
-        // Write inbound — the Http2StreamFrameToHttpObjectCodec converts between HTTP/2
-        // stream frames and HTTP objects; when it receives an already-formed HTTP object
-        // (as happens in an EmbeddedChannel), it passes through. The aggregator then
-        // produces a FullHttpRequest.
-        channel.writeInbound(request);
+        DefaultHttp2Headers h2Headers = new DefaultHttp2Headers();
+        h2Headers.method("POST");
+        h2Headers.path("/com.example.Service/Method");
+        h2Headers.set("content-type", "application/grpc");
+
+        channel.writeInbound(new DefaultHttp2HeadersFrame(h2Headers, false));
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(bodyBytes), true));
 
         assertThat("should have captured a request", capture.captured, is(notNullValue()));
         assertThat(capture.captured.method(), is(HttpMethod.POST));
@@ -100,6 +83,10 @@ public class GrpcMultiplexChildInitializerTest {
     /**
      * Verifies that the HttpObjectAggregator in the re-aggregation chain enforces the
      * maxRequestBodySize limit, rejecting requests that exceed it.
+     * <p>
+     * Feeds a real Http2HeadersFrame followed by an oversized Http2DataFrame through the
+     * codec so the codec's inbound decode is genuinely exercised before the aggregator
+     * rejects the oversized content.
      */
     @Test
     public void shouldEnforceMaxRequestBodySizeInReAggregation() {
@@ -111,21 +98,20 @@ public class GrpcMultiplexChildInitializerTest {
             capture
         );
 
-        // HttpObjectAggregator only enforces the size limit while aggregating a streamed message
-        // (an HttpMessage followed by separate HttpContent parts) — it does not re-check an
-        // already-assembled FullHttpRequest. So feed the request as a header object plus an
-        // oversized trailing content chunk, which is how frames arrive on the real pipeline.
+        // Feed real HTTP/2 frames: HEADERS then an oversized DATA frame
+        DefaultHttp2Headers h2Headers = new DefaultHttp2Headers();
+        h2Headers.method("POST");
+        h2Headers.path("/com.example.Service/LargeMethod");
+        h2Headers.set("content-type", "application/grpc");
+
         byte[] largeBody = new byte[maxBodySize + 1];
         java.util.Arrays.fill(largeBody, (byte) 'X');
-        io.netty.handler.codec.http.HttpRequest header = new io.netty.handler.codec.http.DefaultHttpRequest(
-            HttpVersion.HTTP_1_1, HttpMethod.POST, "/com.example.Service/LargeMethod"
-        );
-        header.headers().set("content-type", "application/grpc");
-        io.netty.handler.codec.http.LastHttpContent oversized =
-            new io.netty.handler.codec.http.DefaultLastHttpContent(Unpooled.wrappedBuffer(largeBody));
 
-        // The aggregator responds 413 and never forwards the assembled request downstream.
-        channel.writeInbound(header, oversized);
+        // The codec decodes the Http2HeadersFrame into an HttpRequest and the Http2DataFrame
+        // into a LastHttpContent. The aggregator then rejects the oversized content (responds
+        // 413) and never forwards the assembled request downstream.
+        channel.writeInbound(new DefaultHttp2HeadersFrame(h2Headers, false));
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(largeBody), true));
 
         assertThat("oversized request must be rejected by the aggregator and never reach the capture handler",
             capture.captured, is(org.hamcrest.Matchers.nullValue()));
@@ -135,7 +121,7 @@ public class GrpcMultiplexChildInitializerTest {
 
     /**
      * Verifies that the re-aggregation pipeline preserves all gRPC-relevant headers
-     * (content-type, te, grpc-encoding, custom metadata).
+     * (content-type, te, grpc-encoding, custom metadata) when decoded from real HTTP/2 frames.
      */
     @Test
     public void shouldPreserveGrpcHeadersThroughReAggregation() {
@@ -147,19 +133,17 @@ public class GrpcMultiplexChildInitializerTest {
         );
 
         byte[] bodyBytes = "payload".getBytes(StandardCharsets.UTF_8);
-        DefaultFullHttpRequest request = new DefaultFullHttpRequest(
-            HttpVersion.HTTP_1_1,
-            HttpMethod.POST,
-            "/com.example.Service/StreamMethod",
-            Unpooled.wrappedBuffer(bodyBytes)
-        );
-        request.headers().set("content-type", "application/grpc");
-        request.headers().set("te", "trailers");
-        request.headers().set("grpc-encoding", "identity");
-        request.headers().set("x-custom-metadata", "test-value");
-        request.headers().setInt("content-length", bodyBytes.length);
 
-        channel.writeInbound(request);
+        DefaultHttp2Headers h2Headers = new DefaultHttp2Headers();
+        h2Headers.method("POST");
+        h2Headers.path("/com.example.Service/StreamMethod");
+        h2Headers.set("content-type", "application/grpc");
+        h2Headers.set("te", "trailers");
+        h2Headers.set("grpc-encoding", "identity");
+        h2Headers.set("x-custom-metadata", "test-value");
+
+        channel.writeInbound(new DefaultHttp2HeadersFrame(h2Headers, false));
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(bodyBytes), true));
 
         assertThat("should have captured a request", capture.captured, is(notNullValue()));
         assertThat(capture.captured.headers().get("content-type"), is("application/grpc"));
@@ -173,8 +157,8 @@ public class GrpcMultiplexChildInitializerTest {
 
     /**
      * Simple capture handler for test assertions.
+     * Not @Sharable — holds mutable state (the captured request reference).
      */
-    @ChannelHandler.Sharable
     private static class CaptureHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         FullHttpRequest captured;
 
