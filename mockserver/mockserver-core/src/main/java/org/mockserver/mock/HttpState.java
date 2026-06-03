@@ -320,6 +320,7 @@ public class HttpState {
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
+        CassetteRegistry.getInstance().reset();
         org.mockserver.mock.dns.DnsIntentRegistry.getInstance().clear();
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -1571,6 +1572,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/cassettes", "/cassettes")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesPut(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -1939,6 +1947,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/cassettes", "/cassettes")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesGet()), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleServiceChaosGet()), true);
@@ -2009,7 +2023,9 @@ public class HttpState {
             if (request.matches("GET") && request.getPath() != null
                 && request.getPath().getValue() != null
                 && (request.getPath().getValue().startsWith(PATH_PREFIX + "/scenario/")
-                    || request.getPath().getValue().startsWith("/scenario/"))) {
+                    || request.getPath().getValue().startsWith("/scenario/")
+                    || request.getPath().getValue().equals(PATH_PREFIX + "/scenario")
+                    || request.getPath().getValue().equals("/scenario"))) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleScenarioGet(request)), true);
                 }
@@ -2052,6 +2068,12 @@ public class HttpState {
                     } else {
                         responseWriter.writeResponse(request, NOT_FOUND, "WASM module '" + moduleName + "' not found", MediaType.create("text", "plain").toString());
                     }
+                }
+                return true;
+            }
+            if (request.matches("DELETE", PATH_PREFIX + "/cassettes", "/cassettes")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesDelete(request)), true);
                 }
                 return true;
             }
@@ -2746,13 +2768,15 @@ public class HttpState {
 
     /**
      * Handles GET /mockserver/scenario/{name} — returns the current state of a scenario.
+     * When no name is supplied (GET /mockserver/scenario), returns the list of all known
+     * scenarios and their current states (see {@link #handleScenarioList()}).
      */
     private HttpResponse handleScenarioGet(HttpRequest request) {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
         try {
             String scenarioPath = extractScenarioPath(request);
             if (isBlank(scenarioPath)) {
-                return scenarioError(objectMapper, "scenario name is required in the path");
+                return handleScenarioList();
             }
 
             ScenarioManager scenarioManager = requestMatchers.getScenarioManager();
@@ -2765,6 +2789,129 @@ public class HttpState {
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
         } catch (Exception e) {
             return scenarioError(objectMapper, "failed to get scenario state: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handles GET /mockserver/scenario — returns every known scenario and its current state
+     * as {@code { "scenarios": [ { "scenarioName", "currentState" }, ... ] }} so the dashboard
+     * can list existing scenarios without the caller having to know their names in advance.
+     */
+    private HttpResponse handleScenarioList() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            ScenarioManager scenarioManager = requestMatchers.getScenarioManager();
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode scenarios = result.putArray("scenarios");
+            for (java.util.Map.Entry<String, String> entry : scenarioManager.getAllStates().entrySet()) {
+                com.fasterxml.jackson.databind.node.ObjectNode node = objectMapper.createObjectNode();
+                node.put("scenarioName", entry.getKey());
+                node.put("currentState", entry.getValue());
+                scenarios.add(node);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return scenarioError(objectMapper, "failed to list scenarios: " + e.getMessage());
+        }
+    }
+
+    // --- Cassette registry endpoint helpers ---
+
+    /**
+     * Handles GET /mockserver/cassettes — lists every cassette tracked server-side as
+     * {@code { "cassettes": [ { "path", "filename", "expectationCount", "origin", "lastUsed" } ] }},
+     * most-recently-used first. The dashboard merges this with its per-browser list so cassettes
+     * recorded/loaded anywhere (or seeded by automation) are visible across reloads and browsers.
+     */
+    private HttpResponse handleCassettesGet() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode cassettes = result.putArray("cassettes");
+            for (CassetteRegistry.Entry entry : CassetteRegistry.getInstance().list()) {
+                com.fasterxml.jackson.databind.node.ObjectNode node = objectMapper.createObjectNode();
+                node.put("path", entry.path);
+                node.put("filename", entry.filename);
+                node.put("expectationCount", entry.expectationCount);
+                node.put("origin", entry.origin);
+                node.put("lastUsed", entry.lastUsedEpochMillis);
+                cassettes.add(node);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return cassetteError(objectMapper, "failed to list cassettes: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handles PUT /mockserver/cassettes — registers (or updates) a cassette from a JSON body
+     * {@code { "path", "filename"?, "expectationCount"?, "origin"? }}. {@code path} is required.
+     */
+    private HttpResponse handleCassettesPut(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return cassetteError(objectMapper, "request body is required with a 'path' field");
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String path = node.path("path").asText(null);
+            if (isBlank(path)) {
+                return cassetteError(objectMapper, "'path' field is required");
+            }
+            String filename = node.path("filename").asText(null);
+            int expectationCount = node.path("expectationCount").asInt(-1);
+            String origin = node.path("origin").asText(null);
+            CassetteRegistry.Entry entry = CassetteRegistry.getInstance().register(path, filename, expectationCount, origin);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("path", entry.path);
+            result.put("filename", entry.filename);
+            result.put("expectationCount", entry.expectationCount);
+            result.put("origin", entry.origin);
+            result.put("lastUsed", entry.lastUsedEpochMillis);
+            return response().withStatusCode(CREATED.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return cassetteError(objectMapper, "failed to register cassette: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handles DELETE /mockserver/cassettes — removes a cassette by path, supplied either as the
+     * {@code path} query parameter or a JSON body {@code { "path": "..." }}.
+     */
+    private HttpResponse handleCassettesDelete(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String path = request.getFirstQueryStringParameter("path");
+            if (isBlank(path)) {
+                String body = request.getBodyAsJsonOrXmlString();
+                if (!isBlank(body)) {
+                    path = objectMapper.readTree(body).path("path").asText(null);
+                }
+            }
+            if (isBlank(path)) {
+                return cassetteError(objectMapper, "'path' is required (query parameter or body field)");
+            }
+            boolean removed = CassetteRegistry.getInstance().remove(path);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("removed", removed);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return cassetteError(objectMapper, "failed to remove cassette: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse cassetteError(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String message) {
+        try {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody(objectMapper.writeValueAsString(objectMapper.createObjectNode().put("error", message)), MediaType.JSON_UTF_8);
+        } catch (Exception jsonError) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to process cassette request\"}", MediaType.JSON_UTF_8);
         }
     }
 
