@@ -10,7 +10,7 @@ sitemap:
   priority: 0.7
   changefreq: 'monthly'
   lastmod: 2026-06-01T08:00:00+00:00
-keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirect, mockserver sidecar, conntrack, proxy protocol, GWLB, HAProxy
+keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirect, mockserver sidecar, conntrack, proxy protocol, NLB, HAProxy
 ---
 
 <p>MockServer can run as a <strong>Kubernetes sidecar</strong> with transparent HTTP proxy interception. This enables service mesh integration patterns where MockServer intercepts traffic destined for external services without any application code changes.</p>
@@ -27,7 +27,7 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
     <li>An init container sets up iptables rules to redirect outbound HTTP/HTTPS traffic to MockServer's port</li>
     <li>MockServer resolves the original destination using a multi-strategy chain (first match wins):
         <ol>
-            <li><strong>PROXY protocol v1 / v2</strong>: if the first bytes on the connection are a PROXY protocol header -- either v1 (text) or v2 (binary), e.g. sent by AWS GWLB, HAProxy, or nginx -- MockServer parses the destination address from the header and consumes it. No configuration is needed -- detection is automatic.</li>
+            <li><strong>PROXY protocol v1 / v2</strong>: if the first bytes on the connection are a PROXY protocol header -- either v1 (text) or v2 (binary), e.g. sent by AWS NLB, HAProxy, or nginx -- MockServer parses the destination address from the header and consumes it. No configuration is needed -- detection is automatic.</li>
             <li><strong>Linux conntrack</strong>: reads the original destination from the kernel conntrack table (<code class="inline code">/proc/net/nf_conntrack</code>), which records the pre-REDIRECT destination. This works even when the Host header is missing or incorrect.</li>
             <li><strong>DNS-intent</strong>: if the client resolved a hostname via MockServer's own DNS server and then connected to the returned IP, MockServer recovers the intended hostname from the DNS answer it handed out — so matching and forwarding work by name. Active only when the DNS server is enabled.</li>
             <li><strong>Host header fallback</strong>: if no other strategy resolves the destination, MockServer reads the <code class="inline code">Host</code> header from the HTTP request.</li>
@@ -92,7 +92,7 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
 
 <h3>Strategy 1: PROXY Protocol (v1 and v2)</h3>
 
-<p>When MockServer is deployed behind a load balancer that prepends PROXY protocol headers (e.g., AWS Gateway Load Balancer, HAProxy with <code class="inline code">send-proxy</code> / <code class="inline code">send-proxy-v2</code>, nginx with <code class="inline code">proxy_protocol on</code>), MockServer automatically detects and parses the header to extract the original destination address. Both the v1 (text) and v2 (binary) formats are recognised on the same listener -- MockServer dispatches on the first byte.</p>
+<p>When MockServer is deployed behind a load balancer that prepends PROXY protocol headers (e.g., AWS Network Load Balancer with <code class="inline code">proxy_protocol_v2.enabled</code>, HAProxy with <code class="inline code">send-proxy</code> / <code class="inline code">send-proxy-v2</code>, nginx with <code class="inline code">proxy_protocol on</code>), MockServer automatically detects and parses the header to extract the original destination address. Both the v1 (text) and v2 (binary) formats are recognised on the same listener -- MockServer dispatches on the first byte.</p>
 
 <p>The PROXY protocol v1 header is a single ASCII line prepended to the TCP connection:</p>
 <pre class="prettyprint code"><code class="code">PROXY TCP4 192.168.1.1 93.184.216.34 56324 80\r\n
@@ -141,7 +141,7 @@ PROXY UNKNOWN\r\n</code></pre>
 
 <h2>Deployment Contexts</h2>
 
-<p>The resolver chain supports multiple deployment patterns:</p>
+<p>The resolver chain supports multiple deployment patterns. For a full catalogue of every mechanism that can deliver traffic to MockServer for transparent interception — including OS firewall rules, DNS steering, cloud route tables, browser proxy, and CI networks — see <a href="/mock_server/transparent_interception_recipes.html">Transparent Interception Recipes</a>.</p>
 
 <table class="table table-bordered table-striped">
     <thead>
@@ -149,7 +149,7 @@ PROXY UNKNOWN\r\n</code></pre>
     </thead>
     <tbody>
         <tr><td>Kubernetes sidecar with iptables REDIRECT</td><td>Conntrack, then Host header</td><td>Standard sidecar pattern</td></tr>
-        <tr><td>Behind AWS GWLB / HAProxy (PROXY protocol)</td><td>PROXY protocol v1 / v2</td><td>Automatic detection, no config needed</td></tr>
+        <tr><td>Behind AWS NLB / HAProxy (PROXY protocol)</td><td>PROXY protocol v1 / v2</td><td>Automatic detection, no config needed</td></tr>
         <tr><td>OS-level transparent proxy</td><td>Conntrack, then Host header</td><td>iptables on host</td></tr>
         <tr><td>Cloud route-based interception</td><td>Host header fallback</td><td>When original-dst is not available</td></tr>
     </tbody>
