@@ -122,7 +122,13 @@ Docker Hub contains the following artifacts:
 
 ##### Helm Chart
 
-* [MockServer Helm Chart](helm/mockserver/README.md) - a Helm Chart that installs MockServer to a Kubernetes cluster (latest: [6.1.0](https://www.mock-server.com/mockserver-6.1.0.tgz)). See the [Install MockServer Helm Chart](helm/mockserver/README.md) guide for all available versions and configuration options.
+* [MockServer Helm Chart](helm/mockserver/README.md) - installs MockServer into a Kubernetes cluster. The chart is published to the GitHub Container Registry as an OCI artifact (no `helm repo add` needed):
+
+  ```bash
+  helm upgrade --install --create-namespace --namespace mockserver --version 6.1.0 mockserver oci://ghcr.io/mock-server/charts/mockserver
+  ```
+
+  See the [Install MockServer Helm Chart](helm/mockserver/README.md) guide for all versions and configuration options. A legacy `.tgz` is also available from [www.mock-server.com](https://www.mock-server.com/mockserver-6.1.0.tgz).
 
 ##### MockServer Clients
 

@@ -7,17 +7,21 @@
 
 ### Helm Install
 
-To run MockServer in Kubernetes the easiest way is to use the existing [MockServer helm chart](https://www.mock-server.com/mockserver-6.1.0.tgz).
+The chart is published to the **GitHub Container Registry (GHCR) as an OCI artifact** — no `helm repo add` is needed, `helm install` can pull straight from `oci://`:
 
-This is available by using `www.mock-server.com` as a chart repo, with the following command:
+```bash
+helm upgrade --install --create-namespace --namespace mockserver --version 6.1.0 mockserver oci://ghcr.io/mock-server/charts/mockserver
+```
+
+The OCI artifact is public — no authentication is required for `helm pull` / `helm install` — and every released version (5.3.0 onward) is available at the same path. Browse all published versions on the [GHCR package page](https://github.com/orgs/mock-server/packages/container/package/charts%2Fmockserver).
+
+**OR** install from the legacy `.tgz` served by `www.mock-server.com`:
 
 ```bash
 helm upgrade --install --create-namespace --namespace mockserver mockserver https://www.mock-server.com/mockserver-6.1.0.tgz
 ```
 
-**OR** 
-
-If you have helm chart source folder (i.e. you have the repository cloned):
+**OR** if you have the helm chart source folder (i.e. you have the repository cloned):
 
 ```bash
 helm upgrade --install --create-namespace --namespace mockserver mockserver helm/mockserver
