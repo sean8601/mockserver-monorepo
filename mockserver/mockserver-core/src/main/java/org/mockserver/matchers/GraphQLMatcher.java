@@ -158,7 +158,11 @@ public class GraphQLMatcher extends BodyMatcher<String> {
             return true;
         }
         if (compiledOperationNamePattern != null) {
-            return compiledOperationNamePattern.matcher(actualOperationName).matches();
+            // operationName is a user-supplied regex from the expectation; bound its evaluation with the
+            // shared regex matching timeout so a pathological pattern cannot pin a worker thread (ReDoS)
+            final Pattern pattern = compiledOperationNamePattern;
+            return MatchingTimeoutExecutor.matchesWithRegexTimeout(mockServerLogger, "graphql operationName", pattern,
+                () -> pattern.matcher(actualOperationName).matches());
         }
         return false;
     }
