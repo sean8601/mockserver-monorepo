@@ -117,6 +117,13 @@
     "timeToLive": {
       "$ref": "#/definitions/timeToLive"
     },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/expectationStep"
+      },
+      "minItems": 1
+    },
     "timestamp": {
       "description": "added to allow request and response log output to be used to create expectations",
       "type": "string"
@@ -221,6 +228,11 @@
     {
       "required": [
         "httpResponses"
+      ]
+    },
+    {
+      "required": [
+        "steps"
       ]
     }
   ],

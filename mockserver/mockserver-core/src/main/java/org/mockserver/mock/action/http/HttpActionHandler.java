@@ -204,24 +204,47 @@ public class HttpActionHandler {
 
         if (expectation != null && expectation.getAction() != null) {
 
-            final List<AfterAction> beforeActions = expectation.getBeforeActions();
-            if (beforeActions != null && !beforeActions.isEmpty()) {
-                // run before-actions ahead of the primary action; blocking before-actions may gate
-                // (fail-fast) the response. Wrapped in scheduler.submit so any blocking wait happens
-                // off the event loop (async) or inline (synchronous), mirroring forward-action threading.
+            // steps-based dispatch supersedes beforeActions+primary when steps are configured
+            if (expectation.getSteps() != null && !expectation.getSteps().isEmpty()) {
                 final Expectation matchedExpectation = expectation;
                 scheduler.submit(() -> {
-                    if (runBeforeActions(matchedExpectation, request, responseWriter)) {
-                        dispatchPrimaryAction(matchedExpectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
+                    if (runStepsPreResponder(matchedExpectation, request, responseWriter)) {
+                        dispatchPrimaryAction(matchedExpectation, request, responseWriter, ctx, synchronous, () -> {
+                            // post-process and dispatch post-responder steps (like after-actions)
+                            if (postProcessed.compareAndSet(false, true)) {
+                                httpStateHandler.postProcess(matchedExpectation);
+                                dispatchPostResponderSteps(matchedExpectation, request);
+                                if (matchedExpectation.getAfterActions() != null) {
+                                    for (AfterAction afterAction : matchedExpectation.getAfterActions()) {
+                                        dispatchAfterAction(afterAction, request);
+                                    }
+                                }
+                            }
+                        });
                     } else {
-                        // fail-fast abort: the 502 is the response, so still post-process to clear
-                        // responseInProgress, remove exhausted expectations, and fire after-actions
-                        // (idempotent via compareAndSet).
                         expectationPostProcessor.run();
                     }
                 }, synchronous);
             } else {
-                dispatchPrimaryAction(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
+                final List<AfterAction> beforeActions = expectation.getBeforeActions();
+                if (beforeActions != null && !beforeActions.isEmpty()) {
+                    // run before-actions ahead of the primary action; blocking before-actions may gate
+                    // (fail-fast) the response. Wrapped in scheduler.submit so any blocking wait happens
+                    // off the event loop (async) or inline (synchronous), mirroring forward-action threading.
+                    final Expectation matchedExpectation = expectation;
+                    scheduler.submit(() -> {
+                        if (runBeforeActions(matchedExpectation, request, responseWriter)) {
+                            dispatchPrimaryAction(matchedExpectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
+                        } else {
+                            // fail-fast abort: the 502 is the response, so still post-process to clear
+                            // responseInProgress, remove exhausted expectations, and fire after-actions
+                            // (idempotent via compareAndSet).
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous);
+                } else {
+                    dispatchPrimaryAction(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
+                }
             }
 
         } else if (CORSHeaders.isPreflightRequest(configuration, request) && (configuration.enableCORSForAPI() || configuration.enableCORSForAllResponses() || isControlPlanePreflight(request))) {
@@ -1092,6 +1115,135 @@ public class HttpActionHandler {
             }
         }
         return true;
+    }
+
+    /**
+     * Runs the pre-responder steps from the expectation's steps list. Each pre-responder step
+     * is a side-effect (webhook/callback/forward) that runs before the responder. Follows the
+     * same blocking/timeout/failurePolicy semantics as {@link #runBeforeActions}.
+     *
+     * @return {@code true} to proceed to the responder step, {@code false} if a fail-fast
+     * step already wrote an error response
+     */
+    private boolean runStepsPreResponder(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter) {
+        List<ExpectationStep> preSteps = expectation.getPreResponderSteps();
+        for (ExpectationStep step : preSteps) {
+            // Convert step to an AfterAction-like dispatch: reuse the same blocking/timeout/failurePolicy logic
+            final boolean blocking = step.getBlocking() == null || step.getBlocking();
+            final FailurePolicy failurePolicy = step.getFailurePolicy() == null
+                ? FailurePolicy.BEST_EFFORT
+                : step.getFailurePolicy();
+
+            if (!blocking || step.getHttpRequest() == null) {
+                // non-blocking, or a callback/forward step: dispatch fire-and-forget
+                if (blocking && step.getHttpRequest() == null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(WARN)
+                            .setLogLevel(Level.INFO)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setMessageFormat("ignoring blocking=true on a non-webhook step - only httpRequest (webhook) steps can block the response; dispatching fire-and-forget")
+                    );
+                }
+                dispatchStepSideEffect(step, request);
+                continue;
+            }
+
+            // blocking webhook step: send and wait
+            final HttpRequest callbackRequest = OpenApiRuntimeExpressionResolver.resolve(step.getHttpRequest(), request);
+            final long timeoutMillis = step.getTimeout() != null
+                ? step.getTimeout().getTimeUnit().toMillis(step.getTimeout().getValue())
+                : configuration.maxSocketTimeoutInMillis();
+            try {
+                httpClient.sendRequest(callbackRequest, timeoutMillis, MILLISECONDS);
+            } catch (Exception e) {
+                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(WARN)
+                            .setLogLevel(Level.INFO)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setMessageFormat("blocking step webhook failed for request{} - " + e.getMessage())
+                            .setArguments(callbackRequest)
+                            .setThrowable(e)
+                    );
+                }
+                if (failurePolicy == FailurePolicy.FAIL_FAST) {
+                    responseWriter.writeResponse(request, badGatewayResponse().withBody("step failed: " + e.getMessage()), false);
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Dispatches post-responder steps (steps that come after the responder in the list)
+     * as fire-and-forget side-effects, similar to after-actions.
+     */
+    private void dispatchPostResponderSteps(final Expectation expectation, final HttpRequest request) {
+        List<ExpectationStep> postSteps = expectation.getPostResponderSteps();
+        for (ExpectationStep step : postSteps) {
+            dispatchStepSideEffect(step, request);
+        }
+    }
+
+    /**
+     * Dispatches a single step as a fire-and-forget side-effect. Supports webhook
+     * (httpRequest), class callback, object callback, forward, and forward-replace targets.
+     */
+    private void dispatchStepSideEffect(final ExpectationStep step, final HttpRequest request) {
+        scheduler.submitAsync(() -> {
+            try {
+                if (step.getHttpRequest() != null) {
+                    HttpRequest callbackRequest = OpenApiRuntimeExpressionResolver.resolve(
+                        step.getHttpRequest(), request
+                    );
+                    httpClient.sendRequest(callbackRequest)
+                        .whenComplete((response, throwable) -> {
+                            if (throwable != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat("step webhook failed for request{} - " + throwable.getMessage())
+                                        .setArguments(callbackRequest)
+                                        .setThrowable(throwable)
+                                );
+                            }
+                        });
+                } else if (step.getHttpClassCallback() != null) {
+                    getHttpResponseClassCallbackActionHandler().handle(step.getHttpClassCallback(), request);
+                } else if (step.getHttpObjectCallback() != null) {
+                    HttpObjectCallback callback = step.getHttpObjectCallback();
+                    callback.withActionType(Action.Type.RESPONSE_OBJECT_CALLBACK);
+                    String clientId = callback.getClientId();
+                    if (LocalCallbackRegistry.responseClientExists(clientId)) {
+                        LocalCallbackRegistry.retrieveResponseCallback(clientId).handle(request);
+                    }
+                } else if (step.getHttpForward() != null) {
+                    getHttpForwardActionHandler().handle(step.getHttpForward(), request);
+                } else if (step.getHttpOverrideForwardedRequest() != null) {
+                    getHttpOverrideForwardedRequestCallbackActionHandler().handle(step.getHttpOverrideForwardedRequest(), request);
+                }
+            } catch (Exception e) {
+                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(WARN)
+                            .setLogLevel(Level.INFO)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setMessageFormat("exception dispatching step side-effect - " + e.getMessage())
+                            .setThrowable(e)
+                    );
+                }
+            }
+        }, step.getDelay());
     }
 
     void writeResponseActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous) {

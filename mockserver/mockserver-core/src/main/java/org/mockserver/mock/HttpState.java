@@ -390,6 +390,11 @@ public class HttpState {
     public List<Expectation> add(Expectation... expectations) {
         List<Expectation> upsertedExpectations = new ArrayList<>();
         for (Expectation expectation : expectations) {
+            // validate steps if present
+            String stepsError = expectation.validateSteps();
+            if (stepsError != null) {
+                throw new IllegalArgumentException("invalid expectation steps: " + stepsError);
+            }
             RequestDefinition requestDefinition = expectation.getHttpRequest();
             if (requestDefinition instanceof HttpRequest) {
                 final String hostHeader = ((HttpRequest) requestDefinition).getFirstHeader(HOST.toString());

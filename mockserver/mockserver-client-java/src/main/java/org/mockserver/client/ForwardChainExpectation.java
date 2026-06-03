@@ -153,6 +153,34 @@ public class ForwardChainExpectation {
     }
 
     /**
+     * Set an ordered list of steps for this expectation. Steps provide a unified way to
+     * declare an ordered pipeline of side-effects and a single designated responder.
+     * Exactly one step must have {@code responder = true}. Steps that precede the
+     * responder run before the response; steps that follow run after.
+     *
+     * <p>When steps are set, they supersede {@code beforeActions} + the primary response
+     * action for dispatch ordering. The primary action is still determined by the
+     * responder step's action type.</p>
+     *
+     * @param steps the ordered steps
+     */
+    public ForwardChainExpectation withSteps(ExpectationStep... steps) {
+        expectation.withSteps(steps);
+        return this;
+    }
+
+    /**
+     * Set an ordered list of steps for this expectation.
+     *
+     * @param steps the ordered steps
+     * @see #withSteps(ExpectationStep...)
+     */
+    public ForwardChainExpectation withSteps(java.util.List<ExpectationStep> steps) {
+        expectation.withSteps(steps);
+        return this;
+    }
+
+    /**
      * Set a single after-action to execute after the primary action completes
      *
      * @param afterAction the after-action to set
@@ -449,6 +477,19 @@ public class ForwardChainExpectation {
                 throw new ClientException("Unable to retrieve client registration id", e);
             }
         }
+    }
+
+    /**
+     * Submit the expectation to MockServer without setting any additional primary action.
+     * This is the correct terminal call when the expectation's action is already fully
+     * defined by its {@code steps} (the responder step defines the action). Using
+     * {@code .respond()} or {@code .forward()} would set a redundant top-level action
+     * that conflicts with the steps pipeline.
+     *
+     * @return added or updated expectations
+     */
+    public Expectation[] upsert() {
+        return mockServerClient.upsert(expectation);
     }
 
     @VisibleForTesting

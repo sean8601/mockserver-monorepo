@@ -1152,9 +1152,10 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                 "  }" + NEW_LINE +
                 "}"),
             is(
-                "20 errors:" + NEW_LINE +
+                "22 errors:" + NEW_LINE +
                     " - $.binaryResponse: is missing but it is required" + NEW_LINE +
                     " - $.dnsResponse: is missing but it is required" + NEW_LINE +
+                    " - $.grpcBidiResponse: is missing, but is required, if specifying action of type GrpcBidiResponse" + NEW_LINE +
                     " - $.grpcStreamResponse: is missing, but is required, if specifying action of type GrpcStreamResponse" + NEW_LINE +
                     " - $.httpError: is missing, but is required, if specifying action of type Error" + NEW_LINE +
                     " - $.httpForward: is missing, but is required, if specifying action of type Forward" + NEW_LINE +
@@ -1172,6 +1173,7 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                     " - $.httpResponses: is missing, but is required, if specifying action of type Responses" + NEW_LINE +
                     " - $.httpSseResponse: is missing, but is required, if specifying action of type SseResponse" + NEW_LINE +
                     " - $.httpWebSocketResponse: is missing, but is required, if specifying action of type WebSocketResponse" + NEW_LINE +
+                    " - $.steps: is missing but it is required" + NEW_LINE +
                     " - oneOf of the following must be specified [httpError, httpForward, httpForwardClassCallback, httpForwardObjectCallback, httpForwardTemplate, httpForwardValidateAction, httpForwardWithFallback, httpOverrideForwardedRequest, httpResponse, httpResponseClassCallback, httpResponseObjectCallback, httpResponseTemplate]" + NEW_LINE +
                     NEW_LINE +
                     OPEN_API_SPECIFICATION_URL
@@ -1198,9 +1200,10 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                 "    \"invalidField\" : \"randomValue\"" + NEW_LINE +
                 "  }"),
             is(
-                "21 errors:" + NEW_LINE +
+                "23 errors:" + NEW_LINE +
                     " - $.binaryResponse: is missing but it is required" + NEW_LINE +
                     " - $.dnsResponse: is missing but it is required" + NEW_LINE +
+                    " - $.grpcBidiResponse: is missing, but is required, if specifying action of type GrpcBidiResponse" + NEW_LINE +
                     " - $.grpcStreamResponse: is missing, but is required, if specifying action of type GrpcStreamResponse" + NEW_LINE +
                     " - $.httpError: is missing, but is required, if specifying action of type Error" + NEW_LINE +
                     " - $.httpForward: is missing, but is required, if specifying action of type Forward" + NEW_LINE +
@@ -1219,6 +1222,7 @@ public class JsonSchemaExpectationValidatorIntegrationTest {
                     " - $.httpSseResponse: is missing, but is required, if specifying action of type SseResponse" + NEW_LINE +
                     " - $.httpWebSocketResponse: is missing, but is required, if specifying action of type WebSocketResponse" + NEW_LINE +
                     " - $.invalidField: is not defined in the schema and the schema does not allow additional properties" + NEW_LINE +
+                    " - $.steps: is missing but it is required" + NEW_LINE +
                     " - oneOf of the following must be specified [httpError, httpForward, httpForwardClassCallback, httpForwardObjectCallback, httpForwardTemplate, httpForwardValidateAction, httpForwardWithFallback, httpOverrideForwardedRequest, httpResponse, httpResponseClassCallback, httpResponseObjectCallback, httpResponseTemplate]" + NEW_LINE +
                     NEW_LINE +
                     OPEN_API_SPECIFICATION_URL

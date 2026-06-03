@@ -460,6 +460,27 @@ Setting one target clears the others. `AfterAction` also carries three optional 
 
 Both lists are additive and optional (an expectation without them is unchanged), serialised via `AfterActionDTO`/`ExpectationDTO`, and validated against the shared `afterAction` JSON schema definition. Dispatch is handled in `HttpActionHandler` (`runBeforeActions` / `dispatchSideAction`) — see [request-processing.md](request-processing.md) for the before/after dispatch flow.
 
+#### Unified Ordered Steps (`steps`)
+
+As an alternative to separate `beforeActions` + primary action + `afterActions`, an expectation can declare a `List<ExpectationStep>` in the `steps` field. Each `ExpectationStep` carries:
+
+- Exactly one action target: `httpRequest` (webhook), `httpClassCallback`, `httpObjectCallback`, `httpForward`, `httpOverrideForwardedRequest`, `httpResponse`, or `httpError`.
+- A `responder` boolean flag — exactly one step must be the responder (the action that produces the HTTP response).
+- The same blocking/timeout/failurePolicy controls as before-actions, for pre-responder side-effect steps.
+
+**Validation rules** (enforced in `Expectation.validateSteps()`, called at upsert time in `HttpState.add()`):
+- Exactly one step must have `responder = true`.
+- `httpError` cannot be combined with other steps (must be sole step).
+- `httpRequest` (webhook) cannot be a responder (side-effect only).
+- Each step must have exactly one action target.
+
+**Dispatch order** (in `HttpActionHandler`):
+1. Pre-responder steps (blocking/async side-effects, like beforeActions).
+2. The responder step's action is dispatched via the normal `dispatchPrimaryAction` path.
+3. Post-responder steps run as fire-and-forget side-effects (like afterActions).
+
+Serialised via `ExpectationStepDTO`/`ExpectationDTO`, validated against `expectationStep.json` schema. Backward-compatible: when `steps` is null/empty, the existing beforeActions + primary action path is used unchanged.
+
 #### Bidirectional WebSocket Matching (`WebSocketMessageMatcher`)
 
 `HttpWebSocketResponse` supports bidirectional WebSocket mocking via `matchers` -- a list of `WebSocketMessageMatcher` objects that evaluate incoming WebSocket frames and send configured response messages when matched.

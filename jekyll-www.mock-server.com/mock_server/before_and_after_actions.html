@@ -219,12 +219,179 @@ Content-Type: application/json
 
 <p>A webhook's fields can reference values from the request that triggered the expectation using <span class="inline_code">{$request.&hellip;}</span> runtime expressions, which are resolved before the webhook is sent. Supported expressions include <span class="inline_code">{$url}</span>, <span class="inline_code">{$request.method}</span>, <span class="inline_code">{$request.header.NAME}</span>, <span class="inline_code">{$request.query.NAME}</span>, <span class="inline_code">{$request.path.NAME}</span>, and <span class="inline_code">{$request.body#/json/pointer}</span>. Unknown or missing values resolve to an empty string. These are the same expressions used by <a href="using_openapi.html">OpenAPI callbacks</a>.</p>
 
+<a id="unified_steps" class="anchor" href="#unified_steps">&nbsp;</a>
+
+<h2>Unified ordered steps</h2>
+
+<p>For more complex pipelines, the <span class="inline_code">steps</span> field provides a unified, ordered alternative to separate <span class="inline_code">beforeActions</span>, a primary action, and <span class="inline_code">afterActions</span>. A steps list declares an ordered sequence of actions where exactly one step is marked as the <em>responder</em> (the action that produces the HTTP response), and the remaining steps are side-effects.</p>
+
+<p>Steps that appear <em>before</em> the responder behave like before-actions (they can block, timeout, and gate the response). Steps that appear <em>after</em> the responder behave like after-actions (fire-and-forget).</p>
+
+<h3>When to use steps instead of beforeActions/afterActions</h3>
+
+<ul>
+    <li>When you want a single ordered list that makes the pipeline sequence explicit.</li>
+    <li>When the responder is a forward (proxy) and you also want side-effect forwards, all in one ordered list.</li>
+    <li>When you want side-effects both before and after the response in a single declaration.</li>
+</ul>
+
+<p><strong>Backward compatibility:</strong> existing expectations using <span class="inline_code">beforeActions</span> and/or <span class="inline_code">afterActions</span> with a top-level primary action work unchanged. The <span class="inline_code">steps</span> field is an alternative — you do not need to migrate.</p>
+
+<a id="steps_shape" class="anchor" href="#steps_shape">&nbsp;</a>
+
+<h3>Step shape</h3>
+
+<p>Each step specifies exactly one action target:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Can be responder?</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="inline_code">httpResponse</span></td>
+            <td>Yes</td>
+            <td>Static or templated response.</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">httpForward</span></td>
+            <td>Yes</td>
+            <td>Proxy forward. As a side-effect, the upstream response is discarded.</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">httpOverrideForwardedRequest</span></td>
+            <td>Yes</td>
+            <td>Forward with request/response overrides.</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">httpClassCallback</span></td>
+            <td>Yes</td>
+            <td>Server-side class callback.</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">httpObjectCallback</span></td>
+            <td>Yes</td>
+            <td>WebSocket object callback.</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">httpRequest</span></td>
+            <td>No (side-effect only)</td>
+            <td>Webhook — fires an HTTP request. This is the only target that can <em>block</em> in a pre-responder step.</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">httpError</span></td>
+            <td>Yes (solo only)</td>
+            <td>Connection-level error. Must be the only step — cannot combine with other steps.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>Each step also supports:</p>
+<ul>
+    <li><span class="inline_code">responder</span> (boolean) — exactly one step must have <span class="inline_code">responder: true</span>.</li>
+    <li><span class="inline_code">delay</span> — delay before the step runs.</li>
+    <li><span class="inline_code">blocking</span>, <span class="inline_code">timeout</span>, <span class="inline_code">failurePolicy</span> — for pre-responder side-effect steps (same semantics as before-action controls).</li>
+</ul>
+
+<a id="steps_validation" class="anchor" href="#steps_validation">&nbsp;</a>
+
+<h3>Validation rules</h3>
+
+<ul>
+    <li>Exactly one step must be the responder (<span class="inline_code">responder: true</span>).</li>
+    <li>Each step must have exactly one action target.</li>
+    <li><span class="inline_code">httpError</span> cannot be combined with other steps — it must be the only step.</li>
+    <li><span class="inline_code">httpRequest</span> (webhook) cannot be a responder — it is side-effect-only.</li>
+    <li><span class="inline_code">steps</span> cannot be combined with <span class="inline_code">beforeActions</span> — use steps for the full ordered pipeline.</li>
+    <li><span class="inline_code">steps</span> cannot be combined with a top-level response action (e.g. <span class="inline_code">httpResponse</span>, <span class="inline_code">httpForward</span>) — the responder step defines the action.</li>
+    <li><span class="inline_code">steps</span> <em>can</em> coexist with <span class="inline_code">afterActions</span> — after-actions fire after the entire steps pipeline completes.</li>
+</ul>
+
+<p>Invalid combinations are rejected at expectation creation time with a clear error message.</p>
+
+<a id="steps_example_json" class="anchor" href="#steps_example_json">&nbsp;</a>
+
+<h3>Example — webhook then forward-replace responder</h3>
+
+<pre class="prettyprint lang-java code"><code class="code">PUT /mockserver/expectation HTTP/1.1
+Content-Type: application/json
+
+{
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/order"
+  },
+  "steps" : [
+    {
+      "httpRequest"   : { "method" : "POST", "path" : "/audit", "headers" : { "Host" : [ "audit.svc:8080" ] } },
+      "blocking"      : true,
+      "timeout"       : { "timeUnit" : "SECONDS", "value" : 3 },
+      "failurePolicy" : "FAIL_FAST"
+    },
+    {
+      "httpOverrideForwardedRequest" : {
+        "requestOverride" : { "headers" : { "X-Audited" : [ "true" ] } }
+      },
+      "responder" : true
+    },
+    {
+      "httpRequest" : { "method" : "POST", "path" : "/analytics", "headers" : { "Host" : [ "analytics.svc:8080" ] } }
+    }
+  ]
+}</code></pre>
+
+<p>In this pipeline:</p>
+<ol>
+    <li>The audit webhook runs first (blocking, fail-fast — if it fails, the client gets <span class="inline_code">502</span>).</li>
+    <li>The forward-replace responder proxies the request upstream with an added header, and its response is returned to the client.</li>
+    <li>The analytics webhook runs after the response as a fire-and-forget side-effect.</li>
+</ol>
+
+<a id="steps_example_java" class="anchor" href="#steps_example_java">&nbsp;</a>
+
+<h3>Java client</h3>
+
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.ExpectationStep.step;
+
+new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withMethod("POST")
+            .withPath("/order")
+    )
+    .withSteps(
+        step()
+            .withHttpRequest(request().withMethod("POST").withPath("/audit").withHeader("Host", "audit.svc:8080"))
+            .withBlocking(true)
+            .withTimeout(seconds(3))
+            .withFailurePolicy(FailurePolicy.FAIL_FAST),
+        step()
+            .withHttpOverrideForwardedRequest(
+                forwardOverriddenRequest()
+                    .withRequestOverride(request().withHeader("X-Audited", "true"))
+            )
+            .withResponder(true),
+        step()
+            .withHttpRequest(request().withMethod("POST").withPath("/analytics").withHeader("Host", "analytics.svc:8080"))
+    )
+    .upsert();
+    // When steps are present, the responder step defines the primary action.
+    // Use .upsert() to submit the expectation without setting a redundant
+    // top-level action (the server rejects steps + a top-level action).</code></pre>
+
+<p><strong>Note:</strong> When <span class="inline_code">steps</span> is present, the primary action is determined by the responder step. Use <span class="inline_code">.upsert()</span> to submit the expectation without setting a redundant top-level action. Using <span class="inline_code">.respond()</span> or <span class="inline_code">.forward()</span> would set a top-level action that conflicts with the steps pipeline, and the server would reject the expectation. <span class="inline_code">afterActions</span> are still allowed alongside <span class="inline_code">steps</span> and fire after the entire steps pipeline completes.</p>
+
 <a id="notes" class="anchor" href="#notes">&nbsp;</a>
 
 <h2>Notes</h2>
 
 <ul>
-    <li>An expectation without <span class="inline_code">beforeActions</span> or <span class="inline_code">afterActions</span> behaves exactly as before — these fields are fully optional and backward compatible.</li>
+    <li>An expectation without <span class="inline_code">beforeActions</span>, <span class="inline_code">afterActions</span>, or <span class="inline_code">steps</span> behaves exactly as before — these fields are fully optional and backward compatible.</li>
     <li>After-actions never affect the client response; even on a <span class="inline_code">FAIL_FAST</span> before-action abort, the <span class="inline_code">502</span> counts as the response and any after-actions still fire.</li>
     <li>Webhook responses are discarded — these actions are about side-effects, not about composing the client response.</li>
+    <li>The <span class="inline_code">steps</span> field is an alternative to <span class="inline_code">beforeActions</span> + a top-level primary action. When <span class="inline_code">steps</span> is present it determines the dispatch pipeline; the responder step's action becomes the primary action. <span class="inline_code">steps</span> cannot be combined with <span class="inline_code">beforeActions</span> or a top-level response action (the server rejects such expectations), but <span class="inline_code">afterActions</span> still fire after the steps pipeline completes.</li>
 </ul>

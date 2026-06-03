@@ -59,6 +59,7 @@ public class Expectation extends ObjectWithJsonToString {
     private HttpError httpError;
     private List<AfterAction> beforeActions;
     private List<AfterAction> afterActions;
+    private List<ExpectationStep> steps;
     private List<HttpResponse> httpResponses;
     private ResponseMode responseMode;
     private List<CrossProtocolScenario> crossProtocolScenarios;
@@ -477,6 +478,141 @@ public class Expectation extends ObjectWithJsonToString {
         return afterActions != null ? Collections.unmodifiableList(afterActions) : null;
     }
 
+    public List<ExpectationStep> getSteps() {
+        return steps != null ? Collections.unmodifiableList(steps) : null;
+    }
+
+    public Expectation withSteps(ExpectationStep... steps) {
+        if (steps != null && steps.length > 0) {
+            this.steps = new ArrayList<>(Arrays.asList(steps));
+            this.hashCode = 0;
+        }
+        return this;
+    }
+
+    public Expectation withSteps(List<ExpectationStep> steps) {
+        if (steps != null && !steps.isEmpty()) {
+            this.steps = new ArrayList<>(steps);
+            this.hashCode = 0;
+        }
+        return this;
+    }
+
+    /**
+     * Validates the steps list for legal combinations:
+     * <ul>
+     *   <li>Exactly one step must be marked as the responder ({@code responder = true}).</li>
+     *   <li>{@code httpError} cannot be combined with other steps (it must be the only step).</li>
+     *   <li>Each step must have exactly one action target set.</li>
+     *   <li>{@code steps} cannot be combined with {@code beforeActions} — use steps for the full ordered pipeline.</li>
+     *   <li>{@code steps} cannot be combined with a top-level primary response action — the responder step defines the action.</li>
+     *   <li>{@code steps} MAY coexist with {@code afterActions} — after-actions fire after the steps pipeline completes.</li>
+     * </ul>
+     *
+     * @return null if valid, or an error message describing the violation
+     */
+    @JsonIgnore
+    public String validateSteps() {
+        if (steps == null || steps.isEmpty()) {
+            return null;
+        }
+
+        // Coexistence checks: steps is the unified ordered pipeline and must be self-contained
+        if (beforeActions != null && !beforeActions.isEmpty()) {
+            return "steps cannot be combined with beforeActions - use steps for the full ordered pipeline";
+        }
+        if (hasTopLevelPrimaryAction()) {
+            return "steps cannot be combined with a top-level response action - the responder step defines the action";
+        }
+
+        int responderCount = 0;
+        boolean hasHttpError = false;
+        for (int i = 0; i < steps.size(); i++) {
+            ExpectationStep step = steps.get(i);
+
+            // count non-null targets
+            int targetCount = 0;
+            if (step.getHttpRequest() != null) {
+                targetCount++;
+            }
+            if (step.getHttpClassCallback() != null) {
+                targetCount++;
+            }
+            if (step.getHttpObjectCallback() != null) {
+                targetCount++;
+            }
+            if (step.getHttpForward() != null) {
+                targetCount++;
+            }
+            if (step.getHttpOverrideForwardedRequest() != null) {
+                targetCount++;
+            }
+            if (step.getHttpResponse() != null) {
+                targetCount++;
+            }
+            if (step.getHttpError() != null) {
+                targetCount++;
+            }
+            if (targetCount == 0) {
+                return "step[" + i + "] has no action target set";
+            }
+            if (targetCount > 1) {
+                return "step[" + i + "] has multiple action targets set; each step must have exactly one";
+            }
+
+            if (step.getHttpError() != null) {
+                hasHttpError = true;
+            }
+            if (Boolean.TRUE.equals(step.getResponder())) {
+                responderCount++;
+                // non-responder-eligible targets used as responder
+                if (step.getHttpRequest() != null) {
+                    return "step[" + i + "] is marked as responder but uses httpRequest (webhook); webhooks are side-effect-only and cannot produce a response";
+                }
+            }
+        }
+
+        if (responderCount == 0) {
+            return "steps must contain exactly one step with responder=true, but none found";
+        }
+        if (responderCount > 1) {
+            return "steps must contain exactly one step with responder=true, but found " + responderCount;
+        }
+        if (hasHttpError && steps.size() > 1) {
+            return "httpError cannot be combined with other steps; it must be the only step";
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns {@code true} if any top-level primary response/forward/error action is set
+     * on this expectation (the traditional action fields, as opposed to actions inside steps).
+     */
+    @JsonIgnore
+    private boolean hasTopLevelPrimaryAction() {
+        return httpResponse != null
+            || httpResponseTemplate != null
+            || httpResponseClassCallback != null
+            || httpResponseObjectCallback != null
+            || httpForward != null
+            || httpForwardTemplate != null
+            || httpForwardClassCallback != null
+            || httpForwardObjectCallback != null
+            || httpOverrideForwardedRequest != null
+            || httpForwardValidateAction != null
+            || httpForwardWithFallback != null
+            || httpSseResponse != null
+            || httpLlmResponse != null
+            || httpWebSocketResponse != null
+            || grpcStreamResponse != null
+            || grpcBidiResponse != null
+            || binaryResponse != null
+            || dnsResponse != null
+            || httpError != null
+            || (httpResponses != null && !httpResponses.isEmpty());
+    }
+
     public List<HttpResponse> getHttpResponses() {
         return httpResponses != null ? Collections.unmodifiableList(httpResponses) : null;
     }
@@ -587,6 +723,19 @@ public class Expectation extends ObjectWithJsonToString {
 
     @JsonIgnore
     public Action getPrimaryAction() {
+        // When steps are configured, the responder step's action is the primary action
+        if (steps != null && !steps.isEmpty()) {
+            for (ExpectationStep step : steps) {
+                if (Boolean.TRUE.equals(step.getResponder())) {
+                    Action action = resolveStepAction(step);
+                    if (action != null) {
+                        action.setExpectationId(getId());
+                    }
+                    return action;
+                }
+            }
+            return null;
+        }
         if (httpResponses != null && !httpResponses.isEmpty()) {
             HttpResponse selected = selectFromResponses();
             if (selected != null) {
@@ -617,6 +766,78 @@ public class Expectation extends ObjectWithJsonToString {
         }
         primary.setExpectationId(getId());
         return primary;
+    }
+
+    /**
+     * Returns the ordered list of side-effect steps (non-responder steps that appear
+     * before the responder in the steps list). Returns empty list when steps is null
+     * or empty, or when no non-responder steps precede the responder.
+     */
+    @JsonIgnore
+    public List<ExpectationStep> getPreResponderSteps() {
+        if (steps == null || steps.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ExpectationStep> pre = new ArrayList<>();
+        for (ExpectationStep step : steps) {
+            if (Boolean.TRUE.equals(step.getResponder())) {
+                break;
+            }
+            pre.add(step);
+        }
+        return pre;
+    }
+
+    /**
+     * Returns the ordered list of side-effect steps that appear after the responder
+     * in the steps list (post-responder side-effects).
+     */
+    @JsonIgnore
+    public List<ExpectationStep> getPostResponderSteps() {
+        if (steps == null || steps.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ExpectationStep> post = new ArrayList<>();
+        boolean pastResponder = false;
+        for (ExpectationStep step : steps) {
+            if (pastResponder) {
+                post.add(step);
+            }
+            if (Boolean.TRUE.equals(step.getResponder())) {
+                pastResponder = true;
+            }
+        }
+        return post;
+    }
+
+    /**
+     * Resolves the action target from an ExpectationStep.
+     */
+    @JsonIgnore
+    static Action resolveStepAction(ExpectationStep step) {
+        if (step.getHttpResponse() != null) {
+            return step.getHttpResponse();
+        }
+        if (step.getHttpForward() != null) {
+            return step.getHttpForward();
+        }
+        if (step.getHttpOverrideForwardedRequest() != null) {
+            return step.getHttpOverrideForwardedRequest();
+        }
+        if (step.getHttpClassCallback() != null) {
+            // Need to set action type depending on context; for a responder callback
+            // the type is RESPONSE_CLASS_CALLBACK
+            step.getHttpClassCallback().withActionType(Action.Type.RESPONSE_CLASS_CALLBACK);
+            return step.getHttpClassCallback();
+        }
+        if (step.getHttpObjectCallback() != null) {
+            step.getHttpObjectCallback().withActionType(Action.Type.RESPONSE_OBJECT_CALLBACK);
+            return step.getHttpObjectCallback();
+        }
+        if (step.getHttpError() != null) {
+            return step.getHttpError();
+        }
+        return null;
     }
 
     @JsonIgnore
@@ -969,6 +1190,9 @@ public class Expectation extends ObjectWithJsonToString {
         if (afterActions != null) {
             clone.afterActions = new ArrayList<>(afterActions);
         }
+        if (steps != null) {
+            clone.steps = new ArrayList<>(steps);
+        }
         if (crossProtocolScenarios != null) {
             clone.crossProtocolScenarios = new ArrayList<>(crossProtocolScenarios);
         }
@@ -1020,6 +1244,7 @@ public class Expectation extends ObjectWithJsonToString {
             Objects.equals(httpError, that.httpError) &&
             Objects.equals(beforeActions, that.beforeActions) &&
             Objects.equals(afterActions, that.afterActions) &&
+            Objects.equals(steps, that.steps) &&
             Objects.equals(httpResponses, that.httpResponses) &&
             Objects.equals(responseMode, that.responseMode) &&
             Objects.equals(scenarioName, that.scenarioName) &&
@@ -1031,7 +1256,7 @@ public class Expectation extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios);
+            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios);
         }
         return hashCode;
     }

@@ -48,6 +48,8 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<AfterActionDTO> afterActions;
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<ExpectationStepDTO> steps;
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<HttpResponseDTO> httpResponses;
     private ResponseMode responseMode;
     private org.mockserver.serialization.model.TimesDTO times;
@@ -160,6 +162,10 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             List<AfterAction> afterActions = expectation.getAfterActions();
             if (afterActions != null && !afterActions.isEmpty()) {
                 this.afterActions = afterActions.stream().map(AfterActionDTO::new).collect(Collectors.toList());
+            }
+            List<ExpectationStep> stepsList = expectation.getSteps();
+            if (stepsList != null && !stepsList.isEmpty()) {
+                this.steps = stepsList.stream().map(ExpectationStepDTO::new).collect(Collectors.toList());
             }
             List<HttpResponse> httpResponsesList = expectation.getHttpResponses();
             if (httpResponsesList != null && !httpResponsesList.isEmpty()) {
@@ -327,6 +333,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .thenError(httpError)
             .withBeforeActions(beforeActionList)
             .withAfterActions(afterActionList)
+            .withSteps(this.steps != null ? this.steps.stream().map(ExpectationStepDTO::buildObject).collect(Collectors.toList()) : null)
             .thenRespond(this.httpResponses != null ? this.httpResponses.stream().map(HttpResponseDTO::buildObject).collect(Collectors.toList()) : null)
             .withResponseMode(this.responseMode)
             .withCrossProtocolScenarios(this.crossProtocolScenarios);
@@ -589,6 +596,16 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     @JsonSetter("afterActions")
     public ExpectationDTO setAfterActions(List<AfterActionDTO> afterActions) {
         this.afterActions = afterActions;
+        return this;
+    }
+
+    public List<ExpectationStepDTO> getSteps() {
+        return steps;
+    }
+
+    @JsonSetter("steps")
+    public ExpectationDTO setSteps(List<ExpectationStepDTO> steps) {
+        this.steps = steps;
         return this;
     }
 
