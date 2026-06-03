@@ -106,6 +106,7 @@
         <!-- examples relocated to repo-root examples/java (kept in the reactor so they stay compiled/tested) -->
         <module>../examples/java</module>
         <module>mockserver-async</module>
+        <module>mockserver-testcontainers</module>
     </modules>
 
     <dependencyManagement>

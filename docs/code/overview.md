@@ -21,6 +21,7 @@ mockserver-monorepo/
 │   ├── mockserver-junit-jupiter-no-dependencies/      # ↑ shaded, zero transitive deps
 │   ├── mockserver-spring-test-listener/               # Spring test integration
 │   ├── mockserver-spring-test-listener-no-dependencies/ # ↑ shaded, zero transitive deps
+│   ├── mockserver-testcontainers/                     # Testcontainers integration (depends on mockserver-client-java)
 │   ├── mockserver-integration-testing/                # Integration-test helpers
 │   └── mockserver-integration-testing-no-dependencies/# ↑ shaded, zero transitive deps
 ├── examples/                       # Runnable usage examples — java/node/python/ruby/curl/json/docker-compose/wasm/chaos
@@ -68,6 +69,7 @@ Everything published to Maven Central under `org.mock-server` is produced by a m
 | `mockserver-junit-rule/` | `mockserver-junit-rule` + `mockserver-junit-rule-no-dependencies` | JUnit 4 `@Rule`. |
 | `mockserver-junit-jupiter/` | `mockserver-junit-jupiter` + `mockserver-junit-jupiter-no-dependencies` | JUnit 5 extension. |
 | `mockserver-spring-test-listener/` | `mockserver-spring-test-listener` + `mockserver-spring-test-listener-no-dependencies` | Spring `TestExecutionListener`. |
+| `mockserver-testcontainers/` | `mockserver-testcontainers` | Canonical, MockServer-maintained Testcontainers module (`MockServerContainer`). Supersedes the thin upstream `org.testcontainers:mockserver`. Depends on `mockserver-client-java`. |
 | `mockserver-integration-testing/` | `mockserver-integration-testing` + `mockserver-integration-testing-no-dependencies` | Integration-test helpers. |
 | `examples/java/` (repo root) | `mockserver-examples` | Published, but documents usage rather than being a consumer dependency. Relocated from `mockserver/mockserver-examples/`; still a reactor module via `../examples/java`. |
 | `mockserver/mockserver-maven-plugin/` | `mockserver-maven-plugin` | Maven plugin (`pre-integration-test` / `post-integration-test` hooks). Inherits its version from `mockserver/pom.xml` and uses `${project.version}` for internal mockserver-* dependency refs, but is NOT a child module of `mockserver/pom.xml` — built and deployed by the dedicated `:java: Maven Plugin` step in `.buildkite/release-pipeline.yml`, separately from the main reactor. |
