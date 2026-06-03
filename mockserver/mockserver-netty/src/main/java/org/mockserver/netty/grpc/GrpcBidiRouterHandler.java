@@ -9,6 +9,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.dashboard.DashboardWebSocketHandler;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
+import org.mockserver.grpc.GrpcServerReflectionHandler;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -129,6 +130,19 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
         Http2HeadersFrame headersFrame = (Http2HeadersFrame) msg;
         CharSequence pathSeq = headersFrame.headers().path();
         String path = pathSeq != null ? pathSeq.toString() : "";
+
+        // Built-in service: gRPC Server Reflection (bidi streaming).
+        // Checked before method descriptor resolution because reflection service
+        // methods are not in the user's descriptor store.
+        if (descriptorStore != null && descriptorStore.hasServices()
+            && GrpcServerReflectionHandler.isReflectionPath(path)) {
+            ChannelPipeline pipeline = ctx.pipeline();
+            GrpcServerReflectionHandler reflectionHandler = new GrpcServerReflectionHandler(descriptorStore);
+            pipeline.replace(this, "grpcBidiReflection",
+                new GrpcBidiReflectionHandler(reflectionHandler));
+            ctx.fireChannelRead(msg);
+            return;
+        }
 
         // Resolve the gRPC method descriptor from the :path
         Descriptors.MethodDescriptor methodDescriptor = resolveMethod(path);

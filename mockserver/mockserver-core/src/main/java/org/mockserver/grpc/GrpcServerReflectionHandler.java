@@ -71,22 +71,22 @@ public class GrpcServerReflectionHandler {
         "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo";
 
     // --- ServerReflectionRequest field numbers ---
-    static final int REQ_HOST_FIELD = 1;
-    static final int REQ_FILE_BY_FILENAME_FIELD = 3;
-    static final int REQ_FILE_CONTAINING_SYMBOL_FIELD = 4;
-    static final int REQ_LIST_SERVICES_FIELD = 7;
+    public static final int REQ_HOST_FIELD = 1;
+    public static final int REQ_FILE_BY_FILENAME_FIELD = 3;
+    public static final int REQ_FILE_CONTAINING_SYMBOL_FIELD = 4;
+    public static final int REQ_LIST_SERVICES_FIELD = 7;
 
     // --- ServerReflectionResponse field numbers ---
-    static final int RESP_VALID_HOST_FIELD = 1;
-    static final int RESP_FILE_DESCRIPTOR_RESPONSE_FIELD = 4;
-    static final int RESP_LIST_SERVICES_RESPONSE_FIELD = 6;
+    public static final int RESP_VALID_HOST_FIELD = 1;
+    public static final int RESP_FILE_DESCRIPTOR_RESPONSE_FIELD = 4;
+    public static final int RESP_LIST_SERVICES_RESPONSE_FIELD = 6;
 
     // --- FileDescriptorResponse field numbers ---
-    static final int FDR_FILE_DESCRIPTOR_PROTO_FIELD = 1;
+    public static final int FDR_FILE_DESCRIPTOR_PROTO_FIELD = 1;
 
     // --- ListServiceResponse / ServiceResponse field numbers ---
-    static final int LSR_SERVICE_FIELD = 1;
-    static final int SR_NAME_FIELD = 1;
+    public static final int LSR_SERVICE_FIELD = 1;
+    public static final int SR_NAME_FIELD = 1;
 
     private final GrpcProtoDescriptorStore descriptorStore;
 
@@ -99,6 +99,14 @@ public class GrpcServerReflectionHandler {
      * gRPC Server Reflection method path.
      */
     public boolean isReflectionRequest(String path) {
+        return isReflectionPath(path);
+    }
+
+    /**
+     * Static variant of {@link #isReflectionRequest(String)} for use from routing
+     * code that does not hold a handler instance.
+     */
+    public static boolean isReflectionPath(String path) {
         return REFLECTION_V1_PATH.equals(path) || REFLECTION_V1ALPHA_PATH.equals(path);
     }
 
@@ -377,7 +385,7 @@ public class GrpcServerReflectionHandler {
      * Wraps a protobuf message in a gRPC frame (5-byte header: 1 byte compression flag +
      * 4-byte big-endian message length).
      */
-    static byte[] grpcFrame(byte[] proto) {
+    public static byte[] grpcFrame(byte[] proto) {
         byte[] framed = new byte[5 + proto.length];
         framed[0] = 0; // no compression
         framed[1] = (byte) ((proto.length >> 24) & 0xFF);
