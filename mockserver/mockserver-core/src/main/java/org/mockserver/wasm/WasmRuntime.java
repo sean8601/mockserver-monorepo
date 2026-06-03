@@ -2,17 +2,17 @@ package org.mockserver.wasm;
 
 import com.dylibso.chicory.runtime.ExportFunction;
 import com.dylibso.chicory.runtime.Instance;
-import com.dylibso.chicory.runtime.Module;
-import com.dylibso.chicory.wasm.types.Value;
+import com.dylibso.chicory.wasm.Parser;
+import com.dylibso.chicory.wasm.WasmModule;
 
 import java.nio.charset.StandardCharsets;
 
 /**
  * Thin wrapper around a compiled chicory WASM instance.
  * <p>
- * Thread-safety: chicory {@link Instance} is NOT thread-safe, so a fresh
- * instance is created for each invocation. The cost is low because the
- * {@link Module} (parsed/validated bytecode) is reused.
+ * Thread-safety: chicory {@link Instance} is NOT thread-safe, so the stored WASM
+ * bytes are parsed into a {@link WasmModule} and a fresh {@link Instance} is
+ * created for each invocation.
  * <p>
  * The WASM module must export a function {@code match(i32 ptr, i32 len) -> i32}
  * that reads {@code len} bytes from linear memory starting at {@code ptr} and
@@ -37,8 +37,8 @@ public class WasmRuntime {
      */
     public boolean callMatch(String requestBody) {
         try {
-            Module module = Module.builder(wasmBytes).build();
-            Instance instance = module.instantiate();
+            WasmModule module = Parser.parse(wasmBytes);
+            Instance instance = Instance.builder(module).build();
             byte[] input = requestBody != null
                 ? requestBody.getBytes(StandardCharsets.UTF_8)
                 : new byte[0];
@@ -48,8 +48,8 @@ public class WasmRuntime {
 
             // Call: i32 match(i32 ptr, i32 len)
             ExportFunction matchFn = instance.export("match");
-            Value[] result = matchFn.apply(Value.i32(0), Value.i32(input.length));
-            return result.length > 0 && result[0].asInt() != 0;
+            long[] result = matchFn.apply(0L, input.length);
+            return result.length > 0 && result[0] != 0;
         } catch (Exception e) {
             // fail closed
             return false;

@@ -16,7 +16,7 @@ flowchart LR
     Matcher -->|"body type = WASM"| WasmBodyMatcher
     WasmBodyMatcher -->|"get bytes by name"| WasmStore
     WasmBodyMatcher -->|"callMatch(body)"| WasmRuntime
-    WasmRuntime -->|"chicory Module/Instance"| Chicory["chicory interpreter"]
+    WasmRuntime -->|"chicory Parser/Instance"| Chicory["chicory interpreter"]
 ```
 
 ## Module ABI
@@ -44,7 +44,7 @@ The module must declare at least one page of linear memory. The maximum memory i
 
 ### WasmRuntime
 
-`org.mockserver.wasm.WasmRuntime` -- wraps chicory's `Module` and `Instance` classes. Creates a fresh WASM instance per invocation for thread safety. Fails closed (returns `false`) on any error.
+`org.mockserver.wasm.WasmRuntime` -- parses the module with chicory's `Parser` and runs it via an `Instance`. Creates a fresh WASM instance per invocation for thread safety. Fails closed (returns `false`) on any error.
 
 ### WasmBody
 
