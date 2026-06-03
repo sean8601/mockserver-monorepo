@@ -286,6 +286,29 @@ The chart is published to two locations on every release. Both are kept in lock-
 - **Index:** `helm/charts/index.yaml`
 - **Charts:** `helm/charts/mockserver-*.tgz` (every released version)
 
+### Artifact Hub
+
+[Artifact Hub](https://artifacthub.io) is the de-facto discovery site for Helm charts. Publishing
+the OCI chart there makes it findable without users knowing the `oci://` path in advance. The
+listing reads `Chart.yaml` natively (`name`, `description`, `keywords`, `home`, `sources`,
+`maintainers`, `icon`) plus the `annotations` block (`artifacthub.io/license`, `artifacthub.io/links`).
+
+Repository metadata lives in [`helm/artifacthub-repo.yml`](../../helm/artifacthub-repo.yml). One-time
+bootstrap (manual — needs an Artifact Hub account):
+
+1. Artifact Hub → Control Panel → Repositories → Add → kind **Helm charts**, OCI based, URL
+   `oci://ghcr.io/mock-server/charts`.
+2. Copy the generated **Repository ID** into `repositoryID` in `helm/artifacthub-repo.yml`.
+3. Publish the metadata file to the registry root so Artifact Hub can verify ownership:
+   ```bash
+   oras push ghcr.io/mock-server/charts:artifacthub.io \
+     helm/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+   ```
+
+After that, Artifact Hub auto-indexes each new chart version pushed to GHCR by the release pipeline —
+no per-release step. (Optional follow-up: add the `oras push` of the metadata file to
+`scripts/release/components/helm.sh` once `oras` is available on the `release` agents.)
+
 ### Release pipeline (automated)
 
 `scripts/release/components/helm.sh` runs on the `release` agent queue and:
