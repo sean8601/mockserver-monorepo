@@ -682,10 +682,7 @@ public class HttpActionHandler {
                                     HttpResponse logResponse = streamingResponse.clone();
                                     byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                     setCapturedStreamingBody(logResponse, captured);
-                                    logResponse.withHeader("x-mockserver-streamed", "true");
-                                    if (streamingResponse.getStreamingBody().isTruncated()) {
-                                        logResponse.withHeader("x-mockserver-stream-truncated", "true");
-                                    }
+                                    attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
                                     mockServerLogger.logEvent(
                                         new LogEntry()
                                             .setType(FORWARDED_REQUEST)
@@ -809,10 +806,7 @@ public class HttpActionHandler {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
-                                logResponse.withHeader("x-mockserver-streamed", "true");
-                                if (streamingResponse.getStreamingBody().isTruncated()) {
-                                    logResponse.withHeader("x-mockserver-stream-truncated", "true");
-                                }
+                                attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
                                 mockServerLogger.logEvent(
                                     new LogEntry()
                                         .setType(FORWARDED_REQUEST)
@@ -1638,10 +1632,7 @@ public class HttpActionHandler {
                 HttpResponse logResponse = response.clone();
                 byte[] captured = streamingBody.capturedBytes();
                 setCapturedStreamingBody(logResponse, captured);
-                logResponse.withHeader("x-mockserver-streamed", "true");
-                if (streamingBody.isTruncated()) {
-                    logResponse.withHeader("x-mockserver-stream-truncated", "true");
-                }
+                attachStreamingHeaders(logResponse, streamingBody);
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(FORWARDED_REQUEST)
@@ -1870,6 +1861,32 @@ public class HttpActionHandler {
             }
         }
         logResponse.withBody(captured);
+    }
+
+    /**
+     * Attach internal streaming metadata headers to a log response. This must be called
+     * consistently from every streaming completion path so that the log entry (and any
+     * fixture derived from it) carries the same set of headers.
+     *
+     * @param logResponse   the cloned response that will be stored in the event log
+     * @param streamingBody the streaming body that captured bytes and timestamps
+     */
+    private static void attachStreamingHeaders(HttpResponse logResponse, StreamingBody streamingBody) {
+        logResponse.withHeader("x-mockserver-streamed", "true");
+        if (streamingBody.isTruncated()) {
+            logResponse.withHeader("x-mockserver-stream-truncated", "true");
+        }
+        List<Long> interChunkDelays = streamingBody.interChunkDelaysMillis();
+        if (interChunkDelays != null && !interChunkDelays.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < interChunkDelays.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(interChunkDelays.get(i));
+            }
+            logResponse.withHeader("x-mockserver-chunk-delays-ms", sb.toString());
+        }
     }
 
     private HttpResponseActionHandler getHttpResponseActionHandler() {
