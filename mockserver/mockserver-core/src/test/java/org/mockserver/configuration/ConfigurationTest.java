@@ -770,6 +770,32 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetGrpcBidiStreamingEnabled() {
+        boolean original = ConfigurationProperties.grpcBidiStreamingEnabled();
+        try {
+            // then - default value
+            assertThat(configuration.grpcBidiStreamingEnabled(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.grpcBidiStreamingEnabled(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.grpcBidiStreamingEnabled(), equalTo(true));
+            assertThat(System.getProperty("mockserver.grpcBidiStreamingEnabled"), equalTo("true"));
+            assertThat(configuration.grpcBidiStreamingEnabled(), equalTo(true));
+            ConfigurationProperties.grpcBidiStreamingEnabled(original);
+
+            // when - setter
+            configuration.grpcBidiStreamingEnabled(true);
+
+            // then - getter
+            assertThat(configuration.grpcBidiStreamingEnabled(), equalTo(true));
+        } finally {
+            ConfigurationProperties.grpcBidiStreamingEnabled(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetForwardBinaryRequestsWithoutWaitingForResponse() {
         boolean original = ConfigurationProperties.forwardBinaryRequestsWithoutWaitingForResponse();
         try {

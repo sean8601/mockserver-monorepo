@@ -127,6 +127,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_GRPC_PROTO_DIRECTORY = "mockserver.grpcProtoDirectory";
     private static final String MOCKSERVER_GRPC_ENABLED = "mockserver.grpcEnabled";
     private static final String MOCKSERVER_GRPC_PROTOC_PATH = "mockserver.grpcProtocPath";
+    private static final String MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED = "mockserver.grpcBidiStreamingEnabled";
     private static final String MOCKSERVER_DNS_ENABLED = "mockserver.dnsEnabled";
     private static final String MOCKSERVER_DNS_PORT = "mockserver.dnsPort";
     private static final String MOCKSERVER_HTTP3_PORT = "mockserver.http3Port";
@@ -540,6 +541,28 @@ public class ConfigurationProperties {
 
     public static void grpcProtocPath(String path) {
         setProperty(MOCKSERVER_GRPC_PROTOC_PATH, path);
+    }
+
+    public static boolean grpcBidiStreamingEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED, "MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED", "false"));
+    }
+
+    /**
+     * If true the HTTP/2 pipeline uses Http2FrameCodec + Http2MultiplexHandler instead of
+     * HttpToHttp2ConnectionHandler + InboundHttp2ToHttpAdapter for connections where gRPC
+     * descriptors are loaded. This is required for true client-streaming and bidirectional-streaming
+     * gRPC in a future phase. In Phase 0 the multiplex branch re-aggregates frames so behaviour
+     * is identical to the connection-level adapter.
+     * <p>
+     * Requires gRPC descriptors to be loaded (grpcEnabled with descriptors present). When false
+     * (the default) or when no descriptors are loaded, the existing connection-level adapter is used.
+     * <p>
+     * Default is false
+     *
+     * @param enable enable the multiplex HTTP/2 pipeline for gRPC bidi-streaming support
+     */
+    public static void grpcBidiStreamingEnabled(boolean enable) {
+        setProperty(MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED, "" + enable);
     }
 
     public static boolean dnsEnabled() {

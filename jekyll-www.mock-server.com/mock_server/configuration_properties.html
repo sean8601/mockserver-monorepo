@@ -529,6 +529,23 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http2Enabled="false"</code></pre>
 </div>
 
+<button id="button_configuration_grpc_bidi_streaming_enabled" class="accordion title"><strong>gRPC Bidi-Streaming Enabled</strong></button>
+<div class="panel title">
+    <p>If true, MockServer uses a per-stream HTTP/2 multiplex pipeline (<span class="keyword">Http2FrameCodec</span> + <span class="keyword">Http2MultiplexHandler</span>) instead of the connection-level adapter for HTTP/2 connections where gRPC descriptors are loaded. This is a prerequisite for true client-streaming and bidirectional-streaming gRPC support (to be enabled in a future release). When enabled, the pipeline re-aggregates stream frames so existing unary and server-streaming gRPC behaviour is unchanged.</p>
+    <p>Requires gRPC to be enabled with descriptors loaded. When false (the default) or when no gRPC descriptors are loaded, the existing connection-level HTTP/2 adapter is used.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.grpcBidiStreamingEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.grpcBidiStreamingEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.grpcBidiStreamingEnabled=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.grpcBidiStreamingEnabled="true"</code></pre>
+</div>
+
 {% include_subpage _includes/cors_configuration.html %}
 
 {% include_subpage _includes/template_restriction_configuration.html %}

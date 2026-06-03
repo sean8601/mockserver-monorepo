@@ -35,6 +35,7 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
+import org.mockserver.netty.grpc.GrpcMultiplexChildInitializer;
 import org.mockserver.netty.grpc.GrpcToHttpRequestHandler;
 import org.mockserver.netty.grpc.GrpcToHttpResponseHandler;
 import org.mockserver.netty.proxy.BinaryRequestProxyingHandler;
@@ -299,34 +300,40 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 pipeline.addLast("tcp-chaos", new TcpChaosHandler());
             }
 
-            final Http2Connection connection = new DefaultHttp2Connection(true);
-            final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
-                .frameListener(
-                    new DelegatingDecompressorFrameListener(
-                        connection,
-                        new InboundHttp2ToHttpAdapterBuilder(connection)
-                            .maxContentLength(configuration.maxRequestBodySize())
-                            .propagateSettings(true)
-                            .validateHttpHeaders(false)
-                            .build()
-                    )
-                );
-            if (mockServerLogger.isEnabledForInstance(TRACE)) {
-                http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
+            if (configuration.grpcBidiStreamingEnabled()
+                && httpState.getGrpcDescriptorStore() != null
+                && httpState.getGrpcDescriptorStore().hasServices()) {
+                switchToHttp2Multiplex(ctx, pipeline, false, null);
+            } else {
+                final Http2Connection connection = new DefaultHttp2Connection(true);
+                final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
+                    .frameListener(
+                        new DelegatingDecompressorFrameListener(
+                            connection,
+                            new InboundHttp2ToHttpAdapterBuilder(connection)
+                                .maxContentLength(configuration.maxRequestBodySize())
+                                .propagateSettings(true)
+                                .validateHttpHeaders(false)
+                                .build()
+                        )
+                    );
+                if (mockServerLogger.isEnabledForInstance(TRACE)) {
+                    http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
+                }
+                addLastIfNotPresent(pipeline, http2ConnectionHandlerBuilder.connection(connection).build());
+                addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
+                addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, false, false));
+                if (configuration.mcpEnabled()) {
+                    addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
+                }
+                addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, false, null, ctx.channel().localAddress()));
+                addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
+                if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
+                    addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
+                    addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
+                }
+                addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
             }
-            addLastIfNotPresent(pipeline, http2ConnectionHandlerBuilder.connection(connection).build());
-            addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
-            addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, false, false));
-            if (configuration.mcpEnabled()) {
-                addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
-            }
-            addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, false, null, ctx.channel().localAddress()));
-            addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
-            if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
-                addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
-                addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
-            }
-            addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
             pipeline.remove(this);
 
             ctx.channel().attr(LOCAL_HOST_HEADERS).set(getLocalAddresses(ctx));
@@ -345,35 +352,41 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 pipeline.addLast("tcp-chaos", new TcpChaosHandler());
             }
 
-            final Http2Connection connection = new DefaultHttp2Connection(true);
-            final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
-                .frameListener(
-                    new DelegatingDecompressorFrameListener(
-                        connection,
-                        new InboundHttp2ToHttpAdapterBuilder(connection)
-                            .maxContentLength(configuration.maxRequestBodySize())
-                            .propagateSettings(true)
-                            .validateHttpHeaders(false)
-                            .build()
-                    )
-                );
-            if (mockServerLogger.isEnabledForInstance(TRACE)) {
-                http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
+            if (configuration.grpcBidiStreamingEnabled()
+                && httpState.getGrpcDescriptorStore() != null
+                && httpState.getGrpcDescriptorStore().hasServices()) {
+                switchToHttp2Multiplex(ctx, pipeline, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx));
+            } else {
+                final Http2Connection connection = new DefaultHttp2Connection(true);
+                final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
+                    .frameListener(
+                        new DelegatingDecompressorFrameListener(
+                            connection,
+                            new InboundHttp2ToHttpAdapterBuilder(connection)
+                                .maxContentLength(configuration.maxRequestBodySize())
+                                .propagateSettings(true)
+                                .validateHttpHeaders(false)
+                                .build()
+                        )
+                    );
+                if (mockServerLogger.isEnabledForInstance(TRACE)) {
+                    http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
+                }
+                addLastIfNotPresent(pipeline, http2ConnectionHandlerBuilder.connection(connection).build());
+                // TODO(jamesdbloom) consider Http2MultiplexHandler and test behaviour when multiple requests sent over the same connection
+                addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
+                addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
+                if (configuration.mcpEnabled()) {
+                    addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
+                }
+                addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
+                addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
+                if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
+                    addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
+                    addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
+                }
+                addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
             }
-            addLastIfNotPresent(pipeline, http2ConnectionHandlerBuilder.connection(connection).build());
-            // TODO(jamesdbloom) consider Http2MultiplexHandler and test behaviour when multiple requests sent over the same connection
-            addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
-            addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
-            if (configuration.mcpEnabled()) {
-                addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
-            }
-            addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
-            addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
-            if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
-                addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
-                addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
-            }
-            addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
             pipeline.remove(this);
 
             ctx.channel().attr(LOCAL_HOST_HEADERS).set(getLocalAddresses(ctx));
@@ -381,6 +394,30 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             // fire message back through pipeline
             ctx.fireChannelRead(msg.readBytes(actualReadableBytes()));
         }
+    }
+
+    private void switchToHttp2Multiplex(ChannelHandlerContext ctx, ChannelPipeline pipeline, boolean sslEnabled, java.security.cert.Certificate[] clientCertificates) {
+        // NOTE: unlike the connection-adapter branch (which wraps its listener in a
+        // DelegatingDecompressorFrameListener), this multiplex path does not apply HTTP/2-level
+        // content-encoding decompression. gRPC carries its own message compression via the
+        // grpc-encoding header (handled by GrpcFrameCodec), not HTTP/2 frame compression, so this
+        // is an intentional Phase 0 limitation for the gRPC multiplex pipeline.
+        Http2FrameCodecBuilder frameCodecBuilder = Http2FrameCodecBuilder.forServer()
+            .initialSettings(Http2Settings.defaultSettings()
+                .maxFrameSize(configuration.maxRequestBodySize() < Http2CodecUtil.MAX_FRAME_SIZE_LOWER_BOUND
+                    ? Http2CodecUtil.MAX_FRAME_SIZE_LOWER_BOUND
+                    : Math.min(configuration.maxRequestBodySize(), Http2CodecUtil.MAX_FRAME_SIZE_UPPER_BOUND)));
+        if (mockServerLogger.isEnabledForInstance(TRACE)) {
+            frameCodecBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
+        }
+        addLastIfNotPresent(pipeline, frameCodecBuilder.build());
+        addLastIfNotPresent(pipeline, new Http2MultiplexHandler(
+            new GrpcMultiplexChildInitializer(
+                configuration, server, httpState, actionHandler,
+                mockServerLogger, mcpSessionManager,
+                sslEnabled, clientCertificates
+            )
+        ));
     }
 
     private void switchToHttp(ChannelHandlerContext ctx, ByteBuf msg) {

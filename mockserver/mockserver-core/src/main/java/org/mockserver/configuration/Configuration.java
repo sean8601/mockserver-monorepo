@@ -49,6 +49,7 @@ public class Configuration {
     private String grpcProtoDirectory;
     private Boolean grpcEnabled;
     private String grpcProtocPath;
+    private Boolean grpcBidiStreamingEnabled;
     private Boolean dnsEnabled;
     private Integer dnsPort;
     private Integer http3Port;
@@ -505,6 +506,29 @@ public class Configuration {
 
     public Configuration grpcProtocPath(String grpcProtocPath) {
         this.grpcProtocPath = grpcProtocPath;
+        return this;
+    }
+
+    public Boolean grpcBidiStreamingEnabled() {
+        if (grpcBidiStreamingEnabled == null) {
+            return ConfigurationProperties.grpcBidiStreamingEnabled();
+        }
+        return grpcBidiStreamingEnabled;
+    }
+
+    /**
+     * If true the HTTP/2 pipeline uses Http2FrameCodec + Http2MultiplexHandler instead of
+     * HttpToHttp2ConnectionHandler + InboundHttp2ToHttpAdapter for connections where gRPC
+     * descriptors are loaded. This is required for true client-streaming and bidirectional-streaming
+     * gRPC in a future phase. In Phase 0 the multiplex branch re-aggregates frames so behaviour
+     * is identical to the connection-level adapter.
+     * <p>
+     * Default is false
+     *
+     * @param grpcBidiStreamingEnabled enable the multiplex HTTP/2 pipeline for gRPC bidi-streaming support
+     */
+    public Configuration grpcBidiStreamingEnabled(Boolean grpcBidiStreamingEnabled) {
+        this.grpcBidiStreamingEnabled = grpcBidiStreamingEnabled;
         return this;
     }
 

@@ -265,6 +265,32 @@ The handlers are placed after `MockServerHttpServerCodec` so they operate on Moc
 
 h2c (HTTP/2 cleartext) is detected by `isH2cPreface()` in `PortUnificationHandler`, which checks for the HTTP/2 connection preface (`PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`). Both `switchToH2c()` and `switchToHttp2()` conditionally wire gRPC handlers when descriptors are loaded. The `switchToHttp()` method also adds gRPC handlers to the HTTP/1.1 pipeline to support gRPC-Web over HTTP/1.1.
 
+##### Multiplex Pipeline (default OFF)
+
+When `grpcBidiStreamingEnabled` is `true` **and** gRPC descriptors are loaded, `switchToHttp2()` / `switchToH2c()` use an alternate HTTP/2 pipeline based on `Http2FrameCodec` + `Http2MultiplexHandler` instead of the connection-level `HttpToHttp2ConnectionHandler` + `InboundHttp2ToHttpAdapter`. Each HTTP/2 stream gets its own child channel initialized by `GrpcMultiplexChildInitializer`:
+
+```mermaid
+graph LR
+    FC[Http2FrameCodec] --> MUX[Http2MultiplexHandler]
+    MUX -->|per-stream child| SF["Http2StreamFrameToHttpObjectCodec\n(server=true)"]
+    SF --> AGG[HttpObjectAggregator]
+    AGG --> CB[CallbackWebSocketServerHandler]
+    CB --> DASH[DashboardWebSocketHandler]
+    DASH --> MCP["McpStreamableHttpHandler\n(conditional)"]
+    MCP --> CODEC[MockServerHttpServerCodec]
+    CODEC --> GRPC_RESP[GrpcToHttpResponseHandler]
+    GRPC_RESP --> GRPC_REQ[GrpcToHttpRequestHandler]
+    GRPC_REQ --> HANDLER[HttpRequestHandler]
+```
+
+In Phase 0, `Http2StreamFrameToHttpObjectCodec` + `HttpObjectAggregator` re-aggregate stream frames into `FullHttpRequest`/`FullHttpResponse` objects, so the downstream handler chain sees the same objects as the connection-level adapter produces. This means behaviour is byte-for-byte equivalent to the default pipeline for unary and server-streaming RPCs. The flag defaults to `false`; when off, the existing connection-level adapter path is used unchanged.
+
+| Property | Default | Env var | System property |
+|----------|---------|---------|-----------------|
+| `grpcBidiStreamingEnabled` | `false` | `MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED` | `mockserver.grpcBidiStreamingEnabled` |
+
+Future phases will remove the re-aggregation and handle individual DATA frames for true client-streaming and bidirectional-streaming gRPC.
+
 #### TLS Pipeline
 
 ```mermaid
