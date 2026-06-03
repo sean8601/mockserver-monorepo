@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.mock-server/mockserver",
+  "description": "Mock, record/replay, verify and chaos-test any HTTP/HTTPS, REST, gRPC or LLM dependency, driven over MCP. MockServer exposes a built-in MCP server so AI assistants can create expectations, verify requests, inspect recorded traffic, debug match failures and more.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/mock-server/mockserver-monorepo",
+    "source": "github"
+  },
+  "version": "6.1.0",
+  "websiteUrl": "https://www.mock-server.com",
+  "packages": [
+    {
+      "registry_type": "oci",
+      "registry_base_url": "https://docker.io",
+      "identifier": "mockserver/mockserver",
+      "version": "mockserver-6.1.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:1080/mockserver/mcp"
+      }
+    }
+  ]
+}
