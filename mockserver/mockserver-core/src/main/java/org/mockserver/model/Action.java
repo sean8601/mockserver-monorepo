@@ -82,6 +82,7 @@ public abstract class Action<T extends Action> extends ObjectWithJsonToString {
         SSE_RESPONSE(Direction.RESPONSE),
         WEBSOCKET_RESPONSE(Direction.RESPONSE),
         GRPC_STREAM_RESPONSE(Direction.RESPONSE),
+        GRPC_BIDI_RESPONSE(Direction.RESPONSE),
         BINARY_RESPONSE(Direction.RESPONSE),
         DNS_RESPONSE(Direction.RESPONSE),
         LLM_RESPONSE(Direction.RESPONSE),

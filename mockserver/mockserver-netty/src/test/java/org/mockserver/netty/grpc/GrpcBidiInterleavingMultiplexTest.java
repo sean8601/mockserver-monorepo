@@ -22,7 +22,15 @@ import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.matchers.Times;
+import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
+import org.mockserver.model.GrpcBidiResponse;
+import org.mockserver.model.GrpcBidiRule;
+import org.mockserver.model.GrpcStreamMessage;
+import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
+import org.mockserver.model.NottableString;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.unification.TraceContextHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
@@ -47,7 +55,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockserver.configuration.Configuration.configuration;
 
 /**
- * Tests for Phase 3a gRPC bidirectional-streaming support: verifies that
+ * Tests for Phase 3a+3b gRPC bidirectional-streaming support: verifies that
  * {@link GrpcBidiStreamHandler} produces interleaved responses (DATA frame
  * for msg1 emitted BEFORE msg2 is fed) and that {@link GrpcBidiRouterHandler}
  * correctly routes bidi methods vs non-bidi methods.
@@ -69,7 +77,7 @@ public class GrpcBidiInterleavingMultiplexTest {
         return store;
     }
 
-    // ---- (a) Interleaving proof ----
+    // ---- (a) Interleaving proof (Phase 3a: function-based responder) ----
 
     /**
      * Core interleaving test: feeds HEADERS, then DATA(msg1, endStream=false), and asserts
@@ -324,12 +332,12 @@ public class GrpcBidiInterleavingMultiplexTest {
     }
 
     /**
-     * Drives a BIDI-method (Chat) HEADERS through {@link GrpcBidiRouterHandler} and asserts
-     * that the resulting pipeline contains {@link GrpcBidiStreamHandler} and NOT the
-     * re-aggregating chain.
+     * Phase 3b: Drives a BIDI-method (Chat) HEADERS through {@link GrpcBidiRouterHandler}
+     * WITHOUT a matching expectation and asserts that it falls back to the re-aggregating
+     * chain (because no GrpcBidiResponse expectation is found).
      */
     @Test
-    public void shouldRouteBidiMethodToStreamHandler() {
+    public void shouldRouteBidiMethodToReAggregatingChainWithoutMatchingExpectation() {
         GrpcProtoDescriptorStore store = loadDescriptorStore();
         Configuration config = configuration();
 
@@ -351,16 +359,15 @@ public class GrpcBidiInterleavingMultiplexTest {
         GrpcToHttpResponseHandler grpcRespHandler = new GrpcToHttpResponseHandler(logger, store);
         GrpcToHttpRequestHandler grpcReqHandler = new GrpcToHttpRequestHandler(logger, store);
 
+        // Router WITH httpState but NO matching expectations
         GrpcBidiRouterHandler router = new GrpcBidiRouterHandler(
             config, store, logger, false, null,
             wsHandler, dashHandler, null, traceHandler,
-            grpcRespHandler, grpcReqHandler, reqHandler
+            grpcRespHandler, grpcReqHandler, reqHandler,
+            httpState
         );
 
-        List<Object> outbound = new ArrayList<>();
-        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
-
-        EmbeddedChannel channel = new EmbeddedChannel(captureHandler, router);
+        EmbeddedChannel channel = new EmbeddedChannel(router);
 
         DefaultHttp2Headers h2Headers = new DefaultHttp2Headers();
         h2Headers.method("POST");
@@ -368,27 +375,12 @@ public class GrpcBidiInterleavingMultiplexTest {
         h2Headers.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
         channel.writeInbound(new DefaultHttp2HeadersFrame(h2Headers, false));
 
-        // After routing: pipeline should contain GrpcBidiStreamHandler, NOT re-aggregating chain
-        assertThat("pipeline should contain GrpcBidiStreamHandler",
-            channel.pipeline().get(GrpcBidiStreamHandler.class), is(notNullValue()));
-        assertThat("pipeline should NOT contain Http2StreamFrameToHttpObjectCodec",
-            channel.pipeline().get(Http2StreamFrameToHttpObjectCodec.class), is(nullValue()));
-        assertThat("pipeline should NOT contain HttpObjectAggregator",
-            channel.pipeline().get(HttpObjectAggregator.class), is(nullValue()));
-        assertThat("pipeline should NOT contain GrpcBidiRouterHandler (replaced)",
-            channel.pipeline().get(GrpcBidiRouterHandler.class), is(nullValue()));
+        // Without a matching expectation, bidi method falls back to re-aggregating chain
+        assertThat("pipeline should contain Http2StreamFrameToHttpObjectCodec",
+            channel.pipeline().get(Http2StreamFrameToHttpObjectCodec.class), is(notNullValue()));
+        assertThat("pipeline should NOT contain GrpcBidiStreamHandler",
+            channel.pipeline().get(GrpcBidiStreamHandler.class), is(nullValue()));
 
-        // Should have emitted initial response HEADERS (bidi handler processes the re-fired frame)
-        assertThat("should have emitted initial response HEADERS",
-            outbound.size(), is(greaterThanOrEqualTo(1)));
-        assertThat("first outbound should be HEADERS",
-            outbound.get(0), instanceOf(Http2HeadersFrame.class));
-
-        for (Object frame : outbound) {
-            if (frame instanceof Http2DataFrame) {
-                ((Http2DataFrame) frame).release();
-            }
-        }
         channel.finishAndReleaseAll();
     }
 
@@ -438,6 +430,577 @@ public class GrpcBidiInterleavingMultiplexTest {
             channel.pipeline().get(GrpcBidiStreamHandler.class), is(nullValue()));
 
         channel.finishAndReleaseAll();
+    }
+
+    // ---- Phase 3b: GrpcBidiResponse-driven tests ----
+
+    /**
+     * Phase 3b: Two-rule interleave test. Configures a GrpcBidiStreamHandler with a
+     * GrpcBidiResponse containing two rules (Alice -> "Hi Alice", Bob -> "Hi Bob"),
+     * eager messages, and a custom trailing status. Verifies:
+     * <ul>
+     *   <li>Eager messages are emitted first (after initial HEADERS)</li>
+     *   <li>Inbound msg1 (Alice) triggers rule 1's response BEFORE msg2 is fed</li>
+     *   <li>Inbound msg2 (Bob) triggers rule 2's response</li>
+     *   <li>Trailing HEADERS carry the configured grpc-status</li>
+     * </ul>
+     */
+    @Test
+    public void shouldInterleaveResponsesFromTwoRules() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withMessage("{\"greeting\": \"Welcome!\"}")
+            .withRule(GrpcBidiRule.grpcBidiRule(".*Alice.*")
+                .withResponse("{\"greeting\": \"Hi Alice\"}"))
+            .withRule(GrpcBidiRule.grpcBidiRule(".*Bob.*")
+                .withResponse("{\"greeting\": \"Hi Bob\"}"))
+            .withStatusName("OK")
+            .withStatusMessage("all done");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, config)
+        );
+
+        // --- STEP 1: Feed HEADERS ---
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Expect: initial HEADERS + eager message DATA
+        assertThat("should have initial HEADERS + eager DATA",
+            outbound.size(), is(2));
+        assertThat("first outbound should be HEADERS",
+            outbound.get(0), instanceOf(Http2HeadersFrame.class));
+        Http2HeadersFrame initialHeaders = (Http2HeadersFrame) outbound.get(0);
+        assertThat("initial HEADERS :status should be 200",
+            initialHeaders.headers().status().toString(), is("200"));
+
+        // Verify eager message
+        assertThat("second outbound should be DATA (eager message)",
+            outbound.get(1), instanceOf(Http2DataFrame.class));
+        Http2DataFrame eagerData = (Http2DataFrame) outbound.get(1);
+        byte[] eagerBytes = new byte[eagerData.content().readableBytes()];
+        eagerData.content().readBytes(eagerBytes);
+        List<byte[]> eagerDecoded = GrpcFrameCodec.decode(eagerBytes);
+        String eagerJson = converter.toJson(eagerDecoded.get(0), chatMethod.getOutputType());
+        assertThat("eager message should contain Welcome", eagerJson, containsString("Welcome"));
+
+        // --- STEP 2: Feed DATA(msg1 = Alice, endStream=false) ---
+        byte[] proto1 = converter.toProtobuf("{\"name\":\"Alice\"}", chatMethod.getInputType());
+        byte[] frame1 = GrpcFrameCodec.encode(proto1);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame1), false));
+
+        // INTERLEAVING ASSERTION: rule 1's response appears before msg2
+        assertThat("should have HEADERS + eager + rule1-response BEFORE msg2",
+            outbound.size(), is(3));
+        Http2DataFrame rule1Data = (Http2DataFrame) outbound.get(2);
+        byte[] rule1Bytes = new byte[rule1Data.content().readableBytes()];
+        rule1Data.content().readBytes(rule1Bytes);
+        List<byte[]> rule1Decoded = GrpcFrameCodec.decode(rule1Bytes);
+        String rule1Json = converter.toJson(rule1Decoded.get(0), chatMethod.getOutputType());
+        assertThat("rule 1 response should contain Hi Alice", rule1Json, containsString("Hi Alice"));
+
+        // --- STEP 3: Feed DATA(msg2 = Bob, endStream=true) ---
+        byte[] proto2 = converter.toProtobuf("{\"name\":\"Bob\"}", chatMethod.getInputType());
+        byte[] frame2 = GrpcFrameCodec.encode(proto2);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame2), true));
+
+        // Expect: HEADERS + eager + rule1 + rule2 + trailing HEADERS = 5
+        assertThat("should have 5 outbound frames total",
+            outbound.size(), is(5));
+
+        // Verify rule 2's response
+        Http2DataFrame rule2Data = (Http2DataFrame) outbound.get(3);
+        byte[] rule2Bytes = new byte[rule2Data.content().readableBytes()];
+        rule2Data.content().readBytes(rule2Bytes);
+        List<byte[]> rule2Decoded = GrpcFrameCodec.decode(rule2Bytes);
+        String rule2Json = converter.toJson(rule2Decoded.get(0), chatMethod.getOutputType());
+        assertThat("rule 2 response should contain Hi Bob", rule2Json, containsString("Hi Bob"));
+
+        // Verify trailing HEADERS
+        Http2HeadersFrame trailing = (Http2HeadersFrame) outbound.get(4);
+        assertThat("trailing HEADERS endStream=true", trailing.isEndStream(), is(true));
+        assertThat("trailing grpc-status should be 0 (OK)",
+            trailing.headers().get(GrpcStatusMapper.GRPC_STATUS_HEADER).toString(), is("0"));
+        assertThat("trailing grpc-message should be 'all done'",
+            trailing.headers().get(GrpcStatusMapper.GRPC_MESSAGE_HEADER).toString(), is("all done"));
+
+        for (Object frame : outbound) {
+            if (frame instanceof Http2DataFrame) {
+                ((Http2DataFrame) frame).release();
+            }
+        }
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Phase 3b: No rule match -> no response emitted. Verifies that when an inbound
+     * message does not match any rule, no DATA frame is emitted for it.
+     */
+    @Test
+    public void shouldEmitNoResponseWhenNoRuleMatches() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule(".*Alice.*")
+                .withResponse("{\"greeting\": \"Hi Alice\"}"))
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, config)
+        );
+
+        // Feed HEADERS
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Expect: initial HEADERS only (no eager messages)
+        assertThat("should have initial HEADERS", outbound.size(), is(1));
+
+        // Feed DATA with a non-matching message (Charlie, not Alice)
+        byte[] proto = converter.toProtobuf("{\"name\":\"Charlie\"}", chatMethod.getInputType());
+        byte[] frame = GrpcFrameCodec.encode(proto);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+        // Expect: initial HEADERS + trailing HEADERS only (no DATA for non-matching message)
+        assertThat("should have 2 outbound frames (HEADERS + trailing HEADERS, no DATA)",
+            outbound.size(), is(2));
+        assertThat("second outbound should be trailing HEADERS",
+            outbound.get(1), instanceOf(Http2HeadersFrame.class));
+        assertThat("trailing HEADERS endStream=true",
+            ((Http2HeadersFrame) outbound.get(1)).isEndStream(), is(true));
+
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Phase 3b: Custom trailing status (NOT_FOUND/5) + statusMessage.
+     */
+    @Test
+    public void shouldUseConfiguredTrailingStatus() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("NOT_FOUND")
+            .withStatusMessage("resource not found");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, config)
+        );
+
+        // Feed HEADERS + endStream
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, true));
+
+        // Expect: initial HEADERS + trailing HEADERS
+        assertThat("should have 2 outbound frames", outbound.size(), is(2));
+        Http2HeadersFrame trailing = (Http2HeadersFrame) outbound.get(1);
+        assertThat("trailing grpc-status should be 5 (NOT_FOUND)",
+            trailing.headers().get(GrpcStatusMapper.GRPC_STATUS_HEADER).toString(), is("5"));
+        assertThat("trailing grpc-message should be 'resource not found'",
+            trailing.headers().get(GrpcStatusMapper.GRPC_MESSAGE_HEADER).toString(), is("resource not found"));
+
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Phase 3b: Multiple responses per rule.
+     */
+    @Test
+    public void shouldEmitMultipleResponsesFromSingleRule() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule(".*Alice.*")
+                .withResponse("{\"greeting\": \"Hello Alice\"}")
+                .withResponse("{\"greeting\": \"Welcome Alice\"}"))
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, config)
+        );
+
+        // Feed HEADERS
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Feed DATA(Alice, endStream=true)
+        byte[] proto = converter.toProtobuf("{\"name\":\"Alice\"}", chatMethod.getInputType());
+        byte[] frame = GrpcFrameCodec.encode(proto);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+        // Expect: HEADERS + DATA1 + DATA2 + trailing HEADERS = 4
+        assertThat("should have 4 outbound frames", outbound.size(), is(4));
+
+        // Verify both responses
+        Http2DataFrame data1 = (Http2DataFrame) outbound.get(1);
+        byte[] data1Bytes = new byte[data1.content().readableBytes()];
+        data1.content().readBytes(data1Bytes);
+        String json1 = converter.toJson(GrpcFrameCodec.decode(data1Bytes).get(0), chatMethod.getOutputType());
+        assertThat("first response should contain Hello Alice", json1, containsString("Hello Alice"));
+
+        Http2DataFrame data2 = (Http2DataFrame) outbound.get(2);
+        byte[] data2Bytes = new byte[data2.content().readableBytes()];
+        data2.content().readBytes(data2Bytes);
+        String json2 = converter.toJson(GrpcFrameCodec.decode(data2Bytes).get(0), chatMethod.getOutputType());
+        assertThat("second response should contain Welcome Alice", json2, containsString("Welcome Alice"));
+
+        for (Object f : outbound) {
+            if (f instanceof Http2DataFrame) {
+                ((Http2DataFrame) f).release();
+            }
+        }
+        channel.finishAndReleaseAll();
+    }
+
+    // ---- FIX 1: Router uses side-effect-free peek (times(1) not consumed by routing) ----
+
+    /**
+     * FIX 1 proof: a times(1) NON-bidi expectation (HttpResponse action) on a bidi-method
+     * path is NOT consumed by the router's routing probe. The router uses
+     * {@link HttpState#peekFirstMatchingExpectation} which does not decrement Times,
+     * transition scenarios, or set responseInProgress. Since the action is HttpResponse
+     * (not GrpcBidiResponse), the router falls back to the re-aggregating chain, and
+     * the expectation remains fully active for HttpActionHandler to consume normally.
+     */
+    @Test
+    public void shouldNotConsumeTimesOneExpectationWhenRoutingProbeFindsNonBidiAction() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        Configuration config = configuration();
+        MockServerLogger logger = new MockServerLogger();
+        HttpState httpState = new HttpState(config, logger, mock(Scheduler.class));
+
+        // Add a times(1) HttpResponse expectation on the bidi Chat method path
+        Expectation timesOneExpectation = new Expectation(
+            HttpRequest.request()
+                .withMethod("POST")
+                .withPath("/com.example.grpc.GreetingService/Chat")
+                .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE),
+            Times.once(), null, 0
+        ).thenRespond(HttpResponse.response().withStatusCode(200).withBody("fallback"));
+
+        httpState.add(timesOneExpectation);
+
+        // Verify the expectation is active before routing
+        assertThat("expectation should be active before routing",
+            timesOneExpectation.isActive(), is(true));
+        assertThat("remaining times should be 1 before routing",
+            timesOneExpectation.getTimes().getRemainingTimes(), is(1));
+
+        // Build router with httpState
+        CallbackWebSocketServerHandler wsHandler = new CallbackWebSocketServerHandler(httpState);
+        DashboardWebSocketHandler dashHandler = new DashboardWebSocketHandler(httpState, false, false);
+        TraceContextHandler traceHandler = new TraceContextHandler(config);
+        HttpRequestHandler reqHandler = new HttpRequestHandler(
+            config, mock(org.mockserver.lifecycle.LifeCycle.class), httpState,
+            mock(org.mockserver.mock.action.http.HttpActionHandler.class)
+        );
+        GrpcToHttpResponseHandler grpcRespHandler = new GrpcToHttpResponseHandler(logger, store);
+        GrpcToHttpRequestHandler grpcReqHandler = new GrpcToHttpRequestHandler(logger, store);
+
+        GrpcBidiRouterHandler router = new GrpcBidiRouterHandler(
+            config, store, logger, false, null,
+            wsHandler, dashHandler, null, traceHandler,
+            grpcRespHandler, grpcReqHandler, reqHandler,
+            httpState
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(router);
+
+        // Feed HEADERS for the bidi Chat method
+        DefaultHttp2Headers h2Headers = new DefaultHttp2Headers();
+        h2Headers.method("POST");
+        h2Headers.path("/com.example.grpc.GreetingService/Chat");
+        h2Headers.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(h2Headers, false));
+
+        // Router should have fallen back to re-aggregating chain (HttpResponse != GrpcBidiResponse)
+        assertThat("pipeline should contain re-aggregating chain (Http2StreamFrameToHttpObjectCodec)",
+            channel.pipeline().get(Http2StreamFrameToHttpObjectCodec.class), is(notNullValue()));
+        assertThat("pipeline should NOT contain GrpcBidiStreamHandler",
+            channel.pipeline().get(GrpcBidiStreamHandler.class), is(nullValue()));
+
+        // CRITICAL ASSERTION: the times(1) expectation was NOT consumed by the routing probe
+        assertThat("expectation should still be active after routing probe",
+            timesOneExpectation.isActive(), is(true));
+        assertThat("remaining times should still be 1 after routing probe (not consumed)",
+            timesOneExpectation.getTimes().getRemainingTimes(), is(1));
+
+        channel.finishAndReleaseAll();
+    }
+
+    // ---- FIX 2: No false-positive from contains step (removed) ----
+
+    /**
+     * FIX 2 proof: a rule with matchJson "Alice" does NOT match an inbound message JSON
+     * like {"name":"Alice"} via substring contains. The contains step was removed; only
+     * exact string match and regex are supported. "Alice" is neither an exact match for
+     * the full JSON string nor a valid regex that matches the full string (it would only
+     * match the literal string "Alice"), so the rule should NOT fire.
+     */
+    @Test
+    public void shouldNotMatchViaContainsSubstring() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        // Rule with plain "Alice" (not a regex pattern like ".*Alice.*")
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule("Alice")
+                .withResponse("{\"greeting\": \"Hi Alice\"}"))
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, config)
+        );
+
+        // Feed HEADERS
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+        assertThat("should have initial HEADERS", outbound.size(), is(1));
+
+        // Feed DATA with a message containing "Alice" as a field value
+        // The full JSON is something like: {"name":"Alice"} — NOT the literal string "Alice"
+        byte[] proto = converter.toProtobuf("{\"name\":\"Alice\"}", chatMethod.getInputType());
+        byte[] frame = GrpcFrameCodec.encode(proto);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+        // With the contains step removed, "Alice" should NOT match {"name":"Alice"}
+        // (it's neither an exact match nor a regex matching the full JSON string)
+        // Expect: initial HEADERS + trailing HEADERS only (NO DATA response)
+        assertThat("should have 2 outbound frames (HEADERS + trailing, NO DATA — no contains match)",
+            outbound.size(), is(2));
+        assertThat("second outbound should be trailing HEADERS (no DATA emitted)",
+            outbound.get(1), instanceOf(Http2HeadersFrame.class));
+        assertThat("trailing HEADERS endStream=true",
+            ((Http2HeadersFrame) outbound.get(1)).isEndStream(), is(true));
+
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * FIX 2 counterpart: a regex rule DOES match when the pattern covers the full JSON.
+     */
+    @Test
+    public void shouldMatchViaRegexPattern() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        // Regex pattern that matches any JSON containing "Alice"
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule(".*Alice.*")
+                .withResponse("{\"greeting\": \"Hi Alice\"}"))
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, config)
+        );
+
+        // Feed HEADERS
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Feed DATA with a message containing "Alice"
+        byte[] proto = converter.toProtobuf("{\"name\":\"Alice\"}", chatMethod.getInputType());
+        byte[] frame = GrpcFrameCodec.encode(proto);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+        // Regex ".*Alice.*" should match the full JSON
+        // Expect: HEADERS + DATA (rule matched) + trailing HEADERS = 3
+        assertThat("should have 3 outbound frames (HEADERS + DATA + trailing)",
+            outbound.size(), is(3));
+        assertThat("second outbound should be DATA (regex rule matched)",
+            outbound.get(1), instanceOf(Http2DataFrame.class));
+
+        for (Object f : outbound) {
+            if (f instanceof Http2DataFrame) {
+                ((Http2DataFrame) f).release();
+            }
+        }
+        channel.finishAndReleaseAll();
+    }
+
+    // ---- FIX 3: Negated matchJson (NottableString.isNot) ----
+
+    /**
+     * FIX 3: a rule with negated matchJson (isNot=true) inverts the match result.
+     * A rule with matchJson "!.*Alice.*" should NOT match an Alice message but
+     * SHOULD match a non-Alice message.
+     */
+    @Test
+    public void shouldHonourNottableStringNegation() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        // Negated rule: "!.*Alice.*" means "match when inbound does NOT contain Alice"
+        GrpcBidiResponse config = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule()
+                .withMatchJson(NottableString.not(".*Alice.*"))
+                .withResponse("{\"greeting\": \"Not Alice!\"}"))
+            .withStatusName("OK");
+
+        // -- Test 1: Alice message should NOT trigger the negated rule --
+        {
+            List<Object> outbound = new ArrayList<>();
+            FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+            EmbeddedChannel channel = new EmbeddedChannel(
+                captureHandler,
+                new GrpcBidiStreamHandler(chatMethod, converter, config)
+            );
+
+            DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+            reqHeaders.method("POST");
+            reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+            reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+            channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+            byte[] proto = converter.toProtobuf("{\"name\":\"Alice\"}", chatMethod.getInputType());
+            byte[] frame = GrpcFrameCodec.encode(proto);
+            channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+            // Negated ".*Alice.*" with Alice input: regex matches -> negation inverts -> no match
+            assertThat("negated rule should NOT match Alice (2 frames: HEADERS + trailing)",
+                outbound.size(), is(2));
+            assertThat("second outbound should be trailing HEADERS (no DATA)",
+                outbound.get(1), instanceOf(Http2HeadersFrame.class));
+
+            channel.finishAndReleaseAll();
+        }
+
+        // -- Test 2: Bob message SHOULD trigger the negated rule --
+        {
+            List<Object> outbound = new ArrayList<>();
+            FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+            EmbeddedChannel channel = new EmbeddedChannel(
+                captureHandler,
+                new GrpcBidiStreamHandler(chatMethod, converter, config)
+            );
+
+            DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+            reqHeaders.method("POST");
+            reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+            reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+            channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+            byte[] proto = converter.toProtobuf("{\"name\":\"Bob\"}", chatMethod.getInputType());
+            byte[] frame = GrpcFrameCodec.encode(proto);
+            channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+            // Negated ".*Alice.*" with Bob input: regex does NOT match -> negation inverts -> match!
+            assertThat("negated rule should match Bob (3 frames: HEADERS + DATA + trailing)",
+                outbound.size(), is(3));
+            assertThat("second outbound should be DATA (negated rule matched Bob)",
+                outbound.get(1), instanceOf(Http2DataFrame.class));
+
+            for (Object f : outbound) {
+                if (f instanceof Http2DataFrame) {
+                    ((Http2DataFrame) f).release();
+                }
+            }
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    /**
+     * FIX 3 unit-level: directly tests {@link GrpcBidiStreamHandler#matchesRule} with
+     * negated NottableString.
+     */
+    @Test
+    public void matchesRuleShouldInvertWhenNottableStringIsNot() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, store.getConverter(), (Function<String, List<String>>) null
+        );
+
+        // Non-negated rule: ".*hello.*" matches "hello world"
+        GrpcBidiRule normalRule = GrpcBidiRule.grpcBidiRule(".*hello.*");
+        assertThat("non-negated rule should match", handler.matchesRule(normalRule, "hello world"), is(true));
+        assertThat("non-negated rule should not match other text",
+            handler.matchesRule(normalRule, "goodbye world"), is(false));
+
+        // Negated rule: "!.*hello.*" inverts the result
+        GrpcBidiRule negatedRule = GrpcBidiRule.grpcBidiRule()
+            .withMatchJson(NottableString.not(".*hello.*"));
+        assertThat("negated rule should NOT match matching text",
+            handler.matchesRule(negatedRule, "hello world"), is(false));
+        assertThat("negated rule SHOULD match non-matching text",
+            handler.matchesRule(negatedRule, "goodbye world"), is(true));
+    }
+
+    /**
+     * FIX 2 unit-level: directly tests that matchesRule does NOT use contains.
+     */
+    @Test
+    public void matchesRuleShouldNotUseContains() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, store.getConverter(), (Function<String, List<String>>) null
+        );
+
+        // "Alice" as a plain substring should NOT match a larger JSON string via contains
+        GrpcBidiRule rule = GrpcBidiRule.grpcBidiRule("Alice");
+        assertThat("plain 'Alice' should match exact string 'Alice'",
+            handler.matchesRule(rule, "Alice"), is(true));
+        assertThat("plain 'Alice' should NOT match via contains in larger string",
+            handler.matchesRule(rule, "{\"sender\":\"Alice\",\"note\":\"x\"}"), is(false));
+        assertThat("plain 'Alice' should NOT match via contains in JSON",
+            handler.matchesRule(rule, "{\"name\":\"Alice\"}"), is(false));
     }
 
     // ---- Capture helper ----

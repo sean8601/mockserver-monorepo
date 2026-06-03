@@ -53,6 +53,7 @@ public class Expectation extends ObjectWithJsonToString {
     private HttpLlmResponse httpLlmResponse;
     private HttpWebSocketResponse httpWebSocketResponse;
     private GrpcStreamResponse grpcStreamResponse;
+    private GrpcBidiResponse grpcBidiResponse;
     private BinaryResponse binaryResponse;
     private DnsResponse dnsResponse;
     private HttpError httpError;
@@ -452,6 +453,10 @@ public class Expectation extends ObjectWithJsonToString {
         return grpcStreamResponse;
     }
 
+    public GrpcBidiResponse getGrpcBidiResponse() {
+        return grpcBidiResponse;
+    }
+
     public BinaryResponse getBinaryResponse() {
         return binaryResponse;
     }
@@ -692,6 +697,9 @@ public class Expectation extends ObjectWithJsonToString {
         if (getGrpcStreamResponse() != null) {
             actions.add(getGrpcStreamResponse());
         }
+        if (getGrpcBidiResponse() != null) {
+            actions.add(getGrpcBidiResponse());
+        }
         if (getBinaryResponse() != null) {
             actions.add(getBinaryResponse());
         }
@@ -839,6 +847,14 @@ public class Expectation extends ObjectWithJsonToString {
         return this;
     }
 
+    public Expectation thenRespondWithGrpcBidi(GrpcBidiResponse grpcBidiResponse) {
+        if (grpcBidiResponse != null) {
+            this.grpcBidiResponse = grpcBidiResponse;
+            this.hashCode = 0;
+        }
+        return this;
+    }
+
     public Expectation thenRespondWithBinary(BinaryResponse binaryResponse) {
         if (binaryResponse != null) {
             this.binaryResponse = binaryResponse;
@@ -941,6 +957,7 @@ public class Expectation extends ObjectWithJsonToString {
             .thenRespondWithLlm(httpLlmResponse)
             .thenRespondWithWebSocket(httpWebSocketResponse)
             .thenRespondWithGrpcStream(grpcStreamResponse)
+            .thenRespondWithGrpcBidi(grpcBidiResponse)
             .thenRespondWithBinary(binaryResponse)
             .thenRespondWithDns(dnsResponse)
             .thenError(httpError)
@@ -997,6 +1014,7 @@ public class Expectation extends ObjectWithJsonToString {
             Objects.equals(httpLlmResponse, that.httpLlmResponse) &&
             Objects.equals(httpWebSocketResponse, that.httpWebSocketResponse) &&
             Objects.equals(grpcStreamResponse, that.grpcStreamResponse) &&
+            Objects.equals(grpcBidiResponse, that.grpcBidiResponse) &&
             Objects.equals(binaryResponse, that.binaryResponse) &&
             Objects.equals(dnsResponse, that.dnsResponse) &&
             Objects.equals(httpError, that.httpError) &&
@@ -1013,7 +1031,7 @@ public class Expectation extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios);
+            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios);
         }
         return hashCode;
     }

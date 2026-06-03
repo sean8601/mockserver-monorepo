@@ -32,6 +32,7 @@ public class JsonSchemaExpectationValidator extends JsonSchemaValidator {
             "httpLlmResponse",
             "httpWebSocketResponse",
             "grpcStreamResponse",
+            "grpcBidiResponse",
             "binaryResponse",
             "dnsResponse",
             "dnsRecord",

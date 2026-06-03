@@ -68,6 +68,9 @@
     "grpcStreamResponse": {
       "$ref": "#/definitions/grpcStreamResponse"
     },
+    "grpcBidiResponse": {
+      "$ref": "#/definitions/grpcBidiResponse"
+    },
     "binaryResponse": {
       "$ref": "#/definitions/binaryResponse"
     },
@@ -198,6 +201,11 @@
     {
       "required": [
         "grpcStreamResponse"
+      ]
+    },
+    {
+      "required": [
+        "grpcBidiResponse"
       ]
     },
     {

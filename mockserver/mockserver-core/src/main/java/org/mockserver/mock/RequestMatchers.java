@@ -570,6 +570,29 @@ public class RequestMatchers extends MockServerMatcherNotifier {
      * there because the concrete request carries headers/cookies that bare stub
      * definitions do not, so it would never match.
      */
+    /**
+     * Side-effect-free probe: returns the first active expectation whose matcher matches the
+     * given request, WITHOUT consuming the match (no Times decrement, no scenario transition,
+     * no responseInProgress flag, no metrics, no log emission). Used by the gRPC bidi router
+     * to decide the routing path before committing to a handler.
+     * <p>
+     * Callers that need to actually consume the match (decrement Times, transition scenarios,
+     * emit logs) must still call {@link #firstMatchingExpectation(RequestDefinition)} separately
+     * on the committed path.
+     */
+    public Expectation peekFirstMatchingExpectation(RequestDefinition requestDefinition) {
+        if (requestDefinition == null) {
+            return null;
+        }
+        for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
+            if ((httpRequestMatcher.isResponseInProgress() || httpRequestMatcher.isActive())
+                && httpRequestMatcher.matches(requestDefinition)) {
+                return httpRequestMatcher.getExpectation();
+            }
+        }
+        return null;
+    }
+
     public List<Expectation> retrieveExpectationsMatchingRequest(RequestDefinition requestDefinition) {
         List<Expectation> expectations = new ArrayList<>();
         if (requestDefinition == null) {

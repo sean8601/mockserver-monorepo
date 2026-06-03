@@ -127,7 +127,8 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
             traceContextHandler,
             grpcToHttpResponseHandler,
             grpcToHttpRequestHandler,
-            httpRequestHandler
+            httpRequestHandler,
+            httpState
         ));
     }
 

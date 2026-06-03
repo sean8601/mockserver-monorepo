@@ -562,6 +562,22 @@ public class HttpActionHandler {
                     }, synchronous, combineWithGlobalDelay(action.getDelay()));
                 }
             }
+            case GRPC_BIDI_RESPONSE -> {
+                if (ctx == null) {
+                    writeResponseActionResponse(
+                        response().withStatusCode(501).withBody("gRPC bidi streaming is not supported in WAR deployments"),
+                        responseWriter, request, action, synchronous, null, expectationPostProcessor
+                    );
+                } else {
+                    // The normal bidi flow is driven by GrpcBidiRouterHandler/GrpcBidiStreamHandler
+                    // at the Netty layer when grpcBidiStreamingEnabled is on. If the action reaches
+                    // HttpActionHandler (flag off or non-multiplex transport), respond with 501.
+                    writeResponseActionResponse(
+                        response().withStatusCode(501).withBody("gRPC bidi streaming requires the multiplex pipeline (grpcBidiStreamingEnabled=true)"),
+                        responseWriter, request, action, synchronous, null, expectationPostProcessor
+                    );
+                }
+            }
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 getHttpErrorActionHandler().handle((HttpError) action, ctx);
                 mockServerLogger.logEvent(

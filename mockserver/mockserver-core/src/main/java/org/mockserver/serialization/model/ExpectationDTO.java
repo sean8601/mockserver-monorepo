@@ -39,6 +39,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private HttpLlmResponseDTO httpLlmResponse;
     private HttpWebSocketResponseDTO httpWebSocketResponse;
     private GrpcStreamResponseDTO grpcStreamResponse;
+    private GrpcBidiResponseDTO grpcBidiResponse;
     private BinaryResponseDTO binaryResponse;
     private DnsResponseDTO dnsResponse;
     private HttpErrorDTO httpError;
@@ -136,6 +137,10 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             if (grpcStreamResponse != null) {
                 this.grpcStreamResponse = new GrpcStreamResponseDTO(grpcStreamResponse);
             }
+            GrpcBidiResponse grpcBidiResponse = expectation.getGrpcBidiResponse();
+            if (grpcBidiResponse != null) {
+                this.grpcBidiResponse = new GrpcBidiResponseDTO(grpcBidiResponse);
+            }
             BinaryResponse binaryResponse = expectation.getBinaryResponse();
             if (binaryResponse != null) {
                 this.binaryResponse = new BinaryResponseDTO(binaryResponse);
@@ -204,6 +209,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
         HttpLlmResponse httpLlmResponse = null;
         HttpWebSocketResponse httpWebSocketResponse = null;
         GrpcStreamResponse grpcStreamResponse = null;
+        GrpcBidiResponse grpcBidiResponse = null;
         BinaryResponse binaryResponse = null;
         DnsResponse dnsResponse = null;
         HttpError httpError = null;
@@ -257,6 +263,9 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
         }
         if (this.grpcStreamResponse != null) {
             grpcStreamResponse = this.grpcStreamResponse.buildObject();
+        }
+        if (this.grpcBidiResponse != null) {
+            grpcBidiResponse = this.grpcBidiResponse.buildObject();
         }
         if (this.binaryResponse != null) {
             binaryResponse = this.binaryResponse.buildObject();
@@ -312,6 +321,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .thenRespondWithLlm(httpLlmResponse)
             .thenRespondWithWebSocket(httpWebSocketResponse)
             .thenRespondWithGrpcStream(grpcStreamResponse)
+            .thenRespondWithGrpcBidi(grpcBidiResponse)
             .thenRespondWithBinary(binaryResponse)
             .thenRespondWithDns(dnsResponse)
             .thenError(httpError)
@@ -505,6 +515,15 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
 
     public ExpectationDTO setGrpcStreamResponse(GrpcStreamResponseDTO grpcStreamResponse) {
         this.grpcStreamResponse = grpcStreamResponse;
+        return this;
+    }
+
+    public GrpcBidiResponseDTO getGrpcBidiResponse() {
+        return grpcBidiResponse;
+    }
+
+    public ExpectationDTO setGrpcBidiResponse(GrpcBidiResponseDTO grpcBidiResponse) {
+        this.grpcBidiResponse = grpcBidiResponse;
         return this;
     }
 
