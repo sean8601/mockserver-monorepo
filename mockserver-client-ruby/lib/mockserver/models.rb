@@ -1232,6 +1232,82 @@ module MockServer
     end
   end
 
+  class GrpcBidiRule
+    attr_accessor :match_json, :responses
+
+    def initialize(match_json: nil, responses: nil)
+      @match_json = match_json
+      @responses = responses
+    end
+
+    def to_h
+      result = {}
+      result['matchJson'] = @match_json unless @match_json.nil?
+      result['responses'] = @responses&.map(&:to_h) if @responses
+      result
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      responses_data = data['responses']
+      responses = responses_data&.map { |r| GrpcStreamMessage.from_hash(r) }
+      new(
+        match_json: data['matchJson'],
+        responses:  responses
+      )
+    end
+  end
+
+  class GrpcBidiResponse
+    attr_accessor :status_name, :status_message, :headers, :messages,
+                  :rules, :close_connection, :delay, :primary
+
+    def initialize(status_name: nil, status_message: nil, headers: nil,
+                   messages: nil, rules: nil, close_connection: nil, delay: nil, primary: nil)
+      @status_name = status_name
+      @status_message = status_message
+      @headers = headers
+      @messages = messages
+      @rules = rules
+      @close_connection = close_connection
+      @delay = delay
+      @primary = primary
+    end
+
+    def to_h
+      result = {}
+      result['statusName'] = @status_name unless @status_name.nil?
+      result['statusMessage'] = @status_message unless @status_message.nil?
+      result['headers'] = MockServer.serialize_key_multi_values(@headers) if @headers
+      result['messages'] = @messages&.map(&:to_h) if @messages
+      result['rules'] = @rules&.map(&:to_h) if @rules
+      result['closeConnection'] = @close_connection unless @close_connection.nil?
+      result['delay'] = @delay.to_h if @delay
+      result['primary'] = @primary unless @primary.nil?
+      result
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      messages_data = data['messages']
+      messages = messages_data&.map { |m| GrpcStreamMessage.from_hash(m) }
+      rules_data = data['rules']
+      rules = rules_data&.map { |r| GrpcBidiRule.from_hash(r) }
+      new(
+        status_name:      data['statusName'],
+        status_message:   data['statusMessage'],
+        headers:          MockServer.deserialize_key_multi_values(data['headers']),
+        messages:         messages,
+        rules:            rules,
+        close_connection: data['closeConnection'],
+        delay:            Delay.from_hash(data['delay']),
+        primary:          data['primary']
+      )
+    end
+  end
+
   class BinaryResponse
     attr_accessor :binary_data, :delay, :primary
 
@@ -1514,7 +1590,8 @@ module MockServer
                   :http_forward_object_callback, :http_override_forwarded_request,
                   :http_error, :times, :time_to_live, :chaos,
                   :http_sse_response, :http_websocket_response,
-                  :grpc_stream_response, :binary_response, :dns_response,
+                  :grpc_stream_response, :grpc_bidi_response,
+                  :binary_response, :dns_response,
                   :before_actions, :after_actions,
                   :http_responses, :response_mode,
                   :scenario_name, :scenario_state, :new_scenario_state
@@ -1526,7 +1603,8 @@ module MockServer
                    http_forward_object_callback: nil, http_override_forwarded_request: nil,
                    http_error: nil, times: nil, time_to_live: nil, chaos: nil,
                    http_sse_response: nil, http_websocket_response: nil,
-                   grpc_stream_response: nil, binary_response: nil, dns_response: nil,
+                   grpc_stream_response: nil, grpc_bidi_response: nil,
+                   binary_response: nil, dns_response: nil,
                    before_actions: nil, after_actions: nil,
                    http_responses: nil, response_mode: nil,
                    scenario_name: nil, scenario_state: nil, new_scenario_state: nil)
@@ -1550,6 +1628,7 @@ module MockServer
       @http_sse_response = http_sse_response
       @http_websocket_response = http_websocket_response
       @grpc_stream_response = grpc_stream_response
+      @grpc_bidi_response = grpc_bidi_response
       @binary_response = binary_response
       @dns_response = dns_response
       @before_actions = before_actions
@@ -1594,6 +1673,7 @@ module MockServer
         'httpSseResponse'              => @http_sse_response&.to_h,
         'httpWebSocketResponse'        => @http_websocket_response&.to_h,
         'grpcStreamResponse'           => @grpc_stream_response&.to_h,
+        'grpcBidiResponse'             => @grpc_bidi_response&.to_h,
         'binaryResponse'               => @binary_response&.to_h,
         'dnsResponse'                  => @dns_response&.to_h,
         'beforeActions'                => before_actions_h,
@@ -1644,6 +1724,7 @@ module MockServer
         http_sse_response:               HttpSseResponse.from_hash(data['httpSseResponse']),
         http_websocket_response:         HttpWebSocketResponse.from_hash(data['httpWebSocketResponse']),
         grpc_stream_response:            GrpcStreamResponse.from_hash(data['grpcStreamResponse']),
+        grpc_bidi_response:              GrpcBidiResponse.from_hash(data['grpcBidiResponse']),
         binary_response:                 BinaryResponse.from_hash(data['binaryResponse']),
         dns_response:                    DnsResponse.from_hash(data['dnsResponse']),
         before_actions:                  before_actions,

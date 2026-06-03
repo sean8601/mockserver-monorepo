@@ -2002,6 +2002,104 @@ RSpec.describe 'MockServer models' do
   end
 
   # -------------------------------------------------------------------
+  # GrpcBidiRule
+  # -------------------------------------------------------------------
+  describe MockServer::GrpcBidiRule do
+    it 'has nil defaults' do
+      rule = MockServer::GrpcBidiRule.new
+      expect(rule.match_json).to be_nil
+      expect(rule.responses).to be_nil
+    end
+
+    it 'round-trips through to_h / from_hash' do
+      rule = MockServer::GrpcBidiRule.new(
+        match_json: '{"name": "Alice"}',
+        responses: [MockServer::GrpcStreamMessage.new(json: '{"greeting": "Hello Alice"}')]
+      )
+      h = rule.to_h
+      expect(h['matchJson']).to eq('{"name": "Alice"}')
+      expect(h['responses'].length).to eq(1)
+      restored = MockServer::GrpcBidiRule.from_hash(h)
+      expect(restored.to_h).to eq(h)
+    end
+
+    it 'returns nil from_hash when data is nil' do
+      expect(MockServer::GrpcBidiRule.from_hash(nil)).to be_nil
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # GrpcBidiResponse
+  # -------------------------------------------------------------------
+  describe MockServer::GrpcBidiResponse do
+    it 'has nil defaults' do
+      resp = MockServer::GrpcBidiResponse.new
+      expect(resp.status_name).to be_nil
+      expect(resp.status_message).to be_nil
+      expect(resp.headers).to be_nil
+      expect(resp.messages).to be_nil
+      expect(resp.rules).to be_nil
+      expect(resp.close_connection).to be_nil
+    end
+
+    it 'round-trips through to_h / from_hash' do
+      original = MockServer::GrpcBidiResponse.new(
+        status_name: 'OK',
+        messages: [MockServer::GrpcStreamMessage.new(json: '{"greeting": "Hello"}')],
+        rules: [
+          MockServer::GrpcBidiRule.new(
+            match_json: '{"name": "Bob"}',
+            responses: [MockServer::GrpcStreamMessage.new(json: '{"greeting": "Hello Bob"}')]
+          )
+        ],
+        close_connection: false
+      )
+      h = original.to_h
+      expect(h['statusName']).to eq('OK')
+      expect(h['messages'].length).to eq(1)
+      expect(h['rules'].length).to eq(1)
+      expect(h['rules'][0]['matchJson']).to eq('{"name": "Bob"}')
+      restored = MockServer::GrpcBidiResponse.from_hash(h)
+      expect(restored.to_h).to eq(h)
+    end
+
+    it 'returns nil from_hash when data is nil' do
+      expect(MockServer::GrpcBidiResponse.from_hash(nil)).to be_nil
+    end
+
+    it 'serializes under grpcBidiResponse key in expectation' do
+      exp = MockServer::Expectation.new(
+        http_request: MockServer::HttpRequest.new(path: '/grpc'),
+        grpc_bidi_response: MockServer::GrpcBidiResponse.new(
+          status_name: 'OK',
+          messages: [MockServer::GrpcStreamMessage.new(json: '{"id": 1}')]
+        )
+      )
+      h = exp.to_h
+      expect(h).to have_key('grpcBidiResponse')
+      expect(h['grpcBidiResponse']['statusName']).to eq('OK')
+      expect(h).not_to have_key('httpResponse')
+    end
+
+    it 'deserializes from grpcBidiResponse key in expectation' do
+      exp = MockServer::Expectation.from_hash({
+        'httpRequest' => { 'path' => '/grpc' },
+        'grpcBidiResponse' => {
+          'statusName' => 'OK',
+          'messages' => [{ 'json' => '{"id": 1}' }],
+          'rules' => [
+            { 'matchJson' => '{"name": "test"}', 'responses' => [{ 'json' => '{"reply": "ok"}' }] }
+          ]
+        }
+      })
+      expect(exp.grpc_bidi_response).not_to be_nil
+      expect(exp.grpc_bidi_response.status_name).to eq('OK')
+      expect(exp.grpc_bidi_response.rules.length).to eq(1)
+      expect(exp.grpc_bidi_response.rules[0].match_json).to eq('{"name": "test"}')
+    end
+  end
+
+  # -------------------------------------------------------------------
   # BinaryResponse
   # -------------------------------------------------------------------
   describe MockServer::BinaryResponse do

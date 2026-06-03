@@ -134,6 +134,18 @@ module MockServer
       @client.upsert(@expectation)
     end
 
+    # Set a gRPC bidi streaming response action.
+    # @param grpc_bidi_response [GrpcBidiResponse]
+    # @return [Array<Expectation>]
+    def respond_with_grpc_bidi(grpc_bidi_response)
+      unless grpc_bidi_response.is_a?(GrpcBidiResponse)
+        raise TypeError,
+              "Expected GrpcBidiResponse, got #{grpc_bidi_response.class.name}"
+      end
+      @expectation.grpc_bidi_response = grpc_bidi_response
+      @client.upsert(@expectation)
+    end
+
     # Set a binary response action.
     # @param binary_response [BinaryResponse]
     # @return [Array<Expectation>]

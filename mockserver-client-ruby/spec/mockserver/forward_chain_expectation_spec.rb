@@ -191,6 +191,31 @@ RSpec.describe MockServer::ForwardChainExpectation do
   end
 
   # -------------------------------------------------------------------
+  # respond_with_grpc_bidi
+  # -------------------------------------------------------------------
+  describe '#respond_with_grpc_bidi' do
+    it 'sets grpc_bidi_response and upserts' do
+      bidi_resp = MockServer::GrpcBidiResponse.new(
+        status_name: 'OK',
+        messages: [MockServer::GrpcStreamMessage.new(json: '{"id": 1}')],
+        rules: [MockServer::GrpcBidiRule.new(
+          match_json: '{"name": "test"}',
+          responses: [MockServer::GrpcStreamMessage.new(json: '{"reply": "ok"}')]
+        )]
+      )
+      chain.respond_with_grpc_bidi(bidi_resp)
+
+      expect(expectation.grpc_bidi_response).to eq(bidi_resp)
+      expect(mock_client).to have_received(:upsert).with(expectation)
+    end
+
+    it 'raises TypeError for invalid types' do
+      expect { chain.respond_with_grpc_bidi('invalid') }.to raise_error(TypeError, /Expected GrpcBidiResponse/)
+      expect { chain.respond_with_grpc_bidi(123) }.to raise_error(TypeError, /Expected GrpcBidiResponse/)
+    end
+  end
+
+  # -------------------------------------------------------------------
   # respond_with_binary
   # -------------------------------------------------------------------
   describe '#respond_with_binary' do

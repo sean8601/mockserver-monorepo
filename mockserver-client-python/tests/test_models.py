@@ -13,6 +13,8 @@ from mockserver.models import (
     DnsResponse,
     Expectation,
     ExpectationId,
+    GrpcBidiResponse,
+    GrpcBidiRule,
     GrpcStreamMessage,
     GrpcStreamResponse,
     HttpChaosProfile,
@@ -2477,6 +2479,94 @@ class TestGrpcStreamResponse:
         assert e.grpc_stream_response is not None
         assert e.grpc_stream_response.status_name == "OK"
         assert len(e.grpc_stream_response.messages) == 1
+
+
+class TestGrpcBidiRule:
+    def test_defaults(self):
+        rule = GrpcBidiRule()
+        assert rule.match_json is None
+        assert rule.responses is None
+
+    def test_round_trip(self):
+        rule = GrpcBidiRule(
+            match_json='{"name": "Alice"}',
+            responses=[GrpcStreamMessage(json='{"greeting": "Hello Alice"}')],
+        )
+        d = rule.to_dict()
+        assert d["matchJson"] == '{"name": "Alice"}'
+        assert len(d["responses"]) == 1
+        restored = GrpcBidiRule.from_dict(d)
+        assert restored.to_dict() == d
+
+    def test_from_dict_none(self):
+        assert GrpcBidiRule.from_dict(None) is None
+
+
+class TestGrpcBidiResponse:
+    def test_defaults(self):
+        resp = GrpcBidiResponse()
+        assert resp.status_name is None
+        assert resp.status_message is None
+        assert resp.headers is None
+        assert resp.messages is None
+        assert resp.rules is None
+        assert resp.close_connection is None
+        assert resp.primary is None
+
+    def test_construction_and_round_trip(self):
+        original = GrpcBidiResponse(
+            status_name="OK",
+            messages=[GrpcStreamMessage(json='{"greeting": "Hello"}')],
+            rules=[
+                GrpcBidiRule(
+                    match_json='{"name": "Bob"}',
+                    responses=[GrpcStreamMessage(json='{"greeting": "Hello Bob"}')],
+                ),
+            ],
+            close_connection=False,
+        )
+        d = original.to_dict()
+        assert d["statusName"] == "OK"
+        assert len(d["messages"]) == 1
+        assert len(d["rules"]) == 1
+        assert d["rules"][0]["matchJson"] == '{"name": "Bob"}'
+        restored = GrpcBidiResponse.from_dict(d)
+        assert restored.to_dict() == d
+
+    def test_from_dict_none(self):
+        assert GrpcBidiResponse.from_dict(None) is None
+
+    def test_expectation_to_dict_key(self):
+        """Verify the expectation serialises under the 'grpcBidiResponse' key."""
+        e = Expectation(
+            http_request=HttpRequest(path="/grpc"),
+            grpc_bidi_response=GrpcBidiResponse(
+                status_name="OK",
+                messages=[GrpcStreamMessage(json='{"id": 1}')],
+            ),
+        )
+        result = e.to_dict()
+        assert "grpcBidiResponse" in result
+        assert result["grpcBidiResponse"]["statusName"] == "OK"
+        assert "httpResponse" not in result
+
+    def test_expectation_from_dict_key(self):
+        """Verify the expectation deserialises from 'grpcBidiResponse' key."""
+        e = Expectation.from_dict({
+            "httpRequest": {"path": "/grpc"},
+            "grpcBidiResponse": {
+                "statusName": "OK",
+                "messages": [{"json": '{"id": 1}'}],
+                "rules": [
+                    {"matchJson": '{"name": "test"}', "responses": [{"json": '{"reply": "ok"}'}]},
+                ],
+            },
+        })
+        assert e.grpc_bidi_response is not None
+        assert e.grpc_bidi_response.status_name == "OK"
+        assert len(e.grpc_bidi_response.messages) == 1
+        assert len(e.grpc_bidi_response.rules) == 1
+        assert e.grpc_bidi_response.rules[0].match_json == '{"name": "test"}'
 
 
 class TestBinaryResponse:

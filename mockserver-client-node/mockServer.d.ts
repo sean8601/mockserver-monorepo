@@ -37,6 +37,8 @@ export type Expectation = {
   httpError?: HttpError;
   httpSseResponse?: HttpSseResponse;
   httpWebSocketResponse?: HttpWebSocketResponse;
+  grpcStreamResponse?: GrpcStreamResponse;
+  grpcBidiResponse?: GrpcBidiResponse;
   times?: Times;
   timeToLive?: TimeToLive;
   chaos?: HttpChaosProfile;
@@ -330,6 +332,37 @@ export interface WebSocketMessage {
 export interface HttpWebSocketResponse {
   subprotocol?: string;
   messages?: WebSocketMessage[];
+  closeConnection?: boolean;
+  delay?: Delay;
+  primary?: boolean;
+}
+
+export interface GrpcStreamMessage {
+  json?: string;
+  delay?: Delay;
+}
+
+export interface GrpcStreamResponse {
+  statusName?: string;
+  statusMessage?: string;
+  headers?: KeyToMultiValue;
+  messages?: GrpcStreamMessage[];
+  closeConnection?: boolean;
+  delay?: Delay;
+  primary?: boolean;
+}
+
+export interface GrpcBidiRule {
+  matchJson?: string;
+  responses?: GrpcStreamMessage[];
+}
+
+export interface GrpcBidiResponse {
+  statusName?: string;
+  statusMessage?: string;
+  headers?: KeyToMultiValue;
+  messages?: GrpcStreamMessage[];
+  rules?: GrpcBidiRule[];
   closeConnection?: boolean;
   delay?: Delay;
   primary?: boolean;

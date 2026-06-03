@@ -1146,6 +1146,88 @@ class GrpcStreamResponse:
 
 
 @dataclass
+class GrpcBidiRule:
+    match_json: str | None = None
+    responses: list[GrpcStreamMessage] | None = None
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        if self.match_json is not None:
+            result["matchJson"] = self.match_json
+        if self.responses is not None:
+            result["responses"] = [r.to_dict() if hasattr(r, 'to_dict') else r for r in self.responses]
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> GrpcBidiRule:
+        if data is None:
+            return None
+        responses_data = data.get("responses")
+        responses = None
+        if responses_data is not None:
+            responses = [GrpcStreamMessage.from_dict(r) if isinstance(r, dict) else r for r in responses_data]
+        return cls(
+            match_json=data.get("matchJson"),
+            responses=responses,
+        )
+
+
+@dataclass
+class GrpcBidiResponse:
+    status_name: str | None = None
+    status_message: str | None = None
+    headers: list[KeyToMultiValue] | None = None
+    messages: list[GrpcStreamMessage] | None = None
+    rules: list[GrpcBidiRule] | None = None
+    close_connection: bool | None = None
+    delay: Delay | None = None
+    primary: bool | None = None
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        if self.status_name is not None:
+            result["statusName"] = self.status_name
+        if self.status_message is not None:
+            result["statusMessage"] = self.status_message
+        if self.headers is not None:
+            result["headers"] = _serialize_key_multi_values(self.headers)
+        if self.messages is not None:
+            result["messages"] = [m.to_dict() if hasattr(m, 'to_dict') else m for m in self.messages]
+        if self.rules is not None:
+            result["rules"] = [r.to_dict() if hasattr(r, 'to_dict') else r for r in self.rules]
+        if self.close_connection is not None:
+            result["closeConnection"] = self.close_connection
+        if self.delay is not None:
+            result["delay"] = self.delay.to_dict()
+        if self.primary is not None:
+            result["primary"] = self.primary
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> GrpcBidiResponse:
+        if data is None:
+            return None
+        messages_data = data.get("messages")
+        messages = None
+        if messages_data is not None:
+            messages = [GrpcStreamMessage.from_dict(m) if isinstance(m, dict) else m for m in messages_data]
+        rules_data = data.get("rules")
+        rules = None
+        if rules_data is not None:
+            rules = [GrpcBidiRule.from_dict(r) if isinstance(r, dict) else r for r in rules_data]
+        return cls(
+            status_name=data.get("statusName"),
+            status_message=data.get("statusMessage"),
+            headers=_deserialize_key_multi_values(data.get("headers")),
+            messages=messages,
+            rules=rules,
+            close_connection=data.get("closeConnection"),
+            delay=Delay.from_dict(data.get("delay")),
+            primary=data.get("primary"),
+        )
+
+
+@dataclass
 class BinaryResponse:
     binary_data: str | None = None
     delay: Delay | None = None
@@ -1417,6 +1499,7 @@ class Expectation:
     http_sse_response: HttpSseResponse | None = None
     http_websocket_response: HttpWebSocketResponse | None = None
     grpc_stream_response: GrpcStreamResponse | None = None
+    grpc_bidi_response: GrpcBidiResponse | None = None
     binary_response: BinaryResponse | None = None
     dns_response: DnsResponse | None = None
     times: Times | None = None
@@ -1449,6 +1532,7 @@ class Expectation:
             "httpSseResponse": self.http_sse_response.to_dict() if self.http_sse_response else None,
             "httpWebSocketResponse": self.http_websocket_response.to_dict() if self.http_websocket_response else None,
             "grpcStreamResponse": self.grpc_stream_response.to_dict() if self.grpc_stream_response else None,
+            "grpcBidiResponse": self.grpc_bidi_response.to_dict() if self.grpc_bidi_response else None,
             "binaryResponse": self.binary_response.to_dict() if self.binary_response else None,
             "dnsResponse": self.dns_response.to_dict() if self.dns_response else None,
             "times": self.times.to_dict() if self.times else None,
@@ -1491,6 +1575,7 @@ class Expectation:
             http_sse_response=HttpSseResponse.from_dict(data.get("httpSseResponse")),
             http_websocket_response=HttpWebSocketResponse.from_dict(data.get("httpWebSocketResponse")),
             grpc_stream_response=GrpcStreamResponse.from_dict(data.get("grpcStreamResponse")),
+            grpc_bidi_response=GrpcBidiResponse.from_dict(data.get("grpcBidiResponse")),
             binary_response=BinaryResponse.from_dict(data.get("binaryResponse")),
             dns_response=DnsResponse.from_dict(data.get("dnsResponse")),
             times=Times.from_dict(data.get("times")),

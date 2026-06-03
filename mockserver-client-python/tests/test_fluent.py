@@ -12,6 +12,8 @@ from mockserver.models import (
     DnsRecord,
     DnsResponse,
     Expectation,
+    GrpcBidiResponse,
+    GrpcBidiRule,
     GrpcStreamMessage,
     GrpcStreamResponse,
     HttpClassCallback,
@@ -244,6 +246,29 @@ class TestRespondWithGrpcStream:
     async def test_with_dict_raises(self, chain):
         with pytest.raises(TypeError, match="Expected GrpcStreamResponse"):
             await chain.respond_with_grpc_stream({"statusName": "OK"})
+
+
+class TestRespondWithGrpcBidi:
+    @pytest.mark.asyncio
+    async def test_with_grpc_bidi_response(self, chain, mock_client):
+        bidi_resp = GrpcBidiResponse(
+            status_name="OK",
+            messages=[GrpcStreamMessage(json='{"id": 1}')],
+            rules=[GrpcBidiRule(match_json='{"name": "test"}', responses=[GrpcStreamMessage(json='{"reply": "ok"}')])],
+        )
+        result = await chain.respond_with_grpc_bidi(bidi_resp)
+        assert chain._expectation.grpc_bidi_response is bidi_resp
+        mock_client.upsert.assert_called_once_with(chain._expectation)
+
+    @pytest.mark.asyncio
+    async def test_with_invalid_type_raises(self, chain):
+        with pytest.raises(TypeError, match="Expected GrpcBidiResponse"):
+            await chain.respond_with_grpc_bidi("not a grpc bidi response")
+
+    @pytest.mark.asyncio
+    async def test_with_dict_raises(self, chain):
+        with pytest.raises(TypeError, match="Expected GrpcBidiResponse"):
+            await chain.respond_with_grpc_bidi({"statusName": "OK"})
 
 
 class TestRespondWithBinary:

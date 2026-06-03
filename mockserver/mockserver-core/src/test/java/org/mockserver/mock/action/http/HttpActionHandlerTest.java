@@ -697,4 +697,49 @@ public class HttpActionHandlerTest {
                 .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
         );
     }
+
+    @Test
+    public void shouldReturn501ForGrpcBidiResponseInWarDeployment() {
+        // given — a GRPC_BIDI_RESPONSE expectation dispatched with ctx==null (WAR/servlet)
+        GrpcBidiResponse grpcBidiResponse = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK")
+            .withMessage("{\"greeting\": \"Hello\"}");
+        expectation = new Expectation(request).thenRespondWithGrpcBidi(grpcBidiResponse);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+
+        // when — ctx is null (WAR deployment)
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then — should respond with 501
+        verify(mockResponseWriter).writeResponse(
+            eq(request),
+            argThat(resp -> resp.getStatusCode() == 501
+                && resp.getBodyAsString().contains("gRPC bidi streaming is not supported in WAR deployments")),
+            eq(false)
+        );
+    }
+
+    @Test
+    public void shouldReturn501ForGrpcBidiResponseWhenFlagOff() {
+        // given — a GRPC_BIDI_RESPONSE expectation dispatched with a non-null ctx
+        // but reaching HttpActionHandler (flag off or non-multiplex transport)
+        GrpcBidiResponse grpcBidiResponse = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK")
+            .withMessage("{\"greeting\": \"Hello\"}");
+        expectation = new Expectation(request).thenRespondWithGrpcBidi(grpcBidiResponse);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+
+        ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
+
+        // when — ctx is non-null but reaching HttpActionHandler (flag off)
+        actionHandler.processAction(request, mockResponseWriter, mockCtx, new HashSet<>(), false, true);
+
+        // then — should respond with 501 (requires multiplex pipeline)
+        verify(mockResponseWriter).writeResponse(
+            eq(request),
+            argThat(resp -> resp.getStatusCode() == 501
+                && resp.getBodyAsString().contains("gRPC bidi streaming requires the multiplex pipeline")),
+            eq(false)
+        );
+    }
 }

@@ -407,6 +407,11 @@ public class ForwardChainExpectation {
         return mockServerClient.upsert(expectation);
     }
 
+    public Expectation[] respondWithGrpcBidi(final GrpcBidiResponse grpcBidiResponse) {
+        expectation.thenRespondWithGrpcBidi(grpcBidiResponse);
+        return mockServerClient.upsert(expectation);
+    }
+
     public Expectation[] respondWithBinary(final BinaryResponse binaryResponse) {
         expectation.thenRespondWithBinary(binaryResponse);
         return mockServerClient.upsert(expectation);

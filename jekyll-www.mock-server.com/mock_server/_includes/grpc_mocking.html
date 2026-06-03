@@ -299,6 +299,151 @@ client.when(
 
 <p>Client streaming requests are converted with the combined stream messages in the request body. MockServer adds an <span class="inline_code">x-grpc-client-streaming</span> header to indicate this is a client streaming request. Client streaming support is limited — see <a href="#grpc_limitations">Limitations</a> below.</p>
 
+<a id="bidi_streaming_rpc" class="anchor" href="#bidi_streaming_rpc">&nbsp;</a>
+
+<h3>Bidirectional Streaming RPC (Experimental)</h3>
+
+<p>MockServer supports true bidirectional (bidi) gRPC streaming, where both the client and server can send messages independently and interleaved on a single stream. This requires the <span class="inline_code">grpcBidiStreamingEnabled</span> configuration flag to be set to <span class="inline_code">true</span> (default is <span class="inline_code">false</span>). See the <a href="/mock_server/configuration_properties.html#grpc_configuration">gRPC Configuration</a> section for details on enabling it.</p>
+
+<p>A <span class="inline_code">grpcBidiResponse</span> action supports two response mechanisms:</p>
+<ul>
+    <li><strong>Eager messages</strong> — messages sent immediately when the stream is established (before any client message is received)</li>
+    <li><strong>Reactive rules</strong> — each inbound client message is matched against rules in order; the first rule whose <span class="inline_code">matchJson</span> matches emits its responses. The <span class="inline_code">matchJson</span> field supports exact string match and regex (via <span class="inline_code">String.matches()</span> semantics)</li>
+</ul>
+
+<button id="button_grpc_bidi" class="accordion title"><strong>Bidirectional Streaming RPC Code Examples</strong></button>
+<div class="panel title">
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+    <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+  "httpRequest": {
+    "method": "POST",
+    "path": "/com.example.grpc.ChatService/BidiChat",
+    "headers": {
+      "x-grpc-service": ["com.example.grpc.ChatService"],
+      "x-grpc-method": ["BidiChat"]
+    }
+  },
+  "grpcBidiResponse": {
+    "statusName": "OK",
+    "messages": [
+      {"json": "{\"message\": \"Welcome to the chat!\"}"}
+    ],
+    "rules": [
+      {
+        "matchJson": "{\"message\": \"hello\"}",
+        "responses": [
+          {"json": "{\"message\": \"Hello! How can I help?\"}"}
+        ]
+      },
+      {
+        "matchJson": ".*goodbye.*",
+        "responses": [
+          {"json": "{\"message\": \"Goodbye! Have a nice day.\"}"}
+        ]
+      }
+    ]
+  }
+}'</code></pre>
+    </div>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+    <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withMethod("POST")
+            .withPath("/com.example.grpc.ChatService/BidiChat")
+            .withHeader("x-grpc-service", "com.example.grpc.ChatService")
+            .withHeader("x-grpc-method", "BidiChat")
+    )
+    .respondWithGrpcBidi(
+        grpcBidiResponse()
+            .withStatusName("OK")
+            .withMessage("{\"message\": \"Welcome to the chat!\"}")
+            .withRule(grpcBidiRule("{\"message\": \"hello\"}")
+                .withResponse("{\"message\": \"Hello! How can I help?\"}"))
+            .withRule(grpcBidiRule(".*goodbye.*")
+                .withResponse("{\"message\": \"Goodbye! Have a nice day.\"}"))
+    );</code></pre>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+    <pre class="prettyprint lang-python code"><code class="code">from mockserver import (
+    MockServerClient, HttpRequest, KeyToMultiValue,
+    GrpcBidiResponse, GrpcBidiRule, GrpcStreamMessage,
+)
+
+client = MockServerClient("localhost", 1080)
+client.when(
+    HttpRequest(
+        method="POST",
+        path="/com.example.grpc.ChatService/BidiChat",
+        headers=[
+            KeyToMultiValue(name="x-grpc-service", values=["com.example.grpc.ChatService"]),
+            KeyToMultiValue(name="x-grpc-method", values=["BidiChat"])
+        ]
+    )
+).respond_with_grpc_bidi(
+    GrpcBidiResponse(
+        status_name="OK",
+        messages=[GrpcStreamMessage(json='{"message": "Welcome to the chat!"}')],
+        rules=[
+            GrpcBidiRule(
+                match_json='{"message": "hello"}',
+                responses=[GrpcStreamMessage(json='{"message": "Hello! How can I help?"}')]
+            ),
+            GrpcBidiRule(
+                match_json='.*goodbye.*',
+                responses=[GrpcStreamMessage(json='{"message": "Goodbye! Have a nice day."}')]
+            ),
+        ]
+    )
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+    <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+include MockServer
+
+client = MockServer::Client.new('localhost', 1080)
+client.when(
+  HttpRequest.new(
+    method: 'POST',
+    path: '/com.example.grpc.ChatService/BidiChat',
+    headers: [
+      KeyToMultiValue.new(name: 'x-grpc-service', values: ['com.example.grpc.ChatService']),
+      KeyToMultiValue.new(name: 'x-grpc-method', values: ['BidiChat'])
+    ]
+  )
+).respond_with_grpc_bidi(
+  GrpcBidiResponse.new(
+    status_name: 'OK',
+    messages: [GrpcStreamMessage.new(json: '{"message": "Welcome to the chat!"}')],
+    rules: [
+      GrpcBidiRule.new(
+        match_json: '{"message": "hello"}',
+        responses: [GrpcStreamMessage.new(json: '{"message": "Hello! How can I help?"}')]
+      ),
+      GrpcBidiRule.new(
+        match_json: '.*goodbye.*',
+        responses: [GrpcStreamMessage.new(json: '{"message": "Goodbye! Have a nice day."}')]
+      )
+    ]
+  )
+)</code></pre>
+    </div>
+</div>
+
+<h4>Known Limitations (Bidi Streaming)</h4>
+
+<ul>
+    <li>A <span class="inline_code">grpcBidiResponse</span> expectation is <strong>not yet Times-limited</strong> &mdash; it will match indefinitely regardless of the <span class="inline_code">times</span> setting on the expectation.</li>
+    <li>Bidi streaming requests are <strong>not yet recorded in the request log</strong> and cannot be used with the verification API.</li>
+    <li>Per-message <span class="inline_code">delay</span> on eager messages and rule responses is accepted in the JSON schema but <strong>not yet applied</strong> &mdash; messages are written immediately. Delay scheduling will be honoured in a future release.</li>
+    <li>Bidi streaming requires the <span class="inline_code">grpcBidiStreamingEnabled=true</span> flag. Without it, a <span class="inline_code">grpcBidiResponse</span> expectation will return HTTP 501.</li>
+    <li>Not supported in WAR/servlet deployments (returns HTTP 501).</li>
+</ul>
+
 <a id="matching_grpc_requests" class="anchor" href="#matching_grpc_requests">&nbsp;</a>
 
 <h2>Matching gRPC Requests</h2>
@@ -354,7 +499,7 @@ client.when(
     <li><strong>Unary RPC</strong> — fully supported</li>
     <li><strong>Server streaming RPC</strong> — fully supported via <span class="inline_code">grpcStreamResponse</span></li>
     <li><strong>Client streaming RPC</strong> — limited support; stream messages are aggregated into a single request body</li>
-    <li><strong>Bidirectional streaming RPC</strong> — not yet supported</li>
+    <li><strong>Bidirectional streaming RPC</strong> — experimental support via <span class="inline_code">grpcBidiResponse</span> (requires <span class="inline_code">grpcBidiStreamingEnabled=true</span>); see <a href="#bidi_streaming_rpc">Bidirectional Streaming</a> above for details and known limitations</li>
 </ul>
 
 <a id="grpc_fault_injection_link" class="anchor" href="#grpc_fault_injection_link">&nbsp;</a>

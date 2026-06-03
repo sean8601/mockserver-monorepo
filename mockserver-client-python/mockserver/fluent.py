@@ -8,6 +8,7 @@ from mockserver.models import (
     Delay,
     DnsResponse,
     Expectation,
+    GrpcBidiResponse,
     GrpcStreamResponse,
     HttpChaosProfile,
     HttpClassCallback,
@@ -125,6 +126,14 @@ class ForwardChainExpectation:
                 f"Expected GrpcStreamResponse, got {type(grpc_stream_response).__name__}"
             )
         self._expectation.grpc_stream_response = grpc_stream_response
+        return await self._client.upsert(self._expectation)
+
+    async def respond_with_grpc_bidi(self, grpc_bidi_response: GrpcBidiResponse) -> list[Expectation]:
+        if not isinstance(grpc_bidi_response, GrpcBidiResponse):
+            raise TypeError(
+                f"Expected GrpcBidiResponse, got {type(grpc_bidi_response).__name__}"
+            )
+        self._expectation.grpc_bidi_response = grpc_bidi_response
         return await self._client.upsert(self._expectation)
 
     async def respond_with_binary(self, binary_response: BinaryResponse) -> list[Expectation]:

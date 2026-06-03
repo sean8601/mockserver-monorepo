@@ -10,6 +10,10 @@ export { mockServerClient, ClockStatus, KeysToMultiValues, MockServerClient } fr
 export {
   Expectation,
   ExpectationId,
+  GrpcBidiResponse,
+  GrpcBidiRule,
+  GrpcStreamMessage,
+  GrpcStreamResponse,
   HttpChaosProfile,
   HttpRequest,
   HttpRequestAndHttpResponse,
