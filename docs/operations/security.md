@@ -76,6 +76,17 @@ Dependencies that interact with the OS kernel or native libraries, added for spe
 | `io.netty:netty-transport-native-epoll` (classifier: `linux-x86_64`) | `${netty.version}` | `mockserver-netty` (runtime) | Native JNI library that activates `Epoll.isAvailable()` on Linux x86_64. Bundled in the distribution jar-with-dependencies and Docker images. Inert on non-Linux platforms. | Yes (follows Netty BOM) |
 | `io.netty:netty-transport-native-epoll` (classifier: `linux-aarch_64`) | `${netty.version}` | `mockserver-netty` (runtime) | Native JNI library that activates `Epoll.isAvailable()` on Linux aarch64 (ARM64). Bundled in the distribution jar-with-dependencies and Docker images. Inert on non-Linux/non-ARM platforms. | Yes (follows Netty BOM) |
 
+### Test Dependencies (Docker-Gated)
+
+Test-scoped dependencies used for Docker-gated integration tests. These are never bundled in released artifacts.
+
+| Dependency | Version | Module | Purpose |
+|------------|---------|--------|---------|
+| `org.testcontainers:testcontainers` | 1.20.6 | `mockserver-async` (test) | Core Testcontainers API for Docker-gated integration tests |
+| `org.testcontainers:kafka` | 1.20.6 | `mockserver-async` (test) | Kafka container module for live-broker integration tests |
+
+The Testcontainers version (1.20.6) is aligned with the existing `mockserver-testcontainers` module. MQTT integration tests use a `GenericContainer` with `eclipse-mosquitto:2.0` (no additional Testcontainers module needed).
+
 ### Maven Dependency Graph Submission
 
 GitHub's built-in dependency graph automatically indexes all manifest files (`pom.xml`, `package.json`, `Gemfile`, `requirements.txt`) and their transitive dependencies. This enables Dependabot vulnerability alerts for the full dependency tree -- currently tracking 2000+ packages including 347 Maven dependencies.

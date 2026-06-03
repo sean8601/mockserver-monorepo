@@ -247,6 +247,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Verify
           </ToggleButton>
+          <ToggleButton value="async" aria-label="AsyncAPI broker mock view">
+            <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Async
+          </ToggleButton>
           <ToggleButton value="metrics" aria-label="Metrics view">
             <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Metrics
