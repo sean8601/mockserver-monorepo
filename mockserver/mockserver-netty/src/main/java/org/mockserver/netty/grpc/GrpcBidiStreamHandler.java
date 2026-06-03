@@ -14,6 +14,7 @@ import org.mockserver.grpc.GrpcFrameCodec;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.IncrementalGrpcFrameDecoder;
+import org.mockserver.model.Delay;
 import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.GrpcBidiRule;
 import org.mockserver.model.GrpcStreamMessage;
@@ -22,6 +23,8 @@ import org.mockserver.model.Headers;
 import org.mockserver.model.NottableString;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -32,13 +35,13 @@ import java.util.regex.PatternSyntaxException;
  * <p>
  * <strong>Phase 3b behaviour (rule-driven via GrpcBidiResponse):</strong>
  * <ul>
- *   <li>On {@link Http2HeadersFrame}: writes the initial response HEADERS
- *       ({@code :status=200}, {@code content-type=application/grpc}, plus any configured
- *       headers from the GrpcBidiResponse, {@code endStream=false}). Then writes
- *       any EAGER messages from the response immediately (note: per-message
- *       {@link GrpcStreamMessage#getDelay()} is NOT currently applied on the bidi path;
- *       the field is accepted for forward-compatibility and may be honoured in a future
- *       increment).</li>
+ *   <li>On {@link Http2HeadersFrame}: applies the top-level action delay (if configured)
+ *       before writing the initial response HEADERS ({@code :status=200},
+ *       {@code content-type=application/grpc}, plus any configured headers from the
+ *       GrpcBidiResponse, {@code endStream=false}). Then writes any EAGER messages from
+ *       the response, honouring per-message {@link GrpcStreamMessage#getDelay()} via
+ *       event-loop scheduling (messages are chained so ordering is preserved and the
+ *       trailing grpc-status is written only after all scheduled messages complete).</li>
  *   <li>On {@link Http2DataFrame}: feeds content bytes to {@link IncrementalGrpcFrameDecoder};
  *       for each complete inbound message, converts to JSON via the converter, evaluates
  *       rules in order (first match emits its responses as DATA frames). If no rule matches,
@@ -78,6 +81,18 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
     // Phase 3b mode: GrpcBidiResponse-driven
     private final GrpcBidiResponse config;
 
+    // Completion callback: invoked exactly once when the stream finishes (normal or error)
+    // or when the channel becomes inactive (client disconnect / abandoned stream).
+    // Clears responseInProgress on the matched expectation so a times-limited expectation
+    // is not left stuck. May be null (e.g. in Phase 3a / testing without HttpState).
+    private final Runnable completionCallback;
+
+    // Self-guard for invokeCompletionCallback: ensures the callback runs exactly once
+    // across ALL terminal paths (finish, writeTrailer error, channelInactive, exceptionCaught).
+    // Separate from the 'finished' flag because channelInactive can fire on an abandoned
+    // stream that never reached finish() or writeTrailer().
+    private final AtomicBoolean callbackInvoked = new AtomicBoolean(false);
+
     /**
      * Phase 3a constructor: function-based responder (backward compatible).
      *
@@ -91,11 +106,11 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         Function<String, List<String>> responder
     ) {
-        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder());
+        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null);
     }
 
     /**
-     * Phase 3b constructor: GrpcBidiResponse-driven.
+     * Phase 3b constructor: GrpcBidiResponse-driven (without completion callback).
      *
      * @param methodDescriptor the resolved gRPC method descriptor
      * @param converter        JSON/protobuf converter for the method's message types
@@ -106,7 +121,26 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         GrpcBidiResponse config
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder());
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null);
+    }
+
+    /**
+     * Phase 3b constructor: GrpcBidiResponse-driven with completion callback.
+     * The completion callback is invoked exactly once when the stream finishes (or errors),
+     * clearing {@code responseInProgress} on the matched expectation.
+     *
+     * @param methodDescriptor   the resolved gRPC method descriptor
+     * @param converter          JSON/protobuf converter for the method's message types
+     * @param config             the GrpcBidiResponse configuration from the matched expectation
+     * @param completionCallback invoked once on stream finish to clear responseInProgress
+     */
+    public GrpcBidiStreamHandler(
+        Descriptors.MethodDescriptor methodDescriptor,
+        GrpcJsonMessageConverter converter,
+        GrpcBidiResponse config,
+        Runnable completionCallback
+    ) {
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback);
     }
 
     /**
@@ -117,13 +151,15 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         Function<String, List<String>> responder,
         GrpcBidiResponse config,
-        IncrementalGrpcFrameDecoder decoder
+        IncrementalGrpcFrameDecoder decoder,
+        Runnable completionCallback
     ) {
         this.methodDescriptor = methodDescriptor;
         this.converter = converter;
         this.responder = responder;
         this.config = config;
         this.decoder = decoder;
+        this.completionCallback = completionCallback;
         this.finished = false;
     }
 
@@ -155,34 +191,51 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void handleHeaders(ChannelHandlerContext ctx, Http2HeadersFrame headersFrame) {
-        // Write initial response headers
-        DefaultHttp2Headers responseHeaders = new DefaultHttp2Headers();
-        responseHeaders.status("200");
-        responseHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        // Apply the top-level action delay (if configured) before writing initial HEADERS.
+        // This mirrors how HttpActionHandler applies action.getDelay() via the Scheduler.
+        Delay actionDelay = (config != null) ? config.getDelay() : null;
+        long actionDelayMillis = (actionDelay != null) ? actionDelay.sampleValueMillis() : 0;
 
-        // Add configured headers from GrpcBidiResponse
-        if (config != null && config.getHeaders() != null) {
-            Headers configHeaders = config.getHeaders();
-            for (Header entry : configHeaders.getEntries()) {
-                for (org.mockserver.model.NottableString value : entry.getValues()) {
-                    responseHeaders.add(entry.getName().getValue().toLowerCase(), value.getValue());
+        Runnable writeInitialResponse = () -> {
+            // Write initial response headers
+            DefaultHttp2Headers responseHeaders = new DefaultHttp2Headers();
+            responseHeaders.status("200");
+            responseHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+
+            // Add configured headers from GrpcBidiResponse
+            if (config != null && config.getHeaders() != null) {
+                Headers configHeaders = config.getHeaders();
+                for (Header entry : configHeaders.getEntries()) {
+                    for (NottableString value : entry.getValues()) {
+                        responseHeaders.add(entry.getName().getValue().toLowerCase(), value.getValue());
+                    }
                 }
             }
-        }
 
-        ctx.writeAndFlush(new DefaultHttp2HeadersFrame(responseHeaders, false));
+            ctx.writeAndFlush(new DefaultHttp2HeadersFrame(responseHeaders, false));
 
-        // Send eager messages if configured (Phase 3b)
-        if (config != null && config.getMessages() != null) {
-            for (GrpcStreamMessage eagerMsg : config.getMessages()) {
-                writeGrpcMessage(ctx, eagerMsg.getJson());
+            // Send eager messages if configured (Phase 3b), honouring per-message delay
+            if (config != null && config.getMessages() != null && !config.getMessages().isEmpty()) {
+                scheduleMessages(config.getMessages(), 0, ctx, () -> {
+                    if (headersFrame.isEndStream()) {
+                        finish(ctx);
+                    } else {
+                        ctx.read();
+                    }
+                });
+            } else {
+                if (headersFrame.isEndStream()) {
+                    finish(ctx);
+                } else {
+                    ctx.read();
+                }
             }
-        }
+        };
 
-        if (headersFrame.isEndStream()) {
-            finish(ctx);
+        if (actionDelayMillis > 0) {
+            ctx.executor().schedule(writeInitialResponse, actionDelayMillis, TimeUnit.MILLISECONDS);
         } else {
-            ctx.read();
+            writeInitialResponse.run();
         }
     }
 
@@ -192,49 +245,81 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
             dataFrame.content().readBytes(bytes);
 
             List<byte[]> completedMessages = decoder.feed(bytes);
+            boolean endStream = dataFrame.isEndStream();
 
-            for (byte[] messageBytes : completedMessages) {
-                String inboundJson = converter.toJson(messageBytes, methodDescriptor.getInputType());
-
-                if (config != null) {
-                    // Phase 3b: rule-driven matching
-                    processWithRules(ctx, inboundJson);
-                } else if (responder != null) {
-                    // Phase 3a: function-based responder
-                    List<String> responseJsons = responder.apply(inboundJson);
-                    if (responseJsons != null) {
-                        for (String responseJson : responseJsons) {
-                            writeGrpcMessage(ctx, responseJson);
-                        }
-                    }
+            // The continuation to run after all inbound messages from this DATA frame
+            // have had their responses (possibly delayed) written.
+            Runnable afterAllMessages = () -> {
+                if (endStream) {
+                    finish(ctx);
+                } else {
+                    ctx.read();
                 }
+            };
+
+            if (completedMessages.isEmpty()) {
+                afterAllMessages.run();
+                return;
             }
 
-            if (dataFrame.isEndStream()) {
-                finish(ctx);
-            } else {
-                ctx.read();
-            }
+            // Process inbound messages sequentially, chaining the continuation through
+            // delayed rule responses so that finish/read happens only after all scheduled
+            // messages are written (preserving interleaving and finish ordering).
+            processInboundMessages(ctx, completedMessages, 0, afterAllMessages);
+
         } finally {
             dataFrame.release();
         }
     }
 
-    private void processWithRules(ChannelHandlerContext ctx, String inboundJson) {
+    /**
+     * Recursively processes decoded inbound messages, chaining rule-response scheduling
+     * so that the {@code afterAll} continuation runs only after the last message's responses
+     * (including any per-message delays) have been written.
+     */
+    private void processInboundMessages(ChannelHandlerContext ctx, List<byte[]> messages, int index, Runnable afterAll) {
+        if (index >= messages.size()) {
+            afterAll.run();
+            return;
+        }
+
+        String inboundJson = converter.toJson(messages.get(index), methodDescriptor.getInputType());
+        Runnable processNext = () -> processInboundMessages(ctx, messages, index + 1, afterAll);
+
+        if (config != null) {
+            // Phase 3b: rule-driven matching with per-message delay
+            processWithRules(ctx, inboundJson, processNext);
+        } else if (responder != null) {
+            // Phase 3a: function-based responder (no delay support)
+            List<String> responseJsons = responder.apply(inboundJson);
+            if (responseJsons != null) {
+                for (String responseJson : responseJsons) {
+                    writeGrpcMessage(ctx, responseJson);
+                }
+            }
+            processNext.run();
+        } else {
+            processNext.run();
+        }
+    }
+
+    private void processWithRules(ChannelHandlerContext ctx, String inboundJson, Runnable afterResponses) {
         if (config.getRules() == null) {
+            afterResponses.run();
             return;
         }
         for (GrpcBidiRule rule : config.getRules()) {
             if (matchesRule(rule, inboundJson)) {
-                if (rule.getResponses() != null) {
-                    for (GrpcStreamMessage response : rule.getResponses()) {
-                        writeGrpcMessage(ctx, response.getJson());
-                    }
+                if (rule.getResponses() != null && !rule.getResponses().isEmpty()) {
+                    scheduleMessages(rule.getResponses(), 0, ctx, afterResponses);
+                } else {
+                    afterResponses.run();
                 }
                 return; // first match wins
             }
         }
         // no match -> no response (documented behaviour)
+        afterResponses.run();
     }
 
     /**
@@ -275,6 +360,36 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         return matched;
     }
 
+    /**
+     * Schedule a list of {@link GrpcStreamMessage} for writing, honouring per-message
+     * {@link Delay} via the channel's event-loop executor. Messages are chained so each
+     * writes only after the previous completes (preserving order even with varying delays).
+     * The {@code afterAll} continuation runs after the last message is written.
+     * <p>
+     * Mirrors the recursive scheduling pattern of
+     * {@link org.mockserver.mock.action.http.GrpcStreamResponseActionHandler#scheduleMessages}.
+     */
+    private void scheduleMessages(List<GrpcStreamMessage> messages, int index, ChannelHandlerContext ctx, Runnable afterAll) {
+        if (index >= messages.size()) {
+            afterAll.run();
+            return;
+        }
+        GrpcStreamMessage message = messages.get(index);
+        Delay delay = message.getDelay();
+        long delayMillis = (delay != null) ? delay.sampleValueMillis() : 0;
+
+        Runnable writeAndContinue = () -> {
+            writeGrpcMessage(ctx, message.getJson());
+            scheduleMessages(messages, index + 1, ctx, afterAll);
+        };
+
+        if (delayMillis > 0) {
+            ctx.executor().schedule(writeAndContinue, delayMillis, TimeUnit.MILLISECONDS);
+        } else {
+            writeAndContinue.run();
+        }
+    }
+
     private void writeGrpcMessage(ChannelHandlerContext ctx, String json) {
         byte[] responseProto = converter.toProtobuf(json, methodDescriptor.getOutputType());
         byte[] framedResponse = GrpcFrameCodec.encode(responseProto);
@@ -306,6 +421,10 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         }
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
 
+        // Clear responseInProgress on the matched expectation so a times-limited
+        // expectation is not left stuck after the bidi stream completes.
+        invokeCompletionCallback();
+
         // Close connection if configured
         if (config != null && Boolean.TRUE.equals(config.getCloseConnection())) {
             ctx.close();
@@ -323,11 +442,50 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
             trailers.set(GrpcStatusMapper.GRPC_MESSAGE_HEADER, message);
         }
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
+
+        // Clear responseInProgress on error path too
+        invokeCompletionCallback();
+    }
+
+    /**
+     * Invokes the completion callback exactly once, guarded by an {@link AtomicBoolean} CAS.
+     * This is safe to call from any terminal path (finish, writeTrailer, channelInactive,
+     * exceptionCaught) -- the callback will execute on the first invocation and be a no-op
+     * on all subsequent calls, regardless of which path fires first.
+     * <p>
+     * Clears {@code responseInProgress} on the matched expectation so it can be removed
+     * when its Times are exhausted.
+     */
+    private void invokeCompletionCallback() {
+        if (completionCallback != null && callbackInvoked.compareAndSet(false, true)) {
+            try {
+                completionCallback.run();
+            } catch (Exception ignored) {
+                // Best-effort: don't let post-processing failure break the stream teardown
+            }
+        }
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         writeTrailer(ctx, GrpcStatusMapper.GrpcStatusCode.INTERNAL,
             cause.getMessage() != null ? cause.getMessage() : "internal error");
+    }
+
+    /**
+     * Handles channel deactivation (client disconnect, connection closed, abandoned stream).
+     * If the stream has not already finished via {@link #finish} or {@link #writeTrailer},
+     * the completion callback is invoked to clear {@code responseInProgress} on the matched
+     * expectation. This prevents a times-limited expectation from being stuck forever when
+     * a bidi stream is abandoned without a clean END_STREAM.
+     * <p>
+     * The callback is self-guarded by {@link #callbackInvoked} (AtomicBoolean CAS), so it
+     * runs exactly once across all terminal paths: normal finish, error trailer, channel
+     * inactive, and exception caught.
+     */
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        invokeCompletionCallback();
+        super.channelInactive(ctx);
     }
 }

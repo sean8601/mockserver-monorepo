@@ -13,10 +13,11 @@ import java.util.*;
  * <ul>
  *   <li>{@link #headers} — initial response headers (sent with the :status 200 HEADERS frame)</li>
  *   <li>{@link #messages} — EAGER server-push messages sent immediately after the initial HEADERS,
- *       regardless of inbound messages. Note: per-message {@link GrpcStreamMessage#getDelay()} is
- *       accepted for forward-compatibility and parity with the GrpcStreamMessage schema, but is
- *       NOT currently applied on the bidi path — eager messages are written immediately. Delay
- *       scheduling may be honoured in a future increment.</li>
+ *       regardless of inbound messages. Per-message {@link GrpcStreamMessage#getDelay()} is
+ *       honoured via event-loop scheduling: each message is written after its configured delay
+ *       elapses, chained sequentially so ordering is preserved. The top-level action
+ *       {@link #getDelay()} (inherited from {@link Action}) is applied before the initial
+ *       HEADERS frame is written.</li>
  *   <li>{@link #rules} — reactive rules: each inbound client message is matched against rules
  *       in order; the first rule whose matchJson matches emits its responses</li>
  *   <li>{@link #statusName}, {@link #statusMessage} — final grpc-status trailer (default OK/0)</li>

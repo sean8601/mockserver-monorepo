@@ -434,12 +434,18 @@ client.when(
     </div>
 </div>
 
-<h4>Known Limitations (Bidi Streaming)</h4>
+<h4>Supported Features (Bidi Streaming)</h4>
 
 <ul>
-    <li>A <span class="inline_code">grpcBidiResponse</span> expectation is <strong>not yet Times-limited</strong> &mdash; it will match indefinitely regardless of the <span class="inline_code">times</span> setting on the expectation.</li>
-    <li>Bidi streaming requests are <strong>not yet recorded in the request log</strong> and cannot be used with the verification API.</li>
-    <li>Per-message <span class="inline_code">delay</span> on eager messages and rule responses is accepted in the JSON schema but <strong>not yet applied</strong> &mdash; messages are written immediately. Delay scheduling will be honoured in a future release.</li>
+    <li><strong>Times-limiting</strong> &mdash; <span class="inline_code">grpcBidiResponse</span> expectations support <span class="inline_code">times(n)</span>; a <span class="inline_code">times(1)</span> bidi expectation will match once and then be exhausted, just like other expectation types.</li>
+    <li><strong>Request logging and verification</strong> &mdash; bidi requests are recorded in the request log and are verifiable via the verification API.</li>
+    <li><strong>Per-message delay</strong> &mdash; each eager message and rule response can have a per-message <span class="inline_code">delay</span>; messages are written after the configured delay elapses, chained sequentially so ordering is preserved. The top-level action <span class="inline_code">delay</span> is applied before the initial response HEADERS frame.</li>
+    <li><strong>Abandoned stream cleanup</strong> &mdash; if a client disconnects or abandons a bidi stream without sending END_STREAM, the expectation is cleaned up automatically (responseInProgress is cleared so the expectation can be removed when exhausted).</li>
+</ul>
+
+<h4>Requirements (Bidi Streaming)</h4>
+
+<ul>
     <li>Bidi streaming requires the <span class="inline_code">grpcBidiStreamingEnabled=true</span> flag. Without it, a <span class="inline_code">grpcBidiResponse</span> expectation will return HTTP 501.</li>
     <li>Not supported in WAR/servlet deployments (returns HTTP 501).</li>
 </ul>

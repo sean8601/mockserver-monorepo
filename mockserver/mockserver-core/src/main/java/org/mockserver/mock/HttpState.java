@@ -412,8 +412,10 @@ public class HttpState {
 
     /**
      * Side-effect-free probe: returns the first matching expectation WITHOUT consuming the
-     * match (no Times decrement, no scenario transition, no responseInProgress, no metrics,
-     * no log). Used by the gRPC bidi router to inspect the action type before committing
+     * match (no Times decrement, no scenario transition, no responseInProgress, no metrics).
+     * Note: the underlying matcher evaluation may still emit INFO-level EXPECTATION_MATCHED /
+     * EXPECTATION_NOT_MATCHED diagnostic logs; this method avoids the consuming side-effects
+     * only. Used by the gRPC bidi router to inspect the action type before committing
      * to a handler — the real consuming match happens separately on the committed path.
      */
     public Expectation peekFirstMatchingExpectation(RequestDefinition request) {

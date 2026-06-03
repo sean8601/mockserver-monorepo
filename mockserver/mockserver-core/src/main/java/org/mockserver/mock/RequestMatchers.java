@@ -572,10 +572,21 @@ public class RequestMatchers extends MockServerMatcherNotifier {
      */
     /**
      * Side-effect-free probe: returns the first active expectation whose matcher matches the
-     * given request, WITHOUT consuming the match (no Times decrement, no scenario transition,
-     * no responseInProgress flag, no metrics, no log emission). Used by the gRPC bidi router
-     * to decide the routing path before committing to a handler.
+     * given request, WITHOUT consuming the match. Specifically, this method avoids:
+     * <ul>
+     *   <li>Times decrement ({@code consumeMatch()})</li>
+     *   <li>Scenario state transition</li>
+     *   <li>{@code responseInProgress} flag</li>
+     *   <li>Metrics increment</li>
+     * </ul>
      * <p>
+     * <strong>Note on logging:</strong> the underlying {@code HttpRequestMatcher.matches()} call
+     * may still emit {@code INFO}-level {@code EXPECTATION_MATCHED} or {@code EXPECTATION_NOT_MATCHED}
+     * log entries as a side-effect of the match evaluation. This method does not suppress those
+     * match-diagnostic logs. It is the Times/scenario/responseInProgress/metrics side-effects
+     * that are avoided.
+     * <p>
+     * Used by the gRPC bidi router to decide the routing path before committing to a handler.
      * Callers that need to actually consume the match (decrement Times, transition scenarios,
      * emit logs) must still call {@link #firstMatchingExpectation(RequestDefinition)} separately
      * on the committed path.

@@ -25,6 +25,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
+import org.mockserver.model.Delay;
 import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.GrpcBidiRule;
 import org.mockserver.model.GrpcStreamMessage;
@@ -41,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -1001,6 +1003,618 @@ public class GrpcBidiInterleavingMultiplexTest {
             handler.matchesRule(rule, "{\"sender\":\"Alice\",\"note\":\"x\"}"), is(false));
         assertThat("plain 'Alice' should NOT match via contains in JSON",
             handler.matchesRule(rule, "{\"name\":\"Alice\"}"), is(false));
+    }
+
+    // ---- Follow-up 1: Times-consumption + request logging/verification ----
+
+    /**
+     * Follow-up 1 proof: a times(1) GrpcBidiResponse expectation is consumed by the
+     * router when it commits to the bidi path. After routing, the expectation's remaining
+     * Times must be 0 (consumed). A second routing attempt returns null (exhausted),
+     * falling back to the re-aggregating chain.
+     */
+    @Test
+    public void shouldConsumeTimesOnBidiCommit() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        Configuration config = configuration();
+        MockServerLogger logger = new MockServerLogger();
+        HttpState httpState = new HttpState(config, logger, mock(Scheduler.class));
+
+        // Add a times(1) GrpcBidiResponse expectation on the Chat bidi method
+        GrpcBidiResponse bidiResponse = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule(".*")
+                .withResponse("{\"greeting\": \"echo\"}"))
+            .withStatusName("OK");
+
+        Expectation timesOneExpectation = new Expectation(
+            HttpRequest.request()
+                .withMethod("POST")
+                .withPath("/com.example.grpc.GreetingService/Chat")
+                .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE),
+            Times.once(), null, 0
+        ).thenRespondWithGrpcBidi(bidiResponse);
+
+        httpState.add(timesOneExpectation);
+
+        // Verify expectation is active
+        assertThat("expectation should be active before routing",
+            timesOneExpectation.isActive(), is(true));
+        assertThat("remaining times should be 1 before routing",
+            timesOneExpectation.getTimes().getRemainingTimes(), is(1));
+
+        // Build and execute the router
+        CallbackWebSocketServerHandler wsHandler = new CallbackWebSocketServerHandler(httpState);
+        DashboardWebSocketHandler dashHandler = new DashboardWebSocketHandler(httpState, false, false);
+        TraceContextHandler traceHandler = new TraceContextHandler(config);
+        HttpRequestHandler reqHandler = new HttpRequestHandler(
+            config, mock(org.mockserver.lifecycle.LifeCycle.class), httpState,
+            mock(org.mockserver.mock.action.http.HttpActionHandler.class)
+        );
+        GrpcToHttpResponseHandler grpcRespHandler = new GrpcToHttpResponseHandler(logger, store);
+        GrpcToHttpRequestHandler grpcReqHandler = new GrpcToHttpRequestHandler(logger, store);
+
+        GrpcBidiRouterHandler router = new GrpcBidiRouterHandler(
+            config, store, logger, false, null,
+            wsHandler, dashHandler, null, traceHandler,
+            grpcRespHandler, grpcReqHandler, reqHandler,
+            httpState
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(router);
+
+        DefaultHttp2Headers h2Headers = new DefaultHttp2Headers();
+        h2Headers.method("POST");
+        h2Headers.path("/com.example.grpc.GreetingService/Chat");
+        h2Headers.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(h2Headers, false));
+
+        // Router should have installed the bidi handler (not re-aggregating chain)
+        assertThat("pipeline should contain GrpcBidiStreamHandler",
+            channel.pipeline().get(GrpcBidiStreamHandler.class), is(notNullValue()));
+
+        // CRITICAL: Times should now be consumed (0 remaining)
+        assertThat("remaining times should be 0 after bidi commit (consumed)",
+            timesOneExpectation.getTimes().getRemainingTimes(), is(0));
+
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Follow-up 1 proof: after a times(1) bidi expectation is consumed, a second bidi
+     * routing attempt on a new stream finds no matching expectation and falls back to
+     * the re-aggregating chain.
+     */
+    @Test
+    public void shouldExhaustTimesOneBidiExpectation() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        Configuration config = configuration();
+        MockServerLogger logger = new MockServerLogger();
+        HttpState httpState = new HttpState(config, logger, mock(Scheduler.class));
+
+        GrpcBidiResponse bidiResponse = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule(".*")
+                .withResponse("{\"greeting\": \"echo\"}"))
+            .withStatusName("OK");
+
+        Expectation timesOneExpectation = new Expectation(
+            HttpRequest.request()
+                .withMethod("POST")
+                .withPath("/com.example.grpc.GreetingService/Chat")
+                .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE),
+            Times.once(), null, 0
+        ).thenRespondWithGrpcBidi(bidiResponse);
+
+        httpState.add(timesOneExpectation);
+
+        // First stream: consumes the expectation
+        {
+            CallbackWebSocketServerHandler wsHandler = new CallbackWebSocketServerHandler(httpState);
+            DashboardWebSocketHandler dashHandler = new DashboardWebSocketHandler(httpState, false, false);
+            TraceContextHandler traceHandler = new TraceContextHandler(config);
+            HttpRequestHandler reqHandler = new HttpRequestHandler(
+                config, mock(org.mockserver.lifecycle.LifeCycle.class), httpState,
+                mock(org.mockserver.mock.action.http.HttpActionHandler.class)
+            );
+            GrpcToHttpResponseHandler grpcRespHandler = new GrpcToHttpResponseHandler(logger, store);
+            GrpcToHttpRequestHandler grpcReqHandler = new GrpcToHttpRequestHandler(logger, store);
+
+            GrpcBidiRouterHandler router1 = new GrpcBidiRouterHandler(
+                config, store, logger, false, null,
+                wsHandler, dashHandler, null, traceHandler,
+                grpcRespHandler, grpcReqHandler, reqHandler,
+                httpState
+            );
+
+            EmbeddedChannel ch1 = new EmbeddedChannel(router1);
+            DefaultHttp2Headers h1 = new DefaultHttp2Headers();
+            h1.method("POST");
+            h1.path("/com.example.grpc.GreetingService/Chat");
+            h1.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+            ch1.writeInbound(new DefaultHttp2HeadersFrame(h1, true));
+
+            assertThat("first stream should get bidi handler",
+                ch1.pipeline().get(GrpcBidiStreamHandler.class), is(notNullValue()));
+
+            // Complete the stream to clear responseInProgress
+            ch1.finishAndReleaseAll();
+        }
+
+        // Post-process to clear responseInProgress (simulating the completion callback)
+        httpState.postProcess(timesOneExpectation);
+
+        // Second stream: expectation exhausted -> fallback to re-aggregating chain
+        {
+            CallbackWebSocketServerHandler wsHandler2 = new CallbackWebSocketServerHandler(httpState);
+            DashboardWebSocketHandler dashHandler2 = new DashboardWebSocketHandler(httpState, false, false);
+            TraceContextHandler traceHandler2 = new TraceContextHandler(config);
+            HttpRequestHandler reqHandler2 = new HttpRequestHandler(
+                config, mock(org.mockserver.lifecycle.LifeCycle.class), httpState,
+                mock(org.mockserver.mock.action.http.HttpActionHandler.class)
+            );
+            GrpcToHttpResponseHandler grpcRespHandler2 = new GrpcToHttpResponseHandler(logger, store);
+            GrpcToHttpRequestHandler grpcReqHandler2 = new GrpcToHttpRequestHandler(logger, store);
+
+            GrpcBidiRouterHandler router2 = new GrpcBidiRouterHandler(
+                config, store, logger, false, null,
+                wsHandler2, dashHandler2, null, traceHandler2,
+                grpcRespHandler2, grpcReqHandler2, reqHandler2,
+                httpState
+            );
+
+            EmbeddedChannel ch2 = new EmbeddedChannel(router2);
+            DefaultHttp2Headers h2 = new DefaultHttp2Headers();
+            h2.method("POST");
+            h2.path("/com.example.grpc.GreetingService/Chat");
+            h2.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+            ch2.writeInbound(new DefaultHttp2HeadersFrame(h2, false));
+
+            assertThat("second stream should NOT get bidi handler (exhausted)",
+                ch2.pipeline().get(GrpcBidiStreamHandler.class), is(nullValue()));
+            assertThat("second stream should fall back to re-aggregating chain",
+                ch2.pipeline().get(io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec.class), is(notNullValue()));
+
+            ch2.finishAndReleaseAll();
+        }
+    }
+
+    /**
+     * Follow-up 1 proof: the fallback path (non-bidi action on same path) still does NOT
+     * consume Times. This is a REGRESSION test — must keep existing RequestMatchersPeekTest
+     * behaviour: a times(1) HttpResponse expectation on a bidi-method path is NOT consumed
+     * by the routing probe.
+     */
+    @Test
+    public void shouldNotConsumeTimesOnFallbackPath() {
+        // This test is the existing shouldNotConsumeTimesOneExpectationWhenRoutingProbeFindsNonBidiAction
+        // test — it stays intact (unchanged). Verifying the existing test still passes proves
+        // the fallback path is not broken by the consume-on-commit change.
+        shouldNotConsumeTimesOneExpectationWhenRoutingProbeFindsNonBidiAction();
+    }
+
+    /**
+     * Follow-up 1 proof: completionCallback is invoked when the bidi stream finishes,
+     * clearing responseInProgress.
+     */
+    @Test
+    public void shouldInvokeCompletionCallbackOnFinish() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        java.util.concurrent.atomic.AtomicBoolean callbackInvoked = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, converter, bidiConfig, () -> callbackInvoked.set(true)
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
+
+        // Feed HEADERS + endStream=true -> should finish immediately
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, true));
+
+        // Verify: completion callback was invoked
+        assertThat("completion callback should be invoked on stream finish",
+            callbackInvoked.get(), is(true));
+
+        // Verify trailing HEADERS were written
+        assertThat("should have initial HEADERS + trailing HEADERS",
+            outbound.size(), is(2));
+
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Follow-up 1 proof: completionCallback is invoked on the error path too.
+     */
+    @Test
+    public void shouldInvokeCompletionCallbackOnError() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        java.util.concurrent.atomic.AtomicBoolean callbackInvoked = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        // Use a small decoder cap (16 bytes) to trigger RESOURCE_EXHAUSTED
+        org.mockserver.grpc.IncrementalGrpcFrameDecoder smallDecoder =
+            new org.mockserver.grpc.IncrementalGrpcFrameDecoder(16);
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, converter, null, bidiConfig, smallDecoder, () -> callbackInvoked.set(true)
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
+
+        // Feed HEADERS (no endStream)
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Feed a DATA frame that exceeds the 16-byte cap
+        byte[] bigPayload = new byte[100];
+        channel.writeInbound(new DefaultHttp2DataFrame(
+            Unpooled.wrappedBuffer(bigPayload), false));
+
+        // Verify: completion callback was invoked even on error
+        assertThat("completion callback should be invoked on error path",
+            callbackInvoked.get(), is(true));
+
+        channel.finishAndReleaseAll();
+    }
+
+    // ---- Follow-up 2: Per-message + top-level delay ----
+
+    /**
+     * Follow-up 2: verifies that per-message delay on eager messages is honoured.
+     * Uses a 0ms delay (which runs immediately via the event loop) to verify the
+     * scheduling path works without introducing flaky timing dependencies.
+     * The key assertion is that the messages are still emitted in order and the
+     * finish (trailing HEADERS) comes AFTER all messages.
+     */
+    @Test
+    public void shouldHonourPerMessageDelayOnEagerMessages() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        // Configure eager messages with 0ms delays (tests the scheduling path without timing flakes)
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withMessage(GrpcStreamMessage.grpcStreamMessage("{\"greeting\": \"First\"}")
+                .withDelay(new Delay(TimeUnit.MILLISECONDS, 0)))
+            .withMessage(GrpcStreamMessage.grpcStreamMessage("{\"greeting\": \"Second\"}")
+                .withDelay(new Delay(TimeUnit.MILLISECONDS, 0)))
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, bidiConfig)
+        );
+
+        // Feed HEADERS + endStream=true
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, true));
+
+        // Run pending scheduled tasks in the EmbeddedChannel's event loop
+        channel.runPendingTasks();
+
+        // Expect: initial HEADERS + First DATA + Second DATA + trailing HEADERS = 4
+        assertThat("should have 4 outbound frames (HEADERS + 2 DATA + trailing HEADERS)",
+            outbound.size(), is(4));
+
+        // Verify ordering: First before Second
+        assertThat("first outbound should be HEADERS",
+            outbound.get(0), instanceOf(Http2HeadersFrame.class));
+        assertThat("second outbound should be DATA (First)",
+            outbound.get(1), instanceOf(Http2DataFrame.class));
+        assertThat("third outbound should be DATA (Second)",
+            outbound.get(2), instanceOf(Http2DataFrame.class));
+        assertThat("fourth outbound should be trailing HEADERS",
+            outbound.get(3), instanceOf(Http2HeadersFrame.class));
+        assertThat("trailing HEADERS endStream=true",
+            ((Http2HeadersFrame) outbound.get(3)).isEndStream(), is(true));
+
+        // Verify content of first and second messages
+        Http2DataFrame firstData = (Http2DataFrame) outbound.get(1);
+        byte[] firstBytes = new byte[firstData.content().readableBytes()];
+        firstData.content().readBytes(firstBytes);
+        String firstJson = converter.toJson(GrpcFrameCodec.decode(firstBytes).get(0), chatMethod.getOutputType());
+        assertThat("first eager message should contain 'First'", firstJson, containsString("First"));
+
+        Http2DataFrame secondData = (Http2DataFrame) outbound.get(2);
+        byte[] secondBytes = new byte[secondData.content().readableBytes()];
+        secondData.content().readBytes(secondBytes);
+        String secondJson = converter.toJson(GrpcFrameCodec.decode(secondBytes).get(0), chatMethod.getOutputType());
+        assertThat("second eager message should contain 'Second'", secondJson, containsString("Second"));
+
+        for (Object f : outbound) {
+            if (f instanceof Http2DataFrame) {
+                ((Http2DataFrame) f).release();
+            }
+        }
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Follow-up 2: verifies that per-message delay on rule responses is honoured.
+     * Uses 0ms delay to exercise the scheduling path without timing flakes.
+     * The trailing HEADERS (grpc-status) MUST come AFTER all rule responses.
+     */
+    @Test
+    public void shouldHonourPerMessageDelayOnRuleResponses() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withRule(GrpcBidiRule.grpcBidiRule(".*Alice.*")
+                .withResponse(GrpcStreamMessage.grpcStreamMessage("{\"greeting\": \"Hi Alice\"}")
+                    .withDelay(new Delay(TimeUnit.MILLISECONDS, 0)))
+                .withResponse(GrpcStreamMessage.grpcStreamMessage("{\"greeting\": \"Welcome Alice\"}")
+                    .withDelay(new Delay(TimeUnit.MILLISECONDS, 0))))
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, bidiConfig)
+        );
+
+        // Feed HEADERS
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Feed DATA(Alice, endStream=true)
+        byte[] proto = converter.toProtobuf("{\"name\":\"Alice\"}", chatMethod.getInputType());
+        byte[] frame = GrpcFrameCodec.encode(proto);
+        channel.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(frame), true));
+
+        // Run pending scheduled tasks
+        channel.runPendingTasks();
+
+        // Expect: HEADERS + Hi Alice DATA + Welcome Alice DATA + trailing HEADERS = 4
+        assertThat("should have 4 outbound frames", outbound.size(), is(4));
+
+        // Verify trailing HEADERS come AFTER all rule responses
+        assertThat("fourth outbound should be trailing HEADERS",
+            outbound.get(3), instanceOf(Http2HeadersFrame.class));
+        assertThat("trailing HEADERS endStream=true",
+            ((Http2HeadersFrame) outbound.get(3)).isEndStream(), is(true));
+        assertThat("trailing grpc-status should be 0 (OK)",
+            ((Http2HeadersFrame) outbound.get(3)).headers().get(GrpcStatusMapper.GRPC_STATUS_HEADER).toString(), is("0"));
+
+        // Verify rule responses
+        Http2DataFrame data1 = (Http2DataFrame) outbound.get(1);
+        byte[] d1b = new byte[data1.content().readableBytes()];
+        data1.content().readBytes(d1b);
+        assertThat("first rule response should contain 'Hi Alice'",
+            converter.toJson(GrpcFrameCodec.decode(d1b).get(0), chatMethod.getOutputType()),
+            containsString("Hi Alice"));
+
+        Http2DataFrame data2 = (Http2DataFrame) outbound.get(2);
+        byte[] d2b = new byte[data2.content().readableBytes()];
+        data2.content().readBytes(d2b);
+        assertThat("second rule response should contain 'Welcome Alice'",
+            converter.toJson(GrpcFrameCodec.decode(d2b).get(0), chatMethod.getOutputType()),
+            containsString("Welcome Alice"));
+
+        for (Object f : outbound) {
+            if (f instanceof Http2DataFrame) {
+                ((Http2DataFrame) f).release();
+            }
+        }
+        channel.finishAndReleaseAll();
+    }
+
+    /**
+     * Follow-up 2: verifies that the top-level action delay is applied before the
+     * initial response HEADERS. Uses 0ms delay to test the scheduling code path.
+     */
+    @Test
+    public void shouldApplyTopLevelActionDelay() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK");
+        // Set top-level action delay (0ms to avoid timing flakes)
+        bidiConfig.withDelay(new Delay(TimeUnit.MILLISECONDS, 0));
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        EmbeddedChannel channel = new EmbeddedChannel(
+            captureHandler,
+            new GrpcBidiStreamHandler(chatMethod, converter, bidiConfig)
+        );
+
+        // Feed HEADERS + endStream=true
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, true));
+
+        // Before running pending tasks, the 0ms delay is scheduled but not yet executed
+        // (EmbeddedChannel uses a deterministic event loop)
+        // Run pending tasks to execute the delayed response
+        channel.runPendingTasks();
+
+        // Expect: initial HEADERS + trailing HEADERS = 2
+        assertThat("should have 2 outbound frames after delay fires",
+            outbound.size(), is(2));
+        assertThat("first outbound should be HEADERS",
+            outbound.get(0), instanceOf(Http2HeadersFrame.class));
+        assertThat("second outbound should be trailing HEADERS",
+            outbound.get(1), instanceOf(Http2HeadersFrame.class));
+
+        channel.finishAndReleaseAll();
+    }
+
+    // ---- FIX 1 (channelInactive leak): abandoned stream cleanup ----
+
+    /**
+     * FIX 1 proof: if a bidi stream is abandoned (channel goes inactive without a clean
+     * END_STREAM / finish()), the completion callback is still invoked via the
+     * {@code channelInactive} override. This ensures responseInProgress is cleared and
+     * a times-limited expectation is not stuck forever.
+     */
+    @Test
+    public void shouldInvokeCompletionCallbackOnChannelInactiveForAbandonedStream() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        java.util.concurrent.atomic.AtomicInteger callbackCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, converter, bidiConfig, callbackCount::incrementAndGet
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
+
+        // Feed HEADERS (no endStream) — stream is open but not finished
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Verify: callback NOT yet invoked (stream is still active)
+        assertThat("callback should not be invoked before channel inactive",
+            callbackCount.get(), is(0));
+
+        // Simulate abandoned stream: close the channel (triggers channelInactive)
+        channel.close().syncUninterruptibly();
+
+        // Verify: callback WAS invoked exactly once via channelInactive
+        assertThat("callback should be invoked exactly once on abandoned stream via channelInactive",
+            callbackCount.get(), is(1));
+    }
+
+    /**
+     * FIX 1 proof (no double-invoke): if a bidi stream finishes normally (END_STREAM) and
+     * then channelInactive fires (as it always does when the channel closes), the completion
+     * callback must NOT be invoked a second time. The AtomicBoolean CAS guard in
+     * invokeCompletionCallback ensures exactly-once semantics.
+     */
+    @Test
+    public void shouldNotDoubleInvokeCompletionCallbackOnFinishThenChannelInactive() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        java.util.concurrent.atomic.AtomicInteger callbackCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, converter, bidiConfig, callbackCount::incrementAndGet
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
+
+        // Feed HEADERS + endStream=true -> stream finishes normally (callback invoked once)
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, true));
+
+        // Verify: callback invoked exactly once from finish()
+        assertThat("callback should be invoked once after finish()",
+            callbackCount.get(), is(1));
+
+        // Close the channel (triggers channelInactive)
+        channel.close().syncUninterruptibly();
+
+        // Verify: callback still invoked exactly once (no double-invoke)
+        assertThat("callback should still be invoked exactly once after channelInactive (no double-invoke)",
+            callbackCount.get(), is(1));
+    }
+
+    /**
+     * FIX 1 proof (exception path): if exceptionCaught fires on an active stream, the
+     * callback is invoked. A subsequent channelInactive does NOT double-invoke.
+     */
+    @Test
+    public void shouldNotDoubleInvokeCompletionCallbackOnExceptionThenChannelInactive() {
+        GrpcProtoDescriptorStore store = loadDescriptorStore();
+        GrpcJsonMessageConverter converter = store.getConverter();
+        Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
+
+        java.util.concurrent.atomic.AtomicInteger callbackCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        GrpcBidiResponse bidiConfig = GrpcBidiResponse.grpcBidiResponse()
+            .withStatusName("OK");
+
+        List<Object> outbound = new ArrayList<>();
+        FrameCaptureHandler captureHandler = new FrameCaptureHandler(outbound);
+
+        GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
+            chatMethod, converter, bidiConfig, callbackCount::incrementAndGet
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
+
+        // Feed HEADERS (no endStream) — stream is open
+        DefaultHttp2Headers reqHeaders = new DefaultHttp2Headers();
+        reqHeaders.method("POST");
+        reqHeaders.path("/com.example.grpc.GreetingService/Chat");
+        reqHeaders.set("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        channel.writeInbound(new DefaultHttp2HeadersFrame(reqHeaders, false));
+
+        // Trigger exceptionCaught (fires writeTrailer -> invokeCompletionCallback)
+        channel.pipeline().fireExceptionCaught(new RuntimeException("simulated failure"));
+
+        // Verify: callback invoked once from exceptionCaught -> writeTrailer
+        assertThat("callback should be invoked once after exceptionCaught",
+            callbackCount.get(), is(1));
+
+        // Close the channel (triggers channelInactive)
+        channel.close().syncUninterruptibly();
+
+        // Verify: callback still invoked exactly once
+        assertThat("callback should still be invoked exactly once after channelInactive",
+            callbackCount.get(), is(1));
     }
 
     // ---- Capture helper ----
