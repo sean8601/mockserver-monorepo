@@ -9,6 +9,7 @@ import org.mockserver.async.AsyncApiControlPlaneRegistry;
 import org.mockserver.async.AsyncApiMockOrchestrator;
 import org.mockserver.async.MessageExampleGenerator;
 import org.mockserver.async.asyncapi.AsyncApiChannel;
+import org.mockserver.async.asyncapi.AsyncApiMessage;
 import org.mockserver.async.asyncapi.AsyncApiParser;
 import org.mockserver.async.asyncapi.AsyncApiSpec;
 import org.mockserver.async.publish.KafkaMessagePublisher;
@@ -120,6 +121,9 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                             channel.getName(), truncate(String.valueOf(result.getErrors())));
                     }
                 }
+
+                // Validate the first spec-provided example of each message against its schema
+                validateFirstMessageExamples(channel);
             }
 
             // Create broker connections based on config
@@ -459,6 +463,48 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
      */
     void addSubscriberForTesting(MessageSubscriber subscriber) {
         activeSubscribers.add(subscriber);
+    }
+
+    /**
+     * Validate the first spec-provided payload example of each message in a channel
+     * against that message's payload schema. Skips messages that have no schema or
+     * no explicit examples. Issues are surfaced as warning logs and validation records
+     * in the load response — matching the existing convention for generated-example
+     * validation — without hard-failing the load.
+     * <p>
+     * Scope: first example per message only (catches malformed spec examples early).
+     */
+    private void validateFirstMessageExamples(AsyncApiChannel channel) {
+        for (AsyncApiMessage message : channel.getMessages()) {
+            JsonNode schema = message.getPayloadSchema();
+            if (schema == null) {
+                continue;
+            }
+            List<JsonNode> examples = message.getPayloadExamples();
+            if (examples.isEmpty()) {
+                continue;
+            }
+            // Validate the first example only
+            JsonNode firstExample = examples.get(0);
+            String examplePayload;
+            try {
+                examplePayload = MAPPER.writeValueAsString(firstExample);
+            } catch (Exception e) {
+                LOG.warn("Failed to serialize first message example for channel '{}' message '{}': {}",
+                    channel.getName(), message.getName(), e.getMessage());
+                continue;
+            }
+            AsyncApiSchemaValidator.ValidationResult result = schemaValidator.validate(examplePayload, schema);
+            if (!result.isValid()) {
+                String context = message.getName() != null
+                    ? "first_message_example:" + message.getName()
+                    : "first_message_example";
+                addValidationIssue(new SchemaValidationRecord(
+                    channel.getName(), context, result.getErrors()));
+                LOG.warn("First example for channel '{}' message '{}' does not conform to schema: {}",
+                    channel.getName(), message.getName(), truncate(String.valueOf(result.getErrors())));
+            }
+        }
     }
 
     /**

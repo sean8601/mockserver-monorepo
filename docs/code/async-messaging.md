@@ -215,7 +215,21 @@ The `MessageExampleGenerator` follows this precedence per channel:
 The `AsyncApiSchemaValidator` reuses core's `JsonSchemaValidator` (backed by `com.networknt:json-schema-validator`) to validate:
 
 - **Generated examples** before publishing (warnings logged for non-conforming examples)
+- **First spec-provided message example per channel** at load time (see below)
 - **Consumed/recorded messages** from broker subscriptions (validation result included in status response)
+
+### First-Message Example Validation (Load-Time)
+
+When an AsyncAPI spec is loaded via `PUT /mockserver/asyncapi`, the control plane validates the **first payload example** of each message in each channel against that message's declared payload schema. This catches malformed spec examples early, before any broker interaction.
+
+- **Scope**: only the first example per message is validated (not all examples).
+- **Skip conditions**: messages with no payload schema or no explicit examples are skipped cleanly.
+- **Multi-message channels** (v3 multiple messages, v2 `oneOf`): each message's first example is validated independently.
+- **Surfacing**: non-conforming examples are surfaced as:
+  - A `WARN`-level log line (matching the existing generated-example warning pattern)
+  - A `validationIssues` entry in the load response and status response, with context `first_message_example` (or `first_message_example:<messageName>` when the message has a name)
+- **No hard failure**: the load succeeds even when examples fail validation, matching the existing convention for generated-example validation.
+- **No publish-time impact**: this validation is purely at load time and does not affect publish-time behaviour.
 
 ## Consumer/Subscriber Mocking
 
@@ -407,6 +421,7 @@ The `mockserver-async` module is wired into the running server:
 | `KafkaMessageSubscriberTest` | Kafka subscribing, message recording, bounded eviction, queued-ops pattern (mocked consumer) |
 | `MqttMessageSubscriberTest` | MQTT subscribing, message recording, bounded eviction (mocked client) |
 | `AsyncApiSchemaValidatorTest` | Schema validation (required, type, enum, min/max, pattern) |
+| `AsyncApiFirstMessageExampleValidationTest` | Per-message first-example schema validation at load time: conforming, non-conforming, no-schema, no-example, multi-message, first-only scope, context naming |
 | `AsyncApiControlPlaneImplTest` | Control-plane load/status/reset lifecycle (no real broker) |
 | `AsyncApiControlPlaneSecurityTest` | Security scheme parsing from `brokerConfig` JSON (kafkaSecurity, mqttSecurity, edge cases) |
 | `AsyncApiControlPlaneVerifyTest` | Message verification: count semantics (atLeast/atMost/exactly), payload substring, JSON path matching, error cases |
