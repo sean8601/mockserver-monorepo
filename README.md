@@ -1,6 +1,7 @@
 MockServer &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [![Build status](https://badge.buildkite.com/3b6803f4fe98cb5ed7bf18292a1434f800b53d8fecb92811d8.svg?branch=master&style=square&theme=slack)](https://buildkite.com/mockserver/mockserver) 
 [![GitHub license](https://img.shields.io/github/license/mock-server/mockserver-monorepo.svg)](https://github.com/mock-server/mockserver-monorepo/blob/master/LICENSE.md) 
-[![GitHub stars](https://img.shields.io/github/stars/mock-server/mockserver-monorepo.svg)](https://github.com/mock-server/mockserver-monorepo/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/mock-server/mockserver-monorepo.svg)](https://github.com/mock-server/mockserver-monorepo/stargazers) 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/mockserver)](https://artifacthub.io/packages/search?repo=mockserver)
 =====
 
 MockServer is an HTTP(S) **mock server and proxy** for testing. Mock any HTTP/HTTPS, REST, gRPC, or JSON-RPC dependency; record-and-replay real traffic as a proxy; and drive it all from a client library (Java, Node, Python, Ruby) or a built-in dashboard. Recent releases add first-class **LLM / AI-agent** provider mocking (Anthropic, OpenAI, Gemini, Bedrock, Ollama and more), an **MCP server** for AI coding assistants, and **chaos / fault injection** on mocked *and* forwarded responses — see the [changelog](changelog.md) for what has shipped in each version.
