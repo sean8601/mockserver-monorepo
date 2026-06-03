@@ -29,6 +29,7 @@ import static io.netty.handler.codec.http.HttpUtil.isKeepAlive;
  */
 public class FullHttpRequestToMockServerHttpRequest {
 
+    private final Configuration configuration;
     private final MockServerLogger mockServerLogger;
     private final BodyDecoderEncoder bodyDecoderEncoder;
     private final ExpandedParameterDecoder formParameterParser;
@@ -38,6 +39,7 @@ public class FullHttpRequestToMockServerHttpRequest {
     private final JDKCertificateToMockServerX509Certificate jdkCertificateToMockServerX509Certificate;
 
     public FullHttpRequestToMockServerHttpRequest(Configuration configuration, MockServerLogger mockServerLogger, boolean isSecure, Certificate[] clientCertificates, Integer port) {
+        this.configuration = configuration;
         this.mockServerLogger = mockServerLogger;
         this.bodyDecoderEncoder = new BodyDecoderEncoder();
         this.formParameterParser = new ExpandedParameterDecoder(configuration, mockServerLogger);
@@ -179,6 +181,16 @@ public class FullHttpRequestToMockServerHttpRequest {
     }
 
     private void setBody(HttpRequest httpRequest, FullHttpRequest fullHttpRequest) {
-        httpRequest.withBody(bodyDecoderEncoder.byteBufToBody(fullHttpRequest.content(), fullHttpRequest.headers().get(CONTENT_TYPE)));
+        String contentEncoding = fullHttpRequest.headers().get(CONTENT_ENCODING);
+        if (!configuration.decompressRequestBodies() && contentEncoding != null && !contentEncoding.isEmpty() && fullHttpRequest.content().readableBytes() > 0) {
+            // request body decompression is disabled and the body is still compressed on the wire:
+            // preserve the exact bytes as a binary body so they are not corrupted by content-type-based
+            // decoding/serialisation and HttpRequest#getBodyAsRawBytes() returns what was actually sent
+            byte[] rawBytes = new byte[fullHttpRequest.content().readableBytes()];
+            fullHttpRequest.content().readBytes(rawBytes);
+            httpRequest.withBody(new BinaryBody(rawBytes));
+        } else {
+            httpRequest.withBody(bodyDecoderEncoder.byteBufToBody(fullHttpRequest.content(), fullHttpRequest.headers().get(CONTENT_TYPE)));
+        }
     }
 }

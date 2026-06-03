@@ -307,16 +307,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             } else {
                 final Http2Connection connection = new DefaultHttp2Connection(true);
                 final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
-                    .frameListener(
-                        new DelegatingDecompressorFrameListener(
-                            connection,
-                            new InboundHttp2ToHttpAdapterBuilder(connection)
-                                .maxContentLength(configuration.maxRequestBodySize())
-                                .propagateSettings(true)
-                                .validateHttpHeaders(false)
-                                .build()
-                        )
-                    );
+                    .frameListener(http2RequestFrameListener(connection));
                 if (mockServerLogger.isEnabledForInstance(TRACE)) {
                     http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
                 }
@@ -359,16 +350,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             } else {
                 final Http2Connection connection = new DefaultHttp2Connection(true);
                 final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
-                    .frameListener(
-                        new DelegatingDecompressorFrameListener(
-                            connection,
-                            new InboundHttp2ToHttpAdapterBuilder(connection)
-                                .maxContentLength(configuration.maxRequestBodySize())
-                                .propagateSettings(true)
-                                .validateHttpHeaders(false)
-                                .build()
-                        )
-                    );
+                    .frameListener(http2RequestFrameListener(connection));
                 if (mockServerLogger.isEnabledForInstance(TRACE)) {
                     http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
                 }
@@ -394,6 +376,23 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             // fire message back through pipeline
             ctx.fireChannelRead(msg.readBytes(actualReadableBytes()));
         }
+    }
+
+    /**
+     * Builds the HTTP/2 inbound request frame listener, wrapping it in a
+     * {@link DelegatingDecompressorFrameListener} only when request-body decompression is enabled
+     * (the default). When disabled the request body is delivered (and recorded) exactly as received.
+     */
+    private Http2FrameListener http2RequestFrameListener(Http2Connection connection) {
+        Http2FrameListener frameListener = new InboundHttp2ToHttpAdapterBuilder(connection)
+            .maxContentLength(configuration.maxRequestBodySize())
+            .propagateSettings(true)
+            .validateHttpHeaders(false)
+            .build();
+        if (configuration.decompressRequestBodies()) {
+            frameListener = new DelegatingDecompressorFrameListener(connection, frameListener);
+        }
+        return frameListener;
     }
 
     private void switchToHttp2Multiplex(ChannelHandlerContext ctx, ChannelPipeline pipeline, boolean sslEnabled, java.security.cert.Certificate[] clientCertificates) {
@@ -435,7 +434,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 configuration.maxChunkSize()
             ));
             addLastIfNotPresent(pipeline, preserveHeadersNettyRemoves);
-            addLastIfNotPresent(pipeline, new HttpContentDecompressor());
+            if (configuration.decompressRequestBodies()) {
+                addLastIfNotPresent(pipeline, new HttpContentDecompressor());
+            }
             addLastIfNotPresent(pipeline, httpContentLengthRemover);
             addLastIfNotPresent(pipeline, new EarlyMatchingHandler(configuration, httpState, actionHandler, isSslEnabledUpstream(ctx.channel())));
             addLastIfNotPresent(pipeline, new HttpObjectAggregator(configuration.maxRequestBodySize()));

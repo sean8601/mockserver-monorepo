@@ -109,6 +109,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
+    private static final String MOCKSERVER_DECOMPRESS_REQUEST_BODIES = "mockserver.decompressRequestBodies";
     private static final String MOCKSERVER_HTTP2_ENABLED = "mockserver.http2Enabled";
 
     // matcher safety
@@ -1471,6 +1472,27 @@ public class ConfigurationProperties {
 
     public static boolean assumeAllRequestsAreHttp() {
         return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP, "MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP", "false"));
+    }
+
+    /**
+     * If true (the default) request bodies sent with a Content-Encoding (e.g. gzip, deflate) are automatically
+     * decompressed before matching and recording, so expectations match the decompressed content.
+     * <p>
+     * Set to false to disable decompression: the request body is then matched and recorded exactly as it was
+     * received on the wire (still compressed), the Content-Encoding header is preserved, and
+     * HttpRequest#getBodyAsRawBytes returns the original compressed bytes. Useful when verifying that a client
+     * actually sent a compressed body.
+     * <p>
+     * The default is true
+     *
+     * @param decompressRequestBodies if false request bodies are matched and recorded as received (still compressed)
+     */
+    public static void decompressRequestBodies(boolean decompressRequestBodies) {
+        setProperty(MOCKSERVER_DECOMPRESS_REQUEST_BODIES, "" + decompressRequestBodies);
+    }
+
+    public static boolean decompressRequestBodies() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DECOMPRESS_REQUEST_BODIES, "MOCKSERVER_DECOMPRESS_REQUEST_BODIES", "true"));
     }
 
     /**
