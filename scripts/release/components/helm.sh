@@ -57,6 +57,7 @@ fi
 
 if is_dry_run; then
   log_dry "skip: helm registry login + helm push to oci://ghcr.io/mock-server/charts"
+  log_dry "skip: cosign sign of the OCI chart (only when mockserver-release/cosign-key is configured)"
   log_dry "skip: aws s3 download index, repack, upload, commit/push"
   log_info "Built chart: .tmp/helm-charts/mockserver-$RELEASE_VERSION.tgz"
 else
@@ -76,6 +77,36 @@ else
       helm push "helm/charts/mockserver-'"$RELEASE_VERSION"'.tgz" \
         oci://ghcr.io/mock-server/charts
     '
+
+  # Optionally cosign-sign the pushed OCI chart so Artifact Hub shows the "Signed" badge.
+  # NO-OP until a signing key is stored at mockserver-release/cosign-key (keys: key, password) —
+  # the describe-secret guard skips this entirely otherwise, so current releases are unaffected.
+  # Signing is additive and non-fatal: a failure here is logged but never blocks the release.
+  # Validate with a --dry-run release after first adding the key. See docs/infrastructure/helm.md.
+  if aws secretsmanager describe-secret --region "$REGION" \
+       --secret-id mockserver-release/cosign-key >/dev/null 2>&1; then
+    log_info "Cosign-signing the OCI chart (mockserver-release/cosign-key found)"
+    COSIGN_KEY=$(load_secret "mockserver-release/cosign-key" "key")
+    COSIGN_PASSWORD=$(load_secret "mockserver-release/cosign-key" "password")
+    if in_docker "$HELM_IMAGE" --entrypoint sh -w /build \
+         -e "GHCR_USERNAME=$GHCR_USERNAME" -e "GHCR_TOKEN=$GHCR_TOKEN" \
+         -e "COSIGN_KEY=$COSIGN_KEY" -e "COSIGN_PASSWORD=$COSIGN_PASSWORD" \
+         -- -ec '
+           set +x
+           wget -qO /usr/local/bin/cosign "https://github.com/sigstore/cosign/releases/download/v2.4.3/cosign-linux-amd64"
+           chmod +x /usr/local/bin/cosign
+           printf "%s" "$GHCR_TOKEN" | cosign login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+           printf "%s" "$COSIGN_KEY" > /tmp/cosign.key
+           cosign sign --yes --key /tmp/cosign.key "ghcr.io/mock-server/charts/mockserver:'"$RELEASE_VERSION"'"
+           rm -f /tmp/cosign.key
+         '; then
+      log_info "Chart signed with cosign"
+    else
+      log_info ":warning: cosign signing failed (non-fatal) — chart published but unsigned"
+    fi
+  else
+    log_info "cosign key not configured (mockserver-release/cosign-key) — skipping chart signing; see docs/infrastructure/helm.md"
+  fi
 
   log_info "Sync existing charts from S3"
   if [[ -z "${WEBSITE_BUCKET:-}" ]]; then

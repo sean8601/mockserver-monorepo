@@ -309,6 +309,33 @@ After that, Artifact Hub auto-indexes each new chart version pushed to GHCR by t
 no per-release step. (Optional follow-up: add the `oras push` of the metadata file to
 `scripts/release/components/helm.sh` once `oras` is available on the `release` agents.)
 
+### Signing the chart (Artifact Hub "Signed" badge)
+
+Artifact Hub shows a **Signed** badge when the OCI chart carries a [cosign](https://docs.sigstore.dev/)
+signature (it detects them automatically for OCI repositories — no annotation needed). The release
+pipeline has a **guarded, opt-in** signing step in `scripts/release/components/helm.sh`: it is a
+**no-op until a signing key exists**, so it never affects unsigned releases.
+
+To enable signing:
+
+1. **Generate a cosign key pair** (once): `cosign generate-key-pair` → `cosign.key` (encrypted with a
+   password) + `cosign.pub`. Publish `cosign.pub` somewhere users can verify against (e.g. the repo
+   or the website).
+2. **Store it** in the build account's Secrets Manager as `mockserver-release/cosign-key`, a JSON
+   secret with keys `key` (the PEM contents of `cosign.key`) and `password` (the key password).
+3. **Validate with a dry-run release first** — the step downloads a pinned cosign binary into the
+   `alpine/helm` image, `cosign login ghcr.io` with the existing GHCR token, and
+   `cosign sign --key <key> ghcr.io/mock-server/charts/mockserver:<version>`. Confirm it succeeds on
+   a `--dry-run`/test before relying on it (signing is non-fatal, so a real release won't break if it
+   fails — it just publishes unsigned).
+
+Once a signed version is on GHCR, Artifact Hub shows the Signed badge on its next scan. Users can
+verify with `cosign verify --key cosign.pub ghcr.io/mock-server/charts/mockserver:<version>`.
+
+> Hardening notes: the step fetches the cosign binary at release time (pinned to a version) — consider
+> SHA-pinning it or switching to a cosign-bearing toolchain image. Keyless (OIDC) signing is an
+> alternative if Buildkite OIDC is set up, avoiding a stored key.
+
 ### Release pipeline (automated)
 
 `scripts/release/components/helm.sh` runs on the `release` agent queue and:
