@@ -224,7 +224,7 @@ public class HttpActionHandler {
                 dispatchPrimaryAction(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
             }
 
-        } else if (CORSHeaders.isPreflightRequest(configuration, request) && (configuration.enableCORSForAPI() || configuration.enableCORSForAllResponses())) {
+        } else if (CORSHeaders.isPreflightRequest(configuration, request) && (configuration.enableCORSForAPI() || configuration.enableCORSForAllResponses() || isControlPlanePreflight(request))) {
 
             responseWriter.writeResponse(request, OK);
             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -250,6 +250,20 @@ public class HttpActionHandler {
             returnNotFound(responseWriter, request, null);
 
         }
+    }
+
+    /**
+     * Whether an (unmatched) preflight targets a control-plane / dashboard endpoint, identified by
+     * the {@code /mockserver} path prefix the dashboard always uses. Such preflights are answered
+     * with a CORS response regardless of {@code enableCORSForAPI}, so the dashboard works
+     * cross-origin (e.g. pointed at a different MockServer via its host/port fields) without
+     * requiring users to enable CORS explicitly. Scoped to the prefix so unmatched OPTIONS on a
+     * user's own mocked paths still fall through to normal matching / not-found handling.
+     */
+    private boolean isControlPlanePreflight(HttpRequest request) {
+        return request.getPath() != null
+            && request.getPath().getValue() != null
+            && request.getPath().getValue().startsWith(org.mockserver.mock.HttpState.PATH_PREFIX);
     }
 
     /**
