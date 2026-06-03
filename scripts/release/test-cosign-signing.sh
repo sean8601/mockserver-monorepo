@@ -77,9 +77,13 @@ COSIGN_PASSWORD=$(load_secret "$COSIGN_SECRET" "password")
 GHCR_USERNAME=$(load_secret "$GHCR_SECRET" "username")
 GHCR_TOKEN=$(load_secret "$GHCR_SECRET" "token")
 
+# cosign keys carry a "... PRIVATE KEY" PEM header — older builds emit
+# "ENCRYPTED COSIGN PRIVATE KEY", newer ones "ENCRYPTED SIGSTORE PRIVATE KEY".
+# Match the common suffix so either is accepted; cosign public-key below is the
+# definitive check that the key + password actually decrypt.
 case "$COSIGN_KEY" in
-  *"COSIGN PRIVATE KEY"*) : ;;
-  *) log_error "Secret '.key' isn't a cosign private key (no 'COSIGN PRIVATE KEY' header)."
+  *"PRIVATE KEY"*) : ;;
+  *) log_error "Secret '.key' isn't a PEM private key (no 'PRIVATE KEY' header)."
      log_error "The secret must be JSON: {\"key\": \"<contents of cosign.key>\", \"password\": \"...\"}."
      exit 1 ;;
 esac
