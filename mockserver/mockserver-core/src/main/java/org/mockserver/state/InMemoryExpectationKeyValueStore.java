@@ -57,11 +57,16 @@ public class InMemoryExpectationKeyValueStore implements KeyValueStore<Expectati
 
     @Override
     public long put(String key, ExpectationEntry value) {
-        // Remove existing entry if present (the queue's add doesn't update by key)
-        queue.getByKey(key).ifPresent(existing -> {
-            queue.remove(existing);
-        });
-        queue.add(value);
+        // If the key already exists, replace the value IN PLACE to preserve
+        // insertion-order position (and therefore eviction order).  This
+        // mirrors how the pre-Phase-2b RequestMatchers did in-place
+        // HttpRequestMatcher.update() — the eviction victim when over
+        // maxExpectations is always the oldest by original insertion time,
+        // regardless of subsequent updates. (COR-01 fix)
+        if (!queue.replaceValue(key, value)) {
+            // New key — add normally (may trigger eviction if at capacity)
+            queue.add(value);
+        }
         AtomicLong ver = versions.computeIfAbsent(key, k -> new AtomicLong(0));
         long newVersion = ver.incrementAndGet();
         fireChanged(key);
@@ -78,10 +83,10 @@ public class InMemoryExpectationKeyValueStore implements KeyValueStore<Expectati
             if (ver.get() != expectedVersion) {
                 return false;
             }
-            queue.getByKey(key).ifPresent(existing -> {
-                queue.remove(existing);
-            });
-            queue.add(value);
+            // Preserve insertion-order position on update (COR-01)
+            if (!queue.replaceValue(key, value)) {
+                queue.add(value);
+            }
             ver.incrementAndGet();
         }
         fireChanged(key);
