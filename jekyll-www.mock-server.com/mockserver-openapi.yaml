@@ -4,7 +4,7 @@ servers:
   - url: 'https://localhost:1080/'
 info:
   title: MockServer API
-  version: 5.16.0
+  version: 6.1.0
   description: >-
     MockServer enables easy mocking of any system you integrate with via HTTP or HTTPS with clients written in Java, JavaScript and Ruby and a simple REST API (as shown below).
 
@@ -26,6 +26,24 @@ tags:
     description: Verify requests (both MockServer & MockServer Proxy)
   - name: control
     description: Manage state or process (both MockServer & MockServer Proxy)
+  - name: import
+    description: Import expectations from external formats such as HAR or Postman collections (only supported by MockServer)
+  - name: crud
+    description: Register a generated CRUD data store backed REST resource (only supported by MockServer)
+  - name: files
+    description: Store, retrieve, list and delete files in the in-memory file store used by response templates and callbacks (only supported by MockServer)
+  - name: chaos
+    description: Register service-scoped, TCP and gRPC chaos / fault-injection profiles (only supported by MockServer)
+  - name: drift
+    description: Inspect and clear recorded mock drift (differences between expectations and observed responses)
+  - name: oidc
+    description: Generate a turnkey OpenID Connect / OAuth2 provider as a set of expectations (only supported by MockServer)
+  - name: asyncapi
+    description: Mock and verify AsyncAPI message brokers (only supported by MockServer when mockserver-async is on the classpath)
+  - name: wasm
+    description: Load and list WebAssembly custom rule modules (only supported by MockServer)
+  - name: grpc
+    description: Manage gRPC proto descriptors, services and health checking (only supported by MockServer)
 
 paths:
   /mockserver/expectation:
@@ -136,7 +154,7 @@ paths:
             type: string
             enum: [ "logs", "requests", "request_responses", "recorded_expectations", "active_expectations", "metrics" ]
           required: false
-          description: specifies the type of object that is retrieve, default if not specified is "requests", supported values are "logs", "requests", "recorded_expectations", "active_expectations", "metrics"
+          description: specifies the type of object that is retrieve, default if not specified is "requests", supported values are "logs", "requests", "request_responses", "recorded_expectations", "active_expectations", "metrics"
       responses:
         '200':
           description: recorded requests or active expectations returned
@@ -359,6 +377,723 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClockStatus"
+  /mockserver/import:
+    put:
+      tags:
+        - import
+      summary: import expectations from a HAR or Postman collection
+      description: >-
+        Converts an HTTP Archive (HAR) export or a Postman collection into MockServer expectations and adds them.
+        The format is auto-detected from the document structure or can be forced with the format query parameter.
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [ "har", "postman" ]
+          required: false
+          description: >-
+            forces the import format, supported values are "har" and "postman"; when omitted the format is auto-detected from the request body
+      responses:
+        '201':
+          description: expectations created from the imported document
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: missing body, unsupported format, or unable to auto-detect the import format
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: a HAR export or Postman collection JSON document
+        description: HAR or Postman collection JSON document to import
+        required: true
+  /mockserver/crud:
+    put:
+      tags:
+        - crud
+      summary: register a generated CRUD data store
+      description: >-
+        Registers a REST resource backed by an in-memory data store that automatically handles
+        list, read, create, update and delete operations under the supplied base path.
+      responses:
+        '201':
+          description: CRUD resource registered
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  basePath:
+                    type: string
+                  idStrategy:
+                    type: string
+        '400':
+          description: missing basePath or failed to register CRUD resource
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CrudExpectationsDefinition"
+        description: CRUD resource definition including the base path and id strategy
+        required: true
+  /mockserver/files/store:
+    put:
+      tags:
+        - files
+      summary: store a file in the file store
+      description: stores a file (text or base64-encoded binary) under the supplied name in the in-memory file store
+      responses:
+        '201':
+          description: file stored
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  name:
+                    type: string
+                  size:
+                    type: integer
+        '400':
+          description: request body missing the required 'name' and 'content' fields, or empty body
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileStoreRequest"
+        description: file name and content to store
+        required: true
+  /mockserver/files/retrieve:
+    put:
+      tags:
+        - files
+      summary: retrieve a file from the file store
+      description: returns the raw bytes of a previously stored file
+      responses:
+        '200':
+          description: file content returned
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: request body missing the required 'name' field
+        '404':
+          description: file not found
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+              required:
+                - name
+        description: name of the file to retrieve
+        required: true
+  /mockserver/files/list:
+    put:
+      tags:
+        - files
+      summary: list files in the file store
+      description: returns the names of all files currently held in the in-memory file store
+      responses:
+        '200':
+          description: list of file names returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '400':
+          description: failed to list files
+  /mockserver/files/delete:
+    put:
+      tags:
+        - files
+      summary: delete a file from the file store
+      description: removes a previously stored file from the in-memory file store
+      responses:
+        '200':
+          description: file deleted
+        '400':
+          description: request body missing the required 'name' field
+        '404':
+          description: file not found
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+              required:
+                - name
+        description: name of the file to delete
+        required: true
+  /mockserver/serviceChaos:
+    put:
+      tags:
+        - chaos
+      summary: register, remove or clear service-scoped HTTP chaos
+      description: >-
+        Registers an HTTP chaos / fault-injection profile for a downstream host, removes a host's profile,
+        or clears all service-scoped chaos. Supply a 'host' with a 'chaos' object to register, 'host' with
+        'remove':true (or no 'chaos') to remove a single host, or 'clear':true to clear all.
+      responses:
+        '200':
+          description: chaos registered, removed, patched or cleared
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: invalid request body or invalid chaos profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceChaosRequest"
+        description: service chaos registration, removal or clear instruction
+        required: true
+    get:
+      tags:
+        - chaos
+      summary: list registered service-scoped HTTP chaos
+      description: returns all registered service-scoped chaos profiles keyed by host, plus any remaining time-to-live
+      responses:
+        '200':
+          description: registered service-scoped chaos returned
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      tags:
+        - chaos
+      summary: update an existing service-scoped HTTP chaos profile (JSON Merge Patch)
+      description: >-
+        Applies a JSON Merge Patch to an already-registered service-scoped chaos profile for a host,
+        updating only the supplied fields and leaving the rest unchanged.
+      responses:
+        '200':
+          description: chaos profile patched
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: invalid request body, unknown host, or invalid chaos profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceChaosRequest"
+        description: JSON Merge Patch with 'host' and the chaos fields to update
+        required: true
+  /mockserver/tcpChaos:
+    put:
+      tags:
+        - chaos
+      summary: register, remove or clear TCP chaos
+      description: >-
+        Registers a TCP-layer chaos / fault-injection profile for a downstream host, removes a host's profile,
+        or clears all TCP chaos. Supply a 'host' with a 'chaos' object to register, 'host' with 'remove':true
+        (or no 'chaos') to remove a single host, or 'clear':true to clear all.
+      responses:
+        '200':
+          description: chaos registered, removed, patched or cleared
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: invalid request body or invalid chaos profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >-
+                TCP chaos registration, removal or clear instruction with 'host', optional 'chaos', 'remove',
+                'clear' and 'ttlMillis' fields
+        description: TCP chaos registration, removal or clear instruction
+        required: true
+    get:
+      tags:
+        - chaos
+      summary: list registered TCP chaos
+      description: returns all registered TCP chaos profiles keyed by host, plus any remaining time-to-live
+      responses:
+        '200':
+          description: registered TCP chaos returned
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      tags:
+        - chaos
+      summary: update an existing TCP chaos profile (JSON Merge Patch)
+      description: >-
+        Applies a JSON Merge Patch to an already-registered TCP chaos profile for a host,
+        updating only the supplied fields and leaving the rest unchanged.
+      responses:
+        '200':
+          description: chaos profile patched
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: invalid request body, unknown host, or invalid chaos profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON Merge Patch with 'host' and the TCP chaos fields to update
+        description: JSON Merge Patch with 'host' and the TCP chaos fields to update
+        required: true
+  /mockserver/grpcChaos:
+    put:
+      tags:
+        - chaos
+      summary: register, remove or clear gRPC chaos
+      description: >-
+        Registers a gRPC chaos / fault-injection profile for a service, removes a service's profile,
+        or clears all gRPC chaos. Supply a 'service' with a 'chaos' object to register, 'service' with
+        'remove':true (or no 'chaos') to remove a single service, or 'clear':true to clear all.
+      responses:
+        '200':
+          description: chaos registered, removed, patched or cleared
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: invalid request body or invalid chaos profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >-
+                gRPC chaos registration, removal or clear instruction with 'service', optional 'chaos', 'remove',
+                'clear' and 'ttlMillis' fields
+        description: gRPC chaos registration, removal or clear instruction
+        required: true
+    get:
+      tags:
+        - chaos
+      summary: list registered gRPC chaos
+      description: returns all registered gRPC chaos profiles keyed by service, plus any remaining time-to-live
+      responses:
+        '200':
+          description: registered gRPC chaos returned
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      tags:
+        - chaos
+      summary: update an existing gRPC chaos profile (JSON Merge Patch)
+      description: >-
+        Applies a JSON Merge Patch to an already-registered gRPC chaos profile for a service,
+        updating only the supplied fields and leaving the rest unchanged.
+      responses:
+        '200':
+          description: chaos profile patched
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: invalid request body, unknown service, or invalid chaos profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON Merge Patch with 'service' and the gRPC chaos fields to update
+        description: JSON Merge Patch with 'service' and the gRPC chaos fields to update
+        required: true
+  /mockserver/drift:
+    get:
+      tags:
+        - drift
+      summary: retrieve recorded mock drift
+      description: >-
+        Returns recorded drift records (differences between expectations and observed responses),
+        optionally filtered by expectation id and limited in count.
+      parameters:
+        - in: query
+          name: expectationId
+          schema:
+            type: string
+          required: false
+          description: only return drift records for the given expectation id
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+          required: false
+          description: maximum number of recent drift records to return (default 50, capped at 500), ignored when expectationId is supplied
+      responses:
+        '200':
+          description: drift records returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  count:
+                    type: integer
+                  drifts:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: failed to retrieve drift records
+  /mockserver/drift/clear:
+    put:
+      tags:
+        - drift
+      summary: clear all recorded mock drift
+      description: removes all recorded drift records
+      responses:
+        '200':
+          description: drift records cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+  /mockserver/oidc:
+    put:
+      tags:
+        - oidc
+      summary: generate a turnkey OIDC / OAuth2 provider
+      description: >-
+        Generates a set of expectations that emulate an OpenID Connect / OAuth2 provider (discovery document,
+        JWKS, token, authorize, userinfo and related endpoints) and adds them. An empty body uses the default
+        provider configuration.
+      responses:
+        '201':
+          description: OIDC provider expectations created
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: invalid OIDC provider configuration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: OIDC provider configuration (issuer, client, claims, etc.); an empty body uses defaults
+        description: OIDC provider configuration
+        required: false
+  /mockserver/asyncapi:
+    put:
+      tags:
+        - asyncapi
+      summary: load an AsyncAPI specification
+      description: >-
+        Loads an AsyncAPI specification (JSON or YAML), or a { spec, brokerConfig } document, to mock the
+        described message broker. Requires the mockserver-async module on the classpath.
+      responses:
+        '201':
+          description: AsyncAPI specification loaded
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: empty or invalid AsyncAPI specification
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '501':
+          description: AsyncAPI messaging module is not available on the classpath
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: an AsyncAPI specification (JSON/YAML) or a { spec, brokerConfig } document
+        description: AsyncAPI specification or spec plus broker configuration
+        required: true
+    get:
+      tags:
+        - asyncapi
+      summary: retrieve AsyncAPI mock status
+      description: returns the status of the currently loaded AsyncAPI mock. Requires the mockserver-async module on the classpath.
+      responses:
+        '200':
+          description: AsyncAPI status returned
+          content:
+            application/json:
+              schema:
+                type: object
+        '501':
+          description: AsyncAPI messaging module is not available on the classpath
+  /mockserver/asyncapi/verify:
+    put:
+      tags:
+        - asyncapi
+      summary: verify AsyncAPI messages
+      description: >-
+        Verifies that messages were published/received against the loaded AsyncAPI mock.
+        Requires the mockserver-async module on the classpath.
+      responses:
+        '202':
+          description: verification passed
+        '400':
+          description: empty or invalid verification request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '406':
+          description: verification failed
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: human-readable description of the verification failure
+        '501':
+          description: AsyncAPI messaging module is not available on the classpath
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: AsyncAPI message verification request
+        description: AsyncAPI message verification request
+        required: true
+  /mockserver/wasm/modules:
+    put:
+      tags:
+        - wasm
+      summary: load a WebAssembly custom rule module
+      description: stores a compiled WebAssembly module (raw .wasm bytes) under the name supplied in the query parameter
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: true
+          description: name to register the WASM module under
+      responses:
+        '201':
+          description: WASM module loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                  moduleName:
+                    type: string
+        '400':
+          description: missing 'name' query parameter or empty module body
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: raw compiled WebAssembly (.wasm) module bytes
+        description: raw compiled WebAssembly module bytes
+        required: true
+    get:
+      tags:
+        - wasm
+      summary: list loaded WebAssembly modules
+      description: returns the names of all currently loaded WebAssembly custom rule modules
+      responses:
+        '200':
+          description: list of WASM module names returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '400':
+          description: failed to list WASM modules
+  /mockserver/grpc/descriptors:
+    put:
+      tags:
+        - grpc
+      summary: load a gRPC proto descriptor set
+      description: loads a compiled protobuf FileDescriptorSet (raw bytes) so gRPC services can be matched and mocked
+      responses:
+        '201':
+          description: descriptor set loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+        '400':
+          description: empty descriptor set body or failed to load descriptor
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: compiled protobuf FileDescriptorSet bytes
+        description: compiled protobuf FileDescriptorSet bytes
+        required: true
+  /mockserver/grpc/health:
+    put:
+      tags:
+        - grpc
+      summary: set a gRPC health serving status
+      description: >-
+        Sets the gRPC health-checking serving status for a service (an empty service name sets the default),
+        or removes a service override with 'remove':true.
+      responses:
+        '200':
+          description: serving status set or removed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                  service:
+                    type: string
+                  servingStatus:
+                    type: string
+        '400':
+          description: missing or invalid 'service' / 'status' fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                service:
+                  type: string
+                  description: gRPC service name; an empty string sets the default status
+                status:
+                  type: string
+                  enum: [ "UNKNOWN", "SERVING", "NOT_SERVING", "SERVICE_UNKNOWN" ]
+                remove:
+                  type: boolean
+                  description: when true, removes the service override
+        description: gRPC service name and serving status
+        required: true
+    get:
+      tags:
+        - grpc
+      summary: retrieve gRPC health serving statuses
+      description: returns the configured gRPC health serving status for each service (the default is reported under "_default")
+      responses:
+        '200':
+          description: serving statuses returned
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: failed to get gRPC health status
   /mockserver/stop:
     put:
       tags:
@@ -1219,3 +1954,67 @@ components:
           $ref: "#/components/schemas/HttpResponse"
         timestamp:
           type: string
+    CrudExpectationsDefinition:
+      description: "definition of a generated CRUD data store backed REST resource"
+      type: object
+      additionalProperties: false
+      required:
+        - basePath
+      properties:
+        basePath:
+          type: string
+          description: "base path the CRUD resource is served under (e.g. /api/users)"
+        idField:
+          type: string
+          default: "id"
+          description: "name of the field used as the resource identifier"
+        idStrategy:
+          type: string
+          enum: [ "AUTO_INCREMENT", "UUID" ]
+          default: "AUTO_INCREMENT"
+          description: "strategy used to generate identifiers for newly created resources"
+        initialData:
+          type: array
+          description: "initial records to seed the data store with"
+          items:
+            type: object
+    FileStoreRequest:
+      description: "file to store in the in-memory file store"
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - content
+      properties:
+        name:
+          type: string
+          description: "name to store the file under"
+        content:
+          type: string
+          description: "file content, either plain text or base64-encoded when base64 is true"
+        base64:
+          type: boolean
+          default: false
+          description: "when true, content is treated as base64-encoded binary data"
+    ServiceChaosRequest:
+      description: "service-scoped HTTP chaos registration, removal or clear instruction"
+      type: object
+      additionalProperties: true
+      properties:
+        host:
+          type: string
+          description: "downstream host the chaos profile applies to (mutually exclusive with clear)"
+        chaos:
+          type: object
+          description: "HTTP chaos profile (fault types, probabilities, error status, etc.); omit (or set remove:true) to remove the host's profile"
+        remove:
+          type: boolean
+          description: "when true, removes the named host's chaos profile"
+        clear:
+          type: boolean
+          description: "when true, clears all service-scoped chaos (mutually exclusive with host)"
+        ttlMillis:
+          type: integer
+          format: int64
+          minimum: 1
+          description: "optional time-to-live in milliseconds after which the registration auto-reverts"
