@@ -232,6 +232,9 @@ function run_all_tests() {
         smoke_test_variant "graaljs" || true
         smoke_test_variant "root-snapshot" || true
       fi
+      # WAR deployment test (Tomcat container); requires mockserver-war to
+      # have been built by the Maven package step.
+      test "docker_compose_war_tomcat"
       clean-up-docker-containers
     fi
     if [[ "${SKIP_HELM_TESTS:-}" != "true" ]]; then
