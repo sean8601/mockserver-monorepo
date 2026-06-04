@@ -6809,4 +6809,300 @@ public abstract class AbstractExtendedMockingIntegrationTest extends AbstractBas
         assertThat("Fast request takes longer than expected", fastRequestElapsedMillis, is(lessThan(1000L)));
     }
 
+    // --- tests moved up from AbstractExtendedNettyMockingIntegrationTest ---
+    // so they run across ALL L3+ subclasses (netty, WAR servlet, HTTP/2)
+
+    @Test
+    public void shouldReturnResponseByMatchingQueryParametersWithPipeDelimitedParameters() {
+        // when
+        mockServerClient
+            .when(
+                request()
+                    .withPath("/some/path")
+                    .withQueryStringParameters(new Parameters(
+                        schemaParam("variableO[a-z]{2}", "{" + NEW_LINE +
+                            "   \"type\": \"string\"," + NEW_LINE +
+                            "   \"pattern\": \"variableOneV[a-z]{4}$\"" + NEW_LINE +
+                            "}").withStyle(ParameterStyle.PIPE_DELIMITED),
+                        schemaParam("?variableTwo", "{" + NEW_LINE +
+                            "   \"type\": \"string\"," + NEW_LINE +
+                            "   \"pattern\": \"variableTwoV[a-z]{4}$\"" + NEW_LINE +
+                            "}").withStyle(ParameterStyle.PIPE_DELIMITED)
+                    ).withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY))
+            )
+            .respond(
+                response()
+                    .withStatusCode(200)
+            );
+
+        // then
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase()),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaa|variableOneValbb|variableOneValcc" +
+                                                "&variableTwo=variableTwoValue|variableTwoValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase()),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValab" +
+                                                "&variableTwo=variableTwoValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase()),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaa|variableOneValbb|variableOneValcc")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaax|variableOneValbb|variableOneValcc")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaa|variableOneValbbx|variableOneValcc")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaa|variableOneValbb|variableOneValccx")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaa|variableOneValbb|variableOneValcc" +
+                                                "&variableTwo=variableTwoOtherValue|variableTwoValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaa|variableOneValbb|variableOneValcc" +
+                                                "&variableTwo=variableTwoValue|variableTwoOtherValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "?variableOne=variableOneValaax|variableOneValbb|variableOneValcc" +
+                                                "&variableTwo=variableTwoValue|variableTwoOtherValue")),
+                getHeadersToRemove()
+            )
+        );
+    }
+
+    @Test
+    public void shouldReturnResponseByMatchingPathParametersWithMatrixStyleParameters() {
+        // when
+        mockServerClient
+            .when(
+                request()
+                    .withPath("/some/path/{variableOne}/{variableTwo}")
+                    .withPathParameters(new Parameters(
+                        schemaParam("variableO[a-z]{2}", "{" + NEW_LINE +
+                            "   \"type\": \"string\"," + NEW_LINE +
+                            "   \"pattern\": \"variableOneV[a-z]{4}$\"" + NEW_LINE +
+                            "}").withStyle(ParameterStyle.MATRIX_EXPLODED),
+                        schemaParam("variableTwo", "{" + NEW_LINE +
+                            "   \"type\": \"string\"," + NEW_LINE +
+                            "   \"pattern\": \"variableTwoV[a-z]{4}$\"" + NEW_LINE +
+                            "}").withStyle(ParameterStyle.MATRIX)
+                    ).withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY))
+            )
+            .respond(
+                response()
+                    .withStatusCode(200)
+            );
+
+        // then
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase()),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "/;variableOne=variableOneValaa;variableOne=variableOneValbb;variableOne=variableOneValcc" +
+                                                "/;variableTwo=variableTwoValue,variableTwoValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase()),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "/;variableOne=variableOneValab" +
+                                                "/;variableTwo=variableTwoValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "/;variableOne=variableOneValaa;variableOne=variableOneValbb;variableOne=variableOneValcc" +
+                                                "/;variableTwo=variableTwoOtherValue,variableTwoValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "/;variableOne=variableOneValaa;variableOne=variableOneValbb;variableOne=variableOneValcc" +
+                                                "/;variableTwo=variableTwoValue,variableTwoOtherValue")),
+                getHeadersToRemove()
+            )
+        );
+        assertEquals(
+            notFoundResponse(),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some/path" +
+                                                "/;variableOne=variableOneValaax;variableOne=variableOneValbb;variableOne=variableOneValcc" +
+                                                "/;variableTwo=variableTwoValue,variableTwoOtherValue")),
+                getHeadersToRemove()
+            )
+        );
+    }
+
+    @Test
+    public void shouldReturnResponseByMatchingVeryLargeHeader() {
+        // when
+        char[] chars = new char[1024 * 2 * 2 * 2 * 2];
+        Arrays.fill(chars, 'a');
+        for (int i = 0; i < chars.length; i++) {
+            chars[i] = (char) ('a' + (i % 26));
+        }
+        String largeHeaderValue = new String(chars);
+        mockServerClient
+            .when(
+                request()
+                    .withHeader("largeHeader", largeHeaderValue)
+            )
+            .respond(
+                response()
+                    .withBody("some_string_body_response")
+            );
+
+        // then
+        // - in http
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase())
+                .withBody("some_string_body_response"),
+            makeRequest(
+                request()
+                    .withMethod("POST")
+                    .withPath(calculatePath("some_path"))
+                    .withHeader("largeHeader", largeHeaderValue),
+                getHeadersToRemove()
+            )
+        );
+        // - in https
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase())
+                .withBody("some_string_body_response"),
+            makeRequest(
+                request()
+                    .withSecure(true)
+                    .withMethod("POST")
+                    .withPath(calculatePath("some_path"))
+                    .withHeader("largeHeader", largeHeaderValue),
+                getHeadersToRemove()
+            )
+        );
+    }
+
+    @Test
+    public void shouldAllowMatchingAgainstContentEncodingHeader() {
+        // when
+        mockServerClient
+            .when(
+                request()
+                    .withPath(calculatePath("some_path"))
+                    .withHeader(CONTENT_ENCODING.toString(), "gzip")
+            )
+            .respond(
+                response()
+                    .withBody("context_encoded_matched")
+            );
+
+        // then
+        // - in http
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase())
+                .withBody("context_encoded_matched"),
+            makeRequest(
+                request()
+                    .withPath(calculatePath("some_path"))
+                    .withHeader(CONTENT_ENCODING.toString(), "gzip"),
+                getHeadersToRemove()
+            )
+        );
+        // - in https
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase())
+                .withBody("context_encoded_matched"),
+            makeRequest(
+                request()
+                    .withSecure(true)
+                    .withPath(calculatePath("some_path"))
+                    .withHeader(CONTENT_ENCODING.toString(), "gzip"),
+                getHeadersToRemove()
+            )
+        );
+    }
+
 }

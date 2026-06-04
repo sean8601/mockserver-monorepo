@@ -2,6 +2,7 @@ package org.mockserver.mockservlet.integration;
 
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslProvider;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -476,5 +477,28 @@ public abstract class AbstractExtendedDeployableWARMockingIntegrationTest extend
         } finally {
             ConfigurationProperties.livenessHttpGetPath(originalStatusPath);
         }
+    }
+
+    // --- decode-gap overrides: tests moved to L3 that fail on the Tomcat servlet codec ---
+
+    @Override
+    @Test
+    @Ignore("decode-gap: Tomcat rejects pipe '|' characters in query strings per RFC 7230/3986 — see test-coverage audit")
+    public void shouldReturnResponseByMatchingQueryParametersWithPipeDelimitedParameters() {
+        super.shouldReturnResponseByMatchingQueryParametersWithPipeDelimitedParameters();
+    }
+
+    @Override
+    @Test
+    @Ignore("decode-gap: Tomcat servlet codec does not decode matrix-style path parameters — see test-coverage audit")
+    public void shouldReturnResponseByMatchingPathParametersWithMatrixStyleParameters() {
+        super.shouldReturnResponseByMatchingPathParametersWithMatrixStyleParameters();
+    }
+
+    @Override
+    @Test
+    @Ignore("decode-gap: Tomcat default max header size (8KB) rejects the 16KB test header — see test-coverage audit")
+    public void shouldReturnResponseByMatchingVeryLargeHeader() {
+        super.shouldReturnResponseByMatchingVeryLargeHeader();
     }
 }
