@@ -22,7 +22,7 @@ function integration_test() {
 
   start-up
   TEST_EXIT_CODE=0
-  wait_ready "mockserver" || return 1
+  wait_ready "mockserver" || { TEST_EXIT_CODE=1; logTestResult "${TEST_EXIT_CODE}" "${TEST_CASE}"; return ${TEST_EXIT_CODE}; }
 
   # Create an expectation that will be persisted
   docker-exec-client "curl -v -s -X PUT 'http://mockserver:1080/mockserver/expectation' -d \\\"{

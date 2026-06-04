@@ -37,8 +37,8 @@ function integration_test() {
   TEST_EXIT_CODE=0
 
   # both the server under test and the MockServer acting as the OTLP sink
-  wait_ready "mockserver" || return 1
-  wait_ready "otlp-receiver" || return 1
+  wait_ready "mockserver" || { TEST_EXIT_CODE=1; logTestResult "${TEST_EXIT_CODE}" "${TEST_CASE}"; return ${TEST_EXIT_CODE}; }
+  wait_ready "otlp-receiver" || { TEST_EXIT_CODE=1; logTestResult "${TEST_EXIT_CODE}" "${TEST_CASE}"; return ${TEST_EXIT_CODE}; }
 
   # Tell the OTLP receiver to accept the exporter's metric POSTs with 200 so the
   # export succeeds cleanly (an unmatched request would 404 and make the OTel SDK
