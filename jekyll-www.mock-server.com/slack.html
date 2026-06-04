@@ -3,6 +3,16 @@ layout: null
 sitemap:
   exclude: true
 ---
+{%- comment %}
+  This page redirects to the Slack shared-invite link configured as
+  `slack_invite_url` in _config.yml. That link EXPIRES ~30 days after it is
+  generated (current: generated 2026-06-04, expires ~2026-07-04). When it
+  expires, regenerate the link in Slack (Invite people → Share invite link)
+  and update slack_invite_url in _config.yml — see the notes there. While the
+  value is empty, this page falls back to GitHub Discussions instead of 404-ing.
+  (This is a Liquid comment: it is stripped at build time and never appears in
+  the served HTML.)
+{%- endcomment %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
