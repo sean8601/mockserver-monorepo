@@ -44,6 +44,10 @@ tags:
     description: Load and list WebAssembly custom rule modules (only supported by MockServer)
   - name: grpc
     description: Manage gRPC proto descriptors, services and health checking (only supported by MockServer)
+  - name: troubleshooting
+    description: Diagnose why requests did not match expectations (only supported by MockServer)
+  - name: pact
+    description: Export and verify Pact consumer-driven contracts (only supported by MockServer)
 
 paths:
   /mockserver/expectation:
@@ -1094,6 +1098,507 @@ paths:
                 type: object
         '400':
           description: failed to get gRPC health status
+  /mockserver/mode:
+    put:
+      tags:
+        - control
+      summary: set the proxy / mock operating mode
+      description: >-
+        Sets the operating mode that controls how unmatched requests are handled.
+        SIMULATE matches expectations and returns a 404 for unmatched requests;
+        SPY matches expectations but forwards (and records) unmatched requests to the real downstream;
+        CAPTURE forwards and records all traffic (the same proxy-on-no-match behaviour as SPY).
+      parameters:
+        - in: query
+          name: mode
+          schema:
+            type: string
+            enum: [ "SIMULATE", "SPY", "CAPTURE" ]
+          required: true
+          description: the operating mode to set
+      responses:
+        '200':
+          description: mode set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  mode:
+                    type: string
+                    enum: [ "SIMULATE", "SPY", "CAPTURE" ]
+                  proxyUnmatchedRequests:
+                    type: boolean
+        '400':
+          description: missing or unknown mode
+    get:
+      tags:
+        - control
+      summary: retrieve the current proxy / mock operating mode
+      description: returns the current operating mode and whether unmatched requests are proxied
+      responses:
+        '200':
+          description: current mode returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  mode:
+                    type: string
+                    enum: [ "SIMULATE", "SPY", "CAPTURE" ]
+                  proxyUnmatchedRequests:
+                    type: boolean
+  /mockserver/cassettes:
+    put:
+      tags:
+        - control
+      summary: register or update a record/replay cassette
+      description: >-
+        Registers (or updates) a cassette entry in the in-memory cassette registry from a JSON body.
+        The 'path' field is required; 'filename', 'expectationCount' and 'origin' are optional.
+      responses:
+        '201':
+          description: cassette registered
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  path:
+                    type: string
+                  filename:
+                    type: string
+                  expectationCount:
+                    type: integer
+                  origin:
+                    type: string
+                  lastUsed:
+                    type: integer
+                    format: int64
+        '400':
+          description: missing request body or missing 'path' field
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: cassette path (required, used as the registry key)
+                filename:
+                  type: string
+                expectationCount:
+                  type: integer
+                origin:
+                  type: string
+        description: cassette registration details
+        required: true
+    get:
+      tags:
+        - control
+      summary: list registered cassettes
+      description: returns all registered cassettes held in the in-memory cassette registry
+      responses:
+        '200':
+          description: registered cassettes returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  cassettes:
+                    type: array
+                    items:
+                      type: object
+    delete:
+      tags:
+        - control
+      summary: remove a registered cassette
+      description: >-
+        removes a cassette by path, supplied either as the 'path' query parameter or a JSON body with a 'path' field
+      parameters:
+        - in: query
+          name: path
+          schema:
+            type: string
+          required: false
+          description: path of the cassette to remove (alternatively supply 'path' in the request body)
+      responses:
+        '200':
+          description: removal processed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  removed:
+                    type: boolean
+        '400':
+          description: path missing from both query parameter and body
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                path:
+                  type: string
+        description: path of the cassette to remove (alternative to the query parameter)
+        required: false
+  /mockserver/diff:
+    put:
+      tags:
+        - verify
+      summary: compare two HTTP requests field-by-field
+      description: >-
+        Diffs an 'expected' against an 'actual' HttpRequest and returns the per-field differences,
+        a total diff count and whether the two requests are identical.
+      responses:
+        '200':
+          description: diff computed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  diffCount:
+                    type: integer
+                  identical:
+                    type: boolean
+                  diffs:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: missing body, missing 'expected'/'actual' fields, or non-HttpRequest definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - expected
+                - actual
+              properties:
+                expected:
+                  $ref: "#/components/schemas/HttpRequest"
+                actual:
+                  $ref: "#/components/schemas/HttpRequest"
+        description: the two HTTP requests to compare
+        required: true
+  /mockserver/generateExpectation:
+    put:
+      tags:
+        - expectation
+      summary: generate expectation suggestion(s) from an unmatched request
+      description: >-
+        Generates one or more suggested expectations for an unmatched HttpRequest. When 'preview' is true
+        (the default) the suggestions are only returned; when false they are also added. If an LLM backend
+        is configured it is used, otherwise a simple template-based stub is generated.
+      responses:
+        '200':
+          description: expectation suggestion(s) returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Expectation"
+                  confidence:
+                    type: number
+                  preview:
+                    type: boolean
+                  explanation:
+                    type: string
+        '400':
+          description: missing body, missing 'request' field, or failed to parse the request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - request
+              properties:
+                request:
+                  $ref: "#/components/schemas/HttpRequest"
+                preview:
+                  type: boolean
+                  default: true
+                  description: when true (default) only return suggestions; when false also add them
+                limit:
+                  type: integer
+                  default: 1
+                  minimum: 1
+                  maximum: 5
+                  description: maximum number of suggestions to generate (1-5)
+        description: the unmatched request to generate expectation(s) for
+        required: true
+  /mockserver/explainUnmatched:
+    put:
+      tags:
+        - troubleshooting
+      summary: explain why recent requests did not match any expectation
+      description: >-
+        Returns a diagnostic report for recently recorded unmatched requests, including the closest-matching
+        expectations and the per-field differences that prevented a match. An optional 'limit' in the body
+        bounds how many unmatched requests are analysed (default 10).
+      responses:
+        '200':
+          description: unmatched-request explanation returned
+          content:
+            application/json:
+              schema:
+                type: object
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                limit:
+                  type: integer
+                  default: 10
+                  description: maximum number of recent unmatched requests to analyse
+        description: optional limit on the number of unmatched requests to analyse
+        required: false
+  /mockserver/debugMismatch:
+    put:
+      tags:
+        - troubleshooting
+      summary: return per-expectation mismatch debug information for a request
+      description: >-
+        Evaluates the supplied HttpRequest against every active expectation and returns, for each, whether
+        it matched and the per-field differences, plus the closest match. Only HttpRequest definitions are
+        supported (not OpenAPI definitions).
+      responses:
+        '200':
+          description: mismatch debug information returned
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: an OpenAPI definition was supplied instead of an HttpRequest, or the request could not be processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestDefinition"
+        description: the request to evaluate against all active expectations
+        required: true
+  /mockserver/pact:
+    put:
+      tags:
+        - pact
+      summary: export active expectations as a Pact contract
+      description: >-
+        Exports the current active expectations as a Pact consumer-driven contract (JSON). The optional
+        'consumer' and 'provider' query parameters set the contract's consumer and provider names.
+      parameters:
+        - in: query
+          name: consumer
+          schema:
+            type: string
+          required: false
+          description: consumer name to record in the exported Pact contract
+        - in: query
+          name: provider
+          schema:
+            type: string
+          required: false
+          description: provider name to record in the exported Pact contract
+      responses:
+        '200':
+          description: Pact contract exported
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Pact consumer-driven contract document
+        '400':
+          description: failed to export the Pact contract
+          content:
+            text/plain:
+              schema:
+                type: string
+  /mockserver/pact/verify:
+    put:
+      tags:
+        - pact
+      summary: verify active expectations against a Pact contract
+      description: >-
+        Verifies the supplied Pact contract (JSON) against the current expectations and returns the
+        verification result. Returns 202 when verification passes and 406 when it fails.
+      responses:
+        '202':
+          description: Pact verification passed
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Pact verification result
+        '406':
+          description: Pact verification failed
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Pact verification result describing the failures
+        '400':
+          description: empty or invalid Pact contract
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Pact contract document to verify against
+        description: the Pact contract to verify
+        required: true
+  /mockserver/wsdl:
+    put:
+      tags:
+        - expectation
+      summary: create expectations from a WSDL
+      description: generates expectations from a WSDL document (the request body is the raw WSDL) and adds them
+      responses:
+        '201':
+          description: expectations created from the WSDL
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: invalid or unparseable WSDL document
+          content:
+            text/plain:
+              schema:
+                type: string
+      requestBody:
+        content:
+          application/xml:
+            schema:
+              type: string
+              description: raw WSDL document
+        description: WSDL document to generate expectations from
+        required: true
+  /mockserver/grpc/services:
+    put:
+      tags:
+        - grpc
+      summary: list loaded gRPC services
+      description: >-
+        Returns the gRPC services available from the loaded proto descriptor set, each with its methods
+        and their input/output types and streaming flags.
+      responses:
+        '200':
+          description: loaded gRPC services returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    name:
+                      type: string
+                    methods:
+                      type: array
+                      items:
+                        type: object
+                        additionalProperties: false
+                        properties:
+                          name:
+                            type: string
+                          inputType:
+                            type: string
+                          outputType:
+                            type: string
+                          clientStreaming:
+                            type: boolean
+                          serverStreaming:
+                            type: boolean
+        '400':
+          description: failed to list gRPC services
+          content:
+            text/plain:
+              schema:
+                type: string
+  /mockserver/grpc/clear:
+    put:
+      tags:
+        - grpc
+      summary: reset the gRPC descriptor store
+      description: clears all loaded gRPC proto descriptors and the services derived from them
+      responses:
+        '200':
+          description: gRPC descriptor store reset
   /mockserver/stop:
     put:
       tags:
