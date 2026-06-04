@@ -253,7 +253,20 @@ public class InfinispanStateBackend implements StateBackend {
             }
             crudConfig.memory().storage(StorageType.HEAP);
             cacheManager.defineConfiguration(cacheName, crudConfig.build());
-            return createKeyValueStore(cacheName);
+            InfinispanKeyValueStore<ObjectNode> store = createKeyValueStore(cacheName);
+            // G11: register a clustered cache listener on newly created CRUD
+            // caches so that remote writes (e.g. chaos profile replication)
+            // trigger InvalidationListener callbacks on this node. Without
+            // this, only expectations and scenarioStates caches fire cluster
+            // events — CRUD entity caches would be invisible to invalidation.
+            if (clustered) {
+                registerClusterListenerOnce(cacheName);
+                // Also wire local invalidation for any already-registered listeners
+                for (InvalidationListener listener : listeners) {
+                    store.addInvalidationListener(listener);
+                }
+            }
+            return store;
         });
     }
 

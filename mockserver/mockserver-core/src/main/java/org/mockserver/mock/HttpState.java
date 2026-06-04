@@ -181,6 +181,32 @@ public class HttpState {
                 requestMatchers.reconcileFromBackend();
             }
         });
+        // G11: wire chaos registries to the clustered backend for fleet-wide
+        // chaos replication. When the backend is not clustered (default), the
+        // setStateBackend calls are no-ops and the registries stay node-local.
+        org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().setStateBackend(stateBackend);
+        org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().setStateBackend(stateBackend);
+        org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().setStateBackend(stateBackend);
+        // G11: register a SEPARATE InvalidationListener for chaos reconciliation
+        // so that remote writes to chaos stores trigger the node-local rebuild.
+        // This is distinct from the expectations reconcile listener above.
+        if (stateBackend.isClustered()) {
+            stateBackend.addInvalidationListener(new InvalidationListener() {
+                @Override
+                public void onChanged(String key) {
+                    org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reconcileFromBackend();
+                    org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reconcileFromBackend();
+                    org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reconcileFromBackend();
+                }
+
+                @Override
+                public void onCleared() {
+                    org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reconcileFromBackend();
+                    org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reconcileFromBackend();
+                    org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reconcileFromBackend();
+                }
+            });
+        }
         Metrics.setActiveExpectationsSupplier(() -> requestMatchers.retrieveActiveExpectations(null));
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers, stateBackend.blobs());
