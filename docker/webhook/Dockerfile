@@ -4,11 +4,14 @@
 # Builds the admission webhook server that handles MutatingAdmissionWebhook
 # requests for automatic sidecar injection.
 #
-# Build:
-#   cd <repo-root>/mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests
-#   cd <repo-root> && docker build -f docker/webhook/Dockerfile \
-#       --build-arg VERSION=6.1.1-SNAPSHOT \
-#       -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT .
+# Build (CI / release — jar copied into docker/webhook/ by the pipeline):
+#   docker build -t mockserver/mockserver-webhook:6.1.0 docker/webhook
+#
+# Build (local dev — build the jar first, then copy it):
+#   cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests && cd ..
+#   cp mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar \
+#       docker/webhook/mockserver-webhook.jar
+#   docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook
 #
 
 # runtime image — distroless java17 (nonroot, ~180 MB)
@@ -20,9 +23,8 @@ LABEL description="MockServer Kubernetes Admission Webhook for automatic sidecar
 # The webhook listens on 8443 by default
 EXPOSE 8443
 
-# Copy the fat jar
-ARG VERSION=6.1.1-SNAPSHOT
-COPY mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-${VERSION}-jar-with-dependencies.jar /mockserver-webhook.jar
+# Copy the fat jar (placed into the build context by CI or by local dev)
+COPY mockserver-webhook.jar /mockserver-webhook.jar
 
 # Don't run as root
 USER nonroot

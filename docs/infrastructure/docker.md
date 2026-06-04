@@ -25,6 +25,9 @@ gcr.io/distroless/java17"]
         LOCAL["docker/local/Dockerfile
 Local Build
 gcr.io/distroless/java17:nonroot"]
+        WEBHOOK["docker/webhook/Dockerfile
+Admission Webhook
+gcr.io/distroless/java17:nonroot"]
     end
 
     subgraph "Build Images"
@@ -47,6 +50,7 @@ grafana/k6"]
 | Snapshot | `docker/snapshot/Dockerfile` | `gcr.io/distroless/java17:debug-nonroot` | `nonroot` | Testing pre-release builds |
 | Root Snapshot | `docker/root-snapshot/Dockerfile` | `gcr.io/distroless/java17` | `root` | Testing pre-release (root) |
 | Local | `docker/local/Dockerfile` | `gcr.io/distroless/java17:nonroot` | `nonroot` | Building from local JAR |
+| Webhook | `docker/webhook/Dockerfile` | `gcr.io/distroless/java17:nonroot` | `nonroot` | Kubernetes admission webhook for sidecar injection |
 
 ### Docker Registries
 
@@ -54,10 +58,12 @@ Images are published to two registries:
 
 | Registry | Image | Notes |
 |----------|-------|-------|
-| Docker Hub | `mockserver/mockserver` | Primary registry |
+| Docker Hub | `mockserver/mockserver` | Primary registry (main MockServer image) |
+| Docker Hub | `mockserver/mockserver-webhook` | Admission webhook image |
 | AWS ECR Public | `public.ecr.aws/mockserver/mockserver` | Avoids Docker Hub rate limits for AWS-based CI/CD |
+| AWS ECR Public | `public.ecr.aws/mockserver/mockserver-webhook` | Webhook image on ECR |
 
-Both registries receive the same tags on every push. On each merge to `master`, the `:snapshot`, `:mockserver-snapshot`, and `-graaljs` snapshot variants are pushed. During releases, `:latest`, `:X.Y.Z`, `:mockserver-X.Y.Z`, and `-graaljs` release variants are pushed. The `:latest` tag always points to the most recent official release, not the development branch.
+Both registries receive the same tags on every push. On each merge to `master`, the legacy Buildkite pipeline (`.buildkite/scripts/steps/java-docker-push-snapshot.sh`) pushes the `:snapshot`, `:mockserver-snapshot`, and `-graaljs` snapshot variants (plus `:snapshot` / `:mockserver-snapshot` for the webhook image). During releases, the release pipeline (`scripts/release/components/docker.sh`) pushes `:latest`, `:X.Y.Z`, `:mockserver-X.Y.Z`, and `-graaljs` release variants (plus the same version tags for the webhook image). The `:latest` tag is pushed only by the release pipeline, not by the legacy Buildkite docker-push-release step. The `:latest` tag always points to the most recent official release, not the development branch.
 
 ### Docker HEALTHCHECK
 

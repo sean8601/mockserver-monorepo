@@ -80,24 +80,23 @@ When `sidecar.transparentProxy` is true, the `MOCKSERVER_TRANSPARENT_PROXY_ENABL
 
 When `webhook.enabled=true`, the chart deploys a MutatingAdmissionWebhook that automatically injects the MockServer sidecar and iptables init container into pods. This removes the need to manually edit every Deployment. See [helm.md](helm.md) for full details.
 
-**Prerequisites:** The webhook Docker image (`mockserver/mockserver-webhook`) is not yet published to a public registry. You must build and push it to your own registry before enabling the webhook:
+The webhook Docker image (`mockserver/mockserver-webhook`) is published to Docker Hub and ECR Public by the release pipeline alongside the main MockServer image. Install with the webhook enabled:
+
+```bash
+helm install mockserver mockserver/mockserver \
+  --set webhook.enabled=true
+kubectl label namespace my-namespace mockserver.org/sidecar-injection=enabled
+# Annotate pods: mockserver.org/inject: "true"
+```
+
+**Building locally (optional, for development):**
 
 ```bash
 # Build the fat jar and Docker image
-cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests
-cd .. && docker build -f docker/webhook/Dockerfile \
-  --build-arg VERSION=6.1.1-SNAPSHOT \
-  -t your-registry/mockserver-webhook:6.1.1-SNAPSHOT .
-docker push your-registry/mockserver-webhook:6.1.1-SNAPSHOT
-```
-
-Then install with the webhook enabled, pointing to your image:
-```bash
-helm install mockserver mockserver/mockserver \
-  --set webhook.enabled=true \
-  --set webhook.image.repository=your-registry/mockserver-webhook
-kubectl label namespace my-namespace mockserver.org/sidecar-injection=enabled
-# Annotate pods: mockserver.org/inject: "true"
+cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests && cd ..
+cp mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar \
+  docker/webhook/mockserver-webhook.jar
+docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook
 ```
 
 ## Implementation

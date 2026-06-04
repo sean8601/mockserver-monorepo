@@ -50,7 +50,7 @@ docker buildx build \
   .
 
 echo "--- :docker: Building and pushing GraalJS variant"
-exec docker buildx build \
+docker buildx build \
   --platform linux/amd64,linux/arm64 \
   --push \
   --tag "mockserver/mockserver:${FULL_TAG}-graaljs" \
@@ -59,3 +59,42 @@ exec docker buildx build \
   --tag "${ECR_REPO}:${SHORT_TAG}-graaljs" \
   --file docker/graaljs/Dockerfile \
   .
+
+echo "--- :docker: Building and pushing webhook image"
+# Copy the webhook fat jar into the docker/webhook build context.
+# The jar is built during the Maven Central step; fall back to local build tree.
+WEBHOOK_JAR=""
+shopt -s nullglob
+for f in mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar; do
+  WEBHOOK_JAR="$f"
+  break
+done
+shopt -u nullglob
+
+if [[ -z "$WEBHOOK_JAR" ]]; then
+  echo "WARNING: Webhook fat jar not found — skipping webhook image push"
+  exit 0
+fi
+
+cp "$WEBHOOK_JAR" docker/webhook/mockserver-webhook.jar
+
+# Error-isolated: a webhook push failure must never abort the release —
+# the main + GraalJS images have already been published above.
+# Push Docker Hub first (primary registry used by Helm chart), then ECR separately.
+if ! docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --push \
+  --tag "mockserver/mockserver-webhook:${FULL_TAG}" \
+  --tag "mockserver/mockserver-webhook:${SHORT_TAG}" \
+  docker/webhook; then
+  echo "WARNING: webhook Docker Hub push failed — continuing (main images already published)"
+fi
+
+if ! docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --push \
+  --tag "${ECR_REPO}-webhook:${FULL_TAG}" \
+  --tag "${ECR_REPO}-webhook:${SHORT_TAG}" \
+  docker/webhook; then
+  echo "WARNING: webhook ECR push failed — continuing (Docker Hub is the primary registry)"
+fi

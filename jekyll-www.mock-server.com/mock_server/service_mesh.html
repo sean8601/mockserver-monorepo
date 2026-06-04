@@ -110,29 +110,26 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
 
 <h3>Enabling the webhook</h3>
 
-<p><strong>Prerequisites:</strong> The webhook Docker image (<code class="inline code">mockserver/mockserver-webhook</code>) is not yet published to a public registry. You must build and push it to your own container registry before enabling the webhook:</p>
+<p>The webhook Docker image (<code class="inline code">mockserver/mockserver-webhook</code>) is published to Docker Hub and ECR Public by the release pipeline alongside the main MockServer image. Install with the webhook enabled:</p>
 
-<pre class="prettyprint lang-sh code"><code class="code"># Build the webhook fat jar
-cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests
-
-# Build and push the Docker image to your registry
-docker build -f docker/webhook/Dockerfile \
-  --build-arg VERSION=6.1.1-SNAPSHOT \
-  -t your-registry/mockserver-webhook:6.1.1-SNAPSHOT .
-docker push your-registry/mockserver-webhook:6.1.1-SNAPSHOT</code></pre>
-
-<p>Then install with the webhook enabled, pointing to your image:</p>
-
-<pre class="prettyprint lang-sh code"><code class="code"># Install with the admission webhook enabled (pointing to your image)
+<pre class="prettyprint lang-sh code"><code class="code"># Install with the admission webhook enabled
 helm install mockserver mockserver/mockserver \
-  --set webhook.enabled=true \
-  --set webhook.image.repository=your-registry/mockserver-webhook
+  --set webhook.enabled=true
 
 # Or with cert-manager for TLS (if cert-manager is installed)
 helm install mockserver mockserver/mockserver \
   --set webhook.enabled=true \
-  --set webhook.image.repository=your-registry/mockserver-webhook \
   --set webhook.certManager.enabled=true</code></pre>
+
+<p>To build the webhook image locally (for development):</p>
+
+<pre class="prettyprint lang-sh code"><code class="code"># Build the webhook fat jar
+cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests && cd ..
+
+# Copy the jar into the Docker build context and build
+cp mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar \
+  docker/webhook/mockserver-webhook.jar
+docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook</code></pre>
 
 <h3>Annotating pods</h3>
 

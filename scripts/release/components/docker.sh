@@ -100,6 +100,43 @@ else
 fi
 
 log_info "Build images"
+
+# ---- Locate or build webhook fat JAR ----------------------------------------
+find_local_webhook_jar() {
+  find mockserver/mockserver-k8s-webhook/target \
+    -name 'mockserver-k8s-webhook-*-jar-with-dependencies.jar' \
+    -print -quit 2>/dev/null || true
+}
+WEBHOOK_JAR=$(find_local_webhook_jar)
+if [[ -z "$WEBHOOK_JAR" ]]; then
+  log_info "Webhook fat JAR not found locally — downloading from Maven Central"
+  mkdir -p mockserver/mockserver-k8s-webhook/target
+  WEBHOOK_JAR="mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-${RELEASE_VERSION}-jar-with-dependencies.jar"
+  WEBHOOK_CENTRAL_URL="https://repo1.maven.org/maven2/org/mock-server/mockserver-k8s-webhook/${RELEASE_VERSION}/mockserver-k8s-webhook-${RELEASE_VERSION}-jar-with-dependencies.jar"
+  if is_dry_run && ! curl -sf -I "$WEBHOOK_CENTRAL_URL" >/dev/null 2>&1; then
+    log_dry "skip: download webhook $RELEASE_VERSION JAR (not yet on Maven Central)"
+    WEBHOOK_JAR=$(find_local_webhook_jar)
+    if [[ -z "$WEBHOOK_JAR" ]]; then
+      log_dry "no local webhook JAR available — running 'mvn package' to produce one"
+      in_maven -w /build/mockserver \
+        -- mvn -DskipTests -pl mockserver-k8s-webhook -am package
+      WEBHOOK_JAR=$(find_local_webhook_jar)
+    fi
+  else
+    curl -fsSL --max-time 300 --connect-timeout 30 --retry 3 --retry-delay 5 \
+      -o "$WEBHOOK_JAR" \
+      "$WEBHOOK_CENTRAL_URL"
+  fi
+fi
+if [[ -n "$WEBHOOK_JAR" && -f "$WEBHOOK_JAR" ]]; then
+  log_info "Using webhook JAR: $WEBHOOK_JAR"
+  cp "$WEBHOOK_JAR" docker/webhook/mockserver-webhook.jar
+  BUILD_WEBHOOK=true
+else
+  log_info "WARNING: Webhook JAR not available — skipping webhook image build"
+  BUILD_WEBHOOK=false
+fi
+
 if is_dry_run; then
   # Local single-arch via the default daemon. Plain `docker build` reuses
   # Docker Desktop's CA trust (whereas a fresh buildx builder does not).
@@ -121,6 +158,17 @@ if is_dry_run; then
     --tag "${ECR_REPO}:$SHORT_TAG-graaljs" \
     --tag "${ECR_REPO}:latest-graaljs" \
     docker/graaljs
+
+  if [[ "$BUILD_WEBHOOK" == "true" ]]; then
+    docker build \
+      --tag "mockserver/mockserver-webhook:$FULL_TAG" \
+      --tag "mockserver/mockserver-webhook:$SHORT_TAG" \
+      --tag "mockserver/mockserver-webhook:latest" \
+      --tag "${ECR_REPO}-webhook:$FULL_TAG" \
+      --tag "${ECR_REPO}-webhook:$SHORT_TAG" \
+      --tag "${ECR_REPO}-webhook:latest" \
+      docker/webhook
+  fi
 
   log_dry "skip: push to Docker Hub + ECR (built locally, not pushed)"
 else
@@ -149,6 +197,31 @@ else
     --tag "${ECR_REPO}:$SHORT_TAG-graaljs" \
     --tag "${ECR_REPO}:latest-graaljs" \
     docker/graaljs
+
+  if [[ "$BUILD_WEBHOOK" == "true" ]]; then
+    # Push webhook to Docker Hub first (primary registry used by Helm chart).
+    # Error-isolated: a webhook push failure must never abort the release —
+    # the main + GraalJS images have already been published above.
+    if ! docker buildx build \
+      --platform "linux/amd64,linux/arm64" \
+      --push \
+      --tag "mockserver/mockserver-webhook:$FULL_TAG" \
+      --tag "mockserver/mockserver-webhook:$SHORT_TAG" \
+      --tag "mockserver/mockserver-webhook:latest" \
+      docker/webhook; then
+      log_info "WARNING: webhook Docker Hub push failed — continuing (main images already published)"
+    fi
+    # Push webhook to ECR separately — the ECR repo may not be provisioned yet.
+    if ! docker buildx build \
+      --platform "linux/amd64,linux/arm64" \
+      --push \
+      --tag "${ECR_REPO}-webhook:$FULL_TAG" \
+      --tag "${ECR_REPO}-webhook:$SHORT_TAG" \
+      --tag "${ECR_REPO}-webhook:latest" \
+      docker/webhook; then
+      log_info "WARNING: webhook ECR push failed — continuing (Docker Hub is the primary registry)"
+    fi
+  fi
 fi
 
 log_info "Docker publish complete"

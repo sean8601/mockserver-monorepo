@@ -239,22 +239,23 @@ The pipeline has two steps separated by a `- wait` directive:
 
 **Trigger:** Manual (during release process, step 7)
 
-Builds and pushes the production MockServer Docker image as a multi-arch image (`linux/amd64` + `linux/arm64` via QEMU).
+Builds and pushes the production MockServer Docker images as multi-arch images (`linux/amd64` + `linux/arm64` via QEMU). Three image variants are published: main, GraalJS, and webhook.
 
 Set the `RELEASE_TAG` environment variable when triggering the build (e.g., `mockserver-6.1.0`). If triggered from a git tag, `BUILDKITE_TAG` is used as fallback.
 
-Two Docker tags are pushed:
-- `mockserver/mockserver:mockserver-X.Y.Z` (full tag)
-- `mockserver/mockserver:X.Y.Z` (short tag)
+Tags pushed per image:
+- `mockserver/mockserver:mockserver-X.Y.Z` + `:X.Y.Z` (main + GraalJS variants)
+- `mockserver/mockserver-webhook:mockserver-X.Y.Z` + `:X.Y.Z` (admission webhook)
+- Same tags to ECR Public (`public.ecr.aws/mockserver/...`)
 
 ```mermaid
 flowchart LR
     TRIGGER["Manual trigger
-RELEASE_TAG=mockserver-X.Y.Z"] --> LOGIN["Docker Hub login
+RELEASE_TAG=mockserver-X.Y.Z"] --> LOGIN["Docker Hub + ECR login
 via Secrets Manager"]
     LOGIN --> BUILD["docker buildx build
 linux/amd64 + linux/arm64"]
-    BUILD --> PUSH["Push to Docker Hub
+    BUILD --> PUSH["Push main + GraalJS + webhook
 :mockserver-X.Y.Z + :X.Y.Z"]
 ```
 

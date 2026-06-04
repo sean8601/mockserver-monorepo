@@ -198,19 +198,21 @@ When `webhook.enabled=true`, the chart deploys a MutatingAdmissionWebhook that a
 
 **Webhook server:** The `mockserver-k8s-webhook` module includes a runnable HTTPS server (`WebhookServer`) that handles AdmissionReview requests on `POST /inject` and serves a health check on `GET /healthz`. The server is packaged as a fat jar (`mockserver-k8s-webhook-<version>-jar-with-dependencies.jar`) and published as the `mockserver/mockserver-webhook` Docker image. Configuration (TLS cert/key paths, sidecar injection settings) is read from environment variables matching the Helm `webhook-deployment.yaml` template.
 
-**Building the webhook image:**
+**Webhook Docker image:** The `mockserver/mockserver-webhook` image is published to Docker Hub and ECR Public by the release pipeline alongside the main MockServer image. The Helm chart defaults to `mockserver/mockserver-webhook:<appVersion>`, so `helm install --set webhook.enabled=true` works out of the box once a release ships.
+
+**Building locally (optional, for development):**
 
 ```bash
 # Build the fat jar
-cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests
+cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests && cd ..
+
+# Copy the jar into the Docker build context
+cp mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar \
+  docker/webhook/mockserver-webhook.jar
 
 # Build the Docker image
-docker build -f docker/webhook/Dockerfile \
-  --build-arg VERSION=6.1.1-SNAPSHOT \
-  -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT .
+docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook
 ```
-
-**Note:** The webhook Docker image is not yet published to Docker Hub or GHCR by the release pipeline. To deploy the webhook, build and push the image to your own registry and set `webhook.image.repository` accordingly. A CI publishing step will be added in a future release.
 
 | Value | Type | Default | Description |
 |-------|------|---------|-------------|
