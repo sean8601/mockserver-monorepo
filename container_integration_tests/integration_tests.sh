@@ -444,6 +444,12 @@ function run_all_tests() {
       test "helm_inline_config"
       test "helm_configmap_injection"
       test "helm_mockserver_config_chart"
+      # Clustered state convergence e2e (non-blocking — new test, may be flaky)
+      if [[ "${SKIP_CLUSTERED_TEST:-}" != "true" ]]; then
+        # Import the -clustered image into k3d so pods can pull it locally
+        k3d image import --cluster "${CLUSTER_NAME}" mockserver/mockserver:integration_testing_clustered 2>/dev/null || true
+        test "helm_clustered_convergence" || true
+      fi
       tear-down-k8s
     fi
     set -euo pipefail
