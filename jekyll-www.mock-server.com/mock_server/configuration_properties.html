@@ -1025,7 +1025,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p>Path to support HTTP GET requests for status response (also available on PUT /mockserver/status).</p>
     <p>If this value is not modified then only PUT /mockserver/status but is a none blank value is provided for this value then GET requests to this path will return the 200 Ok status response showing the MockServer version and bound ports.</p>
     <p>A GET request to this path will be matched before any expectation matching or proxying of requests.</p>
-    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">null</span></p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.livenessHttpGetPath(String livenessPath)</code></pre>
     <p>System Property:</p>

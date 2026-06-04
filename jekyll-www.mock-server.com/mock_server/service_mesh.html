@@ -87,6 +87,8 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
 
 <p>When <code class="inline code">sidecar.iptables.enabled</code> is <code class="inline code">true</code>, the chart renders an init container that adds a UID-based RETURN rule (to exclude MockServer's own egress) before any REDIRECT rules, preventing an infinite redirect loop. The <code class="inline code">excludeUid</code> must match <code class="inline code">app.runAsUser</code> (both default to 65534).</p>
 
+<a id="original_destination_resolution" class="anchor" href="#original_destination_resolution">&nbsp;</a>
+
 <h2>Original Destination Resolution</h2>
 
 <p>MockServer uses a pluggable, ordered chain of strategies to resolve the original destination of transparently intercepted connections. The first strategy that returns a result wins; if none do, MockServer falls back to the <code class="inline code">Host</code> header.</p>
@@ -170,4 +172,14 @@ PROXY UNKNOWN\r\n</code></pre>
     <li><strong>Linux only for conntrack</strong> -- original-destination resolution via conntrack requires Linux. On other OSes, the transparent proxy falls back to Host-header resolution.</li>
     <li><strong>iptables not automatic</strong> -- an init container or external mechanism must configure traffic redirection.</li>
     <li><strong>SO_ORIGINAL_DST and TPROXY need the native transport</strong> -- these kernel-level strategies require the native (epoll) transport on Linux and <code class="inline code">CAP_NET_ADMIN</code>. The eBPF socket-metadata strategy requires a native BPF program and is not yet implemented.</li>
+</ul>
+
+<a id="related" class="anchor" href="#related">&nbsp;</a>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/transparent_interception_recipes.html">Transparent Interception Recipes</a> &mdash; ready-to-use iptables REDIRECT / TPROXY recipes for routing real traffic through MockServer</li>
+    <li><a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> &mdash; inject latency and errors into the traffic this in-path proxy intercepts</li>
+    <li><a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> &mdash; use MockServer as a reverse proxy to isolate one service for testing or debugging</li>
 </ul>

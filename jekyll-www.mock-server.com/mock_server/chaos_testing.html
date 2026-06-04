@@ -216,7 +216,7 @@ schema_faq:
 </p>
 <p>
     Outage windows are measured with MockServer's controllable clock, so tests do not have to wait in real time. Freeze and
-    advance the clock with the <a href="/mock_server/clearing_and_resetting.html#clock_control"><code class="inline code">PUT /mockserver/clock</code></a>
+    advance the clock with the <a href="/mock_server/clock_control.html"><code class="inline code">PUT /mockserver/clock</code></a>
     control-plane endpoint to step deterministically from "before the outage" to "during the outage" to "recovered" without any
     <code class="inline code">sleep</code> calls.
 </p>
@@ -586,7 +586,7 @@ PATCH /mockserver/serviceChaos
         <tr>
             <td><code class="inline code">mock_server_http_chaos_injected_total</code></td>
             <td>Counter</td>
-            <td><code class="inline code">fault_type</code> = <code class="inline code">drop</code> | <code class="inline code">error</code> | <code class="inline code">latency</code> | <code class="inline code">truncate</code> | <code class="inline code">malformed</code> | <code class="inline code">slow</code> | <code class="inline code">graphql</code></td>
+            <td><code class="inline code">fault_type</code> = <code class="inline code">drop</code> | <code class="inline code">error</code> | <code class="inline code">latency</code> | <code class="inline code">truncate</code> | <code class="inline code">malformed</code> | <code class="inline code">slow</code> | <code class="inline code">quota</code> | <code class="inline code">graphql</code></td>
             <td>Cumulative count of HTTP chaos faults injected, split by fault type</td>
         </tr>
         <tr>
@@ -600,7 +600,7 @@ PATCH /mockserver/serviceChaos
 
 <p>Both metrics are also surfaced in the <a href="/mock_server/mockserver_ui.html">dashboard UI</a> Metrics view as an "HTTP Chaos Faults" section — a stat per fault type the server emits (<code class="inline code">drop</code>, <code class="inline code">error</code>, <code class="inline code">latency</code>, <code class="inline code">truncate</code>, <code class="inline code">malformed</code>, <code class="inline code">slow</code>, <code class="inline code">quota</code>, <code class="inline code">graphql</code>), a per-fault-type chart of cumulative injections, and a per-fault-type chart of the active service-scoped chaos gauge (visible only when a chaos metric has non-zero data).</p>
 
-<p>Both metrics are also mirrored over OpenTelemetry OTLP when <a href="/mock_server/configuration_properties.html">OTLP metrics export is enabled</a>, so OTLP-only consumers can observe them without a Prometheus scrape.</p>
+<p>Both metrics are also mirrored over OpenTelemetry OTLP when <a href="/mock_server/configuration_properties.html">OTLP metrics export is enabled</a>, so OTLP-only consumers can observe them without a Prometheus scrape. Note: over OTLP the <code class="inline code">mock_server_active_service_chaos</code> gauge mirrors every fault type, but the <code class="inline code">mock_server_http_chaos_injected_total</code> counter currently mirrors only the <code class="inline code">drop</code>, <code class="inline code">error</code> and <code class="inline code">latency</code> fault types — the full set of fault types is available on the Prometheus endpoint.</p>
 
 <p>Example PromQL queries:</p>
 <pre class="code"><code class="code"># Rate of error faults injected over the last 5 minutes
@@ -619,7 +619,7 @@ mock_server_active_service_chaos{fault_type="drop"}</code></pre>
 
 <h2>Dashboard UI</h2>
 
-<p>Chaos profiles can be configured directly from the <a href="/mock_server/mockserver_ui.html">MockServer dashboard</a> when composing a standard HTTP expectation. Toggle the <strong>Inject fault / chaos</strong> switch in the expectation composer to reveal fields for all seven chaos profile properties. The dashboard generates the correct JSON payload (with <code class="inline code">chaos</code> as a top-level expectation field) and the equivalent Java client and curl snippets. Active expectations that have a chaos profile display a <strong>Chaos</strong> summary chip in the expectations panel.</p>
+<p>Chaos profiles can be configured directly from the <a href="/mock_server/mockserver_ui.html">MockServer dashboard</a> when composing a standard HTTP expectation. Toggle the <strong>Inject fault / chaos</strong> switch in the expectation composer to reveal fields for the chaos profile. The dashboard generates the correct JSON payload (with <code class="inline code">chaos</code> as a top-level expectation field) and the equivalent Java client and curl snippets. Active expectations that have a chaos profile display a <strong>Chaos</strong> summary chip in the expectations panel.</p>
 
 <a id="grpc_fault_injection" class="anchor" href="#grpc_fault_injection">&nbsp;</a>
 
@@ -984,7 +984,7 @@ PATCH /mockserver/tcpChaos
 
 <p>The following chaos features are planned for future releases:</p>
 <ul>
-    <li><strong>Advanced stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills), circuit-breaker windows, and gradual degradation ramps</li>
+    <li><strong>Advanced stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills) and circuit-breaker windows</li>
 </ul>
 
 <a id="chaos_examples" class="anchor" href="#chaos_examples">&nbsp;</a>
@@ -1036,3 +1036,14 @@ PATCH /mockserver/tcpChaos
 <div class="panel">
     <p>Set <code class="inline code">omitGrpcStatus: true</code> on a gRPC chaos profile. MockServer will send the HTTP 200 response with a <code class="inline code">content-type: application/grpc</code> header but deliberately omit the <code class="inline code">grpc-status</code> trailer. Most gRPC clients treat this as a protocol error or stream reset — which is exactly what you want to test to ensure the client does not silently accept an incomplete RPC as a success. Register the profile via <code class="inline code">PUT /mockserver/grpcChaos</code> with <code class="inline code">{"service": "...", "chaos": {"omitGrpcStatus": true}}</code>. See the <a href="#grpc_fault_injection">gRPC Fault Injection</a> section above.</p>
 </div>
+
+<a id="related" class="anchor" href="#related">&nbsp;</a>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/service_mesh.html">Service Mesh / Sidecar Mode</a> &mdash; deploy MockServer in-path as a transparent sidecar so you can inject the faults above into live traffic without changing application config</li>
+    <li><a href="/mock_server/transparent_interception_recipes.html">Transparent Interception Recipes</a> &mdash; iptables REDIRECT / TPROXY recipes for routing real traffic through MockServer to apply chaos profiles</li>
+    <li><a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a> &mdash; sidecar, egress, and reverse-proxy deployment patterns for injecting faults in a cluster</li>
+    <li><a href="/mock_server/chaos_testing_orchestrators.html">Driving MockServer from Chaos Orchestrators</a> &mdash; Chaos Toolkit, AWS FIS, Azure Chaos Studio and LitmusChaos recipes against the control plane</li>
+</ul>

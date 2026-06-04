@@ -11,7 +11,7 @@ sitemap:
   lastmod: 2026-05-27T00:00:00+01:00
 ---
 
-<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Eight views are available from the navigation bar at the top of the page:</p>
+<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Ten views are available from the navigation bar at the top of the page:</p>
 
 <ul>
     <li><strong><a href="#ui_dashboard_section">Dashboard</a></strong> — four panels showing log messages, active expectations, received requests, and proxied requests</li>
@@ -263,7 +263,7 @@ sitemap:
 
 <p>An <strong>Unscoped requests</strong> strip at the bottom holds requests that did not match any isolated scenario — for example, requests made outside a scripted conversation or without an isolation header.</p>
 
-<p>Sessions are most useful when you have set up <a href="/mock_server/ai_mocking.html">LLM conversation mocks with per-session isolation</a>. Each unique session identifier (header, query parameter, or cookie value) gets its own swim-lane, so you can trace multiple concurrent test sessions independently.</p>
+<p>Sessions are most useful when you have set up <a href="/mock_server/ai_mcp_tools.html#create_llm_conversation">LLM conversation mocks with per-session isolation</a>. Each unique session identifier (header, query parameter, or cookie value) gets its own swim-lane, so you can trace multiple concurrent test sessions independently.</p>
 
 <h3>Compare</h3>
 
@@ -271,9 +271,9 @@ sitemap:
 
 <a id="ui_composer_section" class="anchor" href="#ui_composer_section">&nbsp;</a>
 
-<h2>Composer</h2>
+<h2>Mocks</h2>
 
-<p>The Composer view lets you create or edit mock expectations without writing any code. Open it using the <strong>Composer</strong> button in the navigation bar.</p>
+<p>The Mocks view lets you create or edit mock expectations without writing any code. Open it using the <strong>Mocks</strong> button in the navigation bar.</p>
 
 <img class="ui_image" src="/images/MockServerComposer.png" alt="MockServer Composer">
 
@@ -309,7 +309,7 @@ sitemap:
     <li><strong>Review &amp; register</strong> — preview in Java, JSON, or MCP format, then click <strong>Register on server</strong> (or <strong>Update N expectations</strong> when editing). When editing an existing scenario, the expectation IDs are reused so the update happens in place.</li>
 </ol>
 
-<p>See <a href="/mock_server/ai_mocking.html">LLM Conversation Mocking</a> for full details on conversation predicates and isolation options.</p>
+<p>See <a href="/mock_server/ai_mcp_tools.html#create_llm_conversation">LLM Conversation Mocking</a> for full details on conversation predicates and isolation options.</p>
 
 <a id="ui_library_section" class="anchor" href="#ui_library_section">&nbsp;</a>
 

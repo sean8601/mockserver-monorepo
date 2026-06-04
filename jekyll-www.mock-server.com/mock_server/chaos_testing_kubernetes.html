@@ -45,7 +45,7 @@ schema_faq:
     <li>Unmatched requests pass through normally (when <code class="inline code">attemptToProxyIfNoMatchingExpectation</code> is <code class="inline code">true</code>, which is the default)</li>
 </ol>
 
-<p>MockServer operates at the <strong>HTTP layer (L7)</strong>. It does not transparently intercept traffic at the network layer (L3/L4) — traffic must be explicitly routed through it. It does not use iptables rules or a service mesh sidecar protocol.</p>
+<p>MockServer operates at the <strong>HTTP layer (L7)</strong>. Traffic can reach it either through explicit routing (a Kubernetes Service, <code class="inline code">HTTP_PROXY</code> / <code class="inline code">HTTPS_PROXY</code> environment variables, or <code class="inline code">proxyRemoteHost</code> / <code class="inline code">proxyRemotePort</code>) or via transparent interception — when <code class="inline code">transparentProxyEnabled</code> is set, MockServer accepts traffic redirected to it by iptables REDIRECT / TPROXY rules and uses the original destination (or the <code class="inline code">Host</code> header) to choose the forwarding target. See the <a href="/mock_server/service_mesh.html">Service Mesh / Sidecar Mode</a> page for transparent-interception setup.</p>
 
 <p>Chaos profiles apply to forward action types: <code class="inline code">httpForward</code>, forward template, forward class callback, forward with override (<code class="inline code">httpOverrideForwardedRequest</code>), and forward with validation. They do <strong>not</strong> apply to forward object callbacks or the unmatched proxy pass-through path. See the <a href="/mock_server/chaos_testing.html#where_chaos_applies">compatibility table</a> on the Chaos Testing page.</p>
 
@@ -324,7 +324,7 @@ helm install inventory-chaos oci://ghcr.io/mock-server/charts/mockserver \
 
 <button id="button_faq_transparent" class="accordion">Does MockServer support transparent traffic interception in Kubernetes?</button>
 <div class="panel">
-    <p>No. MockServer operates at the HTTP layer (L7) and requires explicit routing. Traffic must be directed to MockServer via <code class="inline code">HTTP_PROXY</code> / <code class="inline code">HTTPS_PROXY</code> environment variables, a Kubernetes Service, or the <code class="inline code">proxyRemoteHost</code> / <code class="inline code">proxyRemotePort</code> configuration. It does not intercept traffic transparently at the network layer (L3/L4) and does not use iptables or a service mesh sidecar protocol.</p>
+    <p>Yes. Set <code class="inline code">transparentProxyEnabled</code> to <code class="inline code">true</code> and MockServer intercepts traffic redirected to it by iptables REDIRECT / TPROXY rules, using the original destination (or the <code class="inline code">Host</code> header) to choose the forwarding target — see the <a href="/mock_server/service_mesh.html">Service Mesh / Sidecar Mode</a> page for setup. Alternatively, route traffic explicitly via <code class="inline code">HTTP_PROXY</code> / <code class="inline code">HTTPS_PROXY</code> environment variables, a Kubernetes Service, or the <code class="inline code">proxyRemoteHost</code> / <code class="inline code">proxyRemotePort</code> configuration.</p>
 </div>
 
 <button id="button_faq_https" class="accordion">How do I intercept HTTPS traffic through MockServer in Kubernetes?</button>

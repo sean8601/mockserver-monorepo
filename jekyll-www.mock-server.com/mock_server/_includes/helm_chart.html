@@ -343,7 +343,7 @@ echo http://$MOCKSERVER_HOST</code></pre>
 
 <p>To test the installation the following <span class="keyword">curl</span> command should return the ports MockServer is bound to:</p>
 
-<pre class="prettyprint code"><code class="code">curl -v -X PUT http://$MOCKSERVER_HOST/status</code></pre>
+<pre class="prettyprint code"><code class="code">curl -v -X PUT http://$MOCKSERVER_HOST/mockserver/status</code></pre>
 
 <h3>Docker for Desktop</h3>
 
@@ -360,7 +360,7 @@ echo http://$MOCKSERVER_HOST</code></pre>
 <p>For <strong>LoadBalancer</strong> services it is possible to query kubernetes to programmatically determine the MockServer base URL as follows:</p>
 
 <pre class="prettyprint code"><code class="code">export SERVICE_IP=$(kubectl get svc --namespace mockserver mockserver -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-export MOCKSERVER_HOST=$SERVICE_IP:1081
+export MOCKSERVER_HOST=$SERVICE_IP:1080
 echo http://$MOCKSERVER_HOST</code></pre>
 
 <h3>Outside Remote Kubernetes Cluster (i.e. Azure AKS, AWS EKS, etc) via Port Forward</h3>
@@ -379,4 +379,4 @@ echo http://$MOCKSERVER_HOST</code></pre>
 
 <p>To completely remove the chart:</p>
 
-<pre class="prettyprint code"><code class="code">helm delete mockserver --purge</code></pre>
+<pre class="prettyprint code"><code class="code">helm uninstall -n mockserver mockserver</code></pre>

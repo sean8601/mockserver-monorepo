@@ -15,7 +15,7 @@
 
 ## Getting Started
 - [Getting Started](https://www.mock-server.com/mock_server/getting_started.html): Quick start guide covering starting MockServer, creating expectations, running tests, and verifying requests
-- [Running MockServer](https://www.mock-server.com/where/running_mock_server.html): How to run MockServer via Docker, Maven plugin, JUnit, npm, Homebrew, or standalone JAR
+- [Running MockServer](https://www.mock-server.com/mock_server/running_mock_server.html): How to run MockServer via Docker, Maven plugin, JUnit, npm, Homebrew, or standalone JAR
 
 ## Creating Expectations
 - [Creating Expectations](https://www.mock-server.com/mock_server/creating_expectations.html): How to set up request matchers and response actions including literal responses, templated responses, class/closure callbacks, forwards, and errors

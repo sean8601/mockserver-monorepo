@@ -356,3 +356,13 @@ curl -X PUT "http://localhost:1080/mockserver/retrieve?type=LOGS&format=LOG_ENTR
 LogEntry[] recentEntries = mockServerClient.retrieveLogEntries(
     null, now - 30_000, now
 );</code></pre>
+
+<a id="related" class="anchor" href="#related">&nbsp;</a>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/creating_expectations.html">Creating Expectations</a> &mdash; the full reference for request matchers and response actions, so you can correct the expectation that is not matching</li>
+    <li><a href="/mock_server/verification.html">Verify Requests</a> &mdash; confirm which requests actually reached MockServer while diagnosing a mismatch</li>
+    <li><a href="/mock_server/clearing_and_resetting.html">Clearing &amp; Resetting</a> &mdash; rule out stale expectations or recorded requests left over from an earlier test</li>
+</ul>

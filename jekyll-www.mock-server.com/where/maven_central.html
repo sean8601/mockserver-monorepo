@@ -1,5 +1,6 @@
 ---
 title: Maven
+description: Add MockServer to Maven or Gradle with org.mock-server coordinates, including netty server, Java client, JUnit, Spring, and Maven plugin artifacts.
 layout: page
 pageOrder: 6
 section: 'Where'
@@ -107,7 +108,7 @@ sitemap:
 <a id="mockserver_junit_jupiter" class="anchor" href="#mockserver_junit_jupiter">&nbsp;</a>
 <h3>mockserver-junit-jupiter &mdash; JUnit 5 integration</h3>
 
-<p>A <a href="/mock_server/running_mock_server.html#junit_rule">JUnit 5 test extension</a> that starts MockServer for tests annotated with <code>@MockServerSettings</code> / <code>@MockServerTest</code>.</p>
+<p>A <a href="/mock_server/running_mock_server.html#junit_rule">JUnit 5 test extension</a> that starts MockServer for tests annotated with <code>@MockServerSettings</code> and <code>@ExtendWith(MockServerExtension.class)</code>.</p>
 
 <pre><code class="code xml">&lt;<span class="element">dependency</span>&gt;
     &lt;<span class="element">groupId</span>&gt;<span class="element_value">org.mock-server</span>&lt;/<span class="element">groupId</span>&gt;
