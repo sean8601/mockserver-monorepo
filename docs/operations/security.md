@@ -86,7 +86,7 @@ Test-scoped dependencies used for Docker-gated integration tests. These are neve
 | `org.testcontainers:testcontainers` | 1.20.6 | `mockserver-async` (test) | Core Testcontainers API for Docker-gated integration tests |
 | `org.testcontainers:kafka` | 1.20.6 | `mockserver-async` (test) | Kafka container module for live-broker integration tests |
 
-The Testcontainers version (1.20.6) is aligned with the existing `mockserver-testcontainers` module. MQTT integration tests use a `GenericContainer` with `eclipse-mosquitto:2.0` (no additional Testcontainers module needed).
+The Testcontainers version (1.20.6) is aligned with the existing `mockserver-testcontainers` module. MQTT integration tests use a `GenericContainer` with `eclipse-mosquitto:2.0` (no additional Testcontainers module needed). Transparent-proxy end-to-end tests (`SoOriginalDstEndToEndIT`, `TproxyEndToEndIT`) use the Docker CLI directly (via `ProcessBuilder`) to build and run privileged containers with NET_ADMIN for iptables REDIRECT/TPROXY rule setup — they do not use Testcontainers.
 
 ### Maven Dependency Graph Submission
 

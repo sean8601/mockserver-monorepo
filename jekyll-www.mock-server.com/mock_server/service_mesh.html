@@ -45,10 +45,11 @@ keywords: sidecar proxy, transparent proxy, kubernetes sidecar, iptables redirec
     </thead>
     <tbody>
         <tr><td><code class="inline code">transparentProxyEnabled</code></td><td><code class="inline code">false</code></td><td>Enable transparent proxy mode</td></tr>
+        <tr><td><code class="inline code">transparentProxyTproxy</code></td><td><code class="inline code">false</code></td><td>Enable TPROXY (IP_TRANSPARENT) original-destination resolution. Requires the native epoll transport on Linux and <code class="inline code">CAP_NET_ADMIN</code>. Used together with <code class="inline code">transparentProxyEnabled</code>.</td></tr>
     </tbody>
 </table>
 
-<p>Environment variable: <code class="inline code">MOCKSERVER_TRANSPARENT_PROXY_ENABLED</code></p>
+<p>Environment variables: <code class="inline code">MOCKSERVER_TRANSPARENT_PROXY_ENABLED</code>, <code class="inline code">MOCKSERVER_TRANSPARENT_PROXY_TPROXY</code></p>
 
 <h3>iptables init container example</h3>
 
@@ -130,12 +131,19 @@ PROXY UNKNOWN\r\n</code></pre>
 
 <p>If no other strategy resolves the destination, MockServer reads the <code class="inline code">Host</code> header from the HTTP request. This always works but requires a valid Host header.</p>
 
+<h3>Strategy 5: Native Strategies (SO_ORIGINAL_DST and TPROXY)</h3>
+
+<p>With the native (epoll) transport on Linux, MockServer resolves the original destination directly from the kernel:</p>
+<ul>
+    <li><strong>SO_ORIGINAL_DST getsockopt</strong> -- reads the pre-REDIRECT destination via a socket option (an O(1) alternative to the conntrack table scan)</li>
+    <li><strong>TPROXY (IP_TRANSPARENT)</strong> -- enabled with <code class="inline code">transparentProxyTproxy=true</code>, the TPROXY iptables target preserves the original destination as the socket's local address</li>
+</ul>
+<p>Both require the native transport and the <code class="inline code">CAP_NET_ADMIN</code> capability.</p>
+
 <h3>Future Strategies (Not Yet Implemented)</h3>
 
-<p>The resolver chain is designed to be extended with additional strategies that require native/JNI code:</p>
+<p>The resolver chain is designed to be extended with additional strategies that require native code:</p>
 <ul>
-    <li><strong>SO_ORIGINAL_DST getsockopt</strong> -- direct socket option read via JNI (O(1) vs conntrack's O(n))</li>
-    <li><strong>TPROXY (IP_TRANSPARENT)</strong> -- the TPROXY iptables target preserves the original destination as the socket's local address</li>
     <li><strong>eBPF socket metadata</strong> -- an eBPF program stores original destination in a BPF map</li>
 </ul>
 
@@ -161,5 +169,5 @@ PROXY UNKNOWN\r\n</code></pre>
     <li><strong>Conntrack lookup is O(n) with a cap</strong> -- the <code class="inline code">/proc/net/nf_conntrack</code> file is parsed per connection, capped at 200,000 lines. If the conntrack table exceeds this limit, MockServer falls back to Host-header resolution. For high-throughput production use, consider a dedicated transparent proxy.</li>
     <li><strong>Linux only for conntrack</strong> -- original-destination resolution via conntrack requires Linux. On other OSes, the transparent proxy falls back to Host-header resolution.</li>
     <li><strong>iptables not automatic</strong> -- an init container or external mechanism must configure traffic redirection.</li>
-    <li><strong>Native strategies deferred</strong> -- SO_ORIGINAL_DST getsockopt, TPROXY, and eBPF require native/JNI code and are not yet implemented.</li>
+    <li><strong>SO_ORIGINAL_DST and TPROXY need the native transport</strong> -- these kernel-level strategies require the native (epoll) transport on Linux and <code class="inline code">CAP_NET_ADMIN</code>. The eBPF socket-metadata strategy requires a native BPF program and is not yet implemented.</li>
 </ul>

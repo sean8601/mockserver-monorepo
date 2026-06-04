@@ -257,6 +257,7 @@ public class ConfigurationProperties {
 
     // service mesh / sidecar
     private static final String MOCKSERVER_TRANSPARENT_PROXY_ENABLED = "mockserver.transparentProxyEnabled";
+    private static final String MOCKSERVER_TRANSPARENT_PROXY_TPROXY = "mockserver.transparentProxyTproxy";
 
     // async messaging defaults
     private static final String MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS = "mockserver.asyncKafkaBootstrapServers";
@@ -603,6 +604,21 @@ public class ConfigurationProperties {
 
     public static void transparentProxyEnabled(boolean enable) {
         setProperty(MOCKSERVER_TRANSPARENT_PROXY_ENABLED, "" + enable);
+    }
+
+    /**
+     * Enable TPROXY (IP_TRANSPARENT) mode for transparent proxy original destination
+     * resolution. When enabled, the listener socket is bound with IP_TRANSPARENT and
+     * the original destination is read from the socket's local address (preserved by
+     * the TPROXY iptables target). Requires Linux, epoll transport, CAP_NET_ADMIN,
+     * and TPROXY iptables rules instead of REDIRECT. Default: false.
+     */
+    public static boolean transparentProxyTproxy() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_TRANSPARENT_PROXY_TPROXY, "MOCKSERVER_TRANSPARENT_PROXY_TPROXY", "" + false));
+    }
+
+    public static void transparentProxyTproxy(boolean enable) {
+        setProperty(MOCKSERVER_TRANSPARENT_PROXY_TPROXY, "" + enable);
     }
 
     // async messaging defaults

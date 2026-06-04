@@ -21,9 +21,10 @@ import static org.mockserver.netty.HttpRequestHandler.PROXYING;
  * <p>
  * Resolution is performed by a pluggable {@link OriginalDestinationResolver} strategy
  * (typically a {@link CompositeOriginalDestinationResolver} chain). The default chain
- * contains, in order, the SO_ORIGINAL_DST getsockopt resolver, the conntrack resolver, and
- * the DNS-intent resolver; further channel-level strategies (TPROXY, eBPF) can be added when
- * native support is available.
+ * contains, in order, the TPROXY resolver (when TPROXY mode is enabled), the
+ * SO_ORIGINAL_DST getsockopt resolver, the conntrack resolver, and the DNS-intent
+ * resolver. See {@link CompositeOriginalDestinationResolver#defaultChain(Configuration)}
+ * for the full chain ordering.
  * <p>
  * Resolution strategy (in order):
  * <ol>
@@ -33,10 +34,12 @@ import static org.mockserver.netty.HttpRequestHandler.PROXYING;
  *       the REMOTE_SOCKET is set before this handler fires.</li>
  *   <li><b>Channel-level chain</b> (this handler, at {@code channelActive}):
  *       <ul>
+ *         <li>{@link TproxyOriginalDestinationResolver} — TPROXY local-address resolution
+ *             (when {@code transparentProxyTproxy=true}; returns null otherwise)</li>
  *         <li>{@link SoOriginalDstResolver} — O(1) getsockopt(SO_ORIGINAL_DST) via JNA
  *             (Linux + epoll transport only; returns null on NIO channels)</li>
  *         <li>{@link ConntrackOriginalDestinationResolver} — Linux conntrack table</li>
- *         <li>(future) TPROXY, eBPF</li>
+ *         <li>(future) eBPF</li>
  *       </ul>
  *   </li>
  *   <li><b>Host header fallback</b> — if no strategy resolves the destination,
@@ -75,18 +78,8 @@ public class TransparentProxyHandler extends ChannelInboundHandlerAdapter {
         InetSocketAddress resolve(io.netty.channel.Channel channel);
     }
 
-    /**
-     * Default resolver: a composite chain that tries [conntrack] in order.
-     * This produces identical behaviour to the original single-resolver default
-     * while allowing the chain to be extended with additional strategies.
-     *
-     * @see CompositeOriginalDestinationResolver#defaultChain()
-     */
-    private static final OriginalDestinationResolver DEFAULT_RESOLVER =
-        CompositeOriginalDestinationResolver.defaultChain();
-
     public TransparentProxyHandler(Configuration configuration, MockServerLogger logger) {
-        this(configuration, logger, DEFAULT_RESOLVER);
+        this(configuration, logger, CompositeOriginalDestinationResolver.defaultChain(configuration));
     }
 
     /**

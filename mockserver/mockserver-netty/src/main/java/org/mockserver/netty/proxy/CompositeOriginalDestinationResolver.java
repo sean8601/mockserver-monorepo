@@ -1,6 +1,7 @@
 package org.mockserver.netty.proxy;
 
 import io.netty.channel.Channel;
+import org.mockserver.configuration.Configuration;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -17,8 +18,12 @@ import java.util.List;
  * strategy is tried. Any other exception is caught, logged at the calling layer,
  * and treated as a skip (fall through to the next strategy).
  * <p>
- * <b>Default chain</b> (constructed via {@link #defaultChain()}):
+ * <b>Default chain</b> (constructed via {@link #defaultChain(Configuration)}):
  * <ol>
+ *   <li>{@link TproxyOriginalDestinationResolver} — reads the original destination from
+ *       {@code channel.localAddress()} when TPROXY mode is active (the TPROXY iptables
+ *       target preserves the original destination as the socket's local address).
+ *       Returns {@code null} when TPROXY mode is not enabled in configuration.</li>
  *   <li>{@link SoOriginalDstResolver} — O(1) {@code getsockopt(SO_ORIGINAL_DST)} via JNA
  *       (requires Linux + Netty epoll transport; returns null on NIO channels or non-Linux)</li>
  *   <li>{@link ConntrackOriginalDestinationResolver} — O(n) Linux conntrack table lookup
@@ -29,13 +34,10 @@ import java.util.List;
  * <p>
  * <b>Future strategies (not yet implemented):</b>
  * <ul>
- *   <li><b>TPROXY (IP_TRANSPARENT)</b> — the TPROXY iptables target preserves the
- *       original destination as the socket's local address. Resolution is trivial
- *       ({@code channel.localAddress()}) but requires {@code CAP_NET_ADMIN} and
- *       TPROXY iptables rules instead of REDIRECT.</li>
  *   <li><b>eBPF socket metadata</b> — an eBPF program attached to the cgroup can store
  *       the original destination in a BPF map keyed by socket cookie. The resolver would
- *       read the map entry via a JNI helper or {@code /sys/fs/bpf/} pinned map.</li>
+ *       read the map entry via a JNI helper or {@code /sys/fs/bpf/} pinned map.
+ *       See {@code docs/plans/g5-ebpf-original-dst.local.md} for the design note.</li>
  * </ul>
  * <p>
  * Note: PROXY protocol v1/v2 resolution is handled separately by
@@ -63,18 +65,41 @@ public class CompositeOriginalDestinationResolver implements TransparentProxyHan
     }
 
     /**
-     * Returns the default chain: [SO_ORIGINAL_DST, conntrack, dns-intent].
+     * Returns the default chain: [TPROXY, SO_ORIGINAL_DST, conntrack, dns-intent].
      * <p>
-     * SO_ORIGINAL_DST (via JNA getsockopt) is tried first — it is an O(1) socket
+     * TPROXY is first — when TPROXY mode is active ({@code transparentProxyTproxy=true}),
+     * the local address IS the original destination and no further resolution is needed.
+     * When TPROXY is not enabled, the resolver returns null and the chain falls through.
+     * <p>
+     * SO_ORIGINAL_DST (via JNA getsockopt) is tried second — it is an O(1) socket
      * option read, far cheaper than the O(n) conntrack table scan. It requires
      * Linux + Netty epoll transport; on NIO channels or non-Linux it returns null
      * and the chain falls through to conntrack.
      * <p>
-     * Conntrack is the second strategy because a real iptables-REDIRECT original
+     * Conntrack is the third strategy because a real iptables-REDIRECT original
      * destination is still the most authoritative source when SO_ORIGINAL_DST is
-     * unavailable. The DNS-intent resolver fills the gap when both return null —
+     * unavailable. The DNS-intent resolver fills the gap when all others return null —
      * it recovers the hostname that MockServer's DNS server mapped to the
      * connection's destination IP.
+     *
+     * @param configuration the MockServer configuration (needed by TPROXY resolver)
+     */
+    public static CompositeOriginalDestinationResolver defaultChain(Configuration configuration) {
+        return new CompositeOriginalDestinationResolver(
+            Arrays.asList(
+                new TproxyOriginalDestinationResolver(configuration),
+                new SoOriginalDstResolver(),
+                new ConntrackOriginalDestinationResolver(),
+                new DnsIntentOriginalDestinationResolver()
+            )
+        );
+    }
+
+    /**
+     * Returns the default chain without TPROXY: [SO_ORIGINAL_DST, conntrack, dns-intent].
+     * <p>
+     * This overload maintains backward compatibility for callers that do not have
+     * a {@link Configuration} instance. TPROXY resolution is not included.
      */
     public static CompositeOriginalDestinationResolver defaultChain() {
         return new CompositeOriginalDestinationResolver(

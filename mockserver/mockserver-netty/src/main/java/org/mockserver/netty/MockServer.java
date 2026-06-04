@@ -204,6 +204,9 @@ public class MockServer extends LifeCycle {
             .childAttr(REMOTE_SOCKET, remoteSocket)
             .childAttr(PROXYING, remoteSocket != null);
 
+        // Apply IP_TRANSPARENT socket option when TPROXY mode is enabled
+        org.mockserver.netty.proxy.MockServerIpTransparentHelper.applyIfEnabled(serverServerBootstrap, configuration);
+
         try {
             bindServerPorts(portBindings);
         } catch (Throwable throwable) {

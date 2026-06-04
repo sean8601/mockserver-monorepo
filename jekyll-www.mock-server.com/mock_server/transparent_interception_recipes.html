@@ -61,13 +61,13 @@ keywords: transparent interception, iptables redirect, tproxy, dns steering, htt
         </tr>
         <tr>
             <td>SO_ORIGINAL_DST getsockopt</td>
-            <td>Not yet implemented (requires JNI)</td>
-            <td>Linux only; O(1) alternative to conntrack</td>
+            <td>Implemented</td>
+            <td>Linux with the native (epoll) transport; O(1) alternative to conntrack</td>
         </tr>
         <tr>
             <td>TPROXY (IP_TRANSPARENT)</td>
-            <td>Not yet implemented (requires JNI + TPROXY rules)</td>
-            <td>Linux TPROXY iptables target</td>
+            <td>Implemented</td>
+            <td>Linux TPROXY iptables target; enable with <code class="inline code">transparentProxyTproxy=true</code> (needs the native epoll transport and <code class="inline code">CAP_NET_ADMIN</code>)</td>
         </tr>
         <tr>
             <td>eBPF socket metadata</td>
@@ -237,7 +237,12 @@ iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-port 1080</code></
 
 <p><strong>Loop avoidance:</strong> always exclude MockServer's egress UID before adding REDIRECT rules. See <a href="/mock_server/service_mesh.html">Transparent Proxy / Sidecar Mode</a> for the full explanation.</p>
 
-<p><strong>TPROXY note:</strong> the TPROXY iptables target (<code class="inline code">-j TPROXY</code>) is a more efficient alternative to REDIRECT because it preserves the original destination as the socket's local address, eliminating the conntrack lookup. However, TPROXY support in MockServer is not yet implemented — it requires JNI code to read the socket's local address after <code class="inline code">IP_TRANSPARENT</code> binding. Use REDIRECT + conntrack for now.</p>
+<p><strong>TPROXY (IP_TRANSPARENT):</strong> the TPROXY iptables target (<code class="inline code">-j TPROXY</code>) is a more efficient alternative to REDIRECT because it preserves the original destination as the socket's local address, eliminating the conntrack lookup. MockServer supports it: set <code class="inline code">transparentProxyTproxy=true</code> (environment variable <code class="inline code">MOCKSERVER_TRANSPARENT_PROXY_TPROXY=true</code>) in addition to <code class="inline code">transparentProxyEnabled=true</code>. It requires the native epoll transport on Linux and the <code class="inline code">CAP_NET_ADMIN</code> capability, plus TPROXY rules in the mangle table and a policy-routing rule, for example:</p>
+<pre class="prettyprint code"><code class="code">ip route add local 0.0.0.0/0 dev lo table 100
+ip rule add fwmark 1 lookup 100
+iptables -t mangle -A PREROUTING -p tcp --dport 80 \
+  -j TPROXY --tproxy-mark 0x1/0x1 --on-port 1080</code></pre>
+<p>If TPROXY is not enabled, MockServer falls back to SO_ORIGINAL_DST then conntrack then Host header, so REDIRECT-based setups continue to work unchanged.</p>
 
 <h3>macOS / BSD pf rdr</h3>
 

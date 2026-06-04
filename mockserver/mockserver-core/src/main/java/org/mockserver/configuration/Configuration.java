@@ -225,6 +225,7 @@ public class Configuration {
 
     // service mesh / sidecar
     private Boolean transparentProxyEnabled;
+    private Boolean transparentProxyTproxy;
 
     // async messaging defaults
     private String asyncKafkaBootstrapServers;
@@ -2724,6 +2725,26 @@ public class Configuration {
      */
     public Configuration transparentProxyEnabled(Boolean transparentProxyEnabled) {
         this.transparentProxyEnabled = transparentProxyEnabled;
+        return this;
+    }
+
+    public Boolean transparentProxyTproxy() {
+        if (transparentProxyTproxy == null) {
+            return ConfigurationProperties.transparentProxyTproxy();
+        }
+        return transparentProxyTproxy;
+    }
+
+    /**
+     * Enable TPROXY (IP_TRANSPARENT) mode for transparent proxy original destination
+     * resolution. When enabled, the listener socket is bound with IP_TRANSPARENT and
+     * the original destination is read from the socket's local address. Requires
+     * Linux + epoll + CAP_NET_ADMIN + TPROXY iptables rules.
+     *
+     * @param transparentProxyTproxy enable TPROXY mode
+     */
+    public Configuration transparentProxyTproxy(Boolean transparentProxyTproxy) {
+        this.transparentProxyTproxy = transparentProxyTproxy;
         return this;
     }
 

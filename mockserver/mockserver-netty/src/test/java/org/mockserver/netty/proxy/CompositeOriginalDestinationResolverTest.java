@@ -2,6 +2,7 @@ package org.mockserver.netty.proxy;
 
 import io.netty.channel.Channel;
 import org.junit.Test;
+import org.mockserver.configuration.Configuration;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
@@ -119,11 +120,21 @@ public class CompositeOriginalDestinationResolverTest {
 
     @Test
     public void defaultChainShouldContainThreeStrategies() {
-        // when
+        // when — no-arg overload (backward compatibility, no TPROXY)
         CompositeOriginalDestinationResolver resolver = CompositeOriginalDestinationResolver.defaultChain();
 
         // then — [SO_ORIGINAL_DST, conntrack, dns-intent]
         assertThat(resolver.strategyCount(), is(3));
+    }
+
+    @Test
+    public void defaultChainWithConfigShouldContainFourStrategies() {
+        // when — configuration-aware overload includes TPROXY
+        Configuration config = Configuration.configuration();
+        CompositeOriginalDestinationResolver resolver = CompositeOriginalDestinationResolver.defaultChain(config);
+
+        // then — [TPROXY, SO_ORIGINAL_DST, conntrack, dns-intent]
+        assertThat(resolver.strategyCount(), is(4));
     }
 
     @Test
@@ -138,6 +149,19 @@ public class CompositeOriginalDestinationResolverTest {
         InetSocketAddress result = resolver.resolve(mockChannel);
 
         // then — either way, no exception escapes
+        assertThat(result, is(nullValue()));
+    }
+
+    @Test
+    public void defaultChainWithConfigShouldReturnNullOnNonLinux() {
+        // given — default chain with config on non-Linux
+        Configuration config = Configuration.configuration();
+        CompositeOriginalDestinationResolver resolver = CompositeOriginalDestinationResolver.defaultChain(config);
+
+        // when — TPROXY not enabled + non-Linux = all return null
+        InetSocketAddress result = resolver.resolve(mockChannel);
+
+        // then
         assertThat(result, is(nullValue()));
     }
 
