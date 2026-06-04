@@ -137,6 +137,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_HTTP3_INITIAL_MAX_STREAMS_BIDIRECTIONAL = "mockserver.http3InitialMaxStreamsBidirectional";
     private static final String MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY = "mockserver.http3QpackMaxTableCapacity";
     private static final String MOCKSERVER_HTTP3_CONNECT_UDP_ENABLED = "mockserver.http3ConnectUdpEnabled";
+    private static final String MOCKSERVER_HTTP3_ALT_SVC_MAX_AGE = "mockserver.http3AltSvcMaxAge";
+    private static final String MOCKSERVER_HTTP3_ADVERTISE_ALT_SVC = "mockserver.http3AdvertiseAltSvc";
 
     // non http proxying
     private static final String MOCKSERVER_FORWARD_BINARY_REQUESTS_WITHOUT_WAITING_FOR_RESPONSE = "mockserver.forwardBinaryRequestsWithoutWaitingForResponse";
@@ -700,6 +702,35 @@ public class ConfigurationProperties {
 
     public static void http3ConnectUdpEnabled(boolean enabled) {
         setProperty(MOCKSERVER_HTTP3_CONNECT_UDP_ENABLED, "" + enabled);
+    }
+
+    /**
+     * Max-age in seconds for the Alt-Svc header advertising HTTP/3 on the TCP
+     * response path. Only relevant when {@code http3Port > 0} and
+     * {@code http3AdvertiseAltSvc} is {@code true}.
+     * Default: 86400 (24 hours).
+     */
+    public static long http3AltSvcMaxAge() {
+        return Math.max(0, readLongProperty(MOCKSERVER_HTTP3_ALT_SVC_MAX_AGE, "MOCKSERVER_HTTP3_ALT_SVC_MAX_AGE", 86400L));
+    }
+
+    public static void http3AltSvcMaxAge(long seconds) {
+        setProperty(MOCKSERVER_HTTP3_ALT_SVC_MAX_AGE, "" + seconds);
+    }
+
+    /**
+     * Whether to add an {@code Alt-Svc: h3=":<http3Port>"; ma=<maxAge>} header
+     * to every response served over the TCP (HTTP/1.1 and HTTP/2) paths when
+     * {@code http3Port > 0}. When {@code false}, no Alt-Svc header is added
+     * even when HTTP/3 is enabled (useful for testing without client auto-upgrade).
+     * Default: true.
+     */
+    public static boolean http3AdvertiseAltSvc() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_HTTP3_ADVERTISE_ALT_SVC, "MOCKSERVER_HTTP3_ADVERTISE_ALT_SVC", "" + true));
+    }
+
+    public static void http3AdvertiseAltSvc(boolean advertise) {
+        setProperty(MOCKSERVER_HTTP3_ADVERTISE_ALT_SVC, "" + advertise);
     }
 
     // service mesh / sidecar

@@ -55,7 +55,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | WASM rules | `wasmEnabled`, `wasmMaxMemoryPages` |
 | gRPC | `grpcEnabled`, `grpcDescriptorDirectory`, `grpcProtoDirectory`, `grpcProtocPath` |
 | DNS | `dnsEnabled`, `dnsPort` |
-| HTTP/3 (QUIC) | `http3Port` |
+| HTTP/3 (QUIC) | `http3Port`, `http3AltSvcMaxAge`, `http3AdvertiseAltSvc` |
 | Service mesh / transparent proxy | `transparentProxyEnabled` |
 | OpenTelemetry | `otelMetricsEnabled`, `otelTracesEnabled`, `otelEndpoint`, `otelMetricsExportIntervalSeconds`, `otelPropagateTraceContext`, `otelGenerateTraceId` |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs` |

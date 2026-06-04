@@ -59,6 +59,9 @@ has zero impact on the existing TCP/HTTP server.
 | `Configuration.http3InitialMaxStreamDataBidirectional()` | `mockserver-core` | Per-stream flow control (bytes) |
 | `Configuration.http3InitialMaxStreamsBidirectional()` | `mockserver-core` | Max concurrent bidirectional streams |
 | `Configuration.http3QpackMaxTableCapacity()` | `mockserver-core` | QPACK dynamic table capacity (bytes, 0 = disabled) |
+| `AltSvcHeaderHandler` | `mockserver-netty` | Outbound handler that adds `Alt-Svc: h3=":<http3Port>"; ma=<maxAge>` to TCP (HTTP/1.1 + HTTP/2) responses when HTTP/3 is enabled; does not clobber user-set Alt-Svc headers |
+| `Configuration.http3AltSvcMaxAge()` | `mockserver-core` | Max-age in seconds for the Alt-Svc header (default 86400) |
+| `Configuration.http3AdvertiseAltSvc()` | `mockserver-core` | Whether to advertise Alt-Svc on TCP responses (default true) |
 
 ### Request Processing
 
@@ -132,6 +135,54 @@ MockServer logs a warning and continues without HTTP/3. The existing TCP/HTTP se
 is never affected by HTTP/3 startup failures.
 
 The bound HTTP/3 port is accessible via `MockServer.getHttp3Port()`.
+
+### Alt-Svc Auto-Discovery
+
+When `http3Port > 0` and `http3AdvertiseAltSvc` is `true` (the default), MockServer
+automatically adds an `Alt-Svc` header to every response served over the TCP
+(HTTP/1.1 and HTTP/2) paths:
+
+```
+Alt-Svc: h3=":<http3Port>"; ma=<http3AltSvcMaxAge>
+```
+
+This follows RFC 7838 and tells HTTP/3-capable clients that a QUIC endpoint is
+available on the same host. Clients that support HTTP/3 will automatically
+upgrade to QUIC on subsequent requests, with transparent fallback to HTTP/2 or
+HTTP/1.1 if QUIC is unavailable.
+
+```mermaid
+sequenceDiagram
+    participant C as HTTP Client
+    participant TCP as MockServer TCP
+    participant H3 as MockServer HTTP/3
+
+    C->>TCP: GET /api (HTTP/1.1 or HTTP/2)
+    TCP->>C: 200 OK + Alt-Svc: h3=":8443"; ma=86400
+    Note over C: Client caches Alt-Svc
+    C->>H3: GET /api (HTTP/3 over QUIC)
+    H3->>C: 200 OK
+```
+
+**Design decisions:**
+
+- The `AltSvcHeaderHandler` is a `@Sharable` `ChannelDuplexHandler` added to the
+  outbound pipeline at the same point as `TraceContextHandler` in all three TCP
+  switch paths (`switchToHttp`, `switchToHttp2`, `switchToH2c`) and in the HTTP/2
+  multiplex child initializer.
+- The handler intercepts outbound `HttpResponse` writes (MockServer model objects,
+  before they are converted to Netty wire format) and adds the header if not already
+  present.
+- A user-set `Alt-Svc` header in an expectation is never overwritten.
+- The handler is NOT added on the HTTP/3 (QUIC) response path itself, since there
+  is no point advertising h3 to an h3 client.
+- When `http3Port` is `0` (default) or `http3AdvertiseAltSvc` is `false`, no handler
+  is added and behaviour is byte-for-byte unchanged.
+
+| Property | Default | Env var | System property |
+|----------|---------|---------|-----------------|
+| `http3AltSvcMaxAge` | `86400` (24 hours) | `MOCKSERVER_HTTP3_ALT_SVC_MAX_AGE` | `mockserver.http3AltSvcMaxAge` |
+| `http3AdvertiseAltSvc` | `true` | `MOCKSERVER_HTTP3_ADVERTISE_ALT_SVC` | `mockserver.http3AdvertiseAltSvc` |
 
 ### TLS
 
@@ -221,6 +272,12 @@ declarations are needed -- they resolve automatically.
   advertises `SETTINGS_ENABLE_CONNECT_PROTOCOL=1` (RFC 9220) when the flag is on.
 - Integration-tested CONNECT-UDP relay (in-JVM QUIC client + local UDP echo server,
   verifies round-trip datagram relay through the tunnel)
+- **Alt-Svc auto-discovery (RFC 7838)**: when `http3Port > 0`, responses served over
+  the TCP (HTTP/1.1 and HTTP/2) paths include an `Alt-Svc: h3=":<port>"; ma=<maxAge>`
+  header so HTTP/3-capable clients automatically upgrade to QUIC. The max-age is
+  configurable via `http3AltSvcMaxAge` (default 86400s). Advertisement can be
+  suppressed via `http3AdvertiseAltSvc=false`. User-set Alt-Svc headers in
+  expectations are never overwritten.
 
 ## What is NOT Implemented (follow-up work)
 

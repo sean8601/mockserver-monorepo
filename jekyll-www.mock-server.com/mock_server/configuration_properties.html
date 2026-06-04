@@ -219,7 +219,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 <button id="button_configuration_http3_port" class="accordion title"><strong>HTTP/3 (QUIC) Port</strong></button>
 <div class="panel title">
-    <p><strong>Experimental.</strong> UDP port for the experimental HTTP/3 (QUIC) listener. When set to a non-zero value MockServer starts an HTTP/3 server on this port in addition to the normal HTTP port(s); leave unset or <span class="inline_code">0</span> to disable (the default). Requires the BoringSSL/QUIC native library for the runtime platform. See <a href="/mock_server/http3.html">HTTP/3 (QUIC) Support</a> for details and current limitations.</p>
+    <p><strong>Experimental.</strong> UDP port for the experimental HTTP/3 (QUIC) listener. When set to a non-zero value MockServer starts an HTTP/3 server on this port in addition to the normal HTTP port(s); leave unset or <span class="inline_code">0</span> to disable (the default). When enabled, MockServer also advertises the HTTP/3 endpoint via an <span class="inline_code">Alt-Svc</span> header on all TCP (HTTP/1.1 and HTTP/2) responses so HTTP/3-capable clients automatically upgrade to QUIC (see <span class="inline_code">http3AdvertiseAltSvc</span> and <span class="inline_code">http3AltSvcMaxAge</span>). Requires the BoringSSL/QUIC native library for the runtime platform. See <a href="/mock_server/http3.html">HTTP/3 (QUIC) Support</a> for details and current limitations.</p>
     <p>Type: <span class="keyword">int</span> Default: <span class="this_value">0 (disabled)</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.http3Port(int port)</code></pre>
@@ -311,6 +311,38 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.http3QpackMaxTableCapacity=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http3QpackMaxTableCapacity="4096"</code></pre>
+</div>
+
+<button id="button_configuration_http3_alt_svc_max_age" class="accordion title"><strong>HTTP/3 Alt-Svc Max Age</strong></button>
+<div class="panel title">
+    <p><strong>Experimental.</strong> Max-age in seconds for the <span class="inline_code">Alt-Svc</span> header that MockServer adds to TCP (HTTP/1.1 and HTTP/2) responses when <span class="inline_code">http3Port</span> is set. This tells HTTP/3-capable clients how long to cache the Alt-Svc advertisement. After the max-age expires, clients will re-discover via the next response. Only relevant when <span class="inline_code">http3Port &gt; 0</span> and <span class="inline_code">http3AdvertiseAltSvc</span> is <span class="inline_code">true</span>.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">86400 (24 hours)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.http3AltSvcMaxAge(long seconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http3AltSvcMaxAge=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_HTTP3_ALT_SVC_MAX_AGE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.http3AltSvcMaxAge=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http3AltSvcMaxAge="3600"</code></pre>
+</div>
+
+<button id="button_configuration_http3_advertise_alt_svc" class="accordion title"><strong>HTTP/3 Advertise Alt-Svc</strong></button>
+<div class="panel title">
+    <p><strong>Experimental.</strong> Whether to add an <span class="inline_code">Alt-Svc</span> header advertising HTTP/3 to responses served over the TCP (HTTP/1.1 and HTTP/2) paths when <span class="inline_code">http3Port</span> is set. When <span class="inline_code">true</span> (the default), HTTP/3-capable clients will automatically upgrade to QUIC on subsequent requests and fall back to HTTP/2 or HTTP/1.1 if QUIC is unavailable. Set to <span class="inline_code">false</span> to keep HTTP/3 enabled for direct QUIC clients without advertising it to TCP clients.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.http3AdvertiseAltSvc(boolean advertise)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http3AdvertiseAltSvc=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_HTTP3_ADVERTISE_ALT_SVC=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.http3AdvertiseAltSvc=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http3AdvertiseAltSvc="false"</code></pre>
 </div>
 
 <button id="button_configuration_http3_connect_udp_enabled" class="accordion title"><strong>HTTP/3 CONNECT-UDP (MASQUE) Enabled</strong></button>

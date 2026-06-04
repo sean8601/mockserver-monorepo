@@ -96,6 +96,7 @@ sitemap:
     <li><strong>Configurable TLS</strong> &mdash; uses the same TLS certificate as the HTTPS server</li>
     <li><strong>Lifecycle integration</strong> &mdash; starts and stops automatically with MockServer</li>
     <li><strong>Fail-soft startup</strong> &mdash; graceful fallback when native QUIC is unavailable</li>
+    <li><strong>Alt-Svc auto-discovery</strong> &mdash; when <span class="inline_code">http3Port</span> is set, MockServer automatically adds an <span class="inline_code">Alt-Svc</span> header to all TCP (HTTP/1.1 and HTTP/2) responses advertising the HTTP/3 endpoint. HTTP/3-capable clients will automatically upgrade to QUIC on subsequent requests, with transparent fallback to HTTP/2 or HTTP/1.1 if QUIC is unavailable. The advertisement max-age is configurable via <span class="inline_code">http3AltSvcMaxAge</span> (default 86400 seconds). Set <span class="inline_code">http3AdvertiseAltSvc=false</span> to disable advertising while keeping HTTP/3 enabled</li>
 </ul>
 
 <a id="http3_limitations" class="anchor" href="#http3_limitations">&nbsp;</a>
