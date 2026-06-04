@@ -8,6 +8,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.RequestMatchers;
+import org.mockserver.mock.ScenarioManager;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
@@ -562,6 +563,165 @@ class ClusteredTwoNodeTest {
         assertTrue(entry.isPresent(), "backend entry should still exist");
         assertThat("remainingTimes should be 0 after exhaustion",
             entry.get().getValue().getRemainingTimes(), is(0));
+    }
+
+    // --- Cross-node ScenarioManager transitions (G10 follow-up) ---
+
+    /**
+     * G10 scenario clustering: a ScenarioManager wired to node A's
+     * replicated scenarioStates() KV store transitions a scenario from
+     * "Started" to "Step1". A ScenarioManager on node B, wired to node
+     * B's view of the same replicated store, must see the new state.
+     * This proves cross-node scenario visibility through the refactored
+     * ScenarioManager (read-through-KV, no node-local cache).
+     */
+    @Test
+    void scenarioTransitionOnNodeAShouldBeVisibleOnNodeB() {
+        ScenarioManager managerA = new ScenarioManager(nodeA.scenarioStates());
+        ScenarioManager managerB = new ScenarioManager(nodeB.scenarioStates());
+
+        // Initial state on both nodes
+        assertThat(managerA.getState("myScenario"), is(ScenarioManager.STARTED));
+        assertThat(managerB.getState("myScenario"), is(ScenarioManager.STARTED));
+
+        // Transition on node A
+        boolean matched = managerA.matchesAndTransition("myScenario", "Started", "Step1");
+        assertTrue(matched, "transition from Started to Step1 should succeed on node A");
+
+        // Visible on node B (REPL_SYNC = synchronous replication)
+        assertThat(managerB.getState("myScenario"), is("Step1"));
+    }
+
+    /**
+     * G10 scenario clustering: a multi-step scenario sequence
+     * (Started -> Step1 -> Step2 -> Done) driven alternately by two
+     * nodes must produce the correct final state visible on both nodes.
+     */
+    @Test
+    void multiStepScenarioTransitionAcrossNodesShouldWork() {
+        ScenarioManager managerA = new ScenarioManager(nodeA.scenarioStates());
+        ScenarioManager managerB = new ScenarioManager(nodeB.scenarioStates());
+
+        // Node A: Started -> Step1
+        assertTrue(managerA.matchesAndTransition("multiStep", "Started", "Step1"));
+        assertThat(managerB.getState("multiStep"), is("Step1"));
+
+        // Node B: Step1 -> Step2
+        assertTrue(managerB.matchesAndTransition("multiStep", "Step1", "Step2"));
+        assertThat(managerA.getState("multiStep"), is("Step2"));
+
+        // Node A: Step2 -> Done
+        assertTrue(managerA.matchesAndTransition("multiStep", "Step2", "Done"));
+        assertThat(managerB.getState("multiStep"), is("Done"));
+    }
+
+    /**
+     * G10 core guarantee: two nodes racing to transition the same
+     * scenario from "Started" to "Step1" — exactly ONE should succeed
+     * (the CAS-based matchesAndTransition ensures atomicity across nodes).
+     * This prevents double-transition of a once-style scenario.
+     */
+    @Test
+    void twoNodesCannotDoubleTransitionSameScenario() throws Exception {
+        ScenarioManager managerA = new ScenarioManager(nodeA.scenarioStates());
+        ScenarioManager managerB = new ScenarioManager(nodeB.scenarioStates());
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicReference<Throwable> error = new AtomicReference<>();
+
+        Thread threadA = new Thread(() -> {
+            try {
+                barrier.await();
+                if (managerA.matchesAndTransition("onceScenario", "Started", "Step1")) {
+                    successCount.incrementAndGet();
+                }
+            } catch (Exception e) {
+                error.set(e);
+            }
+        });
+        Thread threadB = new Thread(() -> {
+            try {
+                barrier.await();
+                if (managerB.matchesAndTransition("onceScenario", "Started", "Step1")) {
+                    successCount.incrementAndGet();
+                }
+            } catch (Exception e) {
+                error.set(e);
+            }
+        });
+
+        threadA.start();
+        threadB.start();
+        threadA.join(10_000);
+        threadB.join(10_000);
+
+        assertNull(error.get(), "no exceptions expected");
+        assertThat("exactly one node should win the Started->Step1 transition",
+            successCount.get(), is(1));
+
+        // Both nodes should see the same final state
+        assertThat(managerA.getState("onceScenario"), is("Step1"));
+        assertThat(managerB.getState("onceScenario"), is("Step1"));
+    }
+
+    /**
+     * G10: scenario clear on node A should be visible on node B.
+     */
+    @Test
+    void scenarioClearOnNodeAShouldBeVisibleOnNodeB() {
+        ScenarioManager managerA = new ScenarioManager(nodeA.scenarioStates());
+        ScenarioManager managerB = new ScenarioManager(nodeB.scenarioStates());
+
+        managerA.setState("clearMe", "Step1");
+        assertThat(managerB.getState("clearMe"), is("Step1"));
+
+        managerA.clear("clearMe");
+
+        // After clear, the state reverts to the implicit STARTED default
+        assertThat(managerB.getState("clearMe"), is(ScenarioManager.STARTED));
+    }
+
+    /**
+     * G10: scenario reset on node A should clear all states on node B.
+     */
+    @Test
+    void scenarioResetOnNodeAShouldClearAllStatesOnNodeB() {
+        ScenarioManager managerA = new ScenarioManager(nodeA.scenarioStates());
+        ScenarioManager managerB = new ScenarioManager(nodeB.scenarioStates());
+
+        managerA.setState("s1", "Step1");
+        managerA.setState("s2", "Step2");
+        assertThat(managerB.getState("s1"), is("Step1"));
+        assertThat(managerB.getState("s2"), is("Step2"));
+
+        managerA.reset();
+
+        assertThat(managerB.getState("s1"), is(ScenarioManager.STARTED));
+        assertThat(managerB.getState("s2"), is(ScenarioManager.STARTED));
+    }
+
+    /**
+     * G10: composite-key (isolated) scenario transitions should also
+     * replicate across nodes.
+     */
+    @Test
+    void isolatedScenarioTransitionShouldReplicateAcrossNodes() {
+        ScenarioManager managerA = new ScenarioManager(nodeA.scenarioStates());
+        ScenarioManager managerB = new ScenarioManager(nodeB.scenarioStates());
+
+        // Node A transitions isolation "session-1"
+        assertTrue(managerA.matchesAndTransition("conv", "session-1", "Started", "turn_1"));
+        // Node B sees the transition for "session-1"
+        assertThat(managerB.getState("conv", "session-1"), is("turn_1"));
+
+        // Node B transitions isolation "session-2" independently
+        assertTrue(managerB.matchesAndTransition("conv", "session-2", "Started", "turn_1"));
+        // Node A sees it
+        assertThat(managerA.getState("conv", "session-2"), is("turn_1"));
+
+        // Original isolation unchanged
+        assertThat(managerA.getState("conv", "session-1"), is("turn_1"));
     }
 
     // --- Helpers for clustered Times tests ---

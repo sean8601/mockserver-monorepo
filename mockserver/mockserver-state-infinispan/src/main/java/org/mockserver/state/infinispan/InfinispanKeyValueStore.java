@@ -64,6 +64,19 @@ public class InfinispanKeyValueStore<V> implements KeyValueStore<V> {
     }
 
     @Override
+    public Optional<Versioned<V>> putIfAbsent(String key, V value) {
+        VersionedWrapper<V> newWrapper = new VersionedWrapper<>(value, 1L);
+        VersionedWrapper<V> existing = cache.putIfAbsent(key, newWrapper);
+        if (existing != null) {
+            // Key already existed — return the existing value without modification
+            return Optional.of(new Versioned<>(existing.getValue(), existing.getVersion()));
+        }
+        // Successfully created the entry
+        fireChanged(key);
+        return Optional.empty();
+    }
+
+    @Override
     public boolean compareAndSet(String key, long expectedVersion, V value) {
         // Use Infinispan's native cache.replace(key, oldValue, newValue)
         // for atomic CAS. This avoids the re-execution problem with

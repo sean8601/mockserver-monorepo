@@ -102,8 +102,6 @@ Dependencies introduced by `mockserver-state-infinispan`, which provides the Inf
 
 The `ExpectationEntry` uses custom `writeObject`/`readObject` to serialize the `Expectation` as its JSON string (via `ExpectationDTO`), avoiding the need for the entire domain model to implement `Serializable`. The LOCAL-mode path retains the `".*"` wildcard because heap-only storage never deserializes untrusted bytes.
 
-**Clustering limitation -- Scenario state transitions are not yet clustered.** While the `scenarioStates` KV store in `StateBackend` is replicated across cluster nodes (REPL_SYNC), the `ScenarioManager` that drives `matchesAndTransition()` / `transitionState()` still uses a node-local in-memory map. Expectations using scenario sequencing (`scenarioName` + `scenarioState` / `newScenarioState`) should not rely on cross-node state consistency. This is a planned follow-up to the Phase 2c clustering work.
-
 ### Test Dependencies (Docker-Gated)
 
 Test-scoped dependencies used for Docker-gated integration tests. These are never bundled in released artifacts.

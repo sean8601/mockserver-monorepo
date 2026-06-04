@@ -1106,8 +1106,6 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 <p>These properties configure multi-node clustering. When enabled, MockServer instances sharing the same cluster name replicate expectation state via an embedded Infinispan data grid with JGroups transport. Requires the <span class="inline_code">mockserver-state-infinispan</span> module on the classpath and <span class="inline_code">stateBackend=infinispan</span>.</p>
 
-<p><strong>Limitation:</strong> Scenario state transitions are not yet clustered. Expectations using scenario sequencing (<span class="inline_code">scenarioName</span> + <span class="inline_code">scenarioState</span> / <span class="inline_code">newScenarioState</span>) should not rely on cross-node state consistency (planned follow-up).</p>
-
 <button id="button_configuration_cluster_enabled" class="accordion title"><strong>Cluster Enabled</strong></button>
 <div class="panel title">
     <p>Enables multi-node clustering with JGroups transport. When <span class="inline_code">false</span> (default), MockServer runs in single-node LOCAL mode with no network transport.</p>

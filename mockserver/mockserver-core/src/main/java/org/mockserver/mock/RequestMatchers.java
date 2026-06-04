@@ -128,6 +128,18 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             // Restore original eviction when backend is removed
             httpRequestMatchers.setMaxSize(configuration.maxExpectations());
         }
+        // Wire scenario states through the backend's replicated KV store
+        // so scenario transitions are shared across cluster nodes. For the
+        // default InMemoryStateBackend this wraps a ConcurrentHashMap —
+        // identical single-node behaviour with no overhead.
+        if (stateBackend != null) {
+            scenarioManager.setScenarioStates(stateBackend.scenarioStates());
+        } else {
+            // Backend removed — reset to a fresh in-memory store so the
+            // ScenarioManager doesn't keep operating on a removed/closed
+            // backend's store.
+            scenarioManager.setScenarioStates(new org.mockserver.state.InMemoryKeyValueStore<>());
+        }
     }
 
     /**

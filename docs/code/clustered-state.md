@@ -138,6 +138,14 @@ The expectations cache uses Infinispan's approximate `maxCount` eviction with `E
 
 Because eviction is approximate, the node-local `CircularPriorityQueue` (used for iteration order during matching) may briefly contain one more entry than `maxExpectations` between an eviction and the next reconcile cycle.
 
+### Clustered Scenario State Transitions
+
+`ScenarioManager` reads and writes scenario state through the backend's `scenarioStates()` `KeyValueStore<String>`. State transitions (`matchesAndTransition`) use `compareAndSet` for cross-node atomicity: two nodes racing to advance the same scenario from "Started" to "Step1" will produce exactly one winner. The losing node's CAS fails and the transition is retried (if the state still matches) or rejected (if the state has changed).
+
+For the default `InMemoryStateBackend`, this is backed by a `ConcurrentHashMap` with version tracking -- identical single-node behaviour and performance to the pre-clustering implementation. For the clustered `InfinispanStateBackend`, the `scenarioStates` cache is `REPL_SYNC`, so writes are synchronously replicated and reads on any node reflect the latest state.
+
+`ScenarioManager` uses no node-local cache for scenario state; all reads go through `KeyValueStore.get()` and all writes through `put()` or `compareAndSet()`. This read-through design means no `InvalidationListener` is needed for scenario state (unlike expectations, which maintain a node-local compiled-matcher cache).
+
 ## Factory and Classpath Discovery
 
 `StateBackendFactory` in `mockserver-core` manages backend creation without a compile-time dependency on Infinispan:
@@ -242,7 +250,6 @@ When the state backend is not clustered (default `InMemoryStateBackend` or `Infi
 
 | Limitation | Detail |
 |------------|--------|
-| Scenario-state transitions | Cross-node scenario transitions are not yet atomic. A client on node A advancing a scenario state and a concurrent client on node B reading the same state may see different values between the write and the replication round-trip. |
 | Shared `Times` counters | Per-expectation match-limit counters (`Times`) are node-local. A `Times(3)` expectation on a two-node cluster allows up to 6 total matches, not 3. |
 | CRUD entity namespace isolation | Each namespace is a separate Infinispan cache defined on demand. The number of distinct CRUD namespaces in use should be small (hundreds, not millions). |
 | No cloud blob backends | `BlobStore` has `InMemoryBlobStore` and `FilesystemBlobStore` implementations; S3/GCS/Azure Blob adapters are SPI-only stubs. |
