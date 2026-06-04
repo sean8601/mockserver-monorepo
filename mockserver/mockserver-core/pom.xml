@@ -544,6 +544,24 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- produce a test-jar so sibling modules (e.g. mockserver-blob-s3/gcs/azure)
+                 can reuse the shared BlobStoreContract without duplicating it -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>**/state/contract/**</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

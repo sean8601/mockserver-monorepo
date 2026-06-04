@@ -147,6 +147,17 @@ public class Configuration {
     private String stateBackend;
     private String blobStoreType;
 
+    // cloud blob store configuration
+    private String blobStoreBucket;
+    private String blobStoreRegion;
+    private String blobStoreEndpoint;
+    private String blobStoreKeyPrefix;
+    private String blobStoreAccessKeyId;
+    private String blobStoreSecretAccessKey;
+    private String blobStoreContainer;
+    private String blobStoreConnectionString;
+    private String blobStoreProjectId;
+
     // clustering (G10 phase 2c) — opt-in, default OFF
     private Boolean clusterEnabled;
     private String clusterName;
@@ -1782,6 +1793,149 @@ public class Configuration {
      */
     public Configuration blobStoreType(String blobStoreType) {
         this.blobStoreType = blobStoreType;
+        return this;
+    }
+
+    // --- cloud blob store configuration ---
+
+    /**
+     * Returns the cloud blob store bucket name (S3 bucket or GCS bucket).
+     */
+    public String blobStoreBucket() {
+        if (blobStoreBucket == null) {
+            return ConfigurationProperties.blobStoreBucket();
+        }
+        return blobStoreBucket;
+    }
+
+    public Configuration blobStoreBucket(String blobStoreBucket) {
+        this.blobStoreBucket = blobStoreBucket;
+        return this;
+    }
+
+    /**
+     * Returns the cloud blob store region (e.g. "us-east-1" for S3).
+     */
+    public String blobStoreRegion() {
+        if (blobStoreRegion == null) {
+            return ConfigurationProperties.blobStoreRegion();
+        }
+        return blobStoreRegion;
+    }
+
+    public Configuration blobStoreRegion(String blobStoreRegion) {
+        this.blobStoreRegion = blobStoreRegion;
+        return this;
+    }
+
+    /**
+     * Returns the cloud blob store endpoint override URL (e.g. MinIO
+     * endpoint for S3-compatible stores, or fake-gcs-server URL).
+     */
+    public String blobStoreEndpoint() {
+        if (blobStoreEndpoint == null) {
+            return ConfigurationProperties.blobStoreEndpoint();
+        }
+        return blobStoreEndpoint;
+    }
+
+    public Configuration blobStoreEndpoint(String blobStoreEndpoint) {
+        this.blobStoreEndpoint = blobStoreEndpoint;
+        return this;
+    }
+
+    /**
+     * Returns the key prefix for cloud blob store objects. All blob keys
+     * are prefixed with this value (e.g. "mockserver/" to namespace
+     * objects within a shared bucket).
+     */
+    public String blobStoreKeyPrefix() {
+        if (blobStoreKeyPrefix == null) {
+            return ConfigurationProperties.blobStoreKeyPrefix();
+        }
+        return blobStoreKeyPrefix;
+    }
+
+    public Configuration blobStoreKeyPrefix(String blobStoreKeyPrefix) {
+        this.blobStoreKeyPrefix = blobStoreKeyPrefix;
+        return this;
+    }
+
+    /**
+     * Returns the explicit access key ID for cloud blob store
+     * authentication (optional -- falls back to default credential chain).
+     */
+    public String blobStoreAccessKeyId() {
+        if (blobStoreAccessKeyId == null) {
+            return ConfigurationProperties.blobStoreAccessKeyId();
+        }
+        return blobStoreAccessKeyId;
+    }
+
+    public Configuration blobStoreAccessKeyId(String blobStoreAccessKeyId) {
+        this.blobStoreAccessKeyId = blobStoreAccessKeyId;
+        return this;
+    }
+
+    /**
+     * Returns the explicit secret access key for cloud blob store
+     * authentication (optional -- falls back to default credential chain).
+     */
+    public String blobStoreSecretAccessKey() {
+        if (blobStoreSecretAccessKey == null) {
+            return ConfigurationProperties.blobStoreSecretAccessKey();
+        }
+        return blobStoreSecretAccessKey;
+    }
+
+    public Configuration blobStoreSecretAccessKey(String blobStoreSecretAccessKey) {
+        this.blobStoreSecretAccessKey = blobStoreSecretAccessKey;
+        return this;
+    }
+
+    /**
+     * Returns the Azure Blob Storage container name.
+     */
+    public String blobStoreContainer() {
+        if (blobStoreContainer == null) {
+            return ConfigurationProperties.blobStoreContainer();
+        }
+        return blobStoreContainer;
+    }
+
+    public Configuration blobStoreContainer(String blobStoreContainer) {
+        this.blobStoreContainer = blobStoreContainer;
+        return this;
+    }
+
+    /**
+     * Returns the Azure Blob Storage connection string.
+     */
+    public String blobStoreConnectionString() {
+        if (blobStoreConnectionString == null) {
+            return ConfigurationProperties.blobStoreConnectionString();
+        }
+        return blobStoreConnectionString;
+    }
+
+    public Configuration blobStoreConnectionString(String blobStoreConnectionString) {
+        this.blobStoreConnectionString = blobStoreConnectionString;
+        return this;
+    }
+
+    /**
+     * Returns the GCS project ID (optional -- falls back to default
+     * project from application default credentials).
+     */
+    public String blobStoreProjectId() {
+        if (blobStoreProjectId == null) {
+            return ConfigurationProperties.blobStoreProjectId();
+        }
+        return blobStoreProjectId;
+    }
+
+    public Configuration blobStoreProjectId(String blobStoreProjectId) {
+        this.blobStoreProjectId = blobStoreProjectId;
         return this;
     }
 

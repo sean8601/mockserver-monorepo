@@ -182,6 +182,17 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_STATE_BACKEND = "mockserver.stateBackend";
     private static final String MOCKSERVER_BLOB_STORE_TYPE = "mockserver.blobStoreType";
 
+    // cloud blob store configuration
+    private static final String MOCKSERVER_BLOB_STORE_BUCKET = "mockserver.blobStoreBucket";
+    private static final String MOCKSERVER_BLOB_STORE_REGION = "mockserver.blobStoreRegion";
+    private static final String MOCKSERVER_BLOB_STORE_ENDPOINT = "mockserver.blobStoreEndpoint";
+    private static final String MOCKSERVER_BLOB_STORE_KEY_PREFIX = "mockserver.blobStoreKeyPrefix";
+    private static final String MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID = "mockserver.blobStoreAccessKeyId";
+    private static final String MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY = "mockserver.blobStoreSecretAccessKey";
+    private static final String MOCKSERVER_BLOB_STORE_CONTAINER = "mockserver.blobStoreContainer";
+    private static final String MOCKSERVER_BLOB_STORE_CONNECTION_STRING = "mockserver.blobStoreConnectionString";
+    private static final String MOCKSERVER_BLOB_STORE_PROJECT_ID = "mockserver.blobStoreProjectId";
+
     // clustering (G10 phase 2c)
     private static final String MOCKSERVER_CLUSTER_ENABLED = "mockserver.clusterEnabled";
     private static final String MOCKSERVER_CLUSTER_NAME = "mockserver.clusterName";
@@ -2024,6 +2035,107 @@ public class ConfigurationProperties {
      */
     public static void blobStoreType(String blobStoreType) {
         setProperty(MOCKSERVER_BLOB_STORE_TYPE, blobStoreType);
+    }
+
+    // cloud blob store configuration
+
+    /**
+     * Returns the cloud blob store bucket name (S3 or GCS bucket).
+     */
+    public static String blobStoreBucket() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_BUCKET, "MOCKSERVER_BLOB_STORE_BUCKET", "");
+    }
+
+    public static void blobStoreBucket(String blobStoreBucket) {
+        setProperty(MOCKSERVER_BLOB_STORE_BUCKET, blobStoreBucket);
+    }
+
+    /**
+     * Returns the cloud blob store region (e.g. "us-east-1" for S3).
+     */
+    public static String blobStoreRegion() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_REGION, "MOCKSERVER_BLOB_STORE_REGION", "");
+    }
+
+    public static void blobStoreRegion(String blobStoreRegion) {
+        setProperty(MOCKSERVER_BLOB_STORE_REGION, blobStoreRegion);
+    }
+
+    /**
+     * Returns the cloud blob store endpoint override URL.
+     */
+    public static String blobStoreEndpoint() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_ENDPOINT, "MOCKSERVER_BLOB_STORE_ENDPOINT", "");
+    }
+
+    public static void blobStoreEndpoint(String blobStoreEndpoint) {
+        setProperty(MOCKSERVER_BLOB_STORE_ENDPOINT, blobStoreEndpoint);
+    }
+
+    /**
+     * Returns the key prefix for cloud blob store objects.
+     */
+    public static String blobStoreKeyPrefix() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_KEY_PREFIX, "MOCKSERVER_BLOB_STORE_KEY_PREFIX", "");
+    }
+
+    public static void blobStoreKeyPrefix(String blobStoreKeyPrefix) {
+        setProperty(MOCKSERVER_BLOB_STORE_KEY_PREFIX, blobStoreKeyPrefix);
+    }
+
+    /**
+     * Returns the explicit access key ID for cloud blob store authentication.
+     */
+    public static String blobStoreAccessKeyId() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID, "MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID", "");
+    }
+
+    public static void blobStoreAccessKeyId(String blobStoreAccessKeyId) {
+        setProperty(MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID, blobStoreAccessKeyId);
+    }
+
+    /**
+     * Returns the explicit secret access key for cloud blob store authentication.
+     */
+    public static String blobStoreSecretAccessKey() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY, "MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY", "");
+    }
+
+    public static void blobStoreSecretAccessKey(String blobStoreSecretAccessKey) {
+        setProperty(MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY, blobStoreSecretAccessKey);
+    }
+
+    /**
+     * Returns the Azure Blob Storage container name.
+     */
+    public static String blobStoreContainer() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_CONTAINER, "MOCKSERVER_BLOB_STORE_CONTAINER", "");
+    }
+
+    public static void blobStoreContainer(String blobStoreContainer) {
+        setProperty(MOCKSERVER_BLOB_STORE_CONTAINER, blobStoreContainer);
+    }
+
+    /**
+     * Returns the Azure Blob Storage connection string.
+     */
+    public static String blobStoreConnectionString() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_CONNECTION_STRING, "MOCKSERVER_BLOB_STORE_CONNECTION_STRING", "");
+    }
+
+    public static void blobStoreConnectionString(String blobStoreConnectionString) {
+        setProperty(MOCKSERVER_BLOB_STORE_CONNECTION_STRING, blobStoreConnectionString);
+    }
+
+    /**
+     * Returns the GCS project ID.
+     */
+    public static String blobStoreProjectId() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_PROJECT_ID, "MOCKSERVER_BLOB_STORE_PROJECT_ID", "");
+    }
+
+    public static void blobStoreProjectId(String blobStoreProjectId) {
+        setProperty(MOCKSERVER_BLOB_STORE_PROJECT_ID, blobStoreProjectId);
     }
 
     // --- clustering (G10 phase 2c) ---

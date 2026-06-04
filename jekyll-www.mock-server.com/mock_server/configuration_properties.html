@@ -1244,6 +1244,100 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.clusterTransportConfig=/etc/mockserver/jgroups-tcp.xml</code></pre>
 </div>
 
+<h2>Cloud Blob Store Configuration:</h2>
+
+<p>These properties configure cloud-backed blob storage for durable persistence of expectations, cassettes, and fixture files. Each cloud backend requires its own optional module on the classpath. Set <span class="inline_code">blobStoreType</span> to <span class="inline_code">s3</span>, <span class="inline_code">gcs</span>, or <span class="inline_code">azure</span> and configure the backend-specific properties below.</p>
+
+<button id="button_configuration_blob_store_bucket" class="accordion title"><strong>Blob Store Bucket (S3 / GCS)</strong></button>
+<div class="panel title">
+    <p>The bucket name for S3 or GCS blob storage. Required when <span class="inline_code">blobStoreType</span> is <span class="inline_code">s3</span> or <span class="inline_code">gcs</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (none)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreBucket="my-mockserver-bucket"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_BUCKET="my-mockserver-bucket"</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_region" class="accordion title"><strong>Blob Store Region (S3)</strong></button>
+<div class="panel title">
+    <p>The AWS region for S3 blob storage. If not set, defaults to <span class="inline_code">us-east-1</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (us-east-1)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreRegion="eu-west-1"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_REGION="eu-west-1"</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_endpoint" class="accordion title"><strong>Blob Store Endpoint Override</strong></button>
+<div class="panel title">
+    <p>Endpoint override URL for S3-compatible stores (e.g. MinIO, LocalStack) or GCS emulators (e.g. fake-gcs-server). When set, the cloud client connects to this URL instead of the real cloud service.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (none -- use real cloud endpoint)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreEndpoint="http://localhost:9000"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_ENDPOINT="http://localhost:9000"</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_key_prefix" class="accordion title"><strong>Blob Store Key Prefix</strong></button>
+<div class="panel title">
+    <p>An optional prefix prepended to all blob keys in the cloud store. Useful for namespacing MockServer objects within a shared bucket or container (e.g. <span class="inline_code">mockserver/</span>).</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (no prefix)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreKeyPrefix="mockserver/"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_KEY_PREFIX="mockserver/"</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_container" class="accordion title"><strong>Blob Store Container (Azure)</strong></button>
+<div class="panel title">
+    <p>The Azure Blob Storage container name. Required when <span class="inline_code">blobStoreType</span> is <span class="inline_code">azure</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (none)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreContainer="my-container"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_CONTAINER="my-container"</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_connection_string" class="accordion title"><strong>Blob Store Connection String (Azure)</strong></button>
+<div class="panel title">
+    <p>The Azure Blob Storage connection string (includes account name, key, and endpoint). Required when <span class="inline_code">blobStoreType</span> is <span class="inline_code">azure</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (none)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreConnectionString="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_access_key_id" class="accordion title"><strong>Blob Store Access Key ID (S3)</strong></button>
+<div class="panel title">
+    <p>Explicit AWS access key ID for the S3 blob store. Optional — when empty, the default AWS credential chain is used (environment, profile, instance/IRSA role). Only relevant when <span class="inline_code">blobStoreType</span> is <span class="inline_code">s3</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (use default credential chain)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreAccessKeyId="AKIA..."</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID="AKIA..."</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_secret_access_key" class="accordion title"><strong>Blob Store Secret Access Key (S3)</strong></button>
+<div class="panel title">
+    <p>Explicit AWS secret access key for the S3 blob store. Optional — when empty, the default AWS credential chain is used. Only relevant when <span class="inline_code">blobStoreType</span> is <span class="inline_code">s3</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (use default credential chain)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreSecretAccessKey="..."</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY="..."</code></pre>
+</div>
+
+<button id="button_configuration_blob_store_project_id" class="accordion title"><strong>Blob Store Project ID (GCS)</strong></button>
+<div class="panel title">
+    <p>The Google Cloud project ID for the GCS blob store. Optional — when empty, the project is inferred from Application Default Credentials. Only relevant when <span class="inline_code">blobStoreType</span> is <span class="inline_code">gcs</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (infer from ADC)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreProjectId="my-gcp-project"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_PROJECT_ID="my-gcp-project"</code></pre>
+</div>
+
 {% include_subpage _includes/control_plane_authentication_configuration.html %}
 
 {% include_subpage _includes/tls_configuration.html %}

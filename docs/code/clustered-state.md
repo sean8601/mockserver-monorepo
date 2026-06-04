@@ -170,12 +170,90 @@ flowchart TD
 
 If `stateBackend=infinispan` is configured but `mockserver-state-infinispan` is not on the classpath, `StateBackendFactory` throws `IllegalStateException` immediately at startup rather than silently falling through to the in-memory backend. Falling through would create a split-brain cluster where the operator believes nodes share state but each node is actually isolated.
 
+## Cloud Blob Store Backends
+
+Three optional modules provide cloud-backed `BlobStore` implementations for durable blob storage across cloud providers:
+
+| Module | Blob store type | Cloud SDK | Emulator (Testcontainers) |
+|--------|----------------|-----------|---------------------------|
+| `mockserver-blob-s3` | `s3` | AWS SDK v2 `S3Client` | MinIO (`minio/minio`) |
+| `mockserver-blob-gcs` | `gcs` | `google-cloud-storage` | fake-gcs-server (`fsouza/fake-gcs-server`) |
+| `mockserver-blob-azure` | `azure` | `azure-storage-blob` | Azurite (`mcr.microsoft.com/azure-storage/azurite`) |
+
+### Architecture
+
+Each cloud module follows the same isolation pattern as `mockserver-state-infinispan`:
+
+1. **Zero core dependency** -- `mockserver-core` has no compile-time or runtime dependency on any cloud SDK. The `BlobStore` and `BlobStoreFactory` interfaces are defined in core; cloud modules implement them.
+2. **Self-registration via reflection** -- each module provides a `Registrar` class (e.g. `S3BlobStoreRegistrar`) that calls `StateBackendFactory.registerBlobStoreFactory(type, factory)`. When `blobStoreType` is configured to a cloud type, `StateBackendFactory.createBlobStore()` auto-discovers the registrar via `Class.forName()`.
+3. **Fail-fast** -- if `blobStoreType=s3` is configured but the S3 module is not on the classpath, `StateBackendFactory` throws `IllegalStateException` with a helpful message rather than silently falling through.
+
+```mermaid
+flowchart TD
+    BSF["StateBackendFactory.createBlobStore(config)"]
+    Type{"blobStoreType?"}
+    FS["FilesystemBlobStore"]
+    Mem["InMemoryBlobStore"]
+    Discover["discoverBlobStoreBackend(type)\nClass.forName + register()"]
+    Factory["registered BlobStoreFactory.create(config)"]
+    S3["S3BlobStore"]
+    GCS["GcsBlobStore"]
+    Azure["AzureBlobStore"]
+
+    BSF --> Type
+    Type -->|filesystem| FS
+    Type -->|memory| Mem
+    Type -->|s3/gcs/azure| Discover
+    Discover -->|found| Factory
+    Discover -->|not found| Error["IllegalStateException"]
+    Factory -->|s3| S3
+    Factory -->|gcs| GCS
+    Factory -->|azure| Azure
+```
+
+### Shared BlobStore Contract Test
+
+A shared abstract contract test (`BlobStoreContract`) in `mockserver-core`'s test tree exercises the full `BlobStore` SPI (put/get/overwrite/list-by-prefix/delete/missing-key/metadata round-trip/binary data/nested keys) against any implementation. Each cloud module runs this same contract against its emulator via Testcontainers, ensuring behavioral parity across all five blob store implementations (memory, filesystem, S3, GCS, Azure).
+
+### Enabling a Cloud Blob Store
+
+Add the module to the classpath and configure the blob store type plus backend-specific properties:
+
+**S3:**
+```
+-Dmockserver.blobStoreType=s3
+-Dmockserver.blobStoreBucket=my-bucket
+-Dmockserver.blobStoreRegion=us-east-1
+```
+
+**GCS:**
+```
+-Dmockserver.blobStoreType=gcs
+-Dmockserver.blobStoreBucket=my-bucket
+```
+
+**Azure:**
+```
+-Dmockserver.blobStoreType=azure
+-Dmockserver.blobStoreContainer=my-container
+-Dmockserver.blobStoreConnectionString=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...
+```
+
 ## Configuration Reference
 
 | Property | Env var | Default | Description |
 |----------|---------|---------|-------------|
 | `mockserver.stateBackend` | `MOCKSERVER_STATE_BACKEND` | `memory` | Backend type: `memory` or `infinispan` |
-| `mockserver.blobStoreType` | `MOCKSERVER_BLOB_STORE_TYPE` | `filesystem` | Blob store type: `filesystem` (default, delegates to existing file I/O) or `memory` (in-process only, lost on exit) |
+| `mockserver.blobStoreType` | `MOCKSERVER_BLOB_STORE_TYPE` | `filesystem` | Blob store type: `filesystem` (default), `memory`, `s3`, `gcs`, or `azure` |
+| `mockserver.blobStoreBucket` | `MOCKSERVER_BLOB_STORE_BUCKET` | _(empty)_ | S3/GCS bucket name (required for `s3` and `gcs` backends) |
+| `mockserver.blobStoreRegion` | `MOCKSERVER_BLOB_STORE_REGION` | _(empty)_ | AWS region for S3 (default: us-east-1 when empty) |
+| `mockserver.blobStoreEndpoint` | `MOCKSERVER_BLOB_STORE_ENDPOINT` | _(empty)_ | Endpoint override for S3-compatible (MinIO) or fake-gcs-server |
+| `mockserver.blobStoreKeyPrefix` | `MOCKSERVER_BLOB_STORE_KEY_PREFIX` | _(empty)_ | Key/object-name prefix for all cloud blob store objects |
+| `mockserver.blobStoreAccessKeyId` | `MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID` | _(empty)_ | Explicit AWS access key (optional; falls back to default chain) |
+| `mockserver.blobStoreSecretAccessKey` | `MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY` | _(empty)_ | Explicit AWS secret key (optional; falls back to default chain) |
+| `mockserver.blobStoreContainer` | `MOCKSERVER_BLOB_STORE_CONTAINER` | _(empty)_ | Azure Blob Storage container name (required for `azure` backend) |
+| `mockserver.blobStoreConnectionString` | `MOCKSERVER_BLOB_STORE_CONNECTION_STRING` | _(empty)_ | Azure connection string (required for `azure` backend) |
+| `mockserver.blobStoreProjectId` | `MOCKSERVER_BLOB_STORE_PROJECT_ID` | _(empty)_ | GCS project ID (optional; falls back to application default credentials) |
 | `mockserver.clusterEnabled` | `MOCKSERVER_CLUSTER_ENABLED` | `false` | Enable JGroups cluster transport (Infinispan CLUSTERED mode) |
 | `mockserver.clusterName` | `MOCKSERVER_CLUSTER_NAME` | `mockserver-cluster` | JGroups cluster identifier; all nodes that should share state must use the same value |
 | `mockserver.clusterTransportConfig` | `MOCKSERVER_CLUSTER_TRANSPORT_CONFIG` | _(built-in loopback stack)_ | Path to a custom JGroups XML transport configuration; leave empty to use the built-in loopback stack (suitable for embedded tests; use a UDP or TCP stack for production) |

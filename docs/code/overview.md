@@ -26,6 +26,9 @@ mockserver-monorepo/
 │   ├── mockserver-integration-testing-no-dependencies/# ↑ shaded, zero transitive deps
 │   ├── mockserver-async/                              # AsyncAPI broker mocking (Kafka, MQTT)
 │   ├── mockserver-state-infinispan/                   # Infinispan-backed StateBackend (optional, clustered state)
+│   ├── mockserver-blob-s3/                            # S3-backed BlobStore (optional, cloud blob storage)
+│   ├── mockserver-blob-gcs/                           # GCS-backed BlobStore (optional, cloud blob storage)
+│   ├── mockserver-blob-azure/                         # Azure-backed BlobStore (optional, cloud blob storage)
 │   └── mockserver-benchmark/                          # JMH benchmarks (not part of default reactor build)
 ├── examples/                       # Runnable usage examples — java/node/python/ruby/curl/json/docker-compose/wasm/chaos
 ├── mockserver-ui/                  # React dashboard UI (Vite + TypeScript)
@@ -77,6 +80,9 @@ Everything published to Maven Central under `org.mock-server` is produced by a m
 | `examples/java/` (repo root) | `mockserver-examples` | Published, but documents usage rather than being a consumer dependency. Relocated from `mockserver/mockserver-examples/`; still a reactor module via `../examples/java`. |
 | `mockserver-async/` | `mockserver-async` | AsyncAPI broker mocking: spec parsing, Kafka/MQTT publisher adapters, and `AsyncApiMockOrchestrator`. |
 | `mockserver-state-infinispan/` | `mockserver-state-infinispan` | Optional Infinispan-backed `StateBackend`. Only required when `stateBackend=infinispan` is configured. Not needed for standard deployments. |
+| `mockserver-blob-s3/` | `mockserver-blob-s3` | Optional S3-backed `BlobStore`. Implements the `BlobStore` SPI against AWS SDK v2 `S3Client`. Supports S3-compatible stores (MinIO) via endpoint override. Only required when `blobStoreType=s3`. |
+| `mockserver-blob-gcs/` | `mockserver-blob-gcs` | Optional GCS-backed `BlobStore`. Implements the `BlobStore` SPI against `google-cloud-storage`. Supports fake-gcs-server for testing. Only required when `blobStoreType=gcs`. |
+| `mockserver-blob-azure/` | `mockserver-blob-azure` | Optional Azure-backed `BlobStore`. Implements the `BlobStore` SPI against `azure-storage-blob`. Supports Azurite emulator for testing. Only required when `blobStoreType=azure`. |
 | `mockserver-benchmark/` | _(not published)_ | JMH benchmarks. Deliberately excluded from the default reactor build (not listed in `mockserver/pom.xml` `<modules>`); run manually via `mvn package -pl mockserver-benchmark`. |
 | `mockserver/mockserver-maven-plugin/` | `mockserver-maven-plugin` | Maven plugin (`pre-integration-test` / `post-integration-test` hooks). Inherits its version from `mockserver/pom.xml` and uses `${project.version}` for internal mockserver-* dependency refs, but is NOT a child module of `mockserver/pom.xml` — built and deployed by the dedicated `:java: Maven Plugin` step in `.buildkite/release-pipeline.yml`, separately from the main reactor. |
 

@@ -102,13 +102,25 @@ Dependencies introduced by `mockserver-state-infinispan`, which provides the Inf
 
 The `ExpectationEntry` uses custom `writeObject`/`readObject` to serialize the `Expectation` as its JSON string (via `ExpectationDTO`), avoiding the need for the entire domain model to implement `Serializable`. The LOCAL-mode path retains the `".*"` wildcard because heap-only storage never deserializes untrusted bytes.
 
+### Cloud Blob Store Dependencies (Optional Modules)
+
+Dependencies introduced by the cloud blob store modules, which provide durable `BlobStore` implementations for S3, GCS, and Azure Blob Storage. Each module is **optional** -- it is not pulled into `mockserver-core` or any other module. mockserver-core has **zero** compile-time or runtime dependencies on any cloud SDK; the cloud modules self-register via reflection when present on the classpath. Their transitive dependencies enter CodeQL/Dependabot scan scope only when the module is included in the reactor build.
+
+| Dependency | Version | Module | Purpose | Java 17 compatible |
+|------------|---------|--------|---------|:---:|
+| `software.amazon.awssdk:s3` | 2.31.9 | `mockserver-blob-s3` | AWS SDK v2 S3 client for the S3-backed `BlobStore`. Supports any S3-compatible store (MinIO, LocalStack) via endpoint override. | Yes (targets Java 8+) |
+| `com.google.cloud:google-cloud-storage` | 2.49.0 | `mockserver-blob-gcs` | Google Cloud Storage client for the GCS-backed `BlobStore`. Supports fake-gcs-server for testing. | Yes (targets Java 8+) |
+| `com.azure:azure-storage-blob` | 12.29.1 | `mockserver-blob-azure` | Azure Blob Storage client for the Azure-backed `BlobStore`. Supports Azurite emulator for testing. | Yes (targets Java 8+) |
+
+**Dependency isolation:** Each cloud SDK lives exclusively in its own module. The `mockserver-core` dependency tree contains no AWS, Google Cloud, or Azure artifacts. This is enforced by the module structure: core depends only on its own SPI interfaces (`BlobStore`, `BlobStoreFactory`), and cloud modules register their implementations via `StateBackendFactory.registerBlobStoreFactory()` at startup, discovered by reflection when `blobStoreType` is configured.
+
 ### Test Dependencies (Docker-Gated)
 
 Test-scoped dependencies used for Docker-gated integration tests. These are never bundled in released artifacts.
 
 | Dependency | Version | Module | Purpose |
 |------------|---------|--------|---------|
-| `org.testcontainers:testcontainers` | 1.21.4 | `mockserver-async` (test) | Core Testcontainers API for Docker-gated integration tests |
+| `org.testcontainers:testcontainers` | 1.21.4 | `mockserver-async`, `mockserver-blob-s3`, `mockserver-blob-gcs`, `mockserver-blob-azure` (test) | Core Testcontainers API for Docker-gated integration tests |
 | `org.testcontainers:kafka` | 1.21.4 | `mockserver-async` (test) | Kafka container module for live-broker integration tests |
 
 The Testcontainers version (1.21.4) is aligned with the existing `mockserver-testcontainers` module. Note that `mockserver-testcontainers` depends on `org.testcontainers:testcontainers` (and its transitive `docker-java-*` 3.4.2 artifacts) at **compile scope** — not test scope — because its public `MockServerContainer` extends Testcontainers' `GenericContainer`; consumers of `mockserver-testcontainers` therefore resolve Testcontainers 1.21.4 transitively (overridable via their own dependency management), and these artifacts are in CodeQL/Dependabot scan scope for that module. The 1.20.6 to 1.21.4 bump was required to fix `DockerClientFactory.isDockerAvailable()` returning false on Docker Desktop 4.67+ / Engine 29.x / API 1.54 — the bundled docker-java 3.4.1 in 1.20.6 got a 400 on the info endpoint; 1.21.4 bundles docker-java 3.4.2 and includes explicit fixes for recent Docker Engine API changes. MQTT integration tests use a `GenericContainer` with `eclipse-mosquitto:2.0` (no additional Testcontainers module needed). Transparent-proxy end-to-end tests (`SoOriginalDstEndToEndIT`, `TproxyEndToEndIT`) use the Docker CLI directly (via `ProcessBuilder`) to build and run privileged containers with NET_ADMIN for iptables REDIRECT/TPROXY rule setup — they do not use Testcontainers.

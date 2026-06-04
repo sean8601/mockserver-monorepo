@@ -109,6 +109,9 @@
         <module>mockserver-async</module>
         <module>mockserver-testcontainers</module>
         <module>mockserver-state-infinispan</module>
+        <module>mockserver-blob-s3</module>
+        <module>mockserver-blob-gcs</module>
+        <module>mockserver-blob-azure</module>
     </modules>
 
     <dependencyManagement>
@@ -128,6 +131,13 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>mockserver-core</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>mockserver-core</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
