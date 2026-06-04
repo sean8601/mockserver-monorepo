@@ -16,7 +16,7 @@
 
     <properties>
         <module.name>org.mockserver.async</module.name>
-        <testcontainers.version>1.20.6</testcontainers.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
