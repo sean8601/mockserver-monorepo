@@ -108,6 +108,7 @@
         <module>../examples/java</module>
         <module>mockserver-async</module>
         <module>mockserver-testcontainers</module>
+        <module>mockserver-state-infinispan</module>
     </modules>
 
     <dependencyManagement>

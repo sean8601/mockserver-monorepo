@@ -1,6 +1,10 @@
 package org.mockserver.state;
 
 import org.mockserver.configuration.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.lang.reflect.Method;
 
 /**
  * Pluggable factory for the {@link StateBackend}.
@@ -11,10 +15,22 @@ import org.mockserver.configuration.Configuration;
  * {@link Factory} that returns a clustering-aware {@code StateBackend}
  * without {@code mockserver-core} depending on the data grid.
  * <p>
+ * Auto-discovery: when {@code stateBackend=infinispan} is configured and
+ * no custom factory has been registered, the factory attempts to load
+ * {@code InfinispanStateBackendRegistrar} via reflection from the classpath.
+ * If the class is found, its {@code register()} method is called, which
+ * registers the Infinispan factory. This keeps mockserver-core free of any
+ * compile-time dependency on the Infinispan module.
+ * <p>
  * Thread-safety: the factory reference is {@code volatile}; register/reset
  * are expected at startup.
  */
 public final class StateBackendFactory {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StateBackendFactory.class);
+
+    private static final String INFINISPAN_REGISTRAR_CLASS =
+        "org.mockserver.state.infinispan.InfinispanStateBackendRegistrar";
 
     /**
      * Creates a {@link StateBackend} for an {@code HttpState} instance.
@@ -55,10 +71,42 @@ public final class StateBackendFactory {
     }
 
     /**
-     * Create the state backend via the registered factory (default:
-     * the standard in-memory backend).
+     * Create the state backend via the registered factory. If
+     * {@code stateBackend=infinispan} is configured and no custom factory
+     * has been registered yet, attempts auto-discovery of the Infinispan
+     * module from the classpath via reflection.
      */
     public static StateBackend create(Configuration configuration) {
+        String backendName = configuration.stateBackend();
+        if ("infinispan".equalsIgnoreCase(backendName) && !isCustomFactoryRegistered()) {
+            discoverInfinispanBackend();
+        }
         return factory.create(configuration);
+    }
+
+    /**
+     * Attempt to load and register the Infinispan backend via reflection.
+     * If the class is not on the classpath or registration fails, throws
+     * {@link IllegalStateException} — silently falling through to in-memory
+     * would cause split-brain: a node the operator believes is clustered
+     * would run isolated in-memory.
+     */
+    private static synchronized void discoverInfinispanBackend() {
+        if (isCustomFactoryRegistered()) {
+            return; // another thread already registered
+        }
+        try {
+            Class<?> registrarClass = Class.forName(INFINISPAN_REGISTRAR_CLASS);
+            Method registerMethod = registrarClass.getMethod("register");
+            registerMethod.invoke(null);
+            LOG.info("auto-discovered Infinispan state backend from classpath");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "stateBackend=infinispan configured but " + INFINISPAN_REGISTRAR_CLASS
+                    + " is not on the classpath; add the mockserver-state-infinispan dependency", e);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                "stateBackend=infinispan configured but failed to register the Infinispan state backend", e);
+        }
     }
 }

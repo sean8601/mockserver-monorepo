@@ -62,6 +62,7 @@ MockServer targets **Java 17** as the minimum supported runtime. Some dependenci
 | Dependency | Ceiling | Reason |
 |------------|---------|--------|
 | `com.puppycrawl.tools:checkstyle` | `< 13.0.0` (stay on 12.x) | checkstyle 13.x is compiled for Java 21 (class file version 65.0) and fails to load under Java 17 — see the CodeQL `Analyze (java)` build, which runs on Java 17 |
+| `org.infinispan:infinispan-core` | `< 15.0.0` (stay on 14.0.x) | Infinispan 15.x requires Java 21+. The 14.0.x line is the last to support Java 17. Used only by `mockserver-state-infinispan`. |
 
 **When raising the Java floor:** remove the corresponding ceiling here and the matching ignore entries in `.github/dependabot.yml`, then let the dependency upgrade. The Dependabot ignore does not block **manual** version bumps in `pom.xml` — keep this table in mind when hand-editing dependency versions.
 
@@ -76,6 +77,20 @@ Dependencies that interact with the OS kernel or native libraries, added for spe
 | `io.netty:netty-transport-native-epoll` (classifier: `linux-x86_64`) | `${netty.version}` | `mockserver-netty` (runtime) | Native JNI library that activates `Epoll.isAvailable()` on Linux x86_64. Bundled in the distribution jar-with-dependencies and Docker images. Inert on non-Linux platforms. | Yes (follows Netty BOM) |
 | `io.netty:netty-transport-native-epoll` (classifier: `linux-aarch_64`) | `${netty.version}` | `mockserver-netty` (runtime) | Native JNI library that activates `Epoll.isAvailable()` on Linux aarch64 (ARM64). Bundled in the distribution jar-with-dependencies and Docker images. Inert on non-Linux/non-ARM platforms. | Yes (follows Netty BOM) |
 | `io.netty.incubator:netty-incubator-codec-http3` | `0.0.30.Final` | `mockserver-netty` (compile) | HTTP/3 codec for experimental QUIC support. Transitively pulls `netty-incubator-codec-native-quic` (0.0.73.Final) with native classifiers for linux-x86_64, linux-aarch_64, osx-x86_64, osx-aarch_64, windows-x86_64. The native artifact contains a BoringSSL JNI binding. Fail-soft at runtime: if the native cannot be loaded, `Quic.isAvailable()` returns false and the HTTP/3 server is not started. | Yes (incubator, pre-release API) |
+
+### Embedded Data Grid Dependencies (Optional Module)
+
+Dependencies introduced by `mockserver-state-infinispan`, which provides the Infinispan-backed `StateBackend` for clustered MockServer state. This module is **optional** -- it is not pulled into `mockserver-core` or any other module. Its transitive dependencies enter CodeQL/Dependabot scan scope only when the module is included in the reactor build.
+
+| Dependency | Version | Module | Purpose | Java 17 compatible |
+|------------|---------|--------|---------|:---:|
+| `org.infinispan:infinispan-core` | 14.0.35.Final | `mockserver-state-infinispan` | Embedded (non-server) Infinispan cache manager for LOCAL and clustered KV stores. Provides the `StateBackend` implementation when `stateBackend=infinispan` is configured. | Yes (14.0.x line targets Java 11+; 15.x raises to Java 21) |
+| `org.jgroups:jgroups` | (transitive of infinispan-core) | `mockserver-state-infinispan` | Cluster transport for Infinispan. In Phase 2b (single-node), no JGroups transport is started (LOCAL mode only). Phase 2c will enable JGroups for multi-node clustering with loopback binding by default. | Yes |
+| `org.infinispan.protostream:protostream` | (transitive of infinispan-core) | `mockserver-state-infinispan` | Protocol Buffers serialization framework used internally by Infinispan. Phase 2b uses Java serialization; Phase 2c may switch to ProtoStream for clustered wire format. | Yes |
+
+**JGroups network security note:** In Phase 2b (single-node/LOCAL mode), JGroups does not open any network listeners. When Phase 2c enables clustering, the JGroups transport will bind to loopback by default. Explicit configuration via `clusterTransportConfig` will be required to enable multi-host clustering. See the [G10 design doc](../plans/g10-phase2-clustered-state.local.md) for the phased rollout plan.
+
+**Infinispan serialization allow-list (P0 security gate for Phase 2c):** The Phase 2b Infinispan backend configures `global.serialization().allowList().addRegexp(".*")` — a wildcard that permits deserialization of any class. This is safe in Phase 2b because caches are LOCAL (heap-only, no network marshalling), so no untrusted bytes are ever deserialized. However, this wildcard **MUST be replaced with an explicit package allow-list (e.g. `org.mockserver.*`) or switched to ProtoStream marshalling BEFORE Phase 2c enables JGroups clustering**. Once JGroups is active, an attacker on the cluster network could inject a crafted payload that exploits Java deserialization gadget chains. This is a **P0 security gate** — Phase 2c MUST NOT ship without narrowing the allow-list.
 
 ### Test Dependencies (Docker-Gated)
 

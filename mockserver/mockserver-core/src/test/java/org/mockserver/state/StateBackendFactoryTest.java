@@ -49,4 +49,46 @@ public class StateBackendFactoryTest {
         StateBackendFactory.register(null);
         assertFalse(StateBackendFactory.isCustomFactoryRegistered());
     }
+
+    @Test
+    public void shouldThrowWhenInfinispanConfiguredButModuleAbsent() {
+        // In mockserver-core's test classpath, the Infinispan registrar class
+        // is NOT present, so this exercises the fail-hard path.
+        Configuration config = Configuration.configuration()
+            .maxExpectations(50)
+            .stateBackend("infinispan");
+
+        try {
+            StateBackendFactory.create(config);
+            fail("expected IllegalStateException");
+        } catch (IllegalStateException e) {
+            assertThat(e.getMessage(), containsString("stateBackend=infinispan configured but"));
+            assertThat(e.getMessage(), containsString("is not on the classpath"));
+            assertThat(e.getMessage(), containsString("mockserver-state-infinispan"));
+            assertThat(e.getCause(), instanceOf(ClassNotFoundException.class));
+        }
+    }
+
+    @Test
+    public void shouldCreateInMemoryBackendWhenStateBackendIsMemory() {
+        Configuration config = Configuration.configuration()
+            .maxExpectations(50)
+            .stateBackend("memory");
+        StateBackend backend = StateBackendFactory.create(config);
+
+        assertNotNull(backend);
+        assertThat(backend, instanceOf(InMemoryStateBackend.class));
+        backend.close();
+    }
+
+    @Test
+    public void shouldCreateInMemoryBackendWhenStateBackendIsDefault() {
+        // stateBackend not explicitly set => defaults to "memory"
+        Configuration config = Configuration.configuration().maxExpectations(50);
+        StateBackend backend = StateBackendFactory.create(config);
+
+        assertNotNull(backend);
+        assertThat(backend, instanceOf(InMemoryStateBackend.class));
+        backend.close();
+    }
 }
