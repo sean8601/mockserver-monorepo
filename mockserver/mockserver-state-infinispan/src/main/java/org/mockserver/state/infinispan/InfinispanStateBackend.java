@@ -300,8 +300,12 @@ public class InfinispanStateBackend implements StateBackend {
     }
 
     /**
-     * Returns whether this backend is in clustered mode.
+     * Returns whether this backend is in clustered mode. Overrides the
+     * {@link StateBackend} default ({@code false}) to return the actual
+     * clustering state from the configuration. When {@code true},
+     * {@code RequestMatchers} will use backend CAS for Times consumption.
      */
+    @Override
     public boolean isClustered() {
         return clustered;
     }

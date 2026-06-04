@@ -13,9 +13,13 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.state.*;
 
+import org.mockserver.matchers.Times;
+
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -308,6 +312,289 @@ class ClusteredTwoNodeTest {
             HttpRequest.request("/cross-node-match"));
         assertThat(matched, is(notNullValue()));
         assertThat(matched.getHttpResponse().getBodyAsString(), is("cross-node-ok"));
+    }
+
+    // --- Clustered shared-Times CAS (G10 phase 2c) ---
+
+    /**
+     * G10 core guarantee: a {@code Times.once()} expectation, when both
+     * nodes attempt to consume it concurrently, is served EXACTLY once
+     * across the fleet. This test wires two {@link RequestMatchers}
+     * instances (one per backend node) and fires concurrent match
+     * attempts from two threads via a {@link CyclicBarrier}.
+     */
+    @Test
+    void timesOnceShouldBeServedExactlyOnceAcrossTwoNodes() throws Exception {
+        // Wire RequestMatchers to each node's backend
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA);
+        RequestMatchers nodeBMatchers = createNodeMatchers(nodeB);
+
+        // Wire invalidation listeners so reconcile fires
+        wireReconciliationListener(nodeA, nodeAMatchers);
+        wireReconciliationListener(nodeB, nodeBMatchers);
+
+        // Create a Times.once() expectation on node A
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/times-once"),
+            Times.once(),
+            org.mockserver.matchers.TimeToLive.unlimited()
+        ).thenRespond(HttpResponse.response("once-only"));
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        // Wait for node B to see it via replication + invalidation
+        awaitCondition(
+            () -> nodeBMatchers.peekFirstMatchingExpectation(
+                HttpRequest.request("/times-once")) != null,
+            Duration.ofSeconds(5),
+            "node B should see the expectation"
+        );
+
+        // Concurrent consume from both nodes
+        HttpRequest request = HttpRequest.request("/times-once");
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        AtomicReference<Expectation> resultA = new AtomicReference<>();
+        AtomicReference<Expectation> resultB = new AtomicReference<>();
+
+        Thread threadA = new Thread(() -> {
+            try {
+                barrier.await();
+                Expectation matched = nodeAMatchers.firstMatchingExpectation(request);
+                resultA.set(matched);
+                // Always postProcess to clear responseInProgress
+                nodeAMatchers.postProcess(matched);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        Thread threadB = new Thread(() -> {
+            try {
+                barrier.await();
+                Expectation matched = nodeBMatchers.firstMatchingExpectation(request);
+                resultB.set(matched);
+                nodeBMatchers.postProcess(matched);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        threadA.start();
+        threadB.start();
+        threadA.join(10_000);
+        threadB.join(10_000);
+
+        // Exactly one should have matched, the other should be null
+        int totalMatches = (resultA.get() != null ? 1 : 0) + (resultB.get() != null ? 1 : 0);
+        assertThat("Times.once() should produce exactly 1 match across 2 nodes, got " + totalMatches,
+            totalMatches, is(1));
+    }
+
+    /**
+     * G10: a {@code Times.exactly(3)} expectation, when both nodes
+     * alternate consuming, should produce exactly 3 matches total.
+     */
+    @Test
+    void timesExactlyNShouldBeServedExactlyNTimesAcrossTwoNodes() throws Exception {
+        final int N = 3;
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA);
+        RequestMatchers nodeBMatchers = createNodeMatchers(nodeB);
+        wireReconciliationListener(nodeA, nodeAMatchers);
+        wireReconciliationListener(nodeB, nodeBMatchers);
+
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/times-n"),
+            Times.exactly(N),
+            org.mockserver.matchers.TimeToLive.unlimited()
+        ).thenRespond(HttpResponse.response("n-times"));
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        awaitCondition(
+            () -> nodeBMatchers.peekFirstMatchingExpectation(
+                HttpRequest.request("/times-n")) != null,
+            Duration.ofSeconds(5),
+            "node B should see the expectation"
+        );
+
+        HttpRequest request = HttpRequest.request("/times-n");
+        AtomicInteger totalMatches = new AtomicInteger(0);
+
+        // Alternate between nodes, attempting more than N matches
+        for (int i = 0; i < N + 4; i++) {
+            RequestMatchers matchers = (i % 2 == 0) ? nodeAMatchers : nodeBMatchers;
+            Expectation matched = matchers.firstMatchingExpectation(request);
+            matchers.postProcess(matched);
+            if (matched != null) {
+                totalMatches.incrementAndGet();
+            }
+        }
+
+        assertThat("Times.exactly(" + N + ") should produce exactly " + N
+                + " matches total across 2 nodes, got " + totalMatches.get(),
+            totalMatches.get(), is(N));
+    }
+
+    /**
+     * G10: a {@code Times.exactly(5)} expectation under high concurrency
+     * (multiple threads per node racing) still produces exactly 5 matches.
+     */
+    @Test
+    void timesExactlyUnderHighConcurrencyShouldNotDoubleServe() throws Exception {
+        final int N = 5;
+        final int THREADS_PER_NODE = 4;
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA);
+        RequestMatchers nodeBMatchers = createNodeMatchers(nodeB);
+        wireReconciliationListener(nodeA, nodeAMatchers);
+        wireReconciliationListener(nodeB, nodeBMatchers);
+
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/times-concurrent"),
+            Times.exactly(N),
+            org.mockserver.matchers.TimeToLive.unlimited()
+        ).thenRespond(HttpResponse.response("concurrent"));
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        awaitCondition(
+            () -> nodeBMatchers.peekFirstMatchingExpectation(
+                HttpRequest.request("/times-concurrent")) != null,
+            Duration.ofSeconds(5),
+            "node B should see the expectation"
+        );
+
+        HttpRequest request = HttpRequest.request("/times-concurrent");
+        CyclicBarrier barrier = new CyclicBarrier(THREADS_PER_NODE * 2);
+        AtomicInteger totalMatches = new AtomicInteger(0);
+        Thread[] threads = new Thread[THREADS_PER_NODE * 2];
+
+        for (int i = 0; i < threads.length; i++) {
+            RequestMatchers matchers = (i < THREADS_PER_NODE) ? nodeAMatchers : nodeBMatchers;
+            threads[i] = new Thread(() -> {
+                try {
+                    barrier.await();
+                    // Each thread attempts multiple matches
+                    for (int attempt = 0; attempt < N; attempt++) {
+                        Expectation matched = matchers.firstMatchingExpectation(request);
+                        matchers.postProcess(matched);
+                        if (matched != null) {
+                            totalMatches.incrementAndGet();
+                        }
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+
+        for (Thread t : threads) {
+            t.start();
+        }
+        for (Thread t : threads) {
+            t.join(30_000);
+        }
+
+        assertThat("Times.exactly(" + N + ") should produce exactly " + N
+                + " total matches under high concurrency, got " + totalMatches.get(),
+            totalMatches.get(), is(N));
+    }
+
+    /**
+     * G10: unlimited-Times expectations with a clustered backend should
+     * still work without CAS overhead. Both nodes should be able to match
+     * indefinitely.
+     */
+    @Test
+    void unlimitedTimesShouldNotBeLimitedUnderClustering() throws Exception {
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA);
+        RequestMatchers nodeBMatchers = createNodeMatchers(nodeB);
+        wireReconciliationListener(nodeA, nodeAMatchers);
+        wireReconciliationListener(nodeB, nodeBMatchers);
+
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/unlimited")
+        ).thenRespond(HttpResponse.response("unlimited"));
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        awaitCondition(
+            () -> nodeBMatchers.peekFirstMatchingExpectation(
+                HttpRequest.request("/unlimited")) != null,
+            Duration.ofSeconds(5),
+            "node B should see the unlimited expectation"
+        );
+
+        HttpRequest request = HttpRequest.request("/unlimited");
+        // Match 20 times across both nodes — all should succeed
+        int matches = 0;
+        for (int i = 0; i < 20; i++) {
+            RequestMatchers matchers = (i % 2 == 0) ? nodeAMatchers : nodeBMatchers;
+            Expectation matched = matchers.firstMatchingExpectation(request);
+            matchers.postProcess(matched);
+            if (matched != null) {
+                matches++;
+            }
+        }
+        assertThat("unlimited Times should produce matches on every attempt",
+            matches, is(20));
+    }
+
+    /**
+     * G10 backend CAS: after Times are exhausted on the shared backend,
+     * the remainingTimes counter on the backend entry should be 0.
+     */
+    @Test
+    void backendRemainingTimesShouldReachZeroWhenExhausted() throws Exception {
+        final int N = 2;
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA);
+        wireReconciliationListener(nodeA, nodeAMatchers);
+
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/backend-counter"),
+            Times.exactly(N),
+            org.mockserver.matchers.TimeToLive.unlimited()
+        ).thenRespond(HttpResponse.response("counter"));
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        HttpRequest request = HttpRequest.request("/backend-counter");
+        for (int i = 0; i < N + 2; i++) {
+            Expectation matched = nodeAMatchers.firstMatchingExpectation(request);
+            nodeAMatchers.postProcess(matched);
+        }
+
+        // Check the backend entry's shared counter
+        Optional<Versioned<ExpectationEntry>> entry = nodeA.expectations().get(expectation.getId());
+        assertTrue(entry.isPresent(), "backend entry should still exist");
+        assertThat("remainingTimes should be 0 after exhaustion",
+            entry.get().getValue().getRemainingTimes(), is(0));
+    }
+
+    // --- Helpers for clustered Times tests ---
+
+    /**
+     * Creates a {@link RequestMatchers} wired to the given backend node.
+     */
+    private RequestMatchers createNodeMatchers(InfinispanStateBackend backend) {
+        Configuration config = Configuration.configuration()
+            .maxExpectations(MAX_EXPECTATIONS);
+        RequestMatchers matchers = new RequestMatchers(
+            config, new MockServerLogger(),
+            mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        matchers.setStateBackend(backend);
+        return matchers;
+    }
+
+    /**
+     * Wires the backend's invalidation listener to trigger reconciliation
+     * on the given RequestMatchers, mirroring HttpState's wiring.
+     */
+    private void wireReconciliationListener(InfinispanStateBackend backend, RequestMatchers matchers) {
+        backend.addInvalidationListener(new InvalidationListener() {
+            @Override
+            public void onChanged(String key) {
+                matchers.reconcileFromBackend();
+            }
+
+            @Override
+            public void onCleared() {
+                matchers.reconcileFromBackend();
+            }
+        });
     }
 
     // --- Helpers ---
