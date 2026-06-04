@@ -4,6 +4,8 @@
 
 **OPT-IN (single-node default unchanged).** The clustered state backend is an optional Maven module (`mockserver-state-infinispan`) that must be placed on the classpath and activated via configuration. All existing single-node deployments continue to use the default `InMemoryStateBackend` with no change in behaviour or performance.
 
+**Consumer guide:** For an operator-facing deployment guide covering the single-node, clustered HA, and persistence-only options with configuration examples and trade-offs, see the [Centralized Deployment](https://www.mock-server.com/mock_server/centralized_deployment.html) page in the consumer documentation (`jekyll-www.mock-server.com/mock_server/centralized_deployment.html`).
+
 ## Overview
 
 MockServer 7.x introduces a `StateBackend` SPI that abstracts all shared server state — expectations, scenario states, CRUD entity stores, and blob persistence — behind a pluggable interface. The default implementation (`InMemoryStateBackend`) wraps the same concurrent in-memory data structures that have always existed. An optional second implementation (`InfinispanStateBackend`, in the `mockserver-state-infinispan` module) can replicate that state across a JGroups cluster, enabling multiple MockServer nodes to share the same expectation set.
