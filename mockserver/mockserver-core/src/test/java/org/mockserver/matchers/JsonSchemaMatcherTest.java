@@ -10,12 +10,13 @@ import org.mockserver.validator.jsonschema.JsonSchemaValidator;
 import org.slf4j.Logger;
 import org.slf4j.event.Level;
 
-import static junit.framework.TestCase.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.MockitoAnnotations.openMocks;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.Is.is;
 
 /**
  * @author jamesdbloom
@@ -85,7 +86,7 @@ public class JsonSchemaMatcherTest {
         when(mockJsonSchemaValidator.isValid(json, false)).thenReturn("");
 
         // then
-        assertTrue(jsonSchemaMatcher.matches(null, json));
+        assertThat(jsonSchemaMatcher.matches(null, json), is(true));
     }
 
     @Test
@@ -95,7 +96,7 @@ public class JsonSchemaMatcherTest {
         when(mockJsonSchemaValidator.isValid(json, false)).thenReturn("validator_error");
 
         // when
-        assertFalse(jsonSchemaMatcher.matches(new MatchDifference(false, request()), json));
+        assertThat(jsonSchemaMatcher.matches(new MatchDifference(false, request()), json), is(false));
 
         // then
         verify(logger).trace("json schema match failed expected:" + NEW_LINE +
@@ -156,7 +157,7 @@ public class JsonSchemaMatcherTest {
         when(mockJsonSchemaValidator.isValid(json, false)).thenThrow(test_exception);
 
         // when
-        assertFalse(jsonSchemaMatcher.matches(new MatchDifference(false, request()), json));
+        assertThat(jsonSchemaMatcher.matches(new MatchDifference(false, request()), json), is(false));
 
         // then
         verify(logger).trace("json schema match failed expected:" + NEW_LINE +
@@ -212,6 +213,6 @@ public class JsonSchemaMatcherTest {
     @Test
     public void showHaveCorrectEqualsBehaviour() {
         MockServerLogger mockServerLogger = new MockServerLogger();
-        assertEquals(new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA), new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA));
+        assertThat(new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA), is(new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA)));
     }
 }

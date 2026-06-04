@@ -10,12 +10,13 @@ import org.mockserver.validator.xmlschema.XmlSchemaValidator;
 import org.slf4j.Logger;
 import org.slf4j.event.Level;
 
-import static junit.framework.TestCase.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.MockitoAnnotations.openMocks;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.Is.is;
 
 /**
  * @author jamesdbloom
@@ -69,7 +70,7 @@ public class XmlSchemaMatcherTest {
         when(mockXmlSchemaValidator.isValid(xml)).thenReturn("");
 
         // then
-        assertTrue(xmlSchemaMatcher.matches(null, xml));
+        assertThat(xmlSchemaMatcher.matches(null, xml), is(true));
     }
 
     @Test
@@ -79,7 +80,7 @@ public class XmlSchemaMatcherTest {
         when(mockXmlSchemaValidator.isValid(xml)).thenReturn("validator_error");
 
         // when
-        assertFalse(xmlSchemaMatcher.matches(new MatchDifference(false, request()), xml));
+        assertThat(xmlSchemaMatcher.matches(new MatchDifference(false, request()), xml), is(false));
 
         // then
         verify(logger).trace("xml schema match failed expected:" + NEW_LINE +
@@ -124,7 +125,7 @@ public class XmlSchemaMatcherTest {
         when(mockXmlSchemaValidator.isValid(xml)).thenThrow(test_exception);
 
         // when
-        assertFalse(xmlSchemaMatcher.matches(new MatchDifference(false, request()), xml));
+        assertThat(xmlSchemaMatcher.matches(new MatchDifference(false, request()), xml), is(false));
 
         // then
         verify(logger).trace("xml schema match failed expected:" + NEW_LINE +
@@ -164,6 +165,6 @@ public class XmlSchemaMatcherTest {
     @Test
     public void showHaveCorrectEqualsBehaviour() {
         MockServerLogger mockServerLogger = new MockServerLogger();
-        assertEquals(new XmlSchemaMatcher(mockServerLogger, XML_SCHEMA), new XmlSchemaMatcher(mockServerLogger, XML_SCHEMA));
+        assertThat(new XmlSchemaMatcher(mockServerLogger, XML_SCHEMA), is(new XmlSchemaMatcher(mockServerLogger, XML_SCHEMA)));
     }
 }
