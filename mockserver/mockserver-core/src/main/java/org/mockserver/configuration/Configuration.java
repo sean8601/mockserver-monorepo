@@ -137,6 +137,10 @@ public class Configuration {
     private Boolean persistRecordedExpectations;
     private String persistedRecordedExpectationsPath;
 
+    // state backend (G10 phase 2a)
+    private String stateBackend;
+    private String blobStoreType;
+
     // verification
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
     private Boolean detailedVerificationFailures;
@@ -1649,6 +1653,48 @@ public class Configuration {
      */
     public Configuration persistedRecordedExpectationsPath(String persistedRecordedExpectationsPath) {
         this.persistedRecordedExpectationsPath = persistedRecordedExpectationsPath;
+        return this;
+    }
+
+    /**
+     * Returns the state backend type. Currently only "memory" is supported
+     * (default). Phase 2b will add "infinispan" for clustered state.
+     */
+    public String stateBackend() {
+        if (stateBackend == null) {
+            return ConfigurationProperties.stateBackend();
+        }
+        return stateBackend;
+    }
+
+    /**
+     * Sets the state backend type. Currently only "memory" is supported.
+     *
+     * @param stateBackend the backend type (e.g. "memory")
+     */
+    public Configuration stateBackend(String stateBackend) {
+        this.stateBackend = stateBackend;
+        return this;
+    }
+
+    /**
+     * Returns the blob store type. "memory" (default) keeps blobs in-memory;
+     * "filesystem" delegates to the existing file persistence paths.
+     */
+    public String blobStoreType() {
+        if (blobStoreType == null) {
+            return ConfigurationProperties.blobStoreType();
+        }
+        return blobStoreType;
+    }
+
+    /**
+     * Sets the blob store type.
+     *
+     * @param blobStoreType the blob store type (e.g. "memory", "filesystem")
+     */
+    public Configuration blobStoreType(String blobStoreType) {
+        this.blobStoreType = blobStoreType;
         return this;
     }
 

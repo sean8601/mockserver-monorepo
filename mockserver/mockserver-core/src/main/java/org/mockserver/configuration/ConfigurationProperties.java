@@ -172,6 +172,10 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_PERSIST_RECORDED_EXPECTATIONS = "mockserver.persistRecordedExpectations";
     private static final String MOCKSERVER_PERSISTED_RECORDED_EXPECTATIONS_PATH = "mockserver.persistedRecordedExpectationsPath";
 
+    // state backend (G10 phase 2a)
+    private static final String MOCKSERVER_STATE_BACKEND = "mockserver.stateBackend";
+    private static final String MOCKSERVER_BLOB_STORE_TYPE = "mockserver.blobStoreType";
+
     // verification
     private static final String MOCKSERVER_MAXIMUM_NUMBER_OF_REQUESTS_TO_RETURN_IN_VERIFICATION_FAILURE = "mockserver.maximumNumberOfRequestToReturnInVerificationFailure";
     private static final String MOCKSERVER_DETAILED_VERIFICATION_FAILURES = "mockserver.detailedVerificationFailures";
@@ -1844,6 +1848,42 @@ public class ConfigurationProperties {
      */
     public static void persistedRecordedExpectationsPath(String persistedRecordedExpectationsPath) {
         setProperty(MOCKSERVER_PERSISTED_RECORDED_EXPECTATIONS_PATH, persistedRecordedExpectationsPath);
+    }
+
+    // state backend (G10 phase 2a)
+
+    /**
+     * Returns the state backend type. Currently only "memory" is supported
+     * (default). Phase 2b will add "infinispan" for clustered state.
+     */
+    public static String stateBackend() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_STATE_BACKEND, "MOCKSERVER_STATE_BACKEND", "memory");
+    }
+
+    /**
+     * Sets the state backend type. Currently only "memory" is supported.
+     *
+     * @param stateBackend the backend type (e.g. "memory")
+     */
+    public static void stateBackend(String stateBackend) {
+        setProperty(MOCKSERVER_STATE_BACKEND, stateBackend);
+    }
+
+    /**
+     * Returns the blob store type. "memory" (default) keeps blobs in-memory;
+     * "filesystem" delegates to the existing file persistence paths.
+     */
+    public static String blobStoreType() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_TYPE, "MOCKSERVER_BLOB_STORE_TYPE", "memory");
+    }
+
+    /**
+     * Sets the blob store type.
+     *
+     * @param blobStoreType the blob store type (e.g. "memory", "filesystem")
+     */
+    public static void blobStoreType(String blobStoreType) {
+        setProperty(MOCKSERVER_BLOB_STORE_TYPE, blobStoreType);
     }
 
     // verification

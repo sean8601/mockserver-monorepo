@@ -36,6 +36,8 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.java.ExpectationToJavaSerializer;
 import org.mockserver.serialization.YamlToJsonConverter;
 import org.mockserver.server.initialize.ExpectationInitializerLoader;
+import org.mockserver.state.StateBackend;
+import org.mockserver.state.StateBackendFactory;
 import org.mockserver.time.TimeService;
 import org.mockserver.uuid.UUIDService;
 import org.mockserver.verify.Verification;
@@ -86,6 +88,8 @@ public class HttpState {
     private ExpectationFileWatcher expectationFileWatcher;
     // mockserver
     private final RequestMatchers requestMatchers;
+    // G10 phase 2a: pluggable state backend (default in-memory, clustered in 2b+)
+    private final StateBackend stateBackend;
     private final Configuration configuration;
     // Adds CORS headers to dashboard-facing control-plane responses (e.g. service
     // chaos) so the dashboard works when served from another origin (a dev server),
@@ -155,9 +159,12 @@ public class HttpState {
         this.webSocketClientRegistry = new WebSocketClientRegistry(configuration, mockServerLogger);
         LocalCallbackRegistry.setMaxWebSocketExpectations(configuration.maxWebSocketExpectations());
         this.mockServerLog = new MockServerEventLog(configuration, mockServerLogger, scheduler, true);
+        // G10 phase 2a: create the pluggable state backend (default in-memory, clustered in 2b+).
+        this.stateBackend = StateBackendFactory.create(configuration);
         // G10 phase 1: obtain the expectation store via the pluggable factory (default = standard
         // in-memory RequestMatchers; an optional clustered backend can register an alternative).
         this.requestMatchers = ExpectationStoreFactory.create(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
+        this.requestMatchers.setStateBackend(stateBackend);
         Metrics.setActiveExpectationsSupplier(() -> requestMatchers.retrieveActiveExpectations(null));
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers);
@@ -3345,6 +3352,18 @@ public class HttpState {
         // or nothing is loaded.
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         getMockServerLog().stop();
+        // G10 phase 2a: close the state backend (no-op for in-memory)
+        if (stateBackend != null) {
+            stateBackend.close();
+        }
+    }
+
+    /**
+     * Returns the pluggable state backend (G10 phase 2a). The default
+     * implementation is in-memory with zero behaviour change.
+     */
+    public StateBackend getStateBackend() {
+        return stateBackend;
     }
 
     private ExpectationIdSerializer getExpectationIdSerializer() {

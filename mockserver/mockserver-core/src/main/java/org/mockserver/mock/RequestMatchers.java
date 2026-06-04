@@ -16,6 +16,7 @@ import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier;
 import org.mockserver.model.*;
 import org.mockserver.scheduler.Scheduler;
+import org.mockserver.state.StateBackend;
 import org.mockserver.uuid.UUIDService;
 import org.slf4j.event.Level;
 
@@ -48,6 +49,11 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     private MatcherBuilder matcherBuilder;
     private Metrics metrics;
     private final ScenarioManager scenarioManager = new ScenarioManager();
+    // G10 phase 2a: optional reference to the pluggable state backend.
+    // In this phase the backend is wired but RequestMatchers continues to
+    // use its own CircularPriorityQueue internally; the backend's KV stores
+    // are available for a clustered backend in phase 2b+.
+    private volatile StateBackend stateBackend;
 
     public RequestMatchers(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, WebSocketClientRegistry webSocketClientRegistry) {
         super(scheduler);
@@ -71,6 +77,23 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     .setMessageFormat("expectation circular priority queue created, with size " + configuration.maxExpectations())
             );
         }
+    }
+
+    /**
+     * Sets the state backend reference. Called by {@code HttpState} after
+     * construction so RequestMatchers can access shared state stores in
+     * phase 2b+. In phase 2a the backend is stored but not read from —
+     * all operations continue through the node-local CircularPriorityQueue.
+     */
+    public void setStateBackend(StateBackend stateBackend) {
+        this.stateBackend = stateBackend;
+    }
+
+    /**
+     * Returns the state backend, or {@code null} if none has been set.
+     */
+    public StateBackend getStateBackend() {
+        return stateBackend;
     }
 
     public Expectation add(Expectation expectation, Cause cause) {
