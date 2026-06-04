@@ -5,9 +5,9 @@
 **EXPERIMENTAL** -- HTTP/3 support is fully integrated with MockServer's request
 pipeline (expectation matching, actions, recording, proxy forwarding). It is off
 by default and must be explicitly enabled. The "experimental" label reflects the
-fact that the underlying QUIC codec is a Netty incubator dependency
-(`io.netty.incubator:netty-incubator-codec-http3`), which is a pre-release
-artifact whose API may change in future releases.
+fact that the underlying QUIC codec is still evolving, although it has now
+graduated from the Netty incubator into the mainline Netty 4.2 release as
+`io.netty:netty-codec-http3`.
 
 ## Overview
 
@@ -51,7 +51,7 @@ has zero impact on the existing TCP/HTTP server.
 | `Http3MockServerHandler` | `mockserver-netty` | Per-stream handler: accumulates HTTP/3 frames, converts to HttpRequest, routes through the shared pipeline |
 | `Http3RequestBridge` | `mockserver-netty` | Pure conversion helpers: HTTP/3 frames to/from HttpRequest/HttpResponse |
 | `Http3ResponseWriter` | `mockserver-netty` | ResponseWriter subclass that serialises HttpResponse as HTTP/3 frames |
-| `Http3ConnectUdpHandler` | `mockserver-netty` | CONNECT-UDP (MASQUE) handler stub; intercepts CONNECT requests when `http3ConnectUdpEnabled=true`; currently returns 501 (codec limitation) |
+| `Http3ConnectUdpHandler` | `mockserver-netty` | CONNECT-UDP (MASQUE, RFC 9298) relay; intercepts extended CONNECT requests with `:protocol=connect-udp` when `http3ConnectUdpEnabled=true`; opens a UDP channel to the target authority and relays datagrams bidirectionally |
 | `Configuration.http3Port()` | `mockserver-core` | Configuration property |
 | `ConfigurationProperties.http3Port()` | `mockserver-core` | Static/system-property access |
 | `Configuration.http3MaxIdleTimeout()` | `mockserver-core` | QUIC max idle timeout (ms) |
@@ -151,8 +151,8 @@ counter, consistent with HTTP/1.1 and HTTP/2 request counting.
 ## Native QUIC Platform Requirement
 
 The QUIC transport requires a native BoringSSL library. The
-`netty-incubator-codec-http3` dependency transitively pulls in
-`netty-incubator-codec-native-quic` with classifier-specific JARs.
+`netty-codec-http3` dependency transitively pulls in
+`netty-codec-native-quic` with classifier-specific JARs.
 
 ### Supported platforms
 
@@ -165,7 +165,7 @@ The QUIC transport requires a native BoringSSL library. The
 ### CI native classifier note
 
 The Maven dependency is declared without a platform classifier, relying on the
-transitive resolution from `netty-incubator-codec-http3`. This brings in native
+transitive resolution from `netty-codec-http3`. This brings in native
 libraries for all supported platforms. If the shaded/uber JAR build strips
 native libraries (e.g., via maven-shade-plugin filters), ensure the QUIC natives
 are included for the target platform.
@@ -181,14 +181,16 @@ platform incompatibility.
 
 | Artifact | Version | Scope |
 |----------|---------|-------|
-| `io.netty.incubator:netty-incubator-codec-http3` | `0.0.30.Final` | compile |
-| `io.netty.incubator:netty-incubator-codec-native-quic` | `0.0.73.Final` (transitive) | runtime |
-| `io.netty.incubator:netty-incubator-codec-classes-quic` | `0.0.73.Final` (transitive) | compile |
+| `io.netty:netty-codec-http3` | `${netty.version}` (4.2.15.Final) | compile |
+| `io.netty:netty-codec-native-quic` | `${netty.version}` (transitive) | runtime |
+| `io.netty:netty-codec-classes-quic` | `${netty.version}` (transitive) | compile |
 
-The native QUIC artifact is bundled with platform classifiers for all supported
-platforms (`linux-x86_64`, `linux-aarch_64`, `osx-x86_64`, `osx-aarch_64`,
-`windows-x86_64`) as transitive runtime dependencies of
-`netty-incubator-codec-http3`. No additional classifier-specific dependency
+The HTTP/3 codec graduated from the Netty incubator into the mainline Netty 4.2
+release. The version is now aligned with `${netty.version}` -- no separate
+version property is needed. The native QUIC artifact is bundled with platform
+classifiers for all supported platforms (`linux-x86_64`, `linux-aarch_64`,
+`osx-x86_64`, `osx-aarch_64`, `windows-x86_64`) as transitive runtime
+dependencies of `netty-codec-http3`. No additional classifier-specific dependency
 declarations are needed -- they resolve automatically.
 
 ## What Works
@@ -211,6 +213,14 @@ declarations are needed -- they resolve automatically.
 - Integration-tested pipeline parity (expectation matching via HTTP/3)
 - Integration-tested streaming over QUIC (in-JVM Netty QUIC client, gated on
   native QUIC availability)
+- **CONNECT-UDP (MASQUE, RFC 9298)**: when `http3ConnectUdpEnabled=true`, extended
+  CONNECT requests with `:protocol=connect-udp` are intercepted and relayed. The
+  handler opens a UDP channel to the target authority parsed from `:authority`,
+  relays DATA frame payloads as UDP datagrams bidirectionally, and tears down on
+  stream close/error. Normal HTTP/3 requests pass through unchanged. The server
+  advertises `SETTINGS_ENABLE_CONNECT_PROTOCOL=1` (RFC 9220) when the flag is on.
+- Integration-tested CONNECT-UDP relay (in-JVM QUIC client + local UDP echo server,
+  verifies round-trip datagram relay through the tunnel)
 
 ## What is NOT Implemented (follow-up work)
 
@@ -220,21 +230,18 @@ declarations are needed -- they resolve automatically.
   connection count tracked in `Http3Server`; exposed via `GET /mockserver/http3status` endpoint;
   dashboard AppBar shows an "H3" chip with port and active connection count when enabled.
   Per-connection detail (remote address, stream count, duration) is deferred as follow-up.
-- HTTP/3 specific proxy mode -- CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3) -- **PARTIAL (DEFERRED)**:
+- ~~HTTP/3 specific proxy mode -- CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3)~~ -- **DONE**:
   the `http3ConnectUdpEnabled` configuration flag (default `false`) enables the
-  `Http3ConnectUdpHandler` in the QUIC stream pipeline. When enabled, HTTP/3 CONNECT
-  requests are intercepted and cleanly rejected with `501 Not Implemented` (with a JSON
-  body explaining the limitation). Normal HTTP/3 requests pass through unchanged.
-  **Full datagram relay is blocked** because the bundled `netty-incubator-codec-http3`
-  (0.0.30.Final) does not support the `:protocol` pseudo-header (RFC 9220 extended
-  CONNECT) -- the codec actively rejects it in `Http3HeadersSink.validate()`. The QUIC
-  layer (`netty-incubator-codec-classes-quic` 0.0.73.Final) does support QUIC datagrams
-  (RFC 9221) via `QuicCodecBuilder.datagram()` and `QuicheQuicChannel.sendDatagram()`/
-  `recvDatagram()`, so the transport foundation exists. Unblocking requires upgrading
-  to a codec version that adds `:protocol` to `Http3Headers.PseudoHeaderName`,
-  `SETTINGS_ENABLE_CONNECT_PROTOCOL` (0x08) to `Http3SettingsFrame`, and
-  `SETTINGS_H3_DATAGRAM` (0xffd277). See `Http3ConnectUdpHandler` javadoc for the
-  detailed implementation plan.
+  `Http3ConnectUdpHandler` in the QUIC stream pipeline. When enabled, extended
+  CONNECT requests with `:protocol=connect-udp` (RFC 9298) are intercepted and
+  relayed: a UDP `DatagramChannel` is opened to the target authority, DATA frame
+  payloads are forwarded as UDP datagrams, and received datagrams are sent back
+  as DATA frames. The server advertises `SETTINGS_ENABLE_CONNECT_PROTOCOL=1`
+  (RFC 9220). Normal HTTP/3 requests pass through unchanged. Previously blocked
+  on the incubator codec lacking `:protocol` support; unblocked by upgrading to
+  the GA `io.netty:netty-codec-http3` (4.2.15.Final) which includes
+  `Http3Headers.PseudoHeaderName.PROTOCOL` and
+  `Http3SettingsFrame.HTTP3_SETTINGS_ENABLE_CONNECT_PROTOCOL`.
 - ~~Configurable QUIC transport parameters via configuration properties (G16-FOLLOW-UP-4)~~ --
   **DONE**: `http3MaxIdleTimeout`, `http3InitialMaxData`,
   `http3InitialMaxStreamDataBidirectional`, `http3InitialMaxStreamsBidirectional` configuration
@@ -244,11 +251,10 @@ declarations are needed -- they resolve automatically.
 
 - **Native library compatibility**: the QUIC native (BoringSSL) must be available
   for the target platform. Missing natives will prevent the HTTP/3 server from starting.
-- **Incubator API stability**: `netty-incubator-codec-http3` is in the incubator
-  namespace and its API may change in future releases.
-- **Netty version coupling**: the incubator codec must be compatible with the
-  project's Netty version (`4.2.14.Final`). Version updates may require
-  coordinated upgrades.
+- **API stability**: `netty-codec-http3` has graduated from the incubator into
+  mainline Netty 4.2, but the HTTP/3 API may still evolve in future 4.2.x releases.
+- **Netty version coupling**: the HTTP/3 codec version is now aligned with the
+  project's `${netty.version}` (4.2.15.Final). Version updates are automatic.
 - **InsecureQuicTokenHandler**: the QUIC server uses `InsecureQuicTokenHandler`
   which performs no source-address validation (no Retry token). This is acceptable
   for a test/mock tool but means the server does not protect against address

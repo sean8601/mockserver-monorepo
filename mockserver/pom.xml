@@ -405,11 +405,13 @@
                 <version>${jna.version}</version>
             </dependency>
 
-            <!-- HTTP/3 (QUIC) — experimental; native QUIC transport required at runtime -->
+            <!-- HTTP/3 (QUIC) — graduated from incubator into Netty 4.2; native
+                 QUIC transport required at runtime. The codec version is aligned
+                 with ${netty.version} — no separate version property needed. -->
             <dependency>
-                <groupId>io.netty.incubator</groupId>
-                <artifactId>netty-incubator-codec-http3</artifactId>
-                <version>0.0.30.Final</version>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec-http3</artifactId>
+                <version>${netty.version}</version>
             </dependency>
 
             <!-- protobuf (gRPC support) -->

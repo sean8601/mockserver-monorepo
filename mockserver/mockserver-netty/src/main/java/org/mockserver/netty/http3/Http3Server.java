@@ -6,15 +6,15 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
-import io.netty.incubator.codec.http3.DefaultHttp3SettingsFrame;
-import io.netty.incubator.codec.http3.Http3;
-import io.netty.incubator.codec.http3.Http3ServerConnectionHandler;
-import io.netty.incubator.codec.http3.Http3SettingsFrame;
-import io.netty.incubator.codec.quic.InsecureQuicTokenHandler;
-import io.netty.incubator.codec.quic.QuicChannel;
-import io.netty.incubator.codec.quic.QuicSslContext;
-import io.netty.incubator.codec.quic.QuicSslContextBuilder;
-import io.netty.incubator.codec.quic.QuicStreamChannel;
+import io.netty.handler.codec.http3.DefaultHttp3SettingsFrame;
+import io.netty.handler.codec.http3.Http3;
+import io.netty.handler.codec.http3.Http3ServerConnectionHandler;
+import io.netty.handler.codec.http3.Http3SettingsFrame;
+import io.netty.handler.codec.quic.InsecureQuicTokenHandler;
+import io.netty.handler.codec.quic.QuicChannel;
+import io.netty.handler.codec.quic.QuicSslContext;
+import io.netty.handler.codec.quic.QuicSslContextBuilder;
+import io.netty.handler.codec.quic.QuicStreamChannel;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
@@ -44,9 +44,9 @@ import static org.mockserver.socket.tls.KeyAndCertificateFactoryFactory.createKe
  * is used. The QUIC transport requires a native BoringSSL library; if unavailable
  * at startup the server logs a warning and does not start (fail-soft).
  * <p>
- * HTTP/3 is OFF by default ({@code http3Port=0}) and is built on the upstream
- * {@code io.netty.incubator} QUIC codec, which is a pre-release incubator artifact.
- * For this reason HTTP/3 support is labelled <strong>experimental</strong>.
+ * HTTP/3 is OFF by default ({@code http3Port=0}) and is built on the Netty 4.2
+ * {@code netty-codec-http3} module (graduated from the incubator). HTTP/3 support
+ * is labelled <strong>experimental</strong> because the API may evolve.
  */
 @SuppressWarnings("deprecation") // NioEventLoopGroup deprecation in Netty 4.2
 public class Http3Server {
@@ -115,11 +115,16 @@ public class Http3Server {
             long initialMaxStreamsBidi = configuration != null ? configuration.http3InitialMaxStreamsBidirectional() : 100L;
             long qpackMaxTableCapacity = configuration != null ? configuration.http3QpackMaxTableCapacity() : 0L;
 
-            // build QPACK settings frame when a non-zero dynamic table is configured
+            // build settings frame: QPACK dynamic table + extended CONNECT
             DefaultHttp3SettingsFrame settingsFrame = new DefaultHttp3SettingsFrame();
             settingsFrame.put(Http3SettingsFrame.HTTP3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, qpackMaxTableCapacity);
 
             boolean connectUdpEnabled = configuration != null && Boolean.TRUE.equals(configuration.http3ConnectUdpEnabled());
+            if (connectUdpEnabled) {
+                // Advertise extended CONNECT support (RFC 9220) so clients can
+                // send CONNECT requests with the :protocol pseudo-header
+                settingsFrame.put(Http3SettingsFrame.HTTP3_SETTINGS_ENABLE_CONNECT_PROTOCOL, 1L);
+            }
 
             AtomicInteger connectionCounter = this.activeHttp3Connections;
 
@@ -260,7 +265,7 @@ public class Http3Server {
      */
     public static boolean isQuicAvailable() {
         try {
-            return io.netty.incubator.codec.quic.Quic.isAvailable();
+            return io.netty.handler.codec.quic.Quic.isAvailable();
         } catch (Throwable t) {
             return false;
         }
@@ -293,12 +298,12 @@ public class Http3Server {
      * Legacy echo request handler, kept for backward compatibility and basic
      * transport-level testing when the full pipeline is not wired.
      */
-    static class Http3EchoRequestHandler extends io.netty.incubator.codec.http3.Http3RequestStreamInboundHandler {
+    static class Http3EchoRequestHandler extends io.netty.handler.codec.http3.Http3RequestStreamInboundHandler {
 
         @Override
         protected void channelRead(
             io.netty.channel.ChannelHandlerContext ctx,
-            io.netty.incubator.codec.http3.Http3HeadersFrame headersFrame
+            io.netty.handler.codec.http3.Http3HeadersFrame headersFrame
         ) {
             CharSequence methodSeq = headersFrame.headers().method();
             CharSequence pathSeq = headersFrame.headers().path();
@@ -308,14 +313,14 @@ public class Http3Server {
             String responseBody = "MockServer HTTP/3 echo - method: " + method + ", path: " + path;
             byte[] bodyBytes = responseBody.getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-            io.netty.incubator.codec.http3.DefaultHttp3HeadersFrame responseHeaders = new io.netty.incubator.codec.http3.DefaultHttp3HeadersFrame();
+            io.netty.handler.codec.http3.DefaultHttp3HeadersFrame responseHeaders = new io.netty.handler.codec.http3.DefaultHttp3HeadersFrame();
             responseHeaders.headers().status("200");
             responseHeaders.headers().add("content-type", "text/plain; charset=utf-8");
             responseHeaders.headers().addInt("content-length", bodyBytes.length);
             responseHeaders.headers().add("server", "mockserver-http3-experimental");
 
             ctx.write(responseHeaders);
-            ctx.writeAndFlush(new io.netty.incubator.codec.http3.DefaultHttp3DataFrame(
+            ctx.writeAndFlush(new io.netty.handler.codec.http3.DefaultHttp3DataFrame(
                 io.netty.buffer.Unpooled.wrappedBuffer(bodyBytes)
             )).addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
         }
@@ -323,7 +328,7 @@ public class Http3Server {
         @Override
         protected void channelRead(
             io.netty.channel.ChannelHandlerContext ctx,
-            io.netty.incubator.codec.http3.Http3DataFrame dataFrame
+            io.netty.handler.codec.http3.Http3DataFrame dataFrame
         ) {
             // echo handler: ignore request body data frames
             io.netty.util.ReferenceCountUtil.release(dataFrame);

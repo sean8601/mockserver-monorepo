@@ -1,12 +1,13 @@
 package org.mockserver.netty.http3;
 
 import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.incubator.codec.http3.DefaultHttp3DataFrame;
-import io.netty.incubator.codec.http3.DefaultHttp3HeadersFrame;
-import io.netty.incubator.codec.http3.Http3DataFrame;
-import io.netty.incubator.codec.http3.Http3HeadersFrame;
+import io.netty.handler.codec.http3.DefaultHttp3DataFrame;
+import io.netty.handler.codec.http3.DefaultHttp3HeadersFrame;
+import io.netty.handler.codec.http3.Http3DataFrame;
+import io.netty.handler.codec.http3.Http3HeadersFrame;
 import org.junit.Test;
 
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -21,44 +22,6 @@ import static org.junit.Assert.assertNull;
  * QUIC transport and will run on all platforms.
  */
 public class Http3ConnectUdpHandlerTest {
-
-    @Test
-    public void shouldRejectConnectRequestWith501() {
-        EmbeddedChannel channel = new EmbeddedChannel(new Http3ConnectUdpHandler());
-
-        // Send a CONNECT request
-        DefaultHttp3HeadersFrame connectHeaders = new DefaultHttp3HeadersFrame();
-        connectHeaders.headers().method("CONNECT");
-        connectHeaders.headers().authority("target.example.com:443");
-
-        channel.writeInbound(connectHeaders);
-
-        // Read the response headers
-        Http3HeadersFrame responseHeaders = channel.readOutbound();
-        assertNotNull("should write response headers", responseHeaders);
-        assertThat("status should be 501",
-            responseHeaders.headers().status().toString(), is("501"));
-        assertThat("content-type should be JSON",
-            responseHeaders.headers().get("content-type").toString(),
-            containsString("application/json"));
-        assertThat("server header should be set",
-            responseHeaders.headers().get("server").toString(),
-            is("mockserver-http3-experimental"));
-
-        // Read the response body
-        Http3DataFrame responseBody = channel.readOutbound();
-        assertNotNull("should write response body", responseBody);
-        String body = responseBody.content().toString(StandardCharsets.UTF_8);
-        assertThat("body should explain CONNECT-UDP is not implemented",
-            body, containsString("CONNECT-UDP (MASQUE) not yet implemented"));
-        assertThat("body should explain the codec limitation",
-            body, containsString(":protocol pseudo-header"));
-        assertThat("body should mention the flag",
-            body, containsString("http3ConnectUdpEnabled"));
-        responseBody.release();
-
-        channel.finish();
-    }
 
     @Test
     public void shouldPassThroughNonConnectRequests() {
@@ -107,10 +70,30 @@ public class Http3ConnectUdpHandlerTest {
     }
 
     @Test
+    public void shouldPassThroughPlainConnectWithoutProtocol() {
+        EmbeddedChannel channel = new EmbeddedChannel(new Http3ConnectUdpHandler());
+
+        // Plain CONNECT (no :protocol) -- should pass through to mock handler
+        DefaultHttp3HeadersFrame connectHeaders = new DefaultHttp3HeadersFrame();
+        connectHeaders.headers().method("CONNECT");
+        connectHeaders.headers().authority("target.example.com:443");
+
+        channel.writeInbound(connectHeaders);
+
+        // Plain CONNECT should pass through (not handled by MASQUE handler)
+        assertNull("should not write outbound for plain CONNECT", channel.readOutbound());
+        Http3HeadersFrame passedThrough = channel.readInbound();
+        assertNotNull("plain CONNECT should pass through to the next handler", passedThrough);
+        assertThat("method should be CONNECT", passedThrough.headers().method().toString(), is("CONNECT"));
+
+        channel.finish();
+    }
+
+    @Test
     public void shouldPassThroughDataFrames() {
         EmbeddedChannel channel = new EmbeddedChannel(new Http3ConnectUdpHandler());
 
-        // Data frames are not Http3HeadersFrame, so they should pass through
+        // Data frames before tunnel is established should pass through
         DefaultHttp3DataFrame dataFrame = new DefaultHttp3DataFrame(
             io.netty.buffer.Unpooled.wrappedBuffer("test data".getBytes(StandardCharsets.UTF_8))
         );
@@ -128,50 +111,110 @@ public class Http3ConnectUdpHandlerTest {
     }
 
     @Test
-    public void shouldHandleConnectWithDifferentAuthorities() {
+    public void shouldRejectConnectUdpWithMissingAuthority() {
         EmbeddedChannel channel = new EmbeddedChannel(new Http3ConnectUdpHandler());
 
-        // CONNECT to a specific host:port
+        // Extended CONNECT with :protocol=connect-udp but no :authority
         DefaultHttp3HeadersFrame connectHeaders = new DefaultHttp3HeadersFrame();
         connectHeaders.headers().method("CONNECT");
-        connectHeaders.headers().authority("10.0.0.1:8080");
+        connectHeaders.headers().protocol("connect-udp");
+        // no :authority set
 
         channel.writeInbound(connectHeaders);
 
+        // Should get a 400 error response
         Http3HeadersFrame responseHeaders = channel.readOutbound();
-        assertNotNull("should respond to CONNECT", responseHeaders);
-        assertThat("status should be 501",
-            responseHeaders.headers().status().toString(), is("501"));
+        assertNotNull("should write error response headers", responseHeaders);
+        assertThat("status should be 400",
+            responseHeaders.headers().status().toString(), is("400"));
 
-        // Read and release body
         Http3DataFrame responseBody = channel.readOutbound();
-        assertNotNull("should have response body", responseBody);
+        assertNotNull("should write error body", responseBody);
+        String body = responseBody.content().toString(StandardCharsets.UTF_8);
+        assertThat("body should explain missing authority",
+            body, containsString("Missing :authority"));
         responseBody.release();
 
         channel.finish();
     }
 
     @Test
-    public void shouldBeCaseInsensitiveForConnectMethod() {
+    public void shouldRejectConnectUdpWithInvalidAuthority() {
         EmbeddedChannel channel = new EmbeddedChannel(new Http3ConnectUdpHandler());
 
-        // Lower-case "connect"
+        // Extended CONNECT with invalid authority (no port)
         DefaultHttp3HeadersFrame connectHeaders = new DefaultHttp3HeadersFrame();
-        connectHeaders.headers().method("connect");
-        connectHeaders.headers().authority("example.com:443");
+        connectHeaders.headers().method("CONNECT");
+        connectHeaders.headers().protocol("connect-udp");
+        connectHeaders.headers().authority("no-port-here");
 
         channel.writeInbound(connectHeaders);
 
+        // Should get a 400 error response
         Http3HeadersFrame responseHeaders = channel.readOutbound();
-        assertNotNull("should handle lower-case CONNECT", responseHeaders);
-        assertThat("status should be 501",
-            responseHeaders.headers().status().toString(), is("501"));
+        assertNotNull("should write error response headers", responseHeaders);
+        assertThat("status should be 400",
+            responseHeaders.headers().status().toString(), is("400"));
 
-        // Read and release body
         Http3DataFrame responseBody = channel.readOutbound();
-        assertNotNull("should have response body", responseBody);
+        assertNotNull("should write error body", responseBody);
+        String body = responseBody.content().toString(StandardCharsets.UTF_8);
+        assertThat("body should explain invalid authority",
+            body, containsString("Invalid :authority"));
         responseBody.release();
 
         channel.finish();
+    }
+
+    // ---- parseAuthority tests ----
+
+    @Test
+    public void shouldParseIpv4Authority() {
+        InetSocketAddress addr = Http3ConnectUdpHandler.parseAuthority("127.0.0.1:8080");
+        assertNotNull("should parse IPv4 authority", addr);
+        assertThat("host", addr.getHostString(), is("127.0.0.1"));
+        assertThat("port", addr.getPort(), is(8080));
+    }
+
+    @Test
+    public void shouldParseHostnameAuthority() {
+        InetSocketAddress addr = Http3ConnectUdpHandler.parseAuthority("example.com:443");
+        assertNotNull("should parse hostname authority", addr);
+        assertThat("host", addr.getHostString(), is("example.com"));
+        assertThat("port", addr.getPort(), is(443));
+    }
+
+    @Test
+    public void shouldParseIpv6Authority() {
+        InetSocketAddress addr = Http3ConnectUdpHandler.parseAuthority("[::1]:9090");
+        assertNotNull("should parse IPv6 authority", addr);
+        // InetSocketAddress normalizes "::1" to its expanded form
+        assertThat("host should be an IPv6 loopback",
+            addr.getHostString(), anyOf(is("::1"), is("0:0:0:0:0:0:0:1")));
+        assertThat("port", addr.getPort(), is(9090));
+    }
+
+    @Test
+    public void shouldReturnNullForMissingPort() {
+        assertNull("no port", Http3ConnectUdpHandler.parseAuthority("example.com"));
+    }
+
+    @Test
+    public void shouldReturnNullForEmptyAuthority() {
+        assertNull("empty", Http3ConnectUdpHandler.parseAuthority(""));
+        assertNull("null", Http3ConnectUdpHandler.parseAuthority(null));
+    }
+
+    @Test
+    public void shouldReturnNullForInvalidPort() {
+        assertNull("port 0", Http3ConnectUdpHandler.parseAuthority("host:0"));
+        assertNull("port 99999", Http3ConnectUdpHandler.parseAuthority("host:99999"));
+        assertNull("port abc", Http3ConnectUdpHandler.parseAuthority("host:abc"));
+    }
+
+    @Test
+    public void shouldReturnNullForMalformedIpv6() {
+        assertNull("no closing bracket", Http3ConnectUdpHandler.parseAuthority("[::1:8080"));
+        assertNull("no port after bracket", Http3ConnectUdpHandler.parseAuthority("[::1]"));
     }
 }
