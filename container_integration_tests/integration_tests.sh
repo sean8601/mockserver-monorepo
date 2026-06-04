@@ -195,6 +195,37 @@ function test_nonroot_user() {
   return ${exit_code}
 }
 
+# Build the main Dockerfile for linux/arm64 via buildx. Release builds publish
+# linux/amd64+arm64 via buildx but the test suite only exercises the host arch.
+# This build gate catches arch-specific Dockerfile breakage early; booting the
+# image would require QEMU user-mode emulation, so a successful BUILD is the
+# gate — no runtime assertion.
+function test_arm64_build_gate() {
+  local docker_dir="${SCRIPT_DIR}/../docker"
+  local jar_path="${docker_dir}/mockserver-netty-jar-with-dependencies.jar"
+  export TEST_CASE="docker_arm64_build_gate"
+  printMessage "Test: arm64 build gate (buildx --platform linux/arm64)"
+
+  local exit_code=0
+  # Locate locally-built fat jar
+  local source_jar
+  source_jar=$(ls "${SCRIPT_DIR}"/../mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar 2>/dev/null | head -1)
+  if [[ -z "${source_jar}" ]]; then
+    printFailureMessage "arm64 build gate: no local mockserver-netty fat jar found"
+    logTestResult "1" "${TEST_CASE}"
+    return 1
+  fi
+
+  cp "${source_jar}" "${jar_path}"
+  # Build-only (no --load / --push) for linux/arm64; the default builder must
+  # support the platform (Docker Desktop includes QEMU binfmt by default).
+  runCommand "docker buildx build --platform linux/arm64 --build-arg source=copy -t mockserver/mockserver:arm64-gate ${docker_dir}" || exit_code=1
+  rm -f "${jar_path}"
+
+  logTestResult "${exit_code}" "${TEST_CASE}"
+  return ${exit_code}
+}
+
 function run_all_tests() {
   export PASS_LOG_FILE=$(mktemp)
   export FAIL_LOG_FILE=$(mktemp)
@@ -232,6 +263,8 @@ function run_all_tests() {
         smoke_test_variant "graaljs" || true
         smoke_test_variant "root-snapshot" || true
       fi
+      # arm64 cross-platform build gate (buildx --platform linux/arm64).
+      test_arm64_build_gate || true
       # WAR deployment test (Tomcat container); requires mockserver-war to
       # have been built by the Maven package step.
       test "docker_compose_war_tomcat"
