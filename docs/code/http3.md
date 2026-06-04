@@ -80,11 +80,40 @@ sequenceDiagram
     W->>C: Http3HeadersFrame + Http3DataFrame
 ```
 
+### Streaming Response Path
+
+When the response carries a `StreamingBody` (SSE, chunked proxy forwarding, LLM
+streaming), `Http3ResponseWriter` sends the headers immediately and subscribes
+to the body to forward each chunk as an HTTP/3 DATA frame:
+
+```mermaid
+sequenceDiagram
+    participant U as Upstream
+    participant SB as StreamingBody
+    participant W as Http3ResponseWriter
+    participant C as HTTP/3 Client
+
+    U->>SB: addChunk(chunk1)
+    Note over W: subscribe(onChunk, onComplete, onError)
+    W->>C: Http3HeadersFrame (immediate)
+    SB->>W: onChunk(chunk1)
+    W->>C: Http3DataFrame(chunk1)
+    W->>SB: requestMore()
+    U->>SB: addChunk(chunk2)
+    SB->>W: onChunk(chunk2)
+    W->>C: Http3DataFrame(chunk2)
+    W->>SB: requestMore()
+    U->>SB: complete()
+    SB->>W: onComplete()
+    W->>C: QUIC stream FIN (shutdownOutput)
+```
+
 Key design points:
 - **Same matching**: uses `HttpState.firstMatchingExpectation()` and `HttpActionHandler.processAction()` -- identical to HTTP/1.1 and HTTP/2
 - **Same recording**: requests are logged in `MockServerEventLog` for verification
 - **Same proxy forwarding**: unmatched requests can be forwarded when configured
 - **Body handling**: text content types (JSON, XML, HTML, etc.) are stored as string bodies for correct expectation matching; binary content is stored as binary bodies
+- **Streaming support**: `Http3ResponseWriter` subscribes to `StreamingBody` and forwards each chunk as an HTTP/3 DATA frame with backpressure, matching the pattern used by `NettyResponseWriter` for HTTP/1.1
 
 ### Lifecycle Integration
 
@@ -146,9 +175,15 @@ platform incompatibility.
 
 | Artifact | Version | Scope |
 |----------|---------|-------|
-| `io.netty.incubator:netty-incubator-codec-http3` | `0.0.28.Final` | compile |
-| `io.netty.incubator:netty-incubator-codec-native-quic` | `0.0.62.Final` (transitive) | runtime |
-| `io.netty.incubator:netty-incubator-codec-classes-quic` | `0.0.62.Final` (transitive) | compile |
+| `io.netty.incubator:netty-incubator-codec-http3` | `0.0.30.Final` | compile |
+| `io.netty.incubator:netty-incubator-codec-native-quic` | `0.0.73.Final` (transitive) | runtime |
+| `io.netty.incubator:netty-incubator-codec-classes-quic` | `0.0.73.Final` (transitive) | compile |
+
+The native QUIC artifact is bundled with platform classifiers for all supported
+platforms (`linux-x86_64`, `linux-aarch_64`, `osx-x86_64`, `osx-aarch_64`,
+`windows-x86_64`) as transitive runtime dependencies of
+`netty-incubator-codec-http3`. No additional classifier-specific dependency
+declarations are needed -- they resolve automatically.
 
 ## What Works
 
@@ -161,15 +196,22 @@ platform incompatibility.
 - Lifecycle integration: start/stop with MockServer
 - Fail-soft startup when native QUIC is unavailable
 - Metrics: HTTP/3 requests counted in `REQUESTS_RECEIVED_COUNT`
+- **Streaming/SSE responses**: `StreamingBody` (SSE, chunked proxy forwarding,
+  LLM streaming) responses are fully supported over HTTP/3. Each chunk is sent
+  as an HTTP/3 DATA frame with backpressure via `StreamingBody.requestMore()`.
+  The QUIC stream output is shut down on stream completion or error.
 - Unit-tested frame conversion (no native QUIC needed for bridge tests)
+- Unit-tested streaming response writer (no native QUIC needed)
 - Integration-tested pipeline parity (expectation matching via HTTP/3)
+- Integration-tested streaming over QUIC (in-JVM Netty QUIC client, gated on
+  native QUIC availability)
 
 ## What is NOT Implemented (follow-up work)
 
-- Streaming/SSE response bodies (logged as WARN, falls back to static response)
-- QPACK header compression tuning
-- Dashboard UI visibility for HTTP/3 connections
-- HTTP/3 specific proxy mode (CONNECT-UDP / MASQUE)
+- QPACK header compression tuning (G16-FOLLOW-UP-1)
+- Dashboard UI visibility for HTTP/3 connections (G16-FOLLOW-UP-2)
+- HTTP/3 specific proxy mode — CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3)
+- Configurable QUIC transport parameters via configuration properties (G16-FOLLOW-UP-4)
 
 ## Risks
 
@@ -190,7 +232,8 @@ platform incompatibility.
   are hardcoded in `Http3Server.start()`. These defaults are generous for testing
   but are not tuneable via configuration. If a use case needs different flow-control
   limits, the values must be changed in code.
-- **Streaming/SSE responses not supported**: `StreamingBody` (SSE / chunked
-  streaming) responses are not supported over HTTP/3. If an expectation returns a
-  streaming body, `Http3ResponseWriter` logs a WARN and sends only the headers and
-  any static body bytes. This is a known limitation documented in the consumer docs.
+- **Streaming body ordering**: streaming chunks over HTTP/3 are serialised on the
+  QUIC stream (QUIC guarantees in-order delivery per stream), but the subscriber
+  callbacks run on the upstream event loop. If the upstream event loop differs from
+  the QUIC stream's event loop, chunks may be delayed by event loop scheduling
+  (not lost or reordered, just latency-amplified).
