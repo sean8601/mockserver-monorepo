@@ -11,6 +11,14 @@ After making code changes, ALWAYS run unit tests for the affected module(s).
 - Do NOT run integration tests automatically — they are slow and run in CI
 - If changes span multiple modules, run tests for ALL affected modules: `./mvnw test -pl <module1>,<module2>`
 
+## Docker-Gated Tests
+
+**Docker is available locally** (Docker Desktop on the developer Mac) — see `AGENTS.md` → "Local Development Environment".
+
+- Tests guarded by `Assume.assumeTrue(DockerClientFactory.instance().isDockerAvailable())` (Testcontainers live-broker tests, `NET_ADMIN` transparent-proxy e2e, QUIC/HTTP-3 client tests, etc.) **actually run here** — when validating such a change, run it and confirm it PASSES, not merely that it skips.
+- **Keep the `assumeTrue(...isDockerAvailable())` gating in place** regardless. It is still correct so the suite degrades gracefully on machines/CI agents without Docker. Docker being present changes how we *validate*, not how we *write* the tests.
+- `docker build` / `docker run` are available for Dockerfile smoke checks (see `commit-workflow.md`).
+
 ## Before Committing (MANDATORY)
 
 Follow the full pre-commit workflow in `commit-workflow.md`. That workflow covers all file types (Java, Terraform, Bash, Docker, Helm, docs). This file covers the Java-specific testing details.

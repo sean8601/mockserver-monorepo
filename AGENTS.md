@@ -17,6 +17,14 @@ MockServer is an open-source HTTP(S) mock server and proxy for testing, written 
 **Infrastructure:** AWS (Buildkite build agents, documentation site hosting), Docker Hub (container images)
 **Repository:** GitHub (github.com)
 
+### Local Development Environment
+
+**Docker is available locally.** Docker Desktop runs on the developer Mac, so Docker is available to agents in this environment (not only in CI). This means:
+
+- **Docker-gated tests CAN and SHOULD be run locally**, not just in CI. Tests that guard on `Assume.assumeTrue(DockerClientFactory.instance().isDockerAvailable())` (Testcontainers live-broker tests, `NET_ADMIN` transparent-proxy e2e, QUIC/HTTP-3 client tests, etc.) will actually execute here — validate them by running and passing them, not merely by confirming they skip.
+- **Keep the Docker-gating in place anyway.** The `assumeTrue(...isDockerAvailable())` guard is still the correct design so the suite degrades gracefully on any CI agent or machine without Docker. Docker being present locally changes how we *validate*, not how we *write* the tests.
+- `DockerClientFactory.instance().isDockerAvailable()` is the canonical availability probe; Testcontainers is the preferred harness. `docker` CLI commands (`docker build`, `docker run`) are also available for Dockerfile smoke checks in the commit workflow.
+
 ### Project Documentation
 
 Comprehensive internal documentation is maintained in `docs/`. **Always consult these docs before making changes** to understand architecture, conventions, and dependencies:
