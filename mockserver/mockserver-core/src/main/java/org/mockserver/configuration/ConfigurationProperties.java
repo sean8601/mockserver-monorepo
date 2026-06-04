@@ -136,6 +136,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_HTTP3_INITIAL_MAX_STREAM_DATA_BIDIRECTIONAL = "mockserver.http3InitialMaxStreamDataBidirectional";
     private static final String MOCKSERVER_HTTP3_INITIAL_MAX_STREAMS_BIDIRECTIONAL = "mockserver.http3InitialMaxStreamsBidirectional";
     private static final String MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY = "mockserver.http3QpackMaxTableCapacity";
+    private static final String MOCKSERVER_HTTP3_CONNECT_UDP_ENABLED = "mockserver.http3ConnectUdpEnabled";
 
     // non http proxying
     private static final String MOCKSERVER_FORWARD_BINARY_REQUESTS_WITHOUT_WAITING_FOR_RESPONSE = "mockserver.forwardBinaryRequestsWithoutWaitingForResponse";
@@ -669,6 +670,25 @@ public class ConfigurationProperties {
 
     public static void http3QpackMaxTableCapacity(long bytes) {
         setProperty(MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY, "" + bytes);
+    }
+
+    /**
+     * Enable the CONNECT-UDP (MASQUE) forward proxy handler on the HTTP/3 server.
+     * When enabled, HTTP/3 CONNECT requests are intercepted by a dedicated handler
+     * that currently returns 501 Not Implemented (the bundled QUIC codec does not yet
+     * support the :protocol pseudo-header needed for the relay). This is experimental and
+     * requires codec support for the :protocol pseudo-header (RFC 9220) and HTTP
+     * Datagrams (RFC 9297). Currently the bundled netty-incubator-codec-http3
+     * (0.0.30.Final) does not support extended CONNECT, so enabling this flag will
+     * cause CONNECT requests to be cleanly rejected with 501 Not Implemented.
+     * Default: false (disabled).
+     */
+    public static boolean http3ConnectUdpEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_HTTP3_CONNECT_UDP_ENABLED, "MOCKSERVER_HTTP3_CONNECT_UDP_ENABLED", "" + false));
+    }
+
+    public static void http3ConnectUdpEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_HTTP3_CONNECT_UDP_ENABLED, "" + enabled);
     }
 
     // service mesh / sidecar

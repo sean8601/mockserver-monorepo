@@ -119,6 +119,8 @@ public class Http3Server {
             DefaultHttp3SettingsFrame settingsFrame = new DefaultHttp3SettingsFrame();
             settingsFrame.put(Http3SettingsFrame.HTTP3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, qpackMaxTableCapacity);
 
+            boolean connectUdpEnabled = configuration != null && Boolean.TRUE.equals(configuration.http3ConnectUdpEnabled());
+
             AtomicInteger connectionCounter = this.activeHttp3Connections;
 
             ChannelHandler codec = Http3.newQuicServerCodecBuilder()
@@ -145,6 +147,9 @@ public class Http3Server {
                                 @Override
                                 protected void initChannel(QuicStreamChannel streamCh) {
                                     if (httpState != null && httpActionHandler != null && configuration != null) {
+                                        if (connectUdpEnabled) {
+                                            streamCh.pipeline().addLast(new Http3ConnectUdpHandler());
+                                        }
                                         streamCh.pipeline().addLast(new Http3MockServerHandler(
                                             configuration, mockServerLogger, httpState, httpActionHandler, sharedMetrics
                                         ));

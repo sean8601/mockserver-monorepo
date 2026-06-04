@@ -58,6 +58,7 @@ public class Configuration {
     private Long http3InitialMaxStreamDataBidirectional;
     private Long http3InitialMaxStreamsBidirectional;
     private Long http3QpackMaxTableCapacity;
+    private Boolean http3ConnectUdpEnabled;
     private Map<String, String> logLevelOverrides;
     private Boolean compactLogFormat;
 
@@ -642,6 +643,18 @@ public class Configuration {
 
     public Configuration http3QpackMaxTableCapacity(Long http3QpackMaxTableCapacity) {
         this.http3QpackMaxTableCapacity = http3QpackMaxTableCapacity;
+        return this;
+    }
+
+    public Boolean http3ConnectUdpEnabled() {
+        if (http3ConnectUdpEnabled == null) {
+            return ConfigurationProperties.http3ConnectUdpEnabled();
+        }
+        return http3ConnectUdpEnabled;
+    }
+
+    public Configuration http3ConnectUdpEnabled(Boolean http3ConnectUdpEnabled) {
+        this.http3ConnectUdpEnabled = http3ConnectUdpEnabled;
         return this;
     }
 

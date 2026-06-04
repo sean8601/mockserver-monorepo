@@ -51,6 +51,7 @@ has zero impact on the existing TCP/HTTP server.
 | `Http3MockServerHandler` | `mockserver-netty` | Per-stream handler: accumulates HTTP/3 frames, converts to HttpRequest, routes through the shared pipeline |
 | `Http3RequestBridge` | `mockserver-netty` | Pure conversion helpers: HTTP/3 frames to/from HttpRequest/HttpResponse |
 | `Http3ResponseWriter` | `mockserver-netty` | ResponseWriter subclass that serialises HttpResponse as HTTP/3 frames |
+| `Http3ConnectUdpHandler` | `mockserver-netty` | CONNECT-UDP (MASQUE) handler stub; intercepts CONNECT requests when `http3ConnectUdpEnabled=true`; currently returns 501 (codec limitation) |
 | `Configuration.http3Port()` | `mockserver-core` | Configuration property |
 | `ConfigurationProperties.http3Port()` | `mockserver-core` | Static/system-property access |
 | `Configuration.http3MaxIdleTimeout()` | `mockserver-core` | QUIC max idle timeout (ms) |
@@ -219,9 +220,21 @@ declarations are needed -- they resolve automatically.
   connection count tracked in `Http3Server`; exposed via `GET /mockserver/http3status` endpoint;
   dashboard AppBar shows an "H3" chip with port and active connection count when enabled.
   Per-connection detail (remote address, stream count, duration) is deferred as follow-up.
-- HTTP/3 specific proxy mode -- CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3) -- **DEFERRED**: see
-  design note at `docs/plans/g16-masque-connect-udp.local.md` for approach, blast radius,
-  and why it is deferred.
+- HTTP/3 specific proxy mode -- CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3) -- **PARTIAL (DEFERRED)**:
+  the `http3ConnectUdpEnabled` configuration flag (default `false`) enables the
+  `Http3ConnectUdpHandler` in the QUIC stream pipeline. When enabled, HTTP/3 CONNECT
+  requests are intercepted and cleanly rejected with `501 Not Implemented` (with a JSON
+  body explaining the limitation). Normal HTTP/3 requests pass through unchanged.
+  **Full datagram relay is blocked** because the bundled `netty-incubator-codec-http3`
+  (0.0.30.Final) does not support the `:protocol` pseudo-header (RFC 9220 extended
+  CONNECT) -- the codec actively rejects it in `Http3HeadersSink.validate()`. The QUIC
+  layer (`netty-incubator-codec-classes-quic` 0.0.73.Final) does support QUIC datagrams
+  (RFC 9221) via `QuicCodecBuilder.datagram()` and `QuicheQuicChannel.sendDatagram()`/
+  `recvDatagram()`, so the transport foundation exists. Unblocking requires upgrading
+  to a codec version that adds `:protocol` to `Http3Headers.PseudoHeaderName`,
+  `SETTINGS_ENABLE_CONNECT_PROTOCOL` (0x08) to `Http3SettingsFrame`, and
+  `SETTINGS_H3_DATAGRAM` (0xffd277). See `Http3ConnectUdpHandler` javadoc for the
+  detailed implementation plan.
 - ~~Configurable QUIC transport parameters via configuration properties (G16-FOLLOW-UP-4)~~ --
   **DONE**: `http3MaxIdleTimeout`, `http3InitialMaxData`,
   `http3InitialMaxStreamDataBidirectional`, `http3InitialMaxStreamsBidirectional` configuration
