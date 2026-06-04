@@ -44,6 +44,12 @@ public abstract class AbstractExtendedDeployableWARMockingIntegrationTest extend
         return false;
     }
 
+    @Override
+    protected boolean supportsRequestBodyDecompression() {
+        // Tomcat / servlet containers do not decompress request bodies
+        return false;
+    }
+
     @Test
     public void shouldReturnResponseByMatchingUrlEncodedPath() {
         // when

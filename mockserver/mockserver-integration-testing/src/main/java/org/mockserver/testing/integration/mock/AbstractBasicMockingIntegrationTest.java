@@ -59,7 +59,7 @@ import static org.mockserver.validator.jsonschema.JsonSchemaValidator.OPEN_API_S
 /**
  * @author jamesdbloom
  */
-public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockingIntegrationTestBase {
+public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransportDecodeSmokeIntegrationTest {
 
     protected HttpResponse localNotFoundResponse() {
         return response()
