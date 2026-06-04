@@ -17,15 +17,28 @@ public class InMemoryStateBackend implements StateBackend {
     private final InMemoryExpectationKeyValueStore expectations;
     private final InMemoryKeyValueStore<String> scenarioStates;
     private final ConcurrentHashMap<String, KeyValueStore<ObjectNode>> crudStores;
-    private final InMemoryBlobStore blobStore;
+    private final BlobStore blobStore;
     private final String nodeId;
     private final List<InvalidationListener> listeners = new CopyOnWriteArrayList<>();
 
     public InMemoryStateBackend(int maxExpectations) {
+        this(maxExpectations, new InMemoryBlobStore());
+    }
+
+    /**
+     * Creates an in-memory state backend with an externally-supplied
+     * {@link BlobStore}. This allows the {@link StateBackendFactory} to
+     * inject a {@link FilesystemBlobStore} when {@code blobStoreType=filesystem}
+     * while keeping the KV stores in-memory.
+     *
+     * @param maxExpectations maximum number of expectations
+     * @param blobStore       the blob store implementation to use
+     */
+    public InMemoryStateBackend(int maxExpectations, BlobStore blobStore) {
         this.expectations = new InMemoryExpectationKeyValueStore(maxExpectations);
         this.scenarioStates = new InMemoryKeyValueStore<>();
         this.crudStores = new ConcurrentHashMap<>();
-        this.blobStore = new InMemoryBlobStore();
+        this.blobStore = blobStore;
         this.nodeId = UUIDService.getUUID();
     }
 

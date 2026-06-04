@@ -91,4 +91,39 @@ public class StateBackendFactoryTest {
         assertThat(backend, instanceOf(InMemoryStateBackend.class));
         backend.close();
     }
+
+    @Test
+    public void shouldCreateFilesystemBlobStoreWhenBlobStoreTypeIsFilesystem() {
+        Configuration config = Configuration.configuration()
+            .maxExpectations(50)
+            .blobStoreType("filesystem");
+        StateBackend backend = StateBackendFactory.create(config);
+
+        assertNotNull(backend);
+        assertThat(backend.blobs(), instanceOf(FilesystemBlobStore.class));
+        backend.close();
+    }
+
+    @Test
+    public void shouldCreateInMemoryBlobStoreWhenBlobStoreTypeIsMemory() {
+        Configuration config = Configuration.configuration()
+            .maxExpectations(50)
+            .blobStoreType("memory");
+        StateBackend backend = StateBackendFactory.create(config);
+
+        assertNotNull(backend);
+        assertThat(backend.blobs(), instanceOf(InMemoryBlobStore.class));
+        backend.close();
+    }
+
+    @Test
+    public void shouldDefaultToFilesystemBlobStore() {
+        // blobStoreType not explicitly set => defaults to "filesystem"
+        Configuration config = Configuration.configuration().maxExpectations(50);
+        StateBackend backend = StateBackendFactory.create(config);
+
+        assertNotNull(backend);
+        assertThat(backend.blobs(), instanceOf(FilesystemBlobStore.class));
+        backend.close();
+    }
 }

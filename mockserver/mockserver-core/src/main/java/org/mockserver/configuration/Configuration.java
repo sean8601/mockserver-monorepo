@@ -1679,8 +1679,9 @@ public class Configuration {
     }
 
     /**
-     * Returns the blob store type. "memory" (default) keeps blobs in-memory;
-     * "filesystem" delegates to the existing file persistence paths.
+     * Returns the blob store type. "filesystem" (default) delegates to the
+     * existing file persistence paths so on-disk behaviour is unchanged;
+     * "memory" keeps blobs in-memory only (lost on process exit).
      */
     public String blobStoreType() {
         if (blobStoreType == null) {

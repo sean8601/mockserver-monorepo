@@ -1886,11 +1886,12 @@ public class ConfigurationProperties {
     }
 
     /**
-     * Returns the blob store type. "memory" (default) keeps blobs in-memory;
-     * "filesystem" delegates to the existing file persistence paths.
+     * Returns the blob store type. "filesystem" (default) delegates to the
+     * existing file persistence paths so on-disk behaviour is unchanged;
+     * "memory" keeps blobs in-memory only (lost on process exit).
      */
     public static String blobStoreType() {
-        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_TYPE, "MOCKSERVER_BLOB_STORE_TYPE", "memory");
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_BLOB_STORE_TYPE, "MOCKSERVER_BLOB_STORE_TYPE", "filesystem");
     }
 
     /**

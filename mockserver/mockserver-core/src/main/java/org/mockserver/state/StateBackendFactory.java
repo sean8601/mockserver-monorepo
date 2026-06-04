@@ -41,7 +41,10 @@ public final class StateBackendFactory {
     }
 
     private static final Factory DEFAULT_FACTORY =
-        configuration -> new InMemoryStateBackend(configuration.maxExpectations());
+        configuration -> {
+            BlobStore blobStore = createBlobStore(configuration);
+            return new InMemoryStateBackend(configuration.maxExpectations(), blobStore);
+        };
 
     private static volatile Factory factory = DEFAULT_FACTORY;
 
@@ -82,6 +85,26 @@ public final class StateBackendFactory {
             discoverInfinispanBackend();
         }
         return factory.create(configuration);
+    }
+
+    /**
+     * Creates the appropriate {@link BlobStore} based on the
+     * {@code blobStoreType} configuration property.
+     * <ul>
+     *   <li>{@code "filesystem"} (default) — creates a {@link FilesystemBlobStore}
+     *       that writes to the filesystem using the same I/O patterns as the
+     *       pre-existing persistence classes, so on-disk behaviour is
+     *       byte-for-byte identical.</li>
+     *   <li>{@code "memory"} — creates an {@link InMemoryBlobStore} that holds
+     *       blobs in-process only (lost on exit).</li>
+     * </ul>
+     */
+    static BlobStore createBlobStore(Configuration configuration) {
+        String blobStoreType = configuration.blobStoreType();
+        if ("filesystem".equalsIgnoreCase(blobStoreType)) {
+            return new FilesystemBlobStore(null);
+        }
+        return new InMemoryBlobStore();
     }
 
     /**
