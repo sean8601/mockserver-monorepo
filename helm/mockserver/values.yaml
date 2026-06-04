@@ -258,4 +258,34 @@ webhook:
   tolerations: []
   affinity: {}
 
+# Clustering — opt-in clustered deployment using the Infinispan state backend.
+#
+# REQUIRES the -clustered image variant (mockserver/mockserver:clustered-<version>)
+# which includes the Infinispan/JGroups libraries. The default image does NOT
+# support clustering — setting clustering.enabled without switching to the
+# -clustered image will fail at startup with a ClassNotFoundException.
+#
+# When enabled the chart:
+#   1. Creates a headless Service for JGroups DNS_PING pod discovery
+#   2. Sets environment variables for the Infinispan backend, cluster name,
+#      JGroups transport, and DNS_PING query address
+#   3. Allows replicaCount > 1 with state replication across pods
+#
+# Example:
+#   replicaCount: 3
+#   clustering:
+#     enabled: true
+#   image:
+#     repositoryNameAndTag: "mockserver/mockserver:clustered-6.1.0"
+clustering:
+  enabled: false
+  # -- Cluster name for JGroups. All pods that should share state must use
+  # the same value. Only relevant when clustering.enabled is true.
+  clusterName: "mockserver-cluster"
+  # -- JGroups transport configuration file. The default uses TCP + DNS_PING
+  # for Kubernetes headless-Service discovery. Override for non-k8s stacks.
+  transportConfig: "jgroups-kubernetes.xml"
+  # -- JGroups bind port for inter-pod cluster communication (TCP).
+  jgroupsPort: 7800
+
 imagePullSecrets: []

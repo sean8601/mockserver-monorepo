@@ -76,6 +76,15 @@
         "affinity": { "type": "object" }
       }
     },
+    "clustering": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clusterName": { "type": "string" },
+        "transportConfig": { "type": "string" },
+        "jgroupsPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
     "app": {
       "type": "object",
       "properties": {
