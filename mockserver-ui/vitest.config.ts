@@ -18,5 +18,13 @@ export default defineConfig({
     outputFile: {
       junit: 'test-reports/junit.xml',
     },
+    coverage: {
+      thresholds: {
+        statements: 64,
+        branches: 55,
+        functions: 54,
+        lines: 67,
+      },
+    },
   },
 });

@@ -126,7 +126,7 @@ describe('AppBar', () => {
   });
 
   it('does not show HTTP/3 chip when H3 is disabled', async () => {
-    vi.spyOn(http3StatusModule, 'fetchHttp3Status').mockResolvedValue({
+    const spy = vi.spyOn(http3StatusModule, 'fetchHttp3Status').mockResolvedValue({
       enabled: false,
       port: -1,
       activeConnections: 0,
@@ -134,19 +134,21 @@ describe('AppBar', () => {
 
     renderAppBar();
 
-    // give the effect time to fire
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait for the H3 status effect to complete before asserting absence.
+    // Using waitFor on the spy ensures the async effect has settled.
+    await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(screen.queryByText(/^H3 :/)).not.toBeInTheDocument();
   });
 
   it('does not show HTTP/3 chip when endpoint is unavailable', async () => {
-    vi.spyOn(http3StatusModule, 'fetchHttp3Status').mockRejectedValue(
+    const spy = vi.spyOn(http3StatusModule, 'fetchHttp3Status').mockRejectedValue(
       new Error('Not Found'),
     );
 
     renderAppBar();
 
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait for the H3 status effect to complete before asserting absence.
+    await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(screen.queryByText(/^H3 :/)).not.toBeInTheDocument();
   });
 });
