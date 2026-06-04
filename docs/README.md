@@ -2,6 +2,13 @@
 
 Comprehensive internal documentation for the MockServer project covering code architecture, infrastructure, build system, CI/CD, and deployment.
 
+> **Documentation style.** These docs follow the **Pyramid Principle with
+> progressive disclosure** — lead with the outcome, then layer detail beneath
+> it. The **Level** column below (High / Medium / Low) is that principle applied
+> across the doc set: start High for the big picture, drill into Low for
+> subsystem detail. See [`.opencode/rules/documentation-style.md`](../.opencode/rules/documentation-style.md)
+> for the authoring skeleton.
+
 ## Documentation Index
 
 ### Code Architecture
