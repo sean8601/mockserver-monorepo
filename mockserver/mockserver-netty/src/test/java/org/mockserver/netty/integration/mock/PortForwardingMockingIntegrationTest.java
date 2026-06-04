@@ -276,7 +276,6 @@ public class PortForwardingMockingIntegrationTest extends AbstractBasicMockingSa
     }
 
     @Test
-    @Override
     public void shouldReset() {
         mockServerClient
             .when(
