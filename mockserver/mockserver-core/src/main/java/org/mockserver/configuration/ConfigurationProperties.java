@@ -268,6 +268,8 @@ public class ConfigurationProperties {
     // service mesh / sidecar
     private static final String MOCKSERVER_TRANSPARENT_PROXY_ENABLED = "mockserver.transparentProxyEnabled";
     private static final String MOCKSERVER_TRANSPARENT_PROXY_TPROXY = "mockserver.transparentProxyTproxy";
+    private static final String MOCKSERVER_TRANSPARENT_PROXY_EBPF = "mockserver.transparentProxyEbpf";
+    private static final String MOCKSERVER_TRANSPARENT_PROXY_EBPF_MAP_PATH = "mockserver.transparentProxyEbpfMapPath";
 
     // async messaging defaults
     private static final String MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS = "mockserver.asyncKafkaBootstrapServers";
@@ -692,6 +694,34 @@ public class ConfigurationProperties {
 
     public static void transparentProxyTproxy(boolean enable) {
         setProperty(MOCKSERVER_TRANSPARENT_PROXY_TPROXY, "" + enable);
+    }
+
+    /**
+     * Enable eBPF-based original destination resolution. When enabled, the resolver
+     * reads from a pinned BPF hash map (populated by an external cgroup/connect4
+     * BPF program) keyed by socket cookie. Requires Linux, CAP_BPF, a BTF-enabled
+     * kernel, and the external BPF program. Default: false.
+     */
+    public static boolean transparentProxyEbpf() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_TRANSPARENT_PROXY_EBPF, "MOCKSERVER_TRANSPARENT_PROXY_EBPF", "" + false));
+    }
+
+    public static void transparentProxyEbpf(boolean enable) {
+        setProperty(MOCKSERVER_TRANSPARENT_PROXY_EBPF, "" + enable);
+    }
+
+    /**
+     * Path to the pinned BPF map used by the eBPF original destination resolver.
+     * The map must be a BPF hash map with u64 key (socket cookie) and 6-byte value
+     * (4-byte IPv4 address + 2-byte port in network byte order).
+     * Default: /sys/fs/bpf/mockserver_orig_dst.
+     */
+    public static String transparentProxyEbpfMapPath() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_TRANSPARENT_PROXY_EBPF_MAP_PATH, "MOCKSERVER_TRANSPARENT_PROXY_EBPF_MAP_PATH", "/sys/fs/bpf/mockserver_orig_dst");
+    }
+
+    public static void transparentProxyEbpfMapPath(String path) {
+        setProperty(MOCKSERVER_TRANSPARENT_PROXY_EBPF_MAP_PATH, path);
     }
 
     // async messaging defaults

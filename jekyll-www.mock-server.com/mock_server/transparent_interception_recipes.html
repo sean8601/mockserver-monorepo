@@ -71,8 +71,8 @@ keywords: transparent interception, iptables redirect, tproxy, dns steering, htt
         </tr>
         <tr>
             <td>eBPF socket metadata</td>
-            <td>Not yet implemented (requires JNI + eBPF program)</td>
-            <td>eBPF cgroup program keyed by socket cookie</td>
+            <td>Implemented</td>
+            <td>Reads a pinned BPF map (populated by an external BPF program) keyed by socket cookie; enable with <code class="inline code">transparentProxyEbpf=true</code> (Linux, native transport, <code class="inline code">CAP_BPF</code>)</td>
         </tr>
     </tbody>
 </table>
@@ -149,9 +149,9 @@ networks:
 
 <p><strong>Note:</strong> Automatic iptables injection into Docker bridges requires running Docker with sufficient host privileges. In standard Testcontainers usage, the simpler approach is to configure the application's <code class="inline code">HTTP_PROXY</code>/<code class="inline code">HTTPS_PROXY</code> to point at MockServer — see the <a href="#os_host">OS / host</a> section below.</p>
 
-<h3>eBPF-based interception and admission-webhook auto-injection</h3>
+<h3>eBPF original-destination resolution</h3>
 
-<p><strong>Not yet available.</strong> eBPF interception (cgroup-level socket redirection without iptables) and automatic init-container injection via a Kubernetes admission webhook both require native code components that are not yet implemented in MockServer. These are noted as future strategies in the resolver chain.</p>
+<p>MockServer can resolve the original destination from an <strong>eBPF</strong> map: an external BPF program (which you deploy, e.g. via an init container) records the pre-NAT destination keyed by socket cookie in a pinned BPF map, and MockServer reads it. Enable with <code class="inline code">transparentProxyEbpf=true</code> and point <code class="inline code">transparentProxyEbpfMapPath</code> at the pinned map (default <code class="inline code">/sys/fs/bpf/mockserver_orig_dst</code>). Requires Linux, the native (epoll) transport, and <code class="inline code">CAP_BPF</code>. MockServer only <em>reads</em> the map — it does not load or attach the BPF program. Automatic init-container injection via a Kubernetes admission webhook is not yet available.</p>
 
 <a id="os_host" class="anchor" href="#os_host">&nbsp;</a>
 

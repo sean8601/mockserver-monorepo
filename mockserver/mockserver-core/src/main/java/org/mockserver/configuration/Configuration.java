@@ -236,6 +236,8 @@ public class Configuration {
     // service mesh / sidecar
     private Boolean transparentProxyEnabled;
     private Boolean transparentProxyTproxy;
+    private Boolean transparentProxyEbpf;
+    private String transparentProxyEbpfMapPath;
 
     // async messaging defaults
     private String asyncKafkaBootstrapServers;
@@ -2886,6 +2888,47 @@ public class Configuration {
      */
     public Configuration transparentProxyTproxy(Boolean transparentProxyTproxy) {
         this.transparentProxyTproxy = transparentProxyTproxy;
+        return this;
+    }
+
+    public Boolean transparentProxyEbpf() {
+        if (transparentProxyEbpf == null) {
+            return ConfigurationProperties.transparentProxyEbpf();
+        }
+        return transparentProxyEbpf;
+    }
+
+    /**
+     * Enable eBPF-based original destination resolution for transparent proxy mode.
+     * When enabled, the resolver reads from a pinned BPF hash map (populated by an
+     * external cgroup/connect4 BPF program) keyed by socket cookie. Requires Linux,
+     * CAP_BPF (or root), a BTF-enabled kernel, and an external BPF program that
+     * populates the map. Default: false.
+     *
+     * @param transparentProxyEbpf enable eBPF original destination resolution
+     */
+    public Configuration transparentProxyEbpf(Boolean transparentProxyEbpf) {
+        this.transparentProxyEbpf = transparentProxyEbpf;
+        return this;
+    }
+
+    public String transparentProxyEbpfMapPath() {
+        if (transparentProxyEbpfMapPath == null) {
+            return ConfigurationProperties.transparentProxyEbpfMapPath();
+        }
+        return transparentProxyEbpfMapPath;
+    }
+
+    /**
+     * Path to the pinned BPF map used by the eBPF original destination resolver.
+     * The map must be a BPF hash map keyed by u64 (socket cookie) with a 6-byte
+     * value (4-byte IPv4 address + 2-byte port, both in network byte order).
+     * Default: {@code /sys/fs/bpf/mockserver_orig_dst}.
+     *
+     * @param transparentProxyEbpfMapPath path to the pinned BPF map
+     */
+    public Configuration transparentProxyEbpfMapPath(String transparentProxyEbpfMapPath) {
+        this.transparentProxyEbpfMapPath = transparentProxyEbpfMapPath;
         return this;
     }
 

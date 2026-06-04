@@ -142,12 +142,9 @@ PROXY UNKNOWN\r\n</code></pre>
 </ul>
 <p>Both require the native transport and the <code class="inline code">CAP_NET_ADMIN</code> capability.</p>
 
-<h3>Future Strategies (Not Yet Implemented)</h3>
+<h3>eBPF socket metadata</h3>
 
-<p>The resolver chain is designed to be extended with additional strategies that require native code:</p>
-<ul>
-    <li><strong>eBPF socket metadata</strong> -- an eBPF program stores original destination in a BPF map</li>
-</ul>
+<p>The resolver chain also supports an <strong>eBPF socket-metadata</strong> strategy (enable with <code class="inline code">transparentProxyEbpf=true</code>): an external BPF program records the original destination in a pinned BPF map keyed by socket cookie, which MockServer reads (Linux, native transport, <code class="inline code">CAP_BPF</code>; MockServer reads the map only — it does not load the BPF program). Automatic init-container injection via a Kubernetes admission webhook remains a future enhancement.</p>
 
 <h2>Deployment Contexts</h2>
 
@@ -171,7 +168,7 @@ PROXY UNKNOWN\r\n</code></pre>
     <li><strong>Conntrack lookup is O(n) with a cap</strong> -- the <code class="inline code">/proc/net/nf_conntrack</code> file is parsed per connection, capped at 200,000 lines. If the conntrack table exceeds this limit, MockServer falls back to Host-header resolution. For high-throughput production use, consider a dedicated transparent proxy.</li>
     <li><strong>Linux only for conntrack</strong> -- original-destination resolution via conntrack requires Linux. On other OSes, the transparent proxy falls back to Host-header resolution.</li>
     <li><strong>iptables not automatic</strong> -- an init container or external mechanism must configure traffic redirection.</li>
-    <li><strong>SO_ORIGINAL_DST and TPROXY need the native transport</strong> -- these kernel-level strategies require the native (epoll) transport on Linux and <code class="inline code">CAP_NET_ADMIN</code>. The eBPF socket-metadata strategy requires a native BPF program and is not yet implemented.</li>
+    <li><strong>SO_ORIGINAL_DST and TPROXY need the native transport</strong> -- these kernel-level strategies require the native (epoll) transport on Linux and <code class="inline code">CAP_NET_ADMIN</code>. The eBPF socket-metadata strategy is also available (it reads a pinned BPF map populated by an external BPF program; requires <code class="inline code">CAP_BPF</code>) — only automatic admission-webhook injection remains a future enhancement.</li>
 </ul>
 
 <a id="related" class="anchor" href="#related">&nbsp;</a>
