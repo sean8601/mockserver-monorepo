@@ -1102,6 +1102,54 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 {% include_subpage _includes/service_mesh_configuration.html %}
 
+<h2>Clustering Configuration:</h2>
+
+<p>These properties configure multi-node clustering. When enabled, MockServer instances sharing the same cluster name replicate expectation state via an embedded Infinispan data grid with JGroups transport. Requires the <span class="inline_code">mockserver-state-infinispan</span> module on the classpath and <span class="inline_code">stateBackend=infinispan</span>.</p>
+
+<p><strong>Limitation:</strong> Scenario state transitions are not yet clustered. Expectations using scenario sequencing (<span class="inline_code">scenarioName</span> + <span class="inline_code">scenarioState</span> / <span class="inline_code">newScenarioState</span>) should not rely on cross-node state consistency (planned follow-up).</p>
+
+<button id="button_configuration_cluster_enabled" class="accordion title"><strong>Cluster Enabled</strong></button>
+<div class="panel title">
+    <p>Enables multi-node clustering with JGroups transport. When <span class="inline_code">false</span> (default), MockServer runs in single-node LOCAL mode with no network transport.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.clusterEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.clusterEnabled=true</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CLUSTER_ENABLED=true</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.clusterEnabled=true</code></pre>
+</div>
+
+<button id="button_configuration_cluster_name" class="accordion title"><strong>Cluster Name</strong></button>
+<div class="panel title">
+    <p>The JGroups cluster name. All MockServer instances with the same cluster name will form a cluster and replicate state. Change this to isolate independent clusters on the same network.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"mockserver-cluster"</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.clusterName(String name)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.clusterName="my-test-cluster"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CLUSTER_NAME="my-test-cluster"</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.clusterName=my-test-cluster</code></pre>
+</div>
+
+<button id="button_configuration_cluster_transport_config" class="accordion title"><strong>Cluster Transport Config</strong></button>
+<div class="panel title">
+    <p>Path to a custom JGroups XML transport configuration file. When unset, MockServer uses a built-in <span class="inline_code">SHARED_LOOPBACK</span> stack suitable for in-JVM testing only (no network I/O). For multi-host production clusters, provide a JGroups XML file with a real transport (TCP/UDP) and an appropriate discovery protocol (TCPPING, DNS_PING, S3_PING, etc.).</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (built-in SHARED_LOOPBACK stack)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.clusterTransportConfig(String path)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.clusterTransportConfig="/etc/mockserver/jgroups-tcp.xml"</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CLUSTER_TRANSPORT_CONFIG="/etc/mockserver/jgroups-tcp.xml"</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.clusterTransportConfig=/etc/mockserver/jgroups-tcp.xml</code></pre>
+</div>
+
 {% include_subpage _includes/control_plane_authentication_configuration.html %}
 
 {% include_subpage _includes/tls_configuration.html %}

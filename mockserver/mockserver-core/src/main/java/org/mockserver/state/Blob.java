@@ -1,12 +1,17 @@
 package org.mockserver.state;
 
+import java.io.Serializable;
 import java.util.Collections;
 import java.util.Map;
 
 /**
  * An opaque binary blob with key and optional metadata, stored in a {@link BlobStore}.
+ * Implements {@link Serializable} so it can be marshalled by Infinispan's
+ * Java-serialization path in clustered mode.
  */
-public final class Blob {
+public final class Blob implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private final String key;
     private final byte[] data;

@@ -140,6 +140,16 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
         return insertionOrderQueue.isEmpty();
     }
 
+    /**
+     * Returns a cached, unmodifiable sorted snapshot of this queue's elements.
+     * The snapshot is rebuilt lazily when any mutation nulls the cache.
+     * <p>
+     * <b>Eventually-consistent under concurrent mutation:</b> a call to
+     * this method concurrent with a control-plane mutation (add/remove/
+     * reconcileFromBackend) may return a snapshot that does not yet reflect
+     * the in-flight mutation. This is the existing control-plane / data-plane
+     * concurrency contract — no lock is held on the matching hot path.
+     */
     public List<V> toSortedList() {
         List<V> cached = sortedCache;
         if (cached == null) {

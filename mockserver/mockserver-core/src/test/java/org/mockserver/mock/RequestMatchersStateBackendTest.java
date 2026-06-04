@@ -466,6 +466,39 @@ public class RequestMatchersStateBackendTest {
     }
 
     // -------------------------------------------------------
+    // (f) reconcileFromBackend picks up non-sort-field updates
+    // -------------------------------------------------------
+
+    @Test
+    public void reconcileFromBackendPicksUpResponseBodyChange() {
+        // Add an expectation via the normal path
+        backendMatchers.add(new Expectation(request().withPath("/a")).withId("a")
+            .thenRespond(response().withBody("original-body")), API);
+
+        // Verify matcher serves the original body
+        Expectation matched = backendMatchers.firstMatchingExpectation(request().withPath("/a"));
+        assertThat(matched, is(notNullValue()));
+        assertThat(matched.getHttpResponse().getBodyAsString(), is("original-body"));
+
+        // Simulate a REMOTE update: write directly to the backend KV store
+        // (bypassing the local add() path), changing ONLY the response body.
+        // Same id, same priority, same created — sort fields unchanged.
+        Expectation remoteUpdate = new Expectation(request().withPath("/a")).withId("a")
+            .thenRespond(response().withBody("updated-body"));
+        remoteUpdate.withCreated(matched.getCreated());
+        stateBackend.expectations().put("a", new ExpectationEntry(remoteUpdate));
+
+        // Trigger reconcile (simulates what the InvalidationListener does)
+        backendMatchers.reconcileFromBackend();
+
+        // The matcher should now serve the updated body
+        Expectation matchedAfter = backendMatchers.firstMatchingExpectation(request().withPath("/a"));
+        assertThat(matchedAfter, is(notNullValue()));
+        assertThat("reconcile should pick up response body change",
+            matchedAfter.getHttpResponse().getBodyAsString(), is("updated-body"));
+    }
+
+    // -------------------------------------------------------
     // Backend wiring / unwiring
     // -------------------------------------------------------
 

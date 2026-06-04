@@ -15,6 +15,10 @@ import org.slf4j.LoggerFactory;
  * This design keeps {@code mockserver-core} free of any Infinispan
  * dependency: the core factory uses a volatile-registry pattern, and
  * this module registers itself into it.
+ * <p>
+ * Phase 2c: the factory now passes the full {@link org.mockserver.configuration.Configuration}
+ * to {@link InfinispanStateBackend} so it can inspect clustering config
+ * (clusterEnabled, clusterName, clusterTransportConfig).
  */
 public final class InfinispanStateBackendRegistrar {
 
@@ -29,7 +33,7 @@ public final class InfinispanStateBackendRegistrar {
      */
     public static void register() {
         StateBackendFactory.register(
-            configuration -> new InfinispanStateBackend(configuration.maxExpectations())
+            configuration -> new InfinispanStateBackend(configuration)
         );
         LOG.info("registered InfinispanStateBackend with StateBackendFactory");
     }

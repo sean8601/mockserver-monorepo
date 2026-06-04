@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
@@ -46,59 +47,70 @@ public class InfinispanKeyValueStore<V> implements KeyValueStore<V> {
         return Optional.of(new Versioned<>(wrapper.getValue(), wrapper.getVersion()));
     }
 
-    private static final int MAX_CAS_RETRIES = 100;
-
     @Override
     public long put(String key, V value) {
-        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
-            VersionedWrapper<V> existing = cache.get(key);
-            if (existing == null) {
-                VersionedWrapper<V> newWrapper = new VersionedWrapper<>(value, 1L);
-                VersionedWrapper<V> prev = cache.putIfAbsent(key, newWrapper);
-                if (prev == null) {
-                    fireChanged(key);
-                    return 1L;
-                }
-                // Lost race — retry with the existing entry
-                existing = prev;
-            }
-            long newVersion = existing.getVersion() + 1;
-            VersionedWrapper<V> updated = new VersionedWrapper<>(value, newVersion);
-            if (cache.replace(key, existing, updated)) {
-                fireChanged(key);
-                return newVersion;
-            }
-            // CAS failed — retry
-        }
-        throw new IllegalStateException("put() CAS retry limit exceeded for key: " + key);
+        // Use cache.compute() for atomic version-incrementing put. This
+        // avoids the get-then-replace CAS loop which can fail in clustered
+        // mode when equals() comparison on deserialized VersionedWrapper
+        // instances is unreliable (e.g. when the value type does not
+        // override equals). The return value of compute() is the new
+        // wrapper, from which we read the assigned version.
+        VersionedWrapper<V> result = cache.compute(key, (k, existing) -> {
+            long version = (existing != null) ? existing.getVersion() + 1 : 1L;
+            return new VersionedWrapper<>(value, version);
+        });
+        fireChanged(key);
+        return result.getVersion();
     }
 
     @Override
     public boolean compareAndSet(String key, long expectedVersion, V value) {
-        VersionedWrapper<V> existing = cache.get(key);
-        if (existing == null || existing.getVersion() != expectedVersion) {
-            return false;
-        }
-        long newVersion = expectedVersion + 1;
-        VersionedWrapper<V> updated = new VersionedWrapper<>(value, newVersion);
-        boolean swapped = cache.replace(key, existing, updated);
-        if (swapped) {
+        // Track whether the remapping lambda actually performed the CAS via
+        // an AtomicBoolean. We cannot rely on the returned wrapper's version
+        // alone because if the existing version already equals expectedVersion+1
+        // (e.g. put→v1 then compareAndSet(expectedVersion=0)), the version
+        // check would falsely report success without changing the value.
+        // The AtomicBoolean is set to the final decision on every invocation
+        // of the lambda (Infinispan may invoke it more than once in retries),
+        // so no side-effects other than the boolean are performed inside.
+        AtomicBoolean didCas = new AtomicBoolean(false);
+        cache.compute(key, (k, existing) -> {
+            if (existing == null || existing.getVersion() != expectedVersion) {
+                didCas.set(false);
+                return existing; // no change — CAS failed
+            }
+            didCas.set(true);
+            return new VersionedWrapper<>(value, expectedVersion + 1);
+        });
+        boolean success = didCas.get();
+        if (success) {
             fireChanged(key);
         }
-        return swapped;
+        return success;
     }
 
     @Override
     public boolean compareAndRemove(String key, long expectedVersion) {
-        VersionedWrapper<V> existing = cache.get(key);
-        if (existing == null || existing.getVersion() != expectedVersion) {
-            return false;
-        }
-        boolean removed = cache.remove(key, existing);
-        if (removed) {
+        // Track whether the remapping lambda actually performed the removal
+        // via an AtomicBoolean — same pattern as compareAndSet. The entire
+        // version check + removal decision is made inside the compute lambda
+        // to avoid a TOCTOU race from a pre-compute get(). The AtomicBoolean
+        // is set to the final decision on every lambda invocation (Infinispan
+        // may retry), so no side-effects other than the boolean are performed.
+        AtomicBoolean didRemove = new AtomicBoolean(false);
+        cache.compute(key, (k, existing) -> {
+            if (existing == null || existing.getVersion() != expectedVersion) {
+                didRemove.set(false);
+                return existing; // no change
+            }
+            didRemove.set(true);
+            return null; // remove
+        });
+        boolean success = didRemove.get();
+        if (success) {
             fireChanged(key);
         }
-        return removed;
+        return success;
     }
 
     @Override

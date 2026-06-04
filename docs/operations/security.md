@@ -85,12 +85,24 @@ Dependencies introduced by `mockserver-state-infinispan`, which provides the Inf
 | Dependency | Version | Module | Purpose | Java 17 compatible |
 |------------|---------|--------|---------|:---:|
 | `org.infinispan:infinispan-core` | 14.0.35.Final | `mockserver-state-infinispan` | Embedded (non-server) Infinispan cache manager for LOCAL and clustered KV stores. Provides the `StateBackend` implementation when `stateBackend=infinispan` is configured. | Yes (14.0.x line targets Java 11+; 15.x raises to Java 21) |
-| `org.jgroups:jgroups` | (transitive of infinispan-core) | `mockserver-state-infinispan` | Cluster transport for Infinispan. In Phase 2b (single-node), no JGroups transport is started (LOCAL mode only). Phase 2c will enable JGroups for multi-node clustering with loopback binding by default. | Yes |
-| `org.infinispan.protostream:protostream` | (transitive of infinispan-core) | `mockserver-state-infinispan` | Protocol Buffers serialization framework used internally by Infinispan. Phase 2b uses Java serialization; Phase 2c may switch to ProtoStream for clustered wire format. | Yes |
+| `org.jgroups:jgroups` | (transitive of infinispan-core) | `mockserver-state-infinispan` | Cluster transport for Infinispan. In LOCAL mode (default, `clusterEnabled=false`), no JGroups transport is started. In clustered mode (`clusterEnabled=true`), JGroups provides the SHARED_LOOPBACK in-JVM transport (for testing) or TCP transport for multi-host clustering. The default built-in JGroups stack (`jgroups-loopback.xml`) uses SHARED_LOOPBACK, which does not open network sockets; custom multi-host stacks use TCP bound to loopback by default. | Yes |
+| `org.infinispan.protostream:protostream` | (transitive of infinispan-core) | `mockserver-state-infinispan` | Protocol Buffers serialization framework used internally by Infinispan. Not used directly by MockServer's clustered wire format (which uses `JavaSerializationMarshaller` with an explicit allow-list). | Yes |
 
-**JGroups network security note:** In Phase 2b (single-node/LOCAL mode), JGroups does not open any network listeners. When Phase 2c enables clustering, the JGroups transport will bind to loopback by default. Explicit configuration via `clusterTransportConfig` will be required to enable multi-host clustering. See the [G10 design doc](../plans/g10-phase2-clustered-state.local.md) for the phased rollout plan.
+**JGroups network security note:** In LOCAL mode (default, `clusterEnabled=false`), JGroups does not open any network listeners. In clustered mode (`clusterEnabled=true`), the default built-in JGroups stack uses `SHARED_LOOPBACK` transport (in-process, no network I/O), suitable for embedded testing. For multi-host clustering, users must provide a custom JGroups stack via the `clusterTransportConfig` property pointing to a JGroups XML file with a real transport (TCP/UDP) and appropriate discovery protocol (TCPPING, DNS_PING, etc.). The TCP transport should be configured with explicit bind addresses and firewall rules appropriate to the deployment environment.
 
-**Infinispan serialization allow-list (P0 security gate for Phase 2c):** The Phase 2b Infinispan backend configures `global.serialization().allowList().addRegexp(".*")` — a wildcard that permits deserialization of any class. This is safe in Phase 2b because caches are LOCAL (heap-only, no network marshalling), so no untrusted bytes are ever deserialized. However, this wildcard **MUST be replaced with an explicit package allow-list (e.g. `org.mockserver.*`) or switched to ProtoStream marshalling BEFORE Phase 2c enables JGroups clustering**. Once JGroups is active, an attacker on the cluster network could inject a crafted payload that exploits Java deserialization gadget chains. This is a **P0 security gate** — Phase 2c MUST NOT ship without narrowing the allow-list.
+**Infinispan serialization allow-list (P0 security gate -- RESOLVED in Phase 2c):** The Phase 2b LOCAL-mode backend used `global.serialization().allowList().addRegexp(".*")` -- a wildcard that permits deserialization of any class. This was safe in LOCAL mode because caches are heap-only with no network marshalling. Phase 2c **resolves this P0 gate** by configuring the clustered path with:
+
+1. `JavaSerializationMarshaller` as the explicit marshaller (instead of ProtoStream, to handle the generic `VersionedWrapper<V>` types without per-type proto schema definitions)
+2. An **explicit package allow-list** restricted to exactly the types that cross the wire:
+   - `org.mockserver.state.infinispan.*` (VersionedWrapper)
+   - `org.mockserver.state.*` (ExpectationEntry, Blob)
+   - `org.mockserver.mock.*`, `org.mockserver.model.*`, `org.mockserver.matchers.*` (domain model)
+   - `com.fasterxml.jackson.*` (ObjectNode for CRUD entities)
+   - `java.lang.*`, `java.util.*`, `java.time.*`, `[B` (JDK types, byte arrays)
+
+The `ExpectationEntry` uses custom `writeObject`/`readObject` to serialize the `Expectation` as its JSON string (via `ExpectationDTO`), avoiding the need for the entire domain model to implement `Serializable`. The LOCAL-mode path retains the `".*"` wildcard because heap-only storage never deserializes untrusted bytes.
+
+**Clustering limitation -- Scenario state transitions are not yet clustered.** While the `scenarioStates` KV store in `StateBackend` is replicated across cluster nodes (REPL_SYNC), the `ScenarioManager` that drives `matchesAndTransition()` / `transitionState()` still uses a node-local in-memory map. Expectations using scenario sequencing (`scenarioName` + `scenarioState` / `newScenarioState`) should not rely on cross-node state consistency. This is a planned follow-up to the Phase 2c clustering work.
 
 ### Test Dependencies (Docker-Gated)
 

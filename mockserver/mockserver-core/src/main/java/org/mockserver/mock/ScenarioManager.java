@@ -14,6 +14,13 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class ScenarioManager {
 
     public static final String STARTED = "Started";
+    // TODO(G10-clustering): this node-local ConcurrentHashMap is NOT replicated
+    // across cluster nodes. Although the StateBackend's scenarioStates KV store
+    // IS replicated, ScenarioManager maintains its own in-memory map for
+    // matchesAndTransition() / transitionState() which bypasses the backend.
+    // Expectations using scenario sequencing (scenarioName + scenarioState /
+    // newScenarioState) should NOT rely on cross-node state consistency until
+    // this is wired through the clustered backend (planned follow-up).
     private final ConcurrentHashMap<ScenarioKey, String> scenarioStates = new ConcurrentHashMap<>();
 
     // --- Composite key ---

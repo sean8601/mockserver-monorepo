@@ -190,6 +190,35 @@ public abstract class KeyValueStoreContract {
         assertThat(v2, greaterThanOrEqualTo(1L));
     }
 
+    // ---- CAS false-success regression ----
+
+    /**
+     * Regression test: put("k","a") creates version 1. A subsequent
+     * compareAndSet("k", 0, "x") with a stale expectedVersion=0 MUST
+     * return false and leave the value unchanged at "a" / version 1.
+     * <p>
+     * Before the fix, the version-based success detection
+     * ({@code result.getVersion() == expectedVersion + 1}) falsely
+     * reported success because the existing version (1) already equalled
+     * expectedVersion(0) + 1, even though no mutation occurred.
+     */
+    @Test
+    void shouldNotFalselySucceedCompareAndSetWhenExistingVersionEqualsExpectedPlusOne() {
+        long v1 = store.put("k", "a");
+        assertThat("put should return version 1", v1, is(1L));
+
+        // CAS with stale expectedVersion=0 — existing version is 1 which
+        // equals expectedVersion+1, so the old detection would false-positive.
+        boolean success = store.compareAndSet("k", 0L, "x");
+        assertFalse(success, "compareAndSet with stale version 0 must fail");
+
+        // Value and version must be unchanged
+        Optional<Versioned<String>> result = store.get("k");
+        assertTrue(result.isPresent());
+        assertThat(result.get().getValue(), is("a"));
+        assertThat(result.get().getVersion(), is(1L));
+    }
+
     @Test
     void shouldFireInvalidationListenerOnPut() {
         AtomicReference<String> lastKey = new AtomicReference<>();

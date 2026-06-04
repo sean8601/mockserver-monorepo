@@ -176,6 +176,11 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_STATE_BACKEND = "mockserver.stateBackend";
     private static final String MOCKSERVER_BLOB_STORE_TYPE = "mockserver.blobStoreType";
 
+    // clustering (G10 phase 2c)
+    private static final String MOCKSERVER_CLUSTER_ENABLED = "mockserver.clusterEnabled";
+    private static final String MOCKSERVER_CLUSTER_NAME = "mockserver.clusterName";
+    private static final String MOCKSERVER_CLUSTER_TRANSPORT_CONFIG = "mockserver.clusterTransportConfig";
+
     // verification
     private static final String MOCKSERVER_MAXIMUM_NUMBER_OF_REQUESTS_TO_RETURN_IN_VERIFICATION_FAILURE = "mockserver.maximumNumberOfRequestToReturnInVerificationFailure";
     private static final String MOCKSERVER_DETAILED_VERIFICATION_FAILURES = "mockserver.detailedVerificationFailures";
@@ -1901,6 +1906,63 @@ public class ConfigurationProperties {
      */
     public static void blobStoreType(String blobStoreType) {
         setProperty(MOCKSERVER_BLOB_STORE_TYPE, blobStoreType);
+    }
+
+    // --- clustering (G10 phase 2c) ---
+
+    /**
+     * Returns whether clustering is enabled. Default is {@code false}.
+     */
+    public static boolean clusterEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CLUSTER_ENABLED, "MOCKSERVER_CLUSTER_ENABLED", "false"));
+    }
+
+    /**
+     * Enables or disables clustering.
+     *
+     * @param clusterEnabled true to enable JGroups transport
+     */
+    public static void clusterEnabled(boolean clusterEnabled) {
+        setProperty(MOCKSERVER_CLUSTER_ENABLED, String.valueOf(clusterEnabled));
+    }
+
+    /**
+     * Returns the JGroups cluster name. Default is {@code "mockserver-cluster"}.
+     */
+    public static String clusterName() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CLUSTER_NAME, "MOCKSERVER_CLUSTER_NAME", "mockserver-cluster");
+    }
+
+    /**
+     * Sets the JGroups cluster name.
+     *
+     * @param clusterName the cluster identifier
+     */
+    public static void clusterName(String clusterName) {
+        setProperty(MOCKSERVER_CLUSTER_NAME, clusterName);
+    }
+
+    /**
+     * Returns the optional path to a JGroups XML transport configuration.
+     * Default is empty string (use the built-in embedded stack). Empty
+     * string is used instead of {@code null} because the property cache
+     * is a {@code ConcurrentHashMap} which does not permit null values.
+     */
+    public static String clusterTransportConfig() {
+        String value = readPropertyHierarchically(PROPERTIES, MOCKSERVER_CLUSTER_TRANSPORT_CONFIG, "MOCKSERVER_CLUSTER_TRANSPORT_CONFIG", "");
+        return value != null && !value.isEmpty() ? value : null;
+    }
+
+    /**
+     * Sets the path to a custom JGroups XML transport configuration.
+     *
+     * @param clusterTransportConfig path to JGroups XML, or null for default
+     */
+    public static void clusterTransportConfig(String clusterTransportConfig) {
+        // Guard against null: System.setProperty (called by setProperty)
+        // throws NPE for null values. Store empty string to mirror other
+        // nullable string properties.
+        setProperty(MOCKSERVER_CLUSTER_TRANSPORT_CONFIG, clusterTransportConfig != null ? clusterTransportConfig : "");
     }
 
     // verification

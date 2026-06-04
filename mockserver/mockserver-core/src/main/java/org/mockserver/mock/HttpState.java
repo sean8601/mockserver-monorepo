@@ -36,6 +36,7 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.java.ExpectationToJavaSerializer;
 import org.mockserver.serialization.YamlToJsonConverter;
 import org.mockserver.server.initialize.ExpectationInitializerLoader;
+import org.mockserver.state.InvalidationListener;
 import org.mockserver.state.StateBackend;
 import org.mockserver.state.StateBackendFactory;
 import org.mockserver.time.TimeService;
@@ -165,6 +166,21 @@ public class HttpState {
         // in-memory RequestMatchers; an optional clustered backend can register an alternative).
         this.requestMatchers = ExpectationStoreFactory.create(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
         this.requestMatchers.setStateBackend(stateBackend);
+        // G10 phase 2c: wire invalidation listener so remote cluster writes
+        // trigger a node-local view rebuild (reconcileFromBackend). For
+        // single-node/LOCAL backends the listener fires locally only (no-op
+        // because the node-local CPQ is already in sync from the local put).
+        stateBackend.addInvalidationListener(new InvalidationListener() {
+            @Override
+            public void onChanged(String key) {
+                requestMatchers.reconcileFromBackend();
+            }
+
+            @Override
+            public void onCleared() {
+                requestMatchers.reconcileFromBackend();
+            }
+        });
         Metrics.setActiveExpectationsSupplier(() -> requestMatchers.retrieveActiveExpectations(null));
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers, stateBackend.blobs());

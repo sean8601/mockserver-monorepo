@@ -141,6 +141,11 @@ public class Configuration {
     private String stateBackend;
     private String blobStoreType;
 
+    // clustering (G10 phase 2c) — opt-in, default OFF
+    private Boolean clusterEnabled;
+    private String clusterName;
+    private String clusterTransportConfig;
+
     // verification
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
     private Boolean detailedVerificationFailures;
@@ -1697,6 +1702,76 @@ public class Configuration {
      */
     public Configuration blobStoreType(String blobStoreType) {
         this.blobStoreType = blobStoreType;
+        return this;
+    }
+
+    // --- clustering (G10 phase 2c) ---
+
+    /**
+     * Returns whether clustering is enabled. When {@code true} and
+     * {@code stateBackend=infinispan}, the Infinispan backend starts
+     * a JGroups transport for multi-node state replication. Default is
+     * {@code false} (single-node LOCAL mode, identical to today).
+     */
+    public boolean clusterEnabled() {
+        if (clusterEnabled == null) {
+            return ConfigurationProperties.clusterEnabled();
+        }
+        return clusterEnabled;
+    }
+
+    /**
+     * Enables or disables clustering.
+     *
+     * @param clusterEnabled true to enable JGroups transport
+     */
+    public Configuration clusterEnabled(boolean clusterEnabled) {
+        this.clusterEnabled = clusterEnabled;
+        return this;
+    }
+
+    /**
+     * Returns the cluster name used as the JGroups cluster identifier.
+     * All nodes with the same cluster name form a single cluster.
+     * Default is {@code "mockserver-cluster"}.
+     */
+    public String clusterName() {
+        if (clusterName == null) {
+            return ConfigurationProperties.clusterName();
+        }
+        return clusterName;
+    }
+
+    /**
+     * Sets the JGroups cluster name.
+     *
+     * @param clusterName the cluster identifier
+     */
+    public Configuration clusterName(String clusterName) {
+        this.clusterName = clusterName;
+        return this;
+    }
+
+    /**
+     * Returns the optional path to a JGroups XML transport configuration
+     * file. When set, this overrides the default in-JVM loopback stack.
+     * When {@code null}, the Infinispan module uses its built-in
+     * embedded-friendly JGroups configuration.
+     */
+    public String clusterTransportConfig() {
+        if (clusterTransportConfig == null) {
+            return ConfigurationProperties.clusterTransportConfig();
+        }
+        return clusterTransportConfig;
+    }
+
+    /**
+     * Sets the path to a custom JGroups XML transport configuration.
+     *
+     * @param clusterTransportConfig path to JGroups XML, or null for default
+     */
+    public Configuration clusterTransportConfig(String clusterTransportConfig) {
+        this.clusterTransportConfig = clusterTransportConfig;
         return this;
     }
 

@@ -64,6 +64,11 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     // Fast id-to-matcher lookup for the node-local cache. Kept in sync with
     // httpRequestMatchers; used to avoid O(n) scans during reconciliation.
     private final ConcurrentHashMap<String, HttpRequestMatcher> matcherCacheById = new ConcurrentHashMap<>();
+    // Tracks the backend version that was last reconciled for each expectation
+    // id. Used by reconcileFromBackend() to detect remote updates that changed
+    // only non-sort fields (e.g. response body) — without this, such updates
+    // would leave a stale matcher serving the old behaviour.
+    private final ConcurrentHashMap<String, Long> lastReconciledVersion = new ConcurrentHashMap<>();
 
     public RequestMatchers(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, WebSocketClientRegistry webSocketClientRegistry) {
         super(scheduler);
@@ -188,7 +193,8 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             // Put into backend KV (source of truth) — this may trigger
             // maxExpectations eviction inside the backend's CPQ.
             if (expectationBackend != null) {
-                expectationBackend.put(expectation.getId(), new ExpectationEntry(expectation));
+                long newVersion = expectationBackend.put(expectation.getId(), new ExpectationEntry(expectation));
+                lastReconciledVersion.put(expectation.getId(), newVersion);
                 reconcileEvictions();
             }
 
@@ -264,7 +270,8 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
                         // Put into backend KV (source of truth)
                         if (expectationBackend != null) {
-                            expectationBackend.put(expectation.getId(), new ExpectationEntry(expectation));
+                            long newVersion = expectationBackend.put(expectation.getId(), new ExpectationEntry(expectation));
+                            lastReconciledVersion.put(expectation.getId(), newVersion);
                         }
                     }
                 });
@@ -341,6 +348,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         httpRequestMatchers.stream().forEach(httpRequestMatcher -> removeHttpRequestMatcher(httpRequestMatcher, cause, false, UUIDService.getUUID()));
         expectationRequestDefinitions.clear();
         matcherCacheById.clear();
+        lastReconciledVersion.clear();
         if (expectationBackend != null) {
             expectationBackend.clear();
         }
@@ -390,6 +398,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     continue;
                 }
                 httpRequestMatcher.setResponseInProgress(true);
+                // TODO(phase-2c-times): under clustering, Times consumption must be a
+                // backend CAS so Times.exactly(N) is exactly-once across nodes; currently
+                // node-local (correct only single-node).
                 if (!expectation.consumeMatch()) {
                     httpRequestMatcher.setResponseInProgress(false);
                     continue;
@@ -466,6 +477,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     continue;
                 }
                 httpRequestMatcher.setResponseInProgress(true);
+                // TODO(phase-2c-times): under clustering, Times consumption must be a
+                // backend CAS so Times.exactly(N) is exactly-once across nodes; currently
+                // node-local (correct only single-node).
                 if (!expectation.consumeMatch()) {
                     httpRequestMatcher.setResponseInProgress(false);
                     continue;
@@ -536,47 +550,111 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
     /**
      * Reconciles the node-local HttpRequestMatcher cache against the backend
-     * KeyValueStore after mutations that may have triggered maxExpectations
-     * eviction. Removes any cached matchers whose id is no longer present
-     * in the backend, preserving identical eviction semantics.
+     * KeyValueStore. This handles three cases:
+     * <ol>
+     *   <li><b>Eviction:</b> cached matchers whose id is no longer in the
+     *       backend are removed (mirrors maxExpectations eviction).</li>
+     *   <li><b>Remote add:</b> backend entries with no local matcher get a
+     *       new compiled HttpRequestMatcher (enables cross-node visibility
+     *       under clustering).</li>
+     *   <li><b>Remote update:</b> backend entries whose version is newer
+     *       than the locally cached version get their matcher rebuilt.</li>
+     * </ol>
      * <p>
-     * <b>Threading contract:</b> assumes external serialization of
-     * control-plane mutations (single-writer). See {@link #setStateBackend}
-     * for the full contract description.
+     * In single-node / no-backend mode this method is a no-op. When the
+     * backend is LOCAL (non-clustered), only eviction applies because all
+     * mutations originate locally and the CPQ is already in sync.
      * <p>
-     * TODO(jamesdbloom): phase 2c — when remote invalidation events arrive
-     * concurrently, this method must be made safe for concurrent invocation
-     * — either by an internal lock or by routing remote events through a
-     * serial queue.
+     * <b>Threading contract:</b> serialized via {@code synchronized} so
+     * that concurrent remote invalidation events (from a clustered backend)
+     * do not corrupt the node-local CPQ. Local mutations are still
+     * single-writer (Netty event loop / action lock); the lock is
+     * reentrant-safe for local callers because Java's {@code synchronized}
+     * is reentrant.
+     * <p>
+     * <b>Concurrent matching (data-plane) note:</b> this method applies
+     * incremental per-entry mutations (add/update/remove) to the CPQ — the
+     * same granularity as normal control-plane add/remove. The CPQ's
+     * {@code toSortedList()} provides an eventually-consistent sorted
+     * snapshot via {@code ConcurrentSkipListSet + volatile sortedCache +
+     * filter(nonNull)}. A matching thread calling {@code toSortedList()}
+     * during a reconcile may see a snapshot that lags by one mutation, but
+     * will never see a torn/empty view. This matches the pre-existing
+     * control-plane / data-plane concurrency contract.
      */
-    private void reconcileEvictions() {
+    public synchronized void reconcileFromBackend() {
         if (expectationBackend == null) {
             return;
         }
-        // Collect all ids currently in the backend
-        Set<String> backendIds = expectationBackend.entries()
-            .map(KeyValueStore.Entry::getKey)
-            .collect(Collectors.toSet());
-        // Find cached matchers that the backend has evicted
+        // Snapshot backend state
+        Map<String, KeyValueStore.Entry<ExpectationEntry>> backendEntries = new HashMap<>();
+        expectationBackend.entries().forEach(e -> backendEntries.put(e.getKey(), e));
+
+        Set<String> backendIds = backendEntries.keySet();
+
+        // 1. Remove evicted matchers (id no longer in backend)
         List<String> evictedIds = new ArrayList<>();
         for (String cachedId : matcherCacheById.keySet()) {
             if (!backendIds.contains(cachedId)) {
                 evictedIds.add(cachedId);
             }
         }
-        // Remove evicted matchers from node-local cache (mirrors the
-        // eviction behaviour of the original inline CPQ — the matcher and
-        // its Times/responseInProgress state are dropped).
         for (String evictedId : evictedIds) {
             HttpRequestMatcher evictedMatcher = matcherCacheById.remove(evictedId);
             if (evictedMatcher != null) {
                 httpRequestMatchers.remove(evictedMatcher);
             }
-            // INC-04: also clean up expectationRequestDefinitions for full
-            // coherence — otherwise stale entries would accumulate for
-            // evicted expectations.
             expectationRequestDefinitions.remove(evictedId);
+            lastReconciledVersion.remove(evictedId);
         }
+
+        // 2. Add new entries and update stale entries (remote writes)
+        for (Map.Entry<String, KeyValueStore.Entry<ExpectationEntry>> entry : backendEntries.entrySet()) {
+            String id = entry.getKey();
+            long backendVersion = entry.getValue().getVersion();
+            ExpectationEntry backendEntry = entry.getValue().getValue();
+            Expectation expectation = backendEntry.getExpectation();
+
+            HttpRequestMatcher existing = matcherCacheById.get(id);
+            if (existing == null) {
+                // New entry from remote node — build matcher locally
+                HttpRequestMatcher newMatcher = matcherBuilder.transformsToMatcher(expectation);
+                httpRequestMatchers.add(newMatcher);
+                newMatcher.withSource(Cause.API);
+                matcherCacheById.put(id, newMatcher);
+                expectationRequestDefinitions.put(id, expectation.getHttpRequest());
+                lastReconciledVersion.put(id, backendVersion);
+                if (expectation.getAction() != null) {
+                    metrics.increment(expectation.getAction().getType());
+                }
+            } else if (existing.getExpectation() != null) {
+                // Check if backend version is strictly newer than the last
+                // version we reconciled for this id. This catches ALL remote
+                // updates — not just sort-field changes (id/priority/created)
+                // but also response body, request pattern, or action changes.
+                Long lastVersion = lastReconciledVersion.get(id);
+                if (lastVersion == null || backendVersion > lastVersion) {
+                    // Update the matcher preserving runtime state (Times,
+                    // responseInProgress). Re-insert priority key if sort
+                    // fields changed.
+                    httpRequestMatchers.removePriorityKey(existing);
+                    existing.update(expectation);
+                    httpRequestMatchers.addPriorityKey(existing);
+                    matcherCacheById.put(id, existing);
+                    expectationRequestDefinitions.put(id, expectation.getHttpRequest());
+                    lastReconciledVersion.put(id, backendVersion);
+                }
+            }
+        }
+    }
+
+    /**
+     * Backward-compatible alias: reconciles evictions only. Called after
+     * local mutations where the node-local CPQ is already up-to-date
+     * except for backend eviction. Delegates to the full reconcile.
+     */
+    private void reconcileEvictions() {
+        reconcileFromBackend();
     }
 
     Expectation postProcess(Expectation expectation) {
@@ -605,6 +683,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             if (httpRequestMatcher.getExpectation() != null) {
                 String id = httpRequestMatcher.getExpectation().getId();
                 matcherCacheById.remove(id);
+                lastReconciledVersion.remove(id);
                 if (expectationBackend != null) {
                     expectationBackend.remove(id);
                 }
