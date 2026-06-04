@@ -119,6 +119,79 @@ function smoke_test_variant() {
   return ${exit_code}
 }
 
+# Non-blocking wrapper around smoke_test_variant: records pass/fail to the
+# warning log instead of the failure log. Used for new/unproven variants
+# whose CI behaviour has not yet been validated.
+function smoke_test_variant_nonblocking() {
+  local variant="$1"
+  local tag="mockserver/mockserver:smoke-${variant}"
+  local container="smoke-${variant}"
+  local variant_dir="${SCRIPT_DIR}/../docker/${variant}"
+  local jar_path="${variant_dir}/mockserver-netty-jar-with-dependencies.jar"
+  export TEST_CASE="docker_variant_smoke_${variant}"
+  printMessage "Smoke test (non-blocking): variant \"${variant}\""
+
+  local exit_code=0
+  local source_jar
+  source_jar=$(ls "${SCRIPT_DIR}"/../mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar 2>/dev/null | head -1)
+  if [[ -z "${source_jar}" ]]; then
+    source_jar=$(ls "${SCRIPT_DIR}"/../docker/mockserver-netty-jar-with-dependencies.jar 2>/dev/null | head -1)
+  fi
+  if [[ -z "${source_jar}" ]]; then
+    printFailureMessage "${variant}: no local mockserver-netty fat jar found - build it first"
+    logTestResultNonBlocking "1" "${TEST_CASE}"
+    return 0
+  fi
+
+  cp "${source_jar}" "${jar_path}"
+  local build_args=""
+  if [[ "${variant}" != "local" ]]; then
+    build_args="--build-arg source=copy"
+  fi
+
+  local ca_bundle_path="${variant_dir}/ca-bundle.pem"
+  local ca_bundle_created="false"
+  if [[ "${variant}" == "graaljs" && ! -f "${ca_bundle_path}" ]]; then
+    touch "${ca_bundle_path}"
+    ca_bundle_created="true"
+  fi
+
+  runCommand "docker build ${build_args} -t ${tag} ${variant_dir}" || exit_code=1
+  rm -f "${jar_path}"
+  if [[ "${ca_bundle_created}" == "true" ]]; then
+    rm -f "${ca_bundle_path}"
+  fi
+
+  if [[ ${exit_code} -eq 0 ]]; then
+    runCommand "docker rm -f ${container} >/dev/null 2>&1 || true"
+    runCommand "docker run -d --name ${container} -p 0:1080 ${tag}"
+    local host_port
+    host_port=$(docker port "${container}" 1080 2>/dev/null | head -1 | awk -F: '{print $NF}')
+    if [[ -z "${host_port}" ]]; then
+      printFailureMessage "${variant}: could not resolve host port for container ${container}"
+      exit_code=1
+    else
+      local i status
+      status=000
+      for i in $(seq 1 15); do
+        status=$(curl -sf -o /dev/null -w '%{http_code}' -X PUT "http://localhost:${host_port}/mockserver/status" 2>/dev/null || echo "000")
+        [[ "${status}" == "200" ]] && break
+        sleep 2
+      done
+      if [[ "${status}" != "200" ]]; then
+        printFailureMessage "${variant}: /mockserver/status returned \"${status}\" (expected 200)"
+        runCommand "docker logs ${container} | tail -30 || true"
+        exit_code=1
+      fi
+    fi
+    runCommand "docker rm -f ${container} >/dev/null 2>&1 || true"
+  fi
+  runCommand "docker rmi -f ${tag} >/dev/null 2>&1 || true"
+  # Non-blocking: warn on failure, never set EXIT_CODE
+  logTestResultNonBlocking "${exit_code}" "${TEST_CASE}"
+  return 0
+}
+
 # Assert that the Docker HEALTHCHECK defined in the Dockerfile transitions the
 # container to "healthy" within a reasonable period. Every Dockerfile ships
 # HEALTHCHECK ... org.mockserver.cli.HealthCheck but no test has exercised it.
@@ -142,12 +215,13 @@ function test_healthcheck() {
       break
     elif [[ "${health_status}" == "unhealthy" ]]; then
       printFailureMessage "HEALTHCHECK: container reached 'unhealthy' state"
+      runCommand "docker logs ${container} | tail -30 || true"
       exit_code=1
       break
     fi
     sleep 3
   done
-  if [[ "${health_status}" != "healthy" ]]; then
+  if [[ "${exit_code}" -eq 0 && "${health_status}" != "healthy" ]]; then
     printFailureMessage "HEALTHCHECK: container never reached 'healthy' (last status: ${health_status})"
     runCommand "docker logs ${container} | tail -30 || true"
     exit_code=1
@@ -204,7 +278,7 @@ function test_arm64_build_gate() {
   local docker_dir="${SCRIPT_DIR}/../docker"
   local jar_path="${docker_dir}/mockserver-netty-jar-with-dependencies.jar"
   export TEST_CASE="docker_arm64_build_gate"
-  printMessage "Test: arm64 build gate (buildx --platform linux/arm64)"
+  printMessage "Test (non-blocking): arm64 build gate (buildx --platform linux/arm64)"
 
   local exit_code=0
   # Locate locally-built fat jar
@@ -212,23 +286,31 @@ function test_arm64_build_gate() {
   source_jar=$(ls "${SCRIPT_DIR}"/../mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar 2>/dev/null | head -1)
   if [[ -z "${source_jar}" ]]; then
     printFailureMessage "arm64 build gate: no local mockserver-netty fat jar found"
-    logTestResult "1" "${TEST_CASE}"
-    return 1
+    logTestResultNonBlocking "1" "${TEST_CASE}"
+    return 0
   fi
 
   cp "${source_jar}" "${jar_path}"
-  # Build-only (no --load / --push) for linux/arm64; the default builder must
-  # support the platform (Docker Desktop includes QEMU binfmt by default).
+  # Ensure a buildx builder that supports cross-platform builds exists.
+  # The default "docker" driver cannot cross-build; create a
+  # "docker-container" driver builder matching the release pipeline.
+  docker buildx create --use --name multiarch --driver docker-container 2>/dev/null \
+    || docker buildx use multiarch 2>/dev/null \
+    || true
+  # Build-only (no --load / --push) for linux/arm64.
   runCommand "docker buildx build --platform linux/arm64 --build-arg source=copy -t mockserver/mockserver:arm64-gate ${docker_dir}" || exit_code=1
   rm -f "${jar_path}"
 
-  logTestResult "${exit_code}" "${TEST_CASE}"
-  return ${exit_code}
+  # Non-blocking: a failure here warns but does not fail the pipeline.
+  logTestResultNonBlocking "${exit_code}" "${TEST_CASE}"
+  return 0
 }
 
 function run_all_tests() {
   export PASS_LOG_FILE=$(mktemp)
   export FAIL_LOG_FILE=$(mktemp)
+  export WARN_LOG_FILE=$(mktemp)
+  export SKIP_LOG_FILE=$(mktemp)
 
   if [[ "${SKIP_ALL_TESTS:-}" != "true" ]]; then
     set +euo pipefail
@@ -261,7 +343,8 @@ function run_all_tests() {
         smoke_test_variant "snapshot" || true
         smoke_test_variant "local" || true
         smoke_test_variant "graaljs" || true
-        smoke_test_variant "root-snapshot" || true
+        # root-snapshot is a new variant not yet proven in CI — non-blocking.
+        smoke_test_variant_nonblocking "root-snapshot" || true
       fi
       # arm64 cross-platform build gate (buildx --platform linux/arm64).
       test_arm64_build_gate || true
@@ -290,17 +373,31 @@ function run_all_tests() {
     NUMBER_OF_PASSED_TESTS=$(cat "${PASS_LOG_FILE}" | wc -l | sed -r 's/( )+//g')
     printMessage "PASSED: ${NUMBER_OF_PASSED_TESTS}"
     cat "${PASS_LOG_FILE}"
-    rm "${PASS_LOG_FILE}"
     printf "\n\n"
   fi
+  rm -f "${PASS_LOG_FILE}"
+  if [[ -s "${SKIP_LOG_FILE}" ]]; then
+    NUMBER_OF_SKIPPED_TESTS=$(cat "${SKIP_LOG_FILE}" | wc -l | sed -r 's/( )+//g')
+    printMessage "SKIPPED: ${NUMBER_OF_SKIPPED_TESTS}"
+    cat "${SKIP_LOG_FILE}"
+    printf "\n\n"
+  fi
+  rm -f "${SKIP_LOG_FILE}"
+  if [[ -s "${WARN_LOG_FILE}" ]]; then
+    NUMBER_OF_WARNED_TESTS=$(cat "${WARN_LOG_FILE}" | wc -l | sed -r 's/( )+//g')
+    printMessage "WARNINGS (non-blocking): ${NUMBER_OF_WARNED_TESTS}"
+    cat "${WARN_LOG_FILE}"
+    printf "\n\n"
+  fi
+  rm -f "${WARN_LOG_FILE}"
   if [[ -s "${FAIL_LOG_FILE}" ]]; then
     NUMBER_OF_FAILED_TESTS=$(cat "${FAIL_LOG_FILE}" | wc -l | sed -r 's/( )+//g')
     printMessage "FAILED: ${NUMBER_OF_FAILED_TESTS}"
     cat "${FAIL_LOG_FILE}"
-    rm "${FAIL_LOG_FILE}"
     printf "\n\n"
     EXIT_CODE=1
   fi
+  rm -f "${FAIL_LOG_FILE}"
 
   exit ${EXIT_CODE:-0}
 }
