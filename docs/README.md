@@ -30,6 +30,7 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [Async Messaging](code/async-messaging.md) | Low | AsyncAPI broker mocking: spec parsing, example generation, Kafka/MQTT publisher adapters, orchestrator |
 | [HTTP/3 (QUIC)](code/http3.md) | Low | Experimental HTTP/3 support: Http3Server, QUIC native dependency, MVP boundaries |
 | [Clustered State](code/clustered-state.md) | Low | StateBackend SPI, InMemoryStateBackend, InfinispanStateBackend (LOCAL/CLUSTERED), cross-node invalidation, config knobs, limitations |
+| [LLM Security Audit](code/llm-security-audit.md) | Low | M5 security review: known codec limitations, Bedrock SigV4, Ollama NDJSON, adversarial-response safety |
 
 ### Infrastructure
 
@@ -61,13 +62,15 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [AI-Assisted Development](operations/ai-assisted-development.md) | AI development approach, adversarial review, testing backstop, structural safety |
 | [OpenCode Configuration](operations/opencode-configuration.md) | AI harness: config, agents, rules, skills, commands, plugins |
 | [OpenCode Building Blocks](operations/opencode-building-blocks.md) | Generic guide to the 9 building blocks: what each controls, when to use which, and how they fit together |
+| [MCP Registry Publishing](operations/mcp-registry-publishing.md) | Publishing MockServer's MCP server to public MCP registries |
+| [Migration: Java 17 + Jakarta](operations/migration-java17-jakarta.md) | Completed javax→jakarta namespace migration: scope, approach, and verification |
+| [Release Principles](operations/release-principles.md) | Principles and rules governing the release scripts and Buildkite release pipeline |
 
 ### Plans
 
 | Document | Description |
 |----------|-------------|
 | [Security Defaults](plans/security-defaults.md) | Insecure default flips planned for the next major release |
-| [LLM & Agent Mocking Roadmap](plans/mockserver-llm-mocking.md) | Remaining work items after M0–M5 + U1–U4 delivery (drift detection, chaos profiles, tool-call assertions, etc.) |
 
 ### Other
 
@@ -105,10 +108,10 @@ mockserver-monorepo/
 ├── terraform/                      # Terraform IaC (Buildkite agents + pipelines)
 ├── scripts/                        # Build, deploy, and utility scripts
 └── docs/                           # This documentation (you are here)
-    ├── code/                       #   Code architecture (14 docs)
+    ├── code/                       #   Code architecture (21 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm, Service Mesh (6 docs)
-    ├── operations/                 #   Build, release, deps, security, website, perf (11 docs)
-    ├── plans/                      #   Active plans and RFCs (3 docs)
+    ├── operations/                 #   Build, release, deps, security, website, perf (13 docs)
+    ├── plans/                      #   Active plans and RFCs (1 doc)
     └── testing.md                  #   Test frameworks, architecture, config, coverage, CI
 ```
 

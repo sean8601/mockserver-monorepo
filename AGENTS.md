@@ -12,7 +12,7 @@
 
 MockServer is an open-source HTTP(S) mock server and proxy for testing, written in Java. It uses Netty as the HTTP server framework, Maven for builds, and is deployed as Docker containers, JARs, and WARs.
 
-**Tech stack:** Java 17+ (minimum supported), Netty 4.1, Jackson 2.14, Maven (multi-module), Node.js/TypeScript (UI + client), Python 3.9+ (client), Ruby 3.0+ (client), Docker, Helm, Jekyll (documentation site)
+**Tech stack:** Java 17+ (minimum supported), Netty 4.2, Jackson 2.22, Maven (multi-module), Node.js/TypeScript (UI + client), Python 3.9+ (client), Ruby 3.0+ (client), Docker, Helm, Jekyll (documentation site)
 **CI/CD:** Buildkite (primary CI), GitHub Actions (Docker image builds, CodeQL)
 **Infrastructure:** AWS (Buildkite build agents, documentation site hosting), Docker Hub (container images)
 **Repository:** GitHub (github.com)
