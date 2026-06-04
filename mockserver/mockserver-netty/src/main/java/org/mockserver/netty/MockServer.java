@@ -316,6 +316,15 @@ public class MockServer extends LifeCycle {
         return server != null ? server.getPort() : -1;
     }
 
+    /**
+     * Returns the current number of active HTTP/3 (QUIC) connections,
+     * or 0 if the HTTP/3 server is not running.
+     */
+    public int getHttp3ActiveConnectionCount() {
+        Http3Server server = http3Server;
+        return server != null ? server.getActiveConnectionCount() : 0;
+    }
+
     private void startHttp3Server(Configuration configuration, HttpActionHandler actionHandler, int http3Port) {
         if (!Http3Server.isQuicAvailable()) {
             mockServerLogger.logEvent(

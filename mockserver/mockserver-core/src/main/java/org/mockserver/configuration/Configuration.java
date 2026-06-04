@@ -53,6 +53,11 @@ public class Configuration {
     private Boolean dnsEnabled;
     private Integer dnsPort;
     private Integer http3Port;
+    private Long http3MaxIdleTimeout;
+    private Long http3InitialMaxData;
+    private Long http3InitialMaxStreamDataBidirectional;
+    private Long http3InitialMaxStreamsBidirectional;
+    private Long http3QpackMaxTableCapacity;
     private Map<String, String> logLevelOverrides;
     private Boolean compactLogFormat;
 
@@ -575,6 +580,66 @@ public class Configuration {
 
     public Configuration http3Port(Integer http3Port) {
         this.http3Port = http3Port;
+        return this;
+    }
+
+    public Long http3MaxIdleTimeout() {
+        if (http3MaxIdleTimeout == null) {
+            return ConfigurationProperties.http3MaxIdleTimeout();
+        }
+        return Math.max(0, http3MaxIdleTimeout);
+    }
+
+    public Configuration http3MaxIdleTimeout(Long http3MaxIdleTimeout) {
+        this.http3MaxIdleTimeout = http3MaxIdleTimeout;
+        return this;
+    }
+
+    public Long http3InitialMaxData() {
+        if (http3InitialMaxData == null) {
+            return ConfigurationProperties.http3InitialMaxData();
+        }
+        return Math.max(0, http3InitialMaxData);
+    }
+
+    public Configuration http3InitialMaxData(Long http3InitialMaxData) {
+        this.http3InitialMaxData = http3InitialMaxData;
+        return this;
+    }
+
+    public Long http3InitialMaxStreamDataBidirectional() {
+        if (http3InitialMaxStreamDataBidirectional == null) {
+            return ConfigurationProperties.http3InitialMaxStreamDataBidirectional();
+        }
+        return Math.max(0, http3InitialMaxStreamDataBidirectional);
+    }
+
+    public Configuration http3InitialMaxStreamDataBidirectional(Long http3InitialMaxStreamDataBidirectional) {
+        this.http3InitialMaxStreamDataBidirectional = http3InitialMaxStreamDataBidirectional;
+        return this;
+    }
+
+    public Long http3InitialMaxStreamsBidirectional() {
+        if (http3InitialMaxStreamsBidirectional == null) {
+            return ConfigurationProperties.http3InitialMaxStreamsBidirectional();
+        }
+        return Math.max(0, http3InitialMaxStreamsBidirectional);
+    }
+
+    public Configuration http3InitialMaxStreamsBidirectional(Long http3InitialMaxStreamsBidirectional) {
+        this.http3InitialMaxStreamsBidirectional = http3InitialMaxStreamsBidirectional;
+        return this;
+    }
+
+    public Long http3QpackMaxTableCapacity() {
+        if (http3QpackMaxTableCapacity == null) {
+            return ConfigurationProperties.http3QpackMaxTableCapacity();
+        }
+        return Math.max(0, http3QpackMaxTableCapacity);
+    }
+
+    public Configuration http3QpackMaxTableCapacity(Long http3QpackMaxTableCapacity) {
+        this.http3QpackMaxTableCapacity = http3QpackMaxTableCapacity;
         return this;
     }
 

@@ -51,6 +51,7 @@ import {
   MODE_DESCRIPTIONS,
   type MockServerMode,
 } from '../lib/mockServerMode';
+import { fetchHttp3Status, type Http3Status } from '../lib/http3Status';
 import WsdlImportDialog from './WsdlImportDialog';
 import OpenApiImportDialog from './OpenApiImportDialog';
 import PactExportDialog from './PactExportDialog';
@@ -133,6 +134,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [fileStoreOpen, setFileStoreOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
+  const [http3Status, setHttp3Status] = useState<Http3Status | null>(null);
   const setNotification = useDashboardStore((s) => s.setNotification);
   // Confirmation for destructive actions (reset / bulk clear). Holds the pending action.
   const [confirm, setConfirm] = useState<{ title: string; message: string; confirmLabel: string; onConfirm: () => void } | null>(null);
@@ -147,6 +149,26 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
         /* mode endpoint unavailable (older server) — hide the control */
       });
     return () => controller.abort();
+  }, [connectionParams]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const poll = () => {
+      void fetchHttp3Status(connectionParams, controller.signal)
+        .then((status) => {
+          if (!controller.signal.aborted) setHttp3Status(status);
+        })
+        .catch(() => {
+          /* endpoint unavailable (older server or H3 not compiled in) */
+        });
+    };
+    poll();
+    // poll every 5 seconds so active connection count stays reasonably fresh
+    const interval = setInterval(poll, 5000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
   }, [connectionParams]);
 
   const handleModeChange = (event: SelectChangeEvent) => {
@@ -180,6 +202,24 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             ...statusChipPaletteSx(themeMode, connectionStatus),
           }}
         />
+        {http3Status?.enabled && (
+          <Tooltip title={`HTTP/3 (QUIC) on UDP port ${http3Status.port} -- ${http3Status.activeConnections} active connection${http3Status.activeConnections === 1 ? '' : 's'}`}>
+            <Chip
+              label={`H3 :${http3Status.port} (${http3Status.activeConnections})`}
+              size="small"
+              color="info"
+              variant="outlined"
+              sx={{
+                fontSize: '0.7rem',
+                ...(themeMode === 'light' ? {
+                  color: 'rgba(255,255,255,0.9)',
+                  borderColor: 'rgba(255,255,255,0.4)',
+                  '& .MuiChip-label': { color: 'rgba(255,255,255,0.9)' },
+                } : {}),
+              }}
+            />
+          </Tooltip>
+        )}
         <ToggleButtonGroup
           value={view}
           exclusive

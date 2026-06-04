@@ -2708,4 +2708,114 @@ public class ConfigurationTest {
         }
     }
 
+    // -- HTTP/3 QUIC transport parameters --
+
+    @Test
+    public void shouldSetAndGetHttp3MaxIdleTimeout() {
+        // default value
+        assertThat(configuration.http3MaxIdleTimeout(), equalTo(5000L));
+
+        // when - instance setter
+        configuration.http3MaxIdleTimeout(10000L);
+
+        // then
+        assertThat(configuration.http3MaxIdleTimeout(), equalTo(10000L));
+    }
+
+    @Test
+    public void shouldSetAndGetHttp3InitialMaxData() {
+        // default value
+        assertThat(configuration.http3InitialMaxData(), equalTo(10000000L));
+
+        // when - instance setter
+        configuration.http3InitialMaxData(5000000L);
+
+        // then
+        assertThat(configuration.http3InitialMaxData(), equalTo(5000000L));
+    }
+
+    @Test
+    public void shouldSetAndGetHttp3InitialMaxStreamDataBidirectional() {
+        // default value
+        assertThat(configuration.http3InitialMaxStreamDataBidirectional(), equalTo(1000000L));
+
+        // when - instance setter
+        configuration.http3InitialMaxStreamDataBidirectional(500000L);
+
+        // then
+        assertThat(configuration.http3InitialMaxStreamDataBidirectional(), equalTo(500000L));
+    }
+
+    @Test
+    public void shouldSetAndGetHttp3InitialMaxStreamsBidirectional() {
+        // default value
+        assertThat(configuration.http3InitialMaxStreamsBidirectional(), equalTo(100L));
+
+        // when - instance setter
+        configuration.http3InitialMaxStreamsBidirectional(50L);
+
+        // then
+        assertThat(configuration.http3InitialMaxStreamsBidirectional(), equalTo(50L));
+    }
+
+    @Test
+    public void shouldSetAndGetHttp3QpackMaxTableCapacity() {
+        // default value (0 = dynamic table disabled)
+        assertThat(configuration.http3QpackMaxTableCapacity(), equalTo(0L));
+
+        // when - instance setter
+        configuration.http3QpackMaxTableCapacity(4096L);
+
+        // then
+        assertThat(configuration.http3QpackMaxTableCapacity(), equalTo(4096L));
+    }
+
+    @Test
+    public void shouldDelegateHttp3ConfigToConfigurationPropertiesWhenNull() {
+        long originalTimeout = ConfigurationProperties.http3MaxIdleTimeout();
+        long originalMaxData = ConfigurationProperties.http3InitialMaxData();
+        long originalStreamData = ConfigurationProperties.http3InitialMaxStreamDataBidirectional();
+        long originalMaxStreams = ConfigurationProperties.http3InitialMaxStreamsBidirectional();
+        long originalQpack = ConfigurationProperties.http3QpackMaxTableCapacity();
+        try {
+            // when - set via system properties
+            ConfigurationProperties.http3MaxIdleTimeout(15000L);
+            ConfigurationProperties.http3InitialMaxData(20000000L);
+            ConfigurationProperties.http3InitialMaxStreamDataBidirectional(2000000L);
+            ConfigurationProperties.http3InitialMaxStreamsBidirectional(200L);
+            ConfigurationProperties.http3QpackMaxTableCapacity(8192L);
+
+            // then - Configuration delegates to ConfigurationProperties when field is null
+            Configuration fresh = new Configuration();
+            assertThat(fresh.http3MaxIdleTimeout(), equalTo(15000L));
+            assertThat(fresh.http3InitialMaxData(), equalTo(20000000L));
+            assertThat(fresh.http3InitialMaxStreamDataBidirectional(), equalTo(2000000L));
+            assertThat(fresh.http3InitialMaxStreamsBidirectional(), equalTo(200L));
+            assertThat(fresh.http3QpackMaxTableCapacity(), equalTo(8192L));
+        } finally {
+            ConfigurationProperties.http3MaxIdleTimeout(originalTimeout);
+            ConfigurationProperties.http3InitialMaxData(originalMaxData);
+            ConfigurationProperties.http3InitialMaxStreamDataBidirectional(originalStreamData);
+            ConfigurationProperties.http3InitialMaxStreamsBidirectional(originalMaxStreams);
+            ConfigurationProperties.http3QpackMaxTableCapacity(originalQpack);
+        }
+    }
+
+    @Test
+    public void shouldClampHttp3NumericPropertiesToNonNegative() {
+        // when - set negative values via instance setters
+        configuration.http3MaxIdleTimeout(-100L);
+        configuration.http3InitialMaxData(-500L);
+        configuration.http3InitialMaxStreamDataBidirectional(-200L);
+        configuration.http3InitialMaxStreamsBidirectional(-10L);
+        configuration.http3QpackMaxTableCapacity(-4096L);
+
+        // then - all getters should clamp to 0
+        assertThat("http3MaxIdleTimeout should be clamped to 0", configuration.http3MaxIdleTimeout(), equalTo(0L));
+        assertThat("http3InitialMaxData should be clamped to 0", configuration.http3InitialMaxData(), equalTo(0L));
+        assertThat("http3InitialMaxStreamDataBidirectional should be clamped to 0", configuration.http3InitialMaxStreamDataBidirectional(), equalTo(0L));
+        assertThat("http3InitialMaxStreamsBidirectional should be clamped to 0", configuration.http3InitialMaxStreamsBidirectional(), equalTo(0L));
+        assertThat("http3QpackMaxTableCapacity should be clamped to 0", configuration.http3QpackMaxTableCapacity(), equalTo(0L));
+    }
+
 }

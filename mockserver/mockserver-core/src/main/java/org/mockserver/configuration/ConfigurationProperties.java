@@ -131,6 +131,11 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DNS_ENABLED = "mockserver.dnsEnabled";
     private static final String MOCKSERVER_DNS_PORT = "mockserver.dnsPort";
     private static final String MOCKSERVER_HTTP3_PORT = "mockserver.http3Port";
+    private static final String MOCKSERVER_HTTP3_MAX_IDLE_TIMEOUT = "mockserver.http3MaxIdleTimeout";
+    private static final String MOCKSERVER_HTTP3_INITIAL_MAX_DATA = "mockserver.http3InitialMaxData";
+    private static final String MOCKSERVER_HTTP3_INITIAL_MAX_STREAM_DATA_BIDIRECTIONAL = "mockserver.http3InitialMaxStreamDataBidirectional";
+    private static final String MOCKSERVER_HTTP3_INITIAL_MAX_STREAMS_BIDIRECTIONAL = "mockserver.http3InitialMaxStreamsBidirectional";
+    private static final String MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY = "mockserver.http3QpackMaxTableCapacity";
 
     // non http proxying
     private static final String MOCKSERVER_FORWARD_BINARY_REQUESTS_WITHOUT_WAITING_FOR_RESPONSE = "mockserver.forwardBinaryRequestsWithoutWaitingForResponse";
@@ -599,6 +604,69 @@ public class ConfigurationProperties {
 
     public static void http3Port(int port) {
         setProperty(MOCKSERVER_HTTP3_PORT, "" + port);
+    }
+
+    /**
+     * Max idle timeout in milliseconds for QUIC connections.
+     * Default: 5000 (5 seconds).
+     */
+    public static long http3MaxIdleTimeout() {
+        return Math.max(0, readLongProperty(MOCKSERVER_HTTP3_MAX_IDLE_TIMEOUT, "MOCKSERVER_HTTP3_MAX_IDLE_TIMEOUT", 5000L));
+    }
+
+    public static void http3MaxIdleTimeout(long millis) {
+        setProperty(MOCKSERVER_HTTP3_MAX_IDLE_TIMEOUT, "" + millis);
+    }
+
+    /**
+     * Initial maximum data (connection-level flow control) in bytes.
+     * Default: 10000000 (10 MB).
+     */
+    public static long http3InitialMaxData() {
+        return Math.max(0, readLongProperty(MOCKSERVER_HTTP3_INITIAL_MAX_DATA, "MOCKSERVER_HTTP3_INITIAL_MAX_DATA", 10000000L));
+    }
+
+    public static void http3InitialMaxData(long bytes) {
+        setProperty(MOCKSERVER_HTTP3_INITIAL_MAX_DATA, "" + bytes);
+    }
+
+    /**
+     * Initial maximum stream data for bidirectional streams (per-stream flow control)
+     * in bytes. Applied to both local and remote bidirectional streams.
+     * Default: 1000000 (1 MB).
+     */
+    public static long http3InitialMaxStreamDataBidirectional() {
+        return Math.max(0, readLongProperty(MOCKSERVER_HTTP3_INITIAL_MAX_STREAM_DATA_BIDIRECTIONAL, "MOCKSERVER_HTTP3_INITIAL_MAX_STREAM_DATA_BIDIRECTIONAL", 1000000L));
+    }
+
+    public static void http3InitialMaxStreamDataBidirectional(long bytes) {
+        setProperty(MOCKSERVER_HTTP3_INITIAL_MAX_STREAM_DATA_BIDIRECTIONAL, "" + bytes);
+    }
+
+    /**
+     * Initial maximum number of concurrent bidirectional streams.
+     * Default: 100.
+     */
+    public static long http3InitialMaxStreamsBidirectional() {
+        return Math.max(0, readLongProperty(MOCKSERVER_HTTP3_INITIAL_MAX_STREAMS_BIDIRECTIONAL, "MOCKSERVER_HTTP3_INITIAL_MAX_STREAMS_BIDIRECTIONAL", 100L));
+    }
+
+    public static void http3InitialMaxStreamsBidirectional(long maxStreams) {
+        setProperty(MOCKSERVER_HTTP3_INITIAL_MAX_STREAMS_BIDIRECTIONAL, "" + maxStreams);
+    }
+
+    /**
+     * QPACK dynamic table maximum capacity in bytes. Controls the amount of
+     * memory allocated for QPACK header compression on the HTTP/3 control stream.
+     * Set to 0 to disable the dynamic table entirely.
+     * Default: 0 (dynamic table disabled — only static table used).
+     */
+    public static long http3QpackMaxTableCapacity() {
+        return Math.max(0, readLongProperty(MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY, "MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY", 0L));
+    }
+
+    public static void http3QpackMaxTableCapacity(long bytes) {
+        setProperty(MOCKSERVER_HTTP3_QPACK_MAX_TABLE_CAPACITY, "" + bytes);
     }
 
     // service mesh / sidecar

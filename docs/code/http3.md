@@ -53,6 +53,11 @@ has zero impact on the existing TCP/HTTP server.
 | `Http3ResponseWriter` | `mockserver-netty` | ResponseWriter subclass that serialises HttpResponse as HTTP/3 frames |
 | `Configuration.http3Port()` | `mockserver-core` | Configuration property |
 | `ConfigurationProperties.http3Port()` | `mockserver-core` | Static/system-property access |
+| `Configuration.http3MaxIdleTimeout()` | `mockserver-core` | QUIC max idle timeout (ms) |
+| `Configuration.http3InitialMaxData()` | `mockserver-core` | Connection-level flow control (bytes) |
+| `Configuration.http3InitialMaxStreamDataBidirectional()` | `mockserver-core` | Per-stream flow control (bytes) |
+| `Configuration.http3InitialMaxStreamsBidirectional()` | `mockserver-core` | Max concurrent bidirectional streams |
+| `Configuration.http3QpackMaxTableCapacity()` | `mockserver-core` | QPACK dynamic table capacity (bytes, 0 = disabled) |
 
 ### Request Processing
 
@@ -208,10 +213,19 @@ declarations are needed -- they resolve automatically.
 
 ## What is NOT Implemented (follow-up work)
 
-- QPACK header compression tuning (G16-FOLLOW-UP-1)
-- Dashboard UI visibility for HTTP/3 connections (G16-FOLLOW-UP-2)
-- HTTP/3 specific proxy mode — CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3)
-- Configurable QUIC transport parameters via configuration properties (G16-FOLLOW-UP-4)
+- ~~QPACK header compression tuning (G16-FOLLOW-UP-1)~~ -- **DONE**: `http3QpackMaxTableCapacity`
+  configuration property controls the QPACK dynamic table size (default 0 = static table only).
+- ~~Dashboard UI visibility for HTTP/3 connections (G16-FOLLOW-UP-2)~~ -- **DONE**: active
+  connection count tracked in `Http3Server`; exposed via `GET /mockserver/http3status` endpoint;
+  dashboard AppBar shows an "H3" chip with port and active connection count when enabled.
+  Per-connection detail (remote address, stream count, duration) is deferred as follow-up.
+- HTTP/3 specific proxy mode -- CONNECT-UDP / MASQUE (G16-FOLLOW-UP-3) -- **DEFERRED**: see
+  design note at `docs/plans/g16-masque-connect-udp.local.md` for approach, blast radius,
+  and why it is deferred.
+- ~~Configurable QUIC transport parameters via configuration properties (G16-FOLLOW-UP-4)~~ --
+  **DONE**: `http3MaxIdleTimeout`, `http3InitialMaxData`,
+  `http3InitialMaxStreamDataBidirectional`, `http3InitialMaxStreamsBidirectional` configuration
+  properties added. Defaults match the original hardcoded values.
 
 ## Risks
 
@@ -227,11 +241,11 @@ declarations are needed -- they resolve automatically.
   for a test/mock tool but means the server does not protect against address
   spoofing. A production deployment behind a real network would need a proper
   token handler.
-- **Fixed QUIC transport parameters**: transport parameters (`maxIdleTimeout`,
-  `initialMaxData`, `initialMaxStreamDataBidirectional*`, `initialMaxStreamsBidirectional`)
-  are hardcoded in `Http3Server.start()`. These defaults are generous for testing
-  but are not tuneable via configuration. If a use case needs different flow-control
-  limits, the values must be changed in code.
+- **QUIC transport parameters**: transport parameters (`maxIdleTimeout`,
+  `initialMaxData`, `initialMaxStreamDataBidirectional`, `initialMaxStreamsBidirectional`)
+  and the QPACK dynamic table capacity are now configurable via `Configuration` /
+  `ConfigurationProperties`. The defaults match the original hardcoded values and are
+  generous for testing. See the configuration properties documentation for details.
 - **Streaming body ordering**: streaming chunks over HTTP/3 are serialised on the
   QUIC stream (QUIC guarantees in-order delivery per stream), but the subscriber
   callbacks run on the upstream event loop. If the upstream event loop differs from

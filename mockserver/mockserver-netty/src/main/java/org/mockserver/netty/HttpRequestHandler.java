@@ -185,6 +185,14 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                         }
                     }
 
+                } else if (request.matches("GET", PATH_PREFIX + "/http3status", "/http3status")) {
+
+                    int http3Port = server instanceof MockServer ? ((MockServer) server).getHttp3Port() : -1;
+                    int activeConnections = server instanceof MockServer ? ((MockServer) server).getHttp3ActiveConnectionCount() : 0;
+                    boolean enabled = http3Port > 0;
+                    String json = "{\"enabled\":" + enabled + ",\"port\":" + http3Port + ",\"activeConnections\":" + activeConnections + "}";
+                    responseWriter.writeResponse(request, OK, json, "application/json");
+
                 } else if (request.getMethod().getValue().equals("GET") && request.getPath().getValue().startsWith(PATH_PREFIX + "/dashboard")) {
 
                     dashboardHandler.renderDashboard(ctx, request);

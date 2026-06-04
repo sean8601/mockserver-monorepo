@@ -6,9 +6,12 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
+import io.netty.incubator.codec.http3.DefaultHttp3SettingsFrame;
 import io.netty.incubator.codec.http3.Http3;
 import io.netty.incubator.codec.http3.Http3ServerConnectionHandler;
+import io.netty.incubator.codec.http3.Http3SettingsFrame;
 import io.netty.incubator.codec.quic.InsecureQuicTokenHandler;
+import io.netty.incubator.codec.quic.QuicChannel;
 import io.netty.incubator.codec.quic.QuicSslContext;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
@@ -26,6 +29,7 @@ import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockserver.socket.tls.KeyAndCertificateFactoryFactory.createKeyAndCertificateFactory;
 
@@ -48,6 +52,8 @@ import static org.mockserver.socket.tls.KeyAndCertificateFactoryFactory.createKe
 public class Http3Server {
 
     private static final Logger LOG = LoggerFactory.getLogger(Http3Server.class);
+
+    private final AtomicInteger activeHttp3Connections = new AtomicInteger(0);
 
     private volatile Channel channel;
     private volatile NioEventLoopGroup group;
@@ -101,28 +107,56 @@ public class Http3Server {
 
             QuicSslContext sslContext = buildQuicSslContext();
 
+            // resolve transport parameters from configuration (or use defaults
+            // that match the original hardcoded values for backward compat)
+            long maxIdleTimeout = configuration != null ? configuration.http3MaxIdleTimeout() : 5000L;
+            long initialMaxData = configuration != null ? configuration.http3InitialMaxData() : 10000000L;
+            long initialMaxStreamDataBidi = configuration != null ? configuration.http3InitialMaxStreamDataBidirectional() : 1000000L;
+            long initialMaxStreamsBidi = configuration != null ? configuration.http3InitialMaxStreamsBidirectional() : 100L;
+            long qpackMaxTableCapacity = configuration != null ? configuration.http3QpackMaxTableCapacity() : 0L;
+
+            // build QPACK settings frame when a non-zero dynamic table is configured
+            DefaultHttp3SettingsFrame settingsFrame = new DefaultHttp3SettingsFrame();
+            settingsFrame.put(Http3SettingsFrame.HTTP3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, qpackMaxTableCapacity);
+
+            AtomicInteger connectionCounter = this.activeHttp3Connections;
+
             ChannelHandler codec = Http3.newQuicServerCodecBuilder()
                 .sslContext(sslContext)
-                .maxIdleTimeout(5000, TimeUnit.MILLISECONDS)
-                .initialMaxData(10000000)
-                .initialMaxStreamDataBidirectionalLocal(1000000)
-                .initialMaxStreamDataBidirectionalRemote(1000000)
-                .initialMaxStreamsBidirectional(100)
+                .maxIdleTimeout(maxIdleTimeout, TimeUnit.MILLISECONDS)
+                .initialMaxData(initialMaxData)
+                .initialMaxStreamDataBidirectionalLocal(initialMaxStreamDataBidi)
+                .initialMaxStreamDataBidirectionalRemote(initialMaxStreamDataBidi)
+                .initialMaxStreamsBidirectional(initialMaxStreamsBidi)
                 .tokenHandler(InsecureQuicTokenHandler.INSTANCE)
-                .handler(new Http3ServerConnectionHandler(
-                    new ChannelInitializer<QuicStreamChannel>() {
-                        @Override
-                        protected void initChannel(QuicStreamChannel ch) {
-                            if (httpState != null && httpActionHandler != null && configuration != null) {
-                                ch.pipeline().addLast(new Http3MockServerHandler(
-                                    configuration, mockServerLogger, httpState, httpActionHandler, sharedMetrics
-                                ));
-                            } else {
-                                ch.pipeline().addLast(new Http3EchoRequestHandler());
-                            }
-                        }
+                .handler(new ChannelInitializer<QuicChannel>() {
+                    @Override
+                    protected void initChannel(QuicChannel ch) {
+                        // track QUIC connection open/close for dashboard visibility
+                        connectionCounter.incrementAndGet();
+                        ch.closeFuture().addListener(f -> connectionCounter.decrementAndGet());
+
+                        // disable the QPACK dynamic table when capacity is 0 (the default),
+                        // matching the old 1-arg constructor behaviour; enable it only when
+                        // the user has configured a non-zero qpackMaxTableCapacity
+                        boolean disableQpackDynamicTable = qpackMaxTableCapacity == 0;
+                        ch.pipeline().addLast(new Http3ServerConnectionHandler(
+                            new ChannelInitializer<QuicStreamChannel>() {
+                                @Override
+                                protected void initChannel(QuicStreamChannel streamCh) {
+                                    if (httpState != null && httpActionHandler != null && configuration != null) {
+                                        streamCh.pipeline().addLast(new Http3MockServerHandler(
+                                            configuration, mockServerLogger, httpState, httpActionHandler, sharedMetrics
+                                        ));
+                                    } else {
+                                        streamCh.pipeline().addLast(new Http3EchoRequestHandler());
+                                    }
+                                }
+                            },
+                            null, null, settingsFrame, disableQpackDynamicTable
+                        ));
                     }
-                ))
+                })
                 .build();
 
             channel = new Bootstrap()
@@ -143,6 +177,13 @@ public class Http3Server {
                 localGroup.shutdownGracefully();
             }
         }
+    }
+
+    /**
+     * Returns the current number of active QUIC (HTTP/3) connections.
+     */
+    public int getActiveConnectionCount() {
+        return activeHttp3Connections.get();
     }
 
     /**
