@@ -11,7 +11,8 @@
     var mockServerClient = mockServer.mockServerClient;
     var Q = require('q');
     var http = require('http');
-    var mockServerPort = 1080;
+    var mockServerHost = process.env.MOCKSERVER_HOST || "localhost";
+    var mockServerPort = parseInt(process.env.MOCKSERVER_PORT, 10) || 1080;
     var uuid = guid();
 
     function sendRequest(method, host, port, path, jsonBody, headers) {
@@ -65,9 +66,9 @@
 
     exports.mock_server_node_client_test = {
         setUp: function (callback) {
-            client = mockServerClient("localhost", mockServerPort);
+            client = mockServerClient(mockServerHost, mockServerPort);
             client.reset().then(function () {
-                clientOverTls = mockServerClient("localhost", mockServerPort, undefined, true);
+                clientOverTls = mockServerClient(mockServerHost, mockServerPort, undefined, true);
                 clientOverTls.reset().then(function () {
                     callback();
                 }, function (error) {
@@ -113,7 +114,7 @@
             mockAnyResponse.then(function () {
 
                 // then - non matching request
-                sendRequest("GET", "localhost", mockServerPort, "/otherPath")
+                sendRequest("GET", mockServerHost, mockServerPort, "/otherPath")
                     .then(function (error) {
                         test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                         test.done();
@@ -123,7 +124,7 @@
                     .then(function () {
 
                         // then - matching request
-                        sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"value"}');
@@ -134,7 +135,7 @@
                             .then(function () {
 
                                 // then - matching request, but no times remaining
-                                sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody")
+                                sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody")
                                     .then(function (error) {
                                         test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                         test.done();
@@ -186,7 +187,7 @@
             );
             mockAnyResponse.then(function () {
                 // then - matching request
-                sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody")
+                sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody")
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"value"}');
@@ -233,19 +234,19 @@
             ]).then(function () {
 
                 // then
-                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"one"}');
 
                         // then
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathTwo", "someBody")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo", "someBody")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"two"}');
 
                                 // then
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathThree", "someBody")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathThree", "someBody")
                                     .then(function (response) {
                                         test.equal(response.statusCode, 200);
                                         test.equal(response.body, '{"name":"three"}');
@@ -304,14 +305,14 @@
             ]).then(function () {
 
                 // then - matching first request
-                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"one"}');
                         test.equal(response.headers["x-test-default"], "default-value");
 
                         // then - matching second request
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathTwo", "someBody")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo", "someBody")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"two"}');
@@ -319,7 +320,7 @@
                                 test.equal(response.headers["x-test"], "test-value");
 
                                 // then - matching third request
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathThree", "someBody")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathThree", "someBody")
                                     .then(function (response) {
                                         test.equal(response.statusCode, 200);
                                         test.equal(response.body, '{"name":"three"}');
@@ -355,7 +356,7 @@
             }).then(function () {
 
                 // then - matching request
-                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"one"}');
@@ -371,7 +372,7 @@
                         }).then(function () {
 
                             // then - matching request
-                            sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"one"}');
@@ -481,7 +482,7 @@
                     }
                 ).then(function () {
                     // then - matching no expectation
-                    sendRequest("PUT", "localhost", mockServerPort, "/somePath")
+                    sendRequest("PUT", mockServerHost, mockServerPort, "/somePath")
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -491,7 +492,7 @@
                         .then(function () {
 
                             // then - matching first expectation
-                            sendRequest("GET", "localhost", mockServerPort, "/somePath")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/somePath")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"first_body"}');
@@ -502,7 +503,7 @@
                                 .then(function () {
 
                                     // then - request that matches second expectation
-                                    sendRequest("POST", "localhost", mockServerPort, "/somePath")
+                                    sendRequest("POST", mockServerHost, mockServerPort, "/somePath")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 200);
                                             test.equal(response.body, '{"name":"second_body"}');
@@ -567,7 +568,7 @@
                     }
                 ).then(function () {
                     // then - matching no expectation
-                    sendRequest("GET", "localhost", mockServerPort, "/otherPath")
+                    sendRequest("GET", mockServerHost, mockServerPort, "/otherPath")
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -577,7 +578,7 @@
                         .then(function () {
 
                             // then - matching first expectation
-                            sendRequest("GET", "localhost", mockServerPort, "/firstPath")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/firstPath")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"first_body"}');
@@ -588,7 +589,7 @@
                                 .then(function () {
 
                                     // then - request that matches second expectation
-                                    sendRequest("GET", "localhost", mockServerPort, "/secondPath")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/secondPath")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 200);
                                             test.equal(response.body, '{"name":"second_body"}');
@@ -663,7 +664,7 @@
                     }
                 ).then(function () {
                     // then - matching no expectation
-                    sendRequest("GET", "localhost", mockServerPort, "/somePath?param=other")
+                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath?param=other")
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -673,7 +674,7 @@
                         .then(function () {
 
                             // then - matching first expectation
-                            sendRequest("GET", "localhost", mockServerPort, "/somePath?param=first")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/somePath?param=first")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"first_body"}');
@@ -684,7 +685,7 @@
                                 .then(function () {
 
                                     // then - request that matches second expectation
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePath?param=second")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath?param=second")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 200);
                                             test.equal(response.body, '{"name":"second_body"}');
@@ -755,7 +756,7 @@
                     }
                 ).then(function () {
                     // then - matching no expectation
-                    sendRequest("POST", "localhost", mockServerPort, "/otherPath", "someIncorrectBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/otherPath", "someIncorrectBody")
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -765,7 +766,7 @@
                         .then(function () {
 
                             // then - matching first expectation
-                            sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                            sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"first_body"}');
@@ -776,7 +777,7 @@
                                 .then(function () {
 
                                     // then - request that matches second expectation
-                                    sendRequest("POST", "localhost", mockServerPort, "/somePath", "someOtherBody")
+                                    sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someOtherBody")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 200);
                                             test.equal(response.body, '{"name":"second_body"}');
@@ -851,7 +852,7 @@
                     }
                 ).then(function () {
                     // then - matching no expectation
-                    sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Allow': 'other'})
+                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Allow': 'other'})
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -861,7 +862,7 @@
                         .then(function () {
 
                             // then - matching first expectation
-                            sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Allow': 'first'})
+                            sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Allow': 'first'})
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"first_body"}');
@@ -872,7 +873,7 @@
                                 .then(function () {
 
                                     // then - request that matches second expectation
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Allow': 'second'})
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Allow': 'second'})
                                         .then(function (response) {
                                             test.equal(response.statusCode, 200);
                                             test.equal(response.body, '{"name":"second_body"}');
@@ -923,7 +924,7 @@
                 }
             ).then(function () {
                 // then - matching first expectation
-                sendRequest("GET", "localhost", mockServerPort, "/somePath")
+                sendRequest("GET", mockServerHost, mockServerPort, "/somePath")
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"first_body"}');
@@ -971,7 +972,7 @@
                 }
             ).then(function () {
                 // then - matching first expectation
-                sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Allow': 'first'})
+                sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Allow': 'first'})
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"first_body"}');
@@ -1016,7 +1017,7 @@
                 }
             ).then(function () {
                 // then - matching first expectation
-                sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Allow': 'first'})
+                sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Allow': 'first'})
                     .then(function (response) {
                         test.equal(response.statusCode, 200);
                         test.equal(response.body, '{"name":"first_body"}');
@@ -1085,7 +1086,7 @@
                     }
                 ).then(function () {
                     // then - matching no expectation
-                    sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Cookie': 'cookie=other'})
+                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Cookie': 'cookie=other'})
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -1095,7 +1096,7 @@
                         .then(function () {
 
                             // then - matching first expectation
-                            sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Cookie': 'cookie=first'})
+                            sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Cookie': 'cookie=first'})
                                 .then(function (response) {
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"first_body"}');
@@ -1106,7 +1107,7 @@
                                 .then(function () {
 
                                     // then - request that matches second expectation
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Cookie': 'cookie=second'})
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Cookie': 'cookie=second'})
                                         .then(function (response) {
                                             test.equal(response.statusCode, 200);
                                             test.equal(response.body, '{"name":"second_body"}');
@@ -1134,7 +1135,7 @@
             client.mockSimpleResponse('/somePath', {name: 'value'}, 203)
                 .then(function () {
                     // then - non matching request
-                    sendRequest("POST", "localhost", mockServerPort, "/otherPath")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/otherPath")
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -1144,7 +1145,7 @@
                         .then(function () {
 
                             // then - matching request
-                            sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody")
+                            sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 203);
                                     test.equal(response.body, '{"name":"value"}');
@@ -1155,7 +1156,7 @@
                                 .then(function () {
 
                                     // then - matching request, but no times remaining
-                                    sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody")
+                                    sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody")
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -1186,7 +1187,7 @@
             );
             mockAnyResponse.then(function () {
                 // then - non matching request
-                sendRequest("GET", "localhost", mockServerPort, "/otherPath")
+                sendRequest("GET", mockServerHost, mockServerPort, "/otherPath")
                     .then(function (error) {
                         test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                         test.done();
@@ -1196,7 +1197,7 @@
                     .then(function () {
 
                         // then - matching request
-                        sendRequest("GET", "localhost", mockServerPort, "/v1/pets?limit=10")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/v1/pets?limit=10")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, 'open_api_response');
@@ -1224,7 +1225,7 @@
             mockAnyResponse.then(function () {
 
                 // then - non matching request
-                sendRequest("GET", "localhost", mockServerPort, "/otherPath")
+                sendRequest("GET", mockServerHost, mockServerPort, "/otherPath")
                     .then(function (error) {
                         test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                         test.done();
@@ -1234,7 +1235,7 @@
                     .then(function () {
 
                         // then - matching request
-                        sendRequest("GET", "localhost", mockServerPort, "/v1/pets?limit=10")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/v1/pets?limit=10")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '[ {\n' +
@@ -1287,7 +1288,7 @@
                 .then(function () {
 
                     // then - non matching request
-                    sendRequest("POST", "localhost", mockServerPort, "/someOtherPath?test=true", "", {'Vary': uuid})
+                    sendRequest("POST", mockServerHost, mockServerPort, "/someOtherPath?test=true", "", {'Vary': uuid})
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -1297,14 +1298,14 @@
                         .then(function () {
 
                             // then - matching request
-                            sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
+                            sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
                                 .then(function (response) {
 
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"value"}');
 
                                     // then - matching request, but no times remaining
-                                    sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
+                                    sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -1353,7 +1354,7 @@
                 .then(function () {
 
                     // then - non matching request
-                    sendRequest("POST", "localhost", mockServerPort, "/someOtherPath?test=true", "", {'Vary': uuid})
+                    sendRequest("POST", mockServerHost, mockServerPort, "/someOtherPath?test=true", "", {'Vary': uuid})
                         .then(function (error) {
                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                             test.done();
@@ -1363,14 +1364,14 @@
                         .then(function () {
 
                             // then - matching request
-                            sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
+                            sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
                                 .then(function (response) {
 
                                     test.equal(response.statusCode, 200);
                                     test.equal(response.body, '{"name":"value"}');
 
                                     // then - matching request, but no times remaining
-                                    sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
+                                    sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody", {'Vary': uuid})
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -1429,21 +1430,21 @@
                         .then(function () {
 
                             // then - first matching request
-                            sendRequest("GET", "localhost", mockServerPort, "/one", "", {'Vary': uuid})
+                            sendRequest("GET", mockServerHost, mockServerPort, "/one", "", {'Vary': uuid})
                                 .then(function (response) {
 
                                     test.equal(response.statusCode, 201);
                                     test.equal(response.body, 'one');
 
                                     // then - second matching request
-                                    sendRequest("GET", "localhost", mockServerPort, "/two", "someBody", {'Vary': uuid})
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/two", "someBody", {'Vary': uuid})
                                         .then(function (response) {
 
                                             test.equal(response.statusCode, 202);
                                             test.equal(response.body, 'two');
 
                                             // then - first matching request again
-                                            sendRequest("GET", "localhost", mockServerPort, "/one", "", {'Vary': uuid})
+                                            sendRequest("GET", mockServerHost, mockServerPort, "/one", "", {'Vary': uuid})
                                                 .then(function (response) {
 
                                                     test.equal(response.statusCode, 201);
@@ -1491,19 +1492,19 @@
             }, 2).then(function () {
 
                 // then - first matching request
-                sendRequest("GET", "localhost", mockServerPort, "/one", "", {'Vary': uuid})
+                sendRequest("GET", mockServerHost, mockServerPort, "/one", "", {'Vary': uuid})
                     .then(function (response) {
                         test.equal(response.statusCode, 201);
                         test.equal(response.body, 'one');
 
                         // then - first matching request again
-                        sendRequest("GET", "localhost", mockServerPort, "/one", "", {'Vary': uuid})
+                        sendRequest("GET", mockServerHost, mockServerPort, "/one", "", {'Vary': uuid})
                             .then(function (response) {
                                 test.equal(response.statusCode, 201);
                                 test.equal(response.body, 'one');
 
                                 // then - should no match request again
-                                sendRequest("GET", "localhost", mockServerPort, "/one", "", {'Vary': uuid})
+                                sendRequest("GET", mockServerHost, mockServerPort, "/one", "", {'Vary': uuid})
                                     .then(function (error) {
                                         test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                         test.done();
@@ -1543,13 +1544,13 @@
                 .then(function () {
 
                     // then - matching request
-                    sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Vary': uuid})
+                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Vary': uuid})
                         .then(function (response) {
 
                             test.ok(response.statusCode);
 
                             // then - matching request, but no times remaining
-                            sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Vary': uuid})
+                            sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Vary': uuid})
                                 .then(function (error) {
                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                     test.done();
@@ -1590,7 +1591,7 @@
                 .then(function () {
 
                     // then - matching request
-                    sendRequest("GET", "localhost", mockServerPort, "/somePath", "", {'Vary': uuid})
+                    sendRequest("GET", mockServerHost, mockServerPort, "/somePath", "", {'Vary': uuid})
                         .then(function (response) {
 
                             test.equal(response.statusCode, 200);
@@ -1616,7 +1617,7 @@
             // and - an expectation
             client.mockSimpleResponse('/somePath', {name: 'value'}, 203).then(function () {
                 // then - matching request
-                sendRequest("POST", "localhost", mockServerPort, "/somePath?test=true", "someBody")
+                sendRequest("POST", mockServerHost, mockServerPort, "/somePath?test=true", "someBody")
                     .then(function (response) {
                         test.equal(response.statusCode, 203);
                         test.equal(response.body, '{"name":"value"}');
@@ -1637,7 +1638,7 @@
             // given
             client.mockSimpleResponse('/somePath', {name: 'value'}, 203).then(function () {
                 // and - a request
-                sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                     .then(function (response) {
                         test.equal(response.statusCode, 203);
                     }, function (error) {
@@ -1671,7 +1672,7 @@
                 // and - another expectation
                 client.mockSimpleResponse('/somePath', {name: 'value'}, 203).then(function () {
                     // and - a request
-                    sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                         .then(function (response) {
                             test.equal(response.statusCode, 203);
                         }, function (error) {
@@ -1680,7 +1681,7 @@
                         })
                         .then(function () {
                             // and - another request
-                            sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                            sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                                 .then(function (response) {
                                     test.equal(response.statusCode, 203);
                                 }, function (error) {
@@ -1717,7 +1718,7 @@
             // given
             client.mockSimpleResponse('/somePath', {name: 'value'}, 203).then(function () {
                 // and - a request
-                sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                     .then(function (response) {
                         test.equal(response.statusCode, 203);
                     }, function (error) {
@@ -1748,7 +1749,7 @@
             // given
             client.mockSimpleResponse('/somePath', {name: 'value'}, 203).then(function () {
                 // and - a request
-                sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                     .then(function (response) {
                         test.equal(response.statusCode, 203);
                     }, function (error) {
@@ -1782,7 +1783,7 @@
             // given
             client.mockSimpleResponse('/somePath', {name: 'value'}, 203).then(function () {
                 // and - a request
-                sendRequest("POST", "localhost", mockServerPort, "/somePath", "someBody")
+                sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody")
                     .then(function (response) {
                         test.equal(response.statusCode, 203);
                     }, function (error) {
@@ -1818,7 +1819,7 @@
                 // and - another expectation
                 client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
                     // and - a request
-                    sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                         .then(function (response) {
                             test.equal(response.statusCode, 201);
                         }, function (error) {
@@ -1827,7 +1828,7 @@
                         })
                         .then(function () {
 
-                            sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                 .then(function (error) {
                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                     test.done();
@@ -1836,7 +1837,7 @@
                                 })
                                 .then(function () {
 
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 202);
                                         }, function (error) {
@@ -1885,7 +1886,7 @@
                 // and - another expectation
                 client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
                     // and - a request
-                    sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                         .then(function (response) {
                             test.equal(response.statusCode, 201);
                         }, function (error) {
@@ -1894,7 +1895,7 @@
                         })
                         .then(function () {
 
-                            sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                 .then(function (error) {
                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                     test.done();
@@ -1903,7 +1904,7 @@
                                 })
                                 .then(function () {
 
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 202);
                                         }, function (error) {
@@ -1955,7 +1956,7 @@
                 // and - another expectation
                 client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
                     // and - a request
-                    sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                         .then(function (response) {
                             test.equal(response.statusCode, 201);
                         }, function (error) {
@@ -1964,7 +1965,7 @@
                         })
                         .then(function () {
 
-                            sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                 .then(function (error) {
                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                     test.done();
@@ -1973,7 +1974,7 @@
                                 })
                                 .then(function () {
 
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                         .then(function (response) {
                                             test.equal(response.statusCode, 202);
                                         }, function (error) {
@@ -2025,7 +2026,7 @@
                     // and - another expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'value'}, 200).then(function () {
                         // and - a matching request (that returns 200)
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"value"}');
@@ -2039,7 +2040,7 @@
                                 client.clear('/somePathOne').then(function () {
 
                                     // then - request matching cleared expectation should return 404
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -2049,7 +2050,7 @@
                                         .then(function () {
 
                                             // and - request matching non-cleared expectation should return 200
-                                            sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                            sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                 .then(function (response) {
                                                     test.equal(response.statusCode, 200);
                                                     test.equal(response.body, '{"name":"value"}');
@@ -2115,7 +2116,7 @@
                     // and - another expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'value'}, 200).then(function () {
                         // and - a matching request (that returns 200)
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"value"}');
@@ -2132,7 +2133,7 @@
                                     .then(function () {
 
                                         // then - request matching cleared expectation should return 404
-                                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -2142,7 +2143,7 @@
                                             .then(function () {
 
                                                 // and - request matching non-cleared expectation should return 200
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.equal(response.statusCode, 200);
                                                         test.equal(response.body, '{"name":"value"}');
@@ -2179,7 +2180,7 @@
                     // and - another expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'value'}, 200).then(function () {
                         // and - a matching request (that returns 200)
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"value"}');
@@ -2198,7 +2199,7 @@
                                     .then(function () {
 
                                         // then - request matching cleared expectation should return 404
-                                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -2208,7 +2209,7 @@
                                             .then(function () {
 
                                                 // and - request matching non-cleared expectation should return 200
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.equal(response.statusCode, 200);
                                                         test.equal(response.body, '{"name":"value"}');
@@ -2245,7 +2246,7 @@
                     // and - another expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'value'}, 200).then(function () {
                         // and - a matching request (that returns 200)
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                             .then(function (response) {
                                 test.equal(response.statusCode, 200);
                                 test.equal(response.body, '{"name":"value"}');
@@ -2259,7 +2260,7 @@
                                 client.clear('/somePathOne', 'EXPECTATIONS').then(function () {
 
                                     // then - request matching cleared expectation should return 404
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -2269,7 +2270,7 @@
                                         .then(function () {
 
                                             // and - request matching non-cleared expectation should return 200
-                                            sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                            sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                 .then(function (response) {
                                                     test.equal(response.statusCode, 200);
                                                     test.equal(response.body, '{"name":"value"}');
@@ -2322,7 +2323,7 @@
                     // and - another expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'value'}, 200).then(function () {
                         // and - a matching request (that returns 200)
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 200);
                                 test.strictEqual(response.body, '{"name":"value"}');
@@ -2336,7 +2337,7 @@
                                 client.clear('/somePathOne', 'EXPECTATIONS').then(function () {
 
                                     // then - request matching cleared expectation should return 404
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -2346,7 +2347,7 @@
                                         .then(function () {
 
                                             // and - request matching non-cleared expectation should return 200
-                                            sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                            sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                 .then(function (response) {
                                                     test.strictEqual(response.statusCode, 200);
                                                     test.strictEqual(response.body, '{"name":"value"}');
@@ -2412,7 +2413,7 @@
                     // and - another expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'value'}, 200).then(function () {
                         // and - a matching request (that returns 200)
-                        sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                        sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 200);
                                 test.strictEqual(response.body, '{"name":"value"}');
@@ -2426,7 +2427,7 @@
                                 client.reset().then(function () {
 
                                     // then - request matching one reset expectation should return 404
-                                    sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                    sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                         .then(function (error) {
                                             test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                             test.done();
@@ -2436,7 +2437,7 @@
                                         .then(function () {
 
                                             // then - request matching other reset expectation should return 404
-                                            sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                            sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                 .then(function (error) {
                                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                     test.done();
@@ -2665,7 +2666,7 @@
                     // and - third expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
 
-                        sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 201);
                             }, function (error) {
@@ -2674,7 +2675,7 @@
                             })
                             .then(function () {
 
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                     .then(function (response) {
                                         test.strictEqual(response.statusCode, 201);
                                     }, function (error) {
@@ -2683,7 +2684,7 @@
                                     })
                                     .then(function () {
 
-                                        sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -2692,7 +2693,7 @@
                                             })
                                             .then(function () {
 
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.strictEqual(response.statusCode, 202);
                                                     }, function (error) {
@@ -2752,7 +2753,7 @@
                     // and - third expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
 
-                        sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 201);
                             }, function (error) {
@@ -2761,7 +2762,7 @@
                             })
                             .then(function () {
 
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                     .then(function (response) {
                                         test.strictEqual(response.statusCode, 201);
                                     }, function (error) {
@@ -2770,7 +2771,7 @@
                                     })
                                     .then(function () {
 
-                                        sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -2779,7 +2780,7 @@
                                             })
                                             .then(function () {
 
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.strictEqual(response.statusCode, 202);
                                                     }, function (error) {
@@ -2834,7 +2835,7 @@
                     // and - third expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
 
-                        sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 201);
                             }, function (error) {
@@ -2843,7 +2844,7 @@
                             })
                             .then(function () {
 
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                     .then(function (response) {
                                         test.strictEqual(response.statusCode, 201);
                                     }, function (error) {
@@ -2852,7 +2853,7 @@
                                     })
                                     .then(function () {
 
-                                        sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -2861,7 +2862,7 @@
                                             })
                                             .then(function () {
 
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.strictEqual(response.statusCode, 202);
                                                     }, function (error) {
@@ -2927,7 +2928,7 @@
                     // and - third expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
 
-                        sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 201);
                             }, function (error) {
@@ -2936,7 +2937,7 @@
                             })
                             .then(function () {
 
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                     .then(function (response) {
                                         test.strictEqual(response.statusCode, 201);
                                     }, function (error) {
@@ -2945,7 +2946,7 @@
                                     })
                                     .then(function () {
 
-                                        sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -2954,7 +2955,7 @@
                                             })
                                             .then(function () {
 
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.strictEqual(response.statusCode, 202);
                                                     }, function (error) {
@@ -3015,7 +3016,7 @@
                     // and - third expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
 
-                        sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 201);
                             }, function (error) {
@@ -3024,7 +3025,7 @@
                             })
                             .then(function () {
 
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                     .then(function (response) {
                                         test.strictEqual(response.statusCode, 201);
                                     }, function (error) {
@@ -3033,7 +3034,7 @@
                                     })
                                     .then(function () {
 
-                                        sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -3042,7 +3043,7 @@
                                             })
                                             .then(function () {
 
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.strictEqual(response.statusCode, 202);
                                                     }, function (error) {
@@ -3106,7 +3107,7 @@
                     // and - third expectation
                     client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202).then(function () {
 
-                        sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                        sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                             .then(function (response) {
                                 test.strictEqual(response.statusCode, 201);
                             }, function (error) {
@@ -3115,7 +3116,7 @@
                             })
                             .then(function () {
 
-                                sendRequest("GET", "localhost", mockServerPort, "/somePathOne")
+                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathOne")
                                     .then(function (response) {
                                         test.strictEqual(response.statusCode, 201);
                                     }, function (error) {
@@ -3124,7 +3125,7 @@
                                     })
                                     .then(function () {
 
-                                        sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                                        sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                             .then(function (error) {
                                                 test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                                 test.done();
@@ -3133,7 +3134,7 @@
                                             })
                                             .then(function () {
 
-                                                sendRequest("GET", "localhost", mockServerPort, "/somePathTwo")
+                                                sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo")
                                                     .then(function (response) {
                                                         test.strictEqual(response.statusCode, 202);
                                                     }, function (error) {
@@ -3189,12 +3190,12 @@
             client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201)
                 .then(function () {
 
-                    sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                         .then(function (response) {
                             test.equal(response.statusCode, 201);
 
 
-                            sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                 .then(function (error) {
                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                     test.done();
@@ -3253,12 +3254,12 @@
             client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201)
                 .then(function () {
 
-                    sendRequest("POST", "localhost", mockServerPort, "/somePathOne", "someBody")
+                    sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody")
                         .then(function (response) {
                             test.equal(response.statusCode, 201);
 
 
-                            sendRequest("GET", "localhost", mockServerPort, "/notFound")
+                            sendRequest("GET", mockServerHost, mockServerPort, "/notFound")
                                 .then(function (error) {
                                     test.ok(false, "failed with the following error \n" + JSON.stringify(error));
                                     test.done();
@@ -3319,7 +3320,7 @@
                         "  \"ports\" : [ " + (mockServerPort + 1) + " ],\n" +
                         "  \"version\" : \"6.0.0\"\n" +
                         "}") !== -1, response.body);
-                    sendRequest("PUT", "localhost", mockServerPort + 1, "/status")
+                    sendRequest("PUT", mockServerHost, mockServerPort + 1, "/status")
                         .then(function (response) {
                             test.equal(response.statusCode, 200);
                             test.ok(response.body.indexOf("{\n" +

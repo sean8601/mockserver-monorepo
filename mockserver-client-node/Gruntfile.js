@@ -29,20 +29,20 @@ module.exports = function (grunt) {
         },
         start_mockserver: {
             options: {
-                serverPort: 1080,
+                serverPort: parseInt(process.env.MOCKSERVER_PORT, 10) || 1080,
                 jvmOptions: [
                     '-Dmockserver.enableCORSForAllResponses=true',
                     '-Dmockserver.corsAllowMethods="CONNECT, DELETE, GET, HEAD, OPTIONS, POST, PUT, PATCH, TRACE"',
                     '-Dmockserver.corsAllowHeaders="Allow, Content-Encoding, Content-Length, Content-Type, ETag, Expires, Last-Modified, Location, Server, Vary, Authorization"',
                     '-Dmockserver.corsAllowCredentials=true -Dmockserver.corsMaxAgeInSeconds=300'
                 ],
-                mockServerVersion: "6.0.0",
+                mockServerVersion: process.env.MOCKSERVER_VERSION || require('./package.json').version,
                 verbose: false
             }
         },
         stop_mockserver: {
             options: {
-                serverPort: 1080
+                serverPort: parseInt(process.env.MOCKSERVER_PORT, 10) || 1080
             }
         },
         nodeunit: {
@@ -83,6 +83,7 @@ module.exports = function (grunt) {
 
     grunt.registerTask('ts', ['exec:typecheck']);
     grunt.registerTask('test_node', ['ts', 'start_mockserver', 'nodeunit', 'stop_mockserver']);
+    grunt.registerTask('test_node_external', ['nodeunit:no_proxy']);
     grunt.registerTask('test_browser', ['start_mockserver', 'karma:chrome', 'stop_mockserver']);
     grunt.registerTask('test', ['start_mockserver', 'nodeunit', 'karma:chrome', 'stop_mockserver']);
 
