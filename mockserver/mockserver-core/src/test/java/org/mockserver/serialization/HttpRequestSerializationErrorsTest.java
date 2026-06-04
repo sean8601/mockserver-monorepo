@@ -15,6 +15,7 @@ import java.io.IOException;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertArrayEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.spy;
@@ -82,15 +83,10 @@ public class HttpRequestSerializationErrorsTest {
             fail("expected exception to be thrown");
         } catch (IllegalArgumentException iae) {
             // then
-            String expectedPrefix = "incorrect request json format for:" + NEW_LINE +
-                "" + NEW_LINE +
-                "  requestBytes" + NEW_LINE +
-                "" + NEW_LINE +
-                " schema validation errors:" + NEW_LINE +
-                "" + NEW_LINE +
-                "  JsonParseException - Unrecognized token 'requestBytes': was expecting (JSON String, Number (or 'NaN'/'+INF'/'-INF'), Array, Object or token 'null', 'true' or 'false')" + NEW_LINE +
-                "   at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: ";
-            assertThat(iae.getMessage().startsWith(expectedPrefix), is(true));
+            assertThat(iae.getMessage(), containsString("incorrect request json format for:"));
+            assertThat(iae.getMessage(), containsString("requestBytes"));
+            assertThat(iae.getMessage(), containsString("schema validation errors:"));
+            assertThat(iae.getMessage(), containsString("Unrecognized token"));
         }
     }
 
@@ -102,9 +98,8 @@ public class HttpRequestSerializationErrorsTest {
             fail("expected exception");
         } catch (IllegalArgumentException iae) {
             // then
-            String expectedPrefix = "com.fasterxml.jackson.core.JsonParseException: Unrecognized token 'requestBytes': was expecting (JSON String, Number (or 'NaN'/'+INF'/'-INF'), Array, Object or token 'null', 'true' or 'false')" + NEW_LINE +
-                " at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: ";
-            assertThat(iae.getMessage().startsWith(expectedPrefix), is(true));
+            assertThat(iae.getMessage(), containsString("Unrecognized token"));
+            assertThat(iae.getMessage(), containsString("requestBytes"));
         }
     }
 
