@@ -1,22 +1,13 @@
 package org.mockserver.matchers;
 
-import org.junit.Before;
 import org.junit.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
-import org.mockserver.validator.jsonschema.JsonSchemaValidator;
-import org.slf4j.Logger;
-import org.slf4j.event.Level;
 
-import static org.mockito.Mockito.*;
-import static org.mockito.MockitoAnnotations.openMocks;
-import static org.mockserver.character.Character.NEW_LINE;
-import static org.mockserver.configuration.Configuration.configuration;
-import static org.mockserver.model.HttpRequest.request;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertEquals;
+import static org.mockserver.character.Character.NEW_LINE;
+import static org.mockserver.model.HttpRequest.request;
 
 /**
  * @author jamesdbloom
@@ -60,159 +51,135 @@ public class JsonSchemaMatcherTest {
         "    \"additionalProperties\" : false," + NEW_LINE +
         "    \"required\": [ \"enumField\", \"arrayField\" ]" + NEW_LINE +
         "}";
-    private Configuration configuration;
-    protected Logger logger;
-    @Mock
-    private JsonSchemaValidator mockJsonSchemaValidator;
-    @InjectMocks
-    private JsonSchemaMatcher jsonSchemaMatcher;
 
-    @Before
-    public void setupMocks() {
-        configuration = configuration().logLevel(Level.TRACE).disableSystemOut(false);
-        logger = mock(Logger.class);
-        jsonSchemaMatcher = new JsonSchemaMatcher(new MockServerLogger(configuration, logger), JSON_SCHEMA);
-        openMocks(this);
+    private final MockServerLogger mockServerLogger = new MockServerLogger();
 
-        when(logger.isTraceEnabled()).thenReturn(true);
-        when(logger.isInfoEnabled()).thenReturn(true);
-        when(logger.isErrorEnabled()).thenReturn(true);
+    @Test
+    public void shouldMatchValidJson() {
+        // given
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String validJson = "{\"enumField\": \"one\", \"arrayField\": [\"item\"]}";
+
+        // then - valid document matches
+        assertThat(matcher.matches(null, validJson), is(true));
     }
 
     @Test
-    public void shouldMatchJson() {
+    public void shouldMatchValidJsonWithAllFields() {
         // given
-        String json = "some_json";
-        when(mockJsonSchemaValidator.isValid(json, false)).thenReturn("");
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String validJson = "{" +
+            "\"enumField\": \"two\", " +
+            "\"arrayField\": [\"a\", \"b\"], " +
+            "\"stringField\": \"abcde\", " +
+            "\"booleanField\": true, " +
+            "\"objectField\": {\"stringField\": \"abc\"}" +
+            "}";
 
         // then
-        assertThat(jsonSchemaMatcher.matches(null, json), is(true));
+        assertThat(matcher.matches(null, validJson), is(true));
     }
 
     @Test
-    public void shouldNotMatchJson() {
-        // given
-        String json = "some_json";
-        when(mockJsonSchemaValidator.isValid(json, false)).thenReturn("validator_error");
+    public void shouldMatchWhenJsonEqualsSchema() {
+        // given - matcher also returns true when matched string equals the schema itself
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+
+        // then
+        assertThat(matcher.matches(null, JSON_SCHEMA), is(true));
+    }
+
+    @Test
+    public void shouldNotMatchInvalidJson() {
+        // given - missing required fields
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String invalidJson = "{\"booleanField\": true}";
 
         // when
-        assertThat(jsonSchemaMatcher.matches(new MatchDifference(false, request()), json), is(false));
-
-        // then
-        verify(logger).trace("json schema match failed expected:" + NEW_LINE +
-                NEW_LINE +
-                "  {" + NEW_LINE +
-                "      \"type\": \"object\"," + NEW_LINE +
-                "      \"properties\": {" + NEW_LINE +
-                "          \"enumField\": {" + NEW_LINE +
-                "              \"enum\": [ \"one\", \"two\" ]" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"arrayField\": {" + NEW_LINE +
-                "              \"type\": \"array\"," + NEW_LINE +
-                "              \"minItems\": 1," + NEW_LINE +
-                "              \"items\": {" + NEW_LINE +
-                "                  \"type\": \"string\"" + NEW_LINE +
-                "              }," + NEW_LINE +
-                "              \"uniqueItems\": true" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"stringField\": {" + NEW_LINE +
-                "              \"type\": \"string\"," + NEW_LINE +
-                "              \"minLength\": 5," + NEW_LINE +
-                "              \"maxLength\": 6" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"booleanField\": {" + NEW_LINE +
-                "              \"type\": \"boolean\"" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"objectField\": {" + NEW_LINE +
-                "              \"type\": \"object\"," + NEW_LINE +
-                "              \"properties\": {" + NEW_LINE +
-                "                  \"stringField\": {" + NEW_LINE +
-                "                      \"type\": \"string\"," + NEW_LINE +
-                "                      \"minLength\": 1," + NEW_LINE +
-                "                      \"maxLength\": 3" + NEW_LINE +
-                "                  }" + NEW_LINE +
-                "              }," + NEW_LINE +
-                "              \"required\": [ \"stringField\" ]" + NEW_LINE +
-                "          }" + NEW_LINE +
-                "      }," + NEW_LINE +
-                "      \"additionalProperties\" : false," + NEW_LINE +
-                "      \"required\": [ \"enumField\", \"arrayField\" ]" + NEW_LINE +
-                "  }" + NEW_LINE +
-                NEW_LINE +
-                " found:" + NEW_LINE +
-                NEW_LINE +
-                "  some_json" + NEW_LINE +
-                NEW_LINE +
-                " failed because:" + NEW_LINE +
-                NEW_LINE +
-                "  validator_error" + NEW_LINE,
-            (Throwable) null);
+        assertThat(matcher.matches(new MatchDifference(false, request()), invalidJson), is(false));
     }
 
     @Test
-    public void shouldHandleExpection() {
-        // given
-        String json = "some_json";
-        RuntimeException test_exception = new RuntimeException("TEST_EXCEPTION");
-        when(mockJsonSchemaValidator.isValid(json, false)).thenThrow(test_exception);
+    public void shouldNotMatchJsonWithWrongEnumValue() {
+        // given - enumField has value not in enum list
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String invalidJson = "{\"enumField\": \"three\", \"arrayField\": [\"item\"]}";
 
         // when
-        assertThat(jsonSchemaMatcher.matches(new MatchDifference(false, request()), json), is(false));
+        assertThat(matcher.matches(new MatchDifference(false, request()), invalidJson), is(false));
+    }
 
-        // then
-        verify(logger).trace("json schema match failed expected:" + NEW_LINE +
-                NEW_LINE +
-                "  {" + NEW_LINE +
-                "      \"type\": \"object\"," + NEW_LINE +
-                "      \"properties\": {" + NEW_LINE +
-                "          \"enumField\": {" + NEW_LINE +
-                "              \"enum\": [ \"one\", \"two\" ]" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"arrayField\": {" + NEW_LINE +
-                "              \"type\": \"array\"," + NEW_LINE +
-                "              \"minItems\": 1," + NEW_LINE +
-                "              \"items\": {" + NEW_LINE +
-                "                  \"type\": \"string\"" + NEW_LINE +
-                "              }," + NEW_LINE +
-                "              \"uniqueItems\": true" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"stringField\": {" + NEW_LINE +
-                "              \"type\": \"string\"," + NEW_LINE +
-                "              \"minLength\": 5," + NEW_LINE +
-                "              \"maxLength\": 6" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"booleanField\": {" + NEW_LINE +
-                "              \"type\": \"boolean\"" + NEW_LINE +
-                "          }," + NEW_LINE +
-                "          \"objectField\": {" + NEW_LINE +
-                "              \"type\": \"object\"," + NEW_LINE +
-                "              \"properties\": {" + NEW_LINE +
-                "                  \"stringField\": {" + NEW_LINE +
-                "                      \"type\": \"string\"," + NEW_LINE +
-                "                      \"minLength\": 1," + NEW_LINE +
-                "                      \"maxLength\": 3" + NEW_LINE +
-                "                  }" + NEW_LINE +
-                "              }," + NEW_LINE +
-                "              \"required\": [ \"stringField\" ]" + NEW_LINE +
-                "          }" + NEW_LINE +
-                "      }," + NEW_LINE +
-                "      \"additionalProperties\" : false," + NEW_LINE +
-                "      \"required\": [ \"enumField\", \"arrayField\" ]" + NEW_LINE +
-                "  }" + NEW_LINE +
-                NEW_LINE +
-                " found:" + NEW_LINE +
-                NEW_LINE +
-                "  some_json" + NEW_LINE +
-                NEW_LINE +
-                " failed because:" + NEW_LINE +
-                NEW_LINE +
-                "  TEST_EXCEPTION" + NEW_LINE,
-            test_exception);
+    @Test
+    public void shouldNotMatchJsonWithAdditionalProperties() {
+        // given - additionalProperties is false, so extra fields are not allowed
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String invalidJson = "{\"enumField\": \"one\", \"arrayField\": [\"item\"], \"extraField\": \"value\"}";
+
+        // when
+        assertThat(matcher.matches(new MatchDifference(false, request()), invalidJson), is(false));
+    }
+
+    @Test
+    public void shouldNotMatchJsonWithEmptyArray() {
+        // given - arrayField requires minItems: 1
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String invalidJson = "{\"enumField\": \"one\", \"arrayField\": []}";
+
+        // when
+        assertThat(matcher.matches(new MatchDifference(false, request()), invalidJson), is(false));
+    }
+
+    @Test
+    public void shouldNotMatchBlankString() {
+        // given
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+
+        // then - blank string does not match
+        assertThat(matcher.matches(new MatchDifference(false, request()), ""), is(false));
+    }
+
+    @Test
+    public void shouldNotMatchNull() {
+        // given
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+
+        // then - null does not match
+        assertThat(matcher.matches(new MatchDifference(false, request()), null), is(false));
+    }
+
+    @Test
+    public void shouldRecordDifferenceWhenNotMatching() {
+        // given
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String invalidJson = "{\"booleanField\": true}";
+        MatchDifference matchDifference = new MatchDifference(true, request());
+        matchDifference.currentField(MatchDifference.Field.BODY);
+
+        // when
+        assertThat(matcher.matches(matchDifference, invalidJson), is(false));
+
+        // then - a difference was recorded containing schema-related diagnostic
+        assertThat(matchDifference.getDifferences(MatchDifference.Field.BODY).isEmpty(), is(false));
+    }
+
+    @Test
+    public void shouldHandleException() {
+        // given - malformed JSON that causes a parsing exception
+        JsonSchemaMatcher matcher = new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA);
+        String malformedJson = "not valid json {{{";
+        MatchDifference matchDifference = new MatchDifference(true, request());
+        matchDifference.currentField(MatchDifference.Field.BODY);
+
+        // when - the matcher catches the exception and returns false
+        assertThat(matcher.matches(matchDifference, malformedJson), is(false));
+
+        // then - a difference was recorded
+        assertThat(matchDifference.getDifferences(MatchDifference.Field.BODY).isEmpty(), is(false));
     }
 
     @Test
     public void showHaveCorrectEqualsBehaviour() {
         MockServerLogger mockServerLogger = new MockServerLogger();
-        assertThat(new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA), is(new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA)));
+        assertEquals(new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA), new JsonSchemaMatcher(mockServerLogger, JSON_SCHEMA));
     }
 }
