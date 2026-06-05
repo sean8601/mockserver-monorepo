@@ -26,7 +26,10 @@ echo "Short tag: mockserver/mockserver:${SHORT_TAG}"
 .buildkite/scripts/docker-login.sh
 .buildkite/scripts/ecr-login.sh
 
-ECR_REPO="public.ecr.aws/t2x9c0i6/mockserver"
+# Resolve ECR Public repository URI dynamically — the registry alias is
+# AWS-assigned and must not be hardcoded.
+ECR_REPO=$(aws ecr-public describe-repositories --region us-east-1 \
+  --repository-names mockserver --query 'repositories[0].repositoryUri' --output text)
 
 DOCKER_CMD="docker buildx build --platform linux/amd64,linux/arm64 --push --tag mockserver/mockserver:${FULL_TAG} --tag mockserver/mockserver:${SHORT_TAG} --tag ${ECR_REPO}:${FULL_TAG} --tag ${ECR_REPO}:${SHORT_TAG} --file docker/Dockerfile ."
 

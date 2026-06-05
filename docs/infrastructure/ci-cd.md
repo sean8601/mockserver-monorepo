@@ -280,6 +280,8 @@ The pipeline has two steps separated by a `- wait` directive:
 
 **Trigger:** Manual (during release process, step 7)
 
+**Queue:** `release` — runs on the release agent queue so it has access to release secrets.
+
 Builds and pushes the production MockServer Docker images as multi-arch images (`linux/amd64` + `linux/arm64` via QEMU). Three image variants are published: main, GraalJS, and webhook.
 
 Set the `RELEASE_TAG` environment variable when triggering the build (e.g., `mockserver-6.1.0`). If triggered from a git tag, `BUILDKITE_TAG` is used as fallback.
@@ -287,18 +289,60 @@ Set the `RELEASE_TAG` environment variable when triggering the build (e.g., `moc
 Tags pushed per image:
 - `mockserver/mockserver:mockserver-X.Y.Z` + `:X.Y.Z` (main + GraalJS variants)
 - `mockserver/mockserver-webhook:mockserver-X.Y.Z` + `:X.Y.Z` (admission webhook)
-- Same tags to ECR Public (`public.ecr.aws/mockserver/...`)
+- Same tags to ECR Public (URI resolved dynamically via `aws ecr-public describe-repositories`)
 
 ```mermaid
 flowchart LR
     TRIGGER["Manual trigger
 RELEASE_TAG=mockserver-X.Y.Z"] --> LOGIN["Docker Hub + ECR login
 via Secrets Manager"]
-    LOGIN --> BUILD["docker buildx build
+    LOGIN --> ECR_RESOLVE["Resolve ECR URI dynamically
+ecr-public describe-repositories"]
+    ECR_RESOLVE --> BUILD["docker buildx build
 linux/amd64 + linux/arm64"]
     BUILD --> PUSH["Push main + GraalJS + webhook
 :mockserver-X.Y.Z + :X.Y.Z"]
 ```
+
+The ECR repository URI is resolved at runtime via `aws ecr-public describe-repositories` rather than hardcoded — the registry alias is AWS-assigned and must not be hardcoded (`.buildkite/scripts/steps/docker-push-release.sh`).
+
+### Release Pipeline Security
+
+#### File-based secrets (no `-e` in docker run)
+
+All release scripts that run toolchains inside Docker containers (`scripts/release/components/maven-central.sh`, `maven-plugin.sh`, `helm.sh`, `docker.sh`) write secrets to `0600` files under `.tmp/` and read them from inside the container via mounted volume, rather than passing them as `docker run -e VAR=value`. Environment variables are readable from `/proc/1/environ` and via `docker inspect`; file-based secrets under `.tmp/` are not.
+
+| Secret | File pattern | Removed from container via |
+|--------|-------------|---------------------------|
+| GPG key (base64) | `.tmp/gpg-key.$PID` | `trap` cleanup function on EXIT |
+| GPG passphrase | `.tmp/gpg-passphrase.$PID` | same trap |
+| Sonatype credentials | `.tmp/sonatype-creds.$PID` (username\npassword) | same trap |
+| GHCR token | `.tmp/ghcr-creds.$PID` (username\ntoken) | `trap ... EXIT` in helm.sh |
+| cosign key | `.tmp/cosign-key.$PID` | removed after signing |
+| cosign password | `.tmp/cosign-pw.$PID` | removed after signing |
+| Sonatype netrc | `.tmp/sonatype-netrc.$PID` | `trap ... EXIT` in polling loop |
+
+Curl calls to the Sonatype Central Portal API use `--netrc-file` rather than `Authorization: Basic <base64>` in a shell variable, so credentials are not held in the shell environment across the 30-minute polling loop.
+
+#### TOTP tolerance window (by design)
+
+The TOTP verification step (`release-verify-totp.sh`) accepts ±5 minutes of clock skew (`TOTP_TOLERANCE_WINDOWS=10`). This is intentional — release-queue agents scale to zero, so the agent that runs the verifier cold-starts after the operator enters the code in the Buildkite block step. The Lambda autoscaler poll, EC2 spot acquisition, and agent bootstrap together take up to ~2.5 minutes. A standard ±1-window tolerance would produce false rejections on every cold-start without adding security, because the `allowed_teams: ["release-managers"]` gate on the block step is the primary access control.
+
+To change this behaviour: either pre-warm the release queue or move TOTP validation into the block step itself (which runs in the Buildkite control plane, not on an agent).
+
+#### Docker image cosign signing
+
+After pushing release images to Docker Hub and ECR, the release pipeline cosign-signs each image digest using the same key infrastructure as Helm chart signing (`mockserver-release/cosign-key` in Secrets Manager). Signing is by digest so the signature binds to the exact manifest content, not a mutable tag.
+
+Signing is strictly non-fatal: if the cosign key is absent or the binary is not installed, the images remain published and the release continues. The guard is:
+
+```bash
+if aws secretsmanager describe-secret --secret-id mockserver-release/cosign-key; then
+  # sign
+fi
+```
+
+See [Docker image verification](docker.md#verifying-image-signatures) for how to verify a signed image.
 
 ### Build Docker Image
 
@@ -538,7 +582,7 @@ Add a second, cheap agent stack on small instances (e.g. `t3.small` or `t3.micro
 
       agents_per_instance         = 4
       associate_public_ip_address = true
-      managed_policy_arns         = [aws_iam_policy.read_build_secrets.arn]
+      managed_policy_arns         = [aws_iam_policy.read_buildkite_api_token.arn]
    }
    ```
 
@@ -666,14 +710,11 @@ The previous caching attempt (reverted) broke builds by writing to `/var/cache` 
 
 ### Activation
 
-The S3 bucket and IAM policy are defined in `terraform/buildkite-agents/dependency-cache.tf`. The IAM policy is already attached to the default and release agent roles in `main.tf`. To activate caching:
+The S3 bucket and IAM policy are defined in `terraform/buildkite-agents/dependency-cache.tf`. The IAM policy is currently **detached from all agent roles** — the runtime pipeline wiring (cache-restore/cache-save steps) was reverted. The bucket and policy remain in place so the infrastructure is ready to re-enable once cache-integrity verification (signed or content-addressed entries) is implemented.
 
-```bash
-cd terraform/buildkite-agents
-./run.sh apply
-```
+To re-activate: attach `aws_iam_policy.dependency_cache` to the relevant queues in `main.tf` and re-add the cache restore/save steps to the affected pipelines.
 
-Until `terraform apply` creates the S3 bucket, the cache scripts will detect the missing bucket and no-op gracefully. No pipeline will break.
+Until the IAM policy is re-attached, the cache scripts will detect missing credentials and no-op gracefully. No pipeline will break.
 
 ## Local CI Simulation
 

@@ -84,7 +84,7 @@ Everything downstream now runs in parallel: Versioned Site, Maven Plugin, Docker
 
 | Channel | Verification |
 |---|---|
-| Docker Hub | https://hub.docker.com/r/mockserver/mockserver/tags — `<release-version>`, `<release-version>-graaljs`, and `latest` should appear |
+| Docker Hub | https://hub.docker.com/r/mockserver/mockserver/tags — `<release-version>`, `<release-version>-graaljs`, and `latest` should appear; cosign signatures attached to each image digest |
 | npm — mockserver-node | https://www.npmjs.com/package/mockserver-node |
 | npm — mockserver-client-node | https://www.npmjs.com/package/mockserver-client-node |
 | PyPI | https://pypi.org/project/mockserver-client/ |
@@ -273,7 +273,7 @@ The release pipeline writes every version-bearing file in the repo, so contribut
 | `prepare` | Validate inputs, show pom diff | pom write, git commit, tag, push |
 | `maven-central` | `mvn clean install` (build + test) | Sonatype upload, publish, sync wait |
 | `maven-plugin` | Build core + verify plugin | tag, deploy, push |
-| `docker` | `docker buildx build` (local `--load`, amd64 only) | `--push` to Docker Hub + ECR |
+| `docker` | `docker buildx build` (local `--load`, amd64 only) | `--push` to Docker Hub + ECR, cosign signing by digest |
 | `npm` | `npm install`, grunt build | `git push tag`, `npm publish` (uses `--dry-run`) |
 | `pypi` | `python -m build`, `twine check` | `twine upload` |
 | `rubygems` | `gem build` | `gem push` |

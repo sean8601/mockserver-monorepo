@@ -304,6 +304,89 @@ else
       log_info "WARNING: webhook ECR push failed — continuing (Docker Hub is the primary registry)"
     fi
   fi
+
+  # ---- Cosign-sign pushed Docker images ------------------------------------
+  # Sign by digest so the signature binds to the exact manifest, not a mutable
+  # tag. Uses the SAME cosign key infrastructure as helm.sh. NO-OP until a
+  # signing key is stored at mockserver-release/cosign-key (keys: key, password)
+  # — the describe-secret guard skips this entirely otherwise.
+  # Signing is additive and STRICTLY non-fatal: a failure here never aborts
+  # the release — the images are already pushed.
+  cosign_sign_docker_image() {
+    local image_ref="$1"
+    # Resolve the tag to a digest so we sign by content, not by mutable tag.
+    local digest
+    digest=$(docker buildx imagetools inspect "$image_ref" --format '{{.Digest}}' 2>/dev/null || true)
+    if [[ -z "$digest" ]]; then
+      log_info "WARNING: could not resolve digest for $image_ref — skipping cosign sign"
+      return 1
+    fi
+    local repo="${image_ref%%:*}"
+    local ref_by_digest="${repo}@${digest}"
+    log_info "  cosign sign $ref_by_digest"
+    cosign sign --yes --key "$_cosign_key_file" "$ref_by_digest" || return 1
+  }
+
+  cosign_sign_docker_images() {
+    local rc=0
+    mkdir -p "$REPO_ROOT/.tmp"
+    _cosign_key_file="$REPO_ROOT/.tmp/cosign-key-docker.$$"
+    local _cosign_pw_file="$REPO_ROOT/.tmp/cosign-pw-docker.$$"
+    ( umask 077; load_secret "mockserver-release/cosign-key" "key" > "$_cosign_key_file" ) \
+      || { rm -f "$_cosign_key_file"; return 1; }
+    ( umask 077; load_secret "mockserver-release/cosign-key" "password" > "$_cosign_pw_file" ) \
+      || { rm -f "$_cosign_key_file" "$_cosign_pw_file"; return 1; }
+    export COSIGN_PASSWORD
+    COSIGN_PASSWORD=$(cat "$_cosign_pw_file")
+    rm -f "$_cosign_pw_file"
+
+    # Sign primary images (Docker Hub + ECR) by their :latest tag (resolves to
+    # the multi-arch manifest digest).
+    local -a images_to_sign=(
+      "mockserver/mockserver:$FULL_TAG"
+      "${ECR_REPO}:$FULL_TAG"
+      "mockserver/mockserver:$FULL_TAG-graaljs"
+      "${ECR_REPO}:$FULL_TAG-graaljs"
+    )
+    if [[ "$BUILD_CLUSTERED" == "true" ]]; then
+      images_to_sign+=(
+        "mockserver/mockserver:clustered-$FULL_TAG"
+        "${ECR_REPO}:clustered-$FULL_TAG"
+      )
+    fi
+    if [[ "$BUILD_WEBHOOK" == "true" ]]; then
+      images_to_sign+=(
+        "mockserver/mockserver-webhook:$FULL_TAG"
+      )
+    fi
+    for img in "${images_to_sign[@]}"; do
+      cosign_sign_docker_image "$img" || {
+        log_info "WARNING: cosign signing failed for $img (non-fatal)"
+        rc=1
+      }
+    done
+    rm -f "$_cosign_key_file"
+    unset COSIGN_PASSWORD
+    return $rc
+  }
+
+  if aws secretsmanager describe-secret --region "$REGION" \
+       --secret-id mockserver-release/cosign-key >/dev/null 2>&1; then
+    log_info "Cosign-signing pushed Docker images (mockserver-release/cosign-key found)"
+    # cosign must be available on the host (not in a container) to sign
+    # images already pushed to a registry. Verify it's present.
+    if command -v cosign >/dev/null 2>&1; then
+      if cosign_sign_docker_images; then
+        log_info "Docker images signed with cosign"
+      else
+        log_info ":warning: cosign signing had partial failures (non-fatal) — images published but some unsigned"
+      fi
+    else
+      log_info "cosign binary not found on host — skipping Docker image signing (install cosign to enable)"
+    fi
+  else
+    log_info "cosign key not configured (mockserver-release/cosign-key) — skipping Docker image signing"
+  fi
 fi
 
 log_info "Docker publish complete"

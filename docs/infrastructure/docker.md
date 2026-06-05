@@ -69,7 +69,33 @@ Images are published to two registries:
 
 Both registries receive the same tags on every push. On each merge to `master`, the legacy Buildkite pipeline (`.buildkite/scripts/steps/java-docker-push-snapshot.sh`) pushes the `:snapshot`, `:mockserver-snapshot`, and `-graaljs` snapshot variants (plus `:snapshot` / `:mockserver-snapshot` for the webhook image). During releases, the release pipeline (`scripts/release/components/docker.sh`) pushes `:latest`, `:X.Y.Z`, `:mockserver-X.Y.Z`, `-graaljs`, `clustered-*`, and webhook release variants. The `:latest` tag is pushed only by the release pipeline, not by the legacy Buildkite docker-push-release step. The `:latest` tag always points to the most recent official release, not the development branch.
 
+Release images are cosign-signed by digest after push (see below). Snapshot images are not signed.
+
 The `-clustered` image variant (`clustered-X.Y.Z`, `clustered-mockserver-X.Y.Z`, `clustered-latest`) is published alongside the base and GraalJS images at release time. It bundles the `mockserver-state-infinispan` module and its transitive dependencies (Infinispan, JGroups, etc.) plus `netty-tcnative-boringssl-static` for native TLS. The build is error-isolated: a clustered image push failure does not abort the release since the main images have already been published.
+
+### Verifying Image Signatures
+
+Release images are cosign-signed by digest after push using the project's signing key (stored in AWS Secrets Manager `mockserver-release/cosign-key`). Signing uses the same key infrastructure as the Helm chart signing in `scripts/release/components/helm.sh`.
+
+To verify a release image:
+
+```bash
+# Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/
+
+# Verify by digest (most reliable — binds to exact manifest content)
+cosign verify \
+  --key <path-to-cosign.pub> \
+  mockserver/mockserver@sha256:<digest>
+
+# Or verify the tag (resolves to digest internally)
+cosign verify \
+  --key <path-to-cosign.pub> \
+  mockserver/mockserver:6.1.0
+```
+
+The public key corresponding to `mockserver-release/cosign-key` must be obtained from the project maintainers or from the key stored in `mockserver-release/cosign-key` (field `key` contains the private key; the corresponding `.pub` must be extracted with `cosign public-key --key cosign.key`).
+
+Signing is non-fatal in the release pipeline: if the key is absent or `cosign` is not installed on the release agent, images are published unsigned and the release continues.
 
 ### Docker HEALTHCHECK
 
