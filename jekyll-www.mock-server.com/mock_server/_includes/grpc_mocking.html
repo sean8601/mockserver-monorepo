@@ -522,7 +522,7 @@ client.when(
 
 <p>Kubernetes readiness and liveness probes commonly use the <a href="https://github.com/grpc/grpc/blob/master/doc/health-checking.md">gRPC Health Checking Protocol</a> (<code class="inline code">grpc.health.v1.Health/Check</code>) to verify that a service is ready to receive traffic. MockServer auto-responds to this well-known method <strong>without requiring a proto descriptor</strong> — protobuf encoding and decoding is handled manually so health checks work out of the box even when no descriptors have been loaded.</p>
 
-<p>Health checks are enabled by default (<code class="inline code">grpcHealthCheckEnabled=true</code>). The default serving status for all services is <code class="inline code">SERVING</code>. You can override the status for individual services or for the global default via a REST endpoint.</p>
+<p>Health checking is always available — it is built in and cannot be disabled via a configuration property; MockServer answers any gRPC request whose content-type is gRPC and whose path matches the well-known health-check method. The default serving status for all services is <code class="inline code">SERVING</code>. You can override the status for individual services or for the global default via a REST endpoint.</p>
 
 <h3>ServingStatus values</h3>
 

@@ -529,7 +529,7 @@ PATCH /mockserver/serviceChaos
     <li><strong>Kubernetes sidecar or egress proxy:</strong> deploy MockServer as a sidecar container or egress proxy in your K8s pod/namespace and route specific traffic through it with chaos injection enabled</li>
 </ul>
 
-<p>MockServer operates at the <strong>HTTP layer (L7)</strong> and requires explicit routing — it does not transparently intercept traffic at the network layer. See <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for detailed proxy deployment patterns.</p>
+<p>MockServer operates at the <strong>HTTP layer (L7)</strong> and requires either explicit routing <strong>or</strong> transparent interception (Linux iptables <code class="inline code">REDIRECT</code> / <code class="inline code">TPROXY</code>) to place it in-path — see <a href="/mock_server/chaos_testing_kubernetes.html">Service Mesh / Sidecar Mode</a>. See <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for detailed proxy deployment patterns.</p>
 
 <a id="stateful_count_based_faults" class="anchor" href="#stateful_count_based_faults">&nbsp;</a>
 
@@ -601,6 +601,8 @@ PATCH /mockserver/serviceChaos
 <p>Both metrics are also surfaced in the <a href="/mock_server/mockserver_ui.html">dashboard UI</a> Metrics view as an "HTTP Chaos Faults" section — a stat per fault type the server emits (<code class="inline code">drop</code>, <code class="inline code">error</code>, <code class="inline code">latency</code>, <code class="inline code">truncate</code>, <code class="inline code">malformed</code>, <code class="inline code">slow</code>, <code class="inline code">quota</code>, <code class="inline code">graphql</code>), a per-fault-type chart of cumulative injections, and a per-fault-type chart of the active service-scoped chaos gauge (visible only when a chaos metric has non-zero data).</p>
 
 <p>Both metrics are also mirrored over OpenTelemetry OTLP when <a href="/mock_server/configuration_properties.html">OTLP metrics export is enabled</a>, so OTLP-only consumers can observe them without a Prometheus scrape. Note: over OTLP the <code class="inline code">mock_server_active_service_chaos</code> gauge mirrors every fault type, but the <code class="inline code">mock_server_http_chaos_injected_total</code> counter currently mirrors only the <code class="inline code">drop</code>, <code class="inline code">error</code> and <code class="inline code">latency</code> fault types — the full set of fault types is available on the Prometheus endpoint.</p>
+
+<p>These metrics currently cover <strong>HTTP chaos only</strong>; TCP-layer chaos and gRPC chaos are not yet metered, so faults injected by those features do not appear in the chaos counter or gauge.</p>
 
 <p>Example PromQL queries:</p>
 <pre class="code"><code class="code"># Rate of error faults injected over the last 5 minutes

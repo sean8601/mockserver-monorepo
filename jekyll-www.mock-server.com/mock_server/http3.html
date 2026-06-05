@@ -13,7 +13,7 @@ sitemap:
 ---
 
 <div class="alert" style="background-color:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin-bottom:20px;">
-    <strong>EXPERIMENTAL</strong> &mdash; HTTP/3 support is fully integrated with MockServer's request pipeline but is labelled experimental because the underlying QUIC transport is a <a target="_blank" href="https://github.com/netty/netty-incubator-codec-http3" rel="noopener noreferrer">Netty incubator</a> dependency (pre-release artifact). HTTP/3 is off by default and must be explicitly enabled.
+    <strong>EXPERIMENTAL</strong> &mdash; HTTP/3 support is fully integrated with MockServer's request pipeline and now builds on the mainline <a target="_blank" href="https://github.com/netty/netty" rel="noopener noreferrer"><span class="inline_code">io.netty:netty-codec-http3</span></a> codec (Netty 4.2), which graduated from the Netty incubator. It is still labelled experimental because the HTTP/3 codec API may continue to evolve in future Netty releases. HTTP/3 is off by default and must be explicitly enabled.
 </div>
 
 <p>MockServer can optionally accept HTTP/3 requests over <a target="_blank" href="https://quicwg.org/" rel="noopener noreferrer">QUIC</a> (UDP). HTTP/3 is the third major version of the HTTP protocol, using QUIC as the transport instead of TCP. This is useful when you want to test clients that connect using HTTP/3.</p>
@@ -62,7 +62,7 @@ sitemap:
 
 <h2>Native platform requirement</h2>
 
-<p>HTTP/3 uses the <a target="_blank" href="https://github.com/netty/netty-incubator-codec-http3" rel="noopener noreferrer">netty-incubator-codec-http3</a> library, which requires a native BoringSSL library for the QUIC transport. The native library is included automatically for the following platforms:</p>
+<p>HTTP/3 uses the mainline <a target="_blank" href="https://github.com/netty/netty" rel="noopener noreferrer"><span class="inline_code">io.netty:netty-codec-http3</span></a> library (Netty 4.2), which requires a native BoringSSL library for the QUIC transport. The native library is included automatically for the following platforms:</p>
 
 <ul>
     <li><span class="inline_code">linux-x86_64</span></li>

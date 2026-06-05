@@ -182,7 +182,7 @@ operationsAndResponses.put("showPetById", "200");
 operationsAndResponses.put("createPets", "500");
 new MockServerClient("localhost", 1080)
     .upsert(
-        openAPIExpectation(
+        openAPIExpectationWithStringResponses(
             "https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json",
             operationsAndResponses
         )

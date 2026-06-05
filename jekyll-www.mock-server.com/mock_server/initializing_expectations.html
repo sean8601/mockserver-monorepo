@@ -32,7 +32,7 @@ int mockServerPort = new ClientAndServer().getLocalPort();</code></pre>
 
 <p>When using Spring's <code>@MockServerTest</code>, the initializer class can be configured directly in the annotation:</p>
 <pre class="prettyprint lang-java code"><code class="code">@MockServerTest("mockserver.initializationClass=org.mockserver.server.initialize.ExpectationInitializerExample")
-@RunWith(SpringRunner.class)
+@ExtendWith(SpringExtension.class) // JUnit 5; use @RunWith(SpringRunner.class) on JUnit 4
 public class MyTest {
     private MockServerClient mockServerClient;  // auto-injected with expectations already loaded
 }</code></pre>

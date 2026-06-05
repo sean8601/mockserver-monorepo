@@ -36,6 +36,8 @@ tags:
     description: Register service-scoped, TCP and gRPC chaos / fault-injection profiles (only supported by MockServer)
   - name: drift
     description: Inspect and clear recorded mock drift (differences between expectations and observed responses)
+  - name: scenario
+    description: Inspect, set and trigger stateful scenario state (timed auto-transitions and external triggers) (only supported by MockServer)
   - name: oidc
     description: Generate a turnkey OpenID Connect / OAuth2 provider as a set of expectations (only supported by MockServer)
   - name: asyncapi
@@ -838,6 +840,191 @@ paths:
                 properties:
                   status:
                     type: string
+  /mockserver/scenario:
+    get:
+      tags:
+        - scenario
+      summary: list all scenarios and their current state
+      description: >-
+        Returns every known stateful scenario and its current state. Scenarios are created
+        implicitly by registering expectations with a scenarioName / scenarioState, or explicitly
+        via PUT /mockserver/scenario/{name}. All scenario state is reset when MockServer is reset.
+      responses:
+        '200':
+          description: scenarios listed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  scenarios:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        scenarioName:
+                          type: string
+                        currentState:
+                          type: string
+        '400':
+          description: failed to list scenarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioError'
+  '/mockserver/scenario/{name}':
+    get:
+      tags:
+        - scenario
+      summary: get the current state of one scenario
+      description: Returns the current state of the named scenario (null when the scenario has no state yet).
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the scenario name
+      responses:
+        '200':
+          description: scenario state returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  scenarioName:
+                    type: string
+                  currentState:
+                    type: string
+                    nullable: true
+        '400':
+          description: failed to get scenario state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioError'
+    put:
+      tags:
+        - scenario
+      summary: set a scenario's state, optionally scheduling a timed auto-transition
+      description: >-
+        Sets the named scenario to the given state immediately. Optionally schedules a timed
+        auto-transition to nextState after transitionAfterMs milliseconds; the transition only
+        fires if the scenario is still in the set state when the timer expires, and scheduling a
+        new transition cancels any pending one.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the scenario name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - state
+              properties:
+                state:
+                  type: string
+                  description: the state to set immediately
+                transitionAfterMs:
+                  type: integer
+                  format: int64
+                  description: delay in milliseconds before auto-transitioning to nextState (requires nextState)
+                nextState:
+                  type: string
+                  description: the state to auto-transition to after transitionAfterMs (requires transitionAfterMs)
+            examples:
+              setState:
+                summary: set state immediately
+                value:
+                  state: Deploying
+              timedTransition:
+                summary: set state with timed auto-transition
+                value:
+                  state: Deploying
+                  transitionAfterMs: 5000
+                  nextState: Deployed
+      responses:
+        '200':
+          description: scenario state set
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  scenarioName:
+                    type: string
+                  currentState:
+                    type: string
+                  nextState:
+                    type: string
+                  transitionAfterMs:
+                    type: integer
+                    format: int64
+        '400':
+          description: invalid request (e.g. missing scenario name or state field)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioError'
+  '/mockserver/scenario/{name}/trigger':
+    put:
+      tags:
+        - scenario
+      summary: externally trigger a scenario state transition
+      description: >-
+        Advances the named scenario to newState immediately. Intended for driving a scenario
+        forward from a test harness or CI pipeline.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the scenario name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newState
+              properties:
+                newState:
+                  type: string
+                  description: the state to transition the scenario to
+            example:
+              newState: Failed
+      responses:
+        '200':
+          description: scenario state transition triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  scenarioName:
+                    type: string
+                  currentState:
+                    type: string
+        '400':
+          description: invalid request (e.g. missing scenario name or newState field)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioError'
   /mockserver/oidc:
     put:
       tags:
@@ -1610,6 +1797,13 @@ paths:
           description: MockServer process is stopping
 components:
   schemas:
+    ScenarioError:
+      description: "scenario request error"
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
     Expectations:
       description: "list of expectations"
       oneOf:

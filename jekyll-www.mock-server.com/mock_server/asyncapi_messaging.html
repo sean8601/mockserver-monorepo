@@ -78,6 +78,8 @@ sitemap:
         <tr><td><span class="inline_code">publishOnLoad</span></td><td>boolean</td><td>true</td><td>Publish example messages immediately when spec is loaded</td></tr>
         <tr><td><span class="inline_code">publishIntervalMillis</span></td><td>long</td><td>0 (disabled)</td><td>Publish examples periodically at this interval</td></tr>
         <tr><td><span class="inline_code">consume</span></td><td>boolean</td><td>false</td><td>Subscribe to channels and record incoming messages</td></tr>
+        <tr><td><span class="inline_code">kafkaSecurity</span></td><td>object</td><td>null</td><td>Security settings applied to Kafka broker connections: <span class="inline_code">securityProtocol</span>, <span class="inline_code">saslMechanism</span>, <span class="inline_code">saslJaasConfig</span>, and SSL truststore/keystore location and password</td></tr>
+        <tr><td><span class="inline_code">mqttSecurity</span></td><td>object</td><td>null</td><td>Security settings applied to MQTT broker connections: <span class="inline_code">username</span>, <span class="inline_code">password</span>, and an <span class="inline_code">sslProperties</span> map for TLS</td></tr>
     </tbody>
 </table>
 
@@ -346,7 +348,7 @@ client.verifyAsyncMessage("{\"channel\":\"orders\", \"payloadJsonPath\":\"user.n
 
 <ul>
     <li><strong>Advanced AsyncAPI bindings</strong> &mdash; channel-specific binding configurations (e.g. Kafka partition assignment, MQTT retain flag) are not parsed or applied</li>
-    <li><strong>Security schemes</strong> &mdash; AsyncAPI security scheme definitions (SASL, TLS client certs) are not applied to broker connections; configure broker security via standard client properties</li>
+    <li><strong>Security schemes</strong> &mdash; security scheme definitions declared in the AsyncAPI spec document are not auto-applied to broker connections. Broker security itself <em>is</em> supported: configure it explicitly via the <span class="inline_code">kafkaSecurity</span> and <span class="inline_code">mqttSecurity</span> broker-configuration options above (SASL, TLS truststore/keystore, username/password)</li>
     <li><strong>Correlation IDs</strong> &mdash; AsyncAPI correlation ID definitions are not tracked</li>
     <li><strong>Multi-message channels</strong> &mdash; only the first message definition per channel is used</li>
 </ul>
