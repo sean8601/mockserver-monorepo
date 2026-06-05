@@ -581,19 +581,68 @@ Combine Options A and B: run triggers on cheap instances AND limit concurrency p
 
 If concurrent master builds remain a problem, Option E (adding concurrency groups) can be layered on top.
 
-## Dependency Caching (Reverted — Infrastructure Retained)
+## Dependency Caching
 
-The host-volume cache layer (mounting `/var/cache/buildkite/*` into Docker containers via `run-in-docker.sh`) and the S3 runtime cache layer (`cache-restore.sh` / `cache-save.sh` pipeline steps) were **reverted**. The host-volume approach broke on non-root Buildkite agents that lack write access to `/var/cache`, and the S3 layer was coupled to it. A hotfix made the host mounts skip gracefully, but that meant the feature provided zero benefit on the real agents.
+Each pipeline caches its dependency manager's artifacts in S3, keyed on lockfile hashes, to avoid re-downloading dependencies on every ephemeral agent. The cache is fail-safe by design -- every failure mode (missing bucket, missing credentials, non-root agent, corrupt tarball, empty cache) results in a clean no-op (exit 0) and a cold build proceeds normally.
 
-**What was removed:**
-- Host-volume cache block in `run-in-docker.sh` (`BUILDKITE_DISABLE_HOST_CACHE`, `add_host_cache_volume`)
-- `cache-restore.sh` and `cache-save.sh` scripts
-- Cache restore/save steps from all 7 pipeline YAMLs (java, maven-plugin, node, python, ruby, ui, website)
+### Architecture
 
-**What was retained (inactive):**
-- `terraform/buildkite-agents/dependency-cache.tf` — S3 bucket (`mockserver-ci-dependency-cache`), lifecycle policy (14-day expiry), and IAM policy. The IAM policy remains attached to agent roles so no Terraform change is needed when caching is re-enabled.
+```mermaid
+flowchart LR
+    RESTORE["cache-restore.sh
+    runs on host agent"] -->|download + extract| LOCAL[".buildkite-cache/TYPE/
+    workspace-local dir"]
+    LOCAL -->|volume mount via
+    run-in-docker.sh --cache| CONTAINER["Docker container
+    /root/.m2/repository
+    /root/.npm
+    etc."]
+    CONTAINER -->|build populates cache| LOCAL
+    LOCAL -->|tar + upload| SAVE["cache-save.sh
+    runs on host agent"]
+    RESTORE -->|"s3://mockserver-ci-
+    dependency-cache/TYPE/KEY.tar.gz"| S3[(S3 Bucket)]
+    SAVE -->|same key| S3
+```
 
-**Future:** A correct implementation should use either the Buildkite cache plugin or an approach that avoids host-path permission issues with non-root agents.
+### How It Works
+
+1. **Cache restore** (pipeline step, `soft_fail: true`): `cache-restore.sh <type>` computes a SHA-256 key from the relevant lockfiles, downloads `s3://mockserver-ci-dependency-cache/<type>/<key>.tar.gz`, and extracts it into `$BUILDKITE_BUILD_CHECKOUT_PATH/.buildkite-cache/<type>/`. If anything fails, it exits 0.
+
+2. **Build** (existing step): `run-in-docker.sh --cache <type>` volume-mounts the workspace-local cache directory into the Docker container at the tool's default cache path (e.g., `/root/.m2/repository` for Maven, `/root/.npm` for npm). If the directory is empty (cache miss), the build starts with a cold cache -- no different from before caching was enabled.
+
+3. **Cache save** (pipeline step, `soft_fail: true`): `cache-save.sh <type>` tars the populated cache directory and uploads it to S3 with the same key. If the key already exists in S3 (cache hit on a previous build), the upload is skipped.
+
+### Cache Types and Keys
+
+| Type | Lockfiles hashed | Container mount target |
+|------|-----------------|----------------------|
+| `maven` | All `pom.xml` files in `mockserver/` | `/root/.m2/repository` |
+| `npm` | `package-lock.json` + `package.json` from `mockserver-ui/`, `mockserver-client-node/`, `mockserver-node/` | `/root/.npm` |
+| `pip` | `pyproject.toml`, `setup.cfg`, `requirements.txt` from `mockserver-client-python/` | `/root/.cache/pip` |
+| `bundler` | `Gemfile` + `Gemfile.lock` from `mockserver-client-ruby/`, `jekyll-www.mock-server.com/` | `/usr/local/bundle/cache` |
+
+### Fail-Safe Design
+
+The previous caching attempt (reverted) broke builds by writing to `/var/cache` (requires root) and bridging state across ephemeral agents via host volumes. This redesign avoids both problems:
+
+- **No root-owned host paths**: caches live under the workspace checkout directory, which the `buildkite-agent` user always owns
+- **No cross-agent state**: each job downloads its own cache from S3; no host-volume bridge between jobs
+- **`set -uo pipefail` without `set -e`**: errors are handled inline, never propagated
+- **`soft_fail: true`**: pipeline-level safety net -- even if the script somehow exits non-zero, the build continues
+- **Credential check up-front**: `aws sts get-caller-identity` is tested before any S3 operation; if it fails, the script bails immediately with exit 0
+- **Idempotent keys**: cache key is a pure function of lockfile content; same deps = same key = upload skipped
+
+### Activation
+
+The S3 bucket and IAM policy are defined in `terraform/buildkite-agents/dependency-cache.tf`. The IAM policy is already attached to the default and release agent roles in `main.tf`. To activate caching:
+
+```bash
+cd terraform/buildkite-agents
+./run.sh apply
+```
+
+Until `terraform apply` creates the S3 bucket, the cache scripts will detect the missing bucket and no-op gracefully. No pipeline will break.
 
 ## Local CI Simulation
 

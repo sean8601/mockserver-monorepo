@@ -137,6 +137,10 @@ terraform/**/.terraform.lock.hcl
 terraform/**/tfplan
 terraform/**/*.tfplan
 
+# Buildkite CI dependency cache (workspace-local) #
+#####################################################
+.buildkite-cache/
+
 # Buildkite CLI config (local only) #
 ######################################
 .bk.yaml

@@ -14,6 +14,7 @@ DOCKER_SOCKET=false
 ENTRYPOINT=""
 ENV_VARS=()
 VOLUMES=()
+CACHE_TYPES=()
 
 usage() {
   cat <<EOF
@@ -30,6 +31,7 @@ Options:
   --entrypoint CMD         Override container entrypoint
   -e, --env KEY=VALUE      Pass environment variable to container
   -v, --volume SRC:DST     Additional volume mount
+  --cache TYPE             Mount dependency cache (maven|npm|pip|bundler)
   --network NAME           Docker network to connect to
   -h, --help               Show this help
 
@@ -49,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --entrypoint) ENTRYPOINT="$2"; shift 2 ;;
     -e|--env)     ENV_VARS+=("$2"); shift 2 ;;
     -v|--volume)  VOLUMES+=("$2"); shift 2 ;;
+    --cache)      CACHE_TYPES+=("$2"); shift 2 ;;
     --network)    NETWORK="$2"; shift 2 ;;
     -h|--help)    usage ;;
     --)           shift; COMMAND_ARGS=("$@"); break ;;
@@ -92,6 +95,29 @@ done
 
 for vol in "${VOLUMES[@]+"${VOLUMES[@]}"}"; do
   DOCKER_ARGS+=(-v "$vol")
+done
+
+# ---------------------------------------------------------------------------
+# Dependency cache volume mounts (fail-safe: skip silently if dir missing)
+# ---------------------------------------------------------------------------
+# Each --cache TYPE maps a workspace-local .buildkite-cache/<type> directory
+# into the container at the tool's default cache location. If the directory
+# does not exist (cache-restore.sh was skipped, failed, or cache missed),
+# we create an empty one so the mount point exists -- the build proceeds
+# with an empty cache (equivalent to a cold build).
+# ---------------------------------------------------------------------------
+CACHE_BASE="${BUILDKITE_BUILD_CHECKOUT_PATH:-${REPO_ROOT}}/.buildkite-cache"
+for cache_type in "${CACHE_TYPES[@]+"${CACHE_TYPES[@]}"}"; do
+  host_dir="${CACHE_BASE}/${cache_type}"
+  # Ensure the host directory exists (empty is fine -- cold build)
+  mkdir -p "$host_dir" 2>/dev/null || true
+  case "$cache_type" in
+    maven)   DOCKER_ARGS+=(-v "${host_dir}:/root/.m2/repository") ;;
+    npm)     DOCKER_ARGS+=(-v "${host_dir}:/root/.npm") ;;
+    pip)     DOCKER_ARGS+=(-v "${host_dir}:/root/.cache/pip") ;;
+    bundler) DOCKER_ARGS+=(-v "${host_dir}:/usr/local/bundle/cache") ;;
+    *)       echo "[run-in-docker] WARNING: unknown cache type '${cache_type}' -- ignored" >&2 ;;
+  esac
 done
 
 quote_arg() {

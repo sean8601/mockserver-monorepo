@@ -27,6 +27,7 @@ docker run -d \
 "$SCRIPT_DIR/../run-in-docker.sh" \
   -i python:3.12 \
   -w /build/mockserver-client-python \
+  --cache pip \
   -e "MOCKSERVER_HOST=$MOCKSERVER_NAME" \
   -e "MOCKSERVER_PORT=1080" \
   --network "$NETWORK_NAME" \

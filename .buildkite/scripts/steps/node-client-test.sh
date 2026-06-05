@@ -59,6 +59,7 @@ fi
 "$SCRIPT_DIR/../run-in-docker.sh" \
   -i node:22 \
   -w /build/mockserver-client-node \
+  --cache npm \
   -e "MOCKSERVER_HOST=$MOCKSERVER_NAME" \
   -e "MOCKSERVER_PORT=1080" \
   --network "$NETWORK_NAME" \

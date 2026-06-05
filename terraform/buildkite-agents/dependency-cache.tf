@@ -1,16 +1,18 @@
 # ---------------------------------------------------------------------------
-# S3 Dependency Cache for CI Builds — INACTIVE / RESERVED
+# S3 Dependency Cache for CI Builds
 # ---------------------------------------------------------------------------
-# STATUS: The runtime wiring (host-volume mounts in run-in-docker.sh +
-# cache-restore.sh / cache-save.sh pipeline steps) was REVERTED because the
-# host-volume layer broke on non-root agents and the S3 layer was coupled to
-# it.  This Terraform config (S3 bucket + IAM policy) is RETAINED as inactive
-# infrastructure, ready for a future correct implementation using either the
-# Buildkite cache plugin or a same-agent approach that avoids host-path
-# permission issues.
+# Provides a shared S3 bucket for caching Maven, npm, pip, and Bundler
+# dependencies across ephemeral scale-to-zero build agents.
 #
-# The IAM policy remains attached to agent roles so no Terraform change is
-# needed when the cache is re-enabled — only new pipeline scripts.
+# Design: Each pipeline has cache-restore/cache-save steps that run on the
+# host agent (not inside Docker). They download/upload a lockfile-keyed
+# tarball from S3 into a workspace-local .buildkite-cache/ directory.
+# run-in-docker.sh --cache <type> volume-mounts that directory into the
+# build container at the tool's default cache path. If S3 is unreachable,
+# credentials are missing, or the bucket doesn't exist, both scripts exit 0
+# (clean no-op) and the build proceeds with a cold cache.
+#
+# The IAM policy is attached to default and release agent roles in main.tf.
 # ---------------------------------------------------------------------------
 # Provides a shared S3 bucket for caching Maven, npm, pip, and Bundler
 # dependencies across ephemeral scale-to-zero build agents.  Without this,

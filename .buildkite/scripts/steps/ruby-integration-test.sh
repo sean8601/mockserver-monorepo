@@ -27,6 +27,7 @@ docker run -d \
 "$SCRIPT_DIR/../run-in-docker.sh" \
   -i ruby:3.3 \
   -w /build/mockserver-client-ruby \
+  --cache bundler \
   -e "MOCKSERVER_HOST=$MOCKSERVER_NAME" \
   -e "MOCKSERVER_PORT=1080" \
   --network "$NETWORK_NAME" \

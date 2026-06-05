@@ -62,6 +62,7 @@ fi
 "$SCRIPT_DIR/../run-in-docker.sh" \
   -i mcr.microsoft.com/playwright:v1.60.0-noble \
   -w /build/mockserver-client-node \
+  --cache npm \
   -e "MOCKSERVER_HOST=$MOCKSERVER_NAME" \
   -e "MOCKSERVER_PORT=1080" \
   --network "$NETWORK_NAME" \
