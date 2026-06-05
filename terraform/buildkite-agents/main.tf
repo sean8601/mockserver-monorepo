@@ -24,6 +24,7 @@ locals {
     ecr_public_push            = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_push.name}"
     perf_results               = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.perf_results.name}"
     release_website_tfstate    = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.release_website_tfstate.name}"
+    dependency_cache           = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.dependency_cache.name}"
   }
 }
 
@@ -47,7 +48,8 @@ module "buildkite_stack" {
   managed_policy_arns = [
     local.policy_arn.read_build_secrets_default,
     local.policy_arn.read_dockerhub_secret,
-    local.policy_arn.ecr_public_push, # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
+    local.policy_arn.ecr_public_push,  # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
+    local.policy_arn.dependency_cache, # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
   ]
 }
 
@@ -123,5 +125,6 @@ module "buildkite_release_stack" {
     local.policy_arn.read_dockerhub_secret,
     local.policy_arn.ecr_public_push,
     local.policy_arn.release_website_tfstate,
+    local.policy_arn.dependency_cache, # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
   ]
 }
