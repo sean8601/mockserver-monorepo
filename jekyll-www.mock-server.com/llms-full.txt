@@ -1944,6 +1944,8 @@ The MCP endpoint follows the Model Context Protocol specification and provides t
 
 **retrieve_request_responses** - Retrieve request-response pairs recorded by MockServer.
 
+**retrieve_logs** - Retrieve MockServer's recorded log messages (request matching, mismatches, actions, errors) to debug why a test or request behaved as it did. Supports correlationId filtering and a limit parameter.
+
 **clear_expectations** - Clear expectations and/or logs matching a request.
 
 **reset** - Reset all state (expectations, logs, recorded requests).
