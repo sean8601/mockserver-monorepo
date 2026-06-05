@@ -18,10 +18,13 @@ import io.netty.handler.codec.quic.QuicStreamChannel;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.netty.mcp.McpRequestProcessor;
+import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.socket.tls.KeyAndCertificateFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,9 +71,33 @@ public class Http3Server {
     private final MockServerLogger mockServerLogger;
     private final HttpState httpState;
     private final HttpActionHandler httpActionHandler;
+    /** Null when MCP is not wired (legacy/test constructors). */
+    private final McpRequestProcessor mcpRequestProcessor;
 
     /**
-     * Create an HTTP/3 server wired into MockServer's request pipeline.
+     * Create an HTTP/3 server wired into MockServer's request pipeline, with MCP support.
+     *
+     * @param configuration      the server configuration
+     * @param mockServerLogger   the logger
+     * @param httpState          the shared HTTP state (expectations, matchers, etc.)
+     * @param httpActionHandler  the action handler for processing matched expectations
+     * @param server             the MockServer lifecycle instance (for MCP tool registry)
+     * @param mcpSessionManager  the shared MCP session manager (may be null to disable MCP)
+     */
+    public Http3Server(Configuration configuration, MockServerLogger mockServerLogger,
+                       HttpState httpState, HttpActionHandler httpActionHandler,
+                       LifeCycle server, McpSessionManager mcpSessionManager) {
+        this.configuration = configuration;
+        this.mockServerLogger = mockServerLogger;
+        this.httpState = httpState;
+        this.httpActionHandler = httpActionHandler;
+        this.mcpRequestProcessor = mcpSessionManager != null
+            ? new McpRequestProcessor(httpState, server, mcpSessionManager)
+            : null;
+    }
+
+    /**
+     * Create an HTTP/3 server wired into MockServer's request pipeline (no MCP).
      *
      * @param configuration    the server configuration
      * @param mockServerLogger the logger
@@ -79,10 +106,7 @@ public class Http3Server {
      */
     public Http3Server(Configuration configuration, MockServerLogger mockServerLogger,
                        HttpState httpState, HttpActionHandler httpActionHandler) {
-        this.configuration = configuration;
-        this.mockServerLogger = mockServerLogger;
-        this.httpState = httpState;
-        this.httpActionHandler = httpActionHandler;
+        this(configuration, mockServerLogger, httpState, httpActionHandler, null, null);
     }
 
     /**
@@ -94,6 +118,7 @@ public class Http3Server {
         this.mockServerLogger = null;
         this.httpState = null;
         this.httpActionHandler = null;
+        this.mcpRequestProcessor = null;
     }
 
     /**
@@ -161,7 +186,8 @@ public class Http3Server {
                                             streamCh.pipeline().addLast(new Http3ConnectUdpHandler());
                                         }
                                         streamCh.pipeline().addLast(new Http3MockServerHandler(
-                                            configuration, mockServerLogger, httpState, httpActionHandler, sharedMetrics
+                                            configuration, mockServerLogger, httpState, httpActionHandler, sharedMetrics,
+                                            mcpRequestProcessor
                                         ));
                                     } else {
                                         streamCh.pipeline().addLast(new Http3EchoRequestHandler());

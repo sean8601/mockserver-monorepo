@@ -238,7 +238,7 @@ public class MockServer extends LifeCycle {
         // start HTTP/3 (QUIC) server when configured (http3Port > 0)
         Integer http3Port = configuration.http3Port();
         if (http3Port != null && http3Port > 0) {
-            startHttp3Server(configuration, initializer.getActionHandler(), http3Port);
+            startHttp3Server(configuration, initializer.getActionHandler(), http3Port, this.mcpSessionManager);
         }
 
         // Register the AsyncAPI control-plane if mockserver-async is on the classpath.
@@ -325,7 +325,7 @@ public class MockServer extends LifeCycle {
         return server != null ? server.getActiveConnectionCount() : 0;
     }
 
-    private void startHttp3Server(Configuration configuration, HttpActionHandler actionHandler, int http3Port) {
+    private void startHttp3Server(Configuration configuration, HttpActionHandler actionHandler, int http3Port, org.mockserver.netty.mcp.McpSessionManager mcpSessionMgr) {
         if (!Http3Server.isQuicAvailable()) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -337,7 +337,7 @@ public class MockServer extends LifeCycle {
             return;
         }
         try {
-            Http3Server server = new Http3Server(configuration, mockServerLogger, httpState, actionHandler);
+            Http3Server server = new Http3Server(configuration, mockServerLogger, httpState, actionHandler, MockServer.this, mcpSessionMgr);
             int boundPort = server.start(http3Port);
             this.http3Server = server;
             mockServerLogger.logEvent(

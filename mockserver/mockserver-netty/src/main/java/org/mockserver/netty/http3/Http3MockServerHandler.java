@@ -1,13 +1,20 @@
 package org.mockserver.netty.http3;
 
 import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http3.DefaultHttp3DataFrame;
+import io.netty.handler.codec.http3.DefaultHttp3HeadersFrame;
 import io.netty.handler.codec.http3.Http3DataFrame;
 import io.netty.handler.codec.http3.Http3HeadersFrame;
 import io.netty.handler.codec.http3.Http3RequestStreamInboundHandler;
 import io.netty.handler.codec.quic.QuicChannel;
+import io.netty.handler.codec.quic.QuicStreamChannel;
+import org.mockserver.authentication.AuthenticationException;
+import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.cors.CORSHeaders;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mappers.JDKCertificateToMockServerX509Certificate;
@@ -15,6 +22,8 @@ import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.netty.mcp.JsonRpcMessage;
+import org.mockserver.netty.mcp.McpRequestProcessor;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.telemetry.TraceContextAttributes;
 import org.mockserver.telemetry.W3CTraceContext;
@@ -49,6 +58,8 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     private final HttpActionHandler httpActionHandler;
     private final Metrics metrics;
     private final JDKCertificateToMockServerX509Certificate jdkCertificateToMockServerX509Certificate;
+    /** Null when MCP is not wired (legacy/test constructors). */
+    private final McpRequestProcessor mcpRequestProcessor;
 
     // per-stream state: headers + accumulated body
     private Http3RequestBridge.ParsedHeaders parsedHeaders;
@@ -61,12 +72,24 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
         HttpActionHandler httpActionHandler,
         Metrics metrics
     ) {
+        this(configuration, mockServerLogger, httpState, httpActionHandler, metrics, null);
+    }
+
+    public Http3MockServerHandler(
+        Configuration configuration,
+        MockServerLogger mockServerLogger,
+        HttpState httpState,
+        HttpActionHandler httpActionHandler,
+        Metrics metrics,
+        McpRequestProcessor mcpRequestProcessor
+    ) {
         this.configuration = configuration;
         this.mockServerLogger = mockServerLogger;
         this.httpState = httpState;
         this.httpActionHandler = httpActionHandler;
         this.metrics = metrics;
         this.jdkCertificateToMockServerX509Certificate = new JDKCertificateToMockServerX509Certificate(mockServerLogger);
+        this.mcpRequestProcessor = mcpRequestProcessor;
     }
 
     @Override
@@ -120,6 +143,12 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
 
             if (configuration.metricsEnabled()) {
                 metrics.increment(REQUESTS_RECEIVED_COUNT);
+            }
+
+            // MCP dispatch: intercept /mockserver/mcp before the normal pipeline
+            if (mcpRequestProcessor != null && McpRequestProcessor.isMcpPath(parsedHeaders.path())) {
+                handleMcpOverHttp3(ctx, request);
+                return;
             }
 
             ResponseWriter responseWriter = new Http3ResponseWriter(configuration, mockServerLogger, ctx);
@@ -179,6 +208,149 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             addresses.add("0:0:0:0:0:0:0:1" + portSuffix);
         }
         return addresses;
+    }
+
+    /**
+     * Handle an MCP request over HTTP/3. Determines the HTTP method from the
+     * request, delegates to {@link McpRequestProcessor}, and writes the result
+     * as HTTP/3 frames (headers + optional data + stream shutdown).
+     * <p>
+     * Control-plane authentication is enforced for POST, GET, and DELETE --
+     * mirroring the TCP path ({@code McpStreamableHttpHandler.authenticateRequest}).
+     * OPTIONS (CORS preflight) is exempt, matching TCP behaviour.
+     */
+    private void handleMcpOverHttp3(ChannelHandlerContext ctx, HttpRequest request) {
+        String method = request.getMethod() != null ? request.getMethod().getValue() : "GET";
+        String origin = request.getFirstHeader("origin");
+        String accessControlRequestHeaders = request.getFirstHeader("access-control-request-headers");
+        String mcpSessionId = request.getFirstHeader("mcp-session-id");
+        McpRequestProcessor.McpResult result;
+
+        switch (method.toUpperCase()) {
+            case "OPTIONS":
+                // CORS preflight -- exempt from authentication (matches TCP path)
+                boolean hasOrigin = origin != null && !origin.isEmpty();
+                result = mcpRequestProcessor.handleOptions(hasOrigin);
+                break;
+            case "POST":
+                if (!authenticateMcpRequest(ctx, request)) {
+                    result = buildUnauthorizedResult();
+                    break;
+                }
+                String body = request.getBodyAsString();
+                result = mcpRequestProcessor.handlePost(body, mcpSessionId);
+                break;
+            case "DELETE":
+                if (!authenticateMcpRequest(ctx, request)) {
+                    result = buildUnauthorizedResult();
+                    break;
+                }
+                result = mcpRequestProcessor.handleDelete(mcpSessionId);
+                break;
+            case "GET":
+                if (!authenticateMcpRequest(ctx, request)) {
+                    result = buildUnauthorizedResult();
+                    break;
+                }
+                result = mcpRequestProcessor.handleGet();
+                break;
+            default:
+                result = mcpRequestProcessor.handleOptions(false);
+                break;
+        }
+
+        writeMcpResultAsHttp3(ctx, result, origin, accessControlRequestHeaders);
+    }
+
+    /**
+     * Authenticate an MCP request against the control-plane authentication handler,
+     * mirroring the TCP path's {@code McpStreamableHttpHandler.authenticateRequest()}.
+     * <p>
+     * The request already has the client certificate chain attached (captured in
+     * {@link #captureClientCertificates}), so mTLS authentication works over H3.
+     *
+     * @return true if authentication passed (or no handler is configured); false if rejected
+     */
+    private boolean authenticateMcpRequest(ChannelHandlerContext ctx, HttpRequest request) {
+        AuthenticationHandler authHandler = httpState.getControlPlaneAuthenticationHandler();
+        if (authHandler == null) {
+            return true;
+        }
+        try {
+            return authHandler.controlPlaneRequestAuthenticated(request);
+        } catch (AuthenticationException e) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setHttpRequest(request)
+                    .setMessageFormat("MCP-over-H3 authentication failed: {}")
+                    .setArguments(e.getMessage())
+                    .setThrowable(e)
+            );
+            return false;
+        }
+    }
+
+    /**
+     * Build an unauthorized (401) MCP result with the same JSON-RPC error body
+     * as the TCP path's {@code McpStreamableHttpHandler.writeUnauthorized()}.
+     */
+    private McpRequestProcessor.McpResult buildUnauthorizedResult() {
+        byte[] body;
+        try {
+            body = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(
+                JsonRpcMessage.JsonRpcResponse.error(null, JsonRpcMessage.INVALID_REQUEST, "Unauthorized for control plane"));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            body = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Unauthorized for control plane\"},\"id\":null}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        return new McpRequestProcessor.McpResult(401, body, null);
+    }
+
+    /**
+     * Write an {@link McpRequestProcessor.McpResult} as HTTP/3 frames,
+     * including CORS headers when the request had an Origin header --
+     * mirroring the TCP path's {@code McpStreamableHttpHandler.addCorsHeaders()}.
+     *
+     * @param origin the request's Origin header value (may be null/empty)
+     * @param accessControlRequestHeaders the request's Access-Control-Request-Headers value (may be null)
+     */
+    private void writeMcpResultAsHttp3(
+        ChannelHandlerContext ctx, McpRequestProcessor.McpResult result,
+        String origin, String accessControlRequestHeaders
+    ) {
+        DefaultHttp3HeadersFrame headersFrame = new DefaultHttp3HeadersFrame();
+        headersFrame.headers().status(String.valueOf(result.getStatusCode()));
+        headersFrame.headers().add("server", "mockserver-http3");
+
+        if (result.hasBody()) {
+            headersFrame.headers().add("content-type", "application/json");
+        }
+        if (result.getSessionId() != null) {
+            headersFrame.headers().add("mcp-session-id", result.getSessionId());
+        }
+
+        // CORS headers -- mirror the TCP path (McpStreamableHttpHandler.addCorsHeaders)
+        if (origin != null && !origin.isEmpty()) {
+            headersFrame.headers().add("access-control-allow-origin", origin);
+            headersFrame.headers().add("access-control-allow-methods", CORSHeaders.DEFAULT_ALLOW_METHODS);
+            String allowHeaders = (accessControlRequestHeaders != null && !accessControlRequestHeaders.isEmpty())
+                ? accessControlRequestHeaders : CORSHeaders.DEFAULT_ALLOW_HEADERS;
+            headersFrame.headers().add("access-control-allow-headers", allowHeaders);
+            headersFrame.headers().add("access-control-expose-headers", "Mcp-Session-Id, " + CORSHeaders.DEFAULT_ALLOW_HEADERS);
+            headersFrame.headers().add("access-control-max-age", "300");
+        }
+
+        ctx.write(headersFrame);
+        if (result.hasBody()) {
+            ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(result.getBody())))
+                .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
+        } else {
+            ctx.flush();
+            if (ctx.channel() instanceof QuicStreamChannel) {
+                ((QuicStreamChannel) ctx.channel()).shutdownOutput();
+            }
+        }
     }
 
     @Override

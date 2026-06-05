@@ -59,6 +59,7 @@ has zero impact on the existing TCP/HTTP server.
 | `Configuration.http3InitialMaxStreamDataBidirectional()` | `mockserver-core` | Per-stream flow control (bytes) |
 | `Configuration.http3InitialMaxStreamsBidirectional()` | `mockserver-core` | Max concurrent bidirectional streams |
 | `Configuration.http3QpackMaxTableCapacity()` | `mockserver-core` | QPACK dynamic table capacity (bytes, 0 = disabled) |
+| `McpRequestProcessor` | `mockserver-netty` | Transport-neutral MCP JSON-RPC processor shared by TCP (`McpStreamableHttpHandler`) and HTTP/3 (`Http3MockServerHandler`) paths |
 | `AltSvcHeaderHandler` | `mockserver-netty` | Outbound handler that adds `Alt-Svc: h3=":<http3Port>"; ma=<maxAge>` to TCP (HTTP/1.1 + HTTP/2) responses when HTTP/3 is enabled; does not clobber user-set Alt-Svc headers |
 | `Configuration.http3AltSvcMaxAge()` | `mockserver-core` | Max-age in seconds for the Alt-Svc header (default 86400) |
 | `Configuration.http3AdvertiseAltSvc()` | `mockserver-core` | Whether to advertise Alt-Svc on TCP responses (default true) |
@@ -292,12 +293,37 @@ declarations are needed -- they resolve automatically.
   and plumbed into the `HttpRequest` via `withClientCertificateChain`, enabling
   cert-based expectation matching and verification over HTTP/3. When no client cert
   is presented, the request proceeds without a cert chain (no error).
+- **MCP (Model Context Protocol) over HTTP/3**: the MCP Streamable HTTP transport
+  (`/mockserver/mcp`) works over HTTP/3 with the same behaviour as TCP, including
+  JSON-RPC request/response, session management, tool calls, resource reads, batch
+  requests, notifications, **control-plane authentication** (JWT and mTLS), and
+  **CORS headers**. Specifically:
+  - **Control-plane authentication** is enforced for POST, GET, and DELETE requests
+    on the MCP path, exactly mirroring the TCP handler's `authenticateRequest()`
+    logic. The `HttpRequest` already carries the client certificate chain (captured
+    earlier in `captureClientCertificates`), so mTLS auth works. OPTIONS (CORS
+    preflight) is exempt from authentication, matching TCP behaviour. On auth
+    failure, the H3 path returns the same 401 status and JSON-RPC error body as
+    the TCP path.
+  - **CORS headers** (`Access-Control-Allow-Origin`, `Allow-Methods`,
+    `Allow-Headers`, `Expose-Headers`, `Max-Age`) are added to every MCP response
+    when the request carries an `Origin` header, matching the TCP handler's
+    `addCorsHeaders()` logic.
+  - The MCP protocol logic is extracted into a transport-neutral `McpRequestProcessor`
+    that is shared between the TCP handler (`McpStreamableHttpHandler`) and the
+    HTTP/3 dispatch in `Http3MockServerHandler`. Each transport creates its own
+    `McpRequestProcessor` instance, but both share the same `McpSessionManager` (and
+    thus the same session state); the tool and resource registries are stateless.
+  - Integration-tested with a native QUIC client (initialize, tools/list, tools/call,
+    resources/list, ping, batch, notifications, DELETE, parse errors, GET 405,
+    auth-reject-without-credentials, auth-accept-with-credentials, CORS headers).
 
 ## HTTP/3 Parity / Known Limitations
 
 All expectation matching, actions, recording, verification, HTTP chaos profiles,
-forward-proxy, trace-context propagation, and mTLS work over HTTP/3, matching
-the TCP (HTTP/1.1 and HTTP/2) path.
+forward-proxy, trace-context propagation, mTLS, MCP (including control-plane
+authentication and CORS headers), work over HTTP/3, matching the TCP (HTTP/1.1
+and HTTP/2) path.
 
 ### Inherently N/A over HTTP/3
 
@@ -311,7 +337,7 @@ the TCP (HTTP/1.1 and HTTP/2) path.
 
 | Feature | Status |
 |---------|--------|
-| **MCP-over-H3** | Model Context Protocol Streamable HTTP transport is TCP-only. Deferred until there is demand for MCP over QUIC |
+| ~~**MCP-over-H3**~~ | **DONE**: MCP Streamable HTTP transport works over HTTP/3 with full parity. Transport-neutral `McpRequestProcessor` shared between TCP and H3 paths |
 | **gRPC-over-H3** | gRPC officially runs over HTTP/2. gRPC over HTTP/3 is not yet standardised. Deferred until gRPC-over-QUIC is adopted by the ecosystem |
 | **Per-connection detail in dashboard** | The H3 dashboard chip shows port + aggregate connection count. Per-connection detail (remote address, stream count, duration) is deferred |
 
