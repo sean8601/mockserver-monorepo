@@ -22,7 +22,8 @@
     "node": ">= 14.17.0"
   },
   "scripts": {
-    "test": "grunt"
+    "lint": "grunt jshint",
+    "test": "node --test 'test/**/*_test.js'"
   },
   "files": [
     "README.md",
@@ -36,9 +37,7 @@
   "devDependencies": {
     "grunt": "~1.6.2",
     "grunt-contrib-jshint": "~3.2.0",
-    "grunt-contrib-nodeunit": "~5.0.0",
-    "grunt-exec": "~3.0.0",
-    "nodeunit": "~0.11.3"
+    "grunt-exec": "~3.0.0"
   },
   "keywords": [
     "mockserver",
