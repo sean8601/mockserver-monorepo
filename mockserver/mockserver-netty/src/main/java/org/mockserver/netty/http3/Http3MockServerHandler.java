@@ -74,9 +74,13 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     // per-stream state: headers + accumulated body
     private Http3RequestBridge.ParsedHeaders parsedHeaders;
     private CompositeByteBuf bodyAccumulator;
+    // Running total of accumulated body bytes for enforcing the maxRequestBodySize cap.
+    private long accumulatedBodySize;
     // Non-null once this stream has been routed to true bidirectional gRPC streaming;
     // inbound DATA frames are then fed incrementally to it rather than accumulated.
     private Http3GrpcBidiStreamHandler bidiHandler;
+    // Set to true once a body-too-large rejection has been sent, to suppress further accumulation.
+    private boolean bodyExceeded;
 
     public Http3MockServerHandler(
         Configuration configuration,
@@ -121,12 +125,52 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     @Override
     protected void channelRead(ChannelHandlerContext ctx, Http3DataFrame dataFrame) {
         try {
+            if (bodyExceeded) {
+                // Already rejected -- discard further data frames silently.
+                return;
+            }
+
+            int frameSize = dataFrame.content().readableBytes();
+            int maxBodySize = configuration.maxRequestBodySize();
+
             if (bidiHandler != null) {
+                // Enforce the cap on the bidi streaming path too.
+                if (maxBodySize > 0 && accumulatedBodySize + frameSize > maxBodySize) {
+                    bodyExceeded = true;
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setMessageFormat("HTTP/3 bidi stream body size {} exceeds maxRequestBodySize {} -- resetting stream")
+                            .setArguments(accumulatedBodySize + frameSize, maxBodySize)
+                    );
+                    bidiHandler.onChannelInactive();
+                    bidiHandler = null;
+                    if (ctx.channel() instanceof QuicStreamChannel) {
+                        ((QuicStreamChannel) ctx.channel()).shutdownOutput();
+                    }
+                    return;
+                }
+                accumulatedBodySize += frameSize;
                 ByteBuf content = dataFrame.content();
                 byte[] bytes = new byte[content.readableBytes()];
                 content.readBytes(bytes);
                 bidiHandler.onData(bytes);
             } else if (bodyAccumulator != null) {
+                // Enforce the maxRequestBodySize cap, mirroring the HTTP/1.1/HTTP/2
+                // path which uses HttpObjectAggregator.maxContentLength.
+                if (maxBodySize > 0 && accumulatedBodySize + frameSize > maxBodySize) {
+                    bodyExceeded = true;
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setMessageFormat("HTTP/3 request body size {} exceeds maxRequestBodySize {} -- rejecting with 413")
+                            .setArguments(accumulatedBodySize + frameSize, maxBodySize)
+                    );
+                    releaseBodyAccumulator();
+                    sendPayloadTooLarge(ctx);
+                    return;
+                }
+                accumulatedBodySize += frameSize;
                 Http3RequestBridge.accumulateBody(bodyAccumulator, dataFrame);
             }
         } finally {
@@ -145,6 +189,11 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     @Override
     protected void channelInputClosed(ChannelHandlerContext ctx) {
         try {
+            if (bodyExceeded) {
+                // Already rejected with 413 -- do not process.
+                return;
+            }
+
             if (bidiHandler != null) {
                 // Client half-closed a bidi stream: finish once all responses have drained.
                 bidiHandler.onInputClosed();
@@ -701,6 +750,23 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             sb.append(UUID.randomUUID().toString().replace("-", ""));
         }
         return sb.substring(0, length);
+    }
+
+    /**
+     * Write a 413 Payload Too Large response and shut down the QUIC stream output.
+     * This mirrors the behaviour of Netty's {@code HttpObjectAggregator} when
+     * {@code maxContentLength} is exceeded on the HTTP/1.1 / HTTP/2 paths.
+     */
+    private void sendPayloadTooLarge(ChannelHandlerContext ctx) {
+        byte[] body = "{\"error\":\"request body too large\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        DefaultHttp3HeadersFrame headers = new DefaultHttp3HeadersFrame();
+        headers.headers().status("413");
+        headers.headers().add("content-type", "application/json; charset=utf-8");
+        headers.headers().addInt("content-length", body.length);
+        headers.headers().add("server", "mockserver-http3");
+        ctx.write(headers);
+        ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(body)))
+            .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
     }
 
     /**

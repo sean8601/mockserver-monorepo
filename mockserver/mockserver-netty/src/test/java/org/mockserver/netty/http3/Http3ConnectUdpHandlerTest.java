@@ -217,4 +217,56 @@ public class Http3ConnectUdpHandlerTest {
         assertNull("no closing bracket", Http3ConnectUdpHandler.parseAuthority("[::1:8080"));
         assertNull("no port after bracket", Http3ConnectUdpHandler.parseAuthority("[::1]"));
     }
+
+    // ---- escapeJsonString tests ----
+
+    @Test
+    public void shouldEscapeDoubleQuotes() {
+        assertThat(Http3ConnectUdpHandler.escapeJsonString("say \"hello\""),
+            is("say \\\"hello\\\""));
+    }
+
+    @Test
+    public void shouldEscapeBackslash() {
+        assertThat(Http3ConnectUdpHandler.escapeJsonString("path\\to\\file"),
+            is("path\\\\to\\\\file"));
+    }
+
+    @Test
+    public void shouldEscapeNewlineAndCarriageReturn() {
+        assertThat(Http3ConnectUdpHandler.escapeJsonString("line1\nline2\rline3"),
+            is("line1\\nline2\\rline3"));
+    }
+
+    @Test
+    public void shouldEscapeTabBackspaceFormfeed() {
+        assertThat(Http3ConnectUdpHandler.escapeJsonString("a\tb\bc\f"),
+            is("a\\tb\\bc\\f"));
+    }
+
+    @Test
+    public void shouldEscapeControlCharactersBelowU0020() {
+        // NUL (0x00) and BEL (0x07) should be escaped as \\u0000 and \\u0007
+        assertThat(Http3ConnectUdpHandler.escapeJsonString("\0\u0007"),
+            is("\\u0000\\u0007"));
+    }
+
+    @Test
+    public void shouldReturnEmptyStringForNull() {
+        assertThat(Http3ConnectUdpHandler.escapeJsonString(null), is(""));
+    }
+
+    @Test
+    public void shouldNotEscapePlainText() {
+        assertThat(Http3ConnectUdpHandler.escapeJsonString("plain text 123"),
+            is("plain text 123"));
+    }
+
+    @Test
+    public void shouldEscapeMixedContent() {
+        // Simulates a real error message that might contain backslash and quotes
+        String input = "Connection refused: \"target\" at C:\\path\\host";
+        String expected = "Connection refused: \\\"target\\\" at C:\\\\path\\\\host";
+        assertThat(Http3ConnectUdpHandler.escapeJsonString(input), is(expected));
+    }
 }

@@ -82,12 +82,6 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
      */
     private boolean tunnelEstablished;
 
-    /**
-     * Reference to the QUIC stream context for relaying datagrams back to the
-     * client from the UDP receive path.
-     */
-    private ChannelHandlerContext quicStreamCtx;
-
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (tunnelEstablished && msg instanceof Http3DataFrame) {
@@ -135,8 +129,6 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
         }
 
         LOG.info("CONNECT-UDP tunnel requested to {} -- establishing UDP relay", targetAddress);
-
-        this.quicStreamCtx = ctx;
 
         // Open a UDP channel connected to the target.
         // Reuse the parent channel's event loop group for the UDP socket.
@@ -210,7 +202,7 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
     private void sendErrorResponse(ChannelHandlerContext ctx, String status, String message) {
         LOG.warn("CONNECT-UDP error: {} -- {}", status, message);
 
-        String body = "{\"error\":\"" + message.replace("\"", "\\\"") + "\"}";
+        String body = "{\"error\":\"" + escapeJsonString(message) + "\"}";
         byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
 
         DefaultHttp3HeadersFrame responseHeaders = new DefaultHttp3HeadersFrame();
@@ -292,6 +284,53 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
         LOG.warn("CONNECT-UDP handler exception: {}", cause.getMessage(), cause);
         closeUdpChannel();
         ctx.close();
+    }
+
+    /**
+     * Escape a string for safe embedding in a JSON string value. Handles
+     * backslash, double-quote, and the control characters required by RFC 8259
+     * (newline, carriage-return, tab, backspace, form-feed), plus any other
+     * control character below U+0020.
+     */
+    static String escapeJsonString(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '"':
+                    sb.append("\\\"");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
+                case '\b':
+                    sb.append("\\b");
+                    break;
+                case '\f':
+                    sb.append("\\f");
+                    break;
+                default:
+                    if (ch < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) ch));
+                    } else {
+                        sb.append(ch);
+                    }
+                    break;
+            }
+        }
+        return sb.toString();
     }
 
     /**
