@@ -208,7 +208,12 @@ S3 static-website hosting (`aws_s3_bucket_website_configuration`) is **not** con
 
 ### Cross-Account Role ExternalId
 
-The `mockserver-release-website` IAM role in the website account optionally enforces `sts:ExternalId` on the trust policy when `var.role_external_id` is set. The current default is `""` (condition inactive). To activate, store the secret in `mockserver-release/website-external-id` in the build account's Secrets Manager and supply it at apply time via `TF_VAR_role_external_id`. See `terraform/website/README.md` for the full wiring procedure.
+The `mockserver-release-website` IAM role in the website account enforces `sts:ExternalId` on the trust policy. The ExternalId is **active** -- callers must supply the correct value or the assume-role call will be denied.
+
+- **Secret location:** the `external_id` key in the `mockserver-release/website-role` secret (build account, eu-west-2). The same secret also holds the `role_arn` key.
+- **CI path (`scripts/release/`):** `assume_website_role()` in `_lib.sh` loads the `external_id` from the secret and passes `--external-id` to `aws sts assume-role`. `versioned-site.sh` loads it and passes `TF_VAR_role_external_id` into the dockerized terraform so CI applies keep the trust-policy condition in sync.
+- **Manual apply:** set `TF_VAR_role_external_id=<value>` when running `terraform apply` in `terraform/website/`. The value is in the secret above (never committed to the repo).
+- **Terraform plumbing:** `cross-account-role.tf` conditionally adds the `sts:ExternalId` Condition when `var.role_external_id != ""`. The `main.tf` providers pass `external_id` in their `assume_role` blocks (also conditional).
 
 **OAC-only origin access:** All distributions authenticate to S3 through a single Origin Access Control (OAC), signing origin requests with SigV4. The legacy Origin Access Identity resources and the `AllowLegacyOAIRead` bucket-policy grant were removed (2026-06-05) after confirming all 9 distributions reference only `origin_access_control_id` in their origin config, so the OAI grants were dead code.
 

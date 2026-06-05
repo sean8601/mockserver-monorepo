@@ -373,17 +373,26 @@ assume_website_role() {
   # Note: NOT skipped in dry-run — terraform plan against the website account
   # needs these creds. Callers who only want write-side actions (S3 sync,
   # CloudFront invalidation) wrap their own dry-run guards around them.
-  local role_arn
-  role_arn=$(load_secret "mockserver-release/website-role" "role_arn")
+  # Suppress xtrace BEFORE loading any secret so neither the role ARN nor the
+  # external id can leak to stderr if a caller had `set -x` active.
   local xtrace_state
   xtrace_state=$(shopt -po xtrace 2>/dev/null || true)
   set +x
+  local role_arn
+  role_arn=$(load_secret "mockserver-release/website-role" "role_arn")
+  local external_id
+  external_id=$(load_secret "mockserver-release/website-role" "external_id" 2>/dev/null || true)
+  local -a assume_args=(
+    --role-arn "$role_arn"
+    --role-session-name "mockserver-release-${RELEASE_VERSION}"
+    --duration-seconds 3600
+    --output json
+  )
+  if [[ -n "${external_id:-}" && "$external_id" != "null" ]]; then
+    assume_args+=(--external-id "$external_id")
+  fi
   local creds
-  creds=$(aws sts assume-role \
-    --role-arn "$role_arn" \
-    --role-session-name "mockserver-release-${RELEASE_VERSION}" \
-    --duration-seconds 3600 \
-    --output json)
+  creds=$(aws sts assume-role "${assume_args[@]}")
   AWS_ACCESS_KEY_ID=$(echo "$creds" | jq -r '.Credentials.AccessKeyId')
   AWS_SECRET_ACCESS_KEY=$(echo "$creds" | jq -r '.Credentials.SecretAccessKey')
   AWS_SESSION_TOKEN=$(echo "$creds" | jq -r '.Credentials.SessionToken')
