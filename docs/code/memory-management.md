@@ -57,13 +57,13 @@ maxExpectations  = min(heapAvailableInKB / 10, 15000)
 
 ### Source Code
 
-| Component | File | Line |
-|-----------|------|------|
-| `heapAvailableInKB()` | `ConfigurationProperties.java` | 896 |
-| `maxLogEntries()` default | `ConfigurationProperties.java` | 920 |
-| `maxExpectations()` default | `ConfigurationProperties.java` | 902 |
-| `ringBufferSize()` | `Configuration.java` | 2220 |
-| Heap measurement | `MemoryMonitoring.getJVMMemory()` | `MemoryMonitoring.java:59` |
+| Component | File | Method |
+|-----------|------|--------|
+| Heap available probe | `ConfigurationProperties.java` | `heapAvailableInKB()` |
+| `maxLogEntries()` default | `ConfigurationProperties.java` | `maxLogEntries()` |
+| `maxExpectations()` default | `ConfigurationProperties.java` | `maxExpectations()` |
+| Ring buffer sizing | `Configuration.java` | `ringBufferSize()` |
+| Heap measurement | `MemoryMonitoring.java` | `getJVMMemory()` |
 
 ### Example: Default Limits by Heap Size
 

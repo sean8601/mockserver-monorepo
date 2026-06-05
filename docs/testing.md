@@ -66,8 +66,8 @@ Test filtering is done entirely by naming convention — no `@Category` or `@Tag
 
 | Pattern | Runner | Maven Phase | Plugin |
 |---------|--------|-------------|--------|
-| `**/*Test.java` | Surefire | `test` | `maven-surefire-plugin` 3.5.5 |
-| `**/*IntegrationTest.java` | Failsafe | `integration-test` / `verify` | `maven-failsafe-plugin` 3.5.5 |
+| `**/*Test.java` | Surefire | `test` | `maven-surefire-plugin` 3.5.6 |
+| `**/*IntegrationTest.java` | Failsafe | `integration-test` / `verify` | `maven-failsafe-plugin` 3.5.6 |
 
 ### Abstract Base Class Hierarchy
 
@@ -174,7 +174,7 @@ Unit tests use JUnit 4 (or JUnit 5 in `mockserver-junit-jupiter`) and run via th
 | Naming convention | `*Test.java` |
 | Excludes | `*IntegrationTest.java` |
 | Maven phase | `test` |
-| Plugin | `maven-surefire-plugin` 3.5.5 |
+| Plugin | `maven-surefire-plugin` 3.5.6 |
 | Log level | `mockserver.logLevel=${mockserver.testLogLevel}` (default: `ERROR`) |
 | Locale | `en-GB` (`-Duser.language=en -Duser.country=GB`) |
 | Test listener | `org.mockserver.test.PrintOutCurrentTestRunListener` |
@@ -200,7 +200,7 @@ Integration tests use JUnit 4 and run via the Maven Failsafe plugin during the `
 |----------|-------|
 | Naming convention | `*IntegrationTest.java` |
 | Maven phase | `integration-test` / `verify` |
-| Plugin | `maven-failsafe-plugin` 3.5.5 |
+| Plugin | `maven-failsafe-plugin` 3.5.6 |
 | Log level | `mockserver.logLevel=${mockserver.testLogLevel}` (default: `ERROR`) |
 | Extra system properties | `project.version`, `project.basedir` |
 | Locale | `en-GB` |

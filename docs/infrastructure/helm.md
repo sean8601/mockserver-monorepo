@@ -95,7 +95,7 @@ service:
   loadBalancerSourceRanges: []
   nodePort: ""
   test:
-    image: radial/busyboxplus:curl
+    image: curlimages/curl:8.20.0
 ingress:
   enabled: false
   className: ""

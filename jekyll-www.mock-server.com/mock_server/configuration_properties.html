@@ -705,6 +705,23 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.attemptToProxyIfNoMatchingExpectation="false"</code></pre>
 </div>
 
+<button id="button_configuration_forward_binary_requests_without_waiting_for_response" class="accordion title"><strong>Forward Binary Requests Without Waiting For Response</strong></button>
+<div class="panel title">
+    <p>If true, binary (non-HTTP) requests that are forwarded upstream are sent without waiting for a response from the upstream server (fire-and-forget). This is useful for one-way binary protocols where no response is expected.</p>
+    <p>If false (the default), MockServer waits for the upstream server to respond before completing the forwarded binary request.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardBinaryRequestsWithoutWaitingForResponse(boolean forwardBinaryRequestsAsynchronously)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardBinaryRequestsWithoutWaitingForResponse=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_BINARY_REQUESTS_WITHOUT_WAITING_FOR_RESPONSE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardBinaryRequestsWithoutWaitingForResponse=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardBinaryRequestsWithoutWaitingForResponse="true"</code></pre>
+</div>
+
 <button id="button_configuration_http_proxy" class="accordion title"><strong>HTTP Proxy For Forwarded Requests</strong></button>
 <div class="panel title">
     <p>Use HTTP proxy (i.e. via Host header) for all outbound / forwarded requests</p>
@@ -1165,6 +1182,42 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.livenessHttpGetPath=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.livenessHttpGetPath="/liveness/probe"</code></pre>
+</div>
+
+<a id="openapi_configuration" class="anchor" href="#openapi_configuration">&nbsp;</a>
+
+<h2>OpenAPI Configuration:</h2>
+
+<button id="button_configuration_openapi_context_path_prefix" class="accordion title"><strong>OpenAPI Context Path Prefix</strong></button>
+<div class="panel title">
+    <p>A path prefix to add to all paths generated from OpenAPI specifications. For example, if set to <span class="inline_code">/api/v1</span> then a path <span class="inline_code">/pets</span> from the spec becomes <span class="inline_code">/api/v1/pets</span>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (empty string)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.openAPIContextPathPrefix(String openAPIContextPathPrefix)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.openAPIContextPathPrefix=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_OPENAPI_CONTEXT_PATH_PREFIX=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.openAPIContextPathPrefix=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.openAPIContextPathPrefix="/api/v1"</code></pre>
+</div>
+
+<button id="button_configuration_openapi_response_validation" class="accordion title"><strong>OpenAPI Response Validation</strong></button>
+<div class="panel title">
+    <p>If enabled, MockServer validates that mock responses conform to the OpenAPI spec schema they were generated from. Validation is advisory only - responses are still returned to the client even if validation fails.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.openAPIResponseValidation(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.openAPIResponseValidation=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_OPENAPI_RESPONSE_VALIDATION=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.openAPIResponseValidation=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.openAPIResponseValidation="true"</code></pre>
 </div>
 
 <a id="async_messaging_configuration" class="anchor" href="#async_messaging_configuration">&nbsp;</a>

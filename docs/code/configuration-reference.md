@@ -56,9 +56,13 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | gRPC | `grpcEnabled`, `grpcDescriptorDirectory`, `grpcProtoDirectory`, `grpcProtocPath` |
 | DNS | `dnsEnabled`, `dnsPort` |
 | HTTP/3 (QUIC) | `http3Port`, `http3AltSvcMaxAge`, `http3AdvertiseAltSvc`, `http3ConnectUdpEnabled`, `http3MaxIdleTimeout`, `http3InitialMaxData`, `http3InitialMaxStreamDataBidirectional`, `http3InitialMaxStreamsBidirectional`, `http3QpackMaxTableCapacity` |
-| Service mesh / transparent proxy | `transparentProxyEnabled` |
+| Service mesh / transparent proxy | `transparentProxyEnabled`, `transparentProxyTproxy`, `transparentProxyEbpf`, `transparentProxyEbpfMapPath` |
 | OpenTelemetry | `otelMetricsEnabled`, `otelTracesEnabled`, `otelEndpoint`, `otelMetricsExportIntervalSeconds`, `otelPropagateTraceContext`, `otelGenerateTraceId` |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs` |
+| Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig` |
+| Blob store | `blobStoreType`, `blobStoreBucket`, `blobStoreRegion`, `blobStoreEndpoint`, `blobStoreKeyPrefix`, `blobStoreAccessKeyId`, `blobStoreSecretAccessKey`, `blobStoreContainer`, `blobStoreConnectionString`, `blobStoreProjectId` |
+| Async messaging | `asyncKafkaBootstrapServers`, `asyncMqttBrokerUrl`, `asyncRecordedMessageMaxEntries` |
+| LLM mocking | `llmProvider`, `llmApiKey`, `llmModel`, `llmBaseUrl`, `llmBackendsConfig`, `llmSemanticMatchingEnabled`, `llmVcrStrict`, `fixtureBodyRedactFields` |
 
 The example file documents the most commonly tuned properties (≈220 lines). For the complete list including newer subsystems, read `ConfigurationProperties.java` or the consumer reference page.
 

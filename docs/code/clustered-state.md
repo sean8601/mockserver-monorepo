@@ -391,7 +391,7 @@ Per-expectation `Times` match limits (e.g. `Times.exactly(3)`, `Times.once()`) a
 | Limitation | Detail |
 |------------|--------|
 | CRUD entity namespace isolation | Each namespace is a separate Infinispan cache defined on demand. The number of distinct CRUD namespaces in use should be small (hundreds, not millions). |
-| No cloud blob backends | `BlobStore` has `InMemoryBlobStore` and `FilesystemBlobStore` implementations; S3/GCS/Azure Blob adapters are SPI-only stubs. |
+| Cloud blob backends require their module on the classpath | `BlobStore` has built-in `InMemoryBlobStore` and `FilesystemBlobStore` implementations. The S3, GCS, and Azure Blob backends are fully implemented (see "Cloud Blob Store Backends" above) but live in optional modules (`mockserver-blob-s3` / `-gcs` / `-azure`); each must be on the classpath when its `blobStoreType` is selected, otherwise `StateBackendFactory` fails fast. |
 | JGroups stack configuration | The built-in loopback stack is suitable for embedded tests only. Production clusters require a UDP or TCP JGroups stack configured via `clusterTransportConfig`. |
 | Chaos TTL clock skew | TTL-based auto-expiry uses the node-local controllable clock (`TimeService`). In a clustered deployment, clock advances (via `PUT /mockserver/clock`) are node-local, so a TTL-bearing profile may expire at different wall-clock times on different nodes if their clocks are advanced independently. For production use, rely on the REST API `remove` endpoint rather than TTL for deterministic cross-node cleanup. |
 | Chaos match counters | Per-service gRPC match counters (`incrementMatchCount`) and per-host quota counters remain node-local. A quota limit of 100 on a two-node cluster allows up to 200 total requests. |

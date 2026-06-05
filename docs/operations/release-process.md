@@ -298,7 +298,7 @@ RUBY_IMAGE=ruby:3.2-bookworm
 HELM_IMAGE=alpine/helm:3.16.2
 GH_IMAGE=maniator/gh:v2.62.0
 PYTHON_IMAGE=python:3.12-slim-bookworm
-TERRAFORM_IMAGE=hashicorp/terraform:1.9
+TERRAFORM_IMAGE=hashicorp/terraform:1.15
 ```
 
 Override any of them by exporting the corresponding env var. Change them in `_lib.sh` to update for everyone.

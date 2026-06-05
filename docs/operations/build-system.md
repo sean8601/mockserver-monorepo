@@ -143,10 +143,10 @@ Manual activation"]
 | `templating-maven-plugin` | 3.1.0 | generate-sources | Generates version class from templates (version, group/artifact id, git hash) |
 | `maven-jar-plugin` | 3.5.0 | package | JAR packaging with MANIFEST.MF metadata |
 | `maven-clean-plugin` | 3.5.0 | clean | Removes `.log`, keystore, and temp files |
-| `maven-surefire-plugin` | 3.5.5 | test | Unit tests (`*Test.java`, excludes `*IntegrationTest.java`) |
-| `maven-failsafe-plugin` | 3.5.5 | integration-test | Integration tests (`*IntegrationTest.java`) |
+| `maven-surefire-plugin` | 3.5.6 | test | Unit tests (`*Test.java`, excludes `*IntegrationTest.java`) |
+| `maven-failsafe-plugin` | 3.5.6 | integration-test | Integration tests (`*IntegrationTest.java`) |
 | `maven-checkstyle-plugin` | 3.6.0 | validate | Code style enforcement via `checkstyle.xml` |
-| `maven-enforcer-plugin` | 3.6.2 | validate | Dependency convergence checks |
+| `maven-enforcer-plugin` | 3.6.3 | validate | Dependency convergence checks |
 | `exec-maven-plugin` | 3.6.3 | clean | Runs `stop_MockServer.sh` (Unix profile) |
 
 ## Test Configuration

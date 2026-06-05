@@ -137,6 +137,11 @@ The retrieve and clear endpoints accept type parameters:
 | `JSON` | Standard JSON serialization |
 | `JAVA` | Generated Java client API code (via `ExpectationToJavaSerializer`) |
 | `LOG_ENTRIES` | Raw log entry format |
+| `HAR` | HTTP Archive (HAR) export |
+| `OPENAPI` | OpenAPI spec export (applies to `ACTIVE_EXPECTATIONS`) |
+| `POSTMAN` | Postman collection export (applies to `ACTIVE_EXPECTATIONS`) |
+| `BRUNO` | Bruno request collection export (applies to `ACTIVE_EXPECTATIONS`) |
+| `CURL` | cURL command(s) reproducing recorded requests (applies to `REQUESTS` / `REQUEST_RESPONSES`) |
 
 **`ClearType`** (query parameter `?type=`):
 

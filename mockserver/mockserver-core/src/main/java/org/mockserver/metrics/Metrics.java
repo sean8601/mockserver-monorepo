@@ -249,7 +249,7 @@ public class Metrics {
      * Increment the HTTP chaos injected counter for the given fault type.
      * No-op when metrics are disabled (counter not registered) or faultType is null.
      *
-     * @param faultType one of "drop", "error", or "latency"
+     * @param faultType one of "drop", "error", "latency", "truncate", "malformed", "slow", "quota", or "graphql"
      */
     public static void incrementHttpChaosInjected(String faultType) {
         Counter counter = httpChaosInjectedTotal;

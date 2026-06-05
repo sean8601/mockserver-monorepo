@@ -224,7 +224,7 @@ Current dependency baseline:
 
 | Dependency | Version |
 |-----------|---------|
-| Spring Framework | 7.0.7 |
+| Spring Framework | 7.0.x |
 | Jakarta EE | 10 |
 | Tomcat Embed | 11.x |
 | Jetty | 12.x |
@@ -284,7 +284,7 @@ See: [Client & Integrations — MCP](client-and-integrations.md#mcp-model-contex
 | `org.mockserver.netty.mcp` | netty | MCP (Model Context Protocol) server handler | [Client & Integrations](client-and-integrations.md) |
 | `org.mockserver.integration` | netty | `ClientAndServer` combined class | [Client & Integrations](client-and-integrations.md) |
 | `org.mockserver.mock` | core | Expectation management, HttpState | [Request Processing](request-processing.md) |
-| `org.mockserver.mock.action.http` | core | Action handlers (14 types) | [Request Processing](request-processing.md) |
+| `org.mockserver.mock.action.http` | core | Action handlers (16 types) | [Request Processing](request-processing.md) |
 | `org.mockserver.matchers` | core | Request matching (15+ matcher types) | [Domain Model](domain-model.md) |
 | `org.mockserver.model` | core | Domain objects (HttpRequest, etc.) | [Domain Model](domain-model.md) |
 | `org.mockserver.serialization` | core | JSON/Java serialization | [Domain Model](domain-model.md) |
@@ -320,4 +320,6 @@ See: [Client & Integrations — MCP](client-and-integrations.md#mcp-model-contex
 | **Low** | [Client API & Test Integrations](client-and-integrations.md) | MockServerClient, JUnit 4/5, Spring, WebSocket callbacks |
 | **Medium** | [AI & RPC Protocol Mocking](ai-protocol-mocking.md) | SSE streaming, JSON-RPC, MCP, A2A, gRPC mocking |
 | **Medium** | [LLM Mocking](llm-mocking.md) | LLM response builder, provider codecs, conversation matchers, MCP tools, dashboard |
+| **Low** | [LLM Codec Golden-File Testing](llm-codec-fixtures.md) | Codec-generated golden fixtures, normalization, drift-detection test |
+| **Low** | [LLM Mocking Security Audit](llm-security-audit.md) | Security review of the LLM mocking feature (M0–M4) |
 | **Low** | [Metrics & Monitoring](metrics.md) | Prometheus metrics, memory monitoring |

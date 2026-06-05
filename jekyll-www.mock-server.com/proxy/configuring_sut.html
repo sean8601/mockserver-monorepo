@@ -108,7 +108,7 @@ sitemap:
 
 <h4>Java JDK HttpURLConnection (HTTP)</h4>
 
-<p>Configure the Web or Secure Web Proxy with an <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/net/HttpURLConnection.html" rel="noopener noreferrer">HttpURLConnection</a> from the Java JDK, as follows:</p>
+<p>Configure the Web or Secure Web Proxy with an <a target="_blank" href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/HttpURLConnection.html" rel="noopener noreferrer">HttpURLConnection</a> from the Java JDK, as follows:</p>
 
 <pre><code class="code"><span class="keyword">private</span> HttpURLConnection sendRequestViaProxy(URL url) throws IOException {
     Proxy proxy = <span class="keyword">new</span> Proxy(Proxy.Type.<span class="constant">HTTP</span>, <span class="keyword">new</span> InetSocketAddress(System.getProperty(<span class="string_literal">"http.proxyHost"</span>), Integer.parseInt(System.getProperty(<span class="string_literal">"http.proxyPort"</span>))));
@@ -362,7 +362,7 @@ HttpClient httpClient = HttpClients.custom()
 
 <h4>Java JDK HttpURLConnection (SOCKS)</h4>
 
-<p>Configure the SOCKS Proxy with an <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/net/HttpURLConnection.html" rel="noopener noreferrer">HttpURLConnection</a> from the Java JDK, as follows:</p>
+<p>Configure the SOCKS Proxy with an <a target="_blank" href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/HttpURLConnection.html" rel="noopener noreferrer">HttpURLConnection</a> from the Java JDK, as follows:</p>
 
 <pre><code class="code"><span class="keyword">private</span> HttpURLConnection sendRequestViaProxy(URL url) throws IOException {
     Proxy proxy = <span class="keyword">new</span> Proxy(Proxy.Type.<span class="constant">SOCKS</span>, <span class="keyword">new</span> InetSocketAddress(System.getProperty(<span class="string_literal">"http.proxyHost"</span>), Integer.parseInt(System.getProperty(<span class="string_literal">"http.proxyPort"</span>))));
