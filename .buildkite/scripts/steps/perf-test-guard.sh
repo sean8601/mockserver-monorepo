@@ -18,17 +18,28 @@ source "$SCRIPT_DIR/../lib/last-successful-commit.sh"
 
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || echo '')"
 
+# Forced/manual run: a UI ("New Build") build, or an API build whose message
+# carries the explicit `[perf-run]` marker, ALWAYS dispatches — even on the same
+# commit as the last run. This is the deliberate manual escape hatch. Scheduled
+# runs keep the "only when master moved" guard below so the daily job stays
+# commit-gated.
+FORCE_RUN=false
+if [ "${BUILDKITE_SOURCE:-}" = "ui" ] || [[ "${BUILDKITE_MESSAGE:-}" == *"[perf-run]"* ]]; then
+  FORCE_RUN=true
+  echo "--- :rocket: forced run (source=${BUILDKITE_SOURCE:-?}, [perf-run] marker) — skipping new-commit guard"
+fi
+
 echo "--- :buildkite: resolving the commit the perf regression last RAN against"
 LAST="$(last_perf_run_commit || true)"
 
 NEW_COMMIT=true
-if [ -n "$LAST" ]; then
+if [ "$FORCE_RUN" = false ] && [ -n "$LAST" ]; then
   echo "    last perf run: ${LAST:0:10}  (HEAD: ${HEAD_SHA:0:10})"
   # Equality on the recorded run commit — any new commit on the branch dispatches.
   if [ "$LAST" = "$HEAD_SHA" ]; then
     NEW_COMMIT=false
   fi
-else
+elif [ "$FORCE_RUN" = false ]; then
   echo "    no prior perf run recorded — running (first run / conservative)"
 fi
 
