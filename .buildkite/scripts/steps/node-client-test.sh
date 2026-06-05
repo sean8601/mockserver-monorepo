@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the mockserver-client-node functional tests (nodeunit) against a
+# Run the mockserver-client-node functional tests (node:test) against a
 # MockServer Docker container, mirroring the python/ruby integration test
 # pattern.  The tests are parameterised via MOCKSERVER_HOST / MOCKSERVER_PORT
 # environment variables.
@@ -62,4 +62,4 @@ fi
   -e "MOCKSERVER_HOST=$MOCKSERVER_NAME" \
   -e "MOCKSERVER_PORT=1080" \
   --network "$NETWORK_NAME" \
-  -- bash -c 'npm ci && npx grunt test_node_external'
+  -- bash -c 'npm ci && npx c8 --check-coverage --lines 68 --functions 83 --branches 74 node --test --test-force-exit --test-concurrency=1 test/no_proxy/mock_server_node_client_test.js test/with_proxy/proxy_client_node_test.js'

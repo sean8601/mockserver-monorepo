@@ -32,10 +32,14 @@
     "webSocketClient.js",
     "stop_MockServer.sh"
   ],
+  "scripts": {
+    "test": "node --test --test-force-exit --test-concurrency=1 test/no_proxy/mock_server_node_client_test.js test/with_proxy/proxy_client_node_test.js",
+    "test:coverage": "c8 --check-coverage --lines 68 --functions 83 --branches 74 node --test --test-force-exit --test-concurrency=1 test/no_proxy/mock_server_node_client_test.js test/with_proxy/proxy_client_node_test.js"
+  },
   "devDependencies": {
     "@types/node": "~25.9.1",
+    "c8": "~10.1.3",
     "grunt-contrib-jshint": "~3.2.0",
-    "grunt-contrib-nodeunit": "~5.0.0",
     "grunt-exec": "~3.0.0",
     "grunt-karma": "~4.0.2",
     "jasmine-core": "~6.2.0",
@@ -46,7 +50,6 @@
     "karma-spec-reporter": "~0.0.36",
     "karma-xvfb-chrome-launcher": "~0.0.1",
     "mockserver-node": "6.1.0",
-    "nodeunit": "~0.11.3",
     "typescript": "~6.0.3"
   },
   "keywords": [
