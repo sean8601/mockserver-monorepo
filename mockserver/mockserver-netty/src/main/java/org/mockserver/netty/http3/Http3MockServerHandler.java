@@ -1,5 +1,7 @@
 package org.mockserver.netty.http3;
 
+import com.google.protobuf.Descriptors;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -22,14 +24,17 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mappers.JDKCertificateToMockServerX509Certificate;
 import org.mockserver.metrics.Metrics;
+import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.netty.mcp.JsonRpcMessage;
 import org.mockserver.netty.mcp.McpRequestProcessor;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.telemetry.TraceContextAttributes;
 import org.mockserver.telemetry.W3CTraceContext;
+import org.mockserver.uuid.UUIDService;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLEngine;
@@ -41,6 +46,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST;
+import static org.mockserver.log.model.LogEntryMessages.RECEIVED_REQUEST_MESSAGE_FORMAT;
 import static org.mockserver.metrics.Metrics.Name.REQUESTS_RECEIVED_COUNT;
 
 /**
@@ -67,6 +74,9 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     // per-stream state: headers + accumulated body
     private Http3RequestBridge.ParsedHeaders parsedHeaders;
     private CompositeByteBuf bodyAccumulator;
+    // Non-null once this stream has been routed to true bidirectional gRPC streaming;
+    // inbound DATA frames are then fed incrementally to it rather than accumulated.
+    private Http3GrpcBidiStreamHandler bidiHandler;
 
     public Http3MockServerHandler(
         Configuration configuration,
@@ -99,12 +109,24 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     protected void channelRead(ChannelHandlerContext ctx, Http3HeadersFrame headersFrame) {
         parsedHeaders = Http3RequestBridge.parseHeaders(headersFrame);
         bodyAccumulator = ctx.alloc().compositeBuffer();
+
+        // True bidirectional gRPC streaming is routed here, at HEADERS time, because the
+        // server must start writing response frames while the client is still sending
+        // request frames (QUIC streams are full-duplex). When a bidi method matches a
+        // GrpcBidiResponse expectation, subsequent DATA frames are fed incrementally to
+        // the bidi handler instead of being accumulated for one-shot processing.
+        tryBeginGrpcBidi(ctx);
     }
 
     @Override
     protected void channelRead(ChannelHandlerContext ctx, Http3DataFrame dataFrame) {
         try {
-            if (bodyAccumulator != null) {
+            if (bidiHandler != null) {
+                ByteBuf content = dataFrame.content();
+                byte[] bytes = new byte[content.readableBytes()];
+                content.readBytes(bytes);
+                bidiHandler.onData(bytes);
+            } else if (bodyAccumulator != null) {
                 Http3RequestBridge.accumulateBody(bodyAccumulator, dataFrame);
             }
         } finally {
@@ -113,8 +135,22 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
     }
 
     @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        if (bidiHandler != null) {
+            bidiHandler.onChannelInactive();
+        }
+        super.channelInactive(ctx);
+    }
+
+    @Override
     protected void channelInputClosed(ChannelHandlerContext ctx) {
         try {
+            if (bidiHandler != null) {
+                // Client half-closed a bidi stream: finish once all responses have drained.
+                bidiHandler.onInputClosed();
+                return;
+            }
+
             if (parsedHeaders == null) {
                 // no headers received -- nothing to process
                 return;
@@ -192,6 +228,94 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
         } finally {
             releaseBodyAccumulator();
         }
+    }
+
+    /**
+     * Attempt to route this stream to true bidirectional gRPC streaming. Returns
+     * {@code true} (and installs {@link #bidiHandler}) when ALL of the following hold:
+     * <ul>
+     *   <li>{@code grpcBidiStreamingEnabled} is on;</li>
+     *   <li>proto descriptors are loaded and the request is gRPC (content-type);</li>
+     *   <li>the {@code :path} resolves to a method that is both client- and server-streaming;</li>
+     *   <li>a matching expectation with a {@link GrpcBidiResponse} action is found.</li>
+     * </ul>
+     * The match uses the same two-phase peek-then-consume protocol as the HTTP/2
+     * {@code GrpcBidiRouterHandler}: a side-effect-free peek confirms the action type, then a
+     * consuming match decrements Times / transitions scenarios / sets responseInProgress (cleared
+     * by the completion callback when the stream ends). When any condition is not met, this is a
+     * no-op and the stream falls through to the normal accumulate-then-process path (so unary,
+     * server-streaming, and non-gRPC requests are unaffected).
+     */
+    private boolean tryBeginGrpcBidi(ChannelHandlerContext ctx) {
+        if (!Boolean.TRUE.equals(configuration.grpcBidiStreamingEnabled())) {
+            return false;
+        }
+        GrpcProtoDescriptorStore descriptorStore = httpState.getGrpcDescriptorStore();
+        if (descriptorStore == null || !descriptorStore.hasServices()) {
+            return false;
+        }
+        String path = parsedHeaders.path();
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+
+        HttpRequest request = Http3RequestBridge.toHttpRequest(
+            parsedHeaders.method(), path, parsedHeaders.scheme(), parsedHeaders.authority(),
+            parsedHeaders.headers(), new byte[0]
+        );
+        if (!GrpcHttp3Adapter.isGrpcRequest(request.getFirstHeader("content-type"))) {
+            return false;
+        }
+
+        String[] parts = GrpcHttp3Adapter.parseGrpcPath(path);
+        Descriptors.MethodDescriptor methodDescriptor = descriptorStore.getMethod(parts[0], parts[1]);
+        if (methodDescriptor == null || !methodDescriptor.isClientStreaming() || !methodDescriptor.isServerStreaming()) {
+            return false;
+        }
+
+        // Tag with service/method (header-based matching parity) and capture client certs so
+        // cert-based expectation matching works for bidi too.
+        request.withHeader("x-grpc-service", parts[0]).withHeader("x-grpc-method", parts[1]);
+        if (request.getLogCorrelationId() == null) {
+            request.withLogCorrelationId(UUIDService.getUUID());
+        }
+        captureClientCertificates(ctx, request);
+
+        // Two-phase match: peek (side-effect-free) then consume.
+        Expectation peeked = httpState.peekFirstMatchingExpectation(request);
+        if (peeked == null || !(peeked.getAction() instanceof GrpcBidiResponse)) {
+            return false;
+        }
+        Expectation consumed = httpState.firstMatchingExpectation(request);
+        if (consumed == null || !(consumed.getAction() instanceof GrpcBidiResponse)) {
+            // Race between peek and consume -- fall back to the normal path.
+            return false;
+        }
+
+        // Log the bidi request unconditionally (matching HttpActionHandler) so it is recorded
+        // in the request log and remains verifiable regardless of the configured log level.
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setType(RECEIVED_REQUEST)
+                .setLogLevel(Level.INFO)
+                .setCorrelationId(request.getLogCorrelationId())
+                .setHttpRequest(request)
+                .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
+                .setArguments(request)
+        );
+
+        if (configuration.metricsEnabled()) {
+            metrics.increment(REQUESTS_RECEIVED_COUNT);
+        }
+
+        final Expectation matchedExpectation = consumed;
+        Runnable completionCallback = () -> httpState.postProcess(matchedExpectation);
+        bidiHandler = new Http3GrpcBidiStreamHandler(
+            ctx, methodDescriptor, descriptorStore.getConverter(),
+            (GrpcBidiResponse) consumed.getAction(), completionCallback, mockServerLogger
+        );
+        bidiHandler.start();
+        return true;
     }
 
     /**

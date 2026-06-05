@@ -24,6 +24,7 @@ import org.mockserver.openapi.OpenAPIResponseValidator;
 import org.mockserver.openapi.OpenApiRuntimeExpressionResolver;
 import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
+import org.mockserver.responsewriter.GrpcStreamResponseWriter;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
@@ -547,11 +548,44 @@ public class HttpActionHandler {
                 }
             }
             case GRPC_STREAM_RESPONSE -> {
-                if (ctx == null) {
+                if (ctx == null && !(responseWriter instanceof GrpcStreamResponseWriter)) {
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody("gRPC streaming is not supported in WAR deployments"),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
                     );
+                } else if (responseWriter instanceof GrpcStreamResponseWriter) {
+                    // HTTP/3 path: a QUIC stream has no HTTP/2 frame codec, so delegate the
+                    // server-streaming write to the transport-specific response writer (which
+                    // emits initial HEADERS + DATA frames + trailing HEADERS over the QUIC stream).
+                    scheduler.schedule(() -> {
+                        try {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(EXPECTATION_RESPONSE)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(request.getLogCorrelationId())
+                                    .setHttpRequest(request)
+                                    .setExpectationId(action.getExpectationId())
+                                    .setMessageFormat("returning gRPC stream response over HTTP/3 for request:{}for action:{}from expectation:{}")
+                                    .setArguments(request, action, action.getExpectationId())
+                            );
+                            ((GrpcStreamResponseWriter) responseWriter).writeGrpcStreamResponse((GrpcStreamResponse) action, request);
+                        } catch (Throwable throwable) {
+                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(WARN)
+                                        .setLogLevel(Level.INFO)
+                                        .setCorrelationId(request.getLogCorrelationId())
+                                        .setHttpRequest(request)
+                                        .setMessageFormat(throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
+                        } finally {
+                            expectationPostProcessor.run();
+                        }
+                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
                 } else {
                     scheduler.schedule(() -> {
                         try {

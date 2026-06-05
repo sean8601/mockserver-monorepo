@@ -53,7 +53,10 @@ has zero impact on the existing TCP/HTTP server.
 | `Http3ResponseWriter` | `mockserver-netty` | ResponseWriter subclass that serialises HttpResponse as HTTP/3 frames |
 | `Http3ConnectUdpHandler` | `mockserver-netty` | CONNECT-UDP (MASQUE, RFC 9298) relay; intercepts extended CONNECT requests with `:protocol=connect-udp` when `http3ConnectUdpEnabled=true`; opens a UDP channel to the target authority and relays datagrams bidirectionally |
 | `GrpcHttp3Adapter` | `mockserver-netty` | Pure helper: detects gRPC content-type, decodes gRPC framing to JSON (reusing `GrpcFrameCodec` + `GrpcProtoDescriptorStore`), builds H3 HEADERS/DATA frames for gRPC responses with correct trailing HEADERS framing |
-| `Http3GrpcResponseWriter` | `mockserver-netty` | `ResponseWriter` subclass that writes gRPC responses over H3 with initial HEADERS + DATA + trailing HEADERS (grpc-status) framing |
+| `Http3GrpcResponseWriter` | `mockserver-netty` | `ResponseWriter` subclass that writes gRPC responses over H3 with initial HEADERS + DATA + trailing HEADERS (grpc-status) framing; also implements `GrpcStreamResponseWriter` for server-streaming responses |
+| `Http3GrpcBidiStreamHandler` | `mockserver-netty` | Drives true bidirectional gRPC streaming over a single full-duplex QUIC stream (HTTP/3 analogue of `GrpcBidiStreamHandler`); driven incrementally by `Http3MockServerHandler` |
+| `GrpcStreamResponseWriter` | `mockserver-core` | Transport-neutral seam `HttpActionHandler` uses to delegate `GRPC_STREAM_RESPONSE` writing to the HTTP/3 writer (HTTP/2 keeps using `GrpcStreamResponseActionHandler`) |
+| `GrpcStreamMessageEncoder` / `GrpcBidiRuleMatcher` | `mockserver-core` | Shared encoding + rule-matching helpers so HTTP/2 and HTTP/3 streaming behave identically |
 | `Configuration.http3Port()` | `mockserver-core` | Configuration property |
 | `ConfigurationProperties.http3Port()` | `mockserver-core` | Static/system-property access |
 | `Configuration.http3MaxIdleTimeout()` | `mockserver-core` | QUIC max idle timeout (ms) |
@@ -290,6 +293,23 @@ declarations are needed -- they resolve automatically.
 - Integration-tested gRPC-over-HTTP/3 (in-JVM Netty QUIC client with manual gRPC
   framing, verifies unary call round-trip, trailing HEADERS framing, error status,
   and non-gRPC regression)
+- **gRPC server-streaming over HTTP/3**: a `grpcStreamResponse` expectation streams
+  each configured message as its own HTTP/3 DATA frame (honouring per-message delays),
+  then a trailing HEADERS frame with `grpc-status`. The unary request is matched
+  exactly as for unary gRPC; only the response side fans out. The message encoding is
+  shared with the HTTP/2 path via `GrpcStreamMessageEncoder`, and `HttpActionHandler`
+  routes the `GRPC_STREAM_RESPONSE` action to the transport-specific
+  `GrpcStreamResponseWriter` (implemented by `Http3GrpcResponseWriter`) when the request
+  arrived over HTTP/3.
+- **gRPC bidi-streaming over HTTP/3**: a `grpcBidiResponse` expectation drives true
+  bidirectional streaming on a single (full-duplex) QUIC stream. Enabled by
+  `grpcBidiStreamingEnabled` (same flag as HTTP/2). At HEADERS time the stream is routed
+  to `Http3GrpcBidiStreamHandler` when the `:path` resolves to a client+server-streaming
+  method AND a matching `GrpcBidiResponse` expectation is found (same two-phase
+  peek-then-consume protocol as the HTTP/2 `GrpcBidiRouterHandler`). It writes the initial
+  HEADERS plus any eager messages, then for each inbound request message evaluates the
+  `GrpcBidiRule`s (shared `GrpcBidiRuleMatcher`) and emits the first match's responses,
+  writing the trailing HEADERS once the client half-closes and all responses have drained.
 - **Alt-Svc auto-discovery (RFC 7838)**: when `http3Port > 0`, responses served over
   the TCP (HTTP/1.1 and HTTP/2) paths include an `Alt-Svc: h3=":<port>"; ma=<maxAge>`
   header so HTTP/3-capable clients automatically upgrade to QUIC. The max-age is
@@ -339,8 +359,8 @@ declarations are needed -- they resolve automatically.
 
 All expectation matching, actions, recording, verification, HTTP chaos profiles,
 forward-proxy, trace-context propagation, mTLS, MCP (including control-plane
-authentication and CORS headers), and gRPC unary calls work over HTTP/3, matching
-the TCP (HTTP/1.1 and HTTP/2) path.
+authentication and CORS headers), and gRPC (unary, server-streaming, and
+bidi-streaming) work over HTTP/3, matching the TCP (HTTP/1.1 and HTTP/2) path.
 
 ### Inherently N/A over HTTP/3
 
@@ -355,7 +375,7 @@ the TCP (HTTP/1.1 and HTTP/2) path.
 | Feature | Status |
 |---------|--------|
 | ~~**MCP-over-H3**~~ | **DONE**: MCP Streamable HTTP transport works over HTTP/3 with full parity. Transport-neutral `McpRequestProcessor` shared between TCP and H3 paths |
-| **gRPC server-streaming / bidi-streaming over H3** | Unary gRPC works over H3 (see "What Works"). Server-streaming and bidi-streaming are deferred (G16-FOLLOW-UP-5) — the existing streaming handlers are coupled to HTTP/2 frame types |
+| ~~**gRPC server-streaming / bidi-streaming over H3**~~ | **DONE** (G16-FOLLOW-UP-5): server-streaming via `Http3GrpcResponseWriter` + the `GrpcStreamResponseWriter` seam; bidi-streaming via `Http3GrpcBidiStreamHandler` (gated by `grpcBidiStreamingEnabled`). See "What Works". |
 | **Per-connection detail in dashboard** | The H3 dashboard chip shows port + aggregate connection count. Per-connection detail (remote address, stream count, duration) is deferred |
 
 ## What is NOT Implemented (follow-up work)
@@ -382,17 +402,16 @@ the TCP (HTTP/1.1 and HTTP/2) path.
   **DONE**: `http3MaxIdleTimeout`, `http3InitialMaxData`,
   `http3InitialMaxStreamDataBidirectional`, `http3InitialMaxStreamsBidirectional` configuration
   properties added. Defaults match the original hardcoded values.
-- **gRPC server-streaming / bidi-streaming over HTTP/3 (G16-FOLLOW-UP-5)**: gRPC
-  unary calls work over H3 (see "What Works" above). Server-streaming and
-  bidi-streaming require a new HTTP/3-specific streaming handler that maps the
-  `GrpcBidiResponse` rule system and `IncrementalGrpcFrameDecoder` onto the H3
-  frame model (multiple `Http3DataFrame` messages + trailing `Http3HeadersFrame`).
-  The existing TCP streaming handlers (`GrpcBidiStreamHandler`,
-  `GrpcStreamResponseActionHandler`) are deeply coupled to HTTP/2 stream frames
-  (`Http2HeadersFrame`, `Http2DataFrame`) and the HTTP/2 child channel
-  architecture, so they cannot be reused directly. This is a substantial
-  feature requiring its own design, incremental frame decoding on the H3 path,
-  flow control mapping, and dedicated tests.
+- ~~gRPC server-streaming / bidi-streaming over HTTP/3 (G16-FOLLOW-UP-5)~~ -- **DONE**:
+  rather than reuse the HTTP/2-coupled handlers, the transport-neutral logic was extracted
+  to core helpers (`GrpcStreamMessageEncoder` for message framing, `GrpcBidiRuleMatcher` for
+  rule matching) shared by both transports. Server-streaming is written by
+  `Http3GrpcResponseWriter` (which implements the new core `GrpcStreamResponseWriter` seam
+  that `HttpActionHandler` dispatches the `GRPC_STREAM_RESPONSE` action to). Bidi-streaming is
+  handled by `Http3GrpcBidiStreamHandler`, driven incrementally by `Http3MockServerHandler`'s
+  `channelRead`/`channelInputClosed` over the full-duplex QUIC stream (no HTTP/2 child-channel
+  needed). Bidi is gated by `grpcBidiStreamingEnabled` and reuses `IncrementalGrpcFrameDecoder`.
+  Both are covered by native-QUIC integration tests (`Http3GrpcStreamingIntegrationTest`).
 
 ## Risks
 
