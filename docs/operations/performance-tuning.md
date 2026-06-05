@@ -80,9 +80,9 @@ flowchart TD
 04:00 UTC"] --> GUARD["perf-test-guard.sh
 trigger queue
 commit-guard check"]
-    GUARD -->|"master unchanged since last pass"| SKIP["Annotate: skipped
+    GUARD -->|"HEAD == last RUN commit"| SKIP["Annotate: skipped
 exit 0"]
-    GUARD -->|"new commits since last pass"| UPLOAD["Dynamic pipeline upload
+    GUARD -->|"new commit since last RUN"| UPLOAD["Dynamic pipeline upload
 run + microbench + compare steps"]
     UPLOAD --> RUN["perf-test-run.sh
 perf queue  c5.4xlarge"]
@@ -99,7 +99,7 @@ markdown table
 NOTIFY ONLY — exits 0"]
 ```
 
-**Commit guard:** `perf-test-guard.sh` queries the Buildkite API for the last successful perf-pipeline run's commit SHA via the shared `lib/last-successful-commit.sh` helper (extracted from `generate-pipeline.sh`, which now sources it). If master has not moved since that commit, the pipeline annotates "skipped" and exits — no work runs unless there's something new to measure.
+**Commit guard:** `perf-test-guard.sh` resolves the commit the heavy regression run *last actually executed against* (`last_perf_run_commit` in `lib/last-successful-commit.sh`) and dispatches only when `HEAD` differs. Crucially this keys off **real runs, not lint passes**: the perf-test pipeline passes on its lint step on every push, so "last successful build" would almost always be `HEAD` and the guard would skip forever. Instead, `perf-test-run.sh` records `perf_regression_ran_commit` in the build's Buildkite meta-data when it runs, and the guard reads the most recent such value via the Buildkite API. If `HEAD` equals it, the pipeline annotates "skipped" and exits; otherwise it dynamically uploads the run/microbench/compare steps. (The sibling `last_successful_commit` helper — last *passed build* — remains used by `generate-pipeline.sh` for path-based change detection.)
 
 **Run step (`perf-test-run.sh`, `perf` queue):** Starts a dedicated upstream MockServer (needed for the `forward` behaviour) and the server under test with metrics enabled and default `maxLogEntries`. On hosts with 16+ vCPU it core-pins the server, upstream, and k6 to disjoint cpusets for reproducibility; on smaller hosts it skips pinning with a warning. Runs `regression.js` twice — once over plain HTTP, once over HTTPS (ALPN auto-negotiates HTTP/2), then runs `growth.js` with a background sampler collecting CPU (`docker stats`), heap (`jvm_memory_used_bytes{area="heap"}`), GC (`jvm_gc_collection_seconds_sum`), and threads (`jvm_threads_current`) from `/mockserver/metrics` every 5 seconds. Assembles and uploads `perf-result.json`.
 

@@ -65,3 +65,41 @@ last_successful_commit() {
 
   echo "$commit"
 }
+
+# Echo the commit SHA the perf REGRESSION RUN last executed against, read from
+# the perf-test builds' meta-data (`perf_regression_ran_commit`, set by
+# perf-test-run.sh). This is deliberately NOT the last *successful build*: the
+# perf-test pipeline passes on the lint step alone on every push, so the last
+# successful build is almost always HEAD and would make the daily guard skip
+# forever. The meta-data is written only when the heavy run actually executes,
+# so it is the true "when did we last run" signal. Returns non-zero (reason on
+# stderr) when none can be determined — callers then run conservatively.
+last_perf_run_commit() {
+  local secret_id="${BUILDKITE_API_TOKEN_SECRET_ID:-mockserver-build/buildkite-api-token}"
+  local region="${AWS_REGION:-eu-west-2}"
+  local org="${BUILDKITE_ORGANIZATION_SLUG:-mockserver}"
+  local pipeline="${BUILDKITE_PIPELINE_SLUG:-mockserver-performance-test}"
+  local branch="${BUILDKITE_BRANCH:-master}"
+
+  local token
+  { set +x; } 2>/dev/null # suppress xtrace before secret fetch
+  token=$(aws secretsmanager get-secret-value \
+    --secret-id "$secret_id" --region "$region" \
+    --query SecretString --output text 2>/dev/null) || { echo "    reason: secrets manager unavailable" >&2; return 1; }
+  [ -n "$token" ] || { echo "    reason: empty API token" >&2; return 1; }
+
+  local response
+  response=$(curl -sS --max-time 10 --connect-timeout 5 \
+    --get "https://api.buildkite.com/v2/organizations/${org}/pipelines/${pipeline}/builds" \
+    --data-urlencode "branch=${branch}" \
+    --data-urlencode "per_page=50" \
+    -H "Authorization: Bearer ${token}" 2>/dev/null) || { echo "    reason: Buildkite API request failed" >&2; return 1; }
+
+  printf '%s' "$response" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "    reason: non-array API response" >&2; return 1; }
+
+  # Builds come newest-first; take the most recent that recorded a run commit.
+  local commit
+  commit=$(printf '%s' "$response" | jq -r '[.[] | .meta_data.perf_regression_ran_commit // empty][0] // empty' 2>/dev/null)
+  [ -n "$commit" ] || { echo "    reason: no prior perf run recorded" >&2; return 1; }
+  echo "$commit"
+}

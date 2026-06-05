@@ -18,17 +18,18 @@ source "$SCRIPT_DIR/../lib/last-successful-commit.sh"
 
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || echo '')"
 
-echo "--- :buildkite: resolving last successful perf-test commit"
-LAST="$(last_successful_commit || true)"
+echo "--- :buildkite: resolving the commit the perf regression last RAN against"
+LAST="$(last_perf_run_commit || true)"
 
 NEW_COMMIT=true
 if [ -n "$LAST" ]; then
-  echo "    last successful perf run: ${LAST:0:10}  (HEAD: ${HEAD_SHA:0:10})"
-  if git diff --quiet "$LAST" HEAD 2>/dev/null; then
+  echo "    last perf run: ${LAST:0:10}  (HEAD: ${HEAD_SHA:0:10})"
+  # Equality on the recorded run commit — any new commit on the branch dispatches.
+  if [ "$LAST" = "$HEAD_SHA" ]; then
     NEW_COMMIT=false
   fi
 else
-  echo "    no prior successful perf run resolvable — running conservatively"
+  echo "    no prior perf run recorded — running (first run / conservative)"
 fi
 
 if [ "$NEW_COMMIT" = false ]; then

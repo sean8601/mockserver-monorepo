@@ -167,9 +167,9 @@ Steps 1 and 4 are managed by Terraform (`terraform/buildkite-pipelines/pipelines
 
 The pipeline's first step (`perf-test-guard.sh`, `trigger` queue) implements a "daily but only if there's something new" gate:
 
-1. Calls `lib/last-successful-commit.sh` — the shared helper that resolves the last successful perf-pipeline run's commit SHA via the Buildkite API (token in AWS Secrets Manager `mockserver-build/buildkite-api-token`). This helper is also sourced by `generate-pipeline.sh` for the same purpose.
-2. If master has not advanced since that commit, annotates "skipped" and exits 0 — no compute is consumed.
-3. If master has new commits, uses `buildkite-agent pipeline upload` to dynamically inject the run, microbench, and compare steps into the running build. These three steps target the `perf` agent queue (c5.4xlarge, on-demand).
+1. Calls `last_perf_run_commit` (in `lib/last-successful-commit.sh`) — resolves the commit the heavy regression run *last actually executed against*, by reading the most recent `perf_regression_ran_commit` Buildkite build meta-data (set by `perf-test-run.sh`) via the Buildkite API (token in AWS Secrets Manager `mockserver-build/buildkite-api-token`). This is deliberately distinct from the sibling `last_successful_commit` (last *passed build*, used by `generate-pipeline.sh`): the perf-test pipeline passes on its lint step on every push, so "last passed build" would almost always be `HEAD` and the guard would skip forever.
+2. If `HEAD` equals the last run commit, annotates "skipped" and exits 0 — no compute is consumed.
+3. Otherwise (new commit, or no prior run recorded) uses `buildkite-agent pipeline upload` to dynamically inject the run, microbench, and compare steps into the running build. These three steps target the `perf` agent queue (c5.4xlarge, on-demand).
 
 This pattern avoids a fixed multi-step pipeline definition (which would always run all steps) while keeping the guard cheap on the `trigger` queue.
 

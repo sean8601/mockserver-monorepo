@@ -222,6 +222,10 @@ cat "$RESULT_JSON"
 if command -v buildkite-agent >/dev/null 2>&1; then
   cp "$RESULT_JSON" "$REPO_ROOT/perf-result.json"
   buildkite-agent artifact upload "perf-result.json" || true
+  # Record the commit this run actually executed against. perf-test-guard.sh
+  # reads this (via last_perf_run_commit) to decide "new commit since last run"
+  # — keyed off real runs, NOT the lint build that passes on every push.
+  buildkite-agent meta-data set "perf_regression_ran_commit" "$COMMIT" || true
 else
   cp "$RESULT_JSON" "$REPO_ROOT/perf-result.json"
   echo "(local run) result copied to $REPO_ROOT/perf-result.json"
