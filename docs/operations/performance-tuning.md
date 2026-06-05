@@ -107,6 +107,21 @@ NOTIFY ONLY — exits 0"]
 
 **Compare step (`perf-test-compare.sh`, `perf` queue):** Merges the two artifacts; persists the run to `s3://mockserver-ci-perf-results/runs/<branch>/<iso>__<sha>.json`; fetches the last N=10 prior runs. If fewer than MIN_BASELINE=5 runs exist it annotates "baseline warming up" and stops. Otherwise it computes a regression threshold per metric using a rolling **median + MAD** baseline and flags regressions.
 
+### Triggering a run
+
+The heavy run is gated so it does not fire on ordinary commits. There are three ways to start one:
+
+- **Daily schedule (automatic).** A Buildkite schedule (`perf_regression_daily`, `0 4 * * *` UTC, defined in `terraform/buildkite-pipelines/pipelines.tf`) creates a `build.source == 'schedule'` build. The commit guard dispatches the heavy steps only if `master` has moved since the last *actual* run (see the meta-data mechanism above).
+- **Manual UI build.** Clicking **New Build** on the `mockserver-performance-test` pipeline creates a `build.source == 'ui'` build. This **force-dispatches** the run regardless of the new-commit check, so you can re-measure the same commit on demand.
+- **`[perf-run]` build message (API / CLI).** Any build whose message contains `[perf-run]` force-dispatches the run — the programmatic equivalent of the UI button. The daily schedule and the orchestrator's path-based triggers never carry this marker, so it cannot fire the heavy run by accident. Example:
+  ```bash
+  curl -H "Authorization: Bearer $BK_TOKEN" \
+    -X POST "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver-performance-test/builds" \
+    -d '{"commit":"<sha>","branch":"master","message":"[perf-run] manual run"}'
+  ```
+
+`ui` and `[perf-run]` set `FORCE_RUN=true` in `perf-test-guard.sh`, bypassing the "new commit since last run" check; a `schedule` build respects it. The guard runs on the cheap `trigger` queue; only the dispatched run/microbench/compare steps consume the `perf` queue (a c5.4xlarge that scales from zero, so allow a few minutes for the agent to launch).
+
 ### Behaviours measured
 
 Four behaviours run in `regression.js`, each as a `constant-arrival-rate` k6 scenario tagged `op:<name>`:
@@ -159,8 +174,8 @@ The rolling baseline is self-healing: as runs accumulate, old outlier runs age o
 
 | File | Purpose |
 |------|---------|
-| `.buildkite/pipeline-perf-test.yml` | Pipeline definition — guard step gated on `build.source == 'schedule'` or `'ui'` |
-| `.buildkite/scripts/lib/last-successful-commit.sh` | Shared helper: resolves last-passed build's commit via Buildkite API |
+| `.buildkite/pipeline-perf-test.yml` | Pipeline definition — guard step gated on `build.source == 'schedule'`/`'ui'` or a `[perf-run]` build message |
+| `.buildkite/scripts/lib/last-successful-commit.sh` | Shared helper: `last_successful_commit` (last passed build) for `generate-pipeline.sh` + `last_perf_run_commit` (last actual run, via `perf_regression_ran_commit` meta-data) for the guard |
 | `.buildkite/scripts/steps/perf-test-guard.sh` | Commit-guard + dynamic pipeline upload (`trigger` queue) |
 | `.buildkite/scripts/steps/perf-test-run.sh` | k6 run + background sampler + result assembly (`perf` queue) |
 | `.buildkite/scripts/steps/perf-test-microbench.sh` | JMH microbench + JSON reshape (`perf` queue) |
