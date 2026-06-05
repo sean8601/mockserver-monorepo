@@ -57,6 +57,7 @@ The monorepo uses a path-based pipeline orchestrator that dynamically triggers s
 | `default` | `c5.2xlarge`, `c5a.2xlarge`, `m5.2xlarge` | Build and test workloads (Maven, Docker, k3d) |
 | `trigger` | `t3.small`, `t3a.small`, `t3.micro` | Trigger polling jobs (`sleep` + `curl` loops) |
 | `release` | Same as `default` | Release pipeline steps that access release secrets |
+| `perf` | `c5.4xlarge` | Daily performance-regression benchmarks (k6 + JMH); scale-to-zero, max 1, 100% on-demand |
 
 Trigger jobs (which poll child builds via the Buildkite API) run on cheap `trigger` queue instances to avoid starving build agents. See [Agent Starvation](#agent-starvation-from-script-based-triggers-resolved) for background.
 
@@ -109,6 +110,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | `mockserver-release-image` | `docker-push-release.yml` | Manual | Build/push release image |
 | `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central, maven-plugin, Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
 | `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs |
+| `mockserver-perf-regression` | `pipeline-perf-test.yml` | Daily Buildkite schedule (04:00 UTC) | Daily performance-regression pipeline — guard + k6 run + JMH microbench + rolling-baseline compare |
 
 A single commit can trigger multiple child pipelines if it changes files in multiple areas. For example, a commit touching both `mockserver/` and `mockserver-ui/` triggers both `mockserver-java` and `mockserver-ui` pipelines.
 
@@ -152,6 +154,35 @@ Steps 1 and 4 are managed by Terraform (`terraform/buildkite-pipelines/pipelines
    - Secret: same as step 2
    - Events: select "Let me select individual events" → check only "Pull requests"
 4. **Daily schedule** (Terraform): Created automatically by step 1 — runs at 06:00 UTC daily as a safety net.
+
+### Performance Regression Pipeline
+
+**File:** `.buildkite/pipeline-perf-test.yml`
+
+**Trigger:** Daily Buildkite schedule at 04:00 UTC (`build.source == 'schedule'`), or via the Buildkite UI (`build.source == 'ui'`). Not triggered by the path-based orchestrator.
+
+**Purpose:** Catch performance regressions automatically without requiring manual perf runs after every commit. The pipeline is notify-only — it never fails a build, only annotates.
+
+#### Commit-guard dynamic-dispatch pattern
+
+The pipeline's first step (`perf-test-guard.sh`, `trigger` queue) implements a "daily but only if there's something new" gate:
+
+1. Calls `lib/last-successful-commit.sh` — the shared helper that resolves the last successful perf-pipeline run's commit SHA via the Buildkite API (token in AWS Secrets Manager `mockserver-build/buildkite-api-token`). This helper is also sourced by `generate-pipeline.sh` for the same purpose.
+2. If master has not advanced since that commit, annotates "skipped" and exits 0 — no compute is consumed.
+3. If master has new commits, uses `buildkite-agent pipeline upload` to dynamically inject the run, microbench, and compare steps into the running build. These three steps target the `perf` agent queue (c5.4xlarge, on-demand).
+
+This pattern avoids a fixed multi-step pipeline definition (which would always run all steps) while keeping the guard cheap on the `trigger` queue.
+
+#### Steps
+
+| Step script | Queue | What it does |
+|---|---|---|
+| `perf-test-guard.sh` | `trigger` | Commit guard + dynamic step upload |
+| `perf-test-run.sh` | `perf` | k6 regression.js (HTTP + HTTPS/H2) + growth.js + background sampler; uploads `perf-result.json` |
+| `perf-test-microbench.sh` | `perf` | JMH MatchingBenchmark with `-prof gc`; uploads `perf-microbench.json` |
+| `perf-test-compare.sh` | `perf` | Merge artifacts + S3 persist + rolling median+MAD compare + Buildkite annotation |
+
+See [Performance Tuning](../operations/performance-tuning.md#performance-regression-pipeline) for the full description of behaviours, thresholds, result schema, and how to re-baseline.
 
 ### CI Build Pipeline
 

@@ -53,7 +53,7 @@ locals {
     }
     "perf-test" = {
       name        = "MockServer Performance Test"
-      description = "Performance test validation"
+      description = "Performance test validation + daily performance-regression run"
       file        = ".buildkite/pipeline-perf-test.yml"
       emoji       = ":chart_with_upwards_trend:"
       trigger     = "none"
@@ -123,6 +123,19 @@ resource "buildkite_pipeline_schedule" "cleanup_daily" {
   cronline    = "0 6 * * *"
   branch      = "master"
   message     = "Scheduled: clean up closed PR builds"
+}
+
+# Daily performance-regression run. Fires every day at 04:00 UTC (off-peak,
+# before the 06:00 cleanup). The build arrives with build.source == 'schedule',
+# which the perf-test pipeline's commit-guard step keys off; the guard then
+# dispatches the heavy run ONLY when master moved since the last successful run,
+# so an idle day costs just the cheap guard query.
+resource "buildkite_pipeline_schedule" "perf_regression_daily" {
+  pipeline_id = buildkite_pipeline.pipeline["perf-test"].id
+  label       = "Daily performance regression"
+  cronline    = "0 4 * * *"
+  branch      = "master"
+  message     = "Scheduled: daily performance regression run"
 }
 
 locals {

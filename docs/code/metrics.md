@@ -92,6 +92,8 @@ The `Metrics.Name` enum defines 24 request/action/websocket gauges (all Promethe
 
 These let Grafana and the dashboard Metrics view chart heap/GC/thread behaviour alongside the request and action counters.
 
+> **Perf-regression sampler dependency:** `perf-test-run.sh` (the performance regression pipeline's run step) scrapes `/mockserver/metrics` every 5 seconds during a growth run and reads exactly these three series by name: `jvm_memory_used_bytes{area="heap"}`, `jvm_gc_collection_seconds_sum`, and `jvm_threads_current`. If these metric names change, `perf-test-run.sh` must be updated in the same commit.
+
 ### Request Latency Histogram
 
 `mock_server_request_duration_seconds` is a Prometheus classic histogram of request handling duration (receipt → response), with buckets from 0.5 ms to 10 s. It exposes the usual `_bucket{le="…"}`, `_sum`, and `_count` series, so Grafana/PromQL can derive latency percentiles, e.g.:

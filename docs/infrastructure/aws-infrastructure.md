@@ -12,6 +12,7 @@ graph TB
 buildkite-agents/"]
         ASG_D["ASG default queue"]
         ASG_T["ASG trigger queue"]
+        ASG_P["ASG perf queue"]
         SCALER["Lambda Autoscaler"]
         AZ_LAMBDA["Lambda AZ Rebalance
 Suspender"]
@@ -21,6 +22,11 @@ Suspender"]
         EC2_T["EC2 t3 instances
 0–4 trigger agents
 100% spot, 4 agents/instance"]
+        EC2_P["EC2 c5.4xlarge
+0–1 perf agent
+100% on-demand"]
+        S3_PERF["S3 Bucket
+perf-results history"]
         SSM["SSM Parameter Store
 Agent Token"]
         S3_SECRETS["S3 Secrets Bucket"]
@@ -59,11 +65,17 @@ mock-server.com + wildcard"]
 
     TF -->|provisions| ASG_D
     TF -->|provisions| ASG_T
+    TF -->|provisions| ASG_P
     TF -->|provisions| SCALER
     TF -->|state| S3_STATE
     EB -->|triggers| SCALER
     SCALER -->|scales| ASG_D
     SCALER -->|scales| ASG_T
+    SCALER -->|scales| ASG_P
+    ASG_P -->|manages| EC2_P
+    EC2_P -->|reads token| SSM
+    EC2_P -->|reads secrets| S3_SECRETS
+    EC2_P -->|reads/writes| S3_PERF
     ASG_D -->|uses| LT
     ASG_D -->|manages| EC2
     ASG_T -->|manages| EC2_T
@@ -104,7 +116,7 @@ flowchart TB
     subgraph "Buildkite Cloud"
         BK_API[Buildkite API]
         BK_QUEUE["Job Queues
-default · trigger · release"]
+default · trigger · release · perf"]
     end
 
     subgraph "AWS eu-west-2"
@@ -128,6 +140,9 @@ SSM · SSM Messages · EC2 Messages"]
         ASG_T["ASG trigger
 0–4 t3 instances
 4 agents/instance"]
+        ASG_P["ASG perf
+0–1 c5.4xlarge
+100% on-demand"]
         SCALER["Lambda Autoscaler
 Runs every minute"]
         AZ_LAMBDA[Lambda AZ Rebalance Suspender]
@@ -143,6 +158,7 @@ rate 1 min"]
     EB -->|invokes| SCALER
     SCALER -->|set desired| ASG_D
     SCALER -->|set desired| ASG_T
+    SCALER -->|set desired| ASG_P
     ASG_D -->|manages| EC2_1 & EC2_2
     EC2_1 & EC2_2 -->|poll for jobs| BK_QUEUE
     EC2_1 & EC2_2 -->|read token via| VPCE
@@ -160,6 +176,7 @@ rate 1 min"]
 | ASG `default` | Min 0, Max 10, 20% on-demand / 80% Spot, diversified instance types (c5, c5a, m5), on-demand base capacity 1, 1 agent/instance, AZRebalance suspended |
 | ASG `trigger` | Min 0, Max 4, 100% Spot, t3.small/t3a.small/t3.micro, 4 agents/instance — cheap instances for trigger polling jobs |
 | ASG `release` | Min 0, Max 2, 100% on-demand, same instance types as default, 1 agent/instance |
+| ASG `perf` | Min 0, Max 1, 100% on-demand, c5.4xlarge, on-demand base 0 — scale-to-zero, never more than one concurrent perf run |
 | Launch Template | c5.2xlarge (primary for default/release), t3.small (primary for trigger), 250 GiB gp3 root volume, delete-on-termination |
 | EC2 Instances | 0–10 default + 0–4 trigger + 0–2 release (ephemeral), all scale to zero when idle |
 
@@ -197,6 +214,7 @@ rate 1 min"]
 | S3 Bucket (secrets logs) | Secrets bucket access logs (versioned, encrypted, public access blocked) |
 | S3 Bucket (CloudTrail) | CloudTrail audit logs (encrypted, 90-day lifecycle, public access blocked) |
 | S3 Bucket (dependency cache) | CI dependency cache for Maven/npm/pip/Bundler (encrypted, 14-day lifecycle, public access blocked) — requires `terraform apply` to create; pipeline cache scripts no-op gracefully until bucket exists |
+| S3 Bucket (`mockserver-ci-perf-results`) | Performance regression run history — one JSON per run under `runs/<branch>/<iso>__<sha>.json` (versioning enabled, current versions retained indefinitely, noncurrent expire after 365d, AES256, public access blocked) |
 
 #### Container Registry
 
@@ -238,6 +256,7 @@ rate 1 min"]
 | IAM Policy (`buildkite-read-dockerhub-secret`) | Allows agents to read Docker Hub credentials from Secrets Manager |
 | IAM Policy (`buildkite-ecr-public-push`) | Allows agents to push Docker images to ECR Public |
 | IAM Policy (`buildkite-dependency-cache`) | Allows agents to read/write the CI dependency cache S3 bucket — attached to default and release agent roles |
+| IAM Policy (`buildkite-perf-results`) | Allows perf-queue agents to Get/Put/List objects in `mockserver-ci-perf-results` |
 | Service-linked roles | AutoScaling, EC2Spot, Organizations, SSO, Support, TrustedAdvisor, ResourceExplorer |
 
 #### Security
@@ -265,6 +284,15 @@ rate 1 min"]
 - **Instance types:** t3.small, t3a.small, t3.micro
 - **Capacity mix:** 100% Spot
 - **Cost:** ~$0.004–0.008/hr per instance (~$0.001–0.002/hr per trigger agent)
+
+#### Perf Queue (regression benchmarks)
+- **Minimum:** 0 instances (scale-to-zero — mandatory, see AGENTS.md)
+- **Maximum:** 1 instance — enforces at most one concurrent perf run for reproducibility
+- **Instance type:** c5.4xlarge (16 vCPU, 32 GB — enough to core-pin server + upstream + k6 to disjoint cpusets)
+- **Capacity mix:** 100% on-demand (spot interruptions mid-benchmark would corrupt results)
+- **On-demand base capacity:** 0
+- **Single-AZ pinning:** not implemented (max_size 1 + single instance type already gives strong run-to-run reproducibility; single-AZ pinning is noted as an optional future hardening in `terraform/buildkite-agents/main.tf`)
+- **Managed policies:** `read_build_secrets`, `buildkite-perf-results`, `buildkite-dependency-cache`
 
 #### Common
 - **Scaling frequency:** Every 60 seconds

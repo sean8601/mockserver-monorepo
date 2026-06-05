@@ -15,6 +15,8 @@ The monorepo contains multiple projects with different build tools:
 | `mockserver/mockserver-maven-plugin/` | Maven | `cd mockserver && ./mvnw clean install -DskipTests && ./mvnw -f mockserver-maven-plugin/pom.xml clean verify` |
 | `mockserver-performance-test/` | k6 (JavaScript) | `cd mockserver-performance-test && for f in k6/*.js; do k6 inspect "$f"; done` |
 
+> **Running the regression and growth scripts locally:** see [Performance regression pipeline — local runs](#performance-regression-pipeline-local-runs) below.
+
 CI builds are orchestrated by `.buildkite/scripts/generate-pipeline.sh` which selects pipelines based on changed files. See [CI/CD](../infrastructure/ci-cd.md) for details.
 
 ## Java Server Build (mockserver/)
@@ -190,3 +192,68 @@ Artifacts are published to:
 - **Maven Central** (releases): via Central Portal at `https://central.sonatype.com/repository/maven-releases/`
 
 GPG signing is required for releases (configured in the `release` profile).
+
+## Performance regression pipeline — local runs
+
+`mockserver-performance-test/k6/regression.js` and `growth.js` can be run locally against the compose stack in `mockserver-performance-test/stack/`. The `forward` behaviour requires a dedicated upstream MockServer because it proxies to a separate instance (not itself). Use `K6_FORWARD_SELF=true` to skip the upstream requirement on a single-container local smoke run.
+
+```bash
+# Start the compose stack (includes mockserver + mockserver-upstream)
+cd mockserver-performance-test/stack
+docker compose up -d
+
+# Run regression over HTTP (default)
+k6 run \
+  -e BASE_URL=http://localhost:1080 \
+  -e K6_RESULT_PATH=/tmp/perf-result.json \
+  mockserver-performance-test/k6/regression.js
+
+# Run regression over HTTPS + HTTP/2
+k6 run \
+  -e BASE_URL=https://localhost:1080 \
+  -e PROTO=https_h2 \
+  -e K6_RESULT_PATH=/tmp/perf-result-h2.json \
+  mockserver-performance-test/k6/regression.js
+
+# Run growth (fills maxLogEntries, measures latency slope)
+k6 run \
+  -e BASE_URL=http://localhost:1080 \
+  mockserver-performance-test/k6/growth.js
+
+# Single-container smoke (no upstream needed)
+k6 run \
+  -e K6_FORWARD_SELF=true \
+  -e BASE_URL=http://localhost:1080 \
+  mockserver-performance-test/k6/regression.js
+```
+
+The upstream container is named `mockserver-upstream` and listens on port 1080 inside the stack network (`FORWARD_UPSTREAM_HOST` defaults to `mockserver-upstream:1080`). For local runs where k6 is on the host, set `FORWARD_UPSTREAM_HOST=localhost:<exposed-port>` or use `K6_FORWARD_SELF=true`.
+
+### Result JSON schema
+
+The pipeline compare step (`perf-test-compare.sh`) merges two artifacts and persists the result to S3. The schemas are:
+
+**`perf-result.json`**
+```json
+{
+  "metadata": { "sha": "...", "branch": "...", "timestamp": "..." },
+  "behaviours": {
+    "<op>_<proto>": { "p50_ms": 0, "p95_ms": 0, "p99_ms": 0, "throughput_rps": 0, "error_rate": 0 }
+  },
+  "growth": {
+    "cpu_peak": 0, "heap_start": 0, "heap_end": 0, "heap_peak": 0, "heap_ratio": 0,
+    "gc_seconds_delta": 0, "threads_peak": 0, "p95_start": 0, "p95_end": 0, "p95_ratio": 0
+  }
+}
+```
+
+**`perf-microbench.json`**
+```json
+{
+  "microbench": {
+    "<matcherType>_<count>": { "time_per_op": 0, "time_unit": "ns/op", "alloc_bytes_per_op": 0 }
+  }
+}
+```
+
+`<op>_<proto>` keys are `match_http`, `forward_http`, `template_http`, `large_http`, and their `_https_h2` counterparts. The merged run is stored at `s3://mockserver-ci-perf-results/runs/<branch>/<iso>__<sha>.json`.

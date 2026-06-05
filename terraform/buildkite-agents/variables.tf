@@ -64,6 +64,24 @@ variable "trigger_max_size" {
   default     = 4
 }
 
+variable "perf_instance_types" {
+  description = "EC2 instance type for the perf queue — a SINGLE fixed-performance type (no comma list) for reproducible benchmark numbers"
+  type        = string
+  default     = "c5.4xlarge"
+}
+
+variable "perf_min_size" {
+  description = "Minimum perf agent instances. MUST be 0 (scale to zero — zero idle cost; AGENTS.md hard constraint)"
+  type        = number
+  default     = 0
+}
+
+variable "perf_max_size" {
+  description = "Maximum perf agent instances (1 — never run two perf jobs concurrently so they don't contend)"
+  type        = number
+  default     = 1
+}
+
 variable "alert_email" {
   description = "Email address for infrastructure alerts (SNS notifications)"
   type        = string
