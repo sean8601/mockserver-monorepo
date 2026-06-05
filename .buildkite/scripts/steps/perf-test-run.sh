@@ -32,6 +32,12 @@ UPSTREAM="mockserver-upstream-${RUN_ID}"
 SAMPLE_INTERVAL="${PERF_SAMPLE_INTERVAL:-5}"
 
 OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/perf-result.XXXXXX")"
+# The k6 image runs as a NON-root user (uid 12345); mktemp -d creates the dir
+# 0700 owned by the agent user, so k6's handleSummary() can't write its result
+# JSONs into the `/out` bind mount ("permission denied"). World-write the shared
+# output dir so the unprivileged container user can write its artifacts. Only the
+# k6 result files land here (no secrets), and the dir is per-run + cleaned up.
+chmod 0777 "$OUT_DIR"
 RESULT_JSON="$OUT_DIR/result.json"
 SAMPLE_LOG="$OUT_DIR/samples.csv"
 
