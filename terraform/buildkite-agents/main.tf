@@ -20,7 +20,11 @@ module "buildkite_stack" {
   agents_per_instance         = 1
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
-  managed_policy_arns         = [aws_iam_policy.read_build_secrets.arn, aws_iam_policy.ecr_public_push.arn, aws_iam_policy.dependency_cache.arn]
+  managed_policy_arns = [
+    aws_iam_policy.read_build_secrets_default.arn,
+    aws_iam_policy.read_dockerhub_secret.arn,
+    aws_iam_policy.ecr_public_push.arn, # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
+  ]
 }
 
 module "buildkite_trigger_stack" {
@@ -40,7 +44,7 @@ module "buildkite_trigger_stack" {
   agents_per_instance         = 4
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
-  managed_policy_arns         = [aws_iam_policy.read_build_secrets.arn]
+  managed_policy_arns         = [aws_iam_policy.read_buildkite_api_token.arn]
 }
 
 # Dedicated PERFORMANCE queue. Reproducible numbers matter far more here than
@@ -67,8 +71,8 @@ module "buildkite_perf_stack" {
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
   managed_policy_arns = [
-    aws_iam_policy.read_build_secrets.arn, # Buildkite API token (commit guard / compare)
-    aws_iam_policy.perf_results.arn,       # S3 results history bucket
+    aws_iam_policy.read_buildkite_api_token.arn, # Buildkite API token (commit guard / compare)
+    aws_iam_policy.perf_results.arn,             # S3 results history bucket
   ]
 }
 
@@ -90,10 +94,10 @@ module "buildkite_release_stack" {
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
   managed_policy_arns = [
-    aws_iam_policy.read_build_secrets.arn,
+    aws_iam_policy.read_build_secrets_release.arn,
     aws_iam_policy.read_release_secrets.arn,
+    aws_iam_policy.read_dockerhub_secret.arn,
     aws_iam_policy.ecr_public_push.arn,
     aws_iam_policy.release_website_tfstate.arn,
-    aws_iam_policy.dependency_cache.arn,
   ]
 }

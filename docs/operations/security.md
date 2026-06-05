@@ -145,6 +145,59 @@ When an ignore **is** added, give it a dated `expires:` (convention: 3 months ou
 
 See [Snyk Security](snyk-security.md) for the full triage workflow, CLI commands, and vulnerability status by module.
 
+## CI/CD Infrastructure Security
+
+Controls applied to the Buildkite build infrastructure and release pipeline. See [AWS Infrastructure](../infrastructure/aws-infrastructure.md) and [CI/CD](../infrastructure/ci-cd.md) for full details.
+
+### Least-Privilege CI Secrets
+
+Each agent queue receives only the Secrets Manager policies it actually consumes — the single `buildkite-read-build-secrets` policy has been replaced by per-secret, per-queue policies:
+
+| Queue | IAM policies attached | Rationale |
+|-------|----------------------|-----------|
+| `default` | `read-build-secrets-default` (API token + Sonatype), `read-dockerhub-secret`, `ecr-public-push` | Snapshot Docker push on master |
+| `trigger` | `read-buildkite-api-token` | Trigger polling only needs API token |
+| `perf` | `read-buildkite-api-token`, `perf-results` | Commit guard + S3 results |
+| `release` | `read-build-secrets-release`, `read-release-secrets`, `read-dockerhub-secret`, `ecr-public-push`, `release-website-tfstate` | Full release publishing |
+
+The `dependency-cache` policy is detached from all queues (runtime wiring reverted pending cache-integrity implementation).
+
+### Release Secret Hygiene (File-based, not env vars)
+
+Release scripts write secrets to `0600` files under `.tmp/` (volume-mounted into Docker containers) rather than passing them as `docker run -e` flags. This prevents secrets appearing in `/proc/1/environ` or `docker inspect` output on the agent host.
+
+### Released Image Signing
+
+All release Docker images (Docker Hub + ECR) are cosign-signed by digest after push, using the same key stored in `mockserver-release/cosign-key`. This allows consumers to verify image provenance. Signing is non-fatal if the key or binary is absent. See [Docker](../infrastructure/docker.md#verifying-image-signatures) for the verification command.
+
+### CloudTrail Data Events
+
+The CloudTrail trail (`mockserver-management-trail`) uses advanced event selectors to capture:
+- All S3 object-level events on the Terraform state bucket (`mockserver-terraform-state/`)
+- All `GetSecretValue` calls on `mockserver-build/` and `mockserver-release/` Secrets Manager secrets
+
+Classic event selectors do not support Secrets Manager data events; advanced selectors are required.
+
+### GuardDuty Alerting
+
+GuardDuty findings with severity ≥ 7 (HIGH and CRITICAL) trigger an EventBridge rule that forwards to the existing `buildkite-mockserver-alerts` SNS topic. The SNS topic is encrypted with `alias/aws/sns`.
+
+### KMS Encryption at Rest
+
+| Resource | CMK |
+|----------|-----|
+| Terraform state bucket | `alias/mockserver-terraform-state` (bootstrap CMK, rotation enabled) |
+| AWS Config delivery bucket | CloudTrail CMK (`alias/mockserver-cloudtrail`, shared) |
+| SNS alerts topic | `alias/aws/sns` (AWS-managed) |
+
+### VPC Flow Logs
+
+VPC flow logs are set to `traffic_type = ALL` on all four VPCs (default, trigger, release, perf queues), capturing both accepted and rejected traffic. Previously only REJECT traffic was logged.
+
+### Tfstate Lock Scoping
+
+The `buildkite-release-website-tfstate` IAM policy grants `s3:DeleteObject` only on `website/terraform.tfstate.tflock` (the S3-native lock file), not on the state file itself. GetObject/PutObject on the state file are separate statements. This prevents accidental or malicious deletion of the live state.
+
 ## AI Security Review
 
 In addition to automated scanning, every code change receives a security-focused review as part of the [AI-assisted development process](ai-assisted-development.md):

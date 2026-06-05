@@ -12,7 +12,10 @@
 # credentials are missing, or the bucket doesn't exist, both scripts exit 0
 # (clean no-op) and the build proceeds with a cold cache.
 #
-# The IAM policy is attached to default and release agent roles in main.tf.
+# The IAM policy is DETACHED from all agent roles. The runtime wiring (S3
+# cache-restore/cache-save in the pipeline) was reverted. The policy and
+# bucket remain defined so the infrastructure is ready to re-enable once
+# cache integrity (signed/content-addressed entries) is implemented.
 # ---------------------------------------------------------------------------
 # Provides a shared S3 bucket for caching Maven, npm, pip, and Bundler
 # dependencies across ephemeral scale-to-zero build agents.  Without this,

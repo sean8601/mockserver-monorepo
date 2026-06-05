@@ -1,5 +1,17 @@
 variable "buildkite_agent_token" {
-  description = "Buildkite agent registration token"
+  description = <<-EOT
+    Buildkite agent registration token.
+
+    NEVER write this value to terraform.tfvars. Supply it at apply time via
+    an environment variable:
+
+      export TF_VAR_buildkite_agent_token=$(aws ssm get-parameter \
+        --name /buildkite/buildkite/agent-token \
+        --with-decryption --query Parameter.Value --output text \
+        --profile mockserver-build)
+
+    The run.sh wrapper does this automatically.
+  EOT
   type        = string
   sensitive   = true
 }
