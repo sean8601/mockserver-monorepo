@@ -82,6 +82,22 @@ sitemap:
 
 <p>If no custom certificate is configured, MockServer's auto-generated certificate (created via BouncyCastle) is used, which is suitable for testing.</p>
 
+<a id="http3_tuning" class="anchor" href="#http3_tuning">&nbsp;</a>
+
+<h2>Tuning / configuration</h2>
+
+<p>The QUIC transport parameters can be tuned for high-throughput or long-lived connection tests. Each has a sensible default and rarely needs changing:</p>
+
+<ul>
+    <li><span class="inline_code">http3MaxIdleTimeout</span> &mdash; idle timeout in milliseconds before a QUIC connection is closed</li>
+    <li><span class="inline_code">http3InitialMaxData</span> &mdash; connection-level flow-control limit (bytes)</li>
+    <li><span class="inline_code">http3InitialMaxStreamDataBidirectional</span> &mdash; per-stream flow-control limit (bytes)</li>
+    <li><span class="inline_code">http3InitialMaxStreamsBidirectional</span> &mdash; maximum number of concurrent bidirectional streams</li>
+    <li><span class="inline_code">http3QpackMaxTableCapacity</span> &mdash; QPACK dynamic header-table capacity (bytes)</li>
+</ul>
+
+<p>See the <a href="/mock_server/configuration_properties.html#button_configuration_http3_max_idle_timeout">HTTP/3 configuration properties</a> on the configuration page for defaults, value ranges, and the full four-form reference (Java code, system property, environment variable, property file).</p>
+
 <a id="http3_what_works" class="anchor" href="#http3_what_works">&nbsp;</a>
 
 <h2>What works</h2>
@@ -101,6 +117,7 @@ sitemap:
     <li><strong>mTLS client-certificate capture</strong> &mdash; when mTLS is configured (<span class="inline_code">tlsMutualAuthenticationRequired</span> or <span class="inline_code">tlsMutualAuthenticationCertificateChain</span>), client certificates are captured from the QUIC TLS handshake and attached to the request, enabling cert-based expectation matching and verification over HTTP/3</li>
     <li><strong>MCP over HTTP/3</strong> &mdash; the Model Context Protocol Streamable HTTP transport works over HTTP/3 with the same control-plane authentication (JWT / mTLS) and CORS behaviour as the TCP path; the request processing is shared between the two transports</li>
     <li><strong>gRPC over HTTP/3</strong> &mdash; unary, server-streaming, and bidirectional-streaming gRPC calls work over HTTP/3 with correct trailing-HEADERS <span class="inline_code">grpc-status</span> framing. Bidirectional streaming requires <span class="inline_code">grpcBidiStreamingEnabled</span> (the same flag as the TCP path)</li>
+    <li><strong>CONNECT-UDP (MASQUE) relay</strong> &mdash; a working forward-proxy relay for tunnelling UDP through MockServer (RFC 9298). When enabled via <span class="inline_code">http3ConnectUdpEnabled</span> (default <span class="inline_code">false</span>), the server advertises <span class="inline_code">SETTINGS_ENABLE_CONNECT_PROTOCOL</span> (RFC 9220) and handles extended-CONNECT requests with <span class="inline_code">:protocol=connect-udp</span>: it opens a UDP socket to the target authority and relays datagrams bidirectionally (one HTTP/3 DATA frame per UDP datagram). Normal (non-CONNECT) HTTP/3 requests are unaffected. <strong>Security &mdash; this is an open UDP relay.</strong> When enabled there is no restriction on the relay target, so a client can reach any UDP host:port reachable from MockServer (including private networks, loopback, and cloud metadata endpoints such as <span class="inline_code">169.254.169.254</span>). It is intended for controlled test environments only &mdash; leave it disabled (the default) and never expose a CONNECT-UDP&ndash;enabled HTTP/3 port to untrusted clients. See <a href="/mock_server/configuration_properties.html#button_configuration_http3_connect_udp_enabled">HTTP/3 CONNECT-UDP (MASQUE) Enabled</a> on the configuration page</li>
 </ul>
 
 <a id="http3_limitations" class="anchor" href="#http3_limitations">&nbsp;</a>
@@ -108,7 +125,7 @@ sitemap:
 <h2>Limitations</h2>
 
 <ul>
-    <li><strong>Incubator dependency</strong> &mdash; the HTTP/3 codec has graduated from the Netty incubator into mainline Netty 4.2, but the API may still evolve in future releases</li>
+    <li><strong>Codec API maturity</strong> &mdash; the HTTP/3 codec has graduated from the Netty incubator into mainline Netty 4.2, but the API may still evolve in future releases</li>
 </ul>
 
 <a id="http3_parity" class="anchor" href="#http3_parity">&nbsp;</a>

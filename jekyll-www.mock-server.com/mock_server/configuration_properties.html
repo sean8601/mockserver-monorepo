@@ -1235,6 +1235,23 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 <p>These properties configure multi-node clustering. When enabled, MockServer instances sharing the same cluster name replicate expectation state via an embedded Infinispan data grid with JGroups transport. Requires the <span class="inline_code">mockserver-state-infinispan</span> module on the classpath and <span class="inline_code">stateBackend=infinispan</span>.</p>
 
+<button id="button_configuration_state_backend" class="accordion title"><strong>State Backend</strong></button>
+<div class="panel title">
+    <p>Selects the backend used to store expectation and request-log state. The default <span class="inline_code">memory</span> backend keeps all state in the local JVM, so each MockServer instance is independent. Set this to <span class="inline_code">infinispan</span> to replicate state across a cluster of MockServer instances using an embedded Infinispan data grid.</p>
+    <p>The <span class="inline_code">infinispan</span> backend requires the <span class="inline_code">mockserver-state-infinispan</span> module on the classpath and is normally combined with the clustering properties below.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">memory</span> (valid values: <span class="inline_code">memory</span>, <span class="inline_code">infinispan</span>)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.stateBackend(String stateBackend)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.stateBackend=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_STATE_BACKEND=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.stateBackend=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.stateBackend="infinispan"</code></pre>
+</div>
+
 <button id="button_configuration_cluster_enabled" class="accordion title"><strong>Cluster Enabled</strong></button>
 <div class="panel title">
     <p>Enables multi-node clustering with JGroups transport. When <span class="inline_code">false</span> (default), MockServer runs in single-node LOCAL mode with no network transport.</p>
@@ -1280,6 +1297,22 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 <h2>Cloud Blob Store Configuration:</h2>
 
 <p>These properties configure cloud-backed blob storage for durable persistence of expectations, cassettes, and fixture files. Each cloud backend requires its own optional module on the classpath. Set <span class="inline_code">blobStoreType</span> to <span class="inline_code">s3</span>, <span class="inline_code">gcs</span>, or <span class="inline_code">azure</span> and configure the backend-specific properties below.</p>
+
+<button id="button_configuration_blob_store_type" class="accordion title"><strong>Blob Store Type</strong></button>
+<div class="panel title">
+    <p>Selects where MockServer stores blob data such as persisted expectations, recorded cassettes, and fixture files. The default <span class="inline_code">filesystem</span> backend writes blobs to the local disk (preserving the existing on-disk persistence behaviour). The <span class="inline_code">memory</span> backend keeps blobs in the JVM only, so they are lost when the process exits. The <span class="inline_code">s3</span>, <span class="inline_code">gcs</span>, and <span class="inline_code">azure</span> backends store blobs in the corresponding cloud object store and require the matching optional module on the classpath plus the backend-specific properties below.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">filesystem</span> (valid values: <span class="inline_code">filesystem</span>, <span class="inline_code">memory</span>, <span class="inline_code">s3</span>, <span class="inline_code">gcs</span>, <span class="inline_code">azure</span>)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.blobStoreType(String blobStoreType)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreType=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BLOB_STORE_TYPE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.blobStoreType=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.blobStoreType="s3"</code></pre>
+</div>
 
 <button id="button_configuration_blob_store_bucket" class="accordion title"><strong>Blob Store Bucket (S3 / GCS)</strong></button>
 <div class="panel title">

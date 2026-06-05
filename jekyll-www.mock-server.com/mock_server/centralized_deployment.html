@@ -9,19 +9,20 @@ subsection: true
 sitemap:
   priority: 0.8
   changefreq: 'monthly'
-  lastmod: 2026-06-04T00:00:00+00:00
-keywords: shared mockserver, centralized mock server, clustered mockserver, infinispan clustering, shared test environment, mockserver ha, mockserver kubernetes cluster, stateBackend, clusterEnabled
+  lastmod: 2026-06-05T00:00:00+00:00
+keywords: shared mockserver, centralized mock server, clustered mockserver, infinispan clustering, shared test environment, mockserver ha, mockserver kubernetes cluster, stateBackend, clusterEnabled, cloud blob storage, s3 gcs azure blob store
 ---
 
 <p>
     Many teams share a single MockServer deployment across multiple CI pipelines, test suites, or squads rather than running one instance per test.
-    This page describes the three deployment models available and helps you choose the right one for your needs.
+    This page describes the deployment models available and helps you choose the right one for your needs.
 </p>
 
 <ul>
     <li><a href="#option1">Option 1: Single shared instance (no clustering)</a></li>
     <li><a href="#option2">Option 2: Clustered HA fleet (Infinispan)</a></li>
     <li><a href="#option3">Option 3: Persistence-only durability (no clustering)</a></li>
+    <li><a href="#cloud-blob">Cloud blob storage (durable shared storage for any model)</a></li>
     <li><a href="#decision">Decision table</a></li>
 </ul>
 
@@ -252,8 +253,7 @@ for production-grade stacks with discovery appropriate for your network.</p>
     &lt;pbcast.STATE_TRANSFER/&gt;
 &lt;/config&gt;</code></pre>
 
-<pre class="prettyprint lang-yaml code"><code class="code">version: "3.9"
-services:
+<pre class="prettyprint lang-yaml code"><code class="code">services:
   mockserver-a:
     image: mockserver/mockserver:clustered-{{ site.mockserver_version }}
     environment:
@@ -452,6 +452,155 @@ app:
     successful write cycle.
 </p>
 
+<a id="cloud-blob" class="anchor" href="#cloud-blob">&nbsp;</a>
+<h2>Cloud Blob Storage</h2>
+
+<h3>When to use</h3>
+<p>
+    By default MockServer reads and writes persisted expectations, recorded proxy traffic, and fixture files
+    on the local filesystem (<code class="inline code">blobStoreType=filesystem</code>). When several nodes &mdash;
+    or several short-lived CI runners &mdash; need to share that durable data <strong>without</strong> a shared
+    POSIX volume (NFS / EFS / Azure Files), MockServer can store it in a cloud object store instead.
+    This is useful for centralized fixture libraries, record-and-replay cassettes captured by one job and
+    replayed by another, and snapshots that must outlive any individual pod.
+</p>
+
+<p>
+    Cloud blob storage is an <strong>opt-in module</strong>: <code class="inline code">mockserver-core</code> ships with
+    no cloud SDK on its classpath. You add the module for the backend you want, and the backend registers itself
+    automatically when <code class="inline code">blobStoreType</code> is set to its name. It is orthogonal to the
+    clustering option above &mdash; you can use it with a single node, a persisted single node, or an Infinispan
+    cluster.
+</p>
+
+<h3>Choosing a backend module</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th><code class="inline code">blobStoreType</code></th><th>Backend</th><th>Maven module</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">s3</code></td>
+            <td>Amazon S3 (and S3-compatible stores such as MinIO / LocalStack)</td>
+            <td><code class="inline code">org.mock-server:mockserver-blob-s3</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">gcs</code></td>
+            <td>Google Cloud Storage</td>
+            <td><code class="inline code">org.mock-server:mockserver-blob-gcs</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">azure</code></td>
+            <td>Azure Blob Storage</td>
+            <td><code class="inline code">org.mock-server:mockserver-blob-azure</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    Add the relevant dependency (matching your MockServer version) so the cloud SDK is on the classpath:
+</p>
+
+<pre class="prettyprint lang-xml code"><code class="code">&lt;dependency&gt;
+    &lt;groupId&gt;org.mock-server&lt;/groupId&gt;
+    &lt;artifactId&gt;mockserver-blob-s3&lt;/artifactId&gt;
+    &lt;version&gt;{{ site.mockserver_version }}&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+
+<h3>Configuration properties</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Property</th><th>Env var</th><th>Applies to</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreType</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_TYPE</code></td>
+            <td>all</td>
+            <td>Backend selector. Defaults to <code class="inline code">filesystem</code>. Set to <code class="inline code">s3</code>, <code class="inline code">gcs</code>, or <code class="inline code">azure</code> (the matching module must be on the classpath, otherwise startup fails).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreBucket</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_BUCKET</code></td>
+            <td>s3, gcs</td>
+            <td>Bucket name. Required for <code class="inline code">s3</code> and <code class="inline code">gcs</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreRegion</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_REGION</code></td>
+            <td>s3</td>
+            <td>Region for the S3 bucket (e.g. <code class="inline code">eu-west-1</code>).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreEndpoint</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_ENDPOINT</code></td>
+            <td>s3, gcs</td>
+            <td>Endpoint override URL for S3-compatible stores (MinIO, LocalStack) or GCS emulators. Optional.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreKeyPrefix</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_KEY_PREFIX</code></td>
+            <td>all cloud</td>
+            <td>Optional key prefix so multiple deployments can share one bucket/container without colliding.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreAccessKeyId</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_ACCESS_KEY_ID</code></td>
+            <td>s3</td>
+            <td>Explicit AWS access key ID. Optional &mdash; when empty the default AWS credential chain (environment, profile, instance/IRSA role) is used.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreSecretAccessKey</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_SECRET_ACCESS_KEY</code></td>
+            <td>s3</td>
+            <td>Explicit AWS secret access key. Optional &mdash; paired with the access key ID above.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreProjectId</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_PROJECT_ID</code></td>
+            <td>gcs</td>
+            <td>Google Cloud project ID. Optional &mdash; when empty it is inferred from Application Default Credentials.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreContainer</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_CONTAINER</code></td>
+            <td>azure</td>
+            <td>Azure Blob Storage container name. Required for <code class="inline code">azure</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.blobStoreConnectionString</code></td>
+            <td><code class="inline code">MOCKSERVER_BLOB_STORE_CONNECTION_STRING</code></td>
+            <td>azure</td>
+            <td>Azure connection string (account name, key, and endpoint). Required for <code class="inline code">azure</code>.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    All blob-store properties default to an empty string. See
+    <a href="/mock_server/configuration_properties.html">Configuration Properties</a> for the full reference, and
+    <a href="/mock_server/persisting_expectations.html#cloud_blob_storage">Persisting Expectations &rarr; Cloud Blob Storage</a>
+    for how persisted and recorded expectations map onto the blob store.
+</p>
+
+<h3>Example: S3 backend</h3>
+
+<pre class="prettyprint lang-bash code"><code class="code">docker run --rm -p 1080:1080 \
+  -e MOCKSERVER_BLOB_STORE_TYPE=s3 \
+  -e MOCKSERVER_BLOB_STORE_BUCKET=my-mockserver-fixtures \
+  -e MOCKSERVER_BLOB_STORE_REGION=eu-west-1 \
+  -e MOCKSERVER_BLOB_STORE_KEY_PREFIX=ci-shared/ \
+  mockserver/mockserver:{{ site.mockserver_version }}</code></pre>
+
+<p>
+    <strong>Note:</strong> the default <code class="inline code">mockserver/mockserver</code> image does not bundle the cloud SDK
+    modules. To use a cloud blob store from a container, build an image that adds the relevant
+    <code class="inline code">mockserver-blob-*</code> jar to the classpath, or run via the
+    <code class="inline code">-no-dependencies</code> jar with the module (and its transitive cloud SDK) on the classpath.
+</p>
+
 <a id="decision" class="anchor" href="#decision">&nbsp;</a>
 <h2>Choosing an Option</h2>
 
@@ -515,7 +664,7 @@ app:
 
 <ul>
     <li><a href="/mock_server/configuration_properties.html">Configuration Properties</a> &mdash; full reference for <code class="inline code">stateBackend</code>, <code class="inline code">clusterEnabled</code>, <code class="inline code">clusterName</code>, <code class="inline code">clusterTransportConfig</code>, <code class="inline code">blobStoreType</code>, and all other properties</li>
-    <li><a href="/mock_server/persisting_expectations.html">Persisting Expectations</a> &mdash; filesystem persistence in detail, including record-and-replay</li>
+    <li><a href="/mock_server/persisting_expectations.html">Persisting Expectations</a> &mdash; filesystem and cloud blob persistence in detail, including record-and-replay</li>
     <li><a href="/mock_server/running_tests_in_parallel.html">Running Tests In Parallel</a> &mdash; session-ID isolation when multiple teams share one instance</li>
     <li><a href="/mock_server/performance.html">Scalability &amp; Latency</a> &mdash; single-node throughput benchmarks and tuning guidance</li>
     <li><a href="/where/kubernetes.html">Helm &amp; Kubernetes</a> &mdash; Helm chart reference and Kubernetes deployment patterns</li>

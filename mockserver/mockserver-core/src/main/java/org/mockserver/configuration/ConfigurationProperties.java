@@ -687,14 +687,18 @@ public class ConfigurationProperties {
     }
 
     /**
-     * Enable the CONNECT-UDP (MASQUE) forward proxy handler on the HTTP/3 server.
-     * When enabled, HTTP/3 CONNECT requests are intercepted by a dedicated handler
-     * that currently returns 501 Not Implemented (the bundled QUIC codec does not yet
-     * support the :protocol pseudo-header needed for the relay). This is experimental and
-     * requires codec support for the :protocol pseudo-header (RFC 9220) and HTTP
-     * Datagrams (RFC 9297). Currently the bundled netty-incubator-codec-http3
-     * (0.0.30.Final) does not support extended CONNECT, so enabling this flag will
-     * cause CONNECT requests to be cleanly rejected with 501 Not Implemented.
+     * Enable the CONNECT-UDP (MASQUE, RFC 9298) forward proxy on the HTTP/3 server.
+     * When enabled, the server advertises {@code SETTINGS_ENABLE_CONNECT_PROTOCOL}
+     * (RFC 9220) and extended-CONNECT requests with {@code :protocol=connect-udp} are
+     * relayed: a UDP socket is opened to the target authority and datagrams are forwarded
+     * in both directions (one HTTP/3 DATA frame per datagram). This is supported by the
+     * mainline {@code io.netty:netty-codec-http3} codec (Netty 4.2). Normal (non-CONNECT)
+     * HTTP/3 requests are unaffected.
+     * <p>
+     * Experimental and <strong>off by default</strong>. When enabled this is an open UDP
+     * relay with no target restriction (a client can reach any UDP host:port reachable
+     * from the server, including private/loopback/cloud-metadata addresses) — intended
+     * for controlled test environments only; do not expose to untrusted clients.
      * Default: false (disabled).
      */
     public static boolean http3ConnectUdpEnabled() {
@@ -3040,11 +3044,11 @@ public class ConfigurationProperties {
      * MockServer will only be able to establish a TLS connection to endpoints that have a trusted X509 certificate according to the trust manager type, as follows:
      * <p>
      * <p>
-     * ALL - Insecure will trust all X509 certificates and not perform host name verification.
+     * ANY - Insecure will trust all X509 certificates and not perform host name verification.
      * JVM - Will trust all X509 certificates trust by the JVM.
      * CUSTOM - Will trust all X509 certificates specified in forwardProxyTLSCustomTrustX509Certificates configuration value.
      *
-     * @param trustManagerType trusted set of certificates for forwarded or proxied requests, allowed values: ALL, JVM, CUSTOM.
+     * @param trustManagerType trusted set of certificates for forwarded or proxied requests, allowed values: ANY, JVM, CUSTOM.
      */
     public static void forwardProxyTLSX509CertificatesTrustManagerType(ForwardProxyTLSX509CertificatesTrustManager trustManagerType) {
         setProperty(MOCKSERVER_FORWARD_PROXY_TLS_X509_CERTIFICATES_TRUST_MANAGER_TYPE, trustManagerType.name());

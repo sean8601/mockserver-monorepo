@@ -126,6 +126,8 @@ spec:
 
 <p>Your application connects to <code class="inline code">payment-service-chaos:8080</code> instead of <code class="inline code">payment-service:8080</code>. MockServer forwards every request to the real <code class="inline code">payment-service.production.svc.cluster.local:8080</code> and injects errors and latency according to the chaos profile. When you are done testing, point your application back to the real service.</p>
 
+<p><strong>Scaling beyond one replica:</strong> the manifests above run a single replica, so the in-line expectation chaos and any <code class="inline code">PUT /mockserver/serviceChaos</code> registration apply to that one pod. If you scale the MockServer Deployment to multiple replicas behind a Service, run the <a href="/mock_server/centralized_deployment.html#option2">clustered HA variant</a> so that service-scoped HTTP, TCP and gRPC chaos registrations <strong>replicate across every replica</strong> — otherwise a control-plane registration only affects the single pod that received it. See <a href="/mock_server/chaos_testing.html#fleet_chaos">Fleet-wide Chaos</a>.</p>
+
 <a id="forward_proxy_pattern" class="anchor" href="#forward_proxy_pattern">&nbsp;</a>
 
 <h2>Pattern 2: Egress / Forward Proxy</h2>

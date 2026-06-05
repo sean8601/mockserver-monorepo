@@ -482,7 +482,7 @@ LogManager.getLogManager().readConfiguration(new ByteArrayInputStream(loggingCon
 
 <p>When running MockServer from the command line it relies on the Java Logger <span class="inline_code">java.util.logging.Logger</span> in addition to controlling the log level of MockServer using <span class="inline_code">-logLevel</span>
     the underlying logging framework can be configured (overriding the default configuration) by specifying the System Property <span class="inline_code">java.util.logging.config.file</span> or <span class="inline_code">java.util.logging.config.class</span>
-    as detailed in the <a target="_blank" href="https://docs.oracle.com/javase/8/docs/api/java/util/logging/LogManager.html" rel="noopener noreferrer">LogManager JavaDoc</a>.</p>
+    as detailed in the <a target="_blank" href="https://docs.oracle.com/en/java/javase/17/docs/api/java.logging/java/util/logging/LogManager.html" rel="noopener noreferrer">LogManager JavaDoc</a>.</p>
 
 <p>The MockServer github repository contains an example <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/mockserver/mockserver-netty/src/main/resources/example_logging_configuration.properties" rel="noopener noreferrer">Java Logger configuration file</a> (which
     would be configured using <span class="inline_code">java.util.logging.config.file</span>).</p>

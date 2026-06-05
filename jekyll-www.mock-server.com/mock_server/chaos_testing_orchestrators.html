@@ -48,6 +48,8 @@ curl -sf -X PUT http://mockserver:1080/mockserver/serviceChaos \
 
 <p><strong>Always set <code class="inline code">ttlMillis</code> when an orchestrator owns the experiment.</strong> Orchestrators crash, time out, get cancelled, and sometimes skip their rollback step. The TTL is a <strong>dead-man's switch</strong>: MockServer reverts the fault on its own after the window elapses, so a failed experiment can never leave a dependency permanently broken. Match the TTL to (or slightly above) the experiment's planned duration. See <a href="/mock_server/chaos_testing.html#service_scoped_chaos">Service-scoped Chaos</a>.</p>
 
+<p><strong>Clustered deployments:</strong> when MockServer runs as a <a href="/mock_server/centralized_deployment.html#option2">clustered HA fleet</a>, service-scoped HTTP, TCP and gRPC chaos registrations <strong>replicate across all nodes</strong>. A single control-plane call to any node breaks the host for the whole fleet, and the clear (or TTL auto-revert) reverts it fleet-wide — so your orchestrator does not need to address every node individually. See <a href="/mock_server/chaos_testing.html#fleet_chaos">Fleet-wide Chaos</a>.</p>
+
 <a id="chaos_toolkit" class="anchor" href="#chaos_toolkit">&nbsp;</a>
 
 <h2>Chaos Toolkit</h2>
