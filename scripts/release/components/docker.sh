@@ -312,6 +312,36 @@ else
   # — the describe-secret guard skips this entirely otherwise.
   # Signing is additive and STRICTLY non-fatal: a failure here never aborts
   # the release — the images are already pushed.
+  # Resolve a usable cosign binary into $_cosign_bin. Prefer one already on PATH;
+  # otherwise download the pinned release into .tmp/ (writable, no sudo needed —
+  # docker.sh signs on the HOST, unlike helm.sh which installs inside a root
+  # container). Pinned version + sha256 match helm.sh so both signers use the
+  # same cosign. Returns non-zero if cosign cannot be made available.
+  ensure_cosign() {
+    if command -v cosign >/dev/null 2>&1; then
+      _cosign_bin="cosign"
+      return 0
+    fi
+    mkdir -p "$REPO_ROOT/.tmp"
+    local target="$REPO_ROOT/.tmp/cosign"
+    log_info "  cosign not on PATH — downloading pinned cosign v2.4.3 to .tmp/"
+    # curl (not wget) — docker.sh runs on the bare agent host and only curl is
+    # a guaranteed-present tool here (require_cmd curl); helm.sh uses wget only
+    # because it runs inside a container image that bundles it.
+    if ! curl -fsSL --max-time 120 -o "$target" "https://github.com/sigstore/cosign/releases/download/v2.4.3/cosign-linux-amd64"; then
+      log_info "WARNING: failed to download cosign — skipping signing"
+      return 1
+    fi
+    if ! echo "caaad125acef1cb81d58dcdc454a1e429d09a750d1e9e2b3ed1aed8964454708  $target" | sha256sum -c - >/dev/null 2>&1; then
+      log_info "WARNING: cosign checksum mismatch — refusing to use downloaded binary"
+      rm -f "$target"
+      return 1
+    fi
+    chmod +x "$target"
+    _cosign_bin="$target"
+    return 0
+  }
+
   cosign_sign_docker_image() {
     local image_ref="$1"
     # Resolve the tag to a digest so we sign by content, not by mutable tag.
@@ -324,11 +354,12 @@ else
     local repo="${image_ref%%:*}"
     local ref_by_digest="${repo}@${digest}"
     log_info "  cosign sign $ref_by_digest"
-    cosign sign --yes --key "$_cosign_key_file" "$ref_by_digest" || return 1
+    "$_cosign_bin" sign --yes --key "$_cosign_key_file" "$ref_by_digest" || return 1
   }
 
   cosign_sign_docker_images() {
     local rc=0
+    ensure_cosign || return 1
     mkdir -p "$REPO_ROOT/.tmp"
     _cosign_key_file="$REPO_ROOT/.tmp/cosign-key-docker.$$"
     local _cosign_pw_file="$REPO_ROOT/.tmp/cosign-pw-docker.$$"
@@ -373,16 +404,13 @@ else
   if aws secretsmanager describe-secret --region "$REGION" \
        --secret-id mockserver-release/cosign-key >/dev/null 2>&1; then
     log_info "Cosign-signing pushed Docker images (mockserver-release/cosign-key found)"
-    # cosign must be available on the host (not in a container) to sign
-    # images already pushed to a registry. Verify it's present.
-    if command -v cosign >/dev/null 2>&1; then
-      if cosign_sign_docker_images; then
-        log_info "Docker images signed with cosign"
-      else
-        log_info ":warning: cosign signing had partial failures (non-fatal) — images published but some unsigned"
-      fi
+    # cosign signs on the HOST (the images are already pushed to a registry).
+    # cosign_sign_docker_images resolves a cosign binary via ensure_cosign,
+    # installing the pinned release into .tmp/ if one is not already on PATH.
+    if cosign_sign_docker_images; then
+      log_info "Docker images signed with cosign"
     else
-      log_info "cosign binary not found on host — skipping Docker image signing (install cosign to enable)"
+      log_info ":warning: cosign signing had partial failures (non-fatal) — images published but some unsigned"
     fi
   else
     log_info "cosign key not configured (mockserver-release/cosign-key) — skipping Docker image signing"

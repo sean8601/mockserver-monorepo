@@ -168,7 +168,7 @@ Release scripts write secrets to `0600` files under `.tmp/` (volume-mounted into
 
 ### Released Image Signing
 
-All release Docker images (Docker Hub + ECR) are cosign-signed by digest after push, using the same key stored in `mockserver-release/cosign-key`. This allows consumers to verify image provenance. Signing is non-fatal if the key or binary is absent. See [Docker](../infrastructure/docker.md#verifying-image-signatures) for the verification command.
+All release Docker images (Docker Hub + ECR) are cosign-signed by digest after push, using the same key stored in `mockserver-release/cosign-key`. This allows consumers to verify image provenance. The release Docker step runs on the **release** queue (the only queue granted `read_release_secrets`, which includes the cosign key) and auto-installs a checksum-pinned cosign binary; signing is non-fatal if the key is unavailable. See [Docker](../infrastructure/docker.md#verifying-image-signatures) for the verification command.
 
 ### CloudTrail Audit Events
 

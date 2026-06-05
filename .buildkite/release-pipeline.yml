@@ -126,7 +126,10 @@ steps:
       - label: ":docker: Docker Image"
         command: ".buildkite/scripts/release-runner.sh docker"
         timeout_in_minutes: 60
-        agents: { queue: "default" }
+        # release queue: needs mockserver-release/cosign-key (image signing) and
+        # the release-scoped Docker Hub / ECR push credentials. The default queue
+        # runs untrusted PR code and is not granted the release signing key.
+        agents: { queue: "release" }
 
       - label: ":package: npm"
         command: ".buildkite/scripts/release-runner.sh npm"

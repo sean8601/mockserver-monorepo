@@ -75,7 +75,7 @@ The `-clustered` image variant (`clustered-X.Y.Z`, `clustered-mockserver-X.Y.Z`,
 
 ### Verifying Image Signatures
 
-Release images are cosign-signed by digest after push using the project's signing key (stored in AWS Secrets Manager `mockserver-release/cosign-key`). Signing uses the same key infrastructure as the Helm chart signing in `scripts/release/components/helm.sh`.
+Release images are cosign-signed by digest after push using the project's signing key (stored in AWS Secrets Manager `mockserver-release/cosign-key`). Signing uses the same key infrastructure as the Helm chart signing in `scripts/release/components/helm.sh`. The release Docker step runs on the **release** queue (the only queue granted `read_release_secrets`, which includes the cosign key) and auto-installs the pinned cosign binary into `.tmp/` if it is not already on the agent.
 
 To verify a release image:
 
@@ -95,7 +95,7 @@ cosign verify \
 
 The public key corresponding to `mockserver-release/cosign-key` must be obtained from the project maintainers or from the key stored in `mockserver-release/cosign-key` (field `key` contains the private key; the corresponding `.pub` must be extracted with `cosign public-key --key cosign.key`).
 
-Signing is non-fatal in the release pipeline: if the key is absent or `cosign` is not installed on the release agent, images are published unsigned and the release continues.
+Signing is non-fatal in the release pipeline: if the key is absent (or the cosign binary cannot be downloaded), images are published unsigned and the release continues. The cosign binary itself is no longer a prerequisite — the release step downloads and checksum-verifies it on demand.
 
 ### Docker HEALTHCHECK
 

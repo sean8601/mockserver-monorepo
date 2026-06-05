@@ -155,7 +155,16 @@ resource "aws_iam_policy" "read_build_secrets_release" {
   })
 }
 
-# Release-only secrets (unchanged).
+# The cosign signing key (mockserver-release/cosign-key, keys: key + password)
+# is created out of band — it holds a private signing key whose value we don't
+# want in Terraform state — so it's referenced as a data source purely to get
+# its ARN for the IAM grant below. Both docker.sh and helm.sh (release queue)
+# read it to sign published images/charts.
+data "aws_secretsmanager_secret" "cosign" {
+  name = "mockserver-release/cosign-key"
+}
+
+# Release-only secrets.
 resource "aws_iam_policy" "read_release_secrets" {
   name        = "buildkite-read-release-secrets"
   description = "Allow Buildkite agents to read release credentials from Secrets Manager"
@@ -173,6 +182,7 @@ resource "aws_iam_policy" "read_release_secrets" {
           aws_secretsmanager_secret.npm_token.arn,
           aws_secretsmanager_secret.swaggerhub.arn,
           aws_secretsmanager_secret.website_role.arn,
+          data.aws_secretsmanager_secret.cosign.arn,
         ]
       },
       {
