@@ -2,8 +2,7 @@
 # Run the mockserver-client-node browser integration tests (Playwright headless
 # Chromium) against a MockServer Docker container with CORS enabled.
 #
-# This is a CI CANARY step (soft_fail: true) — it does not block master.
-# Promote to a hard gate once proven stable across multiple CI runs.
+# Hard CI gate — a failure here blocks master.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
