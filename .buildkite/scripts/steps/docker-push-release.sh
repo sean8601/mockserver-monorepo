@@ -100,6 +100,10 @@ else
 fi
 
 echo "--- :docker: Building and pushing webhook image"
+# Download the webhook fat jar artifact from the build step (may not exist on
+# older releases that pre-date the webhook module).
+buildkite-agent artifact download "mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar" . 2>/dev/null || true
+
 # Copy the webhook fat jar into the docker/webhook build context.
 # The jar is built during the Maven Central step; fall back to local build tree.
 WEBHOOK_JAR=""

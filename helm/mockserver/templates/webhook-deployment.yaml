@@ -24,7 +24,7 @@ spec:
 {{ toYaml .Values.webhook.podAnnotations | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: {{ template "release.name" . }}-webhook
+      automountServiceAccountToken: false
 {{- if .Values.imagePullSecrets }}
       imagePullSecrets:
 {{ toYaml .Values.imagePullSecrets | indent 8 }}

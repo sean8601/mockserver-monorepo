@@ -1,43 +1,4 @@
-{{- if .Values.webhook.enabled }}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {{ template "release.name" . }}-webhook
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: {{ template "chart.name" . }}-webhook
-    release: {{ .Release.Name }}
-    chart: {{ template "chart.name_version" . }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ template "release.name" . }}-webhook
-  labels:
-    app: {{ template "chart.name" . }}-webhook
-    release: {{ .Release.Name }}
-    chart: {{ template "chart.name_version" . }}
-rules:
-  # Needed to read MutatingWebhookConfiguration for caBundle updates
-  - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["mutatingwebhookconfigurations"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: {{ template "release.name" . }}-webhook
-  labels:
-    app: {{ template "chart.name" . }}-webhook
-    release: {{ .Release.Name }}
-    chart: {{ template "chart.name_version" . }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ template "release.name" . }}-webhook
-subjects:
-  - kind: ServiceAccount
-    name: {{ template "release.name" . }}-webhook
-    namespace: {{ .Release.Namespace }}
-{{- end }}
+{{/* The webhook server (WebhookServer.java) is a pure HTTPS server that handles
+     AdmissionReview requests. It has no Kubernetes API client and therefore
+     requires no runtime RBAC. The TLS bootstrap Jobs have their own scoped RBAC
+     in webhook-tls-selfsigned.yaml. */}}

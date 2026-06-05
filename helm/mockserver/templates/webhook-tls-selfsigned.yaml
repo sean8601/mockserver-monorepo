@@ -41,9 +41,10 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: {{ template "release.name" . }}-webhook-tls-create
+  namespace: {{ .Release.Namespace }}
   labels:
     app: {{ template "chart.name" . }}-webhook
     release: {{ .Release.Name }}
@@ -54,12 +55,17 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ template "release.name" . }}-webhook-tls"]
+    verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: {{ template "release.name" . }}-webhook-tls-create
+  namespace: {{ .Release.Namespace }}
   labels:
     app: {{ template "chart.name" . }}-webhook
     release: {{ .Release.Name }}
@@ -69,7 +75,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ template "release.name" . }}-webhook-tls-create
 subjects:
   - kind: ServiceAccount
@@ -109,7 +115,7 @@ spec:
               SERVICE_NAME="{{ template "release.name" . }}-webhook"
               NAMESPACE="{{ .Release.Namespace }}"
               SECRET_NAME="{{ template "release.name" . }}-webhook-tls"
-              DAYS={{ .Values.webhook.tls.certValidityDays | default 3650 }}
+              DAYS="{{ .Values.webhook.tls.certValidityDays | default 3650 | int }}"
 
               # Generate CA key and certificate
               openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/ca.key
@@ -198,6 +204,47 @@ metadata:
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 ---
+# Namespace-scoped: read the TLS Secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ template "release.name" . }}-webhook-tls-patch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "chart.name" . }}-webhook
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ template "release.name" . }}-webhook-tls"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ template "release.name" . }}-webhook-tls-patch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "chart.name" . }}-webhook
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ template "release.name" . }}-webhook-tls-patch
+subjects:
+  - kind: ServiceAccount
+    name: {{ template "release.name" . }}-webhook-tls-patch
+    namespace: {{ .Release.Namespace }}
+---
+# Cluster-scoped: patch the MutatingWebhookConfiguration caBundle
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -210,12 +257,10 @@ metadata:
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations"]
-    verbs: ["get", "update", "patch"]
+    resourceNames: ["{{ template "release.name" . }}-sidecar-injector"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
