@@ -44,35 +44,15 @@ module.exports = function (grunt) {
                 serverPort: parseInt(process.env.MOCKSERVER_PORT, 10) || 1080
             }
         },
-        karma: {
-            options: {
-                configFile: 'test/karma.conf.js',
-                logLevel: 'INFO',
-                reporters: 'spec',
-                browserDisconnectTimeout: 10 * 10000,
-                browserNoActivityTimeout: 10 * 10000,
-                singleRun: true,
-                files: [
-                    'mockServerClient.js',
-                    'test/no_proxy/mock_server_browser_client_spec.js'
-                ]
-            },
-            chrome: {
-                browsers: ['Chrome']
-            }
-        },
     });
 
     grunt.loadNpmTasks('grunt-exec');
     grunt.loadNpmTasks('mockserver-node');
     grunt.loadNpmTasks('grunt-contrib-jshint');
-    grunt.loadNpmTasks('grunt-karma');
-
     grunt.registerTask('ts', ['exec:typecheck']);
     grunt.registerTask('test_node', ['ts', 'start_mockserver', 'exec:node_test', 'stop_mockserver']);
     grunt.registerTask('test_node_external', ['exec:node_test']);
-    grunt.registerTask('test_browser', ['start_mockserver', 'karma:chrome', 'stop_mockserver']);
-    grunt.registerTask('test', ['start_mockserver', 'exec:node_test', 'karma:chrome', 'stop_mockserver']);
+    grunt.registerTask('test', ['start_mockserver', 'exec:node_test', 'stop_mockserver']);
 
     grunt.registerTask('default', ['exec:stop_existing_mockservers', 'jshint', 'test_node']);
     grunt.registerTask('headless', ['exec:stop_existing_mockservers', 'jshint', 'test_node']);

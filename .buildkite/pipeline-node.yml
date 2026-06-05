@@ -7,6 +7,14 @@ steps:
     command: ".buildkite/scripts/steps/node-client-test.sh"
     timeout_in_minutes: 15
 
+  # CANARY: browser integration tests via Playwright (headless Chromium).
+  # soft_fail so this step does not block master while the new infra stabilises.
+  # Promote to a hard gate once proven stable across multiple CI runs.
+  - label: ":node: :chrome: client-node browser tests (canary)"
+    command: ".buildkite/scripts/steps/node-client-browser-test.sh"
+    timeout_in_minutes: 15
+    soft_fail: true
+
   - label: ":node: node launcher lint"
     command: ".buildkite/scripts/steps/node-launcher-lint.sh"
     timeout_in_minutes: 10
