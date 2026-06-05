@@ -292,7 +292,7 @@ The release pipeline writes every version-bearing file in the repo, so contribut
 All toolchain calls run inside these images. Defined in `scripts/release/_lib.sh`:
 
 ```bash
-MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-11
+MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-17
 NODE_IMAGE=node:20-bookworm
 RUBY_IMAGE=ruby:3.2-bookworm
 HELM_IMAGE=alpine/helm:3.16.2
