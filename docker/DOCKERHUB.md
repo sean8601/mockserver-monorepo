@@ -1,13 +1,26 @@
 # MockServer
 
-> HTTP(S) mock server and proxy for testing — mock any system you integrate with over HTTP/HTTPS, or proxy and inspect/modify in-flight requests.
-
 [![Docker Pulls](https://img.shields.io/docker/pulls/mockserver/mockserver.svg)](https://hub.docker.com/r/mockserver/mockserver/)
 [![License](https://img.shields.io/github/license/mock-server/mockserver-monorepo.svg)](https://github.com/mock-server/mockserver-monorepo/blob/master/LICENSE.md)
 
 - **Website & docs:** https://www.mock-server.com
 - **Source & issues:** https://github.com/mock-server/mockserver-monorepo
 - **Changelog:** https://github.com/mock-server/mockserver-monorepo/blob/master/changelog.md
+
+MockServer is an HTTP(S) **mock server** and **proxy** for testing. Mock the APIs your application depends on so you can develop and test against systems that are unavailable, incomplete, or hard to reproduce — and proxy real traffic to record, inspect, and modify requests in flight.
+
+**Main features:**
+
+- **Mock HTTP/HTTPS services** — match requests on method, path, query, headers, cookies and body (JSON, XML, JSONPath, XPath, regex, OpenAPI) and return configured responses.
+- **Proxy & record** — port forwarding, web (HTTP) proxy, HTTPS tunneling (CONNECT) and SOCKS, with full visibility of even TLS-encrypted traffic.
+- **Dynamic responses** — response templating (Velocity, Mustache, JavaScript), class/closure callbacks and webhooks.
+- **OpenAPI** — generate expectations directly from an OpenAPI/Swagger specification.
+- **Verification** — assert which requests were received, in what order, and how many times.
+- **Chaos & resilience testing** — inject latency, dropped/slow connections and failures to test how your system copes with a misbehaving dependency.
+- **LLM / AI mocking** — mock OpenAI/Bedrock-style chat completion APIs, including streaming.
+- **Live dashboard** — watch requests, expectations and logs in real time at `/mockserver/dashboard`.
+- **Clients & integrations** — Java, JavaScript/Node, Python and Ruby clients, plus JUnit and Spring support.
+- **Run anywhere** — Docker, Helm/Kubernetes, JAR or WAR, with optional clustered state for multi-instance deployments.
 
 ## Quick Start
 
