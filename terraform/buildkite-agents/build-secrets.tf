@@ -125,12 +125,17 @@ resource "aws_iam_policy" "read_buildkite_api_token_readonly" {
   })
 }
 
-# Docker Hub credentials: consumed by docker-login.sh for snapshot push
-# (default queue, master-only) and release image push (release queue).
+# Docker Hub credentials are split by purpose: this SNAPSHOT secret
+# (mockserver-build/dockerhub) is read by the default queue for snapshot/CI image
+# pushes; the RELEASE secret (mockserver-release/dockerhub, data source below) is
+# read only by the release queue. So a compromised default-queue agent cannot
+# obtain the release-designated credential.
 #
-# LIVE FOLLOW-UP: create a separate scoped Docker Hub token for snapshot
-# pushes (default queue) vs release pushes (release queue) so a compromised
-# default agent cannot push release-tagged images.
+# NOTE: Docker Hub personal access tokens cannot be scoped to a single repo/tag
+# on the current plan, so both tokens technically have the same Docker Hub push
+# rights. The benefit of the split is therefore credential separation: independent
+# rotation/revocation, separate audit trail, and the AWS-level guarantee above
+# that the default queue physically cannot read the release token.
 resource "aws_iam_policy" "read_dockerhub_secret" {
   name        = "buildkite-read-dockerhub-secret"
   description = "Allow Buildkite agents to read Docker Hub credentials from Secrets Manager"
@@ -141,6 +146,26 @@ resource "aws_iam_policy" "read_dockerhub_secret" {
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
       Resource = [aws_secretsmanager_secret.dockerhub.arn]
+    }]
+  })
+}
+
+# Release-queue Docker Hub credentials (created out of band; referenced via a
+# data source for its ARN).
+data "aws_secretsmanager_secret" "dockerhub_release" {
+  name = "mockserver-release/dockerhub"
+}
+
+resource "aws_iam_policy" "read_dockerhub_release_secret" {
+  name        = "buildkite-read-dockerhub-release-secret"
+  description = "Allow release-queue Buildkite agents to read the RELEASE Docker Hub credentials from Secrets Manager"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "secretsmanager:GetSecretValue"
+      Resource = [data.aws_secretsmanager_secret.dockerhub_release.arn]
     }]
   })
 }

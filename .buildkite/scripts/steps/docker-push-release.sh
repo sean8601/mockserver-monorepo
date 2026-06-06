@@ -23,7 +23,8 @@ echo "--- :info: Building release image"
 echo "Full tag:  mockserver/mockserver:${FULL_TAG}"
 echo "Short tag: mockserver/mockserver:${SHORT_TAG}"
 
-.buildkite/scripts/docker-login.sh
+# Release images use the release-scoped Docker Hub token (release queue only).
+DOCKERHUB_SECRET_ID="mockserver-release/dockerhub" .buildkite/scripts/docker-login.sh
 .buildkite/scripts/ecr-login.sh
 
 # Resolve ECR Public repository URI dynamically — the registry alias is

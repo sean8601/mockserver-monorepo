@@ -19,7 +19,8 @@ locals {
     read_build_secrets_default = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_default.name}"
     read_build_secrets_release = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_release.name}"
     read_release_secrets       = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_release_secrets.name}"
-    read_dockerhub_secret      = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_secret.name}"
+    read_dockerhub_secret         = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_secret.name}"
+    read_dockerhub_release_secret = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_release_secret.name}"
     read_buildkite_api_token          = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token.name}"
     read_buildkite_api_token_readonly = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token_readonly.name}"
     ecr_public_push            = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_push.name}"
@@ -128,7 +129,7 @@ module "buildkite_release_stack" {
   managed_policy_arns = [
     local.policy_arn.read_build_secrets_release,
     local.policy_arn.read_release_secrets,
-    local.policy_arn.read_dockerhub_secret,
+    local.policy_arn.read_dockerhub_release_secret, # release queue reads ONLY the release Docker Hub token
     local.policy_arn.ecr_public_push,
     local.policy_arn.release_website_tfstate,
     local.policy_arn.dependency_cache, # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)

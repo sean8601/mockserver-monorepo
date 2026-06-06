@@ -132,7 +132,9 @@ fi
 # ---- Auth (skipped in dry-run) --------------------------------------------
 if ! is_dry_run; then
   log_info "Login to Docker Hub + ECR Public"
-  "$REPO_ROOT/.buildkite/scripts/docker-login.sh"
+  # Release images use the release-scoped Docker Hub token (release queue only).
+  DOCKERHUB_SECRET_ID="mockserver-release/dockerhub" \
+    "$REPO_ROOT/.buildkite/scripts/docker-login.sh"
   "$REPO_ROOT/.buildkite/scripts/ecr-login.sh"
 fi
 
