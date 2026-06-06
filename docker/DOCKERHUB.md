@@ -3,13 +3,15 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/mockserver/mockserver.svg)](https://hub.docker.com/r/mockserver/mockserver/)
 [![License](https://img.shields.io/github/license/mock-server/mockserver-monorepo.svg)](https://github.com/mock-server/mockserver-monorepo/blob/master/LICENSE.md)
 
+## Websites
+
 - **Website & docs:** https://www.mock-server.com
 - **Source & issues:** https://github.com/mock-server/mockserver-monorepo
 - **Changelog:** https://github.com/mock-server/mockserver-monorepo/blob/master/changelog.md
 
-MockServer is an HTTP(S) **mock server** and **proxy** for testing. Mock the APIs your application depends on so you can develop and test against systems that are unavailable, incomplete, or hard to reproduce — and proxy real traffic to record, inspect, and modify requests in flight.
+## Main Features
 
-**Main features:**
+MockServer is an HTTP(S) **mock server** and **proxy** for testing. Mock the APIs your application depends on so you can develop and test against systems that are unavailable, incomplete, or hard to reproduce — and proxy real traffic to record, inspect, and modify requests in flight.
 
 - **Mock HTTP/HTTPS services** — match requests on method, path, query, headers, cookies and body (JSON, XML, JSONPath, XPath, regex, OpenAPI) and return configured responses.
 - **Proxy & record** — port forwarding, web (HTTP) proxy, HTTPS tunneling (CONNECT) and SOCKS, with full visibility of even TLS-encrypted traffic.
