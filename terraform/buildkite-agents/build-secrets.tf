@@ -220,6 +220,14 @@ data "aws_secretsmanager_secret" "cosign" {
   name = "mockserver-release/cosign-key"
 }
 
+# GHCR token (mockserver-release/ghcr-token, keys: username + token) is created
+# out of band and read by helm.sh (release queue) to `helm registry login
+# ghcr.io` and push the OCI chart to oci://ghcr.io/mock-server/charts.
+# Referenced as a data source purely for its ARN in the IAM grant below.
+data "aws_secretsmanager_secret" "ghcr_token" {
+  name = "mockserver-release/ghcr-token"
+}
+
 # Release-only secrets.
 resource "aws_iam_policy" "read_release_secrets" {
   name        = "buildkite-read-release-secrets"
@@ -239,6 +247,7 @@ resource "aws_iam_policy" "read_release_secrets" {
           aws_secretsmanager_secret.swaggerhub.arn,
           aws_secretsmanager_secret.website_role.arn,
           data.aws_secretsmanager_secret.cosign.arn,
+          data.aws_secretsmanager_secret.ghcr_token.arn,
         ]
       },
       {

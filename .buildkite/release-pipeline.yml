@@ -173,12 +173,16 @@ steps:
       - label: ":python: PyPI"
         command: ".buildkite/scripts/release-runner.sh pypi"
         timeout_in_minutes: 15
-        agents: { queue: "default" }
+        # Must run on the release queue: PyPI/RubyGems publish tokens
+        # (mockserver-build/pypi, mockserver-build/rubygems) are granted only to
+        # the release-queue agent role. The default queue runs untrusted PR
+        # builds and deliberately has no publish credentials.
+        agents: { queue: "release" }
 
       - label: ":gem: RubyGems"
         command: ".buildkite/scripts/release-runner.sh rubygems"
         timeout_in_minutes: 10
-        agents: { queue: "default" }
+        agents: { queue: "release" }
 
       - label: ":github: GitHub Release"
         command: ".buildkite/scripts/release-runner.sh github"
