@@ -85,13 +85,21 @@ img.action_image {
 img.ui_image {
     max-width: 1700px;
     width: 98%;
-    padding: 1%;
+    padding: 12px;
+    background-color: #000;
+    border: 1px solid #000;
+    border-radius: 9px;
+    box-sizing: border-box;
 }
 
 img.ui_image_half_width {
     max-width: 1700px;
     width: 60%;
-    padding: 1%;
+    padding: 12px;
+    background-color: #000;
+    border: 1px solid #000;
+    border-radius: 9px;
+    box-sizing: border-box;
 }
 
 /*

@@ -8,7 +8,7 @@ subsection: true
 sitemap:
   priority: 0.7
   changefreq: 'monthly'
-  lastmod: 2026-05-27T00:00:00+01:00
+  lastmod: 2026-06-06T00:00:00+01:00
 ---
 
 <p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Ten views are available from the navigation bar at the top of the page:</p>
@@ -277,7 +277,7 @@ sitemap:
 
 <p>The Mocks view lets you create or edit mock expectations without writing any code. Open it using the <strong>Mocks</strong> button in the navigation bar.</p>
 
-<img class="ui_image" src="/images/MockServerComposer.png" alt="MockServer Composer">
+<img class="ui_image_half_width" src="/images/MockServerComposer.png" alt="MockServer Composer">
 
 <p>At the top, choose an <strong>Expectation kind</strong>:</p>
 
@@ -384,6 +384,8 @@ sitemap:
 
 <p>The Verification view lets you assert — straight from the dashboard — that MockServer actually received the requests you expected, without writing any test code. It checks against the requests MockServer has already recorded: a pass means it happened, and a failure shows the closest matching requests and the actual count so you can see what went wrong. Switch to it using the <strong>Verify</strong> button in the navigation bar.</p>
 
+<img class="ui_image" src="/images/MockServerVerification.png" alt="MockServer Verification">
+
 <p>A toggle at the top picks one of two modes:</p>
 
 <ul>
@@ -398,6 +400,8 @@ sitemap:
 <h2>AsyncAPI</h2>
 
 <p>The AsyncAPI view shows the live status of the <a href="/mock_server/asyncapi_messaging.html">AsyncAPI broker mock</a> — MockServer's message-broker mocking for Kafka, AMQP, MQTT, and other async transports. Switch to it using the <strong>Async</strong> button in the navigation bar. The view polls the server every few seconds and refreshes automatically; you can also refresh on demand.</p>
+
+<img class="ui_image" src="/images/MockServerAsyncAPI.png" alt="MockServer AsyncAPI Broker Mock">
 
 <p>At the top a status chip shows whether a spec is loaded (and its title and version). The view then shows:</p>
 
