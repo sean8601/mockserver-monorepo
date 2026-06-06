@@ -5,13 +5,20 @@
 # the credentials they actually consume.  Attachment to queues is in main.tf.
 #
 # Queue -> secret mapping (verified by grepping .buildkite/scripts):
-#   default:  buildkite-api-token (generate-pipeline.sh change detection),
+#   default:  buildkite-api-token-readonly (generate-pipeline.sh change detection),
+#             buildkite-api-token (cleanup-closed-pr-builds.sh, via read_build_secrets_default),
 #             dockerhub (docker-login.sh for snapshot push),
 #             sonatype (java-deploy-snapshot.sh, master-only)
-#   trigger:  buildkite-api-token (trigger-pipeline.sh orchestration)
-#   perf:     buildkite-api-token (perf-test-guard.sh commit comparison)
+#   trigger:  buildkite-api-token (trigger-pipeline.sh orchestration, write),
+#             buildkite-api-token-readonly (perf-test-guard.sh change detection)
+#   perf:     buildkite-api-token-readonly (perf-test-guard.sh commit comparison)
 #   release:  buildkite-api-token, dockerhub, sonatype, pypi, rubygems,
 #             plus release-only secrets in read_release_secrets
+#
+# The Buildkite API token is split three ways: a READ-ONLY token for change
+# detection, a WRITE token (buildkite-api-token) for trigger/cleanup build
+# control, and a separate management token (buildkite-tf-token) used only by the
+# Terraform provider (never granted to a queue).
 # ---------------------------------------------------------------------------
 
 # --- Secret resources -------------------------------------------------------
@@ -77,9 +84,11 @@ resource "aws_secretsmanager_secret" "website_role" {
 # generate-pipeline.sh (default queue), perf-test-guard.sh (perf queue),
 # cleanup-closed-pr-builds.sh (default queue), and release scripts.
 #
-# LIVE FOLLOW-UP: scope this to a READ-ONLY Buildkite API token (current
-# token has write scope for build creation). Create a separate read-only
-# token for change-detection and a write-scoped token only for trigger queue.
+# This grants the WRITE-scoped CI build-control token (read_builds + write_builds):
+# trigger-pipeline.sh (create/cancel builds) and cleanup-closed-pr-builds.sh
+# (cancel/delete). Change-detection (last-successful-commit.sh) uses the separate
+# READ-ONLY token below. The Terraform provider's pipeline/cluster management uses
+# yet another token (mockserver-build/buildkite-tf-token) read only by local admin.
 resource "aws_iam_policy" "read_buildkite_api_token" {
   name        = "buildkite-read-buildkite-api-token"
   description = "Allow Buildkite agents to read the Buildkite API token from Secrets Manager"
@@ -90,6 +99,28 @@ resource "aws_iam_policy" "read_buildkite_api_token" {
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
       Resource = [aws_secretsmanager_secret.buildkite_api_token.arn]
+    }]
+  })
+}
+
+# READ-ONLY Buildkite API token (read_builds + read_pipelines) used by
+# last-successful-commit.sh for change detection / perf-guard comparison. Created
+# out of band, referenced via a data source for its ARN. Defence-in-depth: the
+# change-detection code path physically cannot create/cancel/delete builds.
+data "aws_secretsmanager_secret" "buildkite_api_token_readonly" {
+  name = "mockserver-build/buildkite-api-token-readonly"
+}
+
+resource "aws_iam_policy" "read_buildkite_api_token_readonly" {
+  name        = "buildkite-read-buildkite-api-token-readonly"
+  description = "Allow Buildkite agents to read the READ-ONLY Buildkite API token (change detection) from Secrets Manager"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "secretsmanager:GetSecretValue"
+      Resource = [data.aws_secretsmanager_secret.buildkite_api_token_readonly.arn]
     }]
   })
 }

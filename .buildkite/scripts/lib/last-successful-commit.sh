@@ -15,7 +15,7 @@
 #   BUILDKITE_PIPELINE_SLUG, BUILDKITE_BRANCH, BUILDKITE_BUILD_NUMBER
 
 last_successful_commit() {
-  local secret_id="${BUILDKITE_API_TOKEN_SECRET_ID:-mockserver-build/buildkite-api-token}"
+  local secret_id="${BUILDKITE_API_TOKEN_SECRET_ID:-mockserver-build/buildkite-api-token-readonly}"
   local region="${AWS_REGION:-eu-west-2}"
   local org="${BUILDKITE_ORGANIZATION_SLUG:-mockserver}"
   local pipeline="${BUILDKITE_PIPELINE_SLUG:-mockserver}"
@@ -75,7 +75,7 @@ last_successful_commit() {
 # so it is the true "when did we last run" signal. Returns non-zero (reason on
 # stderr) when none can be determined — callers then run conservatively.
 last_perf_run_commit() {
-  local secret_id="${BUILDKITE_API_TOKEN_SECRET_ID:-mockserver-build/buildkite-api-token}"
+  local secret_id="${BUILDKITE_API_TOKEN_SECRET_ID:-mockserver-build/buildkite-api-token-readonly}"
   local region="${AWS_REGION:-eu-west-2}"
   local org="${BUILDKITE_ORGANIZATION_SLUG:-mockserver}"
   local pipeline="${BUILDKITE_PIPELINE_SLUG:-mockserver-performance-test}"

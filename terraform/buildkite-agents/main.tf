@@ -20,7 +20,8 @@ locals {
     read_build_secrets_release = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_release.name}"
     read_release_secrets       = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_release_secrets.name}"
     read_dockerhub_secret      = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_secret.name}"
-    read_buildkite_api_token   = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token.name}"
+    read_buildkite_api_token          = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token.name}"
+    read_buildkite_api_token_readonly = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token_readonly.name}"
     ecr_public_push            = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_push.name}"
     perf_results               = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.perf_results.name}"
     release_website_tfstate    = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.release_website_tfstate.name}"
@@ -48,8 +49,9 @@ module "buildkite_stack" {
   managed_policy_arns = [
     local.policy_arn.read_build_secrets_default,
     local.policy_arn.read_dockerhub_secret,
-    local.policy_arn.ecr_public_push,  # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
-    local.policy_arn.dependency_cache, # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
+    local.policy_arn.ecr_public_push,                # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
+    local.policy_arn.dependency_cache,               # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
+    local.policy_arn.read_buildkite_api_token_readonly, # change detection (generate-pipeline.sh -> last-successful-commit.sh)
   ]
 }
 
@@ -70,7 +72,10 @@ module "buildkite_trigger_stack" {
   agents_per_instance         = 4
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
-  managed_policy_arns         = [local.policy_arn.read_buildkite_api_token]
+  managed_policy_arns = [
+    local.policy_arn.read_buildkite_api_token,          # trigger-pipeline.sh creates/cancels child builds (write)
+    local.policy_arn.read_buildkite_api_token_readonly, # perf-test-guard.sh change detection (read) runs on this queue
+  ]
 }
 
 # Dedicated PERFORMANCE queue. Reproducible numbers matter far more here than
@@ -97,8 +102,9 @@ module "buildkite_perf_stack" {
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
   managed_policy_arns = [
-    local.policy_arn.read_buildkite_api_token, # Buildkite API token (commit guard / compare)
-    local.policy_arn.perf_results,             # S3 results history bucket
+    local.policy_arn.read_buildkite_api_token,          # Buildkite API token (commit guard / compare)
+    local.policy_arn.read_buildkite_api_token_readonly, # read-only token for change-detection comparisons
+    local.policy_arn.perf_results,                      # S3 results history bucket
   ]
 }
 
