@@ -96,6 +96,8 @@ sequenceDiagram
 | Role | `mock-server-com-email-forwarder` |
 | Permissions | `s3:GetObject` (mail bucket), `ses:SendRawEmail`, CloudWatch Logs create/put (scoped to specific log group in `var.region`) |
 
+**SES sandbox + `ses:SendRawEmail` scope:** the account runs in the SES sandbox (no production access). In the sandbox, SES authorises `ses:SendRawEmail` against **both** the sender identity (the domain) **and** every recipient identity. The IAM policy therefore scopes the action to `identity/<domain>` **plus** one `identity/<address>` per `forward_to` recipient — scoping to the domain alone fails every forward with `AccessDenied` on the recipient identity.
+
 ### DNS Records
 
 | Record | Type | Value | Purpose |
