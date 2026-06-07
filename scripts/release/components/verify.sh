@@ -49,6 +49,8 @@ V="$RELEASE_VERSION"
 # the full patch version — see swaggerhub.sh. Verify against that label.
 V_MINOR_REST="${V#*.}"
 API_V="${V%%.*}.${V_MINOR_REST%%.*}.x"
+# Dot-escaped form for grep -E containment checks of the website's spec links.
+API_V_RE="${API_V//./\\.}"
 
 # Failure accumulators — collect ALL failures rather than abort on the first,
 # so the operator sees the full picture in one pass. Hard failures fail the
@@ -107,7 +109,7 @@ check_json() {
 }
 
 # check_body_contains <label> <url> <grep-pattern>
-# Plain-text containment check, for non-JSON endpoints (e.g. Helm index.yaml).
+# Plain-text containment check, for non-JSON endpoints (e.g. Helm index.yaml, HTML pages).
 check_body_contains() {
   local label="$1" url="$2" pattern="$3"
   local response
@@ -178,6 +180,14 @@ log_info "== Website =="
 check_http "main mock-server.com" "https://www.mock-server.com/"
 check_http "Javadoc $V apidocs" \
   "https://www.mock-server.com/versions/$V/apidocs/index.html"
+# The deployed docs must link to THIS release's OpenAPI spec label (X.Y.x), not
+# a stale one. update-version-references.sh bumps mockserver_api_version before
+# the website build, but a stale-config build or a botched versioned-site
+# snapshot would silently ship docs that point at the previous version's spec
+# (as the legacy 6-0 -> 5.15.x and 5-15 -> 5.14.x sites still do). Fail loudly.
+check_body_contains "live site links to OpenAPI spec $API_V" \
+  "https://www.mock-server.com/mock_server/clearing_and_resetting.html" \
+  "mock-server-openapi/${API_V_RE}[\"#/]"
 
 log_info ""
 log_info "== JSON Schema =="
@@ -206,6 +216,10 @@ if [[ "$CREATE_VERSIONED_SITE" == "yes" ]]; then
   log_info "== Versioned site =="
   SUBDOMAIN=$(version_to_subdomain "$V")
   check_http "${SUBDOMAIN}.mock-server.com" "https://${SUBDOMAIN}.mock-server.com/"
+  # The frozen versioned snapshot must also link to this release's spec label.
+  check_body_contains "${SUBDOMAIN}.mock-server.com links to OpenAPI spec $API_V" \
+    "https://${SUBDOMAIN}.mock-server.com/mock_server/clearing_and_resetting.html" \
+    "mock-server-openapi/${API_V_RE}[\"#/]"
 fi
 
 log_info ""
