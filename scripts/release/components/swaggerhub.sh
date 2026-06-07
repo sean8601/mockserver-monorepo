@@ -44,10 +44,25 @@ SWAGGERHUB_OWNER="jamesdbloom"
 SWAGGERHUB_API="mock-server-openapi"
 SWAGGERHUB_BASE="https://api.swaggerhub.com/apis/${SWAGGERHUB_OWNER}/${SWAGGERHUB_API}"
 
+# SwaggerHub registers each spec under the major.minor ".x" version label (e.g.
+# 7.0.x), NOT the full patch version. This matches the website links
+# (mockserver_api_version, set to ${MAJOR}.${MINOR}.x by
+# update-version-references.sh), the README versions table, and every
+# historical version (5.15.x, 6.0.x, ...). The spec body keeps the full
+# info.version ($RELEASE_VERSION); SwaggerHub takes the registry label from the
+# ?version= query param, so the two intentionally differ. Uploading under the
+# full version (as a regression once did for 6.1.0 and 7.0.0) leaves every
+# ".x" link 404ing.
+MAJOR="${RELEASE_VERSION%%.*}"
+MINOR_REST="${RELEASE_VERSION#*.}"
+MINOR="${MINOR_REST%%.*}"
+API_VERSION="${MAJOR}.${MINOR}.x"
+log_info "SwaggerHub registry version label: $API_VERSION (spec body version: $RELEASE_VERSION)"
+
 if is_dry_run; then
   log_dry "skip: POST spec to SwaggerHub"
-  log_dry "skip: PUT lifecycle (publish) for version $RELEASE_VERSION"
-  log_dry "skip: PUT default version to $RELEASE_VERSION"
+  log_dry "skip: PUT lifecycle (publish) for version $API_VERSION"
+  log_dry "skip: PUT default version to $API_VERSION"
 else
   API_KEY=$(load_secret "mockserver-release/swaggerhub" "api_key")
 
@@ -75,12 +90,12 @@ else
   # to current desired state returns 200 with no change).
   log_info "Uploading spec to SwaggerHub"
   sh_api_call "upload" POST \
-    "${SWAGGERHUB_BASE}?version=$RELEASE_VERSION&isPrivate=false&oas=3.0.0" \
+    "${SWAGGERHUB_BASE}?version=$API_VERSION&isPrivate=false&oas=3.0.0" \
     -H "Content-Type: application/yaml" \
     --data-binary "@$SPEC"
   case "$sh_http" in
     2[0-9][0-9]) log_info "  uploaded (HTTP $sh_http)" ;;
-    409)         log_info "  version $RELEASE_VERSION already on SwaggerHub (HTTP 409) — continuing to publish + setDefault" ;;
+    409)         log_info "  version $API_VERSION already on SwaggerHub (HTTP 409) — continuing to publish + setDefault" ;;
     *)           log_error "SwaggerHub upload failed (HTTP $sh_http)"; exit 1 ;;
   esac
 
@@ -89,9 +104,9 @@ else
   # returns 200 with no state change. Reference:
   # https://api.swaggerhub.com/apis/swagger-hub/registry-api/1.3.0
   # → PUT /apis/{owner}/{api}/{version}/settings/lifecycle
-  log_info "Publishing version $RELEASE_VERSION on SwaggerHub"
+  log_info "Publishing version $API_VERSION on SwaggerHub"
   sh_api_call "publish" PUT \
-    "${SWAGGERHUB_BASE}/${RELEASE_VERSION}/settings/lifecycle" \
+    "${SWAGGERHUB_BASE}/${API_VERSION}/settings/lifecycle" \
     -H "Content-Type: application/json" \
     -d '{"published": true}'
   case "$sh_http" in
@@ -102,13 +117,13 @@ else
   # Promote this version to be the default. Idempotent: PUT default to the
   # current default returns 200 with no state change.
   # PUT /apis/{owner}/{api}/settings/default — body {"version": "X.Y.Z"}
-  log_info "Setting $RELEASE_VERSION as default version on SwaggerHub"
+  log_info "Setting $API_VERSION as default version on SwaggerHub"
   sh_api_call "setDefault" PUT \
     "${SWAGGERHUB_BASE}/settings/default" \
     -H "Content-Type: application/json" \
-    -d "{\"version\": \"$RELEASE_VERSION\"}"
+    -d "{\"version\": \"$API_VERSION\"}"
   case "$sh_http" in
-    2[0-9][0-9]) log_info "  default set to $RELEASE_VERSION (HTTP $sh_http)" ;;
+    2[0-9][0-9]) log_info "  default set to $API_VERSION (HTTP $sh_http)" ;;
     *)           log_error "SwaggerHub setDefault failed (HTTP $sh_http)"; exit 1 ;;
   esac
 fi

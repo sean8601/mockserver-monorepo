@@ -45,6 +45,11 @@ fi
 
 V="$RELEASE_VERSION"
 
+# SwaggerHub registers specs under the major.minor ".x" label (e.g. 7.0.x), not
+# the full patch version — see swaggerhub.sh. Verify against that label.
+V_MINOR_REST="${V#*.}"
+API_V="${V%%.*}.${V_MINOR_REST%%.*}.x"
+
 # Failure accumulators — collect ALL failures rather than abort on the first,
 # so the operator sees the full picture in one pass. Hard failures fail the
 # build; soft failures emit a warning summary.
@@ -181,18 +186,18 @@ check_http "expectations schema" "https://www.mock-server.com/schema/expectation
 
 log_info ""
 log_info "== SwaggerHub =="
-check_http "spec $V" \
-  "https://api.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/$V"
+check_http "spec $API_V" \
+  "https://api.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/$API_V"
 # Default-version check — SwaggerHub's settings/default endpoint returns
-# `{"version":"X.Y.Z"}` for the current default; if swaggerhub.sh's PUT
+# `{"version":"X.Y.x"}` for the current default; if swaggerhub.sh's PUT
 # /settings/default step silently failed, this is where we'd surface it.
 default_version=$(curl -sS --connect-timeout 10 --max-time 30 \
   "https://api.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/settings/default" 2>/dev/null \
   | jq -r '.version // empty' 2>/dev/null)
-if [[ "$default_version" == "$V" ]]; then
-  log_info "  PASS  SwaggerHub default version is $V"
+if [[ "$default_version" == "$API_V" ]]; then
+  log_info "  PASS  SwaggerHub default version is $API_V"
 else
-  log_error "  FAIL  SwaggerHub default version is '${default_version:-<empty>}', expected '$V'"
+  log_error "  FAIL  SwaggerHub default version is '${default_version:-<empty>}', expected '$API_V'"
   HARD_FAILS+=("SwaggerHub default version")
 fi
 
