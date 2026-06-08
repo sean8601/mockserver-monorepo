@@ -15,6 +15,17 @@ ENTRYPOINT=""
 ENV_VARS=()
 VOLUMES=()
 CACHE_TYPES=()
+# Security posture (hardening for untrusted PR builds):
+#  - Containers run as the host agent UID by default (non-root), so a process
+#    escaping the build cannot be root on the host and cannot leave root-owned
+#    files in the checkout (which break the next build's git clean). Pass --root
+#    only for steps that genuinely need root inside the container (e.g. apt-get).
+#  - no-new-privileges + cap-drop=ALL shrink the breakout surface. Add specific
+#    capabilities back per-step with --cap-add when a tool needs one (e.g.
+#    SYS_ADMIN for a Chromium sandbox, NET_ADMIN for transparent-proxy tests).
+RUN_AS_ROOT=false
+CAP_ADDS=()
+NO_HARDEN=false
 
 usage() {
   cat <<EOF
@@ -31,8 +42,11 @@ Options:
   --entrypoint CMD         Override container entrypoint
   -e, --env KEY=VALUE      Pass environment variable to container
   -v, --volume SRC:DST     Additional volume mount
-  --cache TYPE             Mount dependency cache (maven|npm|pip|bundler)
+  --cache TYPE             Mount dependency cache (maven|npm|pip|bundler|gradle|go|cargo|nuget)
   --network NAME           Docker network to connect to
+  --root                   Run the container as root (default: host agent UID, non-root)
+  --cap-add CAP            Add a Linux capability back (default caps are all dropped)
+  --no-harden              Disable no-new-privileges + cap-drop (escape hatch)
   -h, --help               Show this help
 
 Examples:
@@ -53,6 +67,9 @@ while [[ $# -gt 0 ]]; do
     -v|--volume)  VOLUMES+=("$2"); shift 2 ;;
     --cache)      CACHE_TYPES+=("$2"); shift 2 ;;
     --network)    NETWORK="$2"; shift 2 ;;
+    --root)       RUN_AS_ROOT=true; shift ;;
+    --cap-add)    CAP_ADDS+=("$2"); shift 2 ;;
+    --no-harden)  NO_HARDEN=true; shift ;;
     -h|--help)    usage ;;
     --)           shift; COMMAND_ARGS=("$@"); break ;;
     *)            COMMAND_ARGS=("$@"); break ;;
@@ -73,6 +90,40 @@ DOCKER_ARGS+=(--rm)
 DOCKER_ARGS+=(-v "$REPO_ROOT:/build")
 DOCKER_ARGS+=(-w "$WORKDIR")
 
+# ---------------------------------------------------------------------------
+# User + HOME (non-root by default)
+# ---------------------------------------------------------------------------
+# Non-root: run as the host agent UID so anything written to the bind-mounted
+# workspace/caches is owned by the agent (not root) and a breakout is
+# unprivileged. An arbitrary UID has no /etc/passwd entry, so point HOME at a
+# writable dir (/tmp). Tools then use $HOME/.m2, $HOME/.npm, $HOME/.gradle, etc.
+if [[ "$RUN_AS_ROOT" == "true" ]]; then
+  HOME_DIR="/root"
+else
+  HOME_DIR="/tmp"
+  DOCKER_ARGS+=(--user "$(id -u):$(id -g)")
+  DOCKER_ARGS+=(-e "HOME=${HOME_DIR}")
+  # Tools that otherwise write under a root-owned install dir need their home
+  # pointed at a writable location when running as a non-root UID. Harmless for
+  # images that don't use them.
+  DOCKER_ARGS+=(-e "DOTNET_CLI_HOME=${HOME_DIR}" -e "DOTNET_NOLOGO=1")
+  DOCKER_ARGS+=(-e "XDG_CACHE_HOME=${HOME_DIR}/.cache")
+fi
+
+# ---------------------------------------------------------------------------
+# Hardening (no-new-privileges + drop all capabilities)
+# ---------------------------------------------------------------------------
+# Untrusted PR code runs in these containers; dropping privilege escalation and
+# all capabilities shrinks the breakout surface. Steps that need a specific
+# capability add it back with --cap-add (e.g. a Chromium sandbox, NET_ADMIN).
+if [[ "$NO_HARDEN" != "true" ]]; then
+  DOCKER_ARGS+=(--security-opt no-new-privileges)
+  DOCKER_ARGS+=(--cap-drop ALL)
+  for cap in "${CAP_ADDS[@]+"${CAP_ADDS[@]}"}"; do
+    DOCKER_ARGS+=(--cap-add "$cap")
+  done
+fi
+
 if [[ -n "$MEMORY" ]]; then
   DOCKER_ARGS+=(--memory="$MEMORY" --memory-swap="$MEMORY")
 fi
@@ -86,6 +137,21 @@ if [[ -n "$NETWORK" ]]; then
 fi
 
 if [[ "$DOCKER_SOCKET" == "true" ]]; then
+  # L3: the Docker socket gives a container full control of the host daemon
+  # (trivial host-root breakout). Untrusted PR code must NOT receive it — these
+  # socket-mounting steps (Testcontainers / helm integration) are skipped on PR
+  # builds and run only on the trusted default branch (post-merge). Override for
+  # a specific trusted PR with ALLOW_PR_DOCKER_SOCKET=true.
+  PR="${BUILDKITE_PULL_REQUEST:-false}"
+  if [[ "$PR" != "false" && "${ALLOW_PR_DOCKER_SOCKET:-false}" != "true" ]]; then
+    {
+      echo "+++ :lock: Skipping Docker-socket step on PR build #${PR}"
+      echo "The Docker socket is withheld from untrusted PR code (host-root breakout risk)."
+      echo "This step runs on the default branch after merge. To force on a trusted PR,"
+      echo "set ALLOW_PR_DOCKER_SOCKET=true."
+    } >&2
+    exit 0
+  fi
   DOCKER_ARGS+=(-v /var/run/docker.sock:/var/run/docker.sock)
 fi
 
@@ -111,11 +177,26 @@ for cache_type in "${CACHE_TYPES[@]+"${CACHE_TYPES[@]}"}"; do
   host_dir="${CACHE_BASE}/${cache_type}"
   # Ensure the host directory exists (empty is fine -- cold build)
   mkdir -p "$host_dir" 2>/dev/null || true
+  # Cache targets follow $HOME so they work whether the container runs as root
+  # ($HOME=/root) or non-root ($HOME=/tmp). Bundler installs gems under a
+  # GEM_HOME that defaults to a root-only path in the ruby image, so under
+  # non-root we redirect it to a writable $HOME/bundle.
   case "$cache_type" in
-    maven)   DOCKER_ARGS+=(-v "${host_dir}:/root/.m2/repository") ;;
-    npm)     DOCKER_ARGS+=(-v "${host_dir}:/root/.npm") ;;
-    pip)     DOCKER_ARGS+=(-v "${host_dir}:/root/.cache/pip") ;;
-    bundler) DOCKER_ARGS+=(-v "${host_dir}:/usr/local/bundle/cache") ;;
+    maven)   DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.m2/repository") ;;
+    npm)     DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.npm") ;;
+    pip)     DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.cache/pip") ;;
+    gradle)  DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.gradle/caches") ;;
+    go)      DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/go/pkg/mod") ;;
+    cargo)   DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.cargo/registry") ;;
+    nuget)   DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.nuget/packages") ;;
+    bundler)
+      if [[ "$RUN_AS_ROOT" == "true" ]]; then
+        DOCKER_ARGS+=(-v "${host_dir}:/usr/local/bundle/cache")
+      else
+        DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/bundle/cache")
+        DOCKER_ARGS+=(-e "BUNDLE_PATH=${HOME_DIR}/bundle" -e "GEM_HOME=${HOME_DIR}/bundle")
+      fi
+      ;;
     *)       echo "[run-in-docker] WARNING: unknown cache type '${cache_type}' -- ignored" >&2 ;;
   esac
 done

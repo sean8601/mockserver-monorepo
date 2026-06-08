@@ -7,4 +7,4 @@ exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i python:3.12 \
   -w /build/mockserver-client-python \
   --cache pip \
-  -- bash -c "pip install -e '.[dev]' && pytest -m 'not integration' --junitxml=test-reports/unit.xml"
+  -- bash -c "pip install -e '.[dev]' && python -m pytest -m 'not integration' --junitxml=test-reports/unit.xml"

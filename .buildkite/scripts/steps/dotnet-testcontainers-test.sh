@@ -8,4 +8,5 @@ exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i mcr.microsoft.com/dotnet/sdk:10.0 \
   -w /build/mockserver-testcontainers/dotnet \
   --docker-socket \
+  --root \
   -- bash -c "dotnet test --logger 'trx;LogFileName=unit.trx' --results-directory test-reports"

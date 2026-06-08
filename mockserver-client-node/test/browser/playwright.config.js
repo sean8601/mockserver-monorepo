@@ -25,6 +25,10 @@ module.exports = defineConfig({
         browserName: 'chromium',
         /* Allow insecure localhost for the MockServer self-signed cert */
         ignoreHTTPSErrors: true,
+        /* Run without Chromium's setuid sandbox so the test works in a non-root,
+         * capability-dropped CI container (the container is the isolation boundary,
+         * so we don't grant SYS_ADMIN to untrusted PR code). */
+        launchOptions: { chromiumSandbox: false },
       },
     },
   ],
