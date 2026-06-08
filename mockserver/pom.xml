@@ -85,6 +85,7 @@
         <protobuf.version>4.35.0</protobuf.version>
         <chicory.version>1.7.5</chicory.version>
         <jna.version>5.19.0</jna.version>
+        <picocli.version>4.7.7</picocli.version>
     </properties>
 
     <modules>
@@ -811,6 +812,13 @@
                 <groupId>com.dylibso.chicory</groupId>
                 <artifactId>runtime</artifactId>
                 <version>${chicory.version}</version>
+            </dependency>
+
+            <!-- CLI (picocli — used for the Main entry point) -->
+            <dependency>
+                <groupId>info.picocli</groupId>
+                <artifactId>picocli</artifactId>
+                <version>${picocli.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

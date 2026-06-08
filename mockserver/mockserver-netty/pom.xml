@@ -125,6 +125,12 @@
             <artifactId>netty-codec-http3</artifactId>
         </dependency>
 
+        <!-- CLI -->
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+        </dependency>
+
         <!-- commons & guava -->
         <dependency>
             <groupId>commons-io</groupId>

@@ -31,6 +31,7 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [AI & RPC Protocol Mocking](code/ai-protocol-mocking.md) | Medium | SSE streaming, JSON-RPC matching, MCP and A2A mock builders, gRPC mocking |
 | [LLM Mocking](code/llm-mocking.md) | Medium | LLM response builder, provider codecs, streaming physics, conversation matchers, isolation, MCP tools, dashboard |
 | [LLM Codec Golden Files](code/llm-codec-fixtures.md) | Low | Automated wire-format drift detection for the LLM provider codecs: golden-master fixtures, normalization, refresh process |
+| [CLI](code/cli.md) | Low | picocli command tree, subcommands, preprocessArguments heuristic, legacy flag compatibility, how to add a subcommand |
 | [Configuration Reference](code/configuration-reference.md) | Low | Property mechanism, resolution order, four equivalent forms, how to add a property |
 | [Drift Detection](code/drift-detection.md) | Low | Mock drift detection: comparing forwarded responses against stub expectations |
 | [WASM Rules](code/wasm-rules.md) | Low | WASM custom rule engine: chicory interpreter, module ABI, REST endpoints, configuration |

@@ -50,6 +50,7 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/code/clustered-state.md](docs/code/clustered-state.md) | Before modifying the StateBackend SPI, InMemoryStateBackend, InfinispanStateBackend, cross-node invalidation, or cluster configuration properties |
 | [docs/code/llm-mocking.md](docs/code/llm-mocking.md) | Before modifying the LLM response builder, provider codecs, streaming physics, conversation matchers, isolation, MCP tools, or LLM dashboard |
 | [docs/code/metrics.md](docs/code/metrics.md) | Before modifying Prometheus metrics, memory monitoring, or CSV metric export |
+| [docs/code/cli.md](docs/code/cli.md) | Before modifying the command-line interface or `org.mockserver.cli.Main` |
 | [docs/code/configuration-reference.md](docs/code/configuration-reference.md) | Before adding a configuration property or changing property resolution order or the equivalent property forms |
 | [docs/operations/build-system.md](docs/operations/build-system.md) | Before changing Maven config, plugins, or build scripts |
 | [docs/infrastructure/ci-cd.md](docs/infrastructure/ci-cd.md) | Before modifying Buildkite or GitHub Actions pipelines |
