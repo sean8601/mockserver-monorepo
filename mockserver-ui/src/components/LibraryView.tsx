@@ -26,6 +26,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { CassetteManagerBody } from './CassetteManager';
+import ImportForm from './ImportForm';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   listWasmModules,
@@ -615,7 +616,7 @@ export interface LibraryViewProps {
   connectionParams: ConnectionParams;
 }
 
-const TABS = ['Export', 'Cassettes', 'WASM Modules', 'gRPC Descriptors'];
+const TABS = ['Import', 'Export', 'Cassettes', 'WASM Modules', 'gRPC Descriptors'];
 
 export default function LibraryView({ connectionParams }: LibraryViewProps) {
   const [tab, setTab] = useState(0);
@@ -633,10 +634,15 @@ export default function LibraryView({ connectionParams }: LibraryViewProps) {
           ))}
         </Tabs>
         <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-          {tab === 0 && <ExportTab connectionParams={connectionParams} />}
-          {tab === 1 && <CassetteManagerBody connectionParams={connectionParams} />}
-          {tab === 2 && <WasmModulesTab connectionParams={connectionParams} />}
-          {tab === 3 && <GrpcDescriptorsTab connectionParams={connectionParams} />}
+          {tab === 0 && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
+              <ImportForm connectionParams={connectionParams} />
+            </Box>
+          )}
+          {tab === 1 && <ExportTab connectionParams={connectionParams} />}
+          {tab === 2 && <CassetteManagerBody connectionParams={connectionParams} />}
+          {tab === 3 && <WasmModulesTab connectionParams={connectionParams} />}
+          {tab === 4 && <GrpcDescriptorsTab connectionParams={connectionParams} />}
         </Box>
       </Paper>
     </Box>
