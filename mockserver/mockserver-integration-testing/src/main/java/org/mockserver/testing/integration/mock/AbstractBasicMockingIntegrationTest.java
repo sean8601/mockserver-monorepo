@@ -552,8 +552,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                 .withReasonPhrase(INTERNAL_SERVER_ERROR_500.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"code\" : 126," + NEW_LINE +
-                    "  \"message\" : \"qui\"" + NEW_LINE +
+                    "  \"code\" : 0," + NEW_LINE +
+                    "  \"message\" : \"some_string_value\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON)),
             makeRequest(
                 request()
@@ -569,8 +569,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                 .withReasonPhrase(OK_200.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"code\" : 126," + NEW_LINE +
-                    "  \"message\" : \"qui\"" + NEW_LINE +
+                    "  \"code\" : 0," + NEW_LINE +
+                    "  \"message\" : \"some_string_value\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON)),
             makeRequest(
                 request()
@@ -590,9 +590,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                 .withReasonPhrase(OK_200.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"id\" : 1994," + NEW_LINE +
-                    "  \"name\" : \"modi\"," + NEW_LINE +
-                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
+                    "  \"id\" : 0," + NEW_LINE +
+                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
+                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON)),
             makeRequest(
                 request()
@@ -612,8 +612,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                         .withStatusCode(500)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 126," + NEW_LINE +
-                            "  \"message\" : \"qui\"" + NEW_LINE +
+                            "  \"code\" : 0," + NEW_LINE +
+                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -623,8 +623,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                     response()
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 126," + NEW_LINE +
-                            "  \"message\" : \"qui\"" + NEW_LINE +
+                            "  \"code\" : 0," + NEW_LINE +
+                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -635,9 +635,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 1994," + NEW_LINE +
-                            "  \"name\" : \"modi\"," + NEW_LINE +
-                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
+                            "  \"id\" : 0," + NEW_LINE +
+                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
+                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
                             "}"))
                 )
         ));

@@ -106,8 +106,8 @@ public class ExpectationInitializerIntegrationTest {
                             .withStatusCode(500)
                             .withHeader("content-type", "application/json")
                             .withBody(json("{" + NEW_LINE +
-                                "  \"code\" : 126," + NEW_LINE +
-                                "  \"message\" : \"qui\"" + NEW_LINE +
+                                "  \"code\" : 0," + NEW_LINE +
+                                "  \"message\" : \"some_string_value\"" + NEW_LINE +
                                 "}"))
                     )
             ));
@@ -117,8 +117,8 @@ public class ExpectationInitializerIntegrationTest {
                         response()
                             .withHeader("content-type", "application/json")
                             .withBody(json("{" + NEW_LINE +
-                                "  \"code\" : 126," + NEW_LINE +
-                                "  \"message\" : \"qui\"" + NEW_LINE +
+                                "  \"code\" : 0," + NEW_LINE +
+                                "  \"message\" : \"some_string_value\"" + NEW_LINE +
                                 "}"))
                     )
             ));
@@ -129,9 +129,9 @@ public class ExpectationInitializerIntegrationTest {
                             .withStatusCode(200)
                             .withHeader("content-type", "application/json")
                             .withBody(json("{" + NEW_LINE +
-                                "  \"id\" : 1994," + NEW_LINE +
-                                "  \"name\" : \"modi\"," + NEW_LINE +
-                                "  \"tag\" : \"dolorem\"" + NEW_LINE +
+                                "  \"id\" : 0," + NEW_LINE +
+                                "  \"name\" : \"some_string_value\"," + NEW_LINE +
+                                "  \"tag\" : \"some_string_value\"" + NEW_LINE +
                                 "}"))
                     )
             ));
@@ -145,8 +145,8 @@ public class ExpectationInitializerIntegrationTest {
                         .withPath("/v1/pets")
                 ).get(10, TimeUnit.SECONDS).getBodyAsString(),
                 is("{" + NEW_LINE +
-                    "  \"code\" : 126," + NEW_LINE +
-                    "  \"message\" : \"qui\"" + NEW_LINE +
+                    "  \"code\" : 0," + NEW_LINE +
+                    "  \"message\" : \"some_string_value\"" + NEW_LINE +
                     "}")
             );
         } finally {
@@ -175,12 +175,12 @@ public class ExpectationInitializerIntegrationTest {
                     .thenRespond(
                         response()
                             .withStatusCode(200)
-                            .withHeader("x-next", "eum")
+                            .withHeader("x-next", "some_string_value")
                             .withHeader("content-type", "application/json")
                             .withBody(json("[ {" + NEW_LINE +
-                                "  \"id\" : 1994," + NEW_LINE +
-                                "  \"name\" : \"modi\"," + NEW_LINE +
-                                "  \"tag\" : \"dolorem\"" + NEW_LINE +
+                                "  \"id\" : 0," + NEW_LINE +
+                                "  \"name\" : \"some_string_value\"," + NEW_LINE +
+                                "  \"tag\" : \"some_string_value\"" + NEW_LINE +
                                 "} ]"))
                     )
             ));
@@ -194,9 +194,9 @@ public class ExpectationInitializerIntegrationTest {
                         .withPath("/v1/pets")
                 ).get(10, TimeUnit.SECONDS).getBodyAsString(),
                 is("[ {" + NEW_LINE +
-                    "  \"id\" : 1994," + NEW_LINE +
-                    "  \"name\" : \"modi\"," + NEW_LINE +
-                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
+                    "  \"id\" : 0," + NEW_LINE +
+                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
+                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
                     "} ]")
             );
         } finally {
@@ -242,9 +242,9 @@ public class ExpectationInitializerIntegrationTest {
                         .withPath("/v1/pets")
                 ).get(10, TimeUnit.SECONDS).getBodyAsString(),
                 is("[ {" + NEW_LINE +
-                    "  \"id\" : 1994," + NEW_LINE +
-                    "  \"name\" : \"modi\"," + NEW_LINE +
-                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
+                    "  \"id\" : 0," + NEW_LINE +
+                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
+                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
                     "} ]")
             );
         } finally {
