@@ -150,7 +150,7 @@ export default function App() {
             </Alert>
           ) : undefined}
         </Snackbar>
-        <DebugMismatchDialog />
+        <DebugMismatchDialog connectionParams={params} />
         <GenerateStubDialog
           open={generateStubOpen}
           onClose={closeGenerateStub}
