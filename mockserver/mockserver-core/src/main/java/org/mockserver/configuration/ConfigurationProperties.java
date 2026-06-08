@@ -61,6 +61,11 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
     private static final String MOCKSERVER_COMPACT_LOG_FORMAT = "mockserver.compactLogFormat";
 
+    // dev mode
+    private static final String MOCKSERVER_DEV_MODE = "mockserver.devMode";
+    static final int DEV_MODE_MAX_LOG_ENTRIES = 1000;
+    static final int DEV_MODE_MAX_EXPECTATIONS = 1000;
+
     // memory usage
     private static final String MOCKSERVER_MAX_EXPECTATIONS = "mockserver.maxExpectations";
     private static final String MOCKSERVER_MAX_LOG_ENTRIES = "mockserver.maxLogEntries";
@@ -922,6 +927,85 @@ public class ConfigurationProperties {
         setProperty(MOCKSERVER_COMPACT_LOG_FORMAT, "" + enable);
     }
 
+    // dev mode
+
+    /**
+     * <p>When true, applies a developer-friendly configuration profile that reduces memory
+     * usage for laptop/test-suite workloads. The following defaults are overridden
+     * (only for properties the user has not explicitly set via system property,
+     * environment variable, or properties file):</p>
+     * <ul>
+     *     <li>{@code maxLogEntries} &rarr; 1,000 (instead of the heap-based default up to 100,000)</li>
+     *     <li>{@code maxExpectations} &rarr; 1,000 (instead of the heap-based default up to 15,000)</li>
+     * </ul>
+     * <p>Default: {@code false}. Enable via {@code --dev} CLI flag, {@code -Dmockserver.devMode=true},
+     * or {@code MOCKSERVER_DEV_MODE=true}.</p>
+     */
+    public static boolean devMode() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DEV_MODE, "MOCKSERVER_DEV_MODE", "" + false));
+    }
+
+    /**
+     * Enable or disable dev mode.
+     *
+     * @param enable enable dev mode
+     */
+    public static void devMode(boolean enable) {
+        setProperty(MOCKSERVER_DEV_MODE, "" + enable);
+        if (enable) {
+            applyDevModeDefaults();
+        }
+    }
+
+    /**
+     * Apply dev-mode defaults for properties the user has not explicitly set.
+     * An "explicitly set" property is one present as a JVM system property,
+     * an environment variable, or in the properties file.
+     */
+    static void applyDevModeDefaults() {
+        if (!isPropertyExplicitlySet(MOCKSERVER_MAX_LOG_ENTRIES, "MOCKSERVER_MAX_LOG_ENTRIES")) {
+            setProperty(MOCKSERVER_MAX_LOG_ENTRIES, "" + DEV_MODE_MAX_LOG_ENTRIES);
+        }
+        if (!isPropertyExplicitlySet(MOCKSERVER_MAX_EXPECTATIONS, "MOCKSERVER_MAX_EXPECTATIONS")) {
+            setProperty(MOCKSERVER_MAX_EXPECTATIONS, "" + DEV_MODE_MAX_EXPECTATIONS);
+        }
+    }
+
+    /**
+     * Returns {@code true} when a property has been explicitly configured by the user
+     * (as a JVM system property, an environment variable, or in the properties file),
+     * as opposed to being at its built-in default.
+     */
+    static boolean isPropertyExplicitlySet(String systemPropertyKey, String environmentVariableKey) {
+        // Check JVM system property (directly, bypassing cache)
+        if (isNotBlank(System.getProperty(systemPropertyKey))) {
+            return true;
+        }
+        // Check environment variable
+        if (isNotBlank(System.getenv(environmentVariableKey))) {
+            return true;
+        }
+        // Check properties file
+        if (PROPERTIES != null && isNotBlank(PROPERTIES.getProperty(systemPropertyKey))) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns the dev-mode default when {@code devMode()} is {@code true} and the user has NOT
+     * explicitly set the given property via system property, environment variable, or properties
+     * file. Otherwise returns the normal heap-based default. This is the lazy counterpart to
+     * {@link #applyDevModeDefaults()} and ensures ALL activation paths (env var, system property,
+     * properties file) work — not only the CLI setter.
+     */
+    private static int devModeDefaultOrHeapBased(int devDefault, String systemPropertyKey, String envVarKey, int heapBasedDefault) {
+        if (devMode() && !isPropertyExplicitlySet(systemPropertyKey, envVarKey)) {
+            return devDefault;
+        }
+        return heapBasedDefault;
+    }
+
     // memory usage
 
     public static long heapAvailableInKB() {
@@ -931,7 +1015,10 @@ public class ConfigurationProperties {
     }
 
     public static int maxExpectations() {
-        return readIntegerProperty(MOCKSERVER_MAX_EXPECTATIONS, "MOCKSERVER_MAX_EXPECTATIONS", Math.min((int) (heapAvailableInKB() / 10), 15000));
+        return readIntegerProperty(MOCKSERVER_MAX_EXPECTATIONS, "MOCKSERVER_MAX_EXPECTATIONS", devModeDefaultOrHeapBased(
+            DEV_MODE_MAX_EXPECTATIONS, MOCKSERVER_MAX_EXPECTATIONS, "MOCKSERVER_MAX_EXPECTATIONS",
+            Math.min((int) (heapAvailableInKB() / 10), 15000)
+        ));
     }
 
     /**
@@ -949,7 +1036,10 @@ public class ConfigurationProperties {
     }
 
     public static int maxLogEntries() {
-        return readIntegerProperty(MOCKSERVER_MAX_LOG_ENTRIES, "MOCKSERVER_MAX_LOG_ENTRIES", Math.min((int) (heapAvailableInKB() / 8), 100000));
+        return readIntegerProperty(MOCKSERVER_MAX_LOG_ENTRIES, "MOCKSERVER_MAX_LOG_ENTRIES", devModeDefaultOrHeapBased(
+            DEV_MODE_MAX_LOG_ENTRIES, MOCKSERVER_MAX_LOG_ENTRIES, "MOCKSERVER_MAX_LOG_ENTRIES",
+            Math.min((int) (heapAvailableInKB() / 8), 100000)
+        ));
     }
 
     /**

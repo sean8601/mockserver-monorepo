@@ -123,6 +123,31 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 {% include_subpage _includes/logging_configuration.html %}
 
+<a id="dev_mode_configuration" class="anchor" href="#dev_mode_configuration">&nbsp;</a>
+
+<h2>Developer Mode:</h2>
+
+<button id="button_configuration_dev_mode" class="accordion title"><strong>Dev Mode</strong></button>
+<div class="panel title">
+    <p>When enabled, applies a developer-friendly configuration profile that reduces memory usage for laptop and test-suite workloads. The following defaults are overridden (only for properties the user has not explicitly set via system property, environment variable, or properties file):</p>
+    <ul>
+        <li><span class="inline_code">maxLogEntries</span> is set to <span class="this_value">1,000</span> (instead of the heap-based default up to 100,000)</li>
+        <li><span class="inline_code">maxExpectations</span> is set to <span class="this_value">1,000</span> (instead of the heap-based default up to 15,000)</li>
+    </ul>
+    <p>This is useful when running MockServer locally during development, where retaining tens of thousands of log entries is unnecessary and wastes memory.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.devMode(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.devMode=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DEV_MODE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.devMode=...</code></pre>
+    <p>Command Line:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver run -p 1080 --dev</code></pre>
+</div>
+
 <a id="memory_configuration" class="anchor" href="#memory_configuration">&nbsp;</a>
 
 <h2>Memory Usage Configuration:</h2>

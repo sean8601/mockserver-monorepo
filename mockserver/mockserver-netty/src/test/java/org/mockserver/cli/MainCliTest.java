@@ -230,6 +230,7 @@ public class MainCliTest {
             assertThat(output, containsString("--init"));
             assertThat(output, containsString("--persist"));
             assertThat(output, containsString("--log-level"));
+            assertThat(output, containsString("--dev"));
             // Legacy flags should be hidden
             assertThat(output, not(containsString("-serverPort")));
         } finally {
@@ -599,6 +600,53 @@ public class MainCliTest {
         } finally {
             Main.systemOut = originalOut;
             Main.systemErr = originalErr;
+        }
+    }
+
+    // ---- Dev mode (--dev) ----
+
+    @Test
+    public void shouldApplyDevModeDefaults() {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+
+        try {
+            Main.main("run", "-p", String.valueOf(freePort), "--dev");
+
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            assertThat("devMode should be enabled", ConfigurationProperties.devMode(), is(true));
+            assertThat("maxLogEntries should be dev default (1000)",
+                ConfigurationProperties.maxLogEntries(), is(1000));
+            assertThat("maxExpectations should be dev default (1000)",
+                ConfigurationProperties.maxExpectations(), is(1000));
+        } finally {
+            // Restore production defaults
+            ConfigurationProperties.devMode(false);
+            // Force maxLogEntries and maxExpectations back to a heap-based value
+            // by setting them to a known large value (the static cache persists across tests)
+            int heapBasedMaxLogEntries = Math.min((int) (ConfigurationProperties.heapAvailableInKB() / 8), 100000);
+            int heapBasedMaxExpectations = Math.min((int) (ConfigurationProperties.heapAvailableInKB() / 10), 15000);
+            ConfigurationProperties.maxLogEntries(heapBasedMaxLogEntries);
+            ConfigurationProperties.maxExpectations(heapBasedMaxExpectations);
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
+    public void shouldNotApplyDevModeWithoutFlag() {
+        // Verify that without --dev, the devMode property is false.
+        // We cannot reliably assert exact maxLogEntries/maxExpectations values because
+        // the property cache is shared across test methods; instead we verify the flag.
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+
+        try {
+            Main.main("run", "-p", String.valueOf(freePort));
+
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            assertThat("devMode should be false by default", ConfigurationProperties.devMode(), is(false));
+        } finally {
+            stopQuietly(mockServerClient);
         }
     }
 }

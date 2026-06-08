@@ -60,6 +60,7 @@ flowchart TD
 | `--init` | — | `mockserver.initializationJsonPath` | File path or glob |
 | `--persist` | — | `mockserver.persistExpectations` = `true` + `mockserver.persistedExpectationsPath` | |
 | `--log-level` | `-l` | `mockserver.logLevel` | |
+| `--dev` | — | `mockserver.devMode` | Developer-friendly defaults: `maxLogEntries=1000`, `maxExpectations=1000`. Explicit config overrides dev defaults. Also available as `MOCKSERVER_DEV_MODE=true` or `-Dmockserver.devMode=true`. |
 | `-serverPort` | — | same as `--port` | Hidden legacy flag |
 | `-proxyRemotePort` | — | same as `--proxy-to` port part | Hidden legacy flag |
 | `-proxyRemoteHost` | — | same as `--proxy-to` host part | Hidden legacy flag |
@@ -149,6 +150,8 @@ if (isNotBlank(persist)) {
 ```
 
 These three calls write into the same `ConfigurationProperties` property store that env vars and `.properties` files write into, so the precedence rule still applies — a `-Dmockserver.initializationJsonPath=...` JVM flag will be overwritten if `--init` is also supplied on the command line (CLI wins).
+
+`--dev` sets `ConfigurationProperties.devMode(true)`, which applies laptop-friendly defaults for any property the user has not explicitly set (via system property, environment variable, or properties file). Currently this lowers `maxLogEntries` and `maxExpectations` to 1,000 each — enough for local development without consuming the full heap-based default (which can reach 100,000 / 15,000). The same effect is available as `MOCKSERVER_DEV_MODE=true` or `-Dmockserver.devMode=true` for Docker / Compose workloads.
 
 ## Proxy target parsing (`parseProxyTarget`)
 

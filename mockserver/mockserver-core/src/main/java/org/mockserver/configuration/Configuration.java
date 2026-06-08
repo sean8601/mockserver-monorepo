@@ -64,6 +64,9 @@ public class Configuration {
     private Map<String, String> logLevelOverrides;
     private Boolean compactLogFormat;
 
+    // dev mode
+    private Boolean devMode;
+
     // memory usage
     private Integer maxExpectations;
     private Integer maxLogEntries;
@@ -718,6 +721,18 @@ public class Configuration {
 
     public Configuration compactLogFormat(Boolean compactLogFormat) {
         this.compactLogFormat = compactLogFormat;
+        return this;
+    }
+
+    public Boolean devMode() {
+        if (devMode == null) {
+            return ConfigurationProperties.devMode();
+        }
+        return devMode;
+    }
+
+    public Configuration devMode(Boolean devMode) {
+        this.devMode = devMode;
         return this;
     }
 

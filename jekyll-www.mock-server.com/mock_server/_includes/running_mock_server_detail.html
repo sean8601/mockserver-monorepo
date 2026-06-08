@@ -580,6 +580,11 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 			<td><span class="inline_code">mockserver.logLevel</span></td>
 		</tr>
 		<tr>
+			<td><span class="inline_code">--dev</span></td>
+			<td>Enable developer-friendly defaults for laptop and test-suite workloads. Sets <span class="inline_code">maxLogEntries=1000</span> and <span class="inline_code">maxExpectations=1000</span> (reducing memory usage). Any explicit configuration (system property, environment variable, or properties file) overrides the dev-mode defaults. Also available as <span class="inline_code">MOCKSERVER_DEV_MODE=true</span> or <span class="inline_code">-Dmockserver.devMode=true</span>.</td>
+			<td><a href="/mock_server/configuration_properties.html"><span class="inline_code">mockserver.devMode</span></a></td>
+		</tr>
+		<tr>
 			<td><span class="inline_code">-h, --help</span></td>
 			<td>Print usage and exit.</td>
 			<td>—</td>

@@ -2870,4 +2870,117 @@ public class ConfigurationTest {
         assertThat("http3QpackMaxTableCapacity should be clamped to 0", configuration.http3QpackMaxTableCapacity(), equalTo(0L));
     }
 
+    @Test
+    public void shouldSetAndGetDevMode() {
+        boolean original = ConfigurationProperties.devMode();
+        int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
+        int originalMaxExpectations = ConfigurationProperties.maxExpectations();
+        try {
+            // then - default value
+            assertThat(configuration.devMode(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.devMode(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.devMode(), equalTo(true));
+            assertThat(System.getProperty("mockserver.devMode"), equalTo("true"));
+            assertThat(configuration.devMode(), equalTo(true));
+            ConfigurationProperties.devMode(false);
+
+            // when - setter
+            configuration.devMode(true);
+
+            // then - getter
+            assertThat(configuration.devMode(), equalTo(true));
+        } finally {
+            ConfigurationProperties.devMode(original);
+            ConfigurationProperties.maxLogEntries(originalMaxLogEntries);
+            ConfigurationProperties.maxExpectations(originalMaxExpectations);
+        }
+    }
+
+    @Test
+    public void shouldApplyDevModeDefaultsWhenEnabled() {
+        boolean originalDevMode = ConfigurationProperties.devMode();
+        int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
+        int originalMaxExpectations = ConfigurationProperties.maxExpectations();
+        try {
+            // when
+            ConfigurationProperties.devMode(true);
+
+            // then
+            assertThat("maxLogEntries should be dev default",
+                ConfigurationProperties.maxLogEntries(), equalTo(ConfigurationProperties.DEV_MODE_MAX_LOG_ENTRIES));
+            assertThat("maxExpectations should be dev default",
+                ConfigurationProperties.maxExpectations(), equalTo(ConfigurationProperties.DEV_MODE_MAX_EXPECTATIONS));
+        } finally {
+            ConfigurationProperties.devMode(originalDevMode);
+            ConfigurationProperties.maxLogEntries(originalMaxLogEntries);
+            ConfigurationProperties.maxExpectations(originalMaxExpectations);
+        }
+    }
+
+    @Test
+    public void shouldNotOverrideExplicitMaxLogEntriesInDevMode() {
+        boolean originalDevMode = ConfigurationProperties.devMode();
+        int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
+        int originalMaxExpectations = ConfigurationProperties.maxExpectations();
+        try {
+            // given - user explicitly sets maxLogEntries (updates both cache and system property)
+            ConfigurationProperties.maxLogEntries(5000);
+
+            // when - dev mode is enabled
+            ConfigurationProperties.devMode(true);
+
+            // then - maxLogEntries should NOT be overridden (user's explicit value wins)
+            assertThat("maxLogEntries should be the user's explicit value, not dev default",
+                ConfigurationProperties.maxLogEntries(), equalTo(5000));
+        } finally {
+            ConfigurationProperties.devMode(originalDevMode);
+            ConfigurationProperties.maxLogEntries(originalMaxLogEntries);
+            ConfigurationProperties.maxExpectations(originalMaxExpectations);
+        }
+    }
+
+    @Test
+    public void shouldApplyDevModeDefaultsViaSystemPropertyActivation() throws Exception {
+        // This test verifies that setting devMode via system property (simulating
+        // -Dmockserver.devMode=true or MOCKSERVER_DEV_MODE=true) applies the dev
+        // defaults lazily in the getters, without requiring the devMode(boolean) setter.
+        boolean originalDevMode = ConfigurationProperties.devMode();
+        int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
+        int originalMaxExpectations = ConfigurationProperties.maxExpectations();
+        try {
+            // Access the private property cache via reflection to simulate a fresh JVM state
+            java.lang.reflect.Field cacheField = ConfigurationProperties.class.getDeclaredField("propertyCache");
+            cacheField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> cache = (java.util.Map<String, String>) cacheField.get(null);
+
+            // 1. Set devMode=true directly via system property (NOT via the setter)
+            //    to simulate -Dmockserver.devMode=true on the command line
+            System.setProperty("mockserver.devMode", "true");
+            cache.put("mockserver.devMode", "true");
+
+            // 2. Clear maxLogEntries and maxExpectations from cache AND system property
+            //    to simulate a fresh read (user has NOT set these explicitly)
+            cache.remove("mockserver.maxLogEntries");
+            System.clearProperty("mockserver.maxLogEntries");
+            cache.remove("mockserver.maxExpectations");
+            System.clearProperty("mockserver.maxExpectations");
+
+            // 3. The lazy devModeDefaultOrHeapBased in the getters should apply dev defaults
+            assertThat("maxLogEntries should be dev default when devMode set via system property",
+                ConfigurationProperties.maxLogEntries(), equalTo(ConfigurationProperties.DEV_MODE_MAX_LOG_ENTRIES));
+            assertThat("maxExpectations should be dev default when devMode set via system property",
+                ConfigurationProperties.maxExpectations(), equalTo(ConfigurationProperties.DEV_MODE_MAX_EXPECTATIONS));
+        } finally {
+            // Restore original values through the public setters (which update cache + system property)
+            ConfigurationProperties.devMode(originalDevMode);
+            ConfigurationProperties.maxLogEntries(originalMaxLogEntries);
+            ConfigurationProperties.maxExpectations(originalMaxExpectations);
+        }
+    }
+
 }

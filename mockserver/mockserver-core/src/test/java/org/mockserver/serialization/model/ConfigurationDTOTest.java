@@ -217,4 +217,43 @@ public class ConfigurationDTOTest {
         ConfigurationDTO dto = new ConfigurationDTO(config);
         assertThat(dto.getLogLevelOverrides(), nullValue());
     }
+
+    @Test
+    public void shouldRoundTripDevMode() {
+        Configuration original = configuration()
+            .devMode(true)
+            .maxExpectations(500);
+
+        ConfigurationDTO dto = new ConfigurationDTO(original);
+        assertThat(dto.getDevMode(), is(true));
+
+        Configuration rebuilt = dto.buildObject();
+        assertThat(rebuilt.devMode(), is(true));
+        assertThat(rebuilt.maxExpectations(), is(500));
+    }
+
+    @Test
+    public void shouldApplyDevModePartially() {
+        Configuration target = configuration()
+            .devMode(false);
+
+        ConfigurationDTO dto = new ConfigurationDTO();
+        dto.setDevMode(true);
+
+        dto.applyTo(target);
+
+        assertThat(target.devMode(), is(true));
+    }
+
+    @Test
+    public void shouldNotApplyDevModeWhenNull() {
+        Configuration target = configuration()
+            .devMode(true);
+
+        ConfigurationDTO dto = new ConfigurationDTO();
+        // devMode is null — should not overwrite
+        dto.applyTo(target);
+
+        assertThat(target.devMode(), is(true));
+    }
 }

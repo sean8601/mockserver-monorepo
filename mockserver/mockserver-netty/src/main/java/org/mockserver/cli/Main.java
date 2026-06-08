@@ -326,8 +326,8 @@ public class Main {
         @Option(names = {"-l", "--log-level"}, description = "Log level: TRACE, DEBUG, INFO, WARN, ERROR, OFF (or Java Logger equivalents).")
         String logLevel;
 
-        // -- reserved for future unit E6 --
-        // @Option(names = "--dev") boolean dev;
+        @Option(names = "--dev", description = "Enable developer-friendly defaults: reduced memory caps (maxLogEntries=1000, maxExpectations=1000) for laptop/test-suite use. Explicit config (system property, env var, or properties file) overrides dev-mode defaults.")
+        boolean dev;
 
         // Legacy hidden flags — exact single-token names so picocli matches them as long options
         @Option(names = "-serverPort", hidden = true)
@@ -364,6 +364,11 @@ public class Main {
                         systemOut.flush();
                         return;
                     }
+                }
+
+                // Wire --dev (apply early so explicit config overrides dev defaults)
+                if (dev) {
+                    ConfigurationProperties.devMode(true);
                 }
 
                 // Wire --openapi
@@ -426,6 +431,9 @@ public class Main {
         @Option(names = {"-l", "--log-level"}, description = "Log level.")
         String logLevel;
 
+        @Option(names = "--dev", description = "Enable developer-friendly defaults.")
+        boolean dev;
+
         @Override
         public void run() {
             // Delegate to RunCommand logic by building equivalent args
@@ -433,6 +441,7 @@ public class Main {
             runCmd.port = port;
             runCmd.proxyTo = to;
             runCmd.logLevel = logLevel;
+            runCmd.dev = dev;
             runCmd.run();
         }
     }
@@ -453,12 +462,16 @@ public class Main {
         @Option(names = {"-l", "--log-level"}, description = "Log level.")
         String logLevel;
 
+        @Option(names = "--dev", description = "Enable developer-friendly defaults.")
+        boolean dev;
+
         @Override
         public void run() {
             RunCommand runCmd = new RunCommand();
             runCmd.port = port;
             runCmd.openapi = specPath;
             runCmd.logLevel = logLevel;
+            runCmd.dev = dev;
             runCmd.run();
         }
     }

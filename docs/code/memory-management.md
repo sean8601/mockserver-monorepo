@@ -81,6 +81,10 @@ The table below shows the computed defaults for different JVM heap configuration
 
 With the default Docker image (no `-Xmx` set, JVM defaults to ~256 MB), users get roughly **20,000 log entries**. Since each HTTP request generates 2-3 log entries (RECEIVED_REQUEST + EXPECTATION_MATCHED + EXPECTATION_RESPONSE), this means approximately **~7,000-10,000 HTTP requests** are retained before eviction begins.
 
+### Dev Mode Override
+
+When `devMode` is enabled (`--dev` CLI flag, `-Dmockserver.devMode=true`, or `MOCKSERVER_DEV_MODE=true`), `maxLogEntries` and `maxExpectations` default to **1,000** instead of the heap-based formula above. This reduces memory usage for laptop and test-suite workloads. If either property is explicitly set (via system property, environment variable, or properties file), the explicit value takes precedence over the dev-mode default. See [configuration-reference.md](configuration-reference.md) for the full property definition.
+
 ### Shared Heap Pool
 
 Both `maxLogEntries` and `maxExpectations` are calculated independently from the same available heap. In the worst case (both buffers completely full with average-sized entries), the combined memory usage could exceed the available heap. In practice this is mitigated by:

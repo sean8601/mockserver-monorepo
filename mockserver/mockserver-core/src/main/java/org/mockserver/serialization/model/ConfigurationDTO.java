@@ -24,6 +24,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Map<String, String> logLevelOverrides;
     private Boolean compactLogFormat;
 
+    private Boolean devMode;
+
     private Integer maxExpectations;
     private Integer maxLogEntries;
     private Integer maxWebSocketExpectations;
@@ -143,6 +145,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
             Map<String, String> overrides = configuration.logLevelOverrides();
             this.logLevelOverrides = overrides != null && !overrides.isEmpty() ? overrides : null;
             this.compactLogFormat = configuration.compactLogFormat();
+
+            this.devMode = configuration.devMode();
 
             this.maxExpectations = configuration.maxExpectations();
             this.maxLogEntries = configuration.maxLogEntries();
@@ -312,6 +316,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.logLevelOverrides(logLevelOverrides);
         configuration.compactLogFormat(compactLogFormat);
 
+        configuration.devMode(devMode);
+
         configuration.maxExpectations(maxExpectations);
         configuration.maxLogEntries(maxLogEntries);
         configuration.maxWebSocketExpectations(maxWebSocketExpectations);
@@ -458,6 +464,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (compactLogFormat != null) {
             target.compactLogFormat(compactLogFormat);
+        }
+        if (devMode != null) {
+            target.devMode(devMode);
         }
         if (maxExpectations != null) {
             target.maxExpectations(maxExpectations);
@@ -808,6 +817,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setCompactLogFormat(Boolean compactLogFormat) {
         this.compactLogFormat = compactLogFormat;
+        return this;
+    }
+
+    public Boolean getDevMode() {
+        return devMode;
+    }
+
+    public ConfigurationDTO setDevMode(Boolean devMode) {
+        this.devMode = devMode;
         return this;
     }
 
