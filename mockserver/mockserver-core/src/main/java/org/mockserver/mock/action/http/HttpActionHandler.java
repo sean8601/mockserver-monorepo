@@ -2022,7 +2022,52 @@ public class HttpActionHandler {
                 }
             }
         }
+        if (configuration.attachMismatchDiagnosticToResponse()) {
+            attachMismatchDiagnostic(request, response);
+        }
         responseWriter.writeResponse(request, response, false);
+    }
+
+    private void attachMismatchDiagnostic(HttpRequest request, HttpResponse response) {
+        try {
+            java.util.Map<org.mockserver.matchers.MatchDifference.Field, java.util.List<String>> closestDiff = httpStateHandler.findClosestMatchDiff(request);
+            if (closestDiff != null && !closestDiff.isEmpty()) {
+                String summary = org.mockserver.matchers.MatchDifferenceFormatter.formatDifferences(closestDiff);
+                if (isNotBlank(summary)) {
+                    // header: concise one-line summary of the mismatched fields
+                    String headerValue = closestDiff.keySet().stream()
+                        .map(org.mockserver.matchers.MatchDifference.Field::getName)
+                        .collect(java.util.stream.Collectors.joining(", "));
+                    response.withHeader("x-mockserver-closest-match", "fields differ: " + headerValue);
+                    // body: structured JSON diagnostic
+                    com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+                    com.fasterxml.jackson.databind.node.ObjectNode diagnosticNode = objectMapper.createObjectNode();
+                    diagnosticNode.put("matchedFieldCount", org.mockserver.matchers.MatchDifference.Field.values().length - closestDiff.size());
+                    diagnosticNode.put("totalFieldCount", org.mockserver.matchers.MatchDifference.Field.values().length);
+                    com.fasterxml.jackson.databind.node.ObjectNode differencesNode = objectMapper.createObjectNode();
+                    for (java.util.Map.Entry<org.mockserver.matchers.MatchDifference.Field, java.util.List<String>> entry : closestDiff.entrySet()) {
+                        com.fasterxml.jackson.databind.node.ArrayNode fieldDiffs = differencesNode.putArray(entry.getKey().getName());
+                        for (String diff : entry.getValue()) {
+                            fieldDiffs.add(org.mockserver.matchers.MatchDifferenceFormatter.truncateDiffLine(diff));
+                        }
+                    }
+                    diagnosticNode.set("differences", differencesNode);
+                    response.withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(diagnosticNode), MediaType.JSON_UTF_8);
+                }
+            } else {
+                response.withHeader("x-mockserver-closest-match", "no expectations configured");
+            }
+        } catch (Exception e) {
+            if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.TRACE)
+                        .setMessageFormat("exception attaching mismatch diagnostic to 404 response:{}")
+                        .setArguments(e.getMessage())
+                        .setThrowable(e)
+                );
+            }
+        }
     }
 
     /**

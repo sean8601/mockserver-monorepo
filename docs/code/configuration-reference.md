@@ -39,7 +39,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Category | Representative properties |
 |----------|--------------------------|
 | Ports & proxy | `serverPort`, `proxyRemoteHost`, `proxyRemotePort` |
-| Logging | `logLevel`, `disableSystemOut`, `detailedMatchFailures`, `compactLogFormat`, `metricsEnabled`, `slowRequestThresholdMillis` |
+| Logging | `logLevel`, `disableSystemOut`, `detailedMatchFailures`, `compactLogFormat`, `metricsEnabled`, `slowRequestThresholdMillis`, `attachMismatchDiagnosticToResponse` |
 | Memory usage | `maxExpectations`, `maxLogEntries`, `maxWebSocketExpectations`, `outputMemoryUsageCsv` |
 | HTTP behaviour | `nioEventLoopThreadCount`, `actionHandlerThreadCount`, `webSocketClientEventLoopThreadCount`, `clientNioEventLoopThreadCount`, `streamingResponsesEnabled`, `maxStreamingCaptureBytes` |
 | Initialisation | `initializationClass`, `initializationJsonPath`, `persistExpectations`, `persistedExpectationsPath` |

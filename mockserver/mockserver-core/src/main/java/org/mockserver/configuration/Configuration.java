@@ -168,6 +168,7 @@ public class Configuration {
     // verification
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
     private Boolean detailedVerificationFailures;
+    private Boolean attachMismatchDiagnosticToResponse;
 
     // proxy
     // volatile: mutated at runtime via PUT /mockserver/mode (control-plane thread) and read on the
@@ -2066,6 +2067,24 @@ public class Configuration {
      */
     public Configuration detailedVerificationFailures(Boolean detailedVerificationFailures) {
         this.detailedVerificationFailures = detailedVerificationFailures;
+        return this;
+    }
+
+    public Boolean attachMismatchDiagnosticToResponse() {
+        if (attachMismatchDiagnosticToResponse == null) {
+            return ConfigurationProperties.attachMismatchDiagnosticToResponse();
+        }
+        return attachMismatchDiagnosticToResponse;
+    }
+
+    /**
+     * If true, when no expectation matches an incoming request the 404 response will include a diagnostic header (x-mockserver-closest-match)
+     * and a JSON body describing which expectation was closest to matching and which fields differed. Defaults to false.
+     *
+     * @param attachMismatchDiagnosticToResponse enable mismatch diagnostic in unmatched responses
+     */
+    public Configuration attachMismatchDiagnosticToResponse(Boolean attachMismatchDiagnosticToResponse) {
+        this.attachMismatchDiagnosticToResponse = attachMismatchDiagnosticToResponse;
         return this;
     }
 

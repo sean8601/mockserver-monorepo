@@ -204,6 +204,7 @@ public class ConfigurationProperties {
     // verification
     private static final String MOCKSERVER_MAXIMUM_NUMBER_OF_REQUESTS_TO_RETURN_IN_VERIFICATION_FAILURE = "mockserver.maximumNumberOfRequestToReturnInVerificationFailure";
     private static final String MOCKSERVER_DETAILED_VERIFICATION_FAILURES = "mockserver.detailedVerificationFailures";
+    private static final String MOCKSERVER_ATTACH_MISMATCH_DIAGNOSTIC_TO_RESPONSE = "mockserver.attachMismatchDiagnosticToResponse";
 
     // proxy
     private static final String MOCKSERVER_ATTEMPT_TO_PROXY_IF_NO_MATCHING_EXPECTATION = "mockserver.attemptToProxyIfNoMatchingExpectation";
@@ -2257,6 +2258,20 @@ public class ConfigurationProperties {
      */
     public static void detailedVerificationFailures(boolean enable) {
         setProperty(MOCKSERVER_DETAILED_VERIFICATION_FAILURES, "" + enable);
+    }
+
+    public static boolean attachMismatchDiagnosticToResponse() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_ATTACH_MISMATCH_DIAGNOSTIC_TO_RESPONSE, "MOCKSERVER_ATTACH_MISMATCH_DIAGNOSTIC_TO_RESPONSE", "" + false));
+    }
+
+    /**
+     * If true, when no expectation matches an incoming request the 404 response will include a diagnostic header (x-mockserver-closest-match)
+     * and a JSON body describing which expectation was closest to matching and which fields differed. Defaults to false.
+     *
+     * @param enable enable mismatch diagnostic in unmatched responses
+     */
+    public static void attachMismatchDiagnosticToResponse(boolean enable) {
+        setProperty(MOCKSERVER_ATTACH_MISMATCH_DIAGNOSTIC_TO_RESPONSE, "" + enable);
     }
 
     // proxy

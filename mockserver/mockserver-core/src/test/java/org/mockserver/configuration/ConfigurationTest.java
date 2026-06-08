@@ -1283,6 +1283,32 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetAttachMismatchDiagnosticToResponse() {
+        boolean original = ConfigurationProperties.attachMismatchDiagnosticToResponse();
+        try {
+            // then - default value (false)
+            assertThat(configuration.attachMismatchDiagnosticToResponse(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.attachMismatchDiagnosticToResponse(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.attachMismatchDiagnosticToResponse(), equalTo(true));
+            assertThat(System.getProperty("mockserver.attachMismatchDiagnosticToResponse"), equalTo("true"));
+            assertThat(configuration.attachMismatchDiagnosticToResponse(), equalTo(true));
+            ConfigurationProperties.attachMismatchDiagnosticToResponse(original);
+
+            // when - setter
+            configuration.attachMismatchDiagnosticToResponse(true);
+
+            // then - getter
+            assertThat(configuration.attachMismatchDiagnosticToResponse(), equalTo(true));
+        } finally {
+            ConfigurationProperties.attachMismatchDiagnosticToResponse(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetAttemptToProxyIfNoMatchingExpectation() {
         boolean original = ConfigurationProperties.attemptToProxyIfNoMatchingExpectation();
         try {

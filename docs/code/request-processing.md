@@ -740,7 +740,16 @@ In `MockServerEventLog.verify()`, after determining verification failed:
 
 ### 404 Closest Match Logging
 
-When no expectation matches and a 404 is returned, `HttpActionHandler.returnNotFound()` calls `HttpState.findClosestMatchDiff()` to find the closest matching expectation's diff details and logs them at INFO level. The 404 response body is not modified to avoid breaking client assertions.
+When no expectation matches and a 404 is returned, `HttpActionHandler.returnNotFound()` calls `HttpState.findClosestMatchDiff()` to find the closest matching expectation's diff details and logs them at DEBUG level. By default the 404 response body is not modified to avoid breaking client assertions.
+
+### Client-Visible Match Feedback (Opt-In)
+
+When `attachMismatchDiagnosticToResponse` is enabled (default: `false`), unmatched 404 responses include diagnostic information to help test authors understand why their mock didn't match:
+
+- **Header** `x-mockserver-closest-match`: lists the fields that differed (e.g., `fields differ: method, path`) or `no expectations configured` when no expectations exist.
+- **Body**: a JSON object with `matchedFieldCount`, `totalFieldCount`, and a `differences` map keyed by field name, each containing an array of diff descriptions.
+
+This reuses the existing `findClosestMatchDiff()` and `MatchDifferenceFormatter` infrastructure -- no new matcher logic is introduced. The diagnostic is only attached when the property is explicitly set to `true`; when off (the default), the response is byte-for-byte identical to previous behaviour.
 
 ### Key Classes
 

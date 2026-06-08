@@ -79,6 +79,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String persistedRecordedExpectationsPath;
 
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
+    private Boolean attachMismatchDiagnosticToResponse;
 
     private Boolean attemptToProxyIfNoMatchingExpectation;
     private String forwardHttpProxy;
@@ -199,6 +200,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.persistedRecordedExpectationsPath = configuration.persistedRecordedExpectationsPath();
 
             this.maximumNumberOfRequestToReturnInVerificationFailure = configuration.maximumNumberOfRequestToReturnInVerificationFailure();
+            this.attachMismatchDiagnosticToResponse = configuration.attachMismatchDiagnosticToResponse();
 
             this.attemptToProxyIfNoMatchingExpectation = configuration.attemptToProxyIfNoMatchingExpectation();
             InetSocketAddress httpProxy = configuration.forwardHttpProxy();
@@ -365,6 +367,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.persistedRecordedExpectationsPath(persistedRecordedExpectationsPath);
 
         configuration.maximumNumberOfRequestToReturnInVerificationFailure(maximumNumberOfRequestToReturnInVerificationFailure);
+        configuration.attachMismatchDiagnosticToResponse(attachMismatchDiagnosticToResponse);
 
         configuration.attemptToProxyIfNoMatchingExpectation(attemptToProxyIfNoMatchingExpectation);
         if (forwardHttpProxy != null) {
@@ -587,6 +590,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (maximumNumberOfRequestToReturnInVerificationFailure != null) {
             target.maximumNumberOfRequestToReturnInVerificationFailure(maximumNumberOfRequestToReturnInVerificationFailure);
+        }
+        if (attachMismatchDiagnosticToResponse != null) {
+            target.attachMismatchDiagnosticToResponse(attachMismatchDiagnosticToResponse);
         }
         if (attemptToProxyIfNoMatchingExpectation != null) {
             target.attemptToProxyIfNoMatchingExpectation(attemptToProxyIfNoMatchingExpectation);
@@ -1201,6 +1207,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setMaximumNumberOfRequestToReturnInVerificationFailure(Integer maximumNumberOfRequestToReturnInVerificationFailure) {
         this.maximumNumberOfRequestToReturnInVerificationFailure = maximumNumberOfRequestToReturnInVerificationFailure;
+        return this;
+    }
+
+    public Boolean getAttachMismatchDiagnosticToResponse() {
+        return attachMismatchDiagnosticToResponse;
+    }
+
+    public ConfigurationDTO setAttachMismatchDiagnosticToResponse(Boolean attachMismatchDiagnosticToResponse) {
+        this.attachMismatchDiagnosticToResponse = attachMismatchDiagnosticToResponse;
         return this;
     }
 

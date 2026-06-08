@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Consolidated "Self-Hosting MockServer" guide** — a single task-oriented site page (`/mock_server/self_hosting_mockserver.html`) that brings together every way to run MockServer yourself with copy-paste commands: Docker and the one-command docker-compose recipes, the `mockserver` CLI and the JVM-less binary bundle, Helm/Kubernetes, the executable JAR, Testcontainers, initializers/persistence, and bootstrapping from a browser HAR. Linked from the repository README.
 - **Dashboard Chaos tab — full HTTP fault-type controls** — the HTTP Service Chaos register/edit form now exposes every `HttpChaosProfile` field: Retry-After header, body truncation fraction, malformed body toggle, slow (dribbled) response chunk size/delay, quota rate-limiting (name/limit/window/error status), degradation ramp, and outage time window — so users can configure the complete fault set without writing JSON.
 
+- **Client-visible match feedback** — new opt-in config property `attachMismatchDiagnosticToResponse` (default `false`) attaches closest-match diagnostic info (header `x-mockserver-closest-match` + JSON body with per-field diffs) to 404 responses for unmatched requests, so test authors can see why their mock didn't match without checking the dashboard or logs.
+
 ### Changed
 - **CI** — the build pipeline now runs unit tests for the new Go, .NET, Rust and PHP libraries, the five Testcontainers modules and the editor extensions (each in its language toolchain Docker image), triggered by changes under their paths.
 
