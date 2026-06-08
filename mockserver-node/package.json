@@ -4,6 +4,9 @@
   "version": "7.0.0",
   "homepage": "http://mock-server.com",
   "types": "index.d.ts",
+  "bin": {
+    "mockserver": "bin/mockserver.js"
+  },
   "author": {
     "name": "James Bloom",
     "email": "jamesdbloom@gmail.com",
@@ -31,6 +34,8 @@
     "tasks",
     "index.js",
     "downloadJar.js",
+    "downloadBinary.js",
+    "bin",
     "mockserver-netty-7.0.0-jar-with-dependencies.jar",
     "stop_MockServer.sh"
   ],
