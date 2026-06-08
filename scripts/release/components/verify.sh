@@ -163,6 +163,13 @@ check_http "mockserver/mockserver:$V tag" \
   "https://hub.docker.com/v2/repositories/mockserver/mockserver/tags/$V/"
 
 log_info ""
+log_info "== Binary bundles (GitHub Release, soft — convenience channel, not a gate) =="
+check_http_soft "mockserver $V linux-x86_64 bundle" \
+  "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-$V/mockserver-$V-linux-x86_64.tar.gz"
+check_http_soft "mockserver $V windows-x86_64 bundle" \
+  "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-$V/mockserver-$V-windows-x86_64.zip"
+
+log_info ""
 log_info "== GHCR mirror (soft — convenience mirror, not a release gate) =="
 # GHCR requires a bearer token even to read a public package, so fetch an
 # anonymous pull token first, then HEAD the manifest. Soft: the mirror is a

@@ -31,6 +31,7 @@ ALL_COMPONENTS=(
   pypi
   rubygems
   github
+  binary
   mcp
   client-go
   client-dotnet

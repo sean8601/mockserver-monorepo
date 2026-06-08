@@ -268,6 +268,17 @@ steps:
     timeout_in_minutes: 10
     agents: { queue: "release" }
 
+  # Build jlink JVM-less bundles for every platform and upload them to the
+  # GitHub Release created in the publish group above. Lives here, after the
+  # group `wait`, so the release exists before assets are uploaded. Soft-fail:
+  # a convenience self-hosting channel, never a release gate. Generous timeout
+  # — it downloads a target JDK per platform and runs jlink for each.
+  - label: ":package: Binary Bundles"
+    command: ".buildkite/scripts/release-runner.sh binary"
+    soft_fail: true
+    timeout_in_minutes: 60
+    agents: { queue: "release" }
+
   - wait
 
   - label: ":sparkles: Finalize"
