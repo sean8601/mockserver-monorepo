@@ -23,6 +23,63 @@
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-core</artifactId>
+            <!--
+                The Java client only builds/serialises requests, responses and expectations and talks to a
+                remote (or containerised) MockServer over HTTP. The server-side engines below are never loaded
+                by any client code path — template rendering, JavaScript/WASM execution, fake-data generation and
+                gRPC/protobuf transcoding all happen inside the running server, not in the client JVM. Excluding
+                them keeps a test-only client classpath small and removes their (often divergent) transitive
+                versions from downstream builds. Swagger/OpenAPI is intentionally NOT excluded: the client's
+                ObjectMapperFactory statically initialises schema serializers that reference
+                io.swagger.v3.oas.models, so swagger-core must remain on the classpath.
+
+                Consumers using strict version alignment (Maven Enforcer dependencyConvergence) should still
+                import org.mock-server:mockserver-bom, which pins every remaining transitive version.
+            -->
+            <exclusions>
+                <!-- Velocity templating (server-side TemplateEngine only) -->
+                <exclusion>
+                    <groupId>org.apache.velocity</groupId>
+                    <artifactId>velocity-engine-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.velocity</groupId>
+                    <artifactId>velocity-engine-scripting</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.velocity.tools</groupId>
+                    <artifactId>velocity-tools-generic</artifactId>
+                </exclusion>
+                <!-- Mustache templating (server-side TemplateEngine only) -->
+                <exclusion>
+                    <groupId>com.samskivert</groupId>
+                    <artifactId>jmustache</artifactId>
+                </exclusion>
+                <!-- GraalVM JavaScript engine (server-side template execution only) -->
+                <exclusion>
+                    <groupId>org.graalvm.polyglot</groupId>
+                    <artifactId>polyglot</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.graalvm.polyglot</groupId>
+                    <artifactId>js</artifactId>
+                </exclusion>
+                <!-- WASM runtime (server-side custom rule execution only) -->
+                <exclusion>
+                    <groupId>com.dylibso.chicory</groupId>
+                    <artifactId>runtime</artifactId>
+                </exclusion>
+                <!-- Fake data generation (server-side template functions only) -->
+                <exclusion>
+                    <groupId>net.datafaker</groupId>
+                    <artifactId>datafaker</artifactId>
+                </exclusion>
+                <!-- Protobuf/gRPC JSON transcoding (server-side gRPC handling only) -->
+                <exclusion>
+                    <groupId>com.google.protobuf</groupId>
+                    <artifactId>protobuf-java-util</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>

@@ -141,6 +141,16 @@
             <groupId>org.apache.velocity.tools</groupId>
             <artifactId>velocity-tools-generic</artifactId>
             <version>3.1</version>
+            <exclusions>
+                <!-- velocity-tools-generic 3.1 pulls velocity-engine-core 2.3 transitively, but this module
+                     declares (and is built and tested against) velocity-engine-core ${velocity.version} directly
+                     above. Pruning the stale 2.3 edge keeps the published tree on a single Velocity version so
+                     downstream consumers' dependencyConvergence checks pass. -->
+                <exclusion>
+                    <groupId>org.apache.velocity</groupId>
+                    <artifactId>velocity-engine-core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.samskivert</groupId>

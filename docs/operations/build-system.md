@@ -29,10 +29,11 @@ MockServer uses Maven 3.9.16 via the Maven Wrapper (`mvnw`). The project targets
 
 ### Modules
 
-The project comprises 24 Maven modules:
+The project comprises 25 Maven modules:
 
 | Module | Packaging | Purpose |
 |--------|-----------|---------|
+| `mockserver-bom` | pom (flattened) | Bill of Materials — import to pin every MockServer module and third-party transitive to one converged version |
 | `mockserver-testing` | jar | Shared test utilities |
 | `mockserver-client-java` | jar | Java client API (`MockServerClient`) |
 | `mockserver-client-java-no-dependencies` | jar (shaded) | Client with all dependencies shaded |
@@ -57,6 +58,28 @@ The project comprises 24 Maven modules:
 | `mockserver-blob-gcs` | jar | GCS blob storage backend |
 | `mockserver-blob-azure` | jar | Azure blob storage backend |
 | `mockserver-k8s-webhook` | jar (+fat) | Kubernetes admission webhook for sidecar injection |
+
+### Dependency management and the BOM
+
+MockServer pins all of its third-party transitive versions in the **parent POM's `<dependencyManagement>`**, and the reactor's own Enforcer `dependencyConvergence` rule guards that everything resolves to a single version. That management is, by design, **not inherited by downstream consumers** — so a consumer running the same Enforcer rule would see MockServer's transitive versions diverge.
+
+`mockserver-bom` closes that gap. It extends the parent POM (inheriting every third-party pin) and adds `dependencyManagement` entries for the published MockServer modules, then uses the `flatten-maven-plugin` (`flattenMode=bom`, `dependencyManagement=expand`) to publish a **self-contained** POM with all pins inlined and no parent reference. Consumers import it to get a converged tree:
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>org.mock-server</groupId>
+      <artifactId>mockserver-bom</artifactId>
+      <version>${mockserver.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+```
+
+Two related choices reduce convergence pressure even without the BOM: `mockserver-client-java` **excludes the server-only engines** from its `mockserver-core` dependency (a client never executes templates/scripts/WASM/gRPC), and `mockserver-core` **prunes the stale `velocity-engine-core 2.3`** that `velocity-tools-generic` drags in alongside the `2.4.1` the build already uses. The parent's `flatten-maven-plugin` execution is declared `<inherited>false</inherited>`, so it applies only to the root POM; `mockserver-bom` carries its own copy.
 
 ### Quick Reference
 

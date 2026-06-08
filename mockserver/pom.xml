@@ -89,6 +89,7 @@
     </properties>
 
     <modules>
+        <module>mockserver-bom</module>
         <module>mockserver-testing</module>
         <module>mockserver-client-java</module>
         <module>mockserver-client-java-no-dependencies</module>
@@ -259,23 +260,6 @@
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-logging-juli</artifactId>
                 <version>8.5.2</version>
-            </dependency>
-
-            <!-- Jetty HTTP Client -->
-            <dependency>
-                <groupId>org.eclipse.jetty</groupId>
-                <artifactId>jetty-client</artifactId>
-                <version>${jetty.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.eclipse.jetty</groupId>
-                <artifactId>jetty-util</artifactId>
-                <version>${jetty.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.eclipse.jetty</groupId>
-                <artifactId>jetty-io</artifactId>
-                <version>${jetty.version}</version>
             </dependency>
 
             <!-- Apache HTTP Client -->
