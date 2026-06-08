@@ -20,7 +20,7 @@ docker run -p <span class="numeric_literal">1080</span>:<span class="numeric_lit
 # Node — no Java and no Docker (downloads a self-contained bundle)
 npx -p mockserver-node mockserver run -p <span class="numeric_literal">1080</span>
 
-# Homebrew (macOS / Linux)
+# Homebrew (macOS / Linux) — formula publishes with the next release
 brew install mockserver && mockserver run -p <span class="numeric_literal">1080</span></code></pre>
 
 <p>Confirm it is up (the status endpoint returns <span class="inline_code">200</span> once MockServer is ready):</p>
@@ -177,7 +177,7 @@ docker compose up</code></pre>
 
 <h3>Homebrew</h3>
 
-<p>On macOS or Linux, install the <span class="inline_code">mockserver</span> command with <a target="_blank" href="https://brew.sh/" rel="noopener noreferrer">Homebrew</a>:</p>
+<p>On macOS or Linux, the <span class="inline_code">mockserver</span> command can be installed with <a target="_blank" href="https://brew.sh/" rel="noopener noreferrer">Homebrew</a> <em>(the formula publishes with the next release)</em>:</p>
 
 <pre class="prettyprint code"><code class="code">brew install mockserver
 mockserver run -p <span class="numeric_literal">1080</span></code></pre>

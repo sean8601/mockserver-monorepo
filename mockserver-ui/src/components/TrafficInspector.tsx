@@ -948,18 +948,25 @@ export default function TrafficInspector() {
   // Resolve the two selected requests to the JSON the diff endpoint expects (the request
   // definition — `httpRequest` if present, otherwise the whole captured value). Preserve the
   // user's pick order: the first selected is "expected", the second "actual".
+  // Selected keys whose request still exists (a WebSocket refresh can remove one),
+  // so a stale selection can't produce an empty/invalid diff payload.
+  const validCompareKeys = useMemo(
+    () => compareKeys.filter((key) => allRequests.some((item) => item.key === key)),
+    [compareKeys, allRequests],
+  );
+
   const compareJson = useMemo(() => {
     const toRequestJson = (item: JsonListItem): string => {
       const request = (item.value['httpRequest'] as Record<string, unknown> | undefined) ?? item.value;
       return JSON.stringify(request, null, 2);
     };
-    return compareKeys.map((key) => {
+    return validCompareKeys.map((key) => {
       const entry = allRequests.find((item) => item.key === key);
       return entry ? toRequestJson(entry) : '';
     });
-  }, [compareKeys, allRequests]);
+  }, [validCompareKeys, allRequests]);
 
-  const canDiff = compareKeys.length === 2;
+  const canDiff = validCompareKeys.length === 2;
 
   return (
     <Box

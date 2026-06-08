@@ -22,7 +22,7 @@ cat recorded/recorded.json
 
 ## What it shows
 
-- `PROXY_REMOTE_HOST` / `PROXY_REMOTE_PORT` put MockServer in port-forwarding (proxy) mode — unmatched requests go to the upstream.
+- `MOCKSERVER_PROXY_REMOTE_HOST` / `MOCKSERVER_PROXY_REMOTE_PORT` put MockServer in port-forwarding (proxy) mode — unmatched requests go to the upstream.
 - `MOCKSERVER_PERSIST_RECORDED_EXPECTATIONS=true` plus `MOCKSERVER_PERSISTED_RECORDED_EXPECTATIONS_PATH` write recorded interactions to a host-mounted file.
 
 ## Replay
