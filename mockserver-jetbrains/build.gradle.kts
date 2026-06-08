@@ -1,6 +1,6 @@
 plugins {
-    id("org.jetbrains.intellij.platform") version "2.2.1"
-    kotlin("jvm") version "1.9.25"
+    id("org.jetbrains.intellij.platform") version "2.16.0"
+    kotlin("jvm") version "2.1.21"
 }
 
 group = "com.mock-server"
@@ -16,38 +16,36 @@ repositories {
 dependencies {
     intellijPlatform {
         intellijIdeaCommunity(providers.gradleProperty("platformVersion").get())
-        instrumentationTools()
-        pluginVerifier()
     }
     testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.11.4")
 }
 
 kotlin {
     jvmToolchain(17)
 }
 
+intellijPlatform {
+    pluginConfiguration {
+        ideaVersion {
+            sinceBuild = providers.gradleProperty("sinceBuild")
+            untilBuild = providers.gradleProperty("untilBuild")
+        }
+    }
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+    publishing {
+        token = providers.environmentVariable("JETBRAINS_TOKEN")
+    }
+}
+
 tasks {
-    patchPluginXml {
-        sinceBuild.set(providers.gradleProperty("sinceBuild"))
-        untilBuild.set(providers.gradleProperty("untilBuild"))
-    }
-
-    publishPlugin {
-        token.set(System.getenv("JETBRAINS_TOKEN"))
-    }
-
-    signPlugin {
-        certificateChain.set(System.getenv("CERTIFICATE_CHAIN"))
-        privateKey.set(System.getenv("PRIVATE_KEY"))
-        password.set(System.getenv("PRIVATE_KEY_PASSWORD"))
-    }
-
     test {
         useJUnitPlatform()
-    }
-
-    buildSearchableOptions {
-        enabled = false
     }
 }
