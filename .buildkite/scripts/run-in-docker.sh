@@ -15,15 +15,16 @@ ENTRYPOINT=""
 ENV_VARS=()
 VOLUMES=()
 CACHE_TYPES=()
-# Security posture (hardening for untrusted PR builds), opt-in via --harden:
-#  - --harden runs the container as the host agent UID (non-root) with HOME=/tmp,
-#    plus no-new-privileges + cap-drop=ALL. A breakout is then unprivileged and
-#    leaves no root-owned files in the checkout. Add a capability back with
-#    --cap-add when a tool needs one. Default (no --harden) preserves the legacy
-#    behaviour (root, full caps) so a step opts into hardening only once it has
-#    been validated non-root.
-#  - The Docker socket (-s) is ALWAYS withheld from PR builds (L3) regardless of
-#    --harden, since that is the highest-value protection and a safe skip.
+# Security posture for untrusted PR builds. NOTE: the agents already run Docker
+# with user-namespace remapping (DOCKER_USERNS_REMAP=true, elastic-ci-stack
+# default), so container-root is already an unprivileged host UID — a breakout
+# is not host-root. On top of that:
+#  - The Docker socket (-s) is ALWAYS withheld from PR builds (L3) — the highest
+#    -value protection and a safe skip (a socket bypasses the userns boundary).
+#  - --harden adds defense-in-depth compatible with userns-remap: cap-drop=ALL +
+#    no-new-privileges. (We deliberately do NOT add --user: that double-remaps
+#    the UID and breaks workspace writes on the agents.) Use --cap-add to restore
+#    a capability a step needs.
 HARDEN=false
 CAP_ADDS=()
 
@@ -44,7 +45,7 @@ Options:
   -v, --volume SRC:DST     Additional volume mount
   --cache TYPE             Mount dependency cache (maven|npm|pip|bundler|gradle|go|cargo|nuget)
   --network NAME           Docker network to connect to
-  --harden                 Run non-root (host agent UID) + no-new-privileges + cap-drop=ALL
+  --harden                 Add no-new-privileges + cap-drop=ALL (agents already userns-remap)
   --cap-add CAP            With --harden, add a Linux capability back
   -h, --help               Show this help
 
@@ -89,29 +90,24 @@ DOCKER_ARGS+=(-v "$REPO_ROOT:/build")
 DOCKER_ARGS+=(-w "$WORKDIR")
 
 # ---------------------------------------------------------------------------
-# Hardening (opt-in via --harden): non-root UID + writable HOME + dropped caps
+# Hardening (opt-in via --harden): capability dropping + no privilege escalation
 # ---------------------------------------------------------------------------
-# With --harden the container runs as the host agent UID so anything written to
-# the bind-mounted workspace/caches is owned by the agent (not root) and a
-# breakout is unprivileged. An arbitrary UID has no /etc/passwd entry, so HOME
-# points at a writable dir (/tmp); tools then use $HOME/.m2, $HOME/.npm, etc.
-# Without --harden the legacy behaviour (root, HOME=/root, full caps) is kept.
+# IMPORTANT: the build agents already run Docker with user-namespace remapping
+# (DOCKER_USERNS_REMAP=true in the elastic-ci-stack), so container-root is
+# ALREADY mapped to an unprivileged host UID — a breakout is not host-root. We
+# therefore must NOT add `--user` here: a non-root container UID gets a SECOND
+# remap and no longer matches the workspace owner, which breaks writes to the
+# bind-mounted /build (this is exactly why per-step non-root passed locally but
+# failed on CI). --harden adds the defense-in-depth that IS compatible with
+# userns-remap: drop all Linux capabilities + block privilege escalation. Add a
+# capability back per-step with --cap-add when a tool needs one.
+HOME_DIR="/root"
 if [[ "$HARDEN" == "true" ]]; then
-  HOME_DIR="/tmp"
-  DOCKER_ARGS+=(--user "$(id -u):$(id -g)")
-  DOCKER_ARGS+=(-e "HOME=${HOME_DIR}")
-  # Tools that otherwise write under a root-owned install dir need their home
-  # pointed at a writable location when running as a non-root UID. Harmless for
-  # images that don't use them.
-  DOCKER_ARGS+=(-e "DOTNET_CLI_HOME=${HOME_DIR}" -e "DOTNET_NOLOGO=1")
-  DOCKER_ARGS+=(-e "XDG_CACHE_HOME=${HOME_DIR}/.cache")
   DOCKER_ARGS+=(--security-opt no-new-privileges)
   DOCKER_ARGS+=(--cap-drop ALL)
   for cap in "${CAP_ADDS[@]+"${CAP_ADDS[@]}"}"; do
     DOCKER_ARGS+=(--cap-add "$cap")
   done
-else
-  HOME_DIR="/root"
 fi
 
 if [[ -n "$MEMORY" ]]; then
@@ -179,14 +175,7 @@ for cache_type in "${CACHE_TYPES[@]+"${CACHE_TYPES[@]}"}"; do
     go)      DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/go/pkg/mod") ;;
     cargo)   DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.cargo/registry") ;;
     nuget)   DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/.nuget/packages") ;;
-    bundler)
-      if [[ "$HARDEN" == "true" ]]; then
-        DOCKER_ARGS+=(-v "${host_dir}:${HOME_DIR}/bundle/cache")
-        DOCKER_ARGS+=(-e "BUNDLE_PATH=${HOME_DIR}/bundle" -e "GEM_HOME=${HOME_DIR}/bundle")
-      else
-        DOCKER_ARGS+=(-v "${host_dir}:/usr/local/bundle/cache")
-      fi
-      ;;
+    bundler) DOCKER_ARGS+=(-v "${host_dir}:/usr/local/bundle/cache") ;;
     *)       echo "[run-in-docker] WARNING: unknown cache type '${cache_type}' -- ignored" >&2 ;;
   esac
 done
