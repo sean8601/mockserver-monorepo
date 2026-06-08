@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-language client libraries** — hand-written idiomatic clients for the MockServer control plane in **Go** (`mockserver-client-go`, pkg.go.dev), **.NET** (`MockServer.Client`, NuGet), **Rust** (`mockserver-client`, crates.io) and **PHP** (`mock-server/mockserver-client`, Packagist), covering create-expectation, verify/verifySequence, clear, reset and retrieve. Each ships unit tests plus a skippable integration test.
+- **Testcontainers modules** — a `MockServerContainer` for **Node**, **Python**, **.NET**, **Go** and **Rust** (under `mockserver-testcontainers/`) that starts the `mockserver/mockserver` image, waits on `/mockserver/status` and exposes the mapped URL.
+- **Editor integrations** — a **VS Code** extension (`mockserver-vscode`: start/stop the Docker container, open the dashboard, expectation snippets) and an initial **JetBrains/IntelliJ Platform** plugin scaffold (`mockserver-jetbrains`).
 
 ### Changed
 
