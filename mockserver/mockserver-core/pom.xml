@@ -201,6 +201,13 @@
             </exclusions>
         </dependency>
         <dependency>
+            <!-- ObjectMapperFactory registers JavaTimeModule directly, so declare this explicitly rather
+                 than relying on it arriving transitively (it previously came only via swagger-parser, which
+                 the Java client now excludes). -->
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+        <dependency>
             <groupId>net.javacrumbs.json-unit</groupId>
             <artifactId>json-unit-core</artifactId>
         </dependency>
