@@ -130,13 +130,43 @@ else
 fi
 
 # ---- Auth (skipped in dry-run) --------------------------------------------
+# MIRROR_GHCR gates the GHCR image mirror (ghcr.io/mock-server/mockserver). It
+# is enabled only when a GHCR login succeeds, so a missing/expired token or a
+# GHCR outage degrades to "Docker Hub + ECR only" rather than aborting.
+MIRROR_GHCR=false
 if ! is_dry_run; then
   log_info "Login to Docker Hub + ECR Public"
   # Release images use the release-scoped Docker Hub token (release queue only).
   DOCKERHUB_SECRET_ID="mockserver-release/dockerhub" \
     "$REPO_ROOT/.buildkite/scripts/docker-login.sh"
   "$REPO_ROOT/.buildkite/scripts/ecr-login.sh"
+
+  # GHCR mirror login. Reuses the same mockserver-release/ghcr-token secret the
+  # Helm chart already pushes with (oci://ghcr.io/mock-server/charts), so the
+  # org packages + write scope already exist. Non-fatal: a GHCR mirror is a
+  # convenience surface, never a release gate.
+  if aws secretsmanager describe-secret --region "$REGION" \
+       --secret-id mockserver-release/ghcr-token >/dev/null 2>&1; then
+    log_info "Login to GHCR (ghcr.io/mock-server) for the image mirror"
+    if GHCR_USER=$(load_secret "mockserver-release/ghcr-token" "username") \
+       && GHCR_TOKEN=$(load_secret "mockserver-release/ghcr-token" "token") \
+       && printf '%s' "$GHCR_TOKEN" | docker login ghcr.io \
+            --username "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+      MIRROR_GHCR=true
+      log_info "  GHCR login OK — images will be mirrored to ghcr.io/mock-server/mockserver"
+    else
+      log_info "  WARNING: GHCR login failed — skipping GHCR mirror (non-fatal)"
+    fi
+    unset GHCR_TOKEN GHCR_USER
+  else
+    log_info "GHCR token not configured (mockserver-release/ghcr-token) — skipping GHCR mirror"
+  fi
 fi
+
+# GHCR image repository (mirror target). The manifests are copied from Docker
+# Hub with `docker buildx imagetools create` after the primary push, so the
+# GHCR images share the exact same digest (and cosign signature) as Docker Hub.
+GHCR_REPO="ghcr.io/mock-server/mockserver"
 
 FULL_TAG="mockserver-$RELEASE_VERSION"
 SHORT_TAG="$RELEASE_VERSION"
@@ -237,6 +267,7 @@ if is_dry_run; then
   fi
 
   log_dry "skip: push to Docker Hub + ECR (built locally, not pushed)"
+  log_dry "skip: mirror to ghcr.io/mock-server/mockserver (only on --execute)"
 else
   # CI: multi-arch + push via buildx.
   docker buildx create --use --name multiarch 2>/dev/null || docker buildx use multiarch
@@ -304,6 +335,37 @@ else
       --tag "${ECR_REPO}-webhook:latest" \
       docker/webhook; then
       log_info "WARNING: webhook ECR push failed — continuing (Docker Hub is the primary registry)"
+    fi
+  fi
+
+  # ---- Mirror images to GHCR -----------------------------------------------
+  # Copy the already-pushed multi-arch manifests from Docker Hub to GHCR with
+  # `docker buildx imagetools create` (a registry-to-registry manifest copy — no
+  # rebuild, identical digest). Strictly non-fatal and error-isolated per tag:
+  # the primary Docker Hub + ECR images are already published above, so a GHCR
+  # hiccup must never abort the release. Signed below alongside the other refs.
+  if [[ "$MIRROR_GHCR" == "true" ]]; then
+    echo "--- :docker: Mirroring images to ghcr.io/mock-server/mockserver"
+    mirror_to_ghcr() {
+      # $1 = source ref (Docker Hub), $2 = destination ref (GHCR)
+      if ! docker buildx imagetools create --tag "$2" "$1"; then
+        log_info "WARNING: GHCR mirror failed for $2 (non-fatal)"
+        return 1
+      fi
+    }
+    for t in "$FULL_TAG" "$SHORT_TAG" "latest" \
+             "$FULL_TAG-graaljs" "$SHORT_TAG-graaljs" "latest-graaljs"; do
+      mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t" || true
+    done
+    if [[ "$BUILD_CLUSTERED" == "true" ]]; then
+      for t in "clustered-$FULL_TAG" "clustered-$SHORT_TAG" "clustered-latest"; do
+        mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t" || true
+      done
+    fi
+    if [[ "$BUILD_WEBHOOK" == "true" ]]; then
+      for t in "$FULL_TAG" "$SHORT_TAG" "latest"; do
+        mirror_to_ghcr "mockserver/mockserver-webhook:$t" "${GHCR_REPO}-webhook:$t" || true
+      done
     fi
   fi
 
@@ -391,6 +453,16 @@ else
       images_to_sign+=(
         "mockserver/mockserver-webhook:$FULL_TAG"
       )
+    fi
+    # GHCR mirror refs (same digests as Docker Hub, but cosign stores the
+    # signature in the registry holding the image, so GHCR needs its own sign).
+    if [[ "$MIRROR_GHCR" == "true" ]]; then
+      images_to_sign+=(
+        "${GHCR_REPO}:$FULL_TAG"
+        "${GHCR_REPO}:$FULL_TAG-graaljs"
+      )
+      [[ "$BUILD_CLUSTERED" == "true" ]] && images_to_sign+=( "${GHCR_REPO}:clustered-$FULL_TAG" )
+      [[ "$BUILD_WEBHOOK" == "true" ]]   && images_to_sign+=( "${GHCR_REPO}-webhook:$FULL_TAG" )
     fi
     for img in "${images_to_sign[@]}"; do
       cosign_sign_docker_image "$img" || {

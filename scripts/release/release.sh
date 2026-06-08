@@ -31,6 +31,18 @@ ALL_COMPONENTS=(
   pypi
   rubygems
   github
+  mcp
+  client-go
+  client-dotnet
+  client-rust
+  client-php
+  tc-node
+  tc-python
+  tc-dotnet
+  tc-go
+  tc-rust
+  vscode
+  jetbrains
 )
 
 usage() {

@@ -15,3 +15,5 @@ sites = {
   "6-1" = { bucket_name = "aws-website-mockserver-6-1" }
   "7-0" = { bucket_name = "aws-website-mockserver-7-0" }
 }
+
+mcp_dns_public_key = "umXq2Fc19DKCTu8MHO9y9FsReiKju+xc6EUXBHNZBFY="

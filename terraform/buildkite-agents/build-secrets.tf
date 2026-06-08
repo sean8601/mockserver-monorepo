@@ -228,6 +228,17 @@ data "aws_secretsmanager_secret" "ghcr_token" {
   name = "mockserver-release/ghcr-token"
 }
 
+# MCP registry DNS key (mockserver-release/mcp-dns-key, key: private_key) is
+# created out of band — it holds an ed25519 private key we don't want in
+# Terraform state. Read by scripts/release/components/mcp.sh (release queue) to
+# `mcp-publisher login dns` and publish server.json to the official MCP registry
+# under the DNS-verified com.mock-server namespace; the matching public key is
+# in the mock-server.com apex TXT record (terraform/website/mcp-dns.tf).
+# Referenced as a data source purely for its ARN in the IAM grant below.
+data "aws_secretsmanager_secret" "mcp_dns_key" {
+  name = "mockserver-release/mcp-dns-key"
+}
+
 # Release-only secrets.
 resource "aws_iam_policy" "read_release_secrets" {
   name        = "buildkite-read-release-secrets"
@@ -248,19 +259,26 @@ resource "aws_iam_policy" "read_release_secrets" {
           aws_secretsmanager_secret.website_role.arn,
           data.aws_secretsmanager_secret.cosign.arn,
           data.aws_secretsmanager_secret.ghcr_token.arn,
+          data.aws_secretsmanager_secret.mcp_dns_key.arn,
         ]
       },
       {
-        # docker.sh and helm.sh gate cosign signing behind
-        # `aws secretsmanager describe-secret mockserver-release/cosign-key`
-        # (a value-free "is signing configured?" probe). DescribeSecret is a
-        # distinct action from GetSecretValue, so without this grant the probe
-        # fails with AccessDenied and BOTH signers silently skip — publishing
-        # the chart and images unsigned (no Artifact Hub "Signed" badge).
-        # Metadata-only; the key value is still read via GetSecretValue above.
-        Effect   = "Allow"
-        Action   = "secretsmanager:DescribeSecret"
-        Resource = data.aws_secretsmanager_secret.cosign.arn
+        # Several release components gate on a value-free
+        # `aws secretsmanager describe-secret` probe ("is this configured?")
+        # before reading the value. DescribeSecret is a distinct action from
+        # GetSecretValue, so without this grant the probe fails with AccessDenied
+        # and the feature silently skips:
+        #   - cosign-key  -> docker.sh + helm.sh image/chart signing
+        #   - ghcr-token  -> docker.sh GHCR image mirror (MIRROR_GHCR gate)
+        #   - mcp-dns-key -> mcp.sh MCP registry publish gate
+        # Metadata-only; the values are still read via GetSecretValue above.
+        Effect = "Allow"
+        Action = "secretsmanager:DescribeSecret"
+        Resource = [
+          data.aws_secretsmanager_secret.cosign.arn,
+          data.aws_secretsmanager_secret.ghcr_token.arn,
+          data.aws_secretsmanager_secret.mcp_dns_key.arn,
+        ]
       },
       {
         # Cross-account assume of the website-release role.
