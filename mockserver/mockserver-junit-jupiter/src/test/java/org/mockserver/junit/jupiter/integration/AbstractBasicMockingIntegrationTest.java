@@ -463,12 +463,12 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 headersToIgnore), is(response()
                 .withStatusCode(OK_200.code())
                 .withReasonPhrase(OK_200.reasonPhrase())
-                .withHeader("x-next", "some_string_value")
+                .withHeader("x-next", "eum")
                 .withHeader("content-type", "application/json")
                 .withBody(json("[ {" + NEW_LINE +
-                    "  \"id\" : 0," + NEW_LINE +
-                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"id\" : 1994," + NEW_LINE +
+                    "  \"name\" : \"modi\"," + NEW_LINE +
+                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
                     "} ]", MediaType.APPLICATION_JSON))));
         assertThat(makeRequest(
                 request()
@@ -492,9 +492,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 .withReasonPhrase(OK_200.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"id\" : 0," + NEW_LINE +
-                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"id\" : 1994," + NEW_LINE +
+                    "  \"name\" : \"modi\"," + NEW_LINE +
+                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON))));
 
         // and
@@ -504,12 +504,12 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 .thenRespond(
                     response()
                         .withStatusCode(200)
-                        .withHeader("x-next", "some_string_value")
+                        .withHeader("x-next", "eum")
                         .withHeader("content-type", "application/json")
                         .withBody(json("[ {" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "} ]"))
                 )
         ));
@@ -527,9 +527,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -540,9 +540,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -572,8 +572,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 .withReasonPhrase(INTERNAL_SERVER_ERROR_500.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"code\" : 0," + NEW_LINE +
-                    "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"code\" : 126," + NEW_LINE +
+                    "  \"message\" : \"qui\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON))));
         assertThat(makeRequest(
                 request()
@@ -589,8 +589,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 .withReasonPhrase(OK_200.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"code\" : 0," + NEW_LINE +
-                    "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"code\" : 126," + NEW_LINE +
+                    "  \"message\" : \"qui\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON))));
         assertThat(makeRequest(
                 request()
@@ -602,9 +602,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                 .withReasonPhrase(OK_200.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"id\" : 0," + NEW_LINE +
-                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"id\" : 1994," + NEW_LINE +
+                    "  \"name\" : \"modi\"," + NEW_LINE +
+                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON))));
 
         // and
@@ -616,8 +616,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                         .withStatusCode(500)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -627,8 +627,8 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                     response()
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -639,9 +639,9 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractMockin
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));

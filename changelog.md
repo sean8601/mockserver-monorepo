@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **CI** — the build pipeline now runs unit tests for the new Go, .NET, Rust and PHP libraries, the five Testcontainers modules and the editor extensions (each in its language toolchain Docker image), triggered by changes under their paths.
+- **OpenAPI example generation** — when an OpenAPI schema has no explicit `example` or `default`, generated example values are now realistic and format-aware (via Datafaker) instead of static placeholders. String formats (`email`, `uuid`, `date-time`, `uri`, `hostname`, `ipv4`, `ipv6`, `byte`, `password`) and numeric constraints (`minimum`/`maximum`, `minLength`/`maxLength`) are respected. Output is deterministic (seeded) so generated mocks are stable across restarts.
 
 ### Fixed
 

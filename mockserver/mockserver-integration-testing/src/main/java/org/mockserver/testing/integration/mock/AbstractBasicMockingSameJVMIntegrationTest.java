@@ -466,12 +466,12 @@ public abstract class AbstractBasicMockingSameJVMIntegrationTest extends Abstrac
             response()
                 .withStatusCode(OK_200.code())
                 .withReasonPhrase(OK_200.reasonPhrase())
-                .withHeader("x-next", "some_string_value")
+                .withHeader("x-next", "eum")
                 .withHeader("content-type", "application/json")
                 .withBody(json("[ {" + NEW_LINE +
-                    "  \"id\" : 0," + NEW_LINE +
-                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"id\" : 1994," + NEW_LINE +
+                    "  \"name\" : \"modi\"," + NEW_LINE +
+                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
                     "} ]", MediaType.APPLICATION_JSON)),
             makeRequest(
                 request()
@@ -503,9 +503,9 @@ public abstract class AbstractBasicMockingSameJVMIntegrationTest extends Abstrac
                 .withReasonPhrase(OK_200.reasonPhrase())
                 .withHeader("content-type", "application/json")
                 .withBody(json("{" + NEW_LINE +
-                    "  \"id\" : 0," + NEW_LINE +
-                    "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                    "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                    "  \"id\" : 1994," + NEW_LINE +
+                    "  \"name\" : \"modi\"," + NEW_LINE +
+                    "  \"tag\" : \"dolorem\"" + NEW_LINE +
                     "}", MediaType.APPLICATION_JSON)),
             makeRequest(
                 request()
@@ -523,12 +523,12 @@ public abstract class AbstractBasicMockingSameJVMIntegrationTest extends Abstrac
                 .thenRespond(
                     response()
                         .withStatusCode(200)
-                        .withHeader("x-next", "some_string_value")
+                        .withHeader("x-next", "eum")
                         .withHeader("content-type", "application/json")
                         .withBody(json("[ {" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "} ]"))
                 )
         ));
@@ -546,9 +546,9 @@ public abstract class AbstractBasicMockingSameJVMIntegrationTest extends Abstrac
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -559,9 +559,9 @@ public abstract class AbstractBasicMockingSameJVMIntegrationTest extends Abstrac
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));

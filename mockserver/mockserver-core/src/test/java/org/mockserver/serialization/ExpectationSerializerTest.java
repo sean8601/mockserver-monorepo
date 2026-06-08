@@ -99,8 +99,8 @@ public class ExpectationSerializerTest {
                         .withStatusCode(500)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -110,8 +110,8 @@ public class ExpectationSerializerTest {
                     response()
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -122,9 +122,9 @@ public class ExpectationSerializerTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -165,8 +165,8 @@ public class ExpectationSerializerTest {
                         .withStatusCode(500)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -176,8 +176,8 @@ public class ExpectationSerializerTest {
                     response()
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -188,9 +188,9 @@ public class ExpectationSerializerTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));

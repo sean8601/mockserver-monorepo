@@ -76,22 +76,22 @@ public class OpenAPIConverterTest {
                 .thenRespond(
                     response()
                         .withStatusCode(200)
-                        .withHeader("x-next", "some_string_value")
+                        .withHeader("x-next", "eum")
                         .withHeader("content-type", "application/json")
                         .withBody(json("[ {" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"," + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"," + NEW_LINE +
                             "  \"accessories\" : [ {" + NEW_LINE +
-                            "    \"id\" : 0," + NEW_LINE +
-                            "    \"name\" : \"some_string_value\"," + NEW_LINE +
+                            "    \"id\" : 3360," + NEW_LINE +
+                            "    \"name\" : \"itaque\"," + NEW_LINE +
                             "    \"pet\" : {" + NEW_LINE +
-                            "      \"id\" : 0," + NEW_LINE +
-                            "      \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "      \"tag\" : \"some_string_value\"," + NEW_LINE +
+                            "      \"id\" : 5756," + NEW_LINE +
+                            "      \"name\" : \"hic\"," + NEW_LINE +
+                            "      \"tag\" : \"labore\"," + NEW_LINE +
                             "      \"accessories\" : [ {" + NEW_LINE +
-                            "        \"id\" : 0," + NEW_LINE +
-                            "        \"name\" : \"some_string_value\"" + NEW_LINE +
+                            "        \"id\" : 9060," + NEW_LINE +
+                            "        \"name\" : \"quam\"" + NEW_LINE +
                             "      } ]" + NEW_LINE +
                             "    }" + NEW_LINE +
                             "  } ]" + NEW_LINE +
@@ -112,19 +112,19 @@ public class OpenAPIConverterTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"," + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"," + NEW_LINE +
                             "  \"accessories\" : [ {" + NEW_LINE +
-                            "    \"id\" : 0," + NEW_LINE +
-                            "    \"name\" : \"some_string_value\"," + NEW_LINE +
+                            "    \"id\" : 3360," + NEW_LINE +
+                            "    \"name\" : \"itaque\"," + NEW_LINE +
                             "    \"pet\" : {" + NEW_LINE +
-                            "      \"id\" : 0," + NEW_LINE +
-                            "      \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "      \"tag\" : \"some_string_value\"," + NEW_LINE +
+                            "      \"id\" : 5756," + NEW_LINE +
+                            "      \"name\" : \"hic\"," + NEW_LINE +
+                            "      \"tag\" : \"labore\"," + NEW_LINE +
                             "      \"accessories\" : [ {" + NEW_LINE +
-                            "        \"id\" : 0," + NEW_LINE +
-                            "        \"name\" : \"some_string_value\"" + NEW_LINE +
+                            "        \"id\" : 9060," + NEW_LINE +
+                            "        \"name\" : \"quam\"" + NEW_LINE +
                             "      } ]" + NEW_LINE +
                             "    }" + NEW_LINE +
                             "  } ]" + NEW_LINE +
@@ -138,19 +138,19 @@ public class OpenAPIConverterTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"," + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"," + NEW_LINE +
                             "  \"accessories\" : [ {" + NEW_LINE +
-                            "    \"id\" : 0," + NEW_LINE +
-                            "    \"name\" : \"some_string_value\"," + NEW_LINE +
+                            "    \"id\" : 3360," + NEW_LINE +
+                            "    \"name\" : \"itaque\"," + NEW_LINE +
                             "    \"pet\" : {" + NEW_LINE +
-                            "      \"id\" : 0," + NEW_LINE +
-                            "      \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "      \"tag\" : \"some_string_value\"," + NEW_LINE +
+                            "      \"id\" : 5756," + NEW_LINE +
+                            "      \"name\" : \"hic\"," + NEW_LINE +
+                            "      \"tag\" : \"labore\"," + NEW_LINE +
                             "      \"accessories\" : [ {" + NEW_LINE +
-                            "        \"id\" : 0," + NEW_LINE +
-                            "        \"name\" : \"some_string_value\"" + NEW_LINE +
+                            "        \"id\" : 9060," + NEW_LINE +
+                            "        \"name\" : \"quam\"" + NEW_LINE +
                             "      } ]" + NEW_LINE +
                             "    }" + NEW_LINE +
                             "  } ]" + NEW_LINE +
@@ -1059,12 +1059,12 @@ public class OpenAPIConverterTest {
                 .thenRespond(
                     response()
                         .withStatusCode(200)
-                        .withHeader("x-next", "some_string_value")
+                        .withHeader("x-next", "eum")
                         .withHeader("content-type", "application/json")
                         .withBody(json("[ {" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "} ]"))
                 )
         ));
@@ -1082,9 +1082,9 @@ public class OpenAPIConverterTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -1095,9 +1095,9 @@ public class OpenAPIConverterTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -1112,8 +1112,8 @@ public class OpenAPIConverterTest {
                         .withStatusCode(500)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -1123,8 +1123,8 @@ public class OpenAPIConverterTest {
                     response()
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -1135,9 +1135,9 @@ public class OpenAPIConverterTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"id\" : 0," + NEW_LINE +
-                            "  \"name\" : \"some_string_value\"," + NEW_LINE +
-                            "  \"tag\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"id\" : 1994," + NEW_LINE +
+                            "  \"name\" : \"modi\"," + NEW_LINE +
+                            "  \"tag\" : \"dolorem\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -1283,8 +1283,8 @@ public class OpenAPIConverterTest {
                         .withHeader("content-type", "application/json")
                         .withHeader("x-code", "90")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
@@ -1294,8 +1294,8 @@ public class OpenAPIConverterTest {
                     response()
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"code\" : 0," + NEW_LINE +
-                            "  \"message\" : \"some_string_value\"" + NEW_LINE +
+                            "  \"code\" : 126," + NEW_LINE +
+                            "  \"message\" : \"qui\"" + NEW_LINE +
                             "}"))
                 )
         ));
