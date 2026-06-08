@@ -24,6 +24,7 @@ import ServiceChaosPanel from './components/ServiceChaosPanel';
 import DriftPanel from './components/DriftPanel';
 import VerificationView from './components/VerificationView';
 import AsyncApiPanel from './components/AsyncApiPanel';
+import OnboardingPanel from './components/OnboardingPanel';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import GenerateStubDialog from './components/GenerateStubDialog';
 import type { RequestFilter } from './types';
@@ -118,6 +119,7 @@ export default function App() {
               {error}
             </Alert>
           )}
+          {view === 'get-started' && <OnboardingPanel connectionParams={params} />}
           {view === 'dashboard' && <DashboardGrid />}
           {view === 'traffic' && <TrafficInspector />}
           {view === 'sessions' && <SessionInspector connectionParams={params} />}

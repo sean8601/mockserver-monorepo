@@ -24,6 +24,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import TrafficIcon from '@mui/icons-material/Traffic';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
@@ -255,6 +256,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             },
           }}
         >
+          <ToggleButton value="get-started" aria-label="Get started view">
+            <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Get Started
+          </ToggleButton>
           <ToggleButton value="dashboard" aria-label="Dashboard view">
             <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Dashboard
