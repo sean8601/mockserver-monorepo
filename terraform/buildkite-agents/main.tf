@@ -16,17 +16,18 @@ provider "aws" {
 locals {
   account_id = data.aws_caller_identity.current.account_id
   policy_arn = {
-    read_build_secrets_default = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_default.name}"
-    read_build_secrets_release = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_release.name}"
-    read_release_secrets       = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_release_secrets.name}"
-    read_dockerhub_secret         = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_secret.name}"
-    read_dockerhub_release_secret = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_release_secret.name}"
+    read_build_secrets_default        = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_default.name}"
+    read_build_secrets_release        = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_build_secrets_release.name}"
+    read_release_secrets              = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_release_secrets.name}"
+    read_dockerhub_secret             = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_secret.name}"
+    read_dockerhub_release_secret     = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_dockerhub_release_secret.name}"
     read_buildkite_api_token          = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token.name}"
     read_buildkite_api_token_readonly = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token_readonly.name}"
-    ecr_public_push            = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_push.name}"
-    perf_results               = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.perf_results.name}"
-    release_website_tfstate    = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.release_website_tfstate.name}"
-    dependency_cache           = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.dependency_cache.name}"
+    ecr_public_push                   = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_push.name}"
+    perf_results                      = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.perf_results.name}"
+    release_website_tfstate           = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.release_website_tfstate.name}"
+    dependency_cache                  = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.dependency_cache.name}"
+    imds_hardening                    = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.imds_hardening.name}"
   }
 }
 
@@ -47,12 +48,16 @@ module "buildkite_stack" {
   agents_per_instance         = 1
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
+  # Lower the IMDS hop limit to 1 at boot so untrusted PR-build containers cannot
+  # reach IMDS and steal the agent instance-role credentials (imds-hardening.tf).
+  bootstrap_script_url = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_build_secrets_default,
     local.policy_arn.read_dockerhub_secret,
-    local.policy_arn.ecr_public_push,                # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
-    local.policy_arn.dependency_cache,               # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
+    local.policy_arn.ecr_public_push,                   # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
+    local.policy_arn.dependency_cache,                  # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
     local.policy_arn.read_buildkite_api_token_readonly, # change detection (generate-pipeline.sh -> last-successful-commit.sh)
+    local.policy_arn.imds_hardening,                    # fetch the boot script + lower own IMDS hop limit
   ]
 }
 
@@ -73,9 +78,11 @@ module "buildkite_trigger_stack" {
   agents_per_instance         = 4
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
+  bootstrap_script_url        = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_buildkite_api_token,          # trigger-pipeline.sh creates/cancels child builds (write)
     local.policy_arn.read_buildkite_api_token_readonly, # perf-test-guard.sh change detection (read) runs on this queue
+    local.policy_arn.imds_hardening,
   ]
 }
 
@@ -102,10 +109,12 @@ module "buildkite_perf_stack" {
   agents_per_instance         = 1
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
+  bootstrap_script_url        = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_buildkite_api_token,          # Buildkite API token (commit guard / compare)
     local.policy_arn.read_buildkite_api_token_readonly, # read-only token for change-detection comparisons
     local.policy_arn.perf_results,                      # S3 results history bucket
+    local.policy_arn.imds_hardening,
   ]
 }
 
@@ -126,6 +135,7 @@ module "buildkite_release_stack" {
   agents_per_instance         = 1
   associate_public_ip_address = true
   imdsv2_tokens               = "required"
+  bootstrap_script_url        = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_build_secrets_release,
     local.policy_arn.read_release_secrets,
@@ -133,5 +143,6 @@ module "buildkite_release_stack" {
     local.policy_arn.ecr_public_push,
     local.policy_arn.release_website_tfstate,
     local.policy_arn.dependency_cache, # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
+    local.policy_arn.imds_hardening,
   ]
 }
