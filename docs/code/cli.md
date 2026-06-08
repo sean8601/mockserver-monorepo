@@ -228,7 +228,11 @@ overrides JVM options.
 
 **Cross-build from one host:** jlink targets another OS/arch by using the host `jlink` with the
 target JDK's `--jmods` (host and target JDK must share the major version). `--os`/`--arch` name the
-archive; Windows produces a `.zip` with `bin/mockserver.bat`.
+archive; Windows produces a `.zip` with `bin/mockserver.bat`. `scripts/build-all-bundles.sh`
+orchestrates this for every platform — it downloads a same-version Temurin JDK per target (cached
+under `--cache`), then invokes the builder for each `{os}/{arch}`
+(`linux/x86_64 linux/aarch64 darwin/x86_64 darwin/aarch64 windows/x86_64`). Validated: a macOS host
+produces genuine Linux (ELF) and Windows (PE32+) runtimes.
 
 ## Source files
 

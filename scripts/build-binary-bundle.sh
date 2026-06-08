@@ -113,8 +113,8 @@ fi
 # mislabelled (e.g. a macOS runtime inside a *-linux-*.tar.gz). Warn loudly.
 REL="$JMODS/../release"
 if [[ -f "$REL" ]]; then
-  jos=$(grep -E '^OS_NAME=' "$REL" | cut -d= -f2 | tr -d '"' | tr 'A-Z' 'a-z' || true)
-  jarch=$(grep -E '^OS_ARCH=' "$REL" | cut -d= -f2 | tr -d '"' | tr 'A-Z' 'a-z' || true)
+  jos=$(grep -E '^OS_NAME=' "$REL" | cut -d= -f2 | tr -d '"\r' | tr 'A-Z' 'a-z' || true)
+  jarch=$(grep -E '^OS_ARCH=' "$REL" | cut -d= -f2 | tr -d '"\r' | tr 'A-Z' 'a-z' || true)
   case "$jos" in *darwin*|*mac*) jos=darwin ;; *linux*) jos=linux ;; *windows*) jos=windows ;; esac
   case "$jarch" in amd64|x86_64) jarch=x86_64 ;; arm64|aarch64) jarch=aarch64 ;; esac
   if [[ -n "$jos" && -n "$jarch" && ( "$jos" != "$OS" || "$jarch" != "$ARCH" ) ]]; then
