@@ -136,7 +136,7 @@ public class SampleDataGenerator {
         if (max <= min) {
             return min;
         }
-        return min + random.nextInt(max - min);
+        return min + random.nextInt(max - min + 1);
     }
 
     public long longValue(BigDecimal minimum, BigDecimal maximum) {
@@ -145,7 +145,7 @@ public class SampleDataGenerator {
         if (max <= min) {
             return min;
         }
-        return min + ((long) (random.nextDouble() * (max - min)));
+        return min + ((long) (random.nextDouble() * (max - min + 1)));
     }
 
     public float floatValue(BigDecimal minimum, BigDecimal maximum) {

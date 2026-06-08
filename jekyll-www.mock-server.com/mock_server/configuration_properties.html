@@ -1237,6 +1237,22 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.openAPIResponseValidation="true"</code></pre>
 </div>
 
+<button id="button_configuration_generate_realistic_example_values" class="accordion title"><strong>Generate Realistic Example Values</strong></button>
+<div class="panel title">
+    <p>When enabled, OpenAPI example responses that have no explicit <span class="inline_code">example</span> value are filled with realistic, format-aware fake data (e.g. plausible emails, dates, UUIDs) instead of static placeholders. The generated values are deterministic (same seed produces the same output).</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">new Configuration().generateRealisticExampleValues(true)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.generateRealisticExampleValues=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_GENERATE_REALISTIC_EXAMPLE_VALUES=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.generateRealisticExampleValues=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.generateRealisticExampleValues="true"</code></pre>
+</div>
+
 <a id="async_messaging_configuration" class="anchor" href="#async_messaging_configuration">&nbsp;</a>
 
 <h2>Async Messaging Configuration:</h2>

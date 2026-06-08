@@ -1283,6 +1283,32 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetGenerateRealisticExampleValues() {
+        boolean original = ConfigurationProperties.generateRealisticExampleValues();
+        try {
+            // then - default value
+            assertThat(configuration.generateRealisticExampleValues(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.generateRealisticExampleValues(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.generateRealisticExampleValues(), equalTo(true));
+            assertThat(System.getProperty("mockserver.generateRealisticExampleValues"), equalTo("true"));
+            assertThat(configuration.generateRealisticExampleValues(), equalTo(true));
+            ConfigurationProperties.generateRealisticExampleValues(original);
+
+            // when - setter
+            configuration.generateRealisticExampleValues(true);
+
+            // then - getter
+            assertThat(configuration.generateRealisticExampleValues(), equalTo(true));
+        } finally {
+            ConfigurationProperties.generateRealisticExampleValues(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetAttachMismatchDiagnosticToResponse() {
         boolean original = ConfigurationProperties.attachMismatchDiagnosticToResponse();
         try {

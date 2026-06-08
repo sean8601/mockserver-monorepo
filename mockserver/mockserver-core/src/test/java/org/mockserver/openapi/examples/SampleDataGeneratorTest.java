@@ -146,14 +146,14 @@ public class SampleDataGeneratorTest {
     public void shouldRespectIntegerMinMax() {
         SampleDataGenerator gen = new SampleDataGenerator();
         int value = gen.integer(BigDecimal.valueOf(10), BigDecimal.valueOf(20));
-        assertThat(value, is(both(greaterThanOrEqualTo(10)).and(lessThan(20))));
+        assertThat(value, is(both(greaterThanOrEqualTo(10)).and(lessThanOrEqualTo(20))));
     }
 
     @Test
     public void shouldRespectLongMinMax() {
         SampleDataGenerator gen = new SampleDataGenerator();
         long value = gen.longValue(BigDecimal.valueOf(100), BigDecimal.valueOf(200));
-        assertThat(value, is(both(greaterThanOrEqualTo(100L)).and(lessThan(200L))));
+        assertThat(value, is(both(greaterThanOrEqualTo(100L)).and(lessThanOrEqualTo(200L))));
     }
 
     @Test
