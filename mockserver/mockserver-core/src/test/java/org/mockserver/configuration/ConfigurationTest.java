@@ -2901,11 +2901,24 @@ public class ConfigurationTest {
     }
 
     @Test
-    public void shouldApplyDevModeDefaultsWhenEnabled() {
+    public void shouldApplyDevModeDefaultsWhenEnabled() throws Exception {
         boolean originalDevMode = ConfigurationProperties.devMode();
         int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
         int originalMaxExpectations = ConfigurationProperties.maxExpectations();
         try {
+            // given - clear any explicitly-set maxLogEntries/maxExpectations (cache + system property) that
+            // a prior or parallel test may have leaked into the shared static ConfigurationProperties state.
+            // Dev mode only applies its defaults to properties the user has NOT explicitly set, so a leaked
+            // value would otherwise make this assertion non-deterministic.
+            java.lang.reflect.Field cacheField = ConfigurationProperties.class.getDeclaredField("propertyCache");
+            cacheField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> cache = (java.util.Map<String, String>) cacheField.get(null);
+            cache.remove("mockserver.maxLogEntries");
+            System.clearProperty("mockserver.maxLogEntries");
+            cache.remove("mockserver.maxExpectations");
+            System.clearProperty("mockserver.maxExpectations");
+
             // when
             ConfigurationProperties.devMode(true);
 
