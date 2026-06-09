@@ -1264,7 +1264,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 <button id="button_configuration_validate_proxy_openapi_spec" class="accordion title"><strong>Validation Proxy OpenAPI Spec</strong></button>
 <div class="panel title">
-    <p>When set to an OpenAPI spec URL, file path, or inline JSON/YAML payload, MockServer validates every forwarded/proxied request and its upstream response against the spec. Violations are recorded as <span class="inline_code">OPENAPI_RESPONSE_VALIDATION_FAILED</span> log events. By default, validation is report-only and does not block traffic. To block non-conformant traffic, also enable <span class="inline_code">validateProxyEnforce</span>.</p>
+    <p>When set to an OpenAPI spec URL, file path, or inline JSON/YAML payload, MockServer validates every forwarded/proxied request and its upstream response against the spec. Request violations are recorded as <span class="inline_code">OPENAPI_REQUEST_VALIDATION_FAILED</span> log events and response violations as <span class="inline_code">OPENAPI_RESPONSE_VALIDATION_FAILED</span> log events. By default, validation is report-only and does not block traffic. To block non-conformant traffic, also enable <span class="inline_code">validateProxyEnforce</span>.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span> (disabled)</p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.validateProxyOpenAPISpec(String specUrlOrPayload)</code></pre>
@@ -1280,7 +1280,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 <button id="button_configuration_validate_proxy_enforce" class="accordion title"><strong>Validation Proxy Enforce</strong></button>
 <div class="panel title">
-    <p>When enabled (and <span class="inline_code">validateProxyOpenAPISpec</span> is set), forwarded requests that violate the OpenAPI spec are rejected with a 400, and upstream responses that violate the spec are replaced with a 502. When disabled (the default), violations are logged but traffic flows unmodified.</p>
+    <p>When enabled (and <span class="inline_code">validateProxyOpenAPISpec</span> is set), forwarded requests that violate the OpenAPI spec are rejected with a 400, and non-streaming upstream responses that violate the spec are replaced with a 502. Streaming responses cannot be replaced after their body has been written to the client, so they are validated in report-only mode (violations logged but not blocked) even when enforce is enabled. When disabled (the default), violations are logged but traffic flows unmodified.</p>
     <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.validateProxyEnforce(boolean enable)</code></pre>

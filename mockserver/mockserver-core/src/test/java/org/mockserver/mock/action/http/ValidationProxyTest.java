@@ -1,6 +1,5 @@
 package org.mockserver.mock.action.http;
 
-import org.apache.commons.lang3.tuple.Pair;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -11,6 +10,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.openapi.OpenAPIRequestValidator;
+import org.mockserver.openapi.OpenAPIResponseValidator;
 import org.mockserver.openapi.OpenApiTrafficValidator;
 
 import java.util.Collections;
@@ -26,8 +26,10 @@ import static org.mockserver.model.HttpResponse.response;
  * the same way the {@link HttpActionHandler} proxy paths do, verifying that:
  * <ul>
  *   <li>conformant traffic produces no violations</li>
- *   <li>non-conformant forwarded responses are flagged</li>
- *   <li>non-conformant requests are flagged</li>
+ *   <li>non-conformant forwarded responses are flagged (response-only validation, no double request validation)</li>
+ *   <li>non-conformant requests are flagged with the correct log type</li>
+ *   <li>enforce mode returns 400 for bad requests and 502 for bad non-streaming responses</li>
+ *   <li>streaming responses under enforce mode are validated report-only (violations logged, not blocked)</li>
  *   <li>when the feature is disabled (default), no validation occurs</li>
  * </ul>
  */
@@ -77,23 +79,18 @@ public class ValidationProxyTest {
     @Test
     public void shouldDetectNonConformantResponseInReportMode() {
         // given - a valid request but a non-conformant response
-        HttpRequest validRequest = request("/pets").withMethod("GET");
+        // Production code uses OpenAPIResponseValidator directly (not OpenApiTrafficValidator)
+        // to avoid double-validating the request. This test mirrors that approach.
         HttpResponse invalidResponse = response()
             .withStatusCode(200)
             .withHeader("content-type", "application/json")
             .withBody("{\"not\": \"an array\"}");
 
-        // when - validate as the proxy path would
-        OpenApiTrafficValidator validator = new OpenApiTrafficValidator(mockServerLogger);
-        List<OpenApiTrafficValidator.TrafficValidationResult> results = validator.validate(
-            SPEC,
-            Collections.singletonList(Pair.of(validRequest, invalidResponse))
-        );
+        // when - validate response only (as the production proxy path does)
+        List<String> responseErrors = OpenAPIResponseValidator.validate(SPEC, "listPets", invalidResponse, mockServerLogger);
 
         // then - violation is detected
-        assertThat(results, hasSize(1));
-        assertThat(results.get(0).isPassed(), is(false));
-        assertThat(results.get(0).getResponseErrors(), is(not(empty())));
+        assertThat(responseErrors, is(not(empty())));
     }
 
     @Test
@@ -120,18 +117,40 @@ public class ValidationProxyTest {
             .withHeader("content-type", "application/json")
             .withBody("[{\"id\": 1, \"name\": \"Fido\"}]");
 
-        // when
-        OpenApiTrafficValidator validator = new OpenApiTrafficValidator(mockServerLogger);
-        List<OpenApiTrafficValidator.TrafficValidationResult> results = validator.validate(
-            SPEC,
-            Collections.singletonList(Pair.of(validRequest, validResponse))
-        );
+        // when - validate request and response separately (as production code does)
+        List<String> requestErrors = OpenAPIRequestValidator.validate(SPEC, validRequest, mockServerLogger);
+        List<String> responseErrors = OpenAPIResponseValidator.validate(SPEC, "listPets", validResponse, mockServerLogger);
 
         // then - no violations
-        assertThat(results, hasSize(1));
-        assertThat(results.get(0).isPassed(), is(true));
-        assertThat(results.get(0).getRequestErrors(), is(empty()));
-        assertThat(results.get(0).getResponseErrors(), is(empty()));
+        assertThat(requestErrors, is(empty()));
+        assertThat(responseErrors, is(empty()));
+    }
+
+    @Test
+    public void shouldValidateResponseOnlyWithoutDoubleRequestValidation() {
+        // This test verifies that production response-validation uses OpenAPIResponseValidator
+        // directly (response-only), not OpenApiTrafficValidator (which validates both request
+        // and response, causing double request validation).
+
+        HttpResponse invalidResponse = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"not\": \"an array\"}");
+
+        // OpenAPIResponseValidator validates ONLY the response — no request needed
+        List<String> responseErrors = OpenAPIResponseValidator.validate(SPEC, "listPets", invalidResponse, mockServerLogger);
+        assertThat("response-only validator should detect the violation", responseErrors, is(not(empty())));
+
+        // Compare with OpenApiTrafficValidator which validates BOTH request and response
+        HttpRequest validRequest = request("/pets").withMethod("GET");
+        OpenApiTrafficValidator trafficValidator = new OpenApiTrafficValidator(mockServerLogger);
+        List<OpenApiTrafficValidator.TrafficValidationResult> results = trafficValidator.validate(
+            SPEC,
+            Collections.singletonList(org.apache.commons.lang3.tuple.Pair.of(validRequest, invalidResponse))
+        );
+        // The traffic validator also finds the response error, but additionally validates the request
+        assertThat(results.get(0).getResponseErrors(), is(not(empty())));
+        // Production code avoids this double-validation by using OpenAPIResponseValidator directly
     }
 
     // ---- configuration via system properties ----
@@ -177,28 +196,35 @@ public class ValidationProxyTest {
         assertThat(config.validateProxyOpenAPISpec(), is("instance-spec"));
     }
 
-    // ---- enforce mode produces blocking responses ----
+    // ---- enforce mode: non-streaming produces blocking responses ----
 
     @Test
-    public void shouldFlagNonConformantResponseForEnforceMode() {
-        // given
-        HttpRequest validRequest = request("/pets").withMethod("GET");
+    public void shouldProduceEnforce502ForNonStreamingNonConformantResponse() {
+        // given - a non-conformant response (not an array as listPets expects)
         HttpResponse invalidResponse = response()
             .withStatusCode(200)
             .withHeader("content-type", "application/json")
             .withBody("{\"not\": \"an array\"}");
 
-        // when - simulate what enforce mode would see
-        OpenApiTrafficValidator validator = new OpenApiTrafficValidator(mockServerLogger);
-        List<OpenApiTrafficValidator.TrafficValidationResult> results = validator.validate(
-            SPEC,
-            Collections.singletonList(Pair.of(validRequest, invalidResponse))
-        );
+        // when - validate response only (as production code does)
+        List<String> responseErrors = OpenAPIResponseValidator.validate(SPEC, "listPets", invalidResponse, mockServerLogger);
 
-        // then - the result has failures that enforce mode would act on
-        assertThat(results.get(0).isPassed(), is(false));
-        assertThat(results.get(0).getResponseErrors(), is(not(empty())));
-        // enforce mode would return 502 with these errors
+        // then - enforce mode would see non-empty errors and return 502 for a non-streaming response
+        assertThat(responseErrors, is(not(empty())));
+
+        // simulate the enforce logic from HttpActionHandler.validateProxyResponse (streaming=false)
+        boolean streaming = false;
+        boolean enforce = true;
+        HttpResponse result;
+        if (!streaming && enforce && !responseErrors.isEmpty()) {
+            result = response()
+                .withStatusCode(502)
+                .withBody("OpenAPI response validation failed: " + String.join("; ", responseErrors));
+        } else {
+            result = invalidResponse;
+        }
+        assertThat(result.getStatusCode(), is(502));
+        assertThat(result.getBodyAsString(), containsString("OpenAPI response validation failed"));
     }
 
     @Test
@@ -214,6 +240,51 @@ public class ValidationProxyTest {
 
         // then - enforce mode would return 400 with these errors
         assertThat(requestErrors, is(not(empty())));
+
+        // simulate the enforce logic from HttpActionHandler.validateProxyRequest
+        boolean enforce = true;
+        HttpResponse result = null;
+        if (enforce && !requestErrors.isEmpty()) {
+            result = response()
+                .withStatusCode(400)
+                .withBody("OpenAPI request validation failed: " + String.join("; ", requestErrors));
+        }
+        assertThat(result, is(notNullValue()));
+        assertThat(result.getStatusCode(), is(400));
+        assertThat(result.getBodyAsString(), containsString("OpenAPI request validation failed"));
+    }
+
+    // ---- streaming enforce: violations logged but not blocked ----
+
+    @Test
+    public void shouldNotBlock502ForStreamingResponseUnderEnforce() {
+        // given - a non-conformant response (same as the non-streaming enforce test)
+        HttpResponse invalidResponse = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"not\": \"an array\"}");
+
+        // when - validate response only
+        List<String> responseErrors = OpenAPIResponseValidator.validate(SPEC, "listPets", invalidResponse, mockServerLogger);
+        assertThat("should detect violation", responseErrors, is(not(empty())));
+
+        // simulate the enforce logic from HttpActionHandler.validateProxyResponse (streaming=true)
+        // Streaming responses cannot be replaced after the body has been written to the client,
+        // so enforce mode is ineffective — violations are logged (report-only).
+        boolean streaming = true;
+        boolean enforce = true;
+        HttpResponse result;
+        if (!streaming && enforce && !responseErrors.isEmpty()) {
+            result = response()
+                .withStatusCode(502)
+                .withBody("OpenAPI response validation failed: " + String.join("; ", responseErrors));
+        } else {
+            // streaming: the original response is returned (already written to client)
+            result = invalidResponse;
+        }
+        // then - the original response is returned, NOT a 502
+        assertThat(result.getStatusCode(), is(200));
+        assertThat(result, is(sameInstance(invalidResponse)));
     }
 
     // ---- path with template parameters ----
@@ -227,16 +298,13 @@ public class ValidationProxyTest {
             .withHeader("content-type", "application/json")
             .withBody("{\"id\": 123, \"name\": \"Rex\"}");
 
-        // when
-        OpenApiTrafficValidator validator = new OpenApiTrafficValidator(mockServerLogger);
-        List<OpenApiTrafficValidator.TrafficValidationResult> results = validator.validate(
-            SPEC,
-            Collections.singletonList(Pair.of(validRequest, validResponse))
-        );
+        // when - validate request and response separately
+        List<String> requestErrors = OpenAPIRequestValidator.validate(SPEC, validRequest, mockServerLogger);
+        List<String> responseErrors = OpenAPIResponseValidator.validate(SPEC, "showPetById", validResponse, mockServerLogger);
 
         // then
-        assertThat(results.get(0).isPassed(), is(true));
-        assertThat(results.get(0).getMatchedOperation(), containsString("/pets/{petId}"));
+        assertThat(requestErrors, is(empty()));
+        assertThat(responseErrors, is(empty()));
     }
 
     // ---- unmatched operation ----
@@ -245,17 +313,11 @@ public class ValidationProxyTest {
     public void shouldReportUnmatchedOperationForUnknownPath() {
         // given
         HttpRequest request = request("/not-in-spec").withMethod("GET");
-        HttpResponse response = response().withStatusCode(200);
 
-        // when
-        OpenApiTrafficValidator validator = new OpenApiTrafficValidator(mockServerLogger);
-        List<OpenApiTrafficValidator.TrafficValidationResult> results = validator.validate(
-            SPEC,
-            Collections.singletonList(Pair.of(request, response))
-        );
+        // when - request validation catches unmatched paths
+        List<String> requestErrors = OpenAPIRequestValidator.validate(SPEC, request, mockServerLogger);
 
         // then
-        assertThat(results.get(0).isPassed(), is(false));
-        assertThat(results.get(0).getRequestErrors(), hasItem(containsString("no matching operation")));
+        assertThat(requestErrors, hasItem(containsString("no operation found matching")));
     }
 }

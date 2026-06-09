@@ -70,7 +70,9 @@ public class ConfigurationDTOTest {
             .logLevel(Level.TRACE)
             .maxExpectations(42)
             .maxLogEntries(1234)
-            .enableCORSForAPI(true);
+            .enableCORSForAPI(true)
+            .validateProxyOpenAPISpec("https://example.com/spec.json")
+            .validateProxyEnforce(true);
 
         ConfigurationDTO dto = new ConfigurationDTO(original);
         Configuration rebuilt = dto.buildObject();
@@ -79,6 +81,8 @@ public class ConfigurationDTOTest {
         assertThat(rebuilt.maxExpectations(), is(original.maxExpectations()));
         assertThat(rebuilt.maxLogEntries(), is(original.maxLogEntries()));
         assertThat(rebuilt.enableCORSForAPI(), is(original.enableCORSForAPI()));
+        assertThat(rebuilt.validateProxyOpenAPISpec(), is(original.validateProxyOpenAPISpec()));
+        assertThat(rebuilt.validateProxyEnforce(), is(original.validateProxyEnforce()));
     }
 
     @Test(expected = IllegalArgumentException.class)

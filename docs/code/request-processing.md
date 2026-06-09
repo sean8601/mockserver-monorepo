@@ -576,31 +576,37 @@ Patterns support exact hostnames (`example.com`), wildcard prefixes (`*.internal
 
 ### Validation Proxy (OpenAPI Contract Validation on Forwarded Traffic)
 
-When `validateProxyOpenAPISpec` is set (to an OpenAPI spec URL, file path, or inline JSON/YAML), MockServer validates every forwarded/proxied request and its upstream response against the spec. This applies to both the unmatched proxy forward path and the ProxyPass reverse-proxy path. Violations are logged as `OPENAPI_RESPONSE_VALIDATION_FAILED` log entries.
+When `validateProxyOpenAPISpec` is set (to an OpenAPI spec URL, file path, or inline JSON/YAML), MockServer validates every forwarded/proxied request and its upstream response against the spec. This applies to both the unmatched proxy forward path and the ProxyPass reverse-proxy path. Request violations are logged as `OPENAPI_REQUEST_VALIDATION_FAILED` and response violations as `OPENAPI_RESPONSE_VALIDATION_FAILED` log entries.
 
-By default, validation is **report-only**: traffic flows unmodified and violations are only logged. When `validateProxyEnforce` is set to `true`, non-conformant requests are rejected with a **400** status code before they reach the upstream, and non-conformant upstream responses are replaced with a **502**.
+By default, validation is **report-only**: traffic flows unmodified and violations are only logged. When `validateProxyEnforce` is set to `true`, non-conformant requests are rejected with a **400** status code before they reach the upstream, and non-conformant **buffered** (non-streaming) upstream responses are replaced with a **502**.
 
-The validation uses the existing `OpenAPIRequestValidator` (for requests) and `OpenApiTrafficValidator` (for request/response pairs, which delegates to both `OpenAPIRequestValidator` and `OpenAPIResponseValidator`). No new validator code is introduced.
+**Streaming response limitation:** For streaming responses the body is written to the client as it arrives, before validation can inspect the complete body. In enforce mode, streaming responses are therefore validated in **report-only** fashion (violations logged but not blocked) even when `validateProxyEnforce=true`. Non-streaming responses are fully enforced.
+
+The validation uses `OpenAPIRequestValidator` for requests and `OpenAPIResponseValidator` for responses (response-only, avoiding the double request validation that `OpenApiTrafficValidator` would perform). Both validation phases run off the Netty event loop (inside the scheduler thread pool) to avoid blocking I/O threads on cold-cache OpenAPI spec parsing or JSON-schema validation.
 
 ```mermaid
 flowchart TD
     REQ([Forwarded Request]) --> SPEC_CHECK{"validateProxyOpenAPISpec\nset?"}
     SPEC_CHECK -->|No| FWD["Forward normally"]
-    SPEC_CHECK -->|Yes| REQ_VAL["Validate request\nagainst spec"]
+    SPEC_CHECK -->|Yes| REQ_VAL["Validate request\nagainst spec\n(off event loop)"]
     REQ_VAL -->|Valid| FWD
-    REQ_VAL -->|Invalid + enforce=false| LOG_REQ["Log violation"] --> FWD
+    REQ_VAL -->|Invalid + enforce=false| LOG_REQ["Log OPENAPI_REQUEST_VALIDATION_FAILED"] --> FWD
     REQ_VAL -->|Invalid + enforce=true| R400["Return 400"]
     FWD --> UPSTREAM["Upstream response"]
-    UPSTREAM --> RESP_VAL["Validate response\nagainst spec"]
+    UPSTREAM --> STREAMING{"Streaming\nresponse?"}
+    STREAMING -->|No| RESP_VAL["Validate response\nagainst spec"]
     RESP_VAL -->|Valid| RETURN["Return response"]
-    RESP_VAL -->|Invalid + enforce=false| LOG_RESP["Log violation"] --> RETURN
+    RESP_VAL -->|Invalid + enforce=false| LOG_RESP["Log OPENAPI_RESPONSE_VALIDATION_FAILED"] --> RETURN
     RESP_VAL -->|Invalid + enforce=true| R502["Return 502"]
+    STREAMING -->|Yes| WRITE_STREAM["Write streaming response\nto client"]
+    WRITE_STREAM --> STREAM_VAL["Validate on stream\ncompletion (report-only)"]
+    STREAM_VAL -->|Invalid| LOG_STREAM["Log OPENAPI_RESPONSE_VALIDATION_FAILED"]
 ```
 
 | Configuration Property | Type | Default | Description |
 |----------------------|------|---------|-------------|
 | `validateProxyOpenAPISpec` | String | `""` (disabled) | OpenAPI spec URL, file path, or inline payload to validate forwarded traffic against |
-| `validateProxyEnforce` | Boolean | `false` | When true, block non-conformant traffic (400 for bad requests, 502 for bad responses) |
+| `validateProxyEnforce` | Boolean | `false` | When true, block non-conformant traffic (400 for bad requests, 502 for bad non-streaming responses). Streaming responses are validated report-only. |
 
 ### Loop Prevention
 
