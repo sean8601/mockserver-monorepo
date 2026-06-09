@@ -48,5 +48,5 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
-    "integration: tests that require a running MockServer (started via Docker)",
+    "integration: tests that require external resources (running MockServer, live network)",
 ]
