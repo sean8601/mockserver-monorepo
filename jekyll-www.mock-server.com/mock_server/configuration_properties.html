@@ -27,8 +27,8 @@ sitemap:
 </ol>
 <p>Each level overrides the levels below it. For example, a system property overrides the same key in a property file, which in turn overrides an environment variable.</p>
 <p>When using <code>@MockServerTest</code>, properties prefixed with <code>mockserver.</code> (e.g. <code>mockserver.initializationClass=...</code>) are applied to the per-instance <code>Configuration</code> object, not to global system properties. This makes them safe for parallel test execution.</p>
-<p>Some properties need to be set before MockServer starts because they are only read at start-up, for example, <a href="#button_configuration_nio_event_loop_thread_count">nioEventLoopThreadCount</a>.</p>
-<p>Other values are read continuously and so can be changed at any time, for example, <a href="#button_configuration_log_level">logLevel</a>.</p>
+<p>Some properties need to be set before MockServer starts because they are only read at start-up, for example, <code>nioEventLoopThreadCount</code>.</p>
+<p>Other values are read continuously and so can be changed at any time, for example, <code>logLevel</code>.</p>
 
 <a id="programmatic_properties" class="anchor" href="#programmatic_properties">&nbsp;</a>
 
@@ -172,7 +172,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 <button id="button_configuration_request_log_size" class="accordion title"><strong>Maximum Log Entries To Hold In Memory</strong></button>
 <div class="panel title">
-    <p>Maximum number of log entries to hold in memory, this includes recorded requests, expectation match failures and other log entries. Log entries are stored in a circular queue so once this limit is reached the oldest entries are overwritten. The lower the <a href="#button_configuration_log_level">log level</a> the more log entries will be captured, particularly at TRACE level logging.</p>
+    <p>Maximum number of log entries to hold in memory, this includes recorded requests, expectation match failures and other log entries. Log entries are stored in a circular queue so once this limit is reached the oldest entries are overwritten. The lower the log level the more log entries will be captured, particularly at TRACE level logging.</p>
     <p>Type: <span class="keyword">int</span> Default: <span class="this_value">minimum of (free heap space in KB / 8) and 100000</span></p>
     <p>The default is calculated automatically based on available JVM heap memory. Each log entry typically uses 4-10 KB of heap for small request/response bodies, but log entries for large responses are proportionally larger (e.g., a 100 KB response body produces log entries of ~100+ KB each). Each HTTP request generates 2-3 log entries (request recording, expectation match, and response) that are always stored regardless of log level. With a 256 MB heap the default of approximately 20,000 entries covers around 7,000-10,000 HTTP requests before the oldest entries are evicted. For high-throughput use cases or large response bodies, reduce this value to limit memory usage and GC pressure. See <a href="/mock_server/performance.html#troubleshooting_performance">troubleshooting performance</a> for detailed guidance.</p>
     <p><strong>Power-of-2 sizing:</strong> the log ring buffer is implemented on top of the LMAX Disruptor, which rounds the configured size up to the next power of 2. Setting <span class="inline_code">maxLogEntries=10000</span> allocates 16,384 slots; setting <span class="inline_code">maxLogEntries=20000</span> allocates 32,768 slots. To minimise wasted heap, pick a power-of-2 value yourself: 4,096 (~32&nbsp;MB) / 16,384 (~131&nbsp;MB) / 65,536 (~524&nbsp;MB) are good starting points.</p>
@@ -637,7 +637,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 <button id="button_configuration_tls_allow_insecure_protocols" class="accordion title"><strong>Allow Insecure TLS Protocols</strong></button>
 <div class="panel title">
-    <p>Whether to honour TLSv1 and TLSv1.1 in <a href="#button_configuration_tls_protocols">tlsProtocols</a>. Both protocols are deprecated by RFC 8996 and vulnerable to BEAST and POODLE.</p>
+    <p>Whether to honour TLSv1 and TLSv1.1 in <code>tlsProtocols</code>. Both protocols are deprecated by RFC 8996 and vulnerable to BEAST and POODLE.</p>
     <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
     <p>The default is <span class="inline_code">true</span> for backwards compatibility &mdash; MockServer's <span class="inline_code">tlsProtocols</span> default still includes TLSv1 and TLSv1.1. Set this to <span class="inline_code">false</span> to opt into a hardened profile: any <span class="inline_code">TLSv1</span> or <span class="inline_code">TLSv1.1</span> entries in <span class="inline_code">tlsProtocols</span> are filtered out before the SSL context is built. A future major release is expected to flip this default to <span class="inline_code">false</span>.</p>
     <p>Java Code:</p>
@@ -1146,7 +1146,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <ul>
         <li><strong>Request breakpoints</strong> &mdash; hold the outbound request before it reaches the upstream server</li>
         <li><strong>Response breakpoints</strong> &mdash; hold the upstream response before it is written back to the client (non-streaming responses only)</li>
-        <li><strong>Stream frame breakpoints</strong> &mdash; hold each individual frame of a forwarded streaming response (SSE / HTTP/1.1 chunked) before it is written to the client, allowing per-frame inspection, modification, dropping, injection, or stream termination</li>
+        <li><strong>Stream frame breakpoints</strong> &mdash; hold each individual frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, or GraphQL subscription) before it is written to the client, allowing per-frame inspection, modification, dropping, injection, or stream termination</li>
     </ul>
     <p>At either phase you can inspect, modify, continue, or abort the exchange via the control-plane REST API. This is useful for debugging, manual testing, and step-through inspection of live traffic.</p>
     <p>When a breakpoint-paused exchange is not resolved within the timeout, it is automatically continued. The <code>breakpointMaxHeld</code> cap prevents resource exhaustion &mdash; when the cap is reached, new exchanges bypass the breakpoint and proceed normally. The implementation is fully non-blocking: paused exchanges do not consume scheduler threads or event-loop threads while waiting for resolution.</p>
@@ -1166,7 +1166,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointResponseEnabled=...</code></pre>
     <p>Environment Variable:</p>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED=...</code></pre>
-    <p><strong>Enable stream frame breakpoints</strong> &mdash; holds each frame of a forwarded streaming response (SSE and HTTP/1.1 chunked) before it is written to the client. Each frame can be continued, modified, dropped, injected after, or used to close the stream via the control-plane REST API. Independent of request and response breakpoints. Scoped to HTTP/1.1 chunked and SSE; gRPC, HTTP/2, and WebSocket streams are not intercepted (future work). Default is <code>false</code> (off, zero overhead).</p>
+    <p><strong>Enable stream frame breakpoints</strong> &mdash; holds each frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, and GraphQL subscription) before it is written to the client. Each frame can be continued, modified, dropped, injected after, or used to close the stream via the control-plane REST API. Independent of request and response breakpoints. Default is <code>false</code> (off, zero overhead).</p>
     <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointStreamEnabled(boolean enable)</code></pre>

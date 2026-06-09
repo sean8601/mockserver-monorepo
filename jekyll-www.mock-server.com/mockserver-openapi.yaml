@@ -1818,43 +1818,61 @@ paths:
         - control
       summary: list all currently paused stream frames
       description: >-
-        Returns a JSON object listing all stream frames currently held at a breakpoint.
-        Each entry includes the frame id, stream id, sequence number, captured bytes (Base64),
-        request method and path, and age. Requires breakpointStreamEnabled=true to have any entries.
+        Returns a JSON object listing all stream frames currently held at a breakpoint,
+        grouped by stream. Each stream entry includes the stream id and an array of its
+        paused frames. Each frame includes the frame id, sequence number, age, body length,
+        request method and path, direction (INBOUND/OUTBOUND), and a body preview (first
+        200 bytes as UTF-8 text). Requires breakpointStreamEnabled=true and/or breakpointInboundEnabled=true to have any entries.
       responses:
         '200':
-          description: list of paused stream frames
+          description: paused stream frames grouped by stream
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  pausedFrames:
+                  streams:
                     type: array
+                    description: one entry per active stream that has held frames
                     items:
                       type: object
                       properties:
-                        frameId:
-                          type: string
                         streamId:
                           type: string
-                        sequenceNumber:
-                          type: integer
-                        capturedBytes:
-                          type: string
-                          description: Base64-encoded frame payload
-                        requestMethod:
-                          type: string
-                        requestPath:
-                          type: string
-                        ageMillis:
-                          type: integer
-                  count:
+                          description: unique identifier for the stream
+                        frames:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              frameId:
+                                type: string
+                                description: unique identifier for this frame (used in action endpoints as the 'id' field)
+                              sequenceNumber:
+                                type: integer
+                                description: monotonically increasing position within the stream
+                              ageMillis:
+                                type: integer
+                                description: milliseconds since the frame was paused
+                              bodyLength:
+                                type: integer
+                                description: byte length of the captured frame payload
+                              requestMethod:
+                                type: string
+                                description: HTTP method of the originating request (if available)
+                              requestPath:
+                                type: string
+                                description: path of the originating request (if available)
+                              direction:
+                                type: string
+                                enum: [OUTBOUND, INBOUND]
+                                description: OUTBOUND for server-to-client frames, INBOUND for client-to-server frames
+                              bodyPreview:
+                                type: string
+                                description: first 200 bytes of the frame payload decoded as UTF-8 text
+                  totalHeldFrames:
                     type: integer
-                  activeStreams:
-                    type: array
-                    items:
-                      type: string
+                    description: total number of frames currently held across all streams
   /mockserver/breakpoint/stream/continue:
     put:
       tags:
@@ -1870,11 +1888,11 @@ paths:
             schema:
               type: object
               required:
-                - frameId
+                - id
               properties:
-                frameId:
+                id:
                   type: string
-                  description: the frame id of the paused stream frame to continue
+                  description: the frame id of the paused stream frame to continue (frameId from the list response)
       responses:
         '200':
           description: frame continued successfully
@@ -1886,10 +1904,10 @@ paths:
                   status:
                     type: string
                     enum: [continued]
-                  frameId:
+                  id:
                     type: string
         '400':
-          description: missing or unparseable body, or missing 'frameId' field
+          description: missing or unparseable body, or missing 'id' field
         '404':
           description: no paused frame found with the given id, or frame is not next in sequence order
   /mockserver/breakpoint/stream/modify:
@@ -1898,8 +1916,8 @@ paths:
         - control
       summary: modify and continue a paused stream frame
       description: >-
-        Resolves a breakpointed stream frame as MODIFY — the replacement body bytes
-        are written to the client instead of the original captured bytes.
+        Resolves a breakpointed stream frame as MODIFY — the replacement body text
+        is written to the client instead of the original captured bytes.
       requestBody:
         required: true
         content:
@@ -1907,15 +1925,15 @@ paths:
             schema:
               type: object
               required:
-                - frameId
+                - id
                 - body
               properties:
-                frameId:
+                id:
                   type: string
-                  description: the frame id of the paused stream frame to modify
+                  description: the frame id of the paused stream frame to modify (frameId from the list response)
                 body:
                   type: string
-                  description: Base64-encoded replacement body bytes
+                  description: replacement frame text (plain UTF-8 string); replaces the original frame payload
       responses:
         '200':
           description: frame modified successfully
@@ -1927,10 +1945,10 @@ paths:
                   status:
                     type: string
                     enum: [modified]
-                  frameId:
+                  id:
                     type: string
         '400':
-          description: missing body, missing 'frameId', or missing 'body' field
+          description: missing body, missing 'id', or missing 'body' field
         '404':
           description: no paused frame found with the given id, or frame is not next in sequence order
   /mockserver/breakpoint/stream/drop:
@@ -1948,11 +1966,11 @@ paths:
             schema:
               type: object
               required:
-                - frameId
+                - id
               properties:
-                frameId:
+                id:
                   type: string
-                  description: the frame id of the paused stream frame to drop
+                  description: the frame id of the paused stream frame to drop (frameId from the list response)
       responses:
         '200':
           description: frame dropped successfully
@@ -1964,10 +1982,10 @@ paths:
                   status:
                     type: string
                     enum: [dropped]
-                  frameId:
+                  id:
                     type: string
         '400':
-          description: missing or unparseable body, or missing 'frameId' field
+          description: missing or unparseable body, or missing 'id' field
         '404':
           description: no paused frame found with the given id, or frame is not next in sequence order
   /mockserver/breakpoint/stream/inject:
@@ -1977,7 +1995,7 @@ paths:
       summary: continue a paused stream frame and inject an additional frame after it
       description: >-
         Resolves a breakpointed stream frame as INJECT — the original captured bytes are
-        written to the client, followed by the additional injected body bytes.
+        written to the client, followed by the injected frame text.
       requestBody:
         required: true
         content:
@@ -1985,15 +2003,15 @@ paths:
             schema:
               type: object
               required:
-                - frameId
+                - id
                 - body
               properties:
-                frameId:
+                id:
                   type: string
-                  description: the frame id of the paused stream frame
+                  description: the frame id of the paused stream frame (frameId from the list response)
                 body:
                   type: string
-                  description: Base64-encoded additional body bytes to inject after the original frame
+                  description: additional frame text to inject after the original frame (plain UTF-8 string)
       responses:
         '200':
           description: frame continued and additional frame injected
@@ -2005,10 +2023,10 @@ paths:
                   status:
                     type: string
                     enum: [injected]
-                  frameId:
+                  id:
                     type: string
         '400':
-          description: missing body, missing 'frameId', or missing 'body' field
+          description: missing body, missing 'id', or missing 'body' field
         '404':
           description: no paused frame found with the given id, or frame is not next in sequence order
   /mockserver/breakpoint/stream/close:
@@ -2026,11 +2044,11 @@ paths:
             schema:
               type: object
               required:
-                - frameId
+                - id
               properties:
-                frameId:
+                id:
                   type: string
-                  description: the frame id of the paused stream frame at which to close
+                  description: the frame id of the paused stream frame at which to close (frameId from the list response)
       responses:
         '200':
           description: stream closed at the specified frame
@@ -2042,10 +2060,10 @@ paths:
                   status:
                     type: string
                     enum: [closed]
-                  frameId:
+                  id:
                     type: string
         '400':
-          description: missing or unparseable body, or missing 'frameId' field
+          description: missing or unparseable body, or missing 'id' field
         '404':
           description: no paused frame found with the given id, or frame is not next in sequence order
   /mockserver/chaosExperiment:

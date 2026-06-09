@@ -56,6 +56,9 @@
 - [File Storage](https://www.mock-server.com/mock_server/file_storage.html): Store, retrieve, list, and delete named binary or text files in MockServer's in-memory file store to use as response bodies, test fixtures, or certificate payloads
 - [CRUD Data Store](https://www.mock-server.com/mock_server/crud_data_store.html): Auto-generate a fully functional REST CRUD API over an in-memory JSON data store using a single PUT /mockserver/crud request, with no expectations required
 
+## Interactive Breakpoints
+- [Interactive Breakpoints](https://www.mock-server.com/mock_server/interactive_breakpoints.html): Pause live HTTP exchanges and streaming frames (SSE, gRPC server-streaming, WebSocket, GraphQL subscription) mid-flight, inspect or modify them, and continue, drop, inject, or close via the control-plane REST API
+
 ## Chaos Testing & Fault Injection
 - [Chaos Testing](https://www.mock-server.com/mock_server/chaos_testing.html): Inject errors, latency, and outages into mocked and proxied responses using declarative chaos profiles for resilience testing
 - [Chaos Proxy in Kubernetes](https://www.mock-server.com/mock_server/chaos_testing_kubernetes.html): Deploy MockServer as a chaos proxy in Kubernetes to inject faults into real service-to-service and external API calls using reverse proxy, egress proxy, and sidecar patterns

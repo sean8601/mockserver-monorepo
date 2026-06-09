@@ -11,7 +11,7 @@ sitemap:
   lastmod: 2026-06-09T00:00:00+01:00
 ---
 
-<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Eleven views are available from the navigation bar at the top of the page:</p>
+<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Twelve views are available from the navigation bar at the top of the page:</p>
 
 <ul>
     <li><strong><a href="#ui_get_started_section">Get Started</a></strong> — guided first-run view: import an OpenAPI spec, set up a proxy, try a quick-start recipe, or browse the docs</li>
@@ -20,10 +20,11 @@ sitemap:
     <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes, plus a <strong>Compare</strong> tab for diffing two captured runs side-by-side</li>
     <li><strong><a href="#ui_composer_section">Mocks</a></strong> — create or edit expectations of every kind (HTTP, gRPC, DNS, MCP, LLM), import them (OpenAPI, WSDL, HAR, Postman), and insert engine-aware template snippets without writing any code</li>
     <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files, WASM modules, and export traffic</li>
-    <li><strong><a href="#ui_chaos_section">Chaos</a></strong> — configure and inject HTTP, gRPC, and TCP faults that apply to all forwarded requests to a given upstream host or service. The HTTP fault set covers error responses, dropped connections, latency, body corruption, slow-response chunking, quotas/rate limits, count and time windows, gradual degradation, and a GraphQL error envelope, with a TTL so chaos auto-expires</li>
+    <li><strong><a href="#ui_chaos_section">Chaos</a></strong> — configure and inject HTTP, gRPC, and TCP faults (chaos experiments) that apply to all forwarded requests to a given upstream host or service. The HTTP fault set covers error responses, dropped connections, latency, body corruption, slow-response chunking, quotas/rate limits, count and time windows, gradual degradation, and a GraphQL error envelope, with a TTL so chaos auto-expires</li>
     <li><strong><a href="#ui_drift_section">Drift</a></strong> — review mock drift records where stubbed responses diverge from the real upstream</li>
     <li><strong><a href="#ui_verification_section">Verification</a></strong> — assert that MockServer received the requests you expected (a single request a given number of times, or an ordered sequence) without writing test code</li>
     <li><strong><a href="#ui_async_section">AsyncAPI</a></strong> — inspect the AsyncAPI broker mock: loaded spec, active channels, and messages recorded from broker subscriptions</li>
+    <li><strong><a href="#ui_breakpoints_section">Breakpoints</a></strong> — pause, inspect, and manipulate live stream frames (SSE, gRPC, WebSocket, GraphQL subscription) and request/response exchanges; see <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a></li>
     <li><strong><a href="#ui_metrics_section">Metrics</a></strong> — JVM, request-latency, chaos, expectations-by-type, and MCP-tool-call charts (shown when metrics are enabled)</li>
 </ul>
 
@@ -592,6 +593,16 @@ sitemap:
 </ul>
 
 <p>Load a spec from the <strong>AsyncAPI broker mock</strong> entry in the title-bar Tools menu (or via the <code>PUT /mockserver/asyncapi</code> endpoint). To see recorded messages, enable consumers in your broker configuration and publish messages to the channels. If the optional AsyncAPI module is not on the server's classpath, the view shows an <em>unavailable</em> notice instead.</p>
+
+<a id="ui_breakpoints_section" class="anchor" href="#ui_breakpoints_section">&nbsp;</a>
+
+<h2>Breakpoints</h2>
+
+<p>The Breakpoints view is the dashboard control panel for <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> — the ability to pause live HTTP exchanges and streaming frames mid-flight, inspect them, and decide how to continue. Enable breakpoints via the <code>breakpointEnabled</code>, <code>breakpointStreamEnabled</code>, or <code>breakpointInboundEnabled</code> configuration properties; the view shows <em>breakpoints disabled</em> when none are active.</p>
+
+<p>The view lists all currently paused exchanges and stream frames, grouped by stream. For each frame you can see the frame id, age, body preview, and direction (INBOUND/OUTBOUND). Actions available on each paused item: <strong>Continue</strong> (release unchanged), <strong>Modify</strong> (replace the body), <strong>Drop</strong> (discard), <strong>Inject</strong> (continue and add a new frame after it), or <strong>Close</strong> (terminate the stream). Request and response breakpoints show the full request or response for inspection and allow modification or abort before the exchange is forwarded.</p>
+
+<p>See <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> for the full REST API reference and configuration details.</p>
 
 <a id="ui_metrics_section" class="anchor" href="#ui_metrics_section">&nbsp;</a>
 

@@ -1229,17 +1229,17 @@ mock_server_chaos_auto_halt &gt; 0</code></pre>
 
 <button id="button_faq_rate_limit" class="accordion">How do I simulate a 429 rate limit with MockServer?</button>
 <div class="panel">
-    <p>Add a chaos profile to your expectation with <code class="inline code">errorStatus</code> set to <code class="inline code">429</code>, <code class="inline code">errorProbability</code> set to <code class="inline code">1.0</code> (for every request) or a fraction like <code class="inline code">0.3</code> (for 30% of requests), and an optional <code class="inline code">retryAfter</code> value. The chaos profile works on both mocked responses and forwarded/proxied upstream calls. See the <a href="#button_chaos_rate_limit">rate limiting example</a> above.</p>
+    <p>Add a chaos profile to your expectation with <code class="inline code">errorStatus</code> set to <code class="inline code">429</code>, <code class="inline code">errorProbability</code> set to <code class="inline code">1.0</code> (for every request) or a fraction like <code class="inline code">0.3</code> (for 30% of requests), and an optional <code class="inline code">retryAfter</code> value. The chaos profile works on both mocked responses and forwarded/proxied upstream calls. See the <a href="#request_quota">Request Quota</a> section above.</p>
 </div>
 
 <button id="button_faq_latency" class="accordion">How do I inject latency into API responses?</button>
 <div class="panel">
-    <p>Add a chaos profile with a <code class="inline code">latency</code> field specifying the delay duration and time unit (e.g. 2000 milliseconds). Latency is injected into every matched response regardless of whether an error is also injected. This works on both mocked and forwarded responses. See the <a href="#button_chaos_latency_injection">latency injection example</a> above.</p>
+    <p>Add a chaos profile with a <code class="inline code">latency</code> field specifying the delay duration and time unit (e.g. 2000 milliseconds). Latency is injected into every matched response regardless of whether an error is also injected. This works on both mocked and forwarded responses. See the <a href="#latency_injection">Latency Injection</a> section above.</p>
 </div>
 
 <button id="button_faq_proxy" class="accordion">Can I inject faults into a real upstream or proxy?</button>
 <div class="panel">
-    <p>Yes. Chaos profiles apply to forwarded and proxied responses, not just mocked ones. Set up a forward expectation pointing at your real upstream service and attach a chaos profile to inject errors or latency into the responses MockServer returns to the caller. See the <a href="#button_chaos_forward_proxy">forward/proxy example</a> and the <a href="#chaos_proxy">Chaos Proxy</a> section above.</p>
+    <p>Yes. Chaos profiles apply to forwarded and proxied responses, not just mocked ones. Set up a forward expectation pointing at your real upstream service and attach a chaos profile to inject errors or latency into the responses MockServer returns to the caller. See the <a href="#chaos_proxy">Chaos Proxy</a> section above.</p>
 </div>
 
 <button id="button_faq_reproducible" class="accordion">How do I make chaos test results reproducible?</button>
@@ -1254,7 +1254,7 @@ mock_server_chaos_auto_halt &gt; 0</code></pre>
 
 <button id="button_faq_fail_then_recover" class="accordion">How do I make a mock fail the first few requests then recover?</button>
 <div class="panel">
-    <p>Use the <code class="inline code">succeedFirst</code> and <code class="inline code">failRequestCount</code> fields on the chaos profile. Set <code class="inline code">succeedFirst</code> to <code class="inline code">0</code> (or omit it) and <code class="inline code">failRequestCount</code> to the number of requests that should fail. For example, <code class="inline code">failRequestCount: 2</code> with <code class="inline code">errorStatus: 503</code> and <code class="inline code">errorProbability: 1.0</code> makes the first 2 matching requests return 503, and all subsequent requests return the normal response. This is useful for testing retry logic and backoff strategies. See the <a href="#button_chaos_fail_then_recover">fail-then-recover example</a> and the <a href="#stateful_count_based_faults">Stateful / Count-Based Faults</a> section above.</p>
+    <p>Use the <code class="inline code">succeedFirst</code> and <code class="inline code">failRequestCount</code> fields on the chaos profile. Set <code class="inline code">succeedFirst</code> to <code class="inline code">0</code> (or omit it) and <code class="inline code">failRequestCount</code> to the number of requests that should fail. For example, <code class="inline code">failRequestCount: 2</code> with <code class="inline code">errorStatus: 503</code> and <code class="inline code">errorProbability: 1.0</code> makes the first 2 matching requests return 503, and all subsequent requests return the normal response. This is useful for testing retry logic and backoff strategies. See the <a href="#stateful_count_based_faults">Stateful / Count-Based Faults</a> section above.</p>
 </div>
 
 <button id="button_faq_graphql_partial_error" class="accordion">How do I simulate a GraphQL partial error (data present alongside errors)?</button>
