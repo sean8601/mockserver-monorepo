@@ -32,6 +32,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import StopIcon from '@mui/icons-material/Stop';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CallReceivedIcon from '@mui/icons-material/CallReceived';
+import CallMadeIcon from '@mui/icons-material/CallMade';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   fetchBreakpoints,
@@ -578,6 +580,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                         <TableHead>
                           <TableRow>
                             <TableCell>Seq</TableCell>
+                            <TableCell>Direction</TableCell>
                             <TableCell>Method</TableCell>
                             <TableCell>Path</TableCell>
                             <TableCell>Body Preview</TableCell>
@@ -593,6 +596,16 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                                 <Chip
                                   size="small"
                                   label={`#${frame.sequenceNumber}`}
+                                  variant="outlined"
+                                  sx={{ height: 20, fontSize: '0.65rem' }}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  icon={frame.direction === 'INBOUND' ? <CallReceivedIcon /> : <CallMadeIcon />}
+                                  label={frame.direction === 'INBOUND' ? 'Inbound' : 'Outbound'}
+                                  color={frame.direction === 'INBOUND' ? 'info' : 'default'}
                                   variant="outlined"
                                   sx={{ height: 20, fontSize: '0.65rem' }}
                                 />

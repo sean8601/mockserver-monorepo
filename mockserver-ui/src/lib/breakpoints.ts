@@ -129,6 +129,8 @@ export interface StreamFrame {
   requestMethod?: string;
   requestPath?: string;
   bodyPreview?: string;
+  /** Frame direction: INBOUND (client-to-server) or OUTBOUND (server-to-client). */
+  direction?: 'INBOUND' | 'OUTBOUND';
 }
 
 export interface StreamGroup {

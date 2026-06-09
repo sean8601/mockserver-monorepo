@@ -789,6 +789,85 @@ describe('BreakpointsPanel — Streams tab', () => {
     });
   });
 
+  it('renders Inbound direction chip for INBOUND frames', async () => {
+    stubBothEndpoints(emptyExchanges, {
+      totalHeldFrames: 1,
+      streams: [{
+        streamId: 'stream-dir',
+        frames: [
+          { frameId: 'stream-dir-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/ws', direction: 'INBOUND' },
+        ],
+      }],
+    });
+    renderPanel();
+    await switchToStreamsTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('stream-dir')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Inbound')).toBeInTheDocument();
+  });
+
+  it('renders Outbound direction chip for OUTBOUND frames', async () => {
+    stubBothEndpoints(emptyExchanges, {
+      totalHeldFrames: 1,
+      streams: [{
+        streamId: 'stream-out',
+        frames: [
+          { frameId: 'stream-out-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/sse', direction: 'OUTBOUND' },
+        ],
+      }],
+    });
+    renderPanel();
+    await switchToStreamsTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('stream-out')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Outbound')).toBeInTheDocument();
+  });
+
+  it('defaults to Outbound when direction is absent', async () => {
+    stubBothEndpoints(emptyExchanges, {
+      totalHeldFrames: 1,
+      streams: [{
+        streamId: 'stream-nodir',
+        frames: [
+          { frameId: 'stream-nodir-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/events' },
+        ],
+      }],
+    });
+    renderPanel();
+    await switchToStreamsTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('stream-nodir')).toBeInTheDocument();
+    });
+    // Should fall back to Outbound
+    expect(screen.getByText('Outbound')).toBeInTheDocument();
+  });
+
+  it('renders both direction chips when stream has mixed directions', async () => {
+    stubBothEndpoints(emptyExchanges, {
+      totalHeldFrames: 2,
+      streams: [{
+        streamId: 'stream-mixed',
+        frames: [
+          { frameId: 'stream-mixed-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/ws', direction: 'OUTBOUND' },
+          { frameId: 'stream-mixed-frame-1', sequenceNumber: 1, ageMillis: 300, bodyLength: 8, requestMethod: 'GET', requestPath: '/ws', direction: 'INBOUND' },
+        ],
+      }],
+    });
+    renderPanel();
+    await switchToStreamsTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('stream-mixed')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Outbound')).toBeInTheDocument();
+    expect(screen.getByText('Inbound')).toBeInTheDocument();
+  });
+
   it('shows total count combining exchanges and streams in the header badge', async () => {
     stubBothEndpoints(
       { count: 2, pausedExchanges: [
