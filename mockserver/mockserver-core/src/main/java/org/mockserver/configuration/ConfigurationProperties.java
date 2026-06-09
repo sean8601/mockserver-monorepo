@@ -946,29 +946,14 @@ public class ConfigurationProperties {
     }
 
     /**
-     * Enable or disable dev mode.
+     * Enable or disable dev mode. Dev-mode defaults for {@code maxLogEntries} and
+     * {@code maxExpectations} are applied lazily by the getters via
+     * {@link #devModeDefaultOrHeapBased} — no eager global-state mutation here.
      *
      * @param enable enable dev mode
      */
     public static void devMode(boolean enable) {
         setProperty(MOCKSERVER_DEV_MODE, "" + enable);
-        if (enable) {
-            applyDevModeDefaults();
-        }
-    }
-
-    /**
-     * Apply dev-mode defaults for properties the user has not explicitly set.
-     * An "explicitly set" property is one present as a JVM system property,
-     * an environment variable, or in the properties file.
-     */
-    static void applyDevModeDefaults() {
-        if (!isPropertyExplicitlySet(MOCKSERVER_MAX_LOG_ENTRIES, "MOCKSERVER_MAX_LOG_ENTRIES")) {
-            setProperty(MOCKSERVER_MAX_LOG_ENTRIES, "" + DEV_MODE_MAX_LOG_ENTRIES);
-        }
-        if (!isPropertyExplicitlySet(MOCKSERVER_MAX_EXPECTATIONS, "MOCKSERVER_MAX_EXPECTATIONS")) {
-            setProperty(MOCKSERVER_MAX_EXPECTATIONS, "" + DEV_MODE_MAX_EXPECTATIONS);
-        }
     }
 
     /**
@@ -995,9 +980,9 @@ public class ConfigurationProperties {
     /**
      * Returns the dev-mode default when {@code devMode()} is {@code true} and the user has NOT
      * explicitly set the given property via system property, environment variable, or properties
-     * file. Otherwise returns the normal heap-based default. This is the lazy counterpart to
-     * {@link #applyDevModeDefaults()} and ensures ALL activation paths (env var, system property,
-     * properties file) work — not only the CLI setter.
+     * file. Otherwise returns the normal heap-based default. This lazy approach ensures ALL
+     * activation paths (env var, system property, properties file, programmatic setter) work
+     * without mutating global state.
      */
     private static int devModeDefaultOrHeapBased(int devDefault, String systemPropertyKey, String envVarKey, int heapBasedDefault) {
         if (devMode() && !isPropertyExplicitlySet(systemPropertyKey, envVarKey)) {
