@@ -98,11 +98,13 @@ module MockServer
       def asset_url(version, file)
         base = ENV['MOCKSERVER_BINARY_BASE_URL'] ||
                "https://github.com/#{REPO}/releases/download/mockserver-#{version}"
-        # The negative look-behind anchors the run of trailing slashes to its
-        # first slash, so the match cannot restart at each '/'. This keeps the
-        # strip linear and avoids polynomial backtracking (ReDoS) on URLs with
-        # long slash runs (CWE-1333), which matters on Ruby < 3.2.
-        base.sub(%r{(?<!/)/+\z}, '') + '/' + file
+        # Strip trailing slashes with a single linear scan rather than a regex,
+        # so there is no ReDoS surface at all (CWE-1333) on the operator-supplied
+        # MOCKSERVER_BINARY_BASE_URL. Interior slashes are preserved; only the
+        # trailing run is removed.
+        last = base.length
+        last -= 1 while last.positive? && base[last - 1] == '/'
+        "#{base[0, last]}/#{file}"
       end
 
       # Return the expected launcher path inside a versioned cache directory.
