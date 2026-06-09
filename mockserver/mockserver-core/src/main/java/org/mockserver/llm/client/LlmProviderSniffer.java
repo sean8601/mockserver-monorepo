@@ -87,6 +87,11 @@ public final class LlmProviderSniffer {
 
         // Well-known provider hosts — no path gate required
         if (lowerHost.equals("api.openai.com")) {
+            // Distinguish the OpenAI Responses API (/responses) from the
+            // Chat Completions API so LlmClientRegistry uses the correct parser
+            if (path != null && path.toLowerCase().contains("/responses")) {
+                return Optional.of(Provider.OPENAI_RESPONSES);
+            }
             return Optional.of(Provider.OPENAI);
         }
         if (lowerHost.endsWith(".openai.azure.com")) {

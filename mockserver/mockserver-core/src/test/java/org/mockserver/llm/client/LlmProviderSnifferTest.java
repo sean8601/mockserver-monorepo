@@ -33,6 +33,27 @@ public class LlmProviderSnifferTest {
     }
 
     @Test
+    public void detectsOpenAiChatCompletionsPath() {
+        // api.openai.com with /v1/chat/completions → OPENAI (not OPENAI_RESPONSES)
+        assertThat(LlmProviderSniffer.sniffByHostAndPath("api.openai.com", "/v1/chat/completions"),
+            is(Optional.of(Provider.OPENAI)));
+    }
+
+    @Test
+    public void detectsOpenAiResponsesApiByPath() {
+        // api.openai.com with /v1/responses → OPENAI_RESPONSES
+        assertThat(LlmProviderSniffer.sniffByHostAndPath("api.openai.com", "/v1/responses"),
+            is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
+    public void detectsOpenAiResponsesApiWithTrailingId() {
+        // api.openai.com with /v1/responses/resp_abc123 → OPENAI_RESPONSES
+        assertThat(LlmProviderSniffer.sniffByHostAndPath("api.openai.com", "/v1/responses/resp_abc123"),
+            is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
     public void detectsAzureOpenAiByWildcardHost() {
         assertThat(LlmProviderSniffer.sniffByHost("my-deployment.openai.azure.com"), is(Optional.of(Provider.AZURE_OPENAI)));
     }
@@ -157,6 +178,15 @@ public class LlmProviderSnifferTest {
             .withPath("/v1/chat/completions")
             .withSocketAddress(true, "api.openai.com", 443);
         assertThat(LlmProviderSniffer.sniff(request), is(Optional.of(Provider.OPENAI)));
+    }
+
+    @Test
+    public void sniffsOpenAiResponsesApiFromRequest() {
+        HttpRequest request = request()
+            .withMethod("POST")
+            .withPath("/v1/responses")
+            .withSocketAddress(true, "api.openai.com", 443);
+        assertThat(LlmProviderSniffer.sniff(request), is(Optional.of(Provider.OPENAI_RESPONSES)));
     }
 
     @Test

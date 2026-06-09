@@ -2083,10 +2083,21 @@ public class HttpActionHandler {
                 // OpenTelemetry: emit a request-level span for the forwarded request
                 emitRequestSpan(request, effectiveResponse, action, ctx, responseTimeMs);
 
+                // Determine streaming BEFORE the breakpoint check so GenAI span can
+                // be emitted for non-streaming responses ahead of a possible early return.
+                boolean isStreaming = !chaosErrorInjected && effectiveResponse != null && effectiveResponse.getStreamingBody() != null;
+
+                // OpenTelemetry: emit GenAI span for non-streaming responses BEFORE the
+                // breakpoint check — a breakpoint-held response must still get a GenAI span
+                // capturing the original upstream response (mirrors unmatched-proxy path).
+                // Streaming GenAI spans are deferred to writeStreamingForwardActionResponse.
+                if (!isStreaming) {
+                    emitForwardGenAiSpan(responseFuture.getHttpRequest(), response);
+                }
+
                 // Response breakpoint: hold non-streaming responses before writing to client.
                 // IMPORTANT: does NOT block any thread — chains the client write onto the
                 // decision future via thenAcceptAsync (same pattern as request breakpoints).
-                boolean isStreaming = !chaosErrorInjected && effectiveResponse != null && effectiveResponse.getStreamingBody() != null;
                 if (!synchronous && !isStreaming && Boolean.TRUE.equals(configuration.breakpointResponseEnabled())) {
                     org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
                     org.mockserver.mock.breakpoint.PausedExchange responsePaused = breakpointRegistry.pauseResponse(
@@ -2143,8 +2154,7 @@ public class HttpActionHandler {
                     // inside writeStreamingForwardActionResponse where the full body is available
                     writeCommand = () -> writeStreamingForwardActionResponse(effectiveResponse, responseWriter, request, action, responseFuture, postProcessor);
                 } else {
-                    // Non-streaming path: body is fully available, emit GenAI span now
-                    emitForwardGenAiSpan(responseFuture.getHttpRequest(), response);
+                    // Non-streaming path: GenAI span already emitted above (before breakpoint check)
                     writeCommand = () -> {
                         responseWriter.writeResponse(request, effectiveResponse, false);
                         String logMessageFormat = chaosErrorInjected
