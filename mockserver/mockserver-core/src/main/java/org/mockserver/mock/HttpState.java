@@ -410,6 +410,7 @@ public class HttpState {
         org.mockserver.mock.dns.DnsIntentRegistry.getInstance().clear();
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().reset();
+        org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -1756,6 +1757,41 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/stream/continue", "/breakpoint/stream/continue")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleStreamFrameContinue(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/stream/modify", "/breakpoint/stream/modify")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleStreamFrameModify(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/stream/drop", "/breakpoint/stream/drop")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleStreamFrameDrop(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/stream/inject", "/breakpoint/stream/inject")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleStreamFrameInject(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/stream/close", "/breakpoint/stream/close")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleStreamFrameClose(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/debugMismatch", "/debugMismatch")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2110,6 +2146,12 @@ public class HttpState {
             if (request.matches("GET", PATH_PREFIX + "/breakpoint", "/breakpoint")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointList()), true);
+                }
+                return true;
+            }
+            if (request.matches("GET", PATH_PREFIX + "/breakpoint/streams", "/breakpoint/streams")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleStreamFrameList()), true);
                 }
                 return true;
             }
@@ -4208,5 +4250,172 @@ public class HttpState {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"internal error building response\"}", MediaType.JSON_UTF_8);
         }
+    }
+
+    // --- stream frame breakpoint control endpoints ---
+
+    private HttpResponse handleStreamFrameList() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry registry = org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance();
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode streamsArray = objectMapper.createArrayNode();
+
+            for (String streamId : registry.activeStreamIds()) {
+                com.fasterxml.jackson.databind.node.ObjectNode streamNode = objectMapper.createObjectNode();
+                streamNode.put("streamId", streamId);
+                com.fasterxml.jackson.databind.node.ArrayNode framesArray = objectMapper.createArrayNode();
+                for (org.mockserver.mock.breakpoint.PausedStreamFrame frame : registry.framesForStream(streamId)) {
+                    com.fasterxml.jackson.databind.node.ObjectNode frameNode = objectMapper.createObjectNode();
+                    frameNode.put("frameId", frame.getFrameId());
+                    frameNode.put("sequenceNumber", frame.getSequenceNumber());
+                    frameNode.put("ageMillis", frame.ageMillis());
+                    frameNode.put("bodyLength", frame.getCapturedBytes() != null ? frame.getCapturedBytes().length : 0);
+                    if (frame.getRequestMethod() != null) {
+                        frameNode.put("requestMethod", frame.getRequestMethod());
+                    }
+                    if (frame.getRequestPath() != null) {
+                        frameNode.put("requestPath", frame.getRequestPath());
+                    }
+                    // Include a preview of the frame body (first 200 bytes)
+                    if (frame.getCapturedBytes() != null && frame.getCapturedBytes().length > 0) {
+                        int previewLen = Math.min(frame.getCapturedBytes().length, 200);
+                        frameNode.put("bodyPreview", new String(frame.getCapturedBytes(), 0, previewLen, java.nio.charset.StandardCharsets.UTF_8));
+                    }
+                    framesArray.add(frameNode);
+                }
+                streamNode.set("frames", framesArray);
+                streamsArray.add(streamNode);
+            }
+            result.set("streams", streamsArray);
+            result.put("totalHeldFrames", registry.size());
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleStreamFrameContinue(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String frameId = extractFrameId(request, objectMapper);
+            if (frameId == null) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().resolveContinue(frameId);
+            return streamFrameResult(objectMapper, resolved, frameId, "continued");
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleStreamFrameModify(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with 'id' and 'body' fields\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String frameId = node.path("id").asText(null);
+            if (isBlank(frameId)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            String replacement = node.path("body").asText(null);
+            if (replacement == null) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'body' field is required for modify\"}", MediaType.JSON_UTF_8);
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance()
+                .resolveModify(frameId, replacement.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return streamFrameResult(objectMapper, resolved, frameId, "modified");
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleStreamFrameDrop(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String frameId = extractFrameId(request, objectMapper);
+            if (frameId == null) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().resolveDrop(frameId);
+            return streamFrameResult(objectMapper, resolved, frameId, "dropped");
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleStreamFrameInject(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with 'id' and 'body' fields\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String frameId = node.path("id").asText(null);
+            if (isBlank(frameId)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            String injectedBody = node.path("body").asText(null);
+            if (injectedBody == null) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'body' field is required for inject\"}", MediaType.JSON_UTF_8);
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance()
+                .resolveInject(frameId, injectedBody.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return streamFrameResult(objectMapper, resolved, frameId, "injected");
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleStreamFrameClose(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String frameId = extractFrameId(request, objectMapper);
+            if (frameId == null) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().resolveClose(frameId);
+            return streamFrameResult(objectMapper, resolved, frameId, "closed");
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private String extractFrameId(HttpRequest request, com.fasterxml.jackson.databind.ObjectMapper objectMapper) throws Exception {
+        String body = request.getBodyAsJsonOrXmlString();
+        if (isBlank(body)) {
+            return null;
+        }
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+        String id = node.path("id").asText(null);
+        return isBlank(id) ? null : id;
+    }
+
+    private HttpResponse streamFrameResult(com.fasterxml.jackson.databind.ObjectMapper objectMapper, boolean resolved, String frameId, String status) throws Exception {
+        if (!resolved) {
+            com.fasterxml.jackson.databind.node.ObjectNode errNode = objectMapper.createObjectNode();
+            errNode.put("error", "no held frame found with id: " + frameId + " (or a predecessor frame is still held)");
+            return response().withStatusCode(NOT_FOUND.code())
+                .withBody(objectMapper.writeValueAsString(errNode), MediaType.JSON_UTF_8);
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode resultNode = objectMapper.createObjectNode();
+        resultNode.put("status", status);
+        resultNode.put("id", frameId);
+        return response().withStatusCode(OK.code())
+            .withBody(objectMapper.writeValueAsString(resultNode), MediaType.JSON_UTF_8);
     }
 }

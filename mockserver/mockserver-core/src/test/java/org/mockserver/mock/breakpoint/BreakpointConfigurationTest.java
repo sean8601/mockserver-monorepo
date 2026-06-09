@@ -19,6 +19,7 @@ public class BreakpointConfigurationTest {
         // reset to defaults
         ConfigurationProperties.breakpointEnabled(false);
         ConfigurationProperties.breakpointResponseEnabled(false);
+        ConfigurationProperties.breakpointStreamEnabled(false);
         ConfigurationProperties.breakpointTimeoutMillis(30_000);
         ConfigurationProperties.breakpointMaxHeld(50);
     }
@@ -110,6 +111,32 @@ public class BreakpointConfigurationTest {
         assertThat(config.breakpointResponseEnabled(), is(true));
     }
 
+    // --- breakpointStreamEnabled ---
+
+    @Test
+    public void shouldDefaultBreakpointStreamEnabledToFalse() {
+        assertThat(ConfigurationProperties.breakpointStreamEnabled(), is(false));
+    }
+
+    @Test
+    public void shouldSetAndGetBreakpointStreamEnabled() {
+        ConfigurationProperties.breakpointStreamEnabled(true);
+        assertThat(ConfigurationProperties.breakpointStreamEnabled(), is(true));
+    }
+
+    @Test
+    public void shouldDelegateStreamEnabledToStaticWhenNull() {
+        Configuration config = Configuration.configuration();
+        assertThat(config.breakpointStreamEnabled(), is(false));
+    }
+
+    @Test
+    public void shouldUseInstanceOverrideForStreamEnabled() {
+        Configuration config = Configuration.configuration()
+            .breakpointStreamEnabled(true);
+        assertThat(config.breakpointStreamEnabled(), is(true));
+    }
+
     // --- default-off path ---
 
     @Test
@@ -119,5 +146,6 @@ public class BreakpointConfigurationTest {
         Configuration config = Configuration.configuration();
         assertThat("default is off", config.breakpointEnabled(), is(false));
         assertThat("response default is off", config.breakpointResponseEnabled(), is(false));
+        assertThat("stream default is off", config.breakpointStreamEnabled(), is(false));
     }
 }

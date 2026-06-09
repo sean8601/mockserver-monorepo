@@ -295,4 +295,28 @@ public class ConfigurationDTOTest {
         assertThat("breakpointEnabled should be unchanged", target.breakpointEnabled(), is(false));
         assertThat("breakpointResponseEnabled should be updated", target.breakpointResponseEnabled(), is(true));
     }
+
+    @Test
+    public void shouldRoundTripBreakpointStreamEnabled() {
+        Configuration original = configuration()
+            .breakpointStreamEnabled(true);
+
+        ConfigurationDTO dto = new ConfigurationDTO(original);
+        assertThat(dto.getBreakpointStreamEnabled(), is(true));
+
+        Configuration rebuilt = dto.buildObject();
+        assertThat(rebuilt.breakpointStreamEnabled(), is(true));
+    }
+
+    @Test
+    public void shouldApplyBreakpointStreamEnabledPartially() {
+        Configuration target = configuration()
+            .breakpointStreamEnabled(false);
+
+        ConfigurationDTO dto = new ConfigurationDTO();
+        dto.setBreakpointStreamEnabled(true);
+        dto.applyTo(target);
+
+        assertThat("breakpointStreamEnabled should be updated", target.breakpointStreamEnabled(), is(true));
+    }
 }

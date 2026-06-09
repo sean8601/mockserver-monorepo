@@ -48,6 +48,7 @@ public class Configuration {
     private Boolean mcpEnabled;
     private Boolean breakpointEnabled;
     private Boolean breakpointResponseEnabled;
+    private Boolean breakpointStreamEnabled;
     private Long breakpointTimeoutMillis;
     private Integer breakpointMaxHeld;
     private Boolean wasmEnabled;
@@ -567,6 +568,23 @@ public class Configuration {
      */
     public Configuration breakpointResponseEnabled(Boolean breakpointResponseEnabled) {
         this.breakpointResponseEnabled = breakpointResponseEnabled;
+        return this;
+    }
+
+    public Boolean breakpointStreamEnabled() {
+        if (breakpointStreamEnabled == null) {
+            return ConfigurationProperties.breakpointStreamEnabled();
+        }
+        return breakpointStreamEnabled;
+    }
+
+    /**
+     * Enable per-frame interactive breakpoints for forwarded streaming responses
+     * (SSE and HTTP/1.1 chunked). Each frame is paused and can be inspected, modified,
+     * dropped, or injected via the control-plane REST API. Default is false (off).
+     */
+    public Configuration breakpointStreamEnabled(Boolean breakpointStreamEnabled) {
+        this.breakpointStreamEnabled = breakpointStreamEnabled;
         return this;
     }
 

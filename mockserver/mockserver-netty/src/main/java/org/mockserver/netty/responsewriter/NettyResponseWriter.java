@@ -11,6 +11,9 @@ import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
+import org.mockserver.mock.breakpoint.PausedStreamFrame;
+import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
+import org.mockserver.mock.breakpoint.StreamFrameDecision;
 import org.mockserver.model.ConnectionOptions;
 import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
@@ -19,6 +22,7 @@ import org.mockserver.model.StreamingBody;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -86,6 +90,15 @@ public class NettyResponseWriter extends ResponseWriter {
         // Send the response head
         ctx.writeAndFlush(nettyResponse);
 
+        // Determine if stream-frame breakpoints are active for this response
+        final boolean streamBreakpointsActive = configuration.breakpointStreamEnabled();
+        // Use the request's log correlation id as the stream identifier
+        final String streamId = request.getLogCorrelationId() != null
+            ? request.getLogCorrelationId() + "-stream"
+            : java.util.UUID.randomUUID() + "-stream";
+        final String reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
+        final String reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+
         // Subscribe to the streaming body to forward chunks as they arrive.
         // After each chunk write completes, call streamingBody.requestMore() to trigger
         // the next upstream read — this implements backpressure so a slow client does not
@@ -93,17 +106,100 @@ public class NettyResponseWriter extends ResponseWriter {
         streamingBody.subscribe(
             // onChunk
             chunk -> {
-                if (ctx.channel().isActive()) {
-                    DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
-                    ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
-                } else {
+                if (!ctx.channel().isActive()) {
                     // Channel is no longer active; still request more so the upstream can
                     // detect the closed channel on the next read and clean up.
                     streamingBody.requestMore();
+                    return;
                 }
+
+                if (!streamBreakpointsActive) {
+                    // Default-off fast path: write the frame immediately (no interception)
+                    DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
+                    ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                    return;
+                }
+
+                // --- Stream-frame breakpoint path ---
+                // Copy the chunk bytes for the registry (the ByteBuf is owned by the caller)
+                byte[] chunkBytes = new byte[chunk.readableBytes()];
+                chunk.getBytes(chunk.readerIndex(), chunkBytes);
+
+                PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                    .pauseFrame(streamId, chunkBytes, reqMethod, reqPath, configuration);
+
+                if (pausedFrame == null) {
+                    // Cap reached — write the frame immediately (no breakpoint)
+                    DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
+                    ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                    return;
+                }
+
+                // Frame is parked. The original chunk ByteBuf is NOT retained — we copied
+                // the bytes above. The chunk will be released by StreamingBody after onChunk returns.
+                // We do NOT call streamingBody.requestMore() — this stops the upstream from
+                // sending more chunks (backpressure). We will call it after the frame is resolved.
+
+                // When the decision future completes (from control-plane API or timeout),
+                // execute the action on the channel's event loop to ensure thread safety.
+                pausedFrame.getDecisionFuture().thenAccept(decision -> {
+                    // Marshal onto the channel's event loop
+                    ctx.channel().eventLoop().execute(() -> {
+                        if (!ctx.channel().isActive()) {
+                            streamingBody.requestMore();
+                            return;
+                        }
+                        switch (decision.getAction()) {
+                            case CONTINUE: {
+                                DefaultHttpContent content = new DefaultHttpContent(
+                                    Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                                break;
+                            }
+                            case MODIFY: {
+                                DefaultHttpContent content = new DefaultHttpContent(
+                                    Unpooled.wrappedBuffer(decision.getReplacementBody()));
+                                ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                                break;
+                            }
+                            case DROP: {
+                                // Discard the frame — do not write anything to the client
+                                streamingBody.requestMore();
+                                break;
+                            }
+                            case INJECT: {
+                                // Write the original frame, then inject an additional frame
+                                DefaultHttpContent originalContent = new DefaultHttpContent(
+                                    Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                ctx.writeAndFlush(originalContent).addListener(future -> {
+                                    if (ctx.channel().isActive()) {
+                                        DefaultHttpContent injectedContent = new DefaultHttpContent(
+                                            Unpooled.wrappedBuffer(decision.getInjectedBody()));
+                                        ctx.writeAndFlush(injectedContent).addListener(f2 -> streamingBody.requestMore());
+                                    } else {
+                                        streamingBody.requestMore();
+                                    }
+                                });
+                                break;
+                            }
+                            case CLOSE: {
+                                // End the stream: send LastHttpContent and close
+                                ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> {
+                                    ctx.close();
+                                    // Do NOT request more — stream is ended
+                                });
+                                break;
+                            }
+                        }
+                    });
+                });
             },
             // onComplete
             () -> {
+                if (streamBreakpointsActive) {
+                    // Evict any remaining held frames for this stream (prevents leaks)
+                    StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+                }
                 if (ctx.channel().isActive()) {
                     ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> {
                         boolean closeChannel;
@@ -121,6 +217,10 @@ public class NettyResponseWriter extends ResponseWriter {
             },
             // onError
             error -> {
+                if (streamBreakpointsActive) {
+                    // Evict any remaining held frames for this stream (prevents leaks)
+                    StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+                }
                 if (ctx.channel().isActive()) {
                     ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> ctx.close());
                 }

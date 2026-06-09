@@ -63,6 +63,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_BREAKPOINT_ENABLED = "mockserver.breakpointEnabled";
     private static final String MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED = "mockserver.breakpointResponseEnabled";
+    private static final String MOCKSERVER_BREAKPOINT_STREAM_ENABLED = "mockserver.breakpointStreamEnabled";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
     private static final String MOCKSERVER_BREAKPOINT_MAX_HELD = "mockserver.breakpointMaxHeld";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
@@ -639,6 +640,22 @@ public class ConfigurationProperties {
      */
     public static void breakpointResponseEnabled(boolean enable) {
         setProperty(MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED, "" + enable);
+    }
+
+    public static boolean breakpointStreamEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_STREAM_ENABLED, "MOCKSERVER_BREAKPOINT_STREAM_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable per-frame interactive breakpoints for forwarded streaming responses
+     * (Server-Sent Events and HTTP/1.1 chunked). When enabled, each frame of a forwarded
+     * streaming response is paused and can be inspected, modified, dropped, or injected
+     * via the control-plane REST API before being written to the client. Default is false (off).
+     *
+     * @param enable enable stream frame breakpoints
+     */
+    public static void breakpointStreamEnabled(boolean enable) {
+        setProperty(MOCKSERVER_BREAKPOINT_STREAM_ENABLED, "" + enable);
     }
 
     public static long breakpointTimeoutMillis() {
