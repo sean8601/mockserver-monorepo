@@ -171,8 +171,13 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
                     }
                 };
 
+                // Generate an inbound stream ID for breakpoint interception.
+                // The ID includes the path and a UUID for uniqueness across concurrent streams.
+                String inboundStreamId = "grpc-bidi-inbound-" + path + "-" + UUIDService.getUUID();
+
                 GrpcBidiStreamHandler bidiHandler = new GrpcBidiStreamHandler(
-                    methodDescriptor, converter, matchResult.bidiResponse, completionCallback
+                    methodDescriptor, converter, matchResult.bidiResponse, completionCallback,
+                    configuration, inboundStreamId
                 );
 
                 pipeline.replace(this, "grpcBidiStream", bidiHandler);

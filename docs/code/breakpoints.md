@@ -5,7 +5,7 @@ Interactive breakpoints let you pause proxied/forwarded exchanges at four phases
 1. **Request breakpoints** (A1a) — hold the outbound request before it reaches the upstream server
 2. **Response breakpoints** (A1b) — hold the upstream response before it is written to the client
 3. **Stream frame breakpoints** (A1c + A1d) — hold each individual frame of a streaming response before it is written to the client. Covers both forwarded upstream streams (SSE / HTTP/1.1 chunked) and mock-generated streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted messages, WebSocket bidirectional responses, and GraphQL subscription pushes)
-4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
+4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription, gRPC-bidi) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
 
 Request and response breakpoints support inspect, modify, continue, and abort via the REST API.
 Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame.
@@ -118,32 +118,41 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
   - `GraphQLSubscriptionHandler.channelRead0` — GraphQL subscription inbound
     frames (A1e). The text content is copied to `byte[]` (UTF-8), the frame is
     released, and the copy is parked.
-- **gRPC-bidi inbound:** NOT intercepted in this pass. The `GrpcBidiStreamHandler`
-  operates above the HTTP/2 codec with explicit flow control (`autoRead=false`,
-  manual `ctx.read()` after each frame). Holding an inbound gRPC frame would
-  require careful HTTP/2 flow-control window management to avoid corrupting the
-  connection-level window. This is deferred as a follow-up.
+- **gRPC-bidi inbound:** `GrpcBidiStreamHandler.handleData` — gRPC bidirectional
+  streaming inbound DATA frames. When enabled, the handler copies the DATA frame
+  bytes to `byte[]` and releases the `Http2DataFrame` IMMEDIATELY (refunding the
+  HTTP/2 flow-control window), then parks the byte copy in the registry. The
+  existing pull-based model (`autoRead=false` + explicit `ctx.read()`) provides
+  backpressure: withholding `ctx.read()` prevents the next DATA frame from being
+  delivered. This decouples flow-control window refund (immediate) from
+  backpressure (deferred), so other streams on the same connection are NOT stalled.
+  `GrpcBidiRouterHandler` generates a per-stream inbound stream ID and passes it
+  along with the `Configuration` to the handler constructor.
 - Decision actions: CONTINUE (process the original frame), MODIFY (process a
   replacement frame), DROP (discard — do not process), INJECT (process original
-  + extra frame), CLOSE (evict stream, close channel).
-- **Backpressure:** when a frame is parked, `autoRead` is set to `false` on the
-  channel, preventing further inbound frames from being read. On resume (any
-  decision), `autoRead` is restored to `true` and `ctx.read()` is called to
-  request the next frame.
+  + extra frame), CLOSE (evict stream, send CANCELLED trailer, close stream).
+- **Backpressure:** WebSocket and GraphQL handlers use `autoRead=false` while
+  a frame is parked. The gRPC-bidi handler uses its existing pull-based model
+  (withholding `ctx.read()`) — no `autoRead` toggling needed since it is already
+  `false` from `handlerAdded`. On resume (any decision), `ctx.read()` is called
+  to request the next frame (or `finish()` is called if `endStream`).
 - **ByteBuf discipline:** the original `WebSocketFrame`'s ByteBuf is copied to
-  `byte[]` at park time and the frame is released immediately. Both handlers
-  use `super(false)` (no auto-release), so the handler manages release explicitly.
-  On resume, a new `WebSocketFrame` is reconstructed via
-  `Unpooled.wrappedBuffer(byte[])` for matcher evaluation or pipeline forwarding.
-  The reconstructed frame is released after use. No ByteBuf is retained across
-  the breakpoint hold period.
-- **Stream ID format:** inbound streams use `{correlationId}-ws-inbound` (distinct
-  from outbound `{correlationId}-ws-stream`).
+  `byte[]` at park time and the frame is released immediately. Both WebSocket
+  handlers use `super(false)` (no auto-release), so the handler manages release
+  explicitly. For gRPC-bidi, the `Http2DataFrame` is released in a `finally`
+  block immediately after byte copy — this refunds the HTTP/2 flow-control
+  window before any breakpoint parking delay. On resume, WebSocket frames are
+  reconstructed via `Unpooled.wrappedBuffer(byte[])` for matcher evaluation;
+  gRPC frames are passed as `byte[]` to the decoder. No ByteBuf is retained
+  across the breakpoint hold period.
+- **Stream ID format:** WebSocket inbound streams use `{correlationId}-ws-inbound`;
+  gRPC-bidi inbound streams use `grpc-bidi-inbound-{path}-{uuid}`.
 - **Direction field:** `PausedStreamFrame.direction` is `INBOUND` for client-to-server
   frames and `OUTBOUND` (default) for server-to-client frames. The REST API
   `/mockserver/breakpoint/streams` list endpoint includes a `direction` field.
-- **Channel close eviction:** `channelInactive` in both handlers evicts all held
-  inbound frames for the stream, preventing leaks and hanging futures.
+- **Channel close eviction:** `channelInactive` in all handlers (WebSocket,
+  GraphQL, and gRPC-bidi) evicts all held inbound frames for the stream,
+  preventing leaks and hanging futures.
 
 ## Safety rails
 

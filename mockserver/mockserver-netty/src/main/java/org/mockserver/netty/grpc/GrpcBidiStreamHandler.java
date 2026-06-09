@@ -9,12 +9,16 @@ import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
 import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.grpc.GrpcException;
 import org.mockserver.grpc.GrpcBidiRuleMatcher;
 import org.mockserver.grpc.GrpcFrameCodec;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.IncrementalGrpcFrameDecoder;
+import org.mockserver.mock.breakpoint.PausedStreamFrame;
+import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
+import org.mockserver.mock.breakpoint.StreamFrameDecision;
 import org.mockserver.model.Delay;
 import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.GrpcBidiRule;
@@ -22,6 +26,8 @@ import org.mockserver.model.GrpcStreamMessage;
 import org.mockserver.model.Header;
 import org.mockserver.model.Headers;
 import org.mockserver.model.NottableString;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -69,6 +75,8 @@ import java.util.function.Function;
  */
 public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
 
+    private static final Logger LOG = LoggerFactory.getLogger(GrpcBidiStreamHandler.class);
+
     private final Descriptors.MethodDescriptor methodDescriptor;
     private final GrpcJsonMessageConverter converter;
     private final IncrementalGrpcFrameDecoder decoder;
@@ -92,6 +100,10 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
     // stream that never reached finish() or writeTrailer().
     private final AtomicBoolean callbackInvoked = new AtomicBoolean(false);
 
+    // Inbound breakpoint fields — null when inbound breakpoints are disabled
+    private final Configuration configuration;
+    private final String inboundStreamId;
+
     /**
      * Phase 3a constructor: function-based responder (backward compatible).
      *
@@ -105,7 +117,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         Function<String, List<String>> responder
     ) {
-        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null);
+        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null, null, null);
     }
 
     /**
@@ -120,7 +132,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         GrpcBidiResponse config
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null, null, null);
     }
 
     /**
@@ -139,7 +151,28 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcBidiResponse config,
         Runnable completionCallback
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, null, null);
+    }
+
+    /**
+     * Phase 3b constructor: GrpcBidiResponse-driven with completion callback and inbound breakpoints.
+     *
+     * @param methodDescriptor   the resolved gRPC method descriptor
+     * @param converter          JSON/protobuf converter for the method's message types
+     * @param config             the GrpcBidiResponse configuration from the matched expectation
+     * @param completionCallback invoked once on stream finish to clear responseInProgress
+     * @param configuration      the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId    the stream ID for inbound breakpoints (null to disable)
+     */
+    public GrpcBidiStreamHandler(
+        Descriptors.MethodDescriptor methodDescriptor,
+        GrpcJsonMessageConverter converter,
+        GrpcBidiResponse config,
+        Runnable completionCallback,
+        Configuration configuration,
+        String inboundStreamId
+    ) {
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId);
     }
 
     /**
@@ -151,7 +184,9 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         Function<String, List<String>> responder,
         GrpcBidiResponse config,
         IncrementalGrpcFrameDecoder decoder,
-        Runnable completionCallback
+        Runnable completionCallback,
+        Configuration configuration,
+        String inboundStreamId
     ) {
         this.methodDescriptor = methodDescriptor;
         this.converter = converter;
@@ -159,6 +194,8 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         this.config = config;
         this.decoder = decoder;
         this.completionCallback = completionCallback;
+        this.configuration = configuration;
+        this.inboundStreamId = inboundStreamId;
         this.finished = false;
     }
 
@@ -242,33 +279,114 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         try {
             byte[] bytes = new byte[dataFrame.content().readableBytes()];
             dataFrame.content().readBytes(bytes);
-
-            List<byte[]> completedMessages = decoder.feed(bytes);
             boolean endStream = dataFrame.isEndStream();
 
-            // The continuation to run after all inbound messages from this DATA frame
-            // have had their responses (possibly delayed) written.
-            Runnable afterAllMessages = () -> {
-                if (endStream) {
-                    finish(ctx);
-                } else {
-                    ctx.read();
-                }
-            };
+            // --- Inbound breakpoint interception ---
+            // The Http2DataFrame is released in the finally block BEFORE any breakpoint
+            // parking delay, which immediately refunds the HTTP/2 flow-control window
+            // (both stream-level and connection-level). This is the key safety property:
+            // holding a breakpointed frame does NOT consume the connection flow-control
+            // window, so other streams on the same connection are not stalled.
+            //
+            // Backpressure while parked is provided by the existing pull-based model:
+            // we simply do not call ctx.read() until the breakpoint decision resolves.
+            // Because autoRead is already false (set in handlerAdded), Netty will not
+            // deliver the next DATA frame until we explicitly request it.
+            if (inboundStreamId != null && configuration != null
+                && Boolean.TRUE.equals(configuration.breakpointInboundEnabled())) {
 
-            if (completedMessages.isEmpty()) {
-                afterAllMessages.run();
+                PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
+                    .pauseFrame(inboundStreamId, bytes, "GRPC-INBOUND",
+                        methodDescriptor.getFullName(), configuration, PausedStreamFrame.Direction.INBOUND);
+
+                if (paused == null) {
+                    // Cap reached — process immediately (fall through to normal path)
+                    processDataBytes(ctx, bytes, endStream);
+                    return;
+                }
+
+                // Park: chain the decision onto the channel's event loop (NEVER block)
+                paused.getDecisionFuture().thenAccept(decision ->
+                    ctx.channel().eventLoop().execute(() -> {
+                        try {
+                            if (!ctx.channel().isActive()) {
+                                return;
+                            }
+
+                            switch (decision.getAction()) {
+                                case CONTINUE ->
+                                    processDataBytes(ctx, paused.getCapturedBytes(), endStream);
+                                case MODIFY ->
+                                    processDataBytes(ctx, decision.getReplacementBody(), endStream);
+                                case DROP -> {
+                                    // Discard: just request the next frame (or finish)
+                                    if (endStream) {
+                                        finish(ctx);
+                                    } else {
+                                        ctx.read();
+                                    }
+                                }
+                                case INJECT -> {
+                                    // Process original, then also process the injected bytes
+                                    processDataBytes(ctx, paused.getCapturedBytes(), false);
+                                    processDataBytes(ctx, decision.getInjectedBody(), endStream);
+                                }
+                                case CLOSE -> {
+                                    StreamFrameBreakpointRegistry.getInstance().evictStream(inboundStreamId);
+                                    writeTrailer(ctx, GrpcStatusMapper.GrpcStatusCode.CANCELLED, "stream closed by breakpoint");
+                                }
+                            }
+                        } catch (Exception e) {
+                            LOG.warn("error processing inbound breakpoint decision for gRPC stream {}",
+                                inboundStreamId, e);
+                            writeTrailer(ctx, GrpcStatusMapper.GrpcStatusCode.INTERNAL,
+                                e.getMessage() != null ? e.getMessage() : "breakpoint resume error");
+                        }
+                    })
+                ).exceptionally(ex -> {
+                    LOG.debug("inbound breakpoint decision callback failed for gRPC stream {}: {}",
+                        inboundStreamId, ex.getMessage());
+                    // Resume reading on failure so the stream is not stuck
+                    ctx.channel().eventLoop().execute(() -> ctx.read());
+                    return null;
+                });
                 return;
             }
 
-            // Process inbound messages sequentially, chaining the continuation through
-            // delayed rule responses so that finish/read happens only after all scheduled
-            // messages are written (preserving interleaving and finish ordering).
-            processInboundMessages(ctx, completedMessages, 0, afterAllMessages);
+            // --- Default path (no inbound breakpoints) ---
+            processDataBytes(ctx, bytes, endStream);
 
         } finally {
             dataFrame.release();
         }
+    }
+
+    /**
+     * Process a DATA frame's bytes through the gRPC frame decoder and rule engine.
+     * Extracted so it can be called from both the default path and the breakpoint resume path.
+     */
+    private void processDataBytes(ChannelHandlerContext ctx, byte[] bytes, boolean endStream) {
+        List<byte[]> completedMessages = decoder.feed(bytes);
+
+        // The continuation to run after all inbound messages from this DATA frame
+        // have had their responses (possibly delayed) written.
+        Runnable afterAllMessages = () -> {
+            if (endStream) {
+                finish(ctx);
+            } else {
+                ctx.read();
+            }
+        };
+
+        if (completedMessages.isEmpty()) {
+            afterAllMessages.run();
+            return;
+        }
+
+        // Process inbound messages sequentially, chaining the continuation through
+        // delayed rule responses so that finish/read happens only after all scheduled
+        // messages are written (preserving interleaving and finish ordering).
+        processInboundMessages(ctx, completedMessages, 0, afterAllMessages);
     }
 
     /**
@@ -456,9 +574,15 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
      * The callback is self-guarded by {@link #callbackInvoked} (AtomicBoolean CAS), so it
      * runs exactly once across all terminal paths: normal finish, error trailer, channel
      * inactive, and exception caught.
+     * <p>
+     * Also evicts any held inbound breakpoint frames to prevent resource leaks and hanging futures.
      */
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        // Evict any held inbound frames on channel close to prevent leaks
+        if (inboundStreamId != null) {
+            StreamFrameBreakpointRegistry.getInstance().evictStream(inboundStreamId);
+        }
         invokeCompletionCallback();
         super.channelInactive(ctx);
     }
