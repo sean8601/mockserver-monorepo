@@ -63,7 +63,7 @@ public class StreamFrameBreakpointRegistry {
     }
 
     /**
-     * Park a streaming response frame at a breakpoint.
+     * Park a streaming response frame at a breakpoint (OUTBOUND direction).
      *
      * <p>If the held-frame cap is already reached, returns {@code null}
      * (the caller should write the frame immediately).
@@ -78,6 +78,27 @@ public class StreamFrameBreakpointRegistry {
     public PausedStreamFrame pauseFrame(String streamId, byte[] chunkBytes,
                                         String requestMethod, String requestPath,
                                         Configuration configuration) {
+        return pauseFrame(streamId, chunkBytes, requestMethod, requestPath, configuration, PausedStreamFrame.Direction.OUTBOUND);
+    }
+
+    /**
+     * Park a streaming frame at a breakpoint with an explicit direction.
+     *
+     * <p>If the held-frame cap is already reached, returns {@code null}
+     * (the caller should write/process the frame immediately).
+     *
+     * @param streamId      the stream correlation id
+     * @param chunkBytes    a COPY of the frame payload bytes (caller retains the ByteBuf)
+     * @param requestMethod the request method (for context/logging)
+     * @param requestPath   the request path (for context/logging)
+     * @param configuration the active server configuration
+     * @param direction     OUTBOUND (server-to-client) or INBOUND (client-to-server)
+     * @return the registered {@link PausedStreamFrame}, or {@code null} if the cap is reached
+     */
+    public PausedStreamFrame pauseFrame(String streamId, byte[] chunkBytes,
+                                        String requestMethod, String requestPath,
+                                        Configuration configuration,
+                                        PausedStreamFrame.Direction direction) {
         int maxHeld = configuration.breakpointMaxHeld();
         if (heldFrames.size() >= maxHeld) {
             LOG.info("stream frame breakpoint cap reached ({}/{}), skipping for stream={}", heldFrames.size(), maxHeld, streamId);
@@ -91,7 +112,7 @@ public class StreamFrameBreakpointRegistry {
         // Ensure the resumable counter exists for this stream
         nextResumable.computeIfAbsent(streamId, k -> new AtomicInteger(0));
 
-        PausedStreamFrame frame = new PausedStreamFrame(frameId, streamId, seq, chunkBytes, requestMethod, requestPath);
+        PausedStreamFrame frame = new PausedStreamFrame(frameId, streamId, seq, chunkBytes, requestMethod, requestPath, direction);
         heldFrames.put(frameId, frame);
 
         // Track in per-stream list

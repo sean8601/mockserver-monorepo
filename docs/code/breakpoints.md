@@ -1,13 +1,14 @@
 # Interactive Breakpoints
 
-Interactive breakpoints let you pause proxied/forwarded exchanges at three phases:
+Interactive breakpoints let you pause proxied/forwarded exchanges at four phases:
 
 1. **Request breakpoints** (A1a) — hold the outbound request before it reaches the upstream server
 2. **Response breakpoints** (A1b) — hold the upstream response before it is written to the client
 3. **Stream frame breakpoints** (A1c + A1d) — hold each individual frame of a streaming response before it is written to the client. Covers both forwarded upstream streams (SSE / HTTP/1.1 chunked) and mock-generated streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted messages, WebSocket bidirectional responses, and GraphQL subscription pushes)
+4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
 
 Request and response breakpoints support inspect, modify, continue, and abort via the REST API.
-Stream frame breakpoints support continue, modify, drop, inject, and close per frame.
+Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame.
 
 ## Non-blocking architecture
 
@@ -104,6 +105,43 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
   streams use `{correlationId}-grpc-stream`, WebSocket/GraphQL streams use
   `{correlationId}-ws-stream`.
 
+### Inbound frame phase (`breakpointInboundEnabled`)
+
+- **Hold points:**
+  - `BidirectionalWebSocketFrameHandler.channelRead0` — WebSocket bidirectional
+    inbound frames (A1e). When enabled, each inbound WebSocket frame is copied to
+    `byte[]`, the original `WebSocketFrame` is released, and the copy is parked
+    in `StreamFrameBreakpointRegistry` with `direction=INBOUND`.
+  - `GraphQLSubscriptionHandler.channelRead0` — GraphQL subscription inbound
+    frames (A1e). The text content is copied to `byte[]` (UTF-8), the frame is
+    released, and the copy is parked.
+- **gRPC-bidi inbound:** NOT intercepted in this pass. The `GrpcBidiStreamHandler`
+  operates above the HTTP/2 codec with explicit flow control (`autoRead=false`,
+  manual `ctx.read()` after each frame). Holding an inbound gRPC frame would
+  require careful HTTP/2 flow-control window management to avoid corrupting the
+  connection-level window. This is deferred as a follow-up.
+- Decision actions: CONTINUE (process the original frame), MODIFY (process a
+  replacement frame), DROP (discard — do not process), INJECT (process original
+  + extra frame), CLOSE (evict stream, close channel).
+- **Backpressure:** when a frame is parked, `autoRead` is set to `false` on the
+  channel, preventing further inbound frames from being read. On resume (any
+  decision), `autoRead` is restored to `true` and `ctx.read()` is called to
+  request the next frame.
+- **ByteBuf discipline:** the original `WebSocketFrame`'s ByteBuf is copied to
+  `byte[]` at park time and the frame is released immediately. Both handlers
+  use `super(false)` (no auto-release), so the handler manages release explicitly.
+  On resume, a new `WebSocketFrame` is reconstructed via
+  `Unpooled.wrappedBuffer(byte[])` for matcher evaluation or pipeline forwarding.
+  The reconstructed frame is released after use. No ByteBuf is retained across
+  the breakpoint hold period.
+- **Stream ID format:** inbound streams use `{correlationId}-ws-inbound` (distinct
+  from outbound `{correlationId}-ws-stream`).
+- **Direction field:** `PausedStreamFrame.direction` is `INBOUND` for client-to-server
+  frames and `OUTBOUND` (default) for server-to-client frames. The REST API
+  `/mockserver/breakpoint/streams` list endpoint includes a `direction` field.
+- **Channel close eviction:** `channelInactive` in both handlers evicts all held
+  inbound frames for the stream, preventing leaks and hanging futures.
+
 ## Safety rails
 
 - **Timeout auto-continue:** each paused exchange or frame auto-continues if not
@@ -111,8 +149,9 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
 - **Max-held cap:** when `breakpointMaxHeld` (default 50) exchanges/frames are
   held (request/response breakpoints and stream frames use separate registries
   but both check the same cap), new intercepts are skipped.
-- **Default off:** `breakpointEnabled`, `breakpointResponseEnabled`, and
-  `breakpointStreamEnabled` all default to `false` — zero overhead.
+- **Default off:** `breakpointEnabled`, `breakpointResponseEnabled`,
+  `breakpointStreamEnabled`, and `breakpointInboundEnabled` all default to
+  `false` — zero overhead.
 
 ## Control-plane endpoints
 
@@ -148,6 +187,7 @@ The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumb
 | `mockserver.breakpointEnabled` | `false` | Enable request-phase breakpoints |
 | `mockserver.breakpointResponseEnabled` | `false` | Enable response-phase breakpoints |
 | `mockserver.breakpointStreamEnabled` | `false` | Enable stream-frame breakpoints (SSE/chunked, gRPC, WebSocket, GraphQL) |
+| `mockserver.breakpointInboundEnabled` | `false` | Enable inbound frame breakpoints (WebSocket bidi, GraphQL subscription) |
 | `mockserver.breakpointTimeoutMillis` | `30000` | Auto-continue timeout (shared) |
 | `mockserver.breakpointMaxHeld` | `50` | Max concurrent paused exchanges/frames (shared) |
 
@@ -172,6 +212,11 @@ The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumb
 - `HttpWebSocketResponseActionHandler.installBidirectionalHandler` — hold point for WebSocket bidi responses
 - `HttpWebSocketResponseActionHandler.installGraphQLSubscriptionHandler` — hold point for GraphQL subscription pushes
 - `HttpState.handleStreamFrame*` — control-plane handlers for stream frame actions
+
+### Inbound frame breakpoints
+- `BidirectionalWebSocketFrameHandler.channelRead0` — hold point for WebSocket bidi inbound frames
+- `GraphQLSubscriptionHandler.channelRead0` — hold point for GraphQL subscription inbound frames
+- Uses the same `StreamFrameBreakpointRegistry` with `direction=INBOUND`
 
 ## Behavioural notes
 
@@ -211,4 +256,6 @@ The Breakpoints panel in the dashboard is phase-aware:
 ## Future work
 
 - HTTP/3 gRPC server-streaming breakpoints (`Http3GrpcResponseWriter`)
-- Dashboard UI for stream frame breakpoints (frame list, per-frame actions)
+- gRPC-bidi inbound frame breakpoints (requires careful HTTP/2 flow-control window management)
+- Dashboard UI for stream frame breakpoints (frame list, per-frame actions, direction badge)
+- Dashboard UI for inbound frame breakpoints

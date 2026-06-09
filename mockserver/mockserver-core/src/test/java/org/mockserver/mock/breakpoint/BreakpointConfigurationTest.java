@@ -20,6 +20,7 @@ public class BreakpointConfigurationTest {
         ConfigurationProperties.breakpointEnabled(false);
         ConfigurationProperties.breakpointResponseEnabled(false);
         ConfigurationProperties.breakpointStreamEnabled(false);
+        ConfigurationProperties.breakpointInboundEnabled(false);
         ConfigurationProperties.breakpointTimeoutMillis(30_000);
         ConfigurationProperties.breakpointMaxHeld(50);
     }
@@ -137,6 +138,32 @@ public class BreakpointConfigurationTest {
         assertThat(config.breakpointStreamEnabled(), is(true));
     }
 
+    // --- breakpointInboundEnabled ---
+
+    @Test
+    public void shouldDefaultBreakpointInboundEnabledToFalse() {
+        assertThat(ConfigurationProperties.breakpointInboundEnabled(), is(false));
+    }
+
+    @Test
+    public void shouldSetAndGetBreakpointInboundEnabled() {
+        ConfigurationProperties.breakpointInboundEnabled(true);
+        assertThat(ConfigurationProperties.breakpointInboundEnabled(), is(true));
+    }
+
+    @Test
+    public void shouldDelegateInboundEnabledToStaticWhenNull() {
+        Configuration config = Configuration.configuration();
+        assertThat(config.breakpointInboundEnabled(), is(false));
+    }
+
+    @Test
+    public void shouldUseInstanceOverrideForInboundEnabled() {
+        Configuration config = Configuration.configuration()
+            .breakpointInboundEnabled(true);
+        assertThat(config.breakpointInboundEnabled(), is(true));
+    }
+
     // --- default-off path ---
 
     @Test
@@ -147,5 +174,6 @@ public class BreakpointConfigurationTest {
         assertThat("default is off", config.breakpointEnabled(), is(false));
         assertThat("response default is off", config.breakpointResponseEnabled(), is(false));
         assertThat("stream default is off", config.breakpointStreamEnabled(), is(false));
+        assertThat("inbound default is off", config.breakpointInboundEnabled(), is(false));
     }
 }

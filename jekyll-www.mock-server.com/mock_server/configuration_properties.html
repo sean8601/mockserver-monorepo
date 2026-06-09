@@ -1174,7 +1174,15 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointStreamEnabled=...</code></pre>
     <p>Environment Variable:</p>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_STREAM_ENABLED=...</code></pre>
-    <p><strong>Timeout</strong> &mdash; maximum time in milliseconds an exchange or frame may be held at a breakpoint before it is automatically continued. Shared by request, response, and stream frame breakpoints. Default is <code>30000</code> (30 seconds).</p>
+    <p><strong>Enable inbound frame breakpoints</strong> &mdash; intercepts client-to-server frames on bidirectional/streaming connections (WebSocket and GraphQL subscriptions) before MockServer processes them. Each inbound frame can be continued, modified, dropped, injected after, or used to close the connection via the control-plane REST API. Independent of request, response, and outbound stream breakpoints. gRPC-bidi inbound is not yet intercepted (future work). Default is <code>false</code> (off, zero overhead).</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointInboundEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointInboundEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_INBOUND_ENABLED=...</code></pre>
+    <p><strong>Timeout</strong> &mdash; maximum time in milliseconds an exchange or frame may be held at a breakpoint before it is automatically continued. Shared by request, response, stream frame, and inbound frame breakpoints. Default is <code>30000</code> (30 seconds).</p>
     <p>Type: <span class="keyword">long</span> Default: <span class="this_value">30000</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointTimeoutMillis(long millis)</code></pre>

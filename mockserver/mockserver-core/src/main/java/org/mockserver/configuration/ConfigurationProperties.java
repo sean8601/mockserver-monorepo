@@ -64,6 +64,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_BREAKPOINT_ENABLED = "mockserver.breakpointEnabled";
     private static final String MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED = "mockserver.breakpointResponseEnabled";
     private static final String MOCKSERVER_BREAKPOINT_STREAM_ENABLED = "mockserver.breakpointStreamEnabled";
+    private static final String MOCKSERVER_BREAKPOINT_INBOUND_ENABLED = "mockserver.breakpointInboundEnabled";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
     private static final String MOCKSERVER_BREAKPOINT_MAX_HELD = "mockserver.breakpointMaxHeld";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
@@ -660,6 +661,23 @@ public class ConfigurationProperties {
      */
     public static void breakpointStreamEnabled(boolean enable) {
         setProperty(MOCKSERVER_BREAKPOINT_STREAM_ENABLED, "" + enable);
+    }
+
+    public static boolean breakpointInboundEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_INBOUND_ENABLED, "MOCKSERVER_BREAKPOINT_INBOUND_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable inbound frame breakpoints for bidirectional/streaming connections (WebSocket,
+     * GraphQL-subscription). When enabled, client-to-server frames are paused
+     * before MockServer processes them and can be inspected, modified, dropped, injected, or
+     * used to close the connection via the control-plane REST API. Independent of
+     * {@link #breakpointStreamEnabled()} (outbound stream breakpoints). Default is false (off).
+     *
+     * @param enable enable inbound frame breakpoints
+     */
+    public static void breakpointInboundEnabled(boolean enable) {
+        setProperty(MOCKSERVER_BREAKPOINT_INBOUND_ENABLED, "" + enable);
     }
 
     public static long breakpointTimeoutMillis() {

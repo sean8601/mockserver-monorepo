@@ -4278,6 +4278,9 @@ public class HttpState {
                     if (frame.getRequestPath() != null) {
                         frameNode.put("requestPath", frame.getRequestPath());
                     }
+                    if (frame.getDirection() != null) {
+                        frameNode.put("direction", frame.getDirection().name());
+                    }
                     // Include a preview of the frame body (first 200 bytes)
                     if (frame.getCapturedBytes() != null && frame.getCapturedBytes().length > 0) {
                         int previewLen = Math.min(frame.getCapturedBytes().length, 200);

@@ -58,18 +58,26 @@ public class HttpWebSocketResponseActionHandler {
 
         // Determine if stream-frame breakpoints are active
         final boolean streamBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointStreamEnabled());
+        final boolean inboundBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointInboundEnabled());
         final String streamId;
         final String reqMethod;
         final String reqPath;
+        final String inboundStreamId;
+        String correlationId = (request.getLogCorrelationId() != null
+            ? request.getLogCorrelationId() : java.util.UUID.randomUUID().toString());
         if (streamBreakpointsActive) {
-            streamId = (request.getLogCorrelationId() != null
-                ? request.getLogCorrelationId() : java.util.UUID.randomUUID().toString()) + "-ws-stream";
+            streamId = correlationId + "-ws-stream";
             reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
             reqPath = request.getPath() != null ? request.getPath().getValue() : null;
         } else {
             streamId = null;
             reqMethod = null;
             reqPath = null;
+        }
+        if (inboundBreakpointsActive) {
+            inboundStreamId = correlationId + "-ws-inbound";
+        } else {
+            inboundStreamId = null;
         }
 
         nettyRequest.retain();
@@ -87,10 +95,10 @@ public class HttpWebSocketResponseActionHandler {
                     if (GraphQLSubscriptionHandler.isGraphQLWebSocketProtocol(httpWebSocketResponse.getSubprotocol())
                         && httpWebSocketResponse.getGraphqlSubscriptionFilter() != null) {
                         installGraphQLSubscriptionHandler(ctx, httpWebSocketResponse, handshaker,
-                            streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            streamBreakpointsActive, streamId, reqMethod, reqPath, inboundStreamId);
                     } else {
                         installBidirectionalHandler(ctx, httpWebSocketResponse, handshaker,
-                            streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            streamBreakpointsActive, streamId, reqMethod, reqPath, inboundStreamId);
 
                         List<WebSocketMessage> messages = httpWebSocketResponse.getMessages();
                         if (messages != null && !messages.isEmpty()) {
@@ -328,7 +336,8 @@ public class HttpWebSocketResponseActionHandler {
     private void installGraphQLSubscriptionHandler(ChannelHandlerContext ctx, HttpWebSocketResponse httpWebSocketResponse,
                                                       WebSocketServerHandshaker handshaker,
                                                       boolean streamBreakpointsActive, String streamId,
-                                                      String reqMethod, String reqPath) {
+                                                      String reqMethod, String reqPath,
+                                                      String inboundStreamId) {
         GraphQLSubscriptionHandler.FrameSender frameSender = (senderCtx, text, delay) -> {
             if (!senderCtx.channel().isActive()) {
                 return;
@@ -400,14 +409,17 @@ public class HttpWebSocketResponseActionHandler {
                 httpWebSocketResponse.getGraphqlSubscriptionFilter(),
                 httpWebSocketResponse.getMessages(),
                 frameSender,
-                handshaker
+                handshaker,
+                configuration,
+                inboundStreamId
             ));
     }
 
     private void installBidirectionalHandler(ChannelHandlerContext ctx, HttpWebSocketResponse httpWebSocketResponse,
                                              WebSocketServerHandshaker handshaker,
                                              boolean streamBreakpointsActive, String streamId,
-                                             String reqMethod, String reqPath) {
+                                             String reqMethod, String reqPath,
+                                             String inboundStreamId) {
         List<WebSocketMessageMatcher> matchers = httpWebSocketResponse.getMatchers();
         if (matchers != null && !matchers.isEmpty()) {
             BidirectionalWebSocketFrameHandler.FrameSender frameSender = (senderCtx, message) -> {
@@ -509,7 +521,7 @@ public class HttpWebSocketResponseActionHandler {
                 }
             };
             ctx.pipeline().addLast("bidirectionalWebSocketHandler",
-                new BidirectionalWebSocketFrameHandler(matchers, frameSender));
+                new BidirectionalWebSocketFrameHandler(matchers, frameSender, configuration, inboundStreamId));
         }
     }
 

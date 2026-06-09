@@ -51,6 +51,7 @@ public class Configuration {
     private Boolean breakpointEnabled;
     private Boolean breakpointResponseEnabled;
     private Boolean breakpointStreamEnabled;
+    private Boolean breakpointInboundEnabled;
     private Long breakpointTimeoutMillis;
     private Integer breakpointMaxHeld;
     private Boolean wasmEnabled;
@@ -624,6 +625,25 @@ public class Configuration {
      */
     public Configuration breakpointStreamEnabled(Boolean breakpointStreamEnabled) {
         this.breakpointStreamEnabled = breakpointStreamEnabled;
+        return this;
+    }
+
+    public Boolean breakpointInboundEnabled() {
+        if (breakpointInboundEnabled == null) {
+            return ConfigurationProperties.breakpointInboundEnabled();
+        }
+        return breakpointInboundEnabled;
+    }
+
+    /**
+     * Enable inbound frame breakpoints for bidirectional/streaming connections (WebSocket,
+     * GraphQL-subscription). When enabled, client-to-server frames are paused before MockServer
+     * processes them and can be inspected, modified, dropped, injected, or used to close the
+     * connection via the control-plane REST API. Independent of {@link #breakpointStreamEnabled()}
+     * (outbound stream breakpoints). Default is false (off).
+     */
+    public Configuration breakpointInboundEnabled(Boolean breakpointInboundEnabled) {
+        this.breakpointInboundEnabled = breakpointInboundEnabled;
         return this;
     }
 

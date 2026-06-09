@@ -5,7 +5,7 @@ import org.mockserver.time.TimeService;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Represents a single streaming response frame that has been paused at a breakpoint,
+ * Represents a single streaming frame that has been paused at a breakpoint,
  * awaiting external resolution via the control-plane REST API or an automatic timeout.
  *
  * <p>The held frame's bytes are captured as a {@code byte[]} copy at park time — the
@@ -19,6 +19,16 @@ import java.util.concurrent.CompletableFuture;
  */
 public class PausedStreamFrame {
 
+    /**
+     * Direction of the paused frame relative to MockServer.
+     */
+    public enum Direction {
+        /** Server-to-client (outbound): a response/push frame sent TO the client. */
+        OUTBOUND,
+        /** Client-to-server (inbound): a frame received FROM the client, before processing. */
+        INBOUND
+    }
+
     private final String frameId;
     private final String streamId;
     private final int sequenceNumber;
@@ -27,9 +37,21 @@ public class PausedStreamFrame {
     private final long createdAtMillis;
     private final String requestPath;
     private final String requestMethod;
+    private final Direction direction;
 
+    /**
+     * Creates a paused frame with the default OUTBOUND direction (backward compatible).
+     */
     public PausedStreamFrame(String frameId, String streamId, int sequenceNumber, byte[] capturedBytes,
                              String requestMethod, String requestPath) {
+        this(frameId, streamId, sequenceNumber, capturedBytes, requestMethod, requestPath, Direction.OUTBOUND);
+    }
+
+    /**
+     * Creates a paused frame with an explicit direction.
+     */
+    public PausedStreamFrame(String frameId, String streamId, int sequenceNumber, byte[] capturedBytes,
+                             String requestMethod, String requestPath, Direction direction) {
         this.frameId = frameId;
         this.streamId = streamId;
         this.sequenceNumber = sequenceNumber;
@@ -38,6 +60,7 @@ public class PausedStreamFrame {
         this.createdAtMillis = TimeService.currentTimeMillis();
         this.requestMethod = requestMethod;
         this.requestPath = requestPath;
+        this.direction = direction;
     }
 
     /**
@@ -99,5 +122,12 @@ public class PausedStreamFrame {
      */
     public String getRequestPath() {
         return requestPath;
+    }
+
+    /**
+     * The direction of this frame: OUTBOUND (server-to-client) or INBOUND (client-to-server).
+     */
+    public Direction getDirection() {
+        return direction;
     }
 }
