@@ -607,7 +607,7 @@ test('pruneOldVersions removes deeply nested content in old versions', function 
 // 19. ensureBinary triggers pruning after successful download
 // ================================================================
 
-test('ensureBinary triggers pruning after successful install', async function () {
+test('ensureBinary triggers pruning after successful install (maxPrevious=1)', async function () {
   var tmp = makeTempDir('ms-prune-e2e-');
   var fixtureDir = path.join(tmp.base, 'fixture');
   var cacheBase = path.join(tmp.base, 'cache');
@@ -618,10 +618,14 @@ test('ensureBinary triggers pruning after successful install', async function ()
   var prevCache = process.env.MOCKSERVER_BINARY_CACHE;
   var prevSkip = process.env.MOCKSERVER_SKIP_BINARY_DOWNLOAD;
   try {
-    // Pre-seed an old version in the cache
-    var oldDir = path.join(cacheBase, '1.0.0');
-    fs.mkdirSync(oldDir, { recursive: true });
-    fs.writeFileSync(path.join(oldDir, 'marker.txt'), 'old');
+    // Pre-seed TWO old versions in the cache; with maxPrevious=1 the newest
+    // previous (2.0.0) should be kept and the older one (1.0.0) pruned
+    var oldDir1 = path.join(cacheBase, '1.0.0');
+    fs.mkdirSync(oldDir1, { recursive: true });
+    fs.writeFileSync(path.join(oldDir1, 'marker.txt'), 'old1');
+    var oldDir2 = path.join(cacheBase, '2.0.0');
+    fs.mkdirSync(oldDir2, { recursive: true });
+    fs.writeFileSync(path.join(oldDir2, 'marker.txt'), 'old2');
 
     var fixture = createFixtureArchive(fixtureDir, '9.8.7');
     process.env.MOCKSERVER_BINARY_BASE_URL = 'file://' + fixtureDir;
@@ -630,9 +634,10 @@ test('ensureBinary triggers pruning after successful install', async function ()
 
     await binary.ensureBinary('9.8.7');
 
-    // The old version should have been pruned
-    assert.ok(!fs.existsSync(oldDir), 'old version 1.0.0 pruned after install of 9.8.7');
+    // maxPrevious=1: keep current (9.8.7) + 1 previous (2.0.0), prune the rest (1.0.0)
     assert.ok(fs.existsSync(path.join(cacheBase, '9.8.7')), 'new version present');
+    assert.ok(fs.existsSync(oldDir2), '2.0.0 kept (maxPrevious=1, newest previous)');
+    assert.ok(!fs.existsSync(oldDir1), '1.0.0 pruned (beyond maxPrevious=1)');
   } finally {
     if (prevBase === undefined) { delete process.env.MOCKSERVER_BINARY_BASE_URL; }
     else { process.env.MOCKSERVER_BINARY_BASE_URL = prevBase; }
@@ -728,6 +733,32 @@ test('pruneOldVersions keeps release over SNAPSHOT when maxPrevious=1 (H7)', fun
     // 1.0.0 (release) is newer than 1.0.0-SNAPSHOT per semver, so it should be kept
     assert.ok(fs.existsSync(path.join(base, '1.0.0')), '1.0.0 kept (release outranks SNAPSHOT)');
     assert.ok(!fs.existsSync(path.join(base, '1.0.0-SNAPSHOT')), '1.0.0-SNAPSHOT pruned');
+  } finally {
+    tmp.cleanup();
+  }
+});
+
+// ================================================================
+// 23b. Pruning — release never deleted in favour of its SNAPSHOT (default maxPrevious)
+// ================================================================
+
+test('pruneOldVersions with default maxPrevious=1 keeps release, prunes SNAPSHOT', function () {
+  var tmp = makeTempDir('ms-prune-default-');
+  try {
+    var base = tmp.base;
+    // Simulate: current=3.0.0, two previous: 2.0.0 (release) and 2.0.0-SNAPSHOT
+    // With maxPrevious=1 (the production default), the pruner should keep 2.0.0
+    // (release outranks SNAPSHOT) and prune 2.0.0-SNAPSHOT
+    fs.mkdirSync(path.join(base, '2.0.0-SNAPSHOT'));
+    fs.mkdirSync(path.join(base, '2.0.0'));
+    fs.mkdirSync(path.join(base, '3.0.0'));
+
+    // Call without explicit maxPrevious to test the default
+    binary.pruneOldVersions(base, '3.0.0');
+
+    assert.ok(fs.existsSync(path.join(base, '3.0.0')), 'current preserved');
+    assert.ok(fs.existsSync(path.join(base, '2.0.0')), '2.0.0 release kept (default maxPrevious=1)');
+    assert.ok(!fs.existsSync(path.join(base, '2.0.0-SNAPSHOT')), '2.0.0-SNAPSHOT pruned (release outranks)');
   } finally {
     tmp.cleanup();
   }

@@ -11,7 +11,7 @@ dotnet add package MockServer.Client
 Or via PackageReference in your `.csproj`:
 
 ```xml
-<PackageReference Include="MockServer.Client" Version="7.0.1" />
+<PackageReference Include="MockServer.Client" Version="7.0.0" />
 ```
 
 ## Supported Targets

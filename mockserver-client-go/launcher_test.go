@@ -586,7 +586,13 @@ func TestCompareSemver(t *testing.T) {
 		{"1.0.2", "1.0.10", -1},    // numeric, not lexicographic
 		{"2.0.0", "10.0.0", -1},    // numeric, not lexicographic
 		{"10.0.0", "2.0.0", 1},     // numeric, not lexicographic
-		{"1.0.0-beta", "1.0.0", 0}, // pre-release stripped for numeric comparison
+		{"1.0.0-beta", "1.0.0", -1},      // pre-release < release when numeric cores equal
+		{"1.0.0", "1.0.0-beta", 1},       // release > pre-release
+		{"7.0.0", "7.0.0-SNAPSHOT", 1},   // release > SNAPSHOT
+		{"7.0.0-SNAPSHOT", "7.0.0", -1},  // SNAPSHOT < release
+		{"1.0.0-alpha", "1.0.0-beta", -1}, // among pre-releases, compare lexicographically
+		{"1.0.0-beta", "1.0.0-alpha", 1},  // among pre-releases, compare lexicographically
+		{"1.0.0-rc.1", "1.0.0-rc.1", 0},  // identical pre-releases
 		{"7.0.0", "6.1.0", 1},
 		{"6.1.0", "7.0.0", -1},
 	}
@@ -646,6 +652,51 @@ func TestPruneOldVersions_RemovesOldDirs_SemverOrder(t *testing.T) {
 	// lexicographically largest ("3.0.0" < "2.0.0" lex but 3.0.0 > 2.0.0 semver)
 	if otherCount == 1 && !remaining["3.0.0"] {
 		t.Errorf("expected newest previous version 3.0.0 to be kept, got %v", remaining)
+	}
+}
+
+func TestPruneOldVersions_ReleaseKeptOverPrerelease(t *testing.T) {
+	base := t.TempDir()
+
+	// Create versions: 6.0.0, 7.0.0-SNAPSHOT, 7.0.0 (release)
+	// When current is "7.0.0", the pruner keeps current + 1 previous.
+	// The kept previous must be "7.0.0-SNAPSHOT" (next newest by semver)
+	// rather than "6.0.0" — but more importantly, the RELEASE "7.0.0"
+	// must NEVER be pruned in favour of its SNAPSHOT.
+	for _, v := range []string{"6.0.0", "7.0.0-SNAPSHOT", "7.0.0"} {
+		if err := os.MkdirAll(filepath.Join(base, v), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := PruneOldVersions(base, "7.0.0"); err != nil {
+		t.Fatalf("PruneOldVersions: %v", err)
+	}
+
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	remaining := make(map[string]bool)
+	for _, e := range entries {
+		remaining[e.Name()] = true
+	}
+
+	// Current version (release) must always survive
+	if !remaining["7.0.0"] {
+		t.Error("current version 7.0.0 was pruned")
+	}
+
+	// With maxPreviousVersions=1, one previous should survive — the next
+	// newest is 7.0.0-SNAPSHOT (which sorts just below 7.0.0 release)
+	if !remaining["7.0.0-SNAPSHOT"] {
+		t.Error("expected 7.0.0-SNAPSHOT to be kept as the newest previous version")
+	}
+
+	// 6.0.0 should be pruned (only 1 previous allowed)
+	if remaining["6.0.0"] {
+		t.Error("expected 6.0.0 to be pruned")
 	}
 }
 

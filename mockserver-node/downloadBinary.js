@@ -313,10 +313,10 @@ function compareVersions(a, b) {
  *
  * @param {string} base        the cache base directory
  * @param {string} currentVer  the version to keep (must match VERSION_PATTERN)
- * @param {number} [maxPrevious=0]  how many previous versions to keep (default: 0)
+ * @param {number} [maxPrevious=1]  how many previous versions to keep (default: 1)
  */
 function pruneOldVersions(base, currentVer, maxPrevious) {
-  if (maxPrevious === undefined || maxPrevious === null) { maxPrevious = 0; }
+  if (maxPrevious === undefined || maxPrevious === null) { maxPrevious = 1; }
 
   // Resolve the base to an absolute path to prevent any symlink trickery
   var resolvedBase;
@@ -488,7 +488,7 @@ async function ensureBinary(version, opts) {
 
   // Contract #7: prune old version directories after successful install
   try {
-    pruneOldVersions(base, version, 0);
+    pruneOldVersions(base, version, 1);
   } catch (e) {
     // Pruning is best-effort; don't fail the install
     log('Warning: pruning old versions failed: ' + (e.message || e));

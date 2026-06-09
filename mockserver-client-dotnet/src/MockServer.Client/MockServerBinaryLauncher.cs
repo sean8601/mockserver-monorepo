@@ -24,7 +24,7 @@ public sealed class MockServerBinaryLauncher : IDisposable
     /// <summary>
     /// The default MockServer version, matching this client package version.
     /// </summary>
-    public const string DefaultVersion = "7.0.1";
+    public const string DefaultVersion = "7.0.0";
 
     private const string Repo = "mock-server/mockserver-monorepo";
 
@@ -281,14 +281,14 @@ public sealed class MockServerBinaryLauncher : IDisposable
         // Split on dots and hyphens to handle pre-release segments
         var partsA = a.Split('.', '-');
         var partsB = b.Split('.', '-');
-        var maxLen = Math.Max(partsA.Length, partsB.Length);
 
-        for (int i = 0; i < maxLen; i++)
+        // Compare the numeric core segments (typically major.minor.patch)
+        var coreLen = Math.Min(partsA.Length, partsB.Length);
+        for (int i = 0; i < coreLen; i++)
         {
-            var segA = i < partsA.Length ? partsA[i] : "";
-            var segB = i < partsB.Length ? partsB[i] : "";
+            var segA = partsA[i];
+            var segB = partsB[i];
 
-            // Try numeric comparison first
             bool aIsNum = long.TryParse(segA, out var numA);
             bool bIsNum = long.TryParse(segB, out var numB);
 
@@ -302,6 +302,15 @@ public sealed class MockServerBinaryLauncher : IDisposable
                 var cmp = string.Compare(segA, segB, StringComparison.Ordinal);
                 if (cmp != 0) return cmp;
             }
+        }
+
+        // When the numeric core is equal, a release (fewer segments, no pre-release
+        // suffix) outranks a pre-release (more segments, e.g. "SNAPSHOT").
+        // Semver rule: 7.0.0 > 7.0.0-SNAPSHOT.
+        if (partsA.Length != partsB.Length)
+        {
+            // The version with FEWER segments is the release — it is GREATER.
+            return partsA.Length < partsB.Length ? 1 : -1;
         }
 
         return 0;

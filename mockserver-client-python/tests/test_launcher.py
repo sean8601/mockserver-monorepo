@@ -617,10 +617,40 @@ class TestSemverPruning:
     """Verify pruning uses numeric semver comparison, not lexicographic."""
 
     def test_semver_parse(self):
-        assert _parse_semver_tuple("7.0.0") == (7, 0, 0)
-        assert _parse_semver_tuple("10.2.30") == (10, 2, 30)
-        assert _parse_semver_tuple("7.0.0-SNAPSHOT") == (7, 0, 0)
-        assert _parse_semver_tuple("7.0.0-rc.1") == (7, 0, 0)
+        assert _parse_semver_tuple("7.0.0") == ((7, 0, 0), 1, "")
+        assert _parse_semver_tuple("10.2.30") == ((10, 2, 30), 1, "")
+        assert _parse_semver_tuple("7.0.0-SNAPSHOT") == ((7, 0, 0), 0, "SNAPSHOT")
+        assert _parse_semver_tuple("7.0.0-rc.1") == ((7, 0, 0), 0, "rc.1")
+
+    def test_release_sorts_above_prerelease(self):
+        """A release (no suffix) must sort ABOVE its pre-release counterpart.
+
+        This is the canonical semver rule: 7.0.0 > 7.0.0-SNAPSHOT.  The pruner
+        uses this ordering so a stable release is never deleted in favour of its
+        -SNAPSHOT.
+        """
+        release = _parse_semver_tuple("7.0.0")
+        snapshot = _parse_semver_tuple("7.0.0-SNAPSHOT")
+        rc = _parse_semver_tuple("7.0.0-rc.1")
+
+        assert release > snapshot
+        assert release > rc
+
+    def test_prune_keeps_release_over_snapshot(self, tmp_path: Path):
+        """When both 7.0.0 and 7.0.0-SNAPSHOT exist, pruning for a newer
+        current version must keep the release (7.0.0) and remove the
+        SNAPSHOT, because _MAX_PREVIOUS_VERSIONS == 1."""
+        cache = tmp_path / "cache"
+        for v in ["7.0.0-SNAPSHOT", "7.0.0"]:
+            d = cache / v
+            d.mkdir(parents=True)
+            (d / "placeholder").write_text("x")
+
+        _prune_old_versions(cache, "8.0.0")
+
+        remaining = {d.name for d in cache.iterdir() if d.is_dir()}
+        assert "7.0.0" in remaining, "release must be kept over its pre-release"
+        assert "7.0.0-SNAPSHOT" not in remaining, "SNAPSHOT must be pruned"
 
     def test_semver_ordering_beats_lexicographic(self, tmp_path: Path):
         """Version 10.0.0 > 9.0.0 but lexicographically '10.0.0' < '9.0.0'.

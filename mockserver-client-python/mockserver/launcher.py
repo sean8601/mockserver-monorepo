@@ -70,22 +70,27 @@ def _validate_version(version: str) -> None:
         raise ValueError(f"invalid version string: {version!r}")
 
 
-def _parse_semver_tuple(version_str: str) -> tuple[int, ...]:
-    """Parse a version string into a tuple of ints for semver-aware comparison.
+def _parse_semver_tuple(version_str: str) -> tuple[tuple[int, ...], int, str]:
+    """Parse a version string into a sort key for semver-aware comparison.
 
-    Pre-release suffixes (anything after the first ``-``) are stripped; only the
-    numeric ``major.minor.patch`` segments are compared.  This is intentionally
-    simple and sufficient for pruning — full PEP-440 / semver precedence is not
-    needed.
+    Returns ``(core_tuple, is_release_rank, prerelease)`` where:
+
+    * *core_tuple* — ``(major, minor, patch)`` as ints.
+    * *is_release_rank* — ``1`` for a release (no pre-release suffix), ``0``
+      for a pre-release.  This ensures a release sorts ABOVE its pre-release
+      when the numeric cores are equal (e.g. ``7.0.0 > 7.0.0-SNAPSHOT``).
+    * *prerelease* — the raw pre-release string (for tie-breaking among
+      pre-releases with the same core), or ``""`` for releases.
     """
-    base = version_str.split("-", 1)[0]
+    base, _, prerelease = version_str.partition("-")
     parts: list[int] = []
     for seg in base.split("."):
         try:
             parts.append(int(seg))
         except ValueError:
             parts.append(0)
-    return tuple(parts)
+    is_release_rank = 0 if prerelease else 1
+    return tuple(parts), is_release_rank, prerelease
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +191,16 @@ def _download(url: str, dest: Path) -> None:
     """
     logger.info("Downloading %s", url)
     # urllib honours http_proxy/https_proxy automatically via ProxyHandler.
-    # timeout covers both the TCP connect and the per-read deadline.
+    #
+    # NOTE: stdlib urllib does not support separate connect vs read timeouts —
+    # urlopen's ``timeout`` is a single socket-level deadline that applies to
+    # every individual socket operation (connect, each recv, etc.).  We use
+    # _HTTP_READ_TIMEOUT (300 s) as the single per-operation deadline: it applies
+    # *per recv call*, not to the whole transfer, so large bundle downloads on
+    # slow/congested links still complete (each chunk just needs to arrive within
+    # the window) while a genuinely dead socket still aborts.  A 30 s value would
+    # risk aborting slow-but-alive transfers.  For truly distinct connect vs read
+    # timeouts, a third-party library (e.g. requests/urllib3) would be needed.
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, timeout=_HTTP_READ_TIMEOUT) as resp:
         with open(dest, "wb") as f:

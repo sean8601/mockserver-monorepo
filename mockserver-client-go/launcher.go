@@ -422,14 +422,21 @@ func downloadFile(client *http.Client, url, dest string) error {
 	return nil
 }
 
-// parseSemver splits a version string "X.Y.Z..." into numeric segments for
-// comparison. Non-numeric suffixes (pre-release) are ignored for ordering;
-// the numeric prefix always determines sort position.
-func parseSemver(v string) []int {
-	// Strip anything after a hyphen (pre-release tag) for numeric comparison
+// semverParts holds the parsed components of a semver version string.
+type semverParts struct {
+	nums       []int  // numeric segments of the core version (major, minor, patch)
+	prerelease string // pre-release suffix (empty string means a stable release)
+}
+
+// parseSemver splits a version string "X.Y.Z[-prerelease]" into its numeric
+// core and pre-release suffix. The pre-release suffix is preserved so that
+// compareSemver can rank releases above their pre-releases.
+func parseSemver(v string) semverParts {
 	base := v
+	pre := ""
 	if idx := strings.IndexByte(v, '-'); idx >= 0 {
 		base = v[:idx]
+		pre = v[idx+1:]
 	}
 	parts := strings.Split(base, ".")
 	nums := make([]int, 0, len(parts))
@@ -442,25 +449,28 @@ func parseSemver(v string) []int {
 			nums = append(nums, n)
 		}
 	}
-	return nums
+	return semverParts{nums: nums, prerelease: pre}
 }
 
-// compareSemver returns -1, 0, or 1 comparing a and b by numeric version
-// segments. This is a SEMVER-aware comparison (H7), not lexicographic.
+// compareSemver returns -1, 0, or 1 comparing a and b by semver rules (H7).
+// It first compares the numeric major.minor.patch segments numerically. When
+// the numeric cores are equal, a release (no pre-release suffix) is GREATER
+// than a pre-release (e.g. 7.0.0 > 7.0.0-SNAPSHOT). Among two pre-releases,
+// the pre-release identifiers are compared lexicographically.
 func compareSemver(a, b string) int {
 	av := parseSemver(a)
 	bv := parseSemver(b)
-	maxLen := len(av)
-	if len(bv) > maxLen {
-		maxLen = len(bv)
+	maxLen := len(av.nums)
+	if len(bv.nums) > maxLen {
+		maxLen = len(bv.nums)
 	}
 	for i := 0; i < maxLen; i++ {
 		var ai, bi int
-		if i < len(av) {
-			ai = av[i]
+		if i < len(av.nums) {
+			ai = av.nums[i]
 		}
-		if i < len(bv) {
-			bi = bv[i]
+		if i < len(bv.nums) {
+			bi = bv.nums[i]
 		}
 		if ai < bi {
 			return -1
@@ -468,6 +478,26 @@ func compareSemver(a, b string) int {
 		if ai > bi {
 			return 1
 		}
+	}
+	// Numeric cores are equal — apply pre-release rules per semver spec:
+	// a release (empty pre-release) has HIGHER precedence than a pre-release.
+	aPre := av.prerelease
+	bPre := bv.prerelease
+	if aPre == "" && bPre == "" {
+		return 0 // both are releases
+	}
+	if aPre == "" {
+		return 1 // a is release, b is pre-release → a > b
+	}
+	if bPre == "" {
+		return -1 // a is pre-release, b is release → a < b
+	}
+	// Both have pre-release: compare lexicographically
+	if aPre < bPre {
+		return -1
+	}
+	if aPre > bPre {
+		return 1
 	}
 	return 0
 }

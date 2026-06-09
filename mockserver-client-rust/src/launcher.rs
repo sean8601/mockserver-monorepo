@@ -615,6 +615,23 @@ fn parse_semver_segments(s: &str) -> Option<(u64, u64, u64, String)> {
     Some((major, minor, patch, rest))
 }
 
+/// Compare two pre-release suffixes for semver ordering.
+///
+/// Per semver, a release (empty pre-release) is NEWER/GREATER than any
+/// pre-release of the same numeric version (e.g. `7.0.0 > 7.0.0-SNAPSHOT`).
+/// Among two pre-releases, compare their identifiers lexicographically.
+fn compare_pre_release(a: &str, b: &str) -> std::cmp::Ordering {
+    match (a.is_empty(), b.is_empty()) {
+        (true, true) => std::cmp::Ordering::Equal,
+        // a is a release, b is a pre-release => a is newer (greater)
+        (true, false) => std::cmp::Ordering::Greater,
+        // a is a pre-release, b is a release => b is newer (a is less)
+        (false, true) => std::cmp::Ordering::Less,
+        // both are pre-releases => compare lexicographically
+        (false, false) => a.cmp(b),
+    }
+}
+
 /// Remove old version directories from the cache base, keeping only the
 /// current version (and at most one previous). Also removes leftover `.part`
 /// and `.sha256` temp files. Safe: never deletes outside the cache dir;
@@ -667,10 +684,14 @@ pub fn prune_old_versions(cache_base: &Path, current_version: &str) {
     }
 
     // H7: sort by semver descending (newest first) using numeric comparison.
+    // When numeric cores are equal, a release (empty pre-release) is NEWER
+    // than a pre-release (e.g. 7.0.0 > 7.0.0-SNAPSHOT).
     version_dirs.sort_by(|a, b| {
         let (a_maj, a_min, a_pat, ref a_rest) = a.1;
         let (b_maj, b_min, b_pat, ref b_rest) = b.1;
-        (b_maj, b_min, b_pat, b_rest.as_str()).cmp(&(a_maj, a_min, a_pat, a_rest.as_str()))
+        (b_maj, b_min, b_pat)
+            .cmp(&(a_maj, a_min, a_pat))
+            .then_with(|| compare_pre_release(b_rest, a_rest))
     });
 
     // Keep at most one previous version (the newest one).
@@ -1188,6 +1209,54 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // Pre-release comparison (semver ordering)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_compare_pre_release_release_is_greater_than_snapshot() {
+        // A release (empty pre-release) is NEWER than its -SNAPSHOT.
+        assert_eq!(
+            compare_pre_release("", "-SNAPSHOT"),
+            std::cmp::Ordering::Greater,
+            "release (empty) should sort above -SNAPSHOT"
+        );
+    }
+
+    #[test]
+    fn test_compare_pre_release_snapshot_is_less_than_release() {
+        assert_eq!(
+            compare_pre_release("-SNAPSHOT", ""),
+            std::cmp::Ordering::Less,
+            "-SNAPSHOT should sort below release (empty)"
+        );
+    }
+
+    #[test]
+    fn test_compare_pre_release_both_empty() {
+        assert_eq!(
+            compare_pre_release("", ""),
+            std::cmp::Ordering::Equal,
+        );
+    }
+
+    #[test]
+    fn test_compare_pre_release_both_pre_releases() {
+        // Among two pre-releases, compare lexicographically.
+        assert_eq!(
+            compare_pre_release("-alpha", "-beta"),
+            std::cmp::Ordering::Less,
+        );
+        assert_eq!(
+            compare_pre_release("-beta", "-alpha"),
+            std::cmp::Ordering::Greater,
+        );
+        assert_eq!(
+            compare_pre_release("-rc1", "-rc1"),
+            std::cmp::Ordering::Equal,
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // Cache pruning
     // -----------------------------------------------------------------------
 
@@ -1352,6 +1421,60 @@ mod tests {
             let v = base.join(format!("{i}.0.0"));
             assert!(!v.exists(), "version {i}.0.0 should be pruned");
         }
+    }
+
+    #[test]
+    fn test_prune_keeps_release_over_snapshot() {
+        // When current is something else, and both 7.0.0 and 7.0.0-SNAPSHOT
+        // exist as previous versions, pruning should keep the release (7.0.0)
+        // because it is newer than 7.0.0-SNAPSHOT by semver rules.
+        let tmp = TempDir::new("prune-rel-snap");
+        let base = tmp.path();
+
+        let release = base.join("7.0.0");
+        let snapshot = base.join("7.0.0-SNAPSHOT");
+        let current = base.join("8.0.0");
+        fs::create_dir_all(&release).unwrap();
+        fs::write(release.join("marker"), "release").unwrap();
+        fs::create_dir_all(&snapshot).unwrap();
+        fs::write(snapshot.join("marker"), "snapshot").unwrap();
+        fs::create_dir_all(&current).unwrap();
+
+        prune_old_versions(base, "8.0.0");
+
+        assert!(current.exists(), "current version should be kept");
+        assert!(
+            release.exists(),
+            "release 7.0.0 should be kept (newer than SNAPSHOT)"
+        );
+        assert!(
+            !snapshot.exists(),
+            "7.0.0-SNAPSHOT should be pruned (older than release)"
+        );
+    }
+
+    #[test]
+    fn test_prune_release_never_deleted_in_favour_of_snapshot() {
+        // Regression test: with only a release and its SNAPSHOT as old versions,
+        // the release must be the one retained (maxPrevious=1).
+        let tmp = TempDir::new("prune-no-snap-win");
+        let base = tmp.path();
+
+        let release = base.join("6.1.0");
+        let snapshot = base.join("6.1.0-SNAPSHOT");
+        fs::create_dir_all(&release).unwrap();
+        fs::create_dir_all(&snapshot).unwrap();
+
+        prune_old_versions(base, "7.0.0");
+
+        assert!(
+            release.exists(),
+            "release 6.1.0 must be kept, not its SNAPSHOT"
+        );
+        assert!(
+            !snapshot.exists(),
+            "6.1.0-SNAPSHOT must be pruned when release exists"
+        );
     }
 
     // -----------------------------------------------------------------------

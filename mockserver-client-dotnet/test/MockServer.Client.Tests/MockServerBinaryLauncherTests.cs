@@ -413,6 +413,27 @@ public class MockServerBinaryLauncherTests : IDisposable
             options => options.WithStrictOrdering());
     }
 
+    [Fact]
+    public void CompareVersions_ReleaseOutranksPreRelease()
+    {
+        // A release (no pre-release suffix) must be GREATER than its pre-release
+        MockServerBinaryLauncher.CompareVersions("7.0.0", "7.0.0-SNAPSHOT").Should().BePositive(
+            "release 7.0.0 should rank higher than pre-release 7.0.0-SNAPSHOT");
+        MockServerBinaryLauncher.CompareVersions("7.0.0-SNAPSHOT", "7.0.0").Should().BeNegative(
+            "pre-release 7.0.0-SNAPSHOT should rank lower than release 7.0.0");
+    }
+
+    [Fact]
+    public void CompareVersions_SortsList_WithPreReleaseCorrectly()
+    {
+        var versions = new List<string> { "7.0.0-SNAPSHOT", "7.0.0", "6.9.0", "7.0.1" };
+        versions.Sort(MockServerBinaryLauncher.CompareVersions);
+
+        versions.Should().BeEquivalentTo(
+            new[] { "6.9.0", "7.0.0-SNAPSHOT", "7.0.0", "7.0.1" },
+            options => options.WithStrictOrdering());
+    }
+
     // ---------------------------------------------------------------
     // MOCKSERVER_SKIP_BINARY_DOWNLOAD
     // ---------------------------------------------------------------
@@ -831,6 +852,27 @@ public class MockServerBinaryLauncherTests : IDisposable
     }
 
     [Fact]
+    public void PruneOldVersions_KeepsReleaseOverSnapshot()
+    {
+        // When a release and its SNAPSHOT both exist as "previous" versions,
+        // the pruner must keep the release (higher by semver) and remove the SNAPSHOT.
+        var cacheBase = Path.Combine(_tempDir, "prune-snapshot");
+        Directory.CreateDirectory(cacheBase);
+
+        Directory.CreateDirectory(Path.Combine(cacheBase, "7.0.0-SNAPSHOT"));
+        Directory.CreateDirectory(Path.Combine(cacheBase, "7.0.0"));
+
+        // Current version is 8.0.0 (not in the directories)
+        MockServerBinaryLauncher.PruneOldVersions(cacheBase, "8.0.0");
+
+        // 7.0.0 (release) should be kept as the one previous; 7.0.0-SNAPSHOT should be pruned
+        Directory.Exists(Path.Combine(cacheBase, "7.0.0")).Should().BeTrue(
+            "release 7.0.0 should be kept as the highest previous version");
+        Directory.Exists(Path.Combine(cacheBase, "7.0.0-SNAPSHOT")).Should().BeFalse(
+            "pre-release 7.0.0-SNAPSHOT should be pruned in favour of release 7.0.0");
+    }
+
+    [Fact]
     public void PruneOldVersions_CrossDigitBoundary_KeepsCorrectPrevious()
     {
         // Regression test: lexicographic sort would keep "9.0.0" as previous
@@ -932,7 +974,7 @@ public class MockServerBinaryLauncherTests : IDisposable
     public void DefaultVersion_MatchesPackageVersion()
     {
         // This should match the Version in MockServer.Client.csproj
-        MockServerBinaryLauncher.DefaultVersion.Should().Be("7.0.1");
+        MockServerBinaryLauncher.DefaultVersion.Should().Be("7.0.0");
     }
 }
 
