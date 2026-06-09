@@ -11,7 +11,8 @@ import Divider from '@mui/material/Divider';
 import SearchIcon from '@mui/icons-material/Search';
 import { useDashboardStore } from '../store';
 import { groupBySession, shortenScenarioName, type Session, type SessionRequest } from '../lib/sessionGrouping';
-import { getModelLabel, getTokenSummary } from '../lib/llmTraffic';
+import { getModelLabel, getTokenSummary, getNumericTokens } from '../lib/llmTraffic';
+import { estimateCostUsd } from '../lib/llmPricing';
 import { AnthropicConversationView, OpenAiConversationView } from './ConversationView';
 import AgentRunGraph from './AgentRunGraph';
 import { CompareRunsBody } from './CompareRunsDialog';
@@ -113,6 +114,52 @@ function RequestDetail({ request }: { request: SessionRequest }) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-session token/cost aggregation (pure, no network)
+// ---------------------------------------------------------------------------
+
+interface SessionUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedCostUsd: number | null;
+}
+
+function computeSessionUsage(requests: SessionRequest[]): SessionUsage | null {
+  let totalIn = 0;
+  let totalOut = 0;
+  let hasCost = false;
+  let totalCost = 0;
+
+  for (const req of requests) {
+    const tokens = getNumericTokens(req.parsed);
+    if (tokens) {
+      totalIn += tokens.inputTokens;
+      totalOut += tokens.outputTokens;
+      const model = getModelLabel(req.parsed);
+      if (model && req.parsed.kind !== 'mcp' && req.parsed.kind !== 'generic') {
+        const cost = estimateCostUsd(req.parsed.kind, model, tokens.inputTokens, tokens.outputTokens);
+        if (cost !== null) {
+          hasCost = true;
+          totalCost += cost;
+        }
+      }
+    }
+  }
+
+  if (totalIn === 0 && totalOut === 0) return null;
+  return {
+    totalInputTokens: totalIn,
+    totalOutputTokens: totalOut,
+    estimatedCostUsd: hasCost ? totalCost : null,
+  };
+}
+
+function formatCost(usd: number): string {
+  if (usd < 0.01) return `$${usd.toFixed(6)}`;
+  if (usd < 1) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
 // Session lane
 // ---------------------------------------------------------------------------
 
@@ -135,6 +182,7 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
 
   const displayName = shortenScenarioName(session.scenarioName);
   const isUnscoped = session.scenarioName === '<unscoped>';
+  const usage = useMemo(() => computeSessionUsage(session.requests), [session.requests]);
 
   // Derive a provider + path for the call-graph lookup from the session's requests.
   const graphRequest = session.requests.find((r) => KIND_TO_PROVIDER[r.parsed.kind] != null);
@@ -188,6 +236,23 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
           variant="outlined"
           sx={{ height: 18, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }}
         />
+        {usage && (
+          <Chip
+            label={`${usage.totalInputTokens.toLocaleString()} in / ${usage.totalOutputTokens.toLocaleString()} out`}
+            size="small"
+            variant="outlined"
+            sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', '& .MuiChip-label': { px: 0.5 } }}
+          />
+        )}
+        {usage?.estimatedCostUsd != null && (
+          <Chip
+            label={formatCost(usage.estimatedCostUsd)}
+            size="small"
+            variant="outlined"
+            color="warning"
+            sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', '& .MuiChip-label': { px: 0.5 } }}
+          />
+        )}
       </Box>
 
       {/* Horizontal request timeline */}

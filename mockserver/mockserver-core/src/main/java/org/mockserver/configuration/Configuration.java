@@ -43,6 +43,8 @@ public class Configuration {
     private Boolean chaosAutoHaltEnabled;
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
+    private Boolean llmMetricsEnabled;
+    private Double llmCostBudgetUsd;
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
     private Boolean mcpEnabled;
@@ -394,6 +396,40 @@ public class Configuration {
      */
     public Configuration metricsEnabled(Boolean metricsEnabled) {
         this.metricsEnabled = metricsEnabled;
+        return this;
+    }
+
+    public Boolean llmMetricsEnabled() {
+        if (llmMetricsEnabled == null) {
+            return ConfigurationProperties.llmMetricsEnabled();
+        }
+        return llmMetricsEnabled;
+    }
+
+    /**
+     * Enable LLM token and cost metrics.
+     *
+     * @param llmMetricsEnabled enable LLM metrics
+     */
+    public Configuration llmMetricsEnabled(Boolean llmMetricsEnabled) {
+        this.llmMetricsEnabled = llmMetricsEnabled;
+        return this;
+    }
+
+    public Double llmCostBudgetUsd() {
+        if (llmCostBudgetUsd == null) {
+            return ConfigurationProperties.llmCostBudgetUsd();
+        }
+        return llmCostBudgetUsd;
+    }
+
+    /**
+     * Set cumulative LLM cost budget in USD. Negative or null to disable.
+     *
+     * @param llmCostBudgetUsd the budget in USD
+     */
+    public Configuration llmCostBudgetUsd(Double llmCostBudgetUsd) {
+        this.llmCostBudgetUsd = llmCostBudgetUsd;
         return this;
     }
 

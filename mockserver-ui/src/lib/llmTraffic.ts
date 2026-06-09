@@ -1144,6 +1144,45 @@ export function getTokenSummary(parsed: ParsedTraffic): string | null {
 }
 
 /**
+ * Extract numeric input/output tokens from parsed traffic.
+ * Returns { inputTokens, outputTokens } or null if the parsed traffic
+ * has no usage data. Used by the Sessions view to compute per-session totals.
+ */
+export function getNumericTokens(parsed: ParsedTraffic): { inputTokens: number; outputTokens: number } | null {
+  if (parsed.kind === 'anthropic' && parsed.usage) {
+    return {
+      inputTokens: parsed.usage.input_tokens ?? 0,
+      outputTokens: parsed.usage.output_tokens ?? 0,
+    };
+  }
+  if (parsed.kind === 'openai' && parsed.usage) {
+    return {
+      inputTokens: parsed.usage.prompt_tokens ?? 0,
+      outputTokens: parsed.usage.completion_tokens ?? 0,
+    };
+  }
+  if (parsed.kind === 'openai_responses' && parsed.usage) {
+    return {
+      inputTokens: parsed.usage.input_tokens ?? 0,
+      outputTokens: parsed.usage.output_tokens ?? 0,
+    };
+  }
+  if (parsed.kind === 'gemini' && parsed.usage) {
+    return {
+      inputTokens: parsed.usage.promptTokenCount ?? 0,
+      outputTokens: parsed.usage.candidatesTokenCount ?? 0,
+    };
+  }
+  if (parsed.kind === 'ollama' && parsed.usage) {
+    return {
+      inputTokens: parsed.usage.prompt_eval_count ?? 0,
+      outputTokens: parsed.usage.eval_count ?? 0,
+    };
+  }
+  return null;
+}
+
+/**
  * Get a compact timing label for the master list (e.g. "142ms").
  * Returns null when timing is not available.
  */

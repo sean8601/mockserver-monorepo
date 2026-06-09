@@ -170,6 +170,34 @@ Example PromQL alert rule:
 increase(mock_server_chaos_auto_halt[5m]) > 0
 ```
 
+### LLM Token & Cost Counters
+
+Three Prometheus `Counter`s track LLM token usage and estimated cost when `llmMetricsEnabled` is `true` (in addition to `metricsEnabled`). Each is labeled by `provider` (lowercased enum name, e.g. `anthropic`, `openai`) and `model` (the model identifier from the completion). They are incremented on both the mock path (`HttpLlmResponseActionHandler`) and the forward/proxy path (`HttpActionHandler.emitForwardGenAiSpan`) whenever a `Completion` is served or forwarded.
+
+| Metric Name | Description |
+|-------------|-------------|
+| `mock_server_llm_input_tokens` | Cumulative input tokens across all LLM completions |
+| `mock_server_llm_output_tokens` | Cumulative output tokens across all LLM completions |
+| `mock_server_llm_cost_usd` | Cumulative estimated cost in USD (via `LlmPricing`) |
+
+Cost estimation uses the static pricing table in `LlmPricing` — it is an estimate, not an invoice. Models with unknown pricing contribute tokens but no cost.
+
+The forward-path response parse (which extracts the `Completion` from the upstream response) is gated on `GenAiSpans.isEnabled() || Metrics.isLlmMetricsActive() || llmCostBudgetUsd > 0`, so token/cost metrics work without requiring full OTLP tracing.
+
+Example PromQL:
+```promql
+sum(rate(mock_server_llm_cost_usd[1h]))
+```
+
+### LLM Cost Budget Circuit-Breaker
+
+`mock_server_llm_cost_budget_tripped` is a Prometheus `Counter` that increments each time the LLM cost-budget circuit-breaker triggers. The breaker is configured by `mockserver.llmCostBudgetUsd` (a cumulative USD budget); when the running cost total exceeds it, further LLM forwards are blocked with a 429 response. The budget is tracked independently of the Prometheus counter (via `LlmCostBudgetMonitor`) so it works even when `metricsEnabled` is false. The breaker is deterministic and fail-open: a negative, unset, or malformed budget never blocks traffic. It resets on `HttpState.reset()`.
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `llmMetricsEnabled` | `false` | Enable LLM token/cost Prometheus counters (requires `metricsEnabled`) |
+| `llmCostBudgetUsd` | `-1.0` (disabled) | Cumulative cost budget in USD; negative = disabled |
+
 ### Async Message Counters
 
 Two Prometheus `Counter`s track broker message flow for the optional `mockserver-async` (AsyncAPI broker-mocking) module, each labelled by `channel` (the broker topic/channel). Both are registered once when `metricsEnabled` is `true`.
@@ -237,6 +265,7 @@ The dashboard **Metrics** view renders these on a dedicated **"Async message act
 | `BuildInfoCollector` | mockserver-core | `org.mockserver.metrics.BuildInfoCollector` |
 | `JvmMetricsCollector` | mockserver-core | `org.mockserver.metrics.JvmMetricsCollector` |
 | `ChaosAutoHaltMonitor` | mockserver-core | `org.mockserver.mock.action.http.ChaosAutoHaltMonitor` |
+| `LlmCostBudgetMonitor` | mockserver-core | `org.mockserver.mock.action.http.LlmCostBudgetMonitor` |
 | `MemoryMonitoring` | mockserver-core | `org.mockserver.memory.MemoryMonitoring` |
 | `Summary` | mockserver-core | `org.mockserver.memory.Summary` |
 | `Detail` | mockserver-core | `org.mockserver.memory.Detail` |

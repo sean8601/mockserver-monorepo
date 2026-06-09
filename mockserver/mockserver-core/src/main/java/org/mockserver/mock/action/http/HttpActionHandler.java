@@ -726,6 +726,14 @@ public class HttpActionHandler {
                             }
                         }
 
+                        // LLM cost-budget circuit-breaker: if the request targets an LLM provider
+                        // and the cumulative cost exceeds the budget, return 429 immediately.
+                        HttpResponse costBudgetResponse = checkLlmCostBudget(request);
+                        if (costBudgetResponse != null) {
+                            responseWriter.writeResponse(request, costBudgetResponse, false);
+                            return;
+                        }
+
                         // breakpoint intercept: pause the request if breakpoints are enabled (async mode only).
                         // IMPORTANT: does NOT block any thread — the decision future's continuation runs
                         // asynchronously on the scheduler executor when the control-plane resolves it (or
@@ -2931,17 +2939,44 @@ public class HttpActionHandler {
     }
 
     /**
-     * Emit an OpenTelemetry GenAI span for a forwarded response when the forward
-     * target is detected as an LLM provider. Fail-soft: telemetry must never
-     * affect the served response. Uses {@link org.mockserver.llm.client.LlmProviderSniffer}
-     * to detect the provider and {@link org.mockserver.llm.client.LlmClientRegistry}
-     * to parse the provider-specific response into a {@link Completion}.
-     *
-     * @param forwardedRequest the request that was forwarded to the upstream
-     * @param upstreamResponse the raw response from the upstream (before chaos injection)
+     * Check the LLM cost budget before forwarding. If the outbound request targets
+     * an LLM provider (detected by {@link org.mockserver.llm.client.LlmProviderSniffer})
+     * and the cumulative cost exceeds the configured budget, return a 429 response.
+     * Otherwise return {@code null} (request should proceed). Fail-open on misconfig
+     * or detection failure.
+     */
+    private HttpResponse checkLlmCostBudget(HttpRequest request) {
+        try {
+            if (org.mockserver.configuration.ConfigurationProperties.llmCostBudgetUsd() <= 0) {
+                return null; // budget not configured — pass through
+            }
+            java.util.Optional<Provider> providerOpt =
+                org.mockserver.llm.client.LlmProviderSniffer.sniff(request);
+            if (providerOpt.isEmpty()) {
+                return null; // not LLM traffic
+            }
+            return LlmCostBudgetMonitor.getInstance().checkBudgetOrNull();
+        } catch (Exception e) {
+            // fail-open: never block traffic on a detection/config error
+            return null;
+        }
+    }
+
+    /**
+     * Process a forwarded LLM response: emit a GenAI span, increment token/cost
+     * metrics, record cost against the budget monitor, and annotate the response
+     * with usage headers for dashboard display. Fail-soft: telemetry and metrics
+     * must never affect the served response.
+     * <p>
+     * The gate is widened beyond just {@code GenAiSpans.isEnabled()} — the parse
+     * also runs when LLM metrics are enabled or a cost budget is configured, so
+     * token/cost tracking works without requiring full OTLP tracing.
      */
     private void emitForwardGenAiSpan(HttpRequest forwardedRequest, HttpResponse upstreamResponse) {
-        if (!GenAiSpans.isEnabled()) {
+        boolean spanEnabled = GenAiSpans.isEnabled();
+        boolean metricsEnabled = org.mockserver.metrics.Metrics.isLlmMetricsActive();
+        boolean budgetEnabled = org.mockserver.configuration.ConfigurationProperties.llmCostBudgetUsd() > 0;
+        if (!spanEnabled && !metricsEnabled && !budgetEnabled) {
             return;
         }
         try {
@@ -2964,7 +2999,11 @@ public class HttpActionHandler {
             if (model == null) {
                 model = org.mockserver.llm.client.LlmProviderSniffer.extractModelFromRequest(forwardedRequest);
             }
-            GenAiSpans.recordCompletion(provider, model, completion);
+            if (spanEnabled) {
+                GenAiSpans.recordCompletion(provider, model, completion);
+            }
+            // Increment LLM token/cost metrics and record against the budget monitor
+            recordLlmUsageMetrics(provider, model, completion);
         } catch (Exception e) {
             // fail-soft: telemetry must never affect the served response
             if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
@@ -2976,6 +3015,29 @@ public class HttpActionHandler {
                         .setThrowable(e)
                 );
             }
+        }
+    }
+
+    /**
+     * Increment LLM token/cost Prometheus counters and record cost against the
+     * cost-budget circuit-breaker. Shared by both the forward path and the mock
+     * path (via {@link HttpLlmResponseActionHandler}). Fail-soft.
+     */
+    public static void recordLlmUsageMetrics(Provider provider, String model, Completion completion) {
+        if (completion == null) {
+            return;
+        }
+        try {
+            Usage usage = completion.getUsage();
+            long inputTokens = usage != null && usage.getInputTokens() != null ? usage.getInputTokens().longValue() : 0L;
+            long outputTokens = usage != null && usage.getOutputTokens() != null ? usage.getOutputTokens().longValue() : 0L;
+            String providerName = provider != null ? provider.name() : "unknown";
+            Double costUsd = org.mockserver.llm.cost.LlmPricing.estimateCostUsd(
+                provider, model, inputTokens, outputTokens);
+            org.mockserver.metrics.Metrics.incrementLlmTokens(providerName, model, inputTokens, outputTokens, costUsd);
+            LlmCostBudgetMonitor.getInstance().recordCost(costUsd);
+        } catch (Exception ignored) {
+            // fail-soft: metrics must never affect the served response
         }
     }
 

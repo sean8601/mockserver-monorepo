@@ -401,6 +401,7 @@ public class HttpState {
         org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ChaosAutoHaltMonitor.getInstance().reset();
         org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
+        org.mockserver.mock.action.http.LlmCostBudgetMonitor.getInstance().reset();
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();

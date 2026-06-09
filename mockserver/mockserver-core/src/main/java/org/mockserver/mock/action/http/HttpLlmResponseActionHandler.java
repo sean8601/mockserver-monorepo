@@ -82,6 +82,7 @@ public class HttpLlmResponseActionHandler {
                 HttpResponse encoded = codecInstance.encode(completion, model);
                 validateStructuredOutput(completion, encoded, provider, request);
                 org.mockserver.telemetry.GenAiSpans.recordCompletion(provider, model, completion);
+                HttpActionHandler.recordLlmUsageMetrics(provider, model, completion);
                 return encoded;
             }
 
@@ -230,6 +231,7 @@ public class HttpLlmResponseActionHandler {
         List<SseEvent> events = codecInstance.encodeStreaming(completion, model, physics);
         validateStructuredOutput(completion, null, provider, request);
         org.mockserver.telemetry.GenAiSpans.recordCompletion(provider, model, completion);
+        HttpActionHandler.recordLlmUsageMetrics(provider, model, completion);
         return applyStreamingChaos(events, httpLlmResponse.getChaos());
     }
 

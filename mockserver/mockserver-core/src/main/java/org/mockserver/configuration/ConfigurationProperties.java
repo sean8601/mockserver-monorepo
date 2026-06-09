@@ -121,6 +121,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT = "mockserver.otelPropagateTraceContext";
     private static final String MOCKSERVER_OTEL_GENERATE_TRACE_ID = "mockserver.otelGenerateTraceId";
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
+    private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
+    private static final String MOCKSERVER_LLM_COST_BUDGET_USD = "mockserver.llmCostBudgetUsd";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
     private static final String MOCKSERVER_HTTP2_ENABLED = "mockserver.http2Enabled";
@@ -1798,6 +1800,50 @@ public class ConfigurationProperties {
 
     public static void llmSemanticMatchingEnabled(boolean enabled) {
         setProperty(MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED, "" + enabled);
+    }
+
+    public static boolean llmMetricsEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_LLM_METRICS_ENABLED, "MOCKSERVER_LLM_METRICS_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable LLM token and cost metrics. When enabled, MockServer parses forwarded LLM responses
+     * to extract token usage and estimated cost, incrementing Prometheus counters labeled by provider
+     * and model. The parse is the same one used for GenAI span export; enabling this property
+     * activates the forward-path response parse even when OTLP tracing is off.
+     * <p>
+     * Default is false (off) to avoid parsing forwarded response bodies unless asked.
+     *
+     * @param enabled enable LLM metrics
+     */
+    public static void llmMetricsEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_LLM_METRICS_ENABLED, "" + enabled);
+    }
+
+    /**
+     * Return the configured LLM cost budget in USD, or a negative value (the default)
+     * when no budget is set (disabled).
+     */
+    public static double llmCostBudgetUsd() {
+        String raw = readPropertyHierarchically(PROPERTIES, MOCKSERVER_LLM_COST_BUDGET_USD, "MOCKSERVER_LLM_COST_BUDGET_USD", "-1.0");
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            return -1.0;
+        }
+    }
+
+    /**
+     * Set a cumulative LLM cost budget in USD. When the cumulative cost of all LLM completions
+     * (mocked and forwarded) exceeds this budget, further LLM forwarding is halted with a 429
+     * response. Set to a negative value or leave unset to disable the budget (the default).
+     * <p>
+     * The budget resets on {@code HttpState.reset()}.
+     *
+     * @param budgetUsd the budget in USD, or negative to disable
+     */
+    public static void llmCostBudgetUsd(double budgetUsd) {
+        setProperty(MOCKSERVER_LLM_COST_BUDGET_USD, "" + budgetUsd);
     }
 
     public static long regexMatchingTimeoutMillis() {

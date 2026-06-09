@@ -1227,6 +1227,22 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.chaosAutoHaltEnabled="true" -Dmockserver.chaosAutoHaltErrorThreshold="20" -Dmockserver.chaosAutoHaltWindowMillis="30000"</code></pre>
 </div>
 
+<button id="button_configuration_llm_metrics" class="accordion title"><strong>LLM Token &amp; Cost Metrics</strong></button>
+<div class="panel title">
+    <p>When enabled (alongside <span class="inline_code">metricsEnabled</span>), MockServer parses forwarded LLM responses to extract token usage and estimated cost, incrementing Prometheus counters labeled by provider and model. The parse is the same one used for GenAI span export; enabling this property activates the forward-path response parse even when OTLP tracing is off.</p>
+    <p>Three new Prometheus counters are registered: <span class="inline_code">mock_server_llm_input_tokens</span>, <span class="inline_code">mock_server_llm_output_tokens</span>, and <span class="inline_code">mock_server_llm_cost_usd</span>, each labeled by <span class="inline_code">provider</span> and <span class="inline_code">model</span>. The cost counter uses <a href="https://www.anthropic.com/pricing">estimated provider pricing</a>; treat the total as an estimate, not an invoice.</p>
+    <p><strong>LLM Metrics Enabled</strong> &mdash; enable LLM token and cost metrics collection. Default is <span class="this_value">false</span> to avoid parsing forwarded response bodies unless asked.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmMetricsEnabled(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmMetricsEnabled=... &nbsp; MOCKSERVER_LLM_METRICS_ENABLED=...</code></pre>
+    <p><strong>LLM Cost Budget</strong> &mdash; set a cumulative LLM cost budget in USD. When the cumulative cost of all LLM completions (mocked and forwarded) exceeds this budget, further LLM forwarding is halted with a 429 response. Negative or unset to disable (the default). Reset on server reset.</p>
+    <p>Type: <span class="keyword">double</span> Default: <span class="this_value">-1.0</span> (disabled)</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmCostBudgetUsd(double budgetUsd)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmCostBudgetUsd=... &nbsp; MOCKSERVER_LLM_COST_BUDGET_USD=...</code></pre>
+    <p>Example (enable metrics and set a $10 cost budget):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.llmMetricsEnabled="true" -Dmockserver.llmCostBudgetUsd="10.0"</code></pre>
+</div>
+
 <button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>

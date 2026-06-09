@@ -303,6 +303,8 @@ The correlated call graph (via `AgentRunGraph.tsx` and the `explain_agent_run` M
 
 The grouping logic lives in `src/lib/sessionGrouping.ts`. It uses `scenarioName` and `scenarioState` from the request data to identify which requests belong to which conversation session, with a host-based fallback for unscoped traffic.
 
+Each session lane header displays **per-session token/cost totals**: total input tokens, total output tokens, and estimated USD cost (via `llmPricing.ts`). These are computed purely client-side by aggregating the token usage already parsed from each request's response body by `llmTraffic.ts` (`getNumericTokens`). The cost chip is shown only when a pricing entry exists for the provider/model combination; unpriced models contribute tokens but no cost.
+
 ## Mocks (composer) View
 
 `ComposerView.tsx` (view = `composer`, surfaced under the AppBar label **Mocks**) is a unified expectation creator and editor — a single inline form covering standard HTTP expectations of every action type plus multi-turn LLM conversations.

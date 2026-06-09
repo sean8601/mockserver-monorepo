@@ -514,6 +514,8 @@
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
                         <exclude>**/HttpActionHandlerGraphQLChaosTest.java</exclude>
                         <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
+                        <exclude>**/LlmCostBudgetMonitorTest.java</exclude>
+                        <exclude>**/LlmMetricsTest.java</exclude>
                         <exclude>**/BreakpointConfigurationTest.java</exclude>
                         <!-- Mutate shared static singleton registries (BreakpointRegistry, StreamFrameBreakpointRegistry) -->
                         <exclude>**/BreakpointRegistryTest.java</exclude>
@@ -562,6 +564,8 @@
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
+                                <include>**/LlmCostBudgetMonitorTest.java</include>
+                                <include>**/LlmMetricsTest.java</include>
                                 <include>**/BreakpointConfigurationTest.java</include>
                                 <include>**/BreakpointRegistryTest.java</include>
                                 <include>**/StreamFrameBreakpointRegistryTest.java</include>

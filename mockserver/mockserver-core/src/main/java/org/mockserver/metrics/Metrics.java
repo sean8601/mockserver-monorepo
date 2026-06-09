@@ -47,6 +47,13 @@ public class Metrics {
     // mockserver-async module (publish path + subscriber record path).
     private static volatile Counter asyncMessagesPublishedTotal;
     private static volatile Counter asyncMessagesConsumedTotal;
+    // LLM token and cost counters, labeled by provider and model.
+    // Null until metrics are enabled AND llmMetricsEnabled is true.
+    private static volatile Counter llmInputTokensTotal;
+    private static volatile Counter llmOutputTokensTotal;
+    private static volatile Counter llmCostUsdTotal;
+    // Counter for LLM cost-budget circuit-breaker trips. Null until metrics are enabled.
+    private static volatile Counter llmCostBudgetTrippedTotal;
     // Supplier of active expectations, set by HttpState at startup so the
     // expectations-by-type GaugeWithCallback can read live state at scrape time
     // without a core->netty dependency.
@@ -95,6 +102,27 @@ public class Metrics {
                 .name("mock_server_async_messages_consumed")
                 .help("Total async/broker messages consumed/recorded by channel")
                 .labelNames("channel")
+                .register();
+            if (Boolean.TRUE.equals(configuration.llmMetricsEnabled())) {
+                llmInputTokensTotal = Counter.builder()
+                    .name("mock_server_llm_input_tokens")
+                    .help("Total LLM input tokens by provider and model")
+                    .labelNames("provider", "model")
+                    .register();
+                llmOutputTokensTotal = Counter.builder()
+                    .name("mock_server_llm_output_tokens")
+                    .help("Total LLM output tokens by provider and model")
+                    .labelNames("provider", "model")
+                    .register();
+                llmCostUsdTotal = Counter.builder()
+                    .name("mock_server_llm_cost_usd")
+                    .help("Cumulative estimated LLM cost in USD by provider and model")
+                    .labelNames("provider", "model")
+                    .register();
+            }
+            llmCostBudgetTrippedTotal = Counter.builder()
+                .name("mock_server_llm_cost_budget_tripped")
+                .help("Total number of times the LLM cost-budget circuit-breaker tripped")
                 .register();
             // Callback gauge, labeled by action_type: read active expectations at
             // scrape time and group by action type, so no imperative tracking is needed.
@@ -172,6 +200,10 @@ public class Metrics {
         mcpToolCallsTotal = null;
         asyncMessagesPublishedTotal = null;
         asyncMessagesConsumedTotal = null;
+        llmInputTokensTotal = null;
+        llmOutputTokensTotal = null;
+        llmCostUsdTotal = null;
+        llmCostBudgetTrippedTotal = null;
         otelRequestDurationHistogram = null;
         activeExpectationsSupplier.set(null);
         metrics.clear();
@@ -395,6 +427,128 @@ public class Metrics {
         } catch (Exception e) {
             return 0L;
         }
+    }
+
+    /**
+     * Increment the LLM token and cost counters for a served or forwarded completion.
+     * No-op when LLM metrics are not registered (llmMetricsEnabled is false or metrics are disabled).
+     * Fail-soft: a null or unresolvable provider/model is recorded as "unknown".
+     *
+     * @param provider     the LLM provider name (e.g. "ANTHROPIC", "OPENAI")
+     * @param model        the model name (e.g. "claude-opus-4")
+     * @param inputTokens  number of input tokens (may be 0)
+     * @param outputTokens number of output tokens (may be 0)
+     * @param costUsd      estimated cost in USD (may be 0.0; null means unknown and is skipped)
+     */
+    public static void incrementLlmTokens(String provider, String model, long inputTokens, long outputTokens, Double costUsd) {
+        String providerLabel = provider != null && !provider.isEmpty() ? provider.toLowerCase() : "unknown";
+        String modelLabel = model != null && !model.isEmpty() ? model : "unknown";
+        Counter inputCounter = llmInputTokensTotal;
+        if (inputCounter != null && inputTokens > 0) {
+            inputCounter.labelValues(providerLabel, modelLabel).inc(inputTokens);
+        }
+        Counter outputCounter = llmOutputTokensTotal;
+        if (outputCounter != null && outputTokens > 0) {
+            outputCounter.labelValues(providerLabel, modelLabel).inc(outputTokens);
+        }
+        Counter costCounter = llmCostUsdTotal;
+        if (costCounter != null && costUsd != null && costUsd > 0.0) {
+            costCounter.labelValues(providerLabel, modelLabel).inc(costUsd);
+        }
+    }
+
+    /**
+     * Return the current LLM input token count for the given provider and model, or 0 if
+     * LLM metrics are disabled.
+     */
+    public static long getLlmInputTokens(String provider, String model) {
+        Counter counter = llmInputTokensTotal;
+        if (counter == null || provider == null || model == null) {
+            return 0L;
+        }
+        try {
+            return (long) counter.labelValues(provider.toLowerCase(), model).get();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Return the current LLM output token count for the given provider and model, or 0 if
+     * LLM metrics are disabled.
+     */
+    public static long getLlmOutputTokens(String provider, String model) {
+        Counter counter = llmOutputTokensTotal;
+        if (counter == null || provider == null || model == null) {
+            return 0L;
+        }
+        try {
+            return (long) counter.labelValues(provider.toLowerCase(), model).get();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Return the current cumulative LLM cost in USD for the given provider and model, or 0.0 if
+     * LLM metrics are disabled.
+     */
+    public static double getLlmCostUsd(String provider, String model) {
+        Counter counter = llmCostUsdTotal;
+        if (counter == null || provider == null || model == null) {
+            return 0.0;
+        }
+        try {
+            return counter.labelValues(provider.toLowerCase(), model).get();
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    /**
+     * Return the aggregate cumulative LLM cost in USD across all providers and models.
+     * Used by the cost-budget circuit-breaker. Returns 0.0 if LLM metrics are disabled.
+     */
+    public static double getLlmCostUsdTotal() {
+        Counter counter = llmCostUsdTotal;
+        if (counter == null) {
+            return 0.0;
+        }
+        try {
+            // Sum across all label combinations by iterating the data points
+            final double[] total = {0.0};
+            counter.collect().getDataPoints().forEach(dp -> total[0] += dp.getValue());
+            return total[0];
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    /**
+     * Return true if LLM token/cost counters are registered (i.e. both metricsEnabled
+     * and llmMetricsEnabled are true).
+     */
+    public static boolean isLlmMetricsActive() {
+        return llmInputTokensTotal != null;
+    }
+
+    /**
+     * Increment the LLM cost-budget circuit-breaker tripped counter.
+     * No-op when metrics are disabled (counter not registered).
+     */
+    public static void incrementLlmCostBudgetTripped() {
+        Counter counter = llmCostBudgetTrippedTotal;
+        if (counter != null) {
+            counter.inc();
+        }
+    }
+
+    /**
+     * Return the current LLM cost-budget tripped count, or 0 if metrics are disabled.
+     */
+    public static long getLlmCostBudgetTrippedCount() {
+        Counter counter = llmCostBudgetTrippedTotal;
+        return counter != null ? (long) counter.get() : 0L;
     }
 
     /**
