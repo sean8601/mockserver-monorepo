@@ -463,18 +463,13 @@ async function ensureBinary(version, opts) {
 
   // Extract with the system tar: GNU tar auto-detects gzip; bsdtar (macOS,
   // Windows 10+) also handles .zip — so `tar -xf` covers every bundle type.
-  // H3: --no-absolute-filenames prevents archive path-traversal entries from
-  // escaping the extraction directory (supported by GNU tar; bsdtar ignores it
-  // harmlessly).
+  // H3: archive path-traversal is already prevented without an extra flag —
+  // GNU tar strips leading "/" and refuses ".." members by default (you must
+  // pass -P/--absolute-names to opt out), and bsdtar behaves the same. The
+  // `--no-absolute-filenames` long option is NOT recognised by GNU tar 1.34/1.35
+  // (the CI image), so passing it aborts extraction with exit 64.
   log('Extracting ' + archive);
   var tarArgs = ['-xf', archive, '-C', dir];
-  // GNU tar supports --no-absolute-filenames; bsdtar (macOS) strips absolute
-  // paths by default and ignores unknown long options, so it is safe to add.
-  // However, bsdtar on some macOS versions rejects unknown flags, so only add
-  // on Linux where GNU tar is standard.
-  if (process.platform === 'linux') {
-    tarArgs.push('--no-absolute-filenames');
-  }
   var r = spawnSync('tar', tarArgs, { stdio: 'pipe' });
   if (r.error) { throw new Error('could not run tar (is it installed?): ' + r.error.message); }
   if (r.status !== 0) {
