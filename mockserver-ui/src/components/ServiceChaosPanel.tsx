@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Collapse from '@mui/material/Collapse';
 import Paper from '@mui/material/Paper';
@@ -469,9 +469,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   // --- Chaos Experiments state ---
   const [experimentsExpanded, setExperimentsExpanded] = useState(false);
   const [experimentStatus, setExperimentStatus] = useState<ExperimentStatusDTO | null>(null);
+  const experimentStatusRef = useRef<ExperimentStatusDTO | null>(null);
   const [expName, setExpName] = useState('');
   const [expLoop, setExpLoop] = useState(false);
+  const stageIdCounter = useRef(1);
   const [expStages, setExpStages] = useState<Array<{
+    id: number;
     durationMs: string;
     host: string;
     errorStatus: string;
@@ -479,7 +482,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     latencyMs: string;
     dropProbability: string;
   }>>([{
-    durationMs: '10000', host: '', errorStatus: '', errorProbability: '',
+    id: 0, durationMs: '10000', host: '', errorStatus: '', errorProbability: '',
     latencyMs: '', dropProbability: '',
   }]);
 
@@ -608,12 +611,16 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     async function poll(): Promise<void> {
       try {
         const status = await getChaosExperimentStatus(connectionParams, controller.signal);
-        if (!cancelled) setExperimentStatus(status);
+        if (!cancelled) {
+          experimentStatusRef.current = status;
+          setExperimentStatus(status);
+        }
       } catch {
         // ignore
       } finally {
         if (!cancelled) {
-          const isRunning = experimentStatus?.status === 'running' || experimentStatus?.status === 'starting';
+          const latest = experimentStatusRef.current;
+          const isRunning = latest?.status === 'running' || latest?.status === 'starting';
           const interval = isRunning ? 2000 : POLL_INTERVAL_MS;
           timer = setTimeout(() => void poll(), experimentsExpanded ? interval : 10000);
         }
@@ -626,7 +633,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [connectionParams, experimentsExpanded, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectionParams, experimentsExpanded, refreshTick]);
 
   const hosts = useMemo(() => Object.keys(data.services).sort(), [data.services]);
 
@@ -860,8 +867,9 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   // --- Chaos Experiment handlers ---
 
   const addExpStage = useCallback(() => {
+    const id = stageIdCounter.current++;
     setExpStages((prev) => [...prev, {
-      durationMs: '10000', host: '', errorStatus: '', errorProbability: '',
+      id, durationMs: '10000', host: '', errorStatus: '', errorProbability: '',
       latencyMs: '', dropProbability: '',
     }]);
   }, []);
@@ -1665,7 +1673,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               </Box>
 
               {expStages.map((stage, idx) => (
-                <Paper key={idx} variant="outlined" sx={{ p: 0.75, mt: 0.75, bgcolor: 'action.hover' }}>
+                <Paper key={stage.id} variant="outlined" sx={{ p: 0.75, mt: 0.75, bgcolor: 'action.hover' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                       Stage {idx + 1}
