@@ -70,6 +70,9 @@ public class AnthropicLlmClient extends AbstractLlmClient {
     public Completion parseCompletionResponse(HttpResponse response) {
         JsonNode root = readBody(response);
         Completion completion = Completion.completion();
+        if (root.hasNonNull("model")) {
+            completion.withModel(root.path("model").asText());
+        }
         StringBuilder text = new StringBuilder();
         for (JsonNode block : root.path("content")) {
             if ("text".equals(block.path("type").asText()) && block.hasNonNull("text")) {

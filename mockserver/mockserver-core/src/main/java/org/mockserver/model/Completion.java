@@ -14,6 +14,7 @@ public class Completion extends ObjectWithJsonToString {
     private Boolean streaming;
     private StreamingPhysics streamingPhysics;
     private String outputSchema;
+    private String model;
 
     public static Completion completion() {
         return new Completion();
@@ -158,6 +159,21 @@ public class Completion extends ObjectWithJsonToString {
         return outputSchema;
     }
 
+    /**
+     * Optional model identifier extracted from the provider response. Set by
+     * {@code parseCompletionResponse} implementations so the caller can read
+     * the model without re-parsing the response body.
+     */
+    public Completion withModel(String model) {
+        this.model = model;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -176,13 +192,14 @@ public class Completion extends ObjectWithJsonToString {
             Objects.equals(usage, that.usage) &&
             Objects.equals(streaming, that.streaming) &&
             Objects.equals(streamingPhysics, that.streamingPhysics) &&
-            Objects.equals(outputSchema, that.outputSchema);
+            Objects.equals(outputSchema, that.outputSchema) &&
+            Objects.equals(model, that.model);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema);
+            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, model);
         }
         return hashCode;
     }

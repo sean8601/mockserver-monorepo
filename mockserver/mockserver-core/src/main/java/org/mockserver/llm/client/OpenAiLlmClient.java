@@ -44,6 +44,9 @@ public class OpenAiLlmClient extends AbstractLlmClient {
     public Completion parseCompletionResponse(HttpResponse response) {
         JsonNode root = readBody(response);
         Completion completion = Completion.completion();
+        if (root.hasNonNull("model")) {
+            completion.withModel(root.path("model").asText());
+        }
         JsonNode choice = root.path("choices").path(0);
         JsonNode message = choice.path("message");
         if (message.hasNonNull("content")) {

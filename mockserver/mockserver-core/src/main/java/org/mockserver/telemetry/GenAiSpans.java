@@ -46,9 +46,19 @@ public final class GenAiSpans {
         if (current == null) {
             return;
         }
+        recordCompletion(current, provider, model, completion);
+    }
+
+    /**
+     * Record a GenAI completion span using the given tracer. Package-private to
+     * allow tests to call this with a per-test tracer, avoiding the shared
+     * process-wide static and the cross-contamination that causes when test
+     * classes run in parallel.
+     */
+    static void recordCompletion(Tracer explicitTracer, Provider provider, String model, Completion completion) {
         try {
             String resolvedModel = model != null && !model.isEmpty() ? model : "unknown";
-            Span span = current.spanBuilder("chat " + resolvedModel)
+            Span span = explicitTracer.spanBuilder("chat " + resolvedModel)
                 .setSpanKind(SpanKind.CLIENT)
                 .startSpan();
             try {

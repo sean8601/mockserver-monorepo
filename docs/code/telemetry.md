@@ -8,10 +8,25 @@ MockServer integrates with OpenTelemetry (OTEL) for both metrics export and trac
 
 ### GenAI Span Export (`GenAiSpans`, `GenAiSpanExporter`)
 
-Emits explicit OpenTelemetry GenAI semantic-convention spans for LLM completions MockServer serves. Each span carries provider (`gen_ai.system`), model, token usage, and finish reason. Controlled by `mockserver.otelTracesEnabled`.
+Emits explicit OpenTelemetry GenAI semantic-convention spans for LLM completions MockServer serves **or forwards**. Each span carries provider (`gen_ai.system`), model, token usage, and finish reason. Controlled by `mockserver.otelTracesEnabled`.
 
 - **`GenAiSpans`** — static emit point; no-op unless a tracer is installed by `GenAiSpanExporter`
 - **`GenAiSpanExporter`** — configures the OTel trace SDK (OTLP HTTP/protobuf, JDK sender) and installs the tracer
+
+GenAI spans fire on two paths:
+1. **Mock action path** — `HttpLlmResponseActionHandler` calls `GenAiSpans.recordCompletion()` for mocked LLM responses (streaming and non-streaming).
+2. **Forward/proxy path** — `HttpActionHandler.emitForwardGenAiSpan()` detects LLM traffic via `LlmProviderSniffer`, parses the upstream response using the provider's `LlmClient`, and records a completion span. Covers matched-expectation forwards, unmatched proxy-pass, and breakpoint-continuation forwards. Streaming forward paths emit the GenAI span in the completion listener after the full SSE body is captured.
+
+### LLM Provider Sniffer (`LlmProviderSniffer`)
+
+Maps a forwarded request's target host to an LLM `Provider` for forward-path GenAI observability. Detection order:
+
+1. Well-known hosts: `api.openai.com` (OPENAI), `*.openai.azure.com` (AZURE_OPENAI), `api.anthropic.com` (ANTHROPIC), `generativelanguage.googleapis.com` (GEMINI), `bedrock*.amazonaws.com` (BEDROCK)
+2. Configured `mockserver.llmBaseUrl` host match (OLLAMA)
+3. Fallback to configured `mockserver.llmProvider` — **path-gated**: only applies when the request path looks like an LLM endpoint (case-insensitive contains any of `/chat/completions`, `/messages`, `/completions`, `/responses`, `/embeddings`, `/v1/`, `:generatecontent`, `/api/generate`, `/api/chat`). This prevents a forward to e.g. `example.com/api/users` from being misclassified as LLM traffic when a provider is configured.
+4. Empty Optional (not LLM traffic — skip GenAI span)
+
+Located at `mockserver-core/src/main/java/org/mockserver/llm/client/LlmProviderSniffer.java`. Pure, stateless, and unit-tested.
 
 ### Metrics Export (`OtelMetricsExporter`)
 
@@ -119,4 +134,9 @@ The span parent is taken from the inbound W3C trace context when present. The
 (in `mockserver-core`) so both the core `HttpActionHandler` (which reads the channel attribute
 to find the parent context) and the netty `TraceContextHandler` (which sets it) share one key
 without `mockserver-core` depending on `mockserver-netty`. Emission happens at the mocked-response
-and forwarded-response write points in `HttpActionHandler`, each guarded by `RequestSpans.isEnabled()`.
+and **all** forwarded-response write points in `HttpActionHandler`, each guarded by `RequestSpans.isEnabled()`:
+
+- Mocked response path (`writeResponseActionResponse`)
+- Matched-expectation forward path (`writeForwardActionResponse` — both streaming and non-streaming)
+- Unmatched proxy-pass path (`handleUnmatchedProxyForward` — both streaming and non-streaming)
+- Breakpoint-continuation forward path (`executeUnmatchedForward` — both streaming and non-streaming)

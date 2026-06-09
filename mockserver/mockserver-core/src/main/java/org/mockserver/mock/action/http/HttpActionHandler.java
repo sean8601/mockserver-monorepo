@@ -30,6 +30,7 @@ import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
 import org.mockserver.socket.tls.NettySslContextFactory;
+import org.mockserver.telemetry.GenAiSpans;
 import org.mockserver.telemetry.RequestSpans;
 import org.mockserver.telemetry.TraceContextAttributes;
 import org.mockserver.telemetry.W3CTraceContext;
@@ -784,8 +785,10 @@ public class HttpActionHandler {
                             }
                         }
 
+                        long forwardStartNanos = System.nanoTime();
                         final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, remoteAddress, potentiallyHttpProxy ? 1000 : configuration.socketConnectionTimeoutInMillis()), null, remoteAddress);
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+                        long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
                         if (response == null) {
                             response = badGatewayResponse();
                         }
@@ -810,6 +813,8 @@ public class HttpActionHandler {
                             // Note: enforce mode cannot replace a streaming response since the body
                             // has already been written to the client — violations are logged (report-only).
                             final HttpResponse streamingResponse = response;
+                            // OpenTelemetry: emit SERVER span for the unmatched streaming forward path
+                            emitRequestSpan(request, streamingResponse, null, ctx, responseTimeMs);
                             responseWriter.writeResponse(request, streamingResponse, false);
                             streamingResponse.getStreamingBody().addCompletionListener(() -> {
                                 HttpResponse logResponse = streamingResponse.clone();
@@ -831,12 +836,18 @@ public class HttpActionHandler {
                                         .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
                                         .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
                                 );
+                                // OpenTelemetry: emit GenAI span for the unmatched streaming forward path
+                                // after the stream completes and the full body is available
+                                emitForwardGenAiSpan(clonedRequest, logResponse);
                             });
                         } else {
                             // validation proxy: validate non-streaming response (enforce mode returns 502)
                             if (validationEnabled) {
                                 response = validateProxyResponse(request, response, false);
                             }
+                            // OpenTelemetry: emit SERVER + GenAI spans for the unmatched non-streaming forward path
+                            emitRequestSpan(request, response, null, ctx, responseTimeMs);
+                            emitForwardGenAiSpan(clonedRequest, response);
                             // Response breakpoint: hold non-streaming unmatched proxy responses before writing
                             if (!synchronous && Boolean.TRUE.equals(configuration.breakpointResponseEnabled())) {
                                 org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
@@ -953,6 +964,7 @@ public class HttpActionHandler {
                                          InetSocketAddress remoteAddress, boolean potentiallyHttpProxy,
                                          boolean validationEnabled, ResponseWriter responseWriter) {
         try {
+            long forwardStartNanos = System.nanoTime();
             final HttpForwardActionResult responseFuture = new HttpForwardActionResult(
                 requestToForward,
                 httpClient.sendRequest(requestToForward, remoteAddress,
@@ -960,6 +972,7 @@ public class HttpActionHandler {
                 null, remoteAddress
             );
             HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+            long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
             if (response == null) {
                 response = badGatewayResponse();
             }
@@ -980,6 +993,8 @@ public class HttpActionHandler {
                 responseWriter.writeResponse(originalRequest, response, false);
             } else if (response.getStreamingBody() != null) {
                 final HttpResponse streamingResponse = response;
+                // OpenTelemetry: emit SERVER span for the breakpoint-continuation streaming forward path
+                emitRequestSpan(originalRequest, streamingResponse, null, null, responseTimeMs);
                 responseWriter.writeResponse(originalRequest, streamingResponse, false);
                 streamingResponse.getStreamingBody().addCompletionListener(() -> {
                     HttpResponse logResponse = streamingResponse.clone();
@@ -1000,11 +1015,16 @@ public class HttpActionHandler {
                             .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
                             .setArguments(logResponse, originalRequest, httpRequestToCurlSerializer.toCurl(originalRequest, remoteAddress))
                     );
+                    // OpenTelemetry: emit GenAI span after stream completes and full body is available
+                    emitForwardGenAiSpan(requestToForward, logResponse);
                 });
             } else {
                 if (validationEnabled) {
                     response = validateProxyResponse(originalRequest, response, false);
                 }
+                // OpenTelemetry: emit SERVER + GenAI spans for the breakpoint-continuation non-streaming forward path
+                emitRequestSpan(originalRequest, response, null, null, responseTimeMs);
+                emitForwardGenAiSpan(requestToForward, response);
                 // Response breakpoint: hold non-streaming unmatched proxy responses before writing
                 if (Boolean.TRUE.equals(configuration.breakpointResponseEnabled())) {
                     org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
@@ -2119,8 +2139,12 @@ public class HttpActionHandler {
                 // it can be dispatched either directly or via the non-blocking scheduler.
                 final Runnable writeCommand;
                 if (isStreaming) {
+                    // Streaming path: GenAI span is deferred to the completion listener
+                    // inside writeStreamingForwardActionResponse where the full body is available
                     writeCommand = () -> writeStreamingForwardActionResponse(effectiveResponse, responseWriter, request, action, responseFuture, postProcessor);
                 } else {
+                    // Non-streaming path: body is fully available, emit GenAI span now
+                    emitForwardGenAiSpan(responseFuture.getHttpRequest(), response);
                     writeCommand = () -> {
                         responseWriter.writeResponse(request, effectiveResponse, false);
                         String logMessageFormat = chaosErrorInjected
@@ -2192,6 +2216,8 @@ public class HttpActionHandler {
                             : new Object[]{logResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress())}
                         )
                 );
+                // OpenTelemetry: emit GenAI span after stream completes and full body is available
+                emitForwardGenAiSpan(responseFuture.getHttpRequest(), logResponse);
             } catch (Throwable throwable) {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                     mockServerLogger.logEvent(
@@ -2892,6 +2918,55 @@ public class HttpActionHandler {
         }
         regex.append(java.util.regex.Pattern.quote(templatePath.substring(lastEnd)));
         return actualPath.matches(regex.toString());
+    }
+
+    /**
+     * Emit an OpenTelemetry GenAI span for a forwarded response when the forward
+     * target is detected as an LLM provider. Fail-soft: telemetry must never
+     * affect the served response. Uses {@link org.mockserver.llm.client.LlmProviderSniffer}
+     * to detect the provider and {@link org.mockserver.llm.client.LlmClientRegistry}
+     * to parse the provider-specific response into a {@link Completion}.
+     *
+     * @param forwardedRequest the request that was forwarded to the upstream
+     * @param upstreamResponse the raw response from the upstream (before chaos injection)
+     */
+    private void emitForwardGenAiSpan(HttpRequest forwardedRequest, HttpResponse upstreamResponse) {
+        if (!GenAiSpans.isEnabled()) {
+            return;
+        }
+        try {
+            java.util.Optional<Provider> providerOpt =
+                org.mockserver.llm.client.LlmProviderSniffer.sniff(forwardedRequest);
+            if (providerOpt.isEmpty()) {
+                return;
+            }
+            Provider provider = providerOpt.get();
+            java.util.Optional<org.mockserver.llm.client.LlmClient> clientOpt =
+                org.mockserver.llm.client.LlmClientRegistry.getInstance().lookup(provider);
+            if (clientOpt.isEmpty()) {
+                return;
+            }
+            // Parse the upstream response body into a Completion (extracts model from
+            // the already-parsed JSON — no second parse needed for the model)
+            Completion completion = clientOpt.get().parseCompletionResponse(upstreamResponse);
+            // Prefer the model from the parsed completion; fall back to the request body
+            String model = completion.getModel();
+            if (model == null) {
+                model = org.mockserver.llm.client.LlmProviderSniffer.extractModelFromRequest(forwardedRequest);
+            }
+            GenAiSpans.recordCompletion(provider, model, completion);
+        } catch (Exception e) {
+            // fail-soft: telemetry must never affect the served response
+            if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.TRACE)
+                        .setMessageFormat("exception emitting forward-path GenAI span:{}")
+                        .setArguments(e.getMessage())
+                        .setThrowable(e)
+                );
+            }
+        }
     }
 
     /**

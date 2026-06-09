@@ -502,8 +502,6 @@
                         <exclude>**/MetricsHandlerTest.java</exclude>
                         <exclude>**/HttpRequestsPropertiesMatcherTest.java</exclude>
                         <exclude>**/HttpRequestPropertiesMatcherLogTest.java</exclude>
-                        <exclude>**/GenAiSpansTest.java</exclude>
-                        <exclude>**/RequestSpansTest.java</exclude>
                         <!-- Run sequentially: these render templates that evaluate several XPath
                              expressions, each bounded by xpathMatchingTimeoutMillis via the shared
                              MatchingTimeoutExecutor. Under heavy parallel CPU contention an eval can
@@ -553,8 +551,6 @@
                                 <include>**/MetricsHandlerTest.java</include>
                                 <include>**/HttpRequestsPropertiesMatcherTest.java</include>
                                 <include>**/HttpRequestPropertiesMatcherLogTest.java</include>
-                                <include>**/GenAiSpansTest.java</include>
-                                <include>**/RequestSpansTest.java</include>
                                 <!-- XPath-in-template tests: sequential to avoid flaky timeout under contention -->
                                 <include>**/MustacheTemplateEngineTest.java</include>
                                 <include>**/VelocityTemplateEngineTest.java</include>

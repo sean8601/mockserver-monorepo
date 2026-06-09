@@ -332,7 +332,9 @@ This SPI is never on the deterministic assertion/matching path. The features tha
 Optional, off-by-default OTLP export, in two independent parts (both fail-soft — a setup error logs one line and never affects the server or a response; `io.opentelemetry` is relocated in the shaded jar):
 
 - **Metrics** (`org.mockserver.metrics.OtelMetricsExporter`, `mockserver.otelMetricsEnabled`) — bridges the existing `Metrics.Name` gauges (the same set exposed for Prometheus, including the LLM/SSE/chaos counters) to OTLP as observable gauges that read the current values, so Prometheus and OTLP stay consistent. An alternative to the Prometheus endpoint.
-- **GenAI spans** (`org.mockserver.telemetry.GenAiSpanExporter` + `GenAiSpans`, `mockserver.otelTracesEnabled`) — `HttpLlmResponseActionHandler` calls `GenAiSpans.recordCompletion(provider, model, completion)` on each served completion (streaming and non-streaming), emitting one span with GenAI semantic-convention attributes (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.response.finish_reasons`, tool-call count). These are spans MockServer codes deliberately — **no auto-instrumentation**. `GenAiSpans` is a process-wide no-op until `GenAiSpanExporter` installs a tracer.
+- **GenAI spans** (`org.mockserver.telemetry.GenAiSpanExporter` + `GenAiSpans`, `mockserver.otelTracesEnabled`) — emits one span per LLM completion with GenAI semantic-convention attributes (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.response.finish_reasons`, tool-call count). These are spans MockServer codes deliberately — **no auto-instrumentation**. `GenAiSpans` is a process-wide no-op until `GenAiSpanExporter` installs a tracer. Spans fire on two paths:
+  - **Mock action path** — `HttpLlmResponseActionHandler` calls `GenAiSpans.recordCompletion()` for mocked responses (streaming and non-streaming).
+  - **Forward/proxy path** — `HttpActionHandler.emitForwardGenAiSpan()` detects LLM traffic via `LlmProviderSniffer` (maps the forwarded request's target host to a `Provider`), parses the upstream response using the provider's `LlmClient.parseCompletionResponse()`, and records a completion span. Covers matched-expectation forwards, unmatched proxy-pass, and breakpoint-continuation forwards. Streaming forward paths emit the GenAI span in the completion listener after the full SSE body is captured. Model is extracted from the response body (most providers include it), falling back to the request body.
 
 Both use the OTLP HTTP/protobuf exporter with the JDK HttpClient sender (no gRPC/OkHttp) and share `mockserver.otelEndpoint` (a base collector URL; `/v1/metrics` and `/v1/traces` appended per signal, resolved by `telemetry.OtelEndpoints`).
 
@@ -479,6 +481,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/client/LlmClient.java` + `AbstractLlmClient.java` | Runtime-LLM client SPI (build request / parse response), pure |
 | `llm/client/LlmClientRegistry.java` | Singleton registry of runtime-LLM clients keyed by `Provider` |
 | `llm/client/{Ollama,OpenAi,OpenAiResponses,AzureOpenAi,Anthropic,Gemini,Bedrock}LlmClient.java` | Per-provider runtime clients |
+| `llm/client/LlmProviderSniffer.java` | Maps forwarded request host/path to LLM Provider for forward-path GenAI observability (path-gated fallback) |
 | `llm/client/LlmBackend.java` | Immutable backend config record (apiKey redacted) |
 | `llm/client/LlmBackendResolver.java` | Three-layer backend resolution (env / properties / named JSON) |
 | `llm/client/LlmCompletionService.java` | Orchestrator: off-unless-configured, fail-closed, cached |

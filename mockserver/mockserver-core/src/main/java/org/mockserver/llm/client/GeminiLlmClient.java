@@ -72,6 +72,9 @@ public class GeminiLlmClient extends AbstractLlmClient {
     public Completion parseCompletionResponse(HttpResponse response) {
         JsonNode root = readBody(response);
         Completion completion = Completion.completion();
+        if (root.hasNonNull("modelVersion")) {
+            completion.withModel(root.path("modelVersion").asText());
+        }
         JsonNode candidate = root.path("candidates").path(0);
         StringBuilder text = new StringBuilder();
         for (JsonNode part : candidate.path("content").path("parts")) {

@@ -46,11 +46,23 @@ public final class RequestSpans {
         if (current == null) {
             return;
         }
+        recordRequest(current, method, path, statusCode, expectationId, responseTimeMs, parentContext);
+    }
+
+    /**
+     * Record a request span using the given tracer. Package-private to allow
+     * tests to call this with a per-test tracer, avoiding the shared
+     * process-wide static and the cross-contamination that causes when test
+     * classes run in parallel.
+     */
+    static void recordRequest(Tracer explicitTracer, String method, String path, Integer statusCode,
+                              String expectationId, long responseTimeMs,
+                              W3CTraceContext parentContext) {
         try {
             String resolvedMethod = method != null && !method.isEmpty() ? method : "HTTP";
             String spanName = resolvedMethod + " " + (path != null && !path.isEmpty() ? path : "/");
 
-            SpanBuilder spanBuilder = current.spanBuilder(spanName)
+            SpanBuilder spanBuilder = explicitTracer.spanBuilder(spanName)
                 .setSpanKind(SpanKind.SERVER);
 
             // Wire the remote parent context from the inbound W3C traceparent header
