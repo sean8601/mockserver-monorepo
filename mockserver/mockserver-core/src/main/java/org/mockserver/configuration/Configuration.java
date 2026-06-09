@@ -47,6 +47,7 @@ public class Configuration {
     private Boolean otelGenerateTraceId;
     private Boolean mcpEnabled;
     private Boolean breakpointEnabled;
+    private Boolean breakpointResponseEnabled;
     private Long breakpointTimeoutMillis;
     private Integer breakpointMaxHeld;
     private Boolean wasmEnabled;
@@ -549,6 +550,23 @@ public class Configuration {
      */
     public Configuration breakpointEnabled(Boolean breakpointEnabled) {
         this.breakpointEnabled = breakpointEnabled;
+        return this;
+    }
+
+    public Boolean breakpointResponseEnabled() {
+        if (breakpointResponseEnabled == null) {
+            return ConfigurationProperties.breakpointResponseEnabled();
+        }
+        return breakpointResponseEnabled;
+    }
+
+    /**
+     * Enable interactive response breakpoints for proxied/forwarded requests.
+     * Holds the upstream response before writing it to the client. Independent
+     * of {@link #breakpointEnabled()} (request breakpoints). Default is false (off).
+     */
+    public Configuration breakpointResponseEnabled(Boolean breakpointResponseEnabled) {
+        this.breakpointResponseEnabled = breakpointResponseEnabled;
         return this;
     }
 

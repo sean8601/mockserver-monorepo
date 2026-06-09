@@ -23,27 +23,42 @@ public class BreakpointDecision {
 
     private final Action action;
     private final HttpRequest modifiedRequest;
+    private final HttpResponse modifiedResponse;
     private final HttpResponse abortResponse;
 
-    private BreakpointDecision(Action action, HttpRequest modifiedRequest, HttpResponse abortResponse) {
+    private BreakpointDecision(Action action, HttpRequest modifiedRequest, HttpResponse modifiedResponse, HttpResponse abortResponse) {
         this.action = action;
         this.modifiedRequest = modifiedRequest;
+        this.modifiedResponse = modifiedResponse;
         this.abortResponse = abortResponse;
     }
 
     public static BreakpointDecision continueOriginal() {
-        return new BreakpointDecision(Action.CONTINUE, null, null);
+        return new BreakpointDecision(Action.CONTINUE, null, null, null);
     }
 
+    /**
+     * Modify a REQUEST-phase exchange: forward a replacement request.
+     */
     public static BreakpointDecision modify(HttpRequest modifiedRequest) {
         if (modifiedRequest == null) {
             throw new IllegalArgumentException("modifiedRequest must not be null for MODIFY decision");
         }
-        return new BreakpointDecision(Action.MODIFY, modifiedRequest, null);
+        return new BreakpointDecision(Action.MODIFY, modifiedRequest, null, null);
+    }
+
+    /**
+     * Modify a RESPONSE-phase exchange: write a replacement response to the client.
+     */
+    public static BreakpointDecision modifyResponse(HttpResponse modifiedResponse) {
+        if (modifiedResponse == null) {
+            throw new IllegalArgumentException("modifiedResponse must not be null for MODIFY decision");
+        }
+        return new BreakpointDecision(Action.MODIFY, null, modifiedResponse, null);
     }
 
     public static BreakpointDecision abort(HttpResponse abortResponse) {
-        return new BreakpointDecision(Action.ABORT, null, abortResponse);
+        return new BreakpointDecision(Action.ABORT, null, null, abortResponse);
     }
 
     public Action getAction() {
@@ -52,6 +67,13 @@ public class BreakpointDecision {
 
     public HttpRequest getModifiedRequest() {
         return modifiedRequest;
+    }
+
+    /**
+     * The modified response (non-null only for RESPONSE-phase MODIFY decisions).
+     */
+    public HttpResponse getModifiedResponse() {
+        return modifiedResponse;
     }
 
     public HttpResponse getAbortResponse() {

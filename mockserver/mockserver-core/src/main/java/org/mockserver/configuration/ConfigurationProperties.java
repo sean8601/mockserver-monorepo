@@ -62,6 +62,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS = "mockserver.chaosAutoHaltWindowMillis";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_BREAKPOINT_ENABLED = "mockserver.breakpointEnabled";
+    private static final String MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED = "mockserver.breakpointResponseEnabled";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
     private static final String MOCKSERVER_BREAKPOINT_MAX_HELD = "mockserver.breakpointMaxHeld";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
@@ -622,6 +623,22 @@ public class ConfigurationProperties {
      */
     public static void breakpointEnabled(boolean enable) {
         setProperty(MOCKSERVER_BREAKPOINT_ENABLED, "" + enable);
+    }
+
+    public static boolean breakpointResponseEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED, "MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable interactive response breakpoints for proxied/forwarded requests. When enabled,
+     * the upstream response is held before being written to the client, and can be inspected,
+     * modified, or replaced via the control-plane REST API. Independent of
+     * {@link #breakpointEnabled()} (request breakpoints). Default is false (off).
+     *
+     * @param enable enable response breakpoints
+     */
+    public static void breakpointResponseEnabled(boolean enable) {
+        setProperty(MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED, "" + enable);
     }
 
     public static long breakpointTimeoutMillis() {

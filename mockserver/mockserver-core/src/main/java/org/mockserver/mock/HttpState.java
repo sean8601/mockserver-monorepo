@@ -3920,6 +3920,7 @@ public class HttpState {
                 org.mockserver.mock.breakpoint.PausedExchange paused = entry.getValue();
                 com.fasterxml.jackson.databind.node.ObjectNode node = objectMapper.createObjectNode();
                 node.put("id", paused.getCorrelationId());
+                node.put("phase", paused.getPhase().name());
                 node.put("ageMillis", paused.ageMillis());
                 if (paused.getMatchedExpectationId() != null) {
                     node.put("expectationId", paused.getMatchedExpectationId());
@@ -3934,6 +3935,18 @@ public class HttpState {
                         requestSummary.put("path", req.getPath().getValue());
                     }
                     node.set("request", requestSummary);
+                }
+                // include response summary for RESPONSE-phase exchanges
+                if (paused.getPhase() == org.mockserver.mock.breakpoint.PausedExchange.Phase.RESPONSE && paused.getCapturedResponse() != null) {
+                    HttpResponse resp = paused.getCapturedResponse();
+                    com.fasterxml.jackson.databind.node.ObjectNode responseSummary = objectMapper.createObjectNode();
+                    if (resp.getStatusCode() != null) {
+                        responseSummary.put("statusCode", resp.getStatusCode());
+                    }
+                    if (resp.getReasonPhrase() != null) {
+                        responseSummary.put("reasonPhrase", resp.getReasonPhrase());
+                    }
+                    node.set("response", responseSummary);
                 }
                 exchanges.add(node);
             }
@@ -3984,7 +3997,7 @@ public class HttpState {
             String body = request.getBodyAsJsonOrXmlString();
             if (isBlank(body)) {
                 return response().withStatusCode(BAD_REQUEST.code())
-                    .withBody("{\"error\":\"request body is required with 'id' and 'httpRequest' fields\"}", MediaType.JSON_UTF_8);
+                    .withBody("{\"error\":\"request body is required with 'id' and either 'httpRequest' or 'httpResponse' field\"}", MediaType.JSON_UTF_8);
             }
             com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
             String id = node.path("id").asText(null);
@@ -3992,12 +4005,27 @@ public class HttpState {
                 return response().withStatusCode(BAD_REQUEST.code())
                     .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
             }
-            if (!node.hasNonNull("httpRequest")) {
+
+            // Determine whether this is a request-phase or response-phase modify
+            boolean hasRequest = node.hasNonNull("httpRequest");
+            boolean hasResponse = node.hasNonNull("httpResponse");
+
+            if (!hasRequest && !hasResponse) {
                 return response().withStatusCode(BAD_REQUEST.code())
-                    .withBody("{\"error\":\"'httpRequest' field is required for modify\"}", MediaType.JSON_UTF_8);
+                    .withBody("{\"error\":\"either 'httpRequest' (for request-phase) or 'httpResponse' (for response-phase) is required for modify\"}", MediaType.JSON_UTF_8);
             }
-            HttpRequest modifiedRequest = getHttpRequestSerializer().deserialize(objectMapper.writeValueAsString(node.get("httpRequest")));
-            boolean resolved = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().resolveModify(id, modifiedRequest);
+
+            boolean resolved;
+            if (hasResponse) {
+                // Response-phase modify: write a replacement response
+                HttpResponse modifiedResponse = getHttpResponseSerializer().deserialize(objectMapper.writeValueAsString(node.get("httpResponse")));
+                resolved = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().resolveModifyResponse(id, modifiedResponse);
+            } else {
+                // Request-phase modify: forward a replacement request (A1a behaviour)
+                HttpRequest modifiedRequest = getHttpRequestSerializer().deserialize(objectMapper.writeValueAsString(node.get("httpRequest")));
+                resolved = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().resolveModify(id, modifiedRequest);
+            }
+
             if (!resolved) {
                 com.fasterxml.jackson.databind.node.ObjectNode errNode = objectMapper.createObjectNode();
                 errNode.put("error", "no paused exchange found with id: " + id);

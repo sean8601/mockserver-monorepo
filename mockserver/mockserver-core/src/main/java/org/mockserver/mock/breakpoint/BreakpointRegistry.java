@@ -5,6 +5,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.mockserver.mock.breakpoint.PausedExchange.Phase;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -88,7 +89,52 @@ public class BreakpointRegistry {
     }
 
     /**
-     * Resolves a paused exchange as CONTINUE (forward original request).
+     * Attempts to pause a forwarded response at a breakpoint (RESPONSE phase).
+     *
+     * <p>If the held-exchange cap is already reached, returns {@code null}
+     * (the caller should write the response normally).
+     *
+     * <p>Otherwise, registers a RESPONSE-phase {@link PausedExchange} and schedules a
+     * timeout auto-continue. Returns the registered exchange whose
+     * {@link PausedExchange#getDecisionFuture()} the caller chains the client write onto.
+     *
+     * @param correlationId the request's log correlation id (unique per request)
+     * @param request       the original inbound request (for context/logging)
+     * @param response      the upstream {@link HttpResponse} to hold
+     * @param expectationId the matched expectation id, or null for unmatched proxy
+     * @param configuration the active server configuration (for maxHeld and timeout)
+     * @return the registered {@link PausedExchange}, or {@code null} if the cap is reached
+     */
+    public PausedExchange pauseResponse(String correlationId, HttpRequest request, HttpResponse response, String expectationId, Configuration configuration) {
+        int maxHeld = configuration.breakpointMaxHeld();
+        if (held.size() >= maxHeld) {
+            LOG.info("breakpoint cap reached ({}/{}), skipping response breakpoint for correlation={}", held.size(), maxHeld, correlationId);
+            return null;
+        }
+
+        // Use a response-phase correlation ID suffix so request + response breakpoints
+        // on the same logical request don't collide in the registry
+        String responseCorrelationId = correlationId + "-response";
+        PausedExchange exchange = new PausedExchange(responseCorrelationId, request, response, expectationId);
+        held.put(responseCorrelationId, exchange);
+
+        long timeoutMillis = configuration.breakpointTimeoutMillis();
+        ScheduledFuture<?> timeoutHandle = TIMEOUT_SCHEDULER.schedule(() -> {
+            if (exchange.getDecisionFuture().complete(BreakpointDecision.continueOriginal())) {
+                LOG.info("response breakpoint auto-continued (timeout {}ms) for correlation={}", timeoutMillis, responseCorrelationId);
+            }
+        }, timeoutMillis, TimeUnit.MILLISECONDS);
+
+        exchange.getDecisionFuture().whenComplete((decision, throwable) -> {
+            timeoutHandle.cancel(false);
+            held.remove(responseCorrelationId);
+        });
+
+        return exchange;
+    }
+
+    /**
+     * Resolves a paused exchange as CONTINUE (forward original request or write original response).
      *
      * @return true if the exchange was found and resolved
      */
@@ -111,6 +157,19 @@ public class BreakpointRegistry {
             return false;
         }
         return exchange.getDecisionFuture().complete(BreakpointDecision.modify(modifiedRequest));
+    }
+
+    /**
+     * Resolves a RESPONSE-phase paused exchange as MODIFY (write a replacement response).
+     *
+     * @return true if the exchange was found and resolved
+     */
+    public boolean resolveModifyResponse(String correlationId, HttpResponse modifiedResponse) {
+        PausedExchange exchange = held.get(correlationId);
+        if (exchange == null) {
+            return false;
+        }
+        return exchange.getDecisionFuture().complete(BreakpointDecision.modifyResponse(modifiedResponse));
     }
 
     /**

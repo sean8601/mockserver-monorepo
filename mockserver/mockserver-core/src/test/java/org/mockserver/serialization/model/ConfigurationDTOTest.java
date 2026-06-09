@@ -260,4 +260,39 @@ public class ConfigurationDTOTest {
 
         assertThat(target.devMode(), is(true));
     }
+
+    @Test
+    public void shouldRoundTripBreakpointResponseEnabled() {
+        Configuration original = configuration()
+            .breakpointEnabled(true)
+            .breakpointResponseEnabled(true)
+            .breakpointTimeoutMillis(5000L)
+            .breakpointMaxHeld(10);
+
+        ConfigurationDTO dto = new ConfigurationDTO(original);
+        assertThat(dto.getBreakpointEnabled(), is(true));
+        assertThat(dto.getBreakpointResponseEnabled(), is(true));
+        assertThat(dto.getBreakpointTimeoutMillis(), is(5000L));
+        assertThat(dto.getBreakpointMaxHeld(), is(10));
+
+        Configuration rebuilt = dto.buildObject();
+        assertThat(rebuilt.breakpointEnabled(), is(true));
+        assertThat(rebuilt.breakpointResponseEnabled(), is(true));
+        assertThat(rebuilt.breakpointTimeoutMillis(), is(5000L));
+        assertThat(rebuilt.breakpointMaxHeld(), is(10));
+    }
+
+    @Test
+    public void shouldApplyBreakpointResponseEnabledPartially() {
+        Configuration target = configuration()
+            .breakpointEnabled(false)
+            .breakpointResponseEnabled(false);
+
+        ConfigurationDTO dto = new ConfigurationDTO();
+        dto.setBreakpointResponseEnabled(true);
+        dto.applyTo(target);
+
+        assertThat("breakpointEnabled should be unchanged", target.breakpointEnabled(), is(false));
+        assertThat("breakpointResponseEnabled should be updated", target.breakpointResponseEnabled(), is(true));
+    }
 }

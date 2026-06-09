@@ -25,6 +25,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long chaosAutoHaltWindowMillis;
     private Boolean mcpEnabled;
     private Boolean breakpointEnabled;
+    private Boolean breakpointResponseEnabled;
     private Long breakpointTimeoutMillis;
     private Integer breakpointMaxHeld;
     private Map<String, String> logLevelOverrides;
@@ -154,6 +155,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.chaosAutoHaltWindowMillis = configuration.chaosAutoHaltWindowMillis();
             this.mcpEnabled = configuration.mcpEnabled();
             this.breakpointEnabled = configuration.breakpointEnabled();
+            this.breakpointResponseEnabled = configuration.breakpointResponseEnabled();
             this.breakpointTimeoutMillis = configuration.breakpointTimeoutMillis();
             this.breakpointMaxHeld = configuration.breakpointMaxHeld();
             Map<String, String> overrides = configuration.logLevelOverrides();
@@ -333,6 +335,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.chaosAutoHaltWindowMillis(chaosAutoHaltWindowMillis);
         configuration.mcpEnabled(mcpEnabled);
         configuration.breakpointEnabled(breakpointEnabled);
+        configuration.breakpointResponseEnabled(breakpointResponseEnabled);
         configuration.breakpointTimeoutMillis(breakpointTimeoutMillis);
         configuration.breakpointMaxHeld(breakpointMaxHeld);
         configuration.logLevelOverrides(logLevelOverrides);
@@ -494,6 +497,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (breakpointEnabled != null) {
             target.breakpointEnabled(breakpointEnabled);
+        }
+        if (breakpointResponseEnabled != null) {
+            target.breakpointResponseEnabled(breakpointResponseEnabled);
         }
         if (breakpointTimeoutMillis != null) {
             target.breakpointTimeoutMillis(breakpointTimeoutMillis);
@@ -883,6 +889,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setBreakpointEnabled(Boolean breakpointEnabled) {
         this.breakpointEnabled = breakpointEnabled;
+        return this;
+    }
+
+    public Boolean getBreakpointResponseEnabled() {
+        return breakpointResponseEnabled;
+    }
+
+    public ConfigurationDTO setBreakpointResponseEnabled(Boolean breakpointResponseEnabled) {
+        this.breakpointResponseEnabled = breakpointResponseEnabled;
         return this;
     }
 

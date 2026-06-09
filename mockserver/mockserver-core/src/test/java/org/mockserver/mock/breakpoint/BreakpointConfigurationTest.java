@@ -18,6 +18,7 @@ public class BreakpointConfigurationTest {
     public void resetProperties() {
         // reset to defaults
         ConfigurationProperties.breakpointEnabled(false);
+        ConfigurationProperties.breakpointResponseEnabled(false);
         ConfigurationProperties.breakpointTimeoutMillis(30_000);
         ConfigurationProperties.breakpointMaxHeld(50);
     }
@@ -83,6 +84,32 @@ public class BreakpointConfigurationTest {
         assertThat(config.breakpointMaxHeld(), is(10));
     }
 
+    // --- breakpointResponseEnabled ---
+
+    @Test
+    public void shouldDefaultBreakpointResponseEnabledToFalse() {
+        assertThat(ConfigurationProperties.breakpointResponseEnabled(), is(false));
+    }
+
+    @Test
+    public void shouldSetAndGetBreakpointResponseEnabled() {
+        ConfigurationProperties.breakpointResponseEnabled(true);
+        assertThat(ConfigurationProperties.breakpointResponseEnabled(), is(true));
+    }
+
+    @Test
+    public void shouldDelegateResponseEnabledToStaticWhenNull() {
+        Configuration config = Configuration.configuration();
+        assertThat(config.breakpointResponseEnabled(), is(false));
+    }
+
+    @Test
+    public void shouldUseInstanceOverrideForResponseEnabled() {
+        Configuration config = Configuration.configuration()
+            .breakpointResponseEnabled(true);
+        assertThat(config.breakpointResponseEnabled(), is(true));
+    }
+
     // --- default-off path ---
 
     @Test
@@ -91,5 +118,6 @@ public class BreakpointConfigurationTest {
         // never be consulted, so the forward path is unaffected
         Configuration config = Configuration.configuration();
         assertThat("default is off", config.breakpointEnabled(), is(false));
+        assertThat("response default is off", config.breakpointResponseEnabled(), is(false));
     }
 }

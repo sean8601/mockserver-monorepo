@@ -1583,9 +1583,10 @@ paths:
         - control
       summary: list all currently paused (breakpointed) exchanges
       description: >-
-        Returns a JSON object listing all requests currently held at a breakpoint, with each entry's
-        correlation id, age, matched expectation id (if any), and a request summary (method + path).
-        Requires breakpointEnabled=true to have any entries.
+        Returns a JSON object listing all exchanges currently held at a breakpoint, with each entry's
+        correlation id, phase (REQUEST or RESPONSE), age, matched expectation id (if any), a request
+        summary (method + path), and for response-phase exchanges a response summary (statusCode + reasonPhrase).
+        Requires breakpointEnabled=true or breakpointResponseEnabled=true to have any entries.
       responses:
         '200':
           description: list of paused exchanges
@@ -1601,6 +1602,9 @@ paths:
                       properties:
                         id:
                           type: string
+                        phase:
+                          type: string
+                          enum: [REQUEST, RESPONSE]
                         ageMillis:
                           type: integer
                         expectationId:
@@ -1611,6 +1615,14 @@ paths:
                             method:
                               type: string
                             path:
+                              type: string
+                        response:
+                          type: object
+                          description: present only for RESPONSE-phase exchanges
+                          properties:
+                            statusCode:
+                              type: integer
+                            reasonPhrase:
                               type: string
                   count:
                     type: integer
@@ -1639,10 +1651,11 @@ paths:
     put:
       tags:
         - control
-      summary: continue a paused exchange (forward the original request unchanged)
+      summary: continue a paused exchange unchanged
       description: >-
-        Resolves a breakpointed request as CONTINUE — the original captured request is forwarded
-        to its upstream target unchanged.
+        Resolves a breakpointed exchange as CONTINUE. For request-phase exchanges, the original
+        captured request is forwarded to its upstream target unchanged. For response-phase exchanges,
+        the original upstream response is written to the client unchanged.
       requestBody:
         required: true
         content:
@@ -1690,10 +1703,12 @@ paths:
     put:
       tags:
         - control
-      summary: modify and continue a paused exchange (forward a replacement request)
+      summary: modify and continue a paused exchange
       description: >-
-        Resolves a breakpointed request as MODIFY — the replacement HttpRequest is forwarded
-        to the upstream target instead of the original captured request.
+        Resolves a breakpointed exchange as MODIFY. For request-phase exchanges, provide
+        {id, httpRequest} — the replacement request is forwarded to the upstream target. For
+        response-phase exchanges, provide {id, httpResponse} — the replacement response is
+        written to the client. Exactly one of httpRequest or httpResponse must be provided.
       requestBody:
         required: true
         content:
@@ -1702,16 +1717,19 @@ paths:
               type: object
               required:
                 - id
-                - httpRequest
               properties:
                 id:
                   type: string
                   description: the correlation id of the paused exchange to modify
                 httpRequest:
+                  description: replacement request (request-phase exchanges only)
                   $ref: "#/components/schemas/HttpRequest"
+                httpResponse:
+                  description: replacement response (response-phase exchanges only)
+                  $ref: "#/components/schemas/HttpResponse"
       responses:
         '200':
-          description: exchange modified and forwarded successfully
+          description: exchange modified successfully
           content:
             application/json:
               schema:
@@ -1723,7 +1741,7 @@ paths:
                   id:
                     type: string
         '400':
-          description: missing body, missing 'id' or 'httpRequest' field
+          description: missing body, missing 'id', or neither 'httpRequest' nor 'httpResponse' provided
           content:
             application/json:
               schema:
@@ -1744,10 +1762,11 @@ paths:
     put:
       tags:
         - control
-      summary: abort a paused exchange (do not forward; return a response to the client)
+      summary: abort a paused exchange (return an error response to the client)
       description: >-
-        Resolves a breakpointed request as ABORT — the request is NOT forwarded to the upstream
-        target. Instead, the optional httpResponse is returned to the client (or a 503 if omitted).
+        Resolves a breakpointed exchange as ABORT. For request-phase exchanges, the request is NOT
+        forwarded to the upstream target. For response-phase exchanges, the original upstream response
+        is discarded. In both cases, the optional httpResponse is returned to the client (or a 503 if omitted).
       requestBody:
         required: true
         content:

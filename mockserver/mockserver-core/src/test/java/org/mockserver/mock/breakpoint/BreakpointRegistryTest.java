@@ -282,4 +282,245 @@ public class BreakpointRegistryTest {
         assertThat("reset should complete", resetDone.get(), is(true));
         assertThat("registry should be empty after reset", registry.size(), is(0));
     }
+
+    // ===== Response-phase breakpoint tests (A1b) =====
+
+    @Test
+    public void shouldPauseResponseAndResolveContinue() throws Exception {
+        Configuration config = configWith(true, 30000, 50);
+        HttpRequest req = request().withMethod("GET").withPath("/api/test");
+        HttpResponse resp = response().withStatusCode(200).withBody("upstream body");
+
+        PausedExchange exchange = BreakpointRegistry.getInstance().pauseResponse(
+            "resp-corr-1", req, resp, null, config
+        );
+        assertThat(exchange, is(notNullValue()));
+        assertThat(exchange.getPhase(), is(PausedExchange.Phase.RESPONSE));
+        assertThat(exchange.getCapturedResponse().getStatusCode(), is(200));
+        assertThat(exchange.getCapturedRequest().getPath().getValue(), is("/api/test"));
+        // Registry uses "-response" suffix
+        assertThat(BreakpointRegistry.getInstance().entries().containsKey("resp-corr-1-response"), is(true));
+
+        boolean resolved = BreakpointRegistry.getInstance().resolveContinue("resp-corr-1-response");
+        assertThat(resolved, is(true));
+
+        BreakpointDecision decision = exchange.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        assertThat(decision.getAction(), is(BreakpointDecision.Action.CONTINUE));
+    }
+
+    @Test
+    public void shouldPauseResponseAndResolveModifyResponse() throws Exception {
+        Configuration config = configWith(true, 30000, 50);
+        HttpRequest req = request().withMethod("GET").withPath("/api/test");
+        HttpResponse resp = response().withStatusCode(200).withBody("original");
+
+        PausedExchange exchange = BreakpointRegistry.getInstance().pauseResponse(
+            "resp-corr-2", req, resp, "exp-1", config
+        );
+        assertThat(exchange, is(notNullValue()));
+        assertThat(exchange.getMatchedExpectationId(), is("exp-1"));
+
+        HttpResponse modified = response().withStatusCode(201).withBody("modified");
+        boolean resolved = BreakpointRegistry.getInstance().resolveModifyResponse(
+            "resp-corr-2-response", modified
+        );
+        assertThat(resolved, is(true));
+
+        BreakpointDecision decision = exchange.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        assertThat(decision.getAction(), is(BreakpointDecision.Action.MODIFY));
+        assertThat(decision.getModifiedResponse().getStatusCode(), is(201));
+        assertThat(decision.getModifiedResponse().getBodyAsString(), is("modified"));
+    }
+
+    @Test
+    public void shouldPauseResponseAndResolveAbort() throws Exception {
+        Configuration config = configWith(true, 30000, 50);
+        HttpRequest req = request().withMethod("GET").withPath("/api/test");
+        HttpResponse resp = response().withStatusCode(200);
+
+        PausedExchange exchange = BreakpointRegistry.getInstance().pauseResponse(
+            "resp-corr-3", req, resp, null, config
+        );
+
+        HttpResponse abortResp = response().withStatusCode(503).withBody("service down");
+        boolean resolved = BreakpointRegistry.getInstance().resolveAbort(
+            "resp-corr-3-response", abortResp
+        );
+        assertThat(resolved, is(true));
+
+        BreakpointDecision decision = exchange.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        assertThat(decision.getAction(), is(BreakpointDecision.Action.ABORT));
+        assertThat(decision.getAbortResponse().getStatusCode(), is(503));
+    }
+
+    @Test
+    public void shouldAutoContinueResponseOnTimeout() throws Exception {
+        Configuration config = configWith(true, 200, 50);
+        HttpRequest req = request().withMethod("GET").withPath("/api/test");
+        HttpResponse resp = response().withStatusCode(200);
+
+        PausedExchange exchange = BreakpointRegistry.getInstance().pauseResponse(
+            "resp-corr-timeout", req, resp, null, config
+        );
+        assertThat(exchange, is(notNullValue()));
+
+        BreakpointDecision decision = exchange.getDecisionFuture().get(2, TimeUnit.SECONDS);
+        assertThat("should auto-continue on timeout", decision.getAction(), is(BreakpointDecision.Action.CONTINUE));
+    }
+
+    @Test
+    public void shouldEnforceMaxHeldCapForResponseBreakpoints() {
+        Configuration config = configWith(true, 30000, 2);
+
+        // Fill cap with request-phase exchanges
+        PausedExchange ex1 = BreakpointRegistry.getInstance().pause("cap-req-1", request(), null, config);
+        PausedExchange ex2 = BreakpointRegistry.getInstance().pause("cap-req-2", request(), null, config);
+        assertThat(ex1, is(notNullValue()));
+        assertThat(ex2, is(notNullValue()));
+
+        // Response pause should be rejected (cap reached — shared with request breakpoints)
+        PausedExchange ex3 = BreakpointRegistry.getInstance().pauseResponse(
+            "cap-resp-1", request(), response(), null, config
+        );
+        assertThat("response pause should be rejected (cap reached)", ex3, is(nullValue()));
+    }
+
+    @Test
+    public void shouldResetResponsePhaseExchanges() throws Exception {
+        Configuration config = configWith(true, 30000, 50);
+
+        PausedExchange reqExchange = BreakpointRegistry.getInstance().pause("reset-req", request(), null, config);
+        PausedExchange respExchange = BreakpointRegistry.getInstance().pauseResponse(
+            "reset-resp", request(), response(), null, config
+        );
+
+        BreakpointRegistry.getInstance().reset();
+
+        assertThat(BreakpointRegistry.getInstance().size(), is(0));
+
+        BreakpointDecision d1 = reqExchange.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        BreakpointDecision d2 = respExchange.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        assertThat(d1.getAction(), is(BreakpointDecision.Action.CONTINUE));
+        assertThat(d2.getAction(), is(BreakpointDecision.Action.CONTINUE));
+    }
+
+    @Test
+    public void shouldStorePhaseInPausedExchange() throws Exception {
+        Configuration config = configWith(true, 30000, 50);
+
+        PausedExchange reqExchange = BreakpointRegistry.getInstance().pause("phase-req", request(), null, config);
+        PausedExchange respExchange = BreakpointRegistry.getInstance().pauseResponse(
+            "phase-resp", request(), response().withStatusCode(404), null, config
+        );
+
+        assertThat(reqExchange.getPhase(), is(PausedExchange.Phase.REQUEST));
+        assertThat(reqExchange.getCapturedResponse(), is(nullValue()));
+
+        assertThat(respExchange.getPhase(), is(PausedExchange.Phase.RESPONSE));
+        assertThat(respExchange.getCapturedResponse().getStatusCode(), is(404));
+    }
+
+    /**
+     * Proves that response breakpoints are non-blocking: pauses MORE concurrent
+     * response exchanges than a typical scheduler pool size, then verifies that
+     * (a) async continuations on a bounded pool still complete, and (b) the pool
+     * is not exhausted (other tasks still run).
+     *
+     * <p>Mirrors the existing shouldNotBlockThreadsWhenMorePausedThanPoolSize
+     * test for request breakpoints.
+     */
+    @Test
+    public void shouldNotBlockThreadsWhenMoreResponsesPausedThanPoolSize() throws Exception {
+        int poolSize = 3;
+        int pausedCount = poolSize + 5;
+        ExecutorService boundedPool = new ThreadPoolExecutor(
+            poolSize, poolSize, 0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(1000),
+            new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+
+        Configuration config = configWith(true, 30000, pausedCount + 10);
+        BreakpointRegistry registry = BreakpointRegistry.getInstance();
+
+        // Pause N response exchanges — none block any thread
+        List<PausedExchange> exchanges = new ArrayList<>();
+        for (int i = 0; i < pausedCount; i++) {
+            PausedExchange ex = registry.pauseResponse(
+                "nb-resp-" + i, request().withPath("/test/" + i),
+                response().withStatusCode(200), null, config
+            );
+            assertThat("exchange " + i + " should be registered", ex, is(notNullValue()));
+            exchanges.add(ex);
+        }
+        assertThat(registry.size(), is(pausedCount));
+
+        // Verify bounded pool is NOT exhausted: canary task completes
+        CountDownLatch canaryLatch = new CountDownLatch(1);
+        boundedPool.submit(canaryLatch::countDown);
+        assertThat("canary task should complete (pool not exhausted)",
+            canaryLatch.await(2, TimeUnit.SECONDS), is(true));
+
+        // Chain async continuations onto each decision future
+        AtomicInteger completedCount = new AtomicInteger(0);
+        CountDownLatch allDone = new CountDownLatch(pausedCount);
+        for (PausedExchange ex : exchanges) {
+            ex.getDecisionFuture().thenAcceptAsync(decision -> {
+                completedCount.incrementAndGet();
+                allDone.countDown();
+            }, boundedPool);
+        }
+
+        // Resolve: CONTINUE most, MODIFY one response, ABORT one
+        for (int i = 0; i < pausedCount; i++) {
+            String id = exchanges.get(i).getCorrelationId();
+            if (i == 0) {
+                registry.resolveModifyResponse(id, response().withStatusCode(201));
+            } else if (i == 1) {
+                registry.resolveAbort(id, response().withStatusCode(503));
+            } else {
+                registry.resolveContinue(id);
+            }
+        }
+
+        assertThat("all async continuations should complete",
+            allDone.await(5, TimeUnit.SECONDS), is(true));
+        assertThat(completedCount.get(), is(pausedCount));
+
+        // Verify cleanup
+        Thread.sleep(200);
+        assertThat("registry should be empty after all resolved", registry.size(), is(0));
+
+        // Verify pool still accepts work
+        CountDownLatch postCanary = new CountDownLatch(1);
+        boundedPool.submit(postCanary::countDown);
+        assertThat("post-resolution canary should complete",
+            postCanary.await(2, TimeUnit.SECONDS), is(true));
+
+        boundedPool.shutdown();
+    }
+
+    @Test
+    public void shouldHandleMixedRequestAndResponseExchanges() throws Exception {
+        Configuration config = configWith(true, 30000, 50);
+        BreakpointRegistry registry = BreakpointRegistry.getInstance();
+
+        PausedExchange reqEx = registry.pause("mixed-1", request().withPath("/req"), null, config);
+        PausedExchange respEx = registry.pauseResponse("mixed-2", request().withPath("/resp"), response().withStatusCode(200), null, config);
+
+        assertThat(registry.size(), is(2));
+
+        // Resolve request exchange
+        registry.resolveContinue("mixed-1");
+        BreakpointDecision d1 = reqEx.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        assertThat(d1.getAction(), is(BreakpointDecision.Action.CONTINUE));
+
+        // Resolve response exchange with modified response
+        registry.resolveModifyResponse("mixed-2-response", response().withStatusCode(201));
+        BreakpointDecision d2 = respEx.getDecisionFuture().get(1, TimeUnit.SECONDS);
+        assertThat(d2.getAction(), is(BreakpointDecision.Action.MODIFY));
+        assertThat(d2.getModifiedResponse().getStatusCode(), is(201));
+
+        Thread.sleep(100);
+        assertThat("registry should be empty", registry.size(), is(0));
+    }
 }

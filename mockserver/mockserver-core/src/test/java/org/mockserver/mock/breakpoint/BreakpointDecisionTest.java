@@ -48,4 +48,19 @@ public class BreakpointDecisionTest {
         assertThat(decision.getAction(), is(BreakpointDecision.Action.ABORT));
         assertThat(decision.getAbortResponse(), is(nullValue()));
     }
+
+    @Test
+    public void shouldCreateModifyResponseDecision() {
+        HttpResponse modified = response().withStatusCode(201).withBody("replaced");
+        BreakpointDecision decision = BreakpointDecision.modifyResponse(modified);
+        assertThat(decision.getAction(), is(BreakpointDecision.Action.MODIFY));
+        assertThat(decision.getModifiedResponse(), is(modified));
+        assertThat(decision.getModifiedRequest(), is(nullValue()));
+        assertThat(decision.getAbortResponse(), is(nullValue()));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectNullModifiedResponse() {
+        BreakpointDecision.modifyResponse(null);
+    }
 }
