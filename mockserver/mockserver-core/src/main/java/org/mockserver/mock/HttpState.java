@@ -28,6 +28,7 @@ import org.mockserver.model.*;
 import org.mockserver.openapi.OpenAPIConverter;
 import org.mockserver.openapi.OpenApiSyncPlanner;
 import org.mockserver.persistence.ExpectationFileSystemPersistence;
+import org.mockserver.proxyconfiguration.InetAddressValidator;
 import org.mockserver.persistence.ExpectationFileWatcher;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
@@ -3498,7 +3499,7 @@ public class HttpState {
 
             HttpRequest requestToReplay = getHttpRequestSerializer().deserialize(body);
 
-            // Safety: enforce body-size cap
+            // Safety: enforce body-size cap on outbound request
             byte[] requestBody = requestToReplay.getBodyAsRawBytes();
             if (requestBody != null && requestBody.length > REPLAY_MAX_BODY_SIZE) {
                 responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
@@ -3506,6 +3507,30 @@ public class HttpState {
                     .withBody("{\"error\":\"request body exceeds maximum replay size of " + REPLAY_MAX_BODY_SIZE + " bytes\"}", MediaType.JSON_UTF_8)), true);
                 canHandle.complete(true);
                 return;
+            }
+
+            // SSRF protection: validate the target host against the same policy
+            // enforced by the normal forward path (HttpForwardActionHandler).
+            // Resolves the host from socketAddress (if set) or the Host header,
+            // mirroring HttpRequest.socketAddressFromHostHeader().
+            String replayTargetHost = resolveReplayTargetHost(requestToReplay);
+            if (isNotBlank(replayTargetHost)) {
+                try {
+                    InetAddressValidator.validateForwardTarget(configuration, replayTargetHost);
+                } catch (IllegalArgumentException blocked) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setHttpRequest(requestToReplay)
+                            .setMessageFormat("replay blocked by SSRF policy:{}")
+                            .setArguments(blocked.getMessage())
+                    );
+                    responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                        .withStatusCode(FORBIDDEN.code())
+                        .withBody("{\"error\":" + jsonEncodeString("replay blocked by SSRF policy: " + blocked.getMessage()) + "}", MediaType.JSON_UTF_8)), true);
+                    canHandle.complete(true);
+                    return;
+                }
             }
 
             replayHandler.apply(requestToReplay)
@@ -3524,11 +3549,22 @@ public class HttpState {
                             );
                             responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
                                 .withStatusCode(BAD_GATEWAY.code())
-                                .withBody("{\"error\":\"replay failed: " + errorMessage.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8)), true);
+                                .withBody("{\"error\":" + jsonEncodeString("replay failed: " + errorMessage) + "}", MediaType.JSON_UTF_8)), true);
                         } else {
                             // Return the upstream response wrapped in a JSON envelope
                             // so the dashboard can display it alongside the original request.
                             HttpResponse replayResponse = upstreamResponse != null ? upstreamResponse : response().withStatusCode(OK.code());
+
+                            // Safety: enforce body-size cap on upstream response to prevent
+                            // OOM from materializing + JSON-serializing an unbounded body.
+                            byte[] responseBody = replayResponse.getBodyAsRawBytes();
+                            if (responseBody != null && responseBody.length > REPLAY_MAX_BODY_SIZE) {
+                                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                                    .withStatusCode(BAD_GATEWAY.code())
+                                    .withBody("{\"error\":\"upstream response body exceeds maximum replay size of " + REPLAY_MAX_BODY_SIZE + " bytes — response too large to return via control plane\"}", MediaType.JSON_UTF_8)), true);
+                                return;
+                            }
+
                             String serializedResponse = getHttpResponseSerializer().serialize(replayResponse);
                             responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
                                 .withStatusCode(OK.code())
@@ -3549,8 +3585,38 @@ public class HttpState {
             );
             responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
                 .withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"" + (e.getMessage() != null ? e.getMessage().replace("\"", "'") : "unknown error") + "\"}", MediaType.JSON_UTF_8)), true);
+                .withBody("{\"error\":" + jsonEncodeString(e.getMessage() != null ? e.getMessage() : "unknown error") + "}", MediaType.JSON_UTF_8)), true);
             canHandle.complete(true);
+        }
+    }
+
+    /**
+     * Resolve the target host from a replay request, using the same precedence
+     * as {@link HttpRequest#socketAddressFromHostHeader()}: explicit
+     * {@code socketAddress.host} first, then the {@code Host} header.
+     */
+    private static String resolveReplayTargetHost(HttpRequest request) {
+        if (request.getSocketAddress() != null && request.getSocketAddress().getHost() != null) {
+            return request.getSocketAddress().getHost();
+        }
+        String hostHeader = request.getFirstHeader(HOST.toString());
+        if (isNotBlank(hostHeader)) {
+            return HttpRequest.splitHostPort(hostHeader)[0];
+        }
+        return null;
+    }
+
+    /**
+     * JSON-encode a string value (with surrounding quotes) using Jackson so that
+     * special characters (quotes, backslashes, newlines, control chars) are
+     * properly escaped — replacing the naive {@code .replace("\"","'")} pattern.
+     */
+    private static String jsonEncodeString(String value) {
+        try {
+            return ObjectMapperFactory.createObjectMapper().writeValueAsString(value);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // Fallback: manual minimal escaping (should never happen for a plain string)
+            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"";
         }
     }
 

@@ -1507,6 +1507,76 @@ paths:
                   $ref: "#/components/schemas/HttpRequest"
         description: the two HTTP requests to compare
         required: true
+  /mockserver/replay:
+    put:
+      tags:
+        - control
+      summary: replay a previously recorded request to its original target
+      description: >-
+        Re-issues a previously recorded or proxied HTTP request to its upstream target and returns the
+        upstream response. The target host/port is resolved from the socketAddress field or the Host
+        header in the submitted HttpRequest JSON. Subject to the SSRF policy
+        (mockserver.forwardProxyBlockPrivateNetworks) and a 10 MB body-size cap on both the outbound
+        request and the upstream response.
+      responses:
+        '200':
+          description: upstream response returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpResponse"
+        '400':
+          description: missing or unparseable HttpRequest body
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: replay blocked by SSRF policy (target is a private/loopback/metadata address)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '413':
+          description: request body exceeds maximum replay size
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '501':
+          description: replay not available (no HTTP client wired)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '502':
+          description: upstream connection failed or upstream response body exceeds maximum size
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HttpRequest"
+        description: the HTTP request to replay to its original upstream target
+        required: true
   /mockserver/generateExpectation:
     put:
       tags:
