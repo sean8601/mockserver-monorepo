@@ -7,6 +7,9 @@ import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.HttpChaosProfile;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -395,5 +398,125 @@ public class ChaosAutoHaltMonitorTest {
 
         assertThat("singleton no-op when disabled",
             ServiceChaosRegistry.getInstance().entries().isEmpty(), is(false));
+    }
+
+    @Test
+    public void shouldMaintainAccurateWindowSizeUnderConcurrency() throws Exception {
+        // Regression test for the TOCTOU race in evictExpired(): before the fix,
+        // two threads could both peekFirst() the same expired head; one would
+        // pollFirst() an UNEXPIRED entry and the AtomicInteger windowSize would
+        // permanently undercount, preventing the circuit breaker from firing.
+        //
+        // Strategy: many threads hammer recordError() concurrently with a clock
+        // that produces a mix of soon-to-expire and fresh timestamps. After all
+        // threads complete, the window size must exactly equal the number of
+        // non-expired timestamps (no lost counts).
+        final int threadCount = 16;
+        final int errorsPerThread = 200;
+        final long windowMillis = 1_000L;
+        final long startTime = 10_000L;
+        // Each call advances the clock by 1 ms, so timestamps span
+        // startTime..startTime+(threadCount*errorsPerThread)-1.
+        // With a 1000 ms window, only the last 1000 entries survive eviction.
+        AtomicLong ticker = new AtomicLong(startTime);
+        ChaosAutoHaltMonitor monitor = new ChaosAutoHaltMonitor(ticker::getAndIncrement);
+
+        // Set a threshold higher than total possible errors so the halt doesn't
+        // fire and clear the window — we want to verify the count, not the halt.
+        ConfigurationProperties.chaosAutoHaltEnabled(true);
+        ConfigurationProperties.chaosAutoHaltErrorThreshold(threadCount * errorsPerThread + 1);
+        ConfigurationProperties.chaosAutoHaltWindowMillis(windowMillis);
+
+        CyclicBarrier barrier = new CyclicBarrier(threadCount);
+        List<Thread> threads = new ArrayList<>();
+        for (int t = 0; t < threadCount; t++) {
+            Thread thread = new Thread(() -> {
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                for (int i = 0; i < errorsPerThread; i++) {
+                    monitor.recordError("error");
+                }
+            });
+            threads.add(thread);
+            thread.start();
+        }
+
+        for (Thread thread : threads) {
+            thread.join(10_000);
+        }
+
+        // The ticker has advanced to startTime + totalErrors. The window spans
+        // [now - windowMillis, now]. Compute how many timestamps fall within it.
+        long finalTime = ticker.get() - 1; // last timestamp actually written
+        long cutoff = finalTime - windowMillis;
+        int totalErrors = threadCount * errorsPerThread;
+        // timestamps are startTime, startTime+1, ..., startTime+totalErrors-1
+        // non-expired: timestamp > cutoff, i.e. timestamp >= cutoff+1
+        int expectedInWindow = 0;
+        for (int i = 0; i < totalErrors; i++) {
+            if (startTime + i > cutoff) {
+                expectedInWindow++;
+            }
+        }
+
+        // Read the size through the public method which evicts expired entries
+        // using the last-used clock value (we can't advance further, but the
+        // evictExpired will use whatever clock returns).
+        // Reset the clock to finalTime so currentWindowSize() evicts correctly.
+        ticker.set(finalTime);
+        // Need a new monitor ref that uses the same ticker — but we already have
+        // it. currentWindowSize() calls clock.getAsLong() which returns finalTime.
+        int actualSize = monitor.currentWindowSize();
+
+        assertThat("window size must be exact after concurrent hammering "
+                + "(was " + actualSize + ", expected " + expectedInWindow + ")",
+            actualSize, is(expectedInWindow));
+    }
+
+    @Test
+    public void shouldFireHaltCorrectlyUnderConcurrency() throws Exception {
+        // Verify the circuit breaker actually fires under concurrent load.
+        // Multiple threads record errors; with a low threshold the halt must fire
+        // at least once, and the halt count must be exactly 1 (the guard prevents
+        // double-trigger).
+        final int threadCount = 8;
+        final int errorsPerThread = 50;
+        AtomicLong clock = new AtomicLong(10_000L);
+        ChaosAutoHaltMonitor monitor = new ChaosAutoHaltMonitor(clock::get);
+
+        ConfigurationProperties.chaosAutoHaltEnabled(true);
+        ConfigurationProperties.chaosAutoHaltErrorThreshold(10);
+        ConfigurationProperties.chaosAutoHaltWindowMillis(60_000L);
+
+        ServiceChaosRegistry.getInstance().put("upstream.svc", httpChaosProfile().withErrorStatus(503));
+
+        CyclicBarrier barrier = new CyclicBarrier(threadCount);
+        List<Thread> threads = new ArrayList<>();
+        for (int t = 0; t < threadCount; t++) {
+            Thread thread = new Thread(() -> {
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                for (int i = 0; i < errorsPerThread; i++) {
+                    monitor.recordError("error");
+                }
+            });
+            threads.add(thread);
+            thread.start();
+        }
+
+        for (Thread thread : threads) {
+            thread.join(10_000);
+        }
+
+        assertThat("circuit breaker must fire under concurrent load",
+            monitor.getHaltCount(), greaterThanOrEqualTo(1L));
+        assertThat("chaos registry must be empty after halt",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
     }
 }

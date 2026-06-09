@@ -3943,8 +3943,7 @@ public class HttpState {
             return response().withStatusCode(OK.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
         } catch (Exception e) {
-            return response().withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+            return breakpointErrorResponse(objectMapper, e);
         }
     }
 

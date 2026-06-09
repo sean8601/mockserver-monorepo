@@ -513,6 +513,10 @@
                         <exclude>**/VelocityTemplateEngineTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/ExampleBuilderRealisticValuesTest.java</exclude>
+                        <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
+                        <exclude>**/HttpActionHandlerGraphQLChaosTest.java</exclude>
+                        <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
+                        <exclude>**/BreakpointConfigurationTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -555,6 +559,9 @@
                                 <include>**/MustacheTemplateEngineTest.java</include>
                                 <include>**/VelocityTemplateEngineTest.java</include>
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
+                                <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
+                                <include>**/ChaosAutoHaltMonitorTest.java</include>
+                                <include>**/BreakpointConfigurationTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

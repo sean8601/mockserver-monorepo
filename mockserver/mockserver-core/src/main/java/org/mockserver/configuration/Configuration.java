@@ -849,6 +849,12 @@ public class Configuration {
 
     public Integer maxExpectations() {
         if (maxExpectations == null) {
+            // Honour the instance devMode field so that
+            // configuration.devMode(true) applies the dev default without
+            // needing to set the global ConfigurationProperties.devMode.
+            if (Boolean.TRUE.equals(devMode)) {
+                return ConfigurationProperties.DEV_MODE_MAX_EXPECTATIONS;
+            }
             return ConfigurationProperties.maxExpectations();
         }
         return maxExpectations;
@@ -871,6 +877,12 @@ public class Configuration {
 
     public Integer maxLogEntries() {
         if (maxLogEntries == null) {
+            // Honour the instance devMode field so that
+            // configuration.devMode(true) applies the dev default without
+            // needing to set the global ConfigurationProperties.devMode.
+            if (Boolean.TRUE.equals(devMode)) {
+                return ConfigurationProperties.DEV_MODE_MAX_LOG_ENTRIES;
+            }
             return ConfigurationProperties.maxLogEntries();
         }
         return maxLogEntries;

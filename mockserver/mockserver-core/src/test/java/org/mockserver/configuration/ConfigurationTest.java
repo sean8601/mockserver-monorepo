@@ -3126,4 +3126,62 @@ public class ConfigurationTest {
         }
     }
 
+    @Test
+    public void shouldApplyDevModeDefaultsViaInstanceDevMode() {
+        // Verify that setting devMode on a Configuration INSTANCE (not the global
+        // ConfigurationProperties.devMode) makes maxExpectations/maxLogEntries
+        // return the dev-mode defaults, without affecting the global state.
+        boolean originalDevMode = ConfigurationProperties.devMode();
+        int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
+        int originalMaxExpectations = ConfigurationProperties.maxExpectations();
+        try {
+            // Ensure global devMode is OFF
+            ConfigurationProperties.devMode(false);
+
+            // when - set devMode on the instance only
+            Configuration cfg = new Configuration();
+            cfg.devMode(true);
+
+            // then - instance getters return dev defaults
+            assertThat("instance maxExpectations should be dev default",
+                cfg.maxExpectations(), equalTo(ConfigurationProperties.DEV_MODE_MAX_EXPECTATIONS));
+            assertThat("instance maxLogEntries should be dev default",
+                cfg.maxLogEntries(), equalTo(ConfigurationProperties.DEV_MODE_MAX_LOG_ENTRIES));
+
+            // and - global getters are unaffected
+            assertThat("global devMode should still be false",
+                ConfigurationProperties.devMode(), equalTo(false));
+        } finally {
+            ConfigurationProperties.devMode(originalDevMode);
+            ConfigurationProperties.maxLogEntries(originalMaxLogEntries);
+            ConfigurationProperties.maxExpectations(originalMaxExpectations);
+        }
+    }
+
+    @Test
+    public void shouldNotOverrideExplicitInstanceMaxInDevMode() {
+        // Verify that an explicit maxExpectations/maxLogEntries set on the instance
+        // takes priority over the instance devMode default.
+        boolean originalDevMode = ConfigurationProperties.devMode();
+        int originalMaxLogEntries = ConfigurationProperties.maxLogEntries();
+        int originalMaxExpectations = ConfigurationProperties.maxExpectations();
+        try {
+            ConfigurationProperties.devMode(false);
+
+            Configuration cfg = new Configuration();
+            cfg.devMode(true);
+            cfg.maxExpectations(42);
+            cfg.maxLogEntries(99);
+
+            assertThat("explicit instance maxExpectations wins over devMode default",
+                cfg.maxExpectations(), equalTo(42));
+            assertThat("explicit instance maxLogEntries wins over devMode default",
+                cfg.maxLogEntries(), equalTo(99));
+        } finally {
+            ConfigurationProperties.devMode(originalDevMode);
+            ConfigurationProperties.maxLogEntries(originalMaxLogEntries);
+            ConfigurationProperties.maxExpectations(originalMaxExpectations);
+        }
+    }
+
 }

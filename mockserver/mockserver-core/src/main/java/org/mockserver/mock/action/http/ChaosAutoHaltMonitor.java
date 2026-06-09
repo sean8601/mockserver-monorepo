@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
@@ -61,10 +60,16 @@ public class ChaosAutoHaltMonitor {
     private final ConcurrentLinkedDeque<Long> errorTimestamps = new ConcurrentLinkedDeque<>();
     private final LongSupplier clock;
     private final AtomicLong haltCount = new AtomicLong(0);
-    /** Tracks window size in O(1) instead of calling ConcurrentLinkedDeque.size() which is O(n). */
-    private final AtomicInteger windowSize = new AtomicInteger(0);
     /** Guards against concurrent double-trigger: only one thread performs the halt block per trigger. */
     private final AtomicBoolean halting = new AtomicBoolean(false);
+    /**
+     * Lock that serializes the evict-then-check-threshold critical section.
+     * Without this, two concurrent {@code recordError()} threads can both
+     * {@code peekFirst()} the same expired head; the loser's {@code pollFirst()}
+     * removes an <em>unexpired</em> entry, permanently undercounting the window
+     * and preventing the circuit breaker from firing (TOCTOU race).
+     */
+    private final Object evictLock = new Object();
 
     ChaosAutoHaltMonitor(LongSupplier clock) {
         this.clock = clock;
@@ -101,26 +106,36 @@ public class ChaosAutoHaltMonitor {
 
         long now = clock.getAsLong();
         errorTimestamps.addLast(now);
-        windowSize.incrementAndGet();
-        int evicted = evictExpired(now);
 
         long threshold = ConfigurationProperties.chaosAutoHaltErrorThreshold();
         if (threshold <= 0) {
             return;
         }
 
-        int currentSize = windowSize.get();
+        // Evict expired entries and read the window size under the same lock to
+        // prevent the TOCTOU race where two threads both peek the same expired
+        // head and one of them polls an unexpired entry instead.
+        int currentSize;
+        synchronized (evictLock) {
+            evictExpired(now);
+            currentSize = errorTimestamps.size();
+        }
+
         if (currentSize >= threshold) {
             // AtomicBoolean guard: only one thread performs the halt block
             if (halting.compareAndSet(false, true)) {
                 try {
                     // Re-check after acquiring the guard (another thread may have cleared the window)
-                    if (windowSize.get() >= threshold && !ServiceChaosRegistry.getInstance().entries().isEmpty()) {
+                    int recheck;
+                    synchronized (evictLock) {
+                        recheck = errorTimestamps.size();
+                    }
+                    if (recheck >= threshold && !ServiceChaosRegistry.getInstance().entries().isEmpty()) {
                         haltCount.incrementAndGet();
                         LOG.warn(
                             "chaos auto-halt triggered: {} error-class faults (5xx/dropped/quota) in the last {} ms "
                                 + "exceeded threshold of {} — disabling all active service-scoped chaos profiles",
-                            windowSize.get(),
+                            recheck,
                             ConfigurationProperties.chaosAutoHaltWindowMillis(),
                             threshold
                         );
@@ -129,7 +144,6 @@ public class ChaosAutoHaltMonitor {
                         // Clear the window after halt so the circuit-breaker does not
                         // re-trigger immediately if new chaos is registered
                         errorTimestamps.clear();
-                        windowSize.set(0);
                     }
                 } finally {
                     halting.set(false);
@@ -140,6 +154,8 @@ public class ChaosAutoHaltMonitor {
 
     /**
      * Evict timestamps older than the current window from the head of the deque.
+     * <p><b>Must be called while holding {@code evictLock}</b> so the peek-then-poll
+     * sequence is atomic with respect to other threads doing the same eviction.
      *
      * @return the number of evicted entries
      */
@@ -153,7 +169,6 @@ public class ChaosAutoHaltMonitor {
                 break;
             }
             if (errorTimestamps.pollFirst() != null) {
-                windowSize.decrementAndGet();
                 evicted++;
             }
         }
@@ -172,8 +187,10 @@ public class ChaosAutoHaltMonitor {
      * Returns the number of error timestamps currently in the sliding window.
      */
     public int currentWindowSize() {
-        evictExpired(clock.getAsLong());
-        return windowSize.get();
+        synchronized (evictLock) {
+            evictExpired(clock.getAsLong());
+            return errorTimestamps.size();
+        }
     }
 
     /**
@@ -181,7 +198,6 @@ public class ChaosAutoHaltMonitor {
      */
     public void reset() {
         errorTimestamps.clear();
-        windowSize.set(0);
         haltCount.set(0);
         halting.set(false);
     }
