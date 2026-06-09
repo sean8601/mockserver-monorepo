@@ -257,6 +257,55 @@ describe('MetricsView', () => {
     expect(screen.getByText('No MCP tool calls recorded.')).toBeInTheDocument();
   });
 
+  it('renders auto-halt circuit breaker with non-zero count', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_chaos_auto_halt 3.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Auto-halt circuit breaker')).toBeInTheDocument());
+    expect(screen.getByText('3 halts')).toBeInTheDocument();
+  });
+
+  it('renders auto-halt circuit breaker with zero count showing "no halts"', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_chaos_auto_halt 0.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Auto-halt circuit breaker')).toBeInTheDocument());
+    expect(screen.getByText('no halts')).toBeInTheDocument();
+  });
+
+  it('shows singular "halt" for count of 1', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_chaos_auto_halt 1.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Auto-halt circuit breaker')).toBeInTheDocument());
+    expect(screen.getByText('1 halt')).toBeInTheDocument();
+  });
+
+  it('hides auto-halt section when metric is absent', async () => {
+    stubFetch(200, 'requests_received_count 5.0\n');
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
+    expect(screen.queryByText('Auto-halt circuit breaker')).not.toBeInTheDocument();
+  });
+
   it('hides zero-value expectation types from the chart', async () => {
     stubFetch(
       200,

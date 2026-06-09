@@ -67,6 +67,19 @@ import {
   EMPTY_GRPC_CHAOS_FORM,
   type GrpcChaosFormState,
 } from '../lib/grpcChaosForm';
+import {
+  startChaosExperiment,
+  getChaosExperimentStatus,
+  stopChaosExperiment,
+  formatDuration,
+  type ExperimentDefinitionDTO,
+  type ExperimentStageDTO,
+  type ExperimentStatusDTO,
+} from '../lib/chaosExperiment';
+import AddIcon from '@mui/icons-material/Add';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
+import LinearProgress from '@mui/material/LinearProgress';
 
 interface ServiceChaosPanelProps {
   connectionParams: ConnectionParams;
@@ -453,6 +466,23 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [grpcChaosData, setGrpcChaosData] = useState<GrpcChaosResponse>({ services: {} });
   const [grpcChaosForm, setGrpcChaosForm] = useState<GrpcChaosFormState>(EMPTY_GRPC_CHAOS_FORM);
 
+  // --- Chaos Experiments state ---
+  const [experimentsExpanded, setExperimentsExpanded] = useState(false);
+  const [experimentStatus, setExperimentStatus] = useState<ExperimentStatusDTO | null>(null);
+  const [expName, setExpName] = useState('');
+  const [expLoop, setExpLoop] = useState(false);
+  const [expStages, setExpStages] = useState<Array<{
+    durationMs: string;
+    host: string;
+    errorStatus: string;
+    errorProbability: string;
+    latencyMs: string;
+    dropProbability: string;
+  }>>([{
+    durationMs: '10000', host: '', errorStatus: '', errorProbability: '',
+    latencyMs: '', dropProbability: '',
+  }]);
+
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
   // Poll the registry on an interval.
@@ -567,6 +597,36 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       if (timer) clearTimeout(timer);
     };
   }, [connectionParams, grpcPanelExpanded, grpcFaultExpanded, refreshTick]);
+
+  // Poll chaos experiment status on mount and while the experiments section is
+  // expanded. Poll more frequently (2s) while a running experiment is active.
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll(): Promise<void> {
+      try {
+        const status = await getChaosExperimentStatus(connectionParams, controller.signal);
+        if (!cancelled) setExperimentStatus(status);
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) {
+          const isRunning = experimentStatus?.status === 'running' || experimentStatus?.status === 'starting';
+          const interval = isRunning ? 2000 : POLL_INTERVAL_MS;
+          timer = setTimeout(() => void poll(), experimentsExpanded ? interval : 10000);
+        }
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [connectionParams, experimentsExpanded, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hosts = useMemo(() => Object.keys(data.services).sort(), [data.services]);
 
@@ -796,6 +856,81 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       setGrpcChaosForm(EMPTY_GRPC_CHAOS_FORM);
     });
   }, [connectionParams, grpcChaosForm, runAction]);
+
+  // --- Chaos Experiment handlers ---
+
+  const addExpStage = useCallback(() => {
+    setExpStages((prev) => [...prev, {
+      durationMs: '10000', host: '', errorStatus: '', errorProbability: '',
+      latencyMs: '', dropProbability: '',
+    }]);
+  }, []);
+
+  const removeExpStage = useCallback((index: number) => {
+    setExpStages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const setExpStageField = (index: number, field: string) =>
+    (e: ChangeEvent<HTMLInputElement>) =>
+      setExpStages((prev) =>
+        prev.map((s, i) => i === index ? { ...s, [field]: e.target.value } : s),
+      );
+
+  const handleStartExperiment = useCallback(() => {
+    if (!expName.trim()) {
+      setActionError('Experiment name is required');
+      return;
+    }
+    if (expStages.length === 0) {
+      setActionError('At least one stage is required');
+      return;
+    }
+    const stages: ExperimentStageDTO[] = [];
+    for (let i = 0; i < expStages.length; i++) {
+      const s = expStages[i]!;
+      const durationMillis = num(s.durationMs);
+      if (durationMillis == null || durationMillis <= 0) {
+        setActionError(`Stage ${i + 1}: duration must be > 0`);
+        return;
+      }
+      if (!s.host.trim()) {
+        setActionError(`Stage ${i + 1}: host is required`);
+        return;
+      }
+      const profile: HttpChaosProfileDTO = {};
+      const errorStatus = num(s.errorStatus);
+      if (errorStatus != null) {
+        profile.errorStatus = errorStatus;
+        const ep = num(s.errorProbability);
+        if (ep != null) profile.errorProbability = ep;
+      }
+      const latMs = num(s.latencyMs);
+      if (latMs != null) profile.latency = { timeUnit: 'MILLISECONDS', value: latMs };
+      const dp = num(s.dropProbability);
+      if (dp != null) profile.dropConnectionProbability = dp;
+      if (summarizeChaosProfile(profile).length === 0) {
+        setActionError(`Stage ${i + 1}: set at least one fault (error, latency, or drop)`);
+        return;
+      }
+      stages.push({ durationMillis, profiles: { [s.host.trim()]: profile } });
+    }
+    const definition: ExperimentDefinitionDTO = {
+      name: expName.trim(),
+      loop: expLoop,
+      stages,
+    };
+    void runAction(async () => {
+      await startChaosExperiment(connectionParams, definition);
+    });
+  }, [connectionParams, expName, expLoop, expStages, runAction]);
+
+  const handleStopExperiment = useCallback(() => {
+    void runAction(async () => {
+      await stopChaosExperiment(connectionParams);
+    });
+  }, [connectionParams, runAction]);
+
+  const isExperimentActive = experimentStatus?.status === 'running' || experimentStatus?.status === 'starting';
 
   // Real gRPC health overrides: a named service, or the default if it is no longer SERVING.
   // The GET always returns a "_default" SERVING entry, which is not an override on its own.
@@ -1314,7 +1449,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       </Paper>
 
       {/* TCP-Layer Chaos */}
-      <Paper variant="outlined" sx={{ p: 1.25 }}>
+      <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
         <Box
           sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
           onClick={() => setTcpExpanded((v) => !v)}
@@ -1410,6 +1545,172 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 })}
               </Box>
             )}
+          </Box>
+        </Collapse>
+      </Paper>
+
+      {/* Chaos Experiments */}
+      <Paper variant="outlined" sx={{ p: 1.25 }}>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
+          onClick={() => setExperimentsExpanded((v) => !v)}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            Experiments
+          </Typography>
+          <Chip
+            size="small"
+            label={isExperimentActive ? 'running' : experimentStatus?.status === 'halted_by_auto_halt' ? 'halted' : 'idle'}
+            color={isExperimentActive ? 'warning' : experimentStatus?.status === 'halted_by_auto_halt' ? 'error' : 'default'}
+            variant="outlined"
+          />
+          <Box sx={{ flex: 1 }} />
+          {isExperimentActive && (
+            <Button
+              size="small"
+              color="error"
+              startIcon={<StopIcon fontSize="small" />}
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStopExperiment();
+              }}
+            >
+              Stop
+            </Button>
+          )}
+          <IconButton size="small" aria-label={experimentsExpanded ? 'Collapse experiments' : 'Expand experiments'}>
+            {experimentsExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+          </IconButton>
+        </Box>
+        <Collapse in={experimentsExpanded} unmountOnExit>
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Define a multi-stage chaos experiment: ordered stages that progress automatically,
+              each applying chaos profiles to upstream hosts for a specified duration.
+            </Typography>
+
+            {/* Live status when an experiment is active or recently terminated */}
+            {experimentStatus && experimentStatus.status !== 'none' && (
+              <Paper variant="outlined" sx={{ p: 1, mb: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Experiment Status
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {experimentStatus.name && (
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>{experimentStatus.name}</Typography>
+                  )}
+                  <Chip
+                    size="small"
+                    label={experimentStatus.status.replace(/_/g, ' ')}
+                    color={
+                      experimentStatus.status === 'running' ? 'warning'
+                        : experimentStatus.status === 'completed' ? 'success'
+                          : experimentStatus.status === 'halted_by_auto_halt' ? 'error'
+                            : 'default'
+                    }
+                  />
+                  {experimentStatus.totalStages > 0 && (
+                    <Typography variant="body2" color="text.secondary">
+                      Stage {experimentStatus.currentStageIndex + 1}/{experimentStatus.totalStages}
+                    </Typography>
+                  )}
+                  {experimentStatus.loopIteration > 0 && (
+                    <Chip size="small" label={`loop ${experimentStatus.loopIteration}`} variant="outlined" />
+                  )}
+                </Box>
+                {isExperimentActive && experimentStatus.totalStages > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        Stage elapsed: {formatDuration(experimentStatus.stageElapsedMillis)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Remaining: {formatDuration(experimentStatus.stageRemainingMillis)}
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={
+                        experimentStatus.stageElapsedMillis + experimentStatus.stageRemainingMillis > 0
+                          ? (experimentStatus.stageElapsedMillis / (experimentStatus.stageElapsedMillis + experimentStatus.stageRemainingMillis)) * 100
+                          : 0
+                      }
+                      sx={{ height: 6, borderRadius: 1 }}
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Total elapsed: {formatDuration(experimentStatus.totalElapsedMillis)}
+                    </Typography>
+                  </Box>
+                )}
+              </Paper>
+            )}
+
+            {/* Stage editor */}
+            <Paper variant="outlined" sx={{ p: 1, mb: 1 }}>
+              <Typography variant="caption" color="text.secondary">Define experiment</Typography>
+              <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  label="Experiment name"
+                  placeholder="latency-then-errors"
+                  value={expName}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setExpName(e.target.value)}
+                  sx={{ minWidth: 200 }}
+                />
+                <FormControlLabel
+                  control={<Switch size="small" checked={expLoop} onChange={(_e, checked) => setExpLoop(checked)} />}
+                  label="Loop"
+                />
+              </Box>
+
+              {expStages.map((stage, idx) => (
+                <Paper key={idx} variant="outlined" sx={{ p: 0.75, mt: 0.75, bgcolor: 'action.hover' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      Stage {idx + 1}
+                    </Typography>
+                    <Box sx={{ flex: 1 }} />
+                    {expStages.length > 1 && (
+                      <IconButton
+                        size="small"
+                        aria-label={`Remove stage ${idx + 1}`}
+                        onClick={() => removeExpStage(idx)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    <TextField size="small" label="Duration ms" placeholder="10000" value={stage.durationMs} onChange={setExpStageField(idx, 'durationMs')} sx={{ width: 120 }} />
+                    <TextField size="small" label="Host" placeholder="upstream.svc" value={stage.host} onChange={setExpStageField(idx, 'host')} sx={{ minWidth: 160 }} />
+                    <TextField size="small" label="Error status" placeholder="503" value={stage.errorStatus} onChange={setExpStageField(idx, 'errorStatus')} sx={{ width: 110 }} />
+                    <TextField size="small" label="Error prob (0-1)" placeholder="1.0" value={stage.errorProbability} onChange={setExpStageField(idx, 'errorProbability')} sx={{ width: 110 }} />
+                    <TextField size="small" label="Latency ms" placeholder="500" value={stage.latencyMs} onChange={setExpStageField(idx, 'latencyMs')} sx={{ width: 100 }} />
+                    <TextField size="small" label="Drop prob (0-1)" placeholder="0.2" value={stage.dropProbability} onChange={setExpStageField(idx, 'dropProbability')} sx={{ width: 110 }} />
+                  </Box>
+                </Paper>
+              ))}
+
+              <Box sx={{ display: 'flex', gap: 1, mt: 0.75, justifyContent: 'flex-end' }}>
+                <Button
+                  size="small"
+                  startIcon={<AddIcon fontSize="small" />}
+                  onClick={addExpStage}
+                >
+                  Add Stage
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<PlayArrowIcon fontSize="small" />}
+                  disabled={busy}
+                  onClick={handleStartExperiment}
+                >
+                  Start Experiment
+                </Button>
+              </Box>
+            </Paper>
           </Box>
         </Collapse>
       </Paper>

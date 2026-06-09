@@ -20,6 +20,7 @@ const CHAOS_METRIC = 'mock_server_http_chaos_injected_total';
 const ACTIVE_CHAOS_METRIC = 'mock_server_active_service_chaos';
 const EXPECTATIONS_BY_TYPE_METRIC = 'mock_server_expectations_by_type';
 const MCP_TOOL_CALLS_METRIC = 'mock_server_mcp_tool_calls_total';
+const AUTO_HALT_METRIC = 'mock_server_chaos_auto_halt';
 const ASYNC_PUBLISHED_METRIC = 'mock_server_async_messages_published_total';
 const ASYNC_CONSUMED_METRIC = 'mock_server_async_messages_consumed_total';
 
@@ -107,8 +108,14 @@ export default function MetricsView({ connectionParams }: MetricsViewProps) {
     (sum, ft) => sum + (latest ? metricValueByLabel(latest.samples, ACTIVE_CHAOS_METRIC, 'fault_type', ft) : 0),
     0,
   );
-  const chaosEnabled = latest ? (hasMetric(latest.samples, CHAOS_METRIC) || activeServiceChaosEnabled) : false;
-  const chaosHasData = chaosFaultTotals.some((f) => f.value > 0) || activeChaosTotal > 0;
+  // Auto-halt circuit-breaker counter
+  const autoHaltTotal = latest ? metricValue(latest.samples, AUTO_HALT_METRIC) : 0;
+  const autoHaltEnabled = latest ? hasMetric(latest.samples, AUTO_HALT_METRIC) : false;
+
+  const chaosEnabled = latest ? (hasMetric(latest.samples, CHAOS_METRIC) || activeServiceChaosEnabled || autoHaltEnabled) : false;
+  // The auto-halt counter is meaningful even at zero (it means the circuit-breaker
+  // is configured and has not fired), so its presence alone qualifies as "has data".
+  const chaosHasData = chaosFaultTotals.some((f) => f.value > 0) || activeChaosTotal > 0 || autoHaltEnabled;
 
   // Expectations by type — gauge labeled by action_type
   const expectationActionTypes = latest
@@ -283,6 +290,27 @@ MOCKSERVER_METRICS_ENABLED=true`}
                       data: gaugeSeriesByLabel(history, ACTIVE_CHAOS_METRIC, 'fault_type', ft),
                       label: chaosFaultLabel(ft),
                     }))}
+                  />
+                </Box>
+              )}
+              {autoHaltEnabled && (
+                <Box sx={{ mt: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                    <Typography variant="caption" color="text.secondary">Auto-halt circuit breaker</Typography>
+                    <Chip
+                      size="small"
+                      label={autoHaltTotal > 0 ? `${autoHaltTotal} halt${autoHaltTotal === 1 ? '' : 's'}` : 'no halts'}
+                      color={autoHaltTotal > 0 ? 'error' : 'success'}
+                      variant="outlined"
+                    />
+                  </Box>
+                  <MetricsLineChart
+                    height={100}
+                    valueFormatter={(v) => Math.round(v).toLocaleString()}
+                    series={[{
+                      data: gaugeSeries(history, AUTO_HALT_METRIC),
+                      label: 'auto-halt count',
+                    }]}
                   />
                 </Box>
               )}

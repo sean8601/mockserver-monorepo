@@ -31,11 +31,25 @@ function stubServiceChaos(initial: {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/chaosExperiment')) {
+        if (init?.method === 'PUT') {
+          puts.push({ body: JSON.parse(String(init.body)) as Record<string, unknown> });
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'started' }) };
+        }
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'stopped' }) };
+        }
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'none' }) };
+      }
       if (init?.method === 'PUT') {
         puts.push({ body: JSON.parse(String(init.body)) as Record<string, unknown> });
         return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'ok' }) };
       }
-      const u = String(url);
+      if (init?.method === 'PATCH') {
+        puts.push({ body: JSON.parse(String(init.body)) as Record<string, unknown> });
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'ok' }) };
+      }
       if (u.includes('/grpc/health')) {
         return { ok: true, status: 200, statusText: 'ok', json: async () => grpcHealthData };
       }
@@ -532,5 +546,213 @@ describe('ServiceChaosPanel', () => {
 
     expect(await screen.findByText(/Retry-After needs an error status/)).toBeInTheDocument();
     expect(puts).toHaveLength(0);
+  });
+
+  // --- Chaos Experiments tests ---
+
+  it('shows the Experiments section collapsed by default', async () => {
+    stubServiceChaos({ services: {} });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Expand experiments' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Collapse experiments' })).not.toBeInTheDocument();
+  });
+
+  it('shows experiment idle chip when no experiment is running', async () => {
+    stubServiceChaos({ services: {} });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+    expect(screen.getByText('idle')).toBeInTheDocument();
+  });
+
+  it('starts a multi-stage experiment with correct payload', async () => {
+    const user = userEvent.setup();
+    const experimentPuts: Array<{ body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/chaosExperiment') && init?.method === 'PUT') {
+          experimentPuts.push({ body: JSON.parse(String(init.body)) as Record<string, unknown> });
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'started' }) };
+        }
+        if (u.includes('/chaosExperiment') && init?.method === 'DELETE') {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'stopped' }) };
+        }
+        if (u.includes('/chaosExperiment')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'none' }) };
+        }
+        if (u.includes('/grpc/health')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({}) };
+        }
+        if (u.includes('/tcpChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ hosts: {} }) };
+        }
+        if (u.includes('/grpcChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+        }
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+      }),
+    );
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+
+    // Expand experiments section
+    await user.click(screen.getByRole('button', { name: 'Expand experiments' }));
+    await waitFor(() => expect(screen.getByLabelText('Experiment name')).toBeInTheDocument());
+
+    // Fill in name
+    await user.type(screen.getByLabelText('Experiment name'), 'error-then-latency');
+
+    // Scope queries to the experiment editor section by finding the "Define
+    // experiment" paper, then querying within it.
+    const defineHeader = screen.getByText('Define experiment');
+    const experimentEditor = defineHeader.closest('.MuiPaper-root') as HTMLElement;
+
+    // Fill in stage 1 — use within() to scope to the experiment editor
+    const stage1Duration = within(experimentEditor).getAllByLabelText('Duration ms');
+    await user.clear(stage1Duration[0]!);
+    await user.type(stage1Duration[0]!, '5000');
+    const stage1Host = within(experimentEditor).getAllByLabelText(/^Host$/);
+    await user.type(stage1Host[0]!, 'api.svc');
+    const stage1Error = within(experimentEditor).getAllByLabelText('Error status');
+    await user.type(stage1Error[0]!, '503');
+    const stage1ErrorProb = within(experimentEditor).getAllByLabelText('Error prob (0-1)');
+    await user.type(stage1ErrorProb[0]!, '1.0');
+
+    // Add stage 2
+    await user.click(within(experimentEditor).getByRole('button', { name: /Add Stage/ }));
+    const durationFields = within(experimentEditor).getAllByLabelText('Duration ms');
+    const hostFields = within(experimentEditor).getAllByLabelText(/^Host$/);
+    const latencyFields = within(experimentEditor).getAllByLabelText('Latency ms');
+    await user.clear(durationFields[1]!);
+    await user.type(durationFields[1]!, '10000');
+    await user.type(hostFields[1]!, 'api.svc');
+    await user.type(latencyFields[1]!, '500');
+
+    // Start experiment
+    await user.click(screen.getByRole('button', { name: /Start Experiment/ }));
+
+    await waitFor(() => expect(experimentPuts.length).toBeGreaterThan(0));
+    const body = experimentPuts[0]?.body as { name: string; loop: boolean; stages: Array<{ durationMillis: number; profiles: Record<string, unknown> }> };
+    expect(body.name).toBe('error-then-latency');
+    expect(body.loop).toBe(false);
+    expect(body.stages).toHaveLength(2);
+    expect(body.stages[0]?.durationMillis).toBe(5000);
+    expect(body.stages[0]?.profiles['api.svc']).toEqual({ errorStatus: 503, errorProbability: 1.0 });
+    expect(body.stages[1]?.durationMillis).toBe(10000);
+    expect(body.stages[1]?.profiles['api.svc']).toEqual({ latency: { timeUnit: 'MILLISECONDS', value: 500 } });
+  });
+
+  it('adds and removes stages in the experiment editor', async () => {
+    const user = userEvent.setup();
+    stubServiceChaos({ services: {} });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Expand experiments' }));
+    await waitFor(() => expect(screen.getByText('Stage 1')).toBeInTheDocument());
+
+    // Initially one stage
+    expect(screen.getByText('Stage 1')).toBeInTheDocument();
+    expect(screen.queryByText('Stage 2')).not.toBeInTheDocument();
+
+    // Add a stage
+    await user.click(screen.getByRole('button', { name: /Add Stage/ }));
+    expect(screen.getByText('Stage 2')).toBeInTheDocument();
+
+    // Add another
+    await user.click(screen.getByRole('button', { name: /Add Stage/ }));
+    expect(screen.getByText('Stage 3')).toBeInTheDocument();
+
+    // Remove stage 2
+    await user.click(screen.getByRole('button', { name: 'Remove stage 2' }));
+    expect(screen.queryByText('Stage 3')).not.toBeInTheDocument();
+    // Should now have stages 1 and 2 (originally 1 and 3)
+    expect(screen.getByText('Stage 1')).toBeInTheDocument();
+    expect(screen.getByText('Stage 2')).toBeInTheDocument();
+  });
+
+  it('shows experiment status with running state and progress', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/chaosExperiment') && !init?.method) {
+          return {
+            ok: true, status: 200, statusText: 'ok',
+            json: async () => ({
+              name: 'my-experiment',
+              status: 'running',
+              currentStageIndex: 1,
+              totalStages: 3,
+              stageElapsedMillis: 4000,
+              stageRemainingMillis: 6000,
+              loopIteration: 0,
+              totalElapsedMillis: 14000,
+            }),
+          };
+        }
+        if (u.includes('/grpc/health')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({}) };
+        }
+        if (u.includes('/tcpChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ hosts: {} }) };
+        }
+        if (u.includes('/grpcChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+        }
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+    // The chip should show "running"
+    await waitFor(() => expect(screen.getByText('running')).toBeInTheDocument());
+
+    // Expand to see status detail
+    await user.click(screen.getByRole('button', { name: 'Expand experiments' }));
+    await waitFor(() => expect(screen.getByText('my-experiment')).toBeInTheDocument());
+    expect(screen.getByText('Stage 2/3')).toBeInTheDocument();
+    // Stop button should be visible in the header
+    expect(screen.getByRole('button', { name: /Stop/ })).toBeInTheDocument();
+  });
+
+  it('sends DELETE when Stop is clicked on a running experiment', async () => {
+    const deleteCalls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/chaosExperiment') && init?.method === 'DELETE') {
+          deleteCalls.push(u);
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ status: 'stopped' }) };
+        }
+        if (u.includes('/chaosExperiment')) {
+          return {
+            ok: true, status: 200, statusText: 'ok',
+            json: async () => ({ name: 'active', status: 'running', currentStageIndex: 0, totalStages: 1, stageElapsedMillis: 1000, stageRemainingMillis: 4000, loopIteration: 0, totalElapsedMillis: 1000 }),
+          };
+        }
+        if (u.includes('/grpc/health')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({}) };
+        }
+        if (u.includes('/tcpChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ hosts: {} }) };
+        }
+        if (u.includes('/grpcChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+        }
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('running')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: /Stop/ }));
+    await waitFor(() => expect(deleteCalls.length).toBeGreaterThan(0));
+    expect(deleteCalls[0]).toContain('/chaosExperiment');
   });
 });
