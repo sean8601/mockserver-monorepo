@@ -1727,6 +1727,39 @@ public class MockServerClientTest {
     }
 
     @Test
+    public void shouldSendModifyBreakpointResponseRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"status\":\"modified\",\"id\":\"abc-123\"}"));
+        HttpResponse modifiedResponse = response().withStatusCode(200).withBody("modified body");
+        when(mockHttpResponseSerializer.serialize(modifiedResponse)).thenReturn("{\"statusCode\":200,\"body\":\"modified body\"}");
+
+        // when
+        mockServerClient.modifyBreakpointResponse("abc-123", modifiedResponse);
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sentRequest = httpRequestArgumentCaptor.getValue();
+        assertThat(sentRequest.getMethod().getValue(), is("PUT"));
+        assertThat(sentRequest.getPath().getValue(), is("/mockserver/breakpoint/modify"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"id\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("abc-123"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"httpResponse\""));
+        assertThat(sentRequest.getBodyAsString(), not(containsString("\"httpRequest\"")));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForBlankModifyBreakpointResponseId() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.modifyBreakpointResponse("", response()));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.modifyBreakpointResponse(null, response()));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForNullModifyBreakpointResponse() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.modifyBreakpointResponse("abc-123", null));
+    }
+
+    @Test
     public void shouldSendAbortBreakpointRequest() {
         // given
         when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))

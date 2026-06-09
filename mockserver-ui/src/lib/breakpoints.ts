@@ -11,11 +11,22 @@ export interface PausedExchangeRequest {
   path?: string;
 }
 
+export interface PausedExchangeResponse {
+  statusCode?: number;
+  reasonPhrase?: string;
+}
+
+export type BreakpointPhase = 'REQUEST' | 'RESPONSE';
+
 export interface PausedExchange {
   id: string;
+  /** The phase at which the exchange is paused (REQUEST or RESPONSE). Defaults to REQUEST when omitted. */
+  phase?: BreakpointPhase;
   ageMillis: number;
   expectationId?: string;
   request?: PausedExchangeRequest;
+  /** Response summary, present only for RESPONSE-phase exchanges. */
+  response?: PausedExchangeResponse;
 }
 
 export interface BreakpointListResponse {
@@ -72,6 +83,20 @@ export async function modifyBreakpoint(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, httpRequest }),
+  });
+  await ensureOk(res);
+}
+
+/** Resume a response-phase paused exchange with a modified response. */
+export async function modifyBreakpointResponse(
+  params: ConnectionParams,
+  id: string,
+  httpResponse: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch(`${endpoint(params)}/modify`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, httpResponse }),
   });
   await ensureOk(res);
 }

@@ -101,6 +101,20 @@ response-phase exchanges, a `response` summary with `statusCode` and `reasonPhra
   REQUEST phase. This prevents completing a decision future with the wrong type,
   which would cause a downstream NPE.
 
-## Follow-up (not yet implemented)
+## Dashboard UI
 
-- INC-11: Java client-library (`MockServerClient`) methods for the breakpoint endpoints
+The Breakpoints panel in the dashboard is phase-aware:
+
+- Each paused exchange displays a **Phase** chip (`REQUEST` or `RESPONSE`).
+- For **request-phase** exchanges: the table shows the HTTP method and path;
+  the Modify dialog edits the request JSON and sends `{id, httpRequest}`.
+- For **response-phase** exchanges: the table shows the status code and reason
+  phrase; the Modify dialog edits the response JSON and sends `{id, httpResponse}`.
+- Continue and Abort work identically for both phases.
+
+## Java client
+
+`MockServerClient` provides typed methods for both phases:
+
+- `modifyBreakpoint(String id, HttpRequest modifiedRequest)` — request-phase modify
+- `modifyBreakpointResponse(String id, HttpResponse modifiedResponse)` — response-phase modify

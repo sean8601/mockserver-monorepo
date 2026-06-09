@@ -2186,6 +2186,44 @@ public class MockServerClient implements Stoppable {
     }
 
     /**
+     * Modify a response-phase paused breakpoint exchange by replacing the captured response
+     * with a modified version, then allow it to be returned to the client.
+     *
+     * @param id               the correlation id of the paused exchange to modify
+     * @param modifiedResponse the modified response that replaces the originally captured one
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank, modifiedResponse is null, or the server rejects the request
+     */
+    public MockServerClient modifyBreakpointResponse(String id, HttpResponse modifiedResponse) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("modifyBreakpointResponse requires a non-blank id");
+        }
+        if (modifiedResponse == null) {
+            throw new IllegalArgumentException("modifyBreakpointResponse requires a non-null modifiedResponse");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            body.put("id", id);
+            String serializedResponse = httpResponseSerializer.serialize(modifiedResponse);
+            body.set("httpResponse", objectMapper.readTree(serializedResponse));
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/modify"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception modifying breakpoint response with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
      * Abort a paused breakpoint exchange, returning a default error response to the caller.
      *
      * @param id the correlation id of the paused exchange to abort

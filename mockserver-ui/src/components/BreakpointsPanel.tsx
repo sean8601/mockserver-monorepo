@@ -28,6 +28,7 @@ import {
   fetchBreakpoints,
   continueBreakpoint,
   modifyBreakpoint,
+  modifyBreakpointResponse,
   abortBreakpoint,
   type PausedExchange,
   type BreakpointListResponse,
@@ -124,7 +125,10 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
 
   const openModifyDialog = useCallback((exchange: PausedExchange) => {
     setModifyTarget(exchange);
-    setModifyJson(JSON.stringify(exchange.request ?? {}, null, 2));
+    const prefill = exchange.phase === 'RESPONSE'
+      ? (exchange.response ?? {})
+      : (exchange.request ?? {});
+    setModifyJson(JSON.stringify(prefill, null, 2));
     setModifyError(null);
   }, []);
 
@@ -140,7 +144,11 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     setBusy(true);
     setModifyError(null);
     try {
-      await modifyBreakpoint(connectionParams, modifyTarget.id, parsed);
+      if (modifyTarget.phase === 'RESPONSE') {
+        await modifyBreakpointResponse(connectionParams, modifyTarget.id, parsed);
+      } else {
+        await modifyBreakpoint(connectionParams, modifyTarget.id, parsed);
+      }
       setModifyTarget(null);
       refresh();
     } catch (e) {
@@ -171,7 +179,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       </Box>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        Requests paused by breakpoint expectations. Continue, modify, or abort each exchange.
+        Exchanges paused by breakpoint expectations. Continue, modify, or abort each exchange.
       </Typography>
 
       {loadError && (
@@ -198,15 +206,16 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       <Paper variant="outlined" sx={{ p: 1.25 }}>
         {data.pausedExchanges.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-            No paused requests. Breakpoint expectations pause matching requests so you can inspect and modify them before forwarding.
+            No paused exchanges. Breakpoint expectations pause matching requests or responses so you can inspect and modify them.
           </Typography>
         ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Method</TableCell>
-                  <TableCell>Path</TableCell>
+                  <TableCell>Phase</TableCell>
+                  <TableCell>Method / Status</TableCell>
+                  <TableCell>Path / Reason</TableCell>
                   <TableCell>Age</TableCell>
                   <TableCell>ID</TableCell>
                   <TableCell>Expectation</TableCell>
@@ -214,82 +223,98 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.pausedExchanges.map((exchange) => (
-                  <TableRow key={exchange.id}>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={exchange.request?.method ?? '?'}
-                        color="primary"
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: '0.65rem' }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                        {exchange.request?.path ?? '/'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption">
-                        {formatAge(exchange.ageMillis)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                        {exchange.id}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                        {exchange.expectationId ?? '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
-                        <Tooltip title="Continue (forward unchanged)">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="success"
-                              disabled={busy}
-                              onClick={() => void handleContinue(exchange.id)}
-                              aria-label={`Continue ${exchange.id}`}
-                            >
-                              <PlayArrowIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Modify request before forwarding">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="info"
-                              disabled={busy}
-                              onClick={() => openModifyDialog(exchange)}
-                              aria-label={`Modify ${exchange.id}`}
-                            >
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Abort (do not forward)">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="error"
-                              disabled={busy}
-                              onClick={() => void handleAbort(exchange.id)}
-                              aria-label={`Abort ${exchange.id}`}
-                            >
-                              <BlockIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {data.pausedExchanges.map((exchange) => {
+                  const isResponse = exchange.phase === 'RESPONSE';
+                  return (
+                    <TableRow key={exchange.id}>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={exchange.phase ?? 'REQUEST'}
+                          color={isResponse ? 'secondary' : 'default'}
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.65rem' }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={isResponse
+                            ? String(exchange.response?.statusCode ?? '?')
+                            : (exchange.request?.method ?? '?')}
+                          color={isResponse ? 'secondary' : 'primary'}
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.65rem' }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          {isResponse
+                            ? (exchange.response?.reasonPhrase ?? exchange.request?.path ?? '-')
+                            : (exchange.request?.path ?? '/')}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption">
+                          {formatAge(exchange.ageMillis)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                          {exchange.id}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          {exchange.expectationId ?? '-'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                          <Tooltip title="Continue (forward unchanged)">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="success"
+                                disabled={busy}
+                                onClick={() => void handleContinue(exchange.id)}
+                                aria-label={`Continue ${exchange.id}`}
+                              >
+                                <PlayArrowIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={isResponse ? 'Modify response before returning' : 'Modify request before forwarding'}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="info"
+                                disabled={busy}
+                                onClick={() => openModifyDialog(exchange)}
+                                aria-label={`Modify ${exchange.id}`}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="Abort (do not forward)">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                disabled={busy}
+                                onClick={() => void handleAbort(exchange.id)}
+                                aria-label={`Abort ${exchange.id}`}
+                              >
+                                <BlockIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>
@@ -298,10 +323,14 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
 
       {/* Modify dialog */}
       <Dialog open={modifyTarget !== null} onClose={() => setModifyTarget(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Modify Request</DialogTitle>
+        <DialogTitle>
+          {modifyTarget?.phase === 'RESPONSE' ? 'Modify Response' : 'Modify Request'}
+        </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Edit the request JSON, then send the modified request.
+            {modifyTarget?.phase === 'RESPONSE'
+              ? 'Edit the response JSON, then send the modified response.'
+              : 'Edit the request JSON, then send the modified request.'}
           </Typography>
           {modifyError && (
             <Alert severity="error" sx={{ mb: 1 }}>

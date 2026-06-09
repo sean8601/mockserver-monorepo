@@ -38,7 +38,7 @@ describe('BreakpointsPanel', () => {
     stubFetchBreakpoints({ pausedExchanges: [], count: 0 });
     renderPanel();
     expect(screen.getByText('Breakpoints')).toBeInTheDocument();
-    expect(screen.getByText(/Requests paused by breakpoint expectations/)).toBeInTheDocument();
+    expect(screen.getByText(/Exchanges paused by breakpoint expectations/)).toBeInTheDocument();
   });
 
   it('shows the empty state when no paused exchanges exist', async () => {
@@ -48,7 +48,7 @@ describe('BreakpointsPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('0 paused')).toBeInTheDocument();
     });
-    expect(screen.getByText(/No paused requests/)).toBeInTheDocument();
+    expect(screen.getByText(/No paused exchanges/)).toBeInTheDocument();
   });
 
   it('renders paused exchanges in a table when populated', async () => {
@@ -303,6 +303,104 @@ describe('BreakpointsPanel', () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
     });
+  });
+
+  it('renders response-phase exchange with status code and phase chip', async () => {
+    stubFetchBreakpoints({
+      count: 1,
+      pausedExchanges: [{
+        id: 'resp-456',
+        phase: 'RESPONSE',
+        ageMillis: 3000,
+        expectationId: 'exp-2',
+        request: { method: 'GET', path: '/api/data' },
+        response: { statusCode: 200, reasonPhrase: 'OK' },
+      }],
+    });
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('1 paused')).toBeInTheDocument();
+    });
+
+    // Phase chip
+    expect(screen.getByText('RESPONSE')).toBeInTheDocument();
+    // Status code chip instead of method
+    expect(screen.getByText('200')).toBeInTheDocument();
+    // Reason phrase
+    expect(screen.getByText('OK')).toBeInTheDocument();
+    // ID
+    expect(screen.getByText('resp-456')).toBeInTheDocument();
+  });
+
+  it('opens modify dialog with response JSON for response-phase exchange', async () => {
+    const user = userEvent.setup();
+    let callIndex = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method === 'PUT') {
+          return { ok: true, status: 200, json: async () => ({ status: 'modified', id: 'resp-456' }) };
+        }
+        callIndex++;
+        if (callIndex === 1) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              count: 1,
+              pausedExchanges: [{
+                id: 'resp-456',
+                phase: 'RESPONSE',
+                ageMillis: 1000,
+                request: { method: 'GET', path: '/api/data' },
+                response: { statusCode: 200, reasonPhrase: 'OK' },
+              }],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ count: 0, pausedExchanges: [] }),
+        };
+      }),
+    );
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('1 paused')).toBeInTheDocument();
+    });
+
+    // Open modify dialog
+    const modifyBtn = screen.getByRole('button', { name: /Modify resp-456/ });
+    await user.click(modifyBtn);
+
+    // Dialog should say "Modify Response"
+    await waitFor(() => {
+      expect(screen.getByText('Modify Response')).toBeInTheDocument();
+    });
+
+    // Textarea should be pre-filled with the response JSON
+    const textarea = screen.getByRole('textbox');
+    expect(textarea).toHaveValue(JSON.stringify({ statusCode: 200, reasonPhrase: 'OK' }, null, 2));
+
+    // Change the response and submit
+    fireEvent.change(textarea, { target: { value: '{"statusCode":503,"body":"Service Unavailable"}' } });
+    const sendBtn = screen.getByRole('button', { name: /Send Modified/ });
+    await user.click(sendBtn);
+
+    // Verify it sends httpResponse, not httpRequest
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const putCall = fetchMock.mock.calls.find(
+      ([u, i]) => String(u).includes('/breakpoint/modify') && (i as RequestInit)?.method === 'PUT',
+    );
+    expect(putCall).toBeDefined();
+    const putBody = JSON.parse((putCall![1] as RequestInit).body as string);
+    expect(putBody.id).toBe('resp-456');
+    expect(putBody.httpResponse).toEqual({ statusCode: 503, body: 'Service Unavailable' });
+    expect(putBody).not.toHaveProperty('httpRequest');
   });
 
   it('shows modify dialog validation error for invalid JSON', async () => {

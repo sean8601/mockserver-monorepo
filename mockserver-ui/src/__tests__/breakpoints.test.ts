@@ -3,6 +3,7 @@ import {
   fetchBreakpoints,
   continueBreakpoint,
   modifyBreakpoint,
+  modifyBreakpointResponse,
   abortBreakpoint,
   type BreakpointListResponse,
 } from '../lib/breakpoints';
@@ -122,6 +123,28 @@ describe('modifyBreakpoint', () => {
       id: 'abc-123',
       httpRequest: { method: 'POST', path: '/modified' },
     });
+  });
+});
+
+describe('modifyBreakpointResponse', () => {
+  it('sends PUT to /mockserver/breakpoint/modify with id and httpResponse', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const modified = { statusCode: 200, body: 'modified response' };
+    await modifyBreakpointResponse(params, 'abc-123', modified);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('http://127.0.0.1:1080/mockserver/breakpoint/modify');
+    expect(init.method).toBe('PUT');
+    const body = JSON.parse(init.body as string);
+    expect(body).toEqual({
+      id: 'abc-123',
+      httpResponse: { statusCode: 200, body: 'modified response' },
+    });
+    // must NOT include httpRequest
+    expect(body).not.toHaveProperty('httpRequest');
   });
 });
 
