@@ -7,14 +7,19 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.*;
 import io.netty.handler.ssl.SslHandler;
 import org.mockserver.codec.MockServerHttpServerCodec;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.breakpoint.PausedStreamFrame;
+import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
+import org.mockserver.mock.breakpoint.StreamFrameDecision;
 import org.mockserver.model.*;
 import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -24,10 +29,12 @@ public class HttpWebSocketResponseActionHandler {
 
     private final MockServerLogger mockServerLogger;
     private final Scheduler scheduler;
+    private final Configuration configuration;
 
-    public HttpWebSocketResponseActionHandler(MockServerLogger mockServerLogger, Scheduler scheduler) {
+    public HttpWebSocketResponseActionHandler(MockServerLogger mockServerLogger, Scheduler scheduler, Configuration configuration) {
         this.mockServerLogger = mockServerLogger;
         this.scheduler = scheduler;
+        this.configuration = configuration;
     }
 
     public void handle(HttpWebSocketResponse httpWebSocketResponse, ChannelHandlerContext ctx, org.mockserver.model.HttpRequest request) {
@@ -49,6 +56,22 @@ public class HttpWebSocketResponseActionHandler {
             return;
         }
 
+        // Determine if stream-frame breakpoints are active
+        final boolean streamBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointStreamEnabled());
+        final String streamId;
+        final String reqMethod;
+        final String reqPath;
+        if (streamBreakpointsActive) {
+            streamId = (request.getLogCorrelationId() != null
+                ? request.getLogCorrelationId() : java.util.UUID.randomUUID().toString()) + "-ws-stream";
+            reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
+            reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+        } else {
+            streamId = null;
+            reqMethod = null;
+            reqPath = null;
+        }
+
         nettyRequest.retain();
         handshaker.handshake(ctx.channel(), nettyRequest).addListener(future -> {
             try {
@@ -63,15 +86,18 @@ public class HttpWebSocketResponseActionHandler {
                     // Check if this is a GraphQL subscription WebSocket
                     if (GraphQLSubscriptionHandler.isGraphQLWebSocketProtocol(httpWebSocketResponse.getSubprotocol())
                         && httpWebSocketResponse.getGraphqlSubscriptionFilter() != null) {
-                        installGraphQLSubscriptionHandler(ctx, httpWebSocketResponse, handshaker);
+                        installGraphQLSubscriptionHandler(ctx, httpWebSocketResponse, handshaker,
+                            streamBreakpointsActive, streamId, reqMethod, reqPath);
                     } else {
-                        installBidirectionalHandler(ctx, httpWebSocketResponse, handshaker);
+                        installBidirectionalHandler(ctx, httpWebSocketResponse, handshaker,
+                            streamBreakpointsActive, streamId, reqMethod, reqPath);
 
                         List<WebSocketMessage> messages = httpWebSocketResponse.getMessages();
                         if (messages != null && !messages.isEmpty()) {
-                            scheduleMessages(messages, 0, ctx, httpWebSocketResponse, request, handshaker);
+                            scheduleMessages(messages, 0, ctx, httpWebSocketResponse, request, handshaker,
+                                streamBreakpointsActive, streamId, reqMethod, reqPath);
                         } else if (httpWebSocketResponse.getMatchers() == null || httpWebSocketResponse.getMatchers().isEmpty()) {
-                            finishWebSocket(ctx, httpWebSocketResponse, handshaker);
+                            finishWebSocket(ctx, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId);
                         }
                     }
                 } else {
@@ -111,11 +137,12 @@ public class HttpWebSocketResponseActionHandler {
 
     private void scheduleMessages(List<WebSocketMessage> messages, int index, ChannelHandlerContext ctx,
                                   HttpWebSocketResponse httpWebSocketResponse, org.mockserver.model.HttpRequest request,
-                                  WebSocketServerHandshaker handshaker) {
+                                  WebSocketServerHandshaker handshaker,
+                                  boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath) {
         if (index >= messages.size() || !ctx.channel().isActive()) {
             boolean hasMatchers = httpWebSocketResponse.getMatchers() != null && !httpWebSocketResponse.getMatchers().isEmpty();
             if (!hasMatchers) {
-                finishWebSocket(ctx, httpWebSocketResponse, handshaker);
+                finishWebSocket(ctx, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId);
             }
             return;
         }
@@ -129,44 +156,93 @@ public class HttpWebSocketResponseActionHandler {
                     return;
                 }
 
-                WebSocketFrame frame;
+                // Extract frame bytes for breakpoint interception
+                byte[] frameBytes;
+                boolean isBinary;
                 if (message.getBinary() != null) {
-                    frame = new BinaryWebSocketFrame(Unpooled.copiedBuffer(message.getBinary()));
+                    frameBytes = message.getBinary();
+                    isBinary = true;
                 } else if (message.getText() != null) {
-                    frame = new TextWebSocketFrame(message.getText());
+                    frameBytes = message.getText().getBytes(StandardCharsets.UTF_8);
+                    isBinary = false;
                 } else {
-                    scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker);
+                    scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
+                        streamBreakpointsActive, streamId, reqMethod, reqPath);
                     return;
                 }
 
-                ctx.writeAndFlush(frame).addListener(future -> {
-                    if (future.isSuccess()) {
-                        if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setType(EXPECTATION_RESPONSE)
-                                    .setLogLevel(Level.DEBUG)
-                                    .setCorrelationId(request.getLogCorrelationId())
-                                    .setHttpRequest(request)
-                                    .setMessageFormat("sent WebSocket message {} of {} for request:{}")
-                                    .setArguments(index + 1, messages.size(), request)
-                            );
+                if (!streamBreakpointsActive) {
+                    // Default-off fast path: write immediately
+                    writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
+                        handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                    return;
+                }
+
+                // --- Stream-frame breakpoint path ---
+                PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                    .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+
+                if (pausedFrame == null) {
+                    // Cap reached -- write immediately
+                    writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
+                        handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                    return;
+                }
+
+                // Frame is parked. Chain the decision callback onto the channel's event loop.
+                final boolean finalIsBinary = isBinary;
+                pausedFrame.getDecisionFuture().thenAccept(decision ->
+                    ctx.channel().eventLoop().execute(() -> {
+                        if (!ctx.channel().isActive()) {
+                            scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
+                                streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            return;
                         }
-                        scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker);
-                    } else {
-                        if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setLogLevel(Level.WARN)
-                                    .setCorrelationId(request.getLogCorrelationId())
-                                    .setHttpRequest(request)
-                                    .setMessageFormat("async write failure for WebSocket message {} for request:{}")
-                                    .setArguments(index + 1, request)
-                                    .setThrowable(future.cause())
-                            );
+                        switch (decision.getAction()) {
+                            case CONTINUE -> writeWebSocketFrame(pausedFrame.getCapturedBytes(), finalIsBinary, ctx, request,
+                                messages, index, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case MODIFY -> writeWebSocketFrame(decision.getReplacementBody(), finalIsBinary, ctx, request,
+                                messages, index, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case DROP ->
+                                scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
+                                    streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case INJECT -> {
+                                // Write original frame, then inject extra, then proceed
+                                WebSocketFrame originalFrame = finalIsBinary
+                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()))
+                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                ctx.writeAndFlush(originalFrame).addListener(future -> {
+                                    if (ctx.channel().isActive()) {
+                                        WebSocketFrame injectedFrame = finalIsBinary
+                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(decision.getInjectedBody()))
+                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getInjectedBody()));
+                                        ctx.writeAndFlush(injectedFrame).addListener(f2 ->
+                                            scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request,
+                                                handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath));
+                                    } else {
+                                        scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request,
+                                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                    }
+                                });
+                            }
+                            case CLOSE -> {
+                                StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+                                finishWebSocket(ctx, httpWebSocketResponse, handshaker, false, null);
+                            }
                         }
-                        finishWebSocket(ctx, httpWebSocketResponse, handshaker);
+                    })
+                ).exceptionally(ex -> {
+                    if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.DEBUG)
+                                .setCorrelationId(request.getLogCorrelationId())
+                                .setHttpRequest(request)
+                                .setMessageFormat("stream frame decision callback failed for WebSocket eager stream{}:{}")
+                                .setArguments(streamId, ex.getMessage())
+                        );
                     }
+                    return null;
                 });
             } catch (Exception e) {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
@@ -180,7 +256,7 @@ public class HttpWebSocketResponseActionHandler {
                             .setThrowable(e)
                     );
                 }
-                finishWebSocket(ctx, httpWebSocketResponse, handshaker);
+                finishWebSocket(ctx, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId);
             }
         };
 
@@ -191,8 +267,57 @@ public class HttpWebSocketResponseActionHandler {
         }
     }
 
+    /**
+     * Writes a WebSocket frame (byte[]) to the channel and chains to the next message on success.
+     * Shared between the default-off fast path and the breakpoint resume path.
+     */
+    private void writeWebSocketFrame(byte[] frameBytes, boolean isBinary, ChannelHandlerContext ctx,
+                                     org.mockserver.model.HttpRequest request, List<WebSocketMessage> messages,
+                                     int index, HttpWebSocketResponse httpWebSocketResponse,
+                                     WebSocketServerHandshaker handshaker,
+                                     boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath) {
+        WebSocketFrame frame = isBinary
+            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
+            : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
+
+        ctx.writeAndFlush(frame).addListener(future -> {
+            if (future.isSuccess()) {
+                if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setType(EXPECTATION_RESPONSE)
+                            .setLogLevel(Level.DEBUG)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setMessageFormat("sent WebSocket message {} of {} for request:{}")
+                            .setArguments(index + 1, messages.size(), request)
+                    );
+                }
+                scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
+                    streamBreakpointsActive, streamId, reqMethod, reqPath);
+            } else {
+                if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setCorrelationId(request.getLogCorrelationId())
+                            .setHttpRequest(request)
+                            .setMessageFormat("async write failure for WebSocket message {} for request:{}")
+                            .setArguments(index + 1, request)
+                            .setThrowable(future.cause())
+                    );
+                }
+                finishWebSocket(ctx, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId);
+            }
+        });
+    }
+
     private void finishWebSocket(ChannelHandlerContext ctx, HttpWebSocketResponse httpWebSocketResponse,
-                                 WebSocketServerHandshaker handshaker) {
+                                 WebSocketServerHandshaker handshaker,
+                                 boolean streamBreakpointsActive, String streamId) {
+        if (streamBreakpointsActive && streamId != null) {
+            StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+        }
         if (ctx.channel().isActive()) {
             if (httpWebSocketResponse.getCloseConnection() == null || httpWebSocketResponse.getCloseConnection()) {
                 handshaker.close(ctx.channel(), new CloseWebSocketFrame());
@@ -201,12 +326,68 @@ public class HttpWebSocketResponseActionHandler {
     }
 
     private void installGraphQLSubscriptionHandler(ChannelHandlerContext ctx, HttpWebSocketResponse httpWebSocketResponse,
-                                                      WebSocketServerHandshaker handshaker) {
+                                                      WebSocketServerHandshaker handshaker,
+                                                      boolean streamBreakpointsActive, String streamId,
+                                                      String reqMethod, String reqPath) {
         GraphQLSubscriptionHandler.FrameSender frameSender = (senderCtx, text, delay) -> {
             if (!senderCtx.channel().isActive()) {
                 return;
             }
-            Runnable writeAction = () -> senderCtx.writeAndFlush(new TextWebSocketFrame(text));
+            Runnable writeAction;
+            if (streamBreakpointsActive) {
+                writeAction = () -> {
+                    byte[] frameBytes = text.getBytes(StandardCharsets.UTF_8);
+                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                        .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+                    if (pausedFrame == null) {
+                        // Cap reached -- write immediately
+                        senderCtx.writeAndFlush(new TextWebSocketFrame(text));
+                        return;
+                    }
+                    pausedFrame.getDecisionFuture().thenAccept(decision ->
+                        senderCtx.channel().eventLoop().execute(() -> {
+                            if (!senderCtx.channel().isActive()) {
+                                return;
+                            }
+                            switch (decision.getAction()) {
+                                case CONTINUE -> senderCtx.writeAndFlush(
+                                    new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes())));
+                                case MODIFY -> senderCtx.writeAndFlush(
+                                    new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getReplacementBody())));
+                                case DROP -> { /* discard -- do not write */ }
+                                case INJECT -> {
+                                    senderCtx.writeAndFlush(
+                                        new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes())))
+                                        .addListener(f -> {
+                                            if (senderCtx.channel().isActive()) {
+                                                senderCtx.writeAndFlush(
+                                                    new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getInjectedBody())));
+                                            }
+                                        });
+                                }
+                                case CLOSE -> {
+                                    StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+                                    if (handshaker != null) {
+                                        handshaker.close(senderCtx.channel(), new CloseWebSocketFrame());
+                                    }
+                                }
+                            }
+                        })
+                    ).exceptionally(ex -> {
+                        if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setLogLevel(Level.DEBUG)
+                                    .setMessageFormat("stream frame decision callback failed for GraphQL subscription stream{}:{}")
+                                    .setArguments(streamId, ex.getMessage())
+                            );
+                        }
+                        return null;
+                    });
+                };
+            } else {
+                writeAction = () -> senderCtx.writeAndFlush(new TextWebSocketFrame(text));
+            }
             if (delay != null) {
                 scheduler.schedule(writeAction, false, delay);
             } else {
@@ -224,26 +405,107 @@ public class HttpWebSocketResponseActionHandler {
     }
 
     private void installBidirectionalHandler(ChannelHandlerContext ctx, HttpWebSocketResponse httpWebSocketResponse,
-                                             WebSocketServerHandshaker handshaker) {
+                                             WebSocketServerHandshaker handshaker,
+                                             boolean streamBreakpointsActive, String streamId,
+                                             String reqMethod, String reqPath) {
         List<WebSocketMessageMatcher> matchers = httpWebSocketResponse.getMatchers();
         if (matchers != null && !matchers.isEmpty()) {
             BidirectionalWebSocketFrameHandler.FrameSender frameSender = (senderCtx, message) -> {
                 if (!senderCtx.channel().isActive()) {
                     return;
                 }
-                WebSocketFrame frame;
+                byte[] frameBytes;
+                boolean isBinary;
                 if (message.getBinary() != null) {
-                    frame = new BinaryWebSocketFrame(Unpooled.copiedBuffer(message.getBinary()));
+                    frameBytes = message.getBinary();
+                    isBinary = true;
                 } else if (message.getText() != null) {
-                    frame = new TextWebSocketFrame(message.getText());
+                    frameBytes = message.getText().getBytes(StandardCharsets.UTF_8);
+                    isBinary = false;
                 } else {
                     return;
                 }
+
+                Runnable writeAction;
+                if (streamBreakpointsActive) {
+                    writeAction = () -> {
+                        PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                            .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+                        if (pausedFrame == null) {
+                            // Cap reached -- write immediately
+                            WebSocketFrame frame = isBinary
+                                ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
+                                : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
+                            senderCtx.writeAndFlush(frame);
+                            return;
+                        }
+                        final boolean finalIsBinary = isBinary;
+                        pausedFrame.getDecisionFuture().thenAccept(decision ->
+                            senderCtx.channel().eventLoop().execute(() -> {
+                                if (!senderCtx.channel().isActive()) {
+                                    return;
+                                }
+                                switch (decision.getAction()) {
+                                    case CONTINUE -> {
+                                        WebSocketFrame f = finalIsBinary
+                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()))
+                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                        senderCtx.writeAndFlush(f);
+                                    }
+                                    case MODIFY -> {
+                                        WebSocketFrame f = finalIsBinary
+                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(decision.getReplacementBody()))
+                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getReplacementBody()));
+                                        senderCtx.writeAndFlush(f);
+                                    }
+                                    case DROP -> { /* discard -- do not write */ }
+                                    case INJECT -> {
+                                        WebSocketFrame orig = finalIsBinary
+                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()))
+                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                        senderCtx.writeAndFlush(orig).addListener(f -> {
+                                            if (senderCtx.channel().isActive()) {
+                                                WebSocketFrame inj = finalIsBinary
+                                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(decision.getInjectedBody()))
+                                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getInjectedBody()));
+                                                senderCtx.writeAndFlush(inj);
+                                            }
+                                        });
+                                    }
+                                    case CLOSE -> {
+                                        StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+                                        if (handshaker != null) {
+                                            handshaker.close(senderCtx.channel(), new CloseWebSocketFrame());
+                                        }
+                                    }
+                                }
+                            })
+                        ).exceptionally(ex -> {
+                            if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setLogLevel(Level.DEBUG)
+                                        .setMessageFormat("stream frame decision callback failed for WebSocket bidi stream{}:{}")
+                                        .setArguments(streamId, ex.getMessage())
+                                );
+                            }
+                            return null;
+                        });
+                    };
+                } else {
+                    writeAction = () -> {
+                        WebSocketFrame frame = isBinary
+                            ? new BinaryWebSocketFrame(Unpooled.copiedBuffer(frameBytes))
+                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
+                        senderCtx.writeAndFlush(frame);
+                    };
+                }
+
                 Delay delay = message.getDelay();
                 if (delay != null) {
-                    scheduler.schedule(() -> senderCtx.writeAndFlush(frame), false, delay);
+                    scheduler.schedule(writeAction, false, delay);
                 } else {
-                    senderCtx.writeAndFlush(frame);
+                    writeAction.run();
                 }
             };
             ctx.pipeline().addLast("bidirectionalWebSocketHandler",

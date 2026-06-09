@@ -4,7 +4,7 @@ Interactive breakpoints let you pause proxied/forwarded exchanges at three phase
 
 1. **Request breakpoints** (A1a) — hold the outbound request before it reaches the upstream server
 2. **Response breakpoints** (A1b) — hold the upstream response before it is written to the client
-3. **Stream frame breakpoints** (A1c) — hold each individual frame of a forwarded streaming response (SSE / HTTP/1.1 chunked) before it is written to the client
+3. **Stream frame breakpoints** (A1c + A1d) — hold each individual frame of a streaming response before it is written to the client. Covers both forwarded upstream streams (SSE / HTTP/1.1 chunked) and mock-generated streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted messages, WebSocket bidirectional responses, and GraphQL subscription pushes)
 
 Request and response breakpoints support inspect, modify, continue, and abort via the REST API.
 Stream frame breakpoints support continue, modify, drop, inject, and close per frame.
@@ -48,30 +48,61 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
 
 ### Stream frame phase (`breakpointStreamEnabled`)
 
-- Hold point: `NettyResponseWriter.writeStreamingResponse`, inside the
-  `StreamingBody.subscribe()` onChunk callback — each chunk is intercepted
-  before being written as a `DefaultHttpContent` to the downstream client.
-- Scope: HTTP/1.1 chunked and Server-Sent Events (SSE) forwarded responses.
-  gRPC, HTTP/2, and WebSocket streams are NOT intercepted (follow-up A1d/A1e).
+- **Hold points:**
+  - `NettyResponseWriter.writeStreamingResponse` — SSE/chunked forwarded and mock
+    responses (A1c). The `StreamingBody.subscribe()` onChunk callback intercepts
+    each chunk before writing as a `DefaultHttpContent`.
+  - `GrpcStreamResponseActionHandler.scheduleMessages` — gRPC server-streaming mock
+    responses (A1d). Each gRPC message frame is intercepted before `ctx.writeAndFlush`.
+  - `HttpWebSocketResponseActionHandler.scheduleMessages` — WebSocket eager/scripted
+    messages (A1d). Each frame is intercepted before writing.
+  - `HttpWebSocketResponseActionHandler.installBidirectionalHandler` — WebSocket
+    bidirectional response frames (A1d). The FrameSender intercepts each response frame.
+  - `HttpWebSocketResponseActionHandler.installGraphQLSubscriptionHandler` — GraphQL
+    subscription push frames (A1d). The FrameSender intercepts each `next` message.
+- Scope: all streaming response types (SSE/chunked forwarded AND mock-generated,
+  gRPC server-streaming, WebSocket, and GraphQL subscriptions). HTTP/3 gRPC
+  server-streaming is NOT yet intercepted (follow-up).
 - Decision actions: CONTINUE (write original frame), MODIFY (write replacement
   body), DROP (discard frame), INJECT (write original + extra frame), CLOSE
-  (send LastHttpContent and close the stream).
-- **Backpressure:** when a frame is parked, `streamingBody.requestMore()` is NOT
-  called — this stops the upstream from sending more chunks. After the frame
-  decision is resolved, `requestMore()` is called to resume the upstream flow.
-- **Stream-close eviction:** when the stream completes or errors, all held frames
-  for that stream are auto-continued (preventing leaks and hanging futures).
+  (send stream-end signal and close the stream).
+- **Backpressure:** for SSE/chunked streams, when a frame is parked,
+  `streamingBody.requestMore()` is NOT called — this stops the upstream from
+  sending more chunks. For gRPC server-streaming and WebSocket eager/scripted
+  mock-generated streams (via `scheduleMessages`), the next message in the
+  sequence is not scheduled until the current frame's decision is resolved
+  (inherent backpressure via the recursive schedule chain). **Note:**
+  GraphQL-subscription (`pushNextSequence`) and WebSocket-bidirectional
+  response paths are fire-and-forget — they park ALL frames simultaneously
+  as they arrive (driven by inbound client messages or the subscription
+  sequence), which means they can hit `breakpointMaxHeld` under high
+  throughput. There is no inherent backpressure in these paths because the
+  frame sender is invoked per inbound event rather than chained sequentially.
+- **Stream-close eviction:** when a stream completes, errors, or is explicitly
+  closed, all held frames for that stream are auto-continued/dropped (preventing
+  leaks and hanging futures).
 - **Frame ordering:** frames within a stream are assigned monotonic sequence
   numbers. The registry enforces that frames are resolved in order — attempting
   to resolve a frame whose predecessor is still held is rejected.
-- **ByteBuf discipline:** the chunk bytes are copied into a `byte[]` at park time.
-  The original ByteBuf (owned by StreamingBody) is released normally by the
-  caller. On resume, the decision handler allocates a new `Unpooled.wrappedBuffer`
-  for writing. No ByteBuf is retained across the breakpoint hold period.
-- **Event-loop safety:** the onChunk callback runs on the upstream channel's event
-  loop. It NEVER blocks — it parks the frame and returns immediately. The
-  decision callback is marshalled onto the downstream channel's event loop via
+- **ByteBuf discipline:** frame bytes are copied into a `byte[]` at park time.
+  For SSE/chunked, the original ByteBuf (owned by StreamingBody) is released
+  normally by the caller. For gRPC, frames are already `byte[]` from
+  `GrpcStreamMessageEncoder.encode()`. For WebSocket, text is encoded to `byte[]`
+  via UTF-8. On resume, the decision handler allocates a new
+  `Unpooled.wrappedBuffer` for writing. No ByteBuf is retained across the
+  breakpoint hold period.
+- **gRPC framing constraint:** for gRPC streams, MODIFY and INJECT replacement
+  bytes must be a valid gRPC length-prefixed frame (1-byte compressed flag +
+  4-byte big-endian message length + message bytes), otherwise the client will
+  see a protocol error. The breakpoint engine passes bytes through opaquely --
+  it does not validate or re-frame the content.
+- **Event-loop safety:** all hold-point callbacks run on the Netty event loop.
+  They NEVER block — they park the frame and return immediately. The decision
+  callback is marshalled onto the channel's event loop via
   `ctx.channel().eventLoop().execute(...)`.
+- **Stream ID format:** forwarded streams use `{correlationId}-stream`, gRPC
+  streams use `{correlationId}-grpc-stream`, WebSocket/GraphQL streams use
+  `{correlationId}-ws-stream`.
 
 ## Safety rails
 
@@ -116,7 +147,7 @@ The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumb
 |----------|---------|-------------|
 | `mockserver.breakpointEnabled` | `false` | Enable request-phase breakpoints |
 | `mockserver.breakpointResponseEnabled` | `false` | Enable response-phase breakpoints |
-| `mockserver.breakpointStreamEnabled` | `false` | Enable stream-frame breakpoints (SSE/chunked) |
+| `mockserver.breakpointStreamEnabled` | `false` | Enable stream-frame breakpoints (SSE/chunked, gRPC, WebSocket, GraphQL) |
 | `mockserver.breakpointTimeoutMillis` | `30000` | Auto-continue timeout (shared) |
 | `mockserver.breakpointMaxHeld` | `50` | Max concurrent paused exchanges/frames (shared) |
 
@@ -135,7 +166,11 @@ The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumb
 - `StreamFrameBreakpointRegistry` — process-wide singleton managing paused stream frames
 - `PausedStreamFrame` — holds streamId, sequence number, captured bytes, `CompletableFuture<StreamFrameDecision>`
 - `StreamFrameDecision` — CONTINUE / MODIFY / DROP / INJECT / CLOSE resolution
-- `NettyResponseWriter.writeStreamingResponse` — choke point: onChunk callback intercepts frames
+- `NettyResponseWriter.writeStreamingResponse` — hold point for SSE/chunked streams (forwarded + mock)
+- `GrpcStreamResponseActionHandler.scheduleMessages` — hold point for gRPC server-streaming mock responses
+- `HttpWebSocketResponseActionHandler.scheduleMessages` — hold point for WebSocket eager/scripted messages
+- `HttpWebSocketResponseActionHandler.installBidirectionalHandler` — hold point for WebSocket bidi responses
+- `HttpWebSocketResponseActionHandler.installGraphQLSubscriptionHandler` — hold point for GraphQL subscription pushes
 - `HttpState.handleStreamFrame*` — control-plane handlers for stream frame actions
 
 ## Behavioural notes
@@ -175,6 +210,5 @@ The Breakpoints panel in the dashboard is phase-aware:
 
 ## Future work
 
-- A1d: gRPC / HTTP/2 stream frame breakpoints
-- A1e: WebSocket stream frame breakpoints
+- HTTP/3 gRPC server-streaming breakpoints (`Http3GrpcResponseWriter`)
 - Dashboard UI for stream frame breakpoints (frame list, per-frame actions)

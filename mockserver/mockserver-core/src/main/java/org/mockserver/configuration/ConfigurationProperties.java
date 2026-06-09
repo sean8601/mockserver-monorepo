@@ -649,10 +649,12 @@ public class ConfigurationProperties {
     }
 
     /**
-     * Enable per-frame interactive breakpoints for forwarded streaming responses
-     * (Server-Sent Events and HTTP/1.1 chunked). When enabled, each frame of a forwarded
-     * streaming response is paused and can be inspected, modified, dropped, or injected
-     * via the control-plane REST API before being written to the client. Default is false (off).
+     * Enable per-frame interactive breakpoints for streaming responses — both
+     * forwarded upstream streams (SSE, HTTP/1.1 chunked) and mock-generated
+     * streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted
+     * messages, WebSocket bidirectional responses, and GraphQL subscription pushes).
+     * Each frame is paused and can be inspected, modified, dropped, or injected
+     * via the control-plane REST API. Default is false (off).
      *
      * @param enable enable stream frame breakpoints
      */

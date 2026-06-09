@@ -520,6 +520,7 @@
                         <!-- Mutate shared static singleton registries (BreakpointRegistry, StreamFrameBreakpointRegistry) -->
                         <exclude>**/BreakpointRegistryTest.java</exclude>
                         <exclude>**/StreamFrameBreakpointRegistryTest.java</exclude>
+                        <exclude>**/MockStreamBreakpointTest.java</exclude>
                         <!-- Mutates ServiceChaosRegistry + ChaosAutoHaltMonitor singletons, Metrics, ConfigurationProperties -->
                         <exclude>**/ChaosExperimentOrchestratorTest.java</exclude>
                     </excludes>
@@ -569,6 +570,7 @@
                                 <include>**/BreakpointConfigurationTest.java</include>
                                 <include>**/BreakpointRegistryTest.java</include>
                                 <include>**/StreamFrameBreakpointRegistryTest.java</include>
+                                <include>**/MockStreamBreakpointTest.java</include>
                                 <include>**/ChaosExperimentOrchestratorTest.java</include>
                             </includes>
                         </configuration>

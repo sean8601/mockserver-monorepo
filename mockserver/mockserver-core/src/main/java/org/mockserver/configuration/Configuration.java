@@ -615,9 +615,12 @@ public class Configuration {
     }
 
     /**
-     * Enable per-frame interactive breakpoints for forwarded streaming responses
-     * (SSE and HTTP/1.1 chunked). Each frame is paused and can be inspected, modified,
-     * dropped, or injected via the control-plane REST API. Default is false (off).
+     * Enable per-frame interactive breakpoints for streaming responses — both
+     * forwarded upstream streams (SSE, HTTP/1.1 chunked) and mock-generated
+     * streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted
+     * messages, WebSocket bidirectional responses, and GraphQL subscription pushes).
+     * Each frame is paused and can be inspected, modified, dropped, or injected
+     * via the control-plane REST API. Default is false (off).
      */
     public Configuration breakpointStreamEnabled(Boolean breakpointStreamEnabled) {
         this.breakpointStreamEnabled = breakpointStreamEnabled;

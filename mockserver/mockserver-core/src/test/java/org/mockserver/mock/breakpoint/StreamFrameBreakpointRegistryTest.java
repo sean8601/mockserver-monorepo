@@ -1,6 +1,7 @@
 package org.mockserver.mock.breakpoint;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 
@@ -13,6 +14,11 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 public class StreamFrameBreakpointRegistryTest {
+
+    @Before
+    public void setup() {
+        StreamFrameBreakpointRegistry.getInstance().reset();
+    }
 
     @After
     public void cleanup() {

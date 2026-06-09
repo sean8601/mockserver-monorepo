@@ -2707,14 +2707,14 @@ public class HttpActionHandler {
 
     private HttpWebSocketResponseActionHandler getHttpWebSocketResponseActionHandler() {
         if (httpWebSocketResponseActionHandler == null) {
-            httpWebSocketResponseActionHandler = new HttpWebSocketResponseActionHandler(mockServerLogger, scheduler);
+            httpWebSocketResponseActionHandler = new HttpWebSocketResponseActionHandler(mockServerLogger, scheduler, configuration);
         }
         return httpWebSocketResponseActionHandler;
     }
 
     private GrpcStreamResponseActionHandler getGrpcStreamResponseActionHandler() {
         if (grpcStreamResponseActionHandler == null) {
-            grpcStreamResponseActionHandler = new GrpcStreamResponseActionHandler(mockServerLogger, scheduler, httpStateHandler.getGrpcDescriptorStore());
+            grpcStreamResponseActionHandler = new GrpcStreamResponseActionHandler(mockServerLogger, scheduler, httpStateHandler.getGrpcDescriptorStore(), configuration);
         }
         return grpcStreamResponseActionHandler;
     }
