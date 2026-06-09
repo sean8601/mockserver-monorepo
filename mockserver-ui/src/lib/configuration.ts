@@ -124,4 +124,5 @@ export const EDITABLE_PROPERTIES: readonly EditablePropertyDescriptor[] = [
     help: 'Sliding window in milliseconds over which errors are counted for auto-halt.',
     group: 'Chaos auto-halt',
   },
+
 ] as const;

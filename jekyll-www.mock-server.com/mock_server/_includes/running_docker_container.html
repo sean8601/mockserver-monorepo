@@ -182,6 +182,8 @@ For example to add all jar files in the current directory, map <strong>$(pwd)</s
       initialDelaySeconds: 5
       periodSeconds: 5</code></pre>
 
+<p><strong>Important:</strong> the <span class="inline_code">MOCKSERVER_LIVENESS_HTTP_GET_PATH</span> environment variable must be set (as shown above) for the <span class="inline_code">httpGet</span> probe to work. This path is empty (disabled) by default &mdash; without the env var, probe requests will return a 404. If you copy only the <span class="inline_code">livenessProbe</span> / <span class="inline_code">readinessProbe</span> blocks without the <span class="inline_code">env</span> section, the probes will fail.</p>
+
 <p>The MockServer Helm chart configures these probes automatically.</p>
 
 <h3>Amazon ECS Health Check</h3>

@@ -11,6 +11,8 @@ import { useDashboardStore } from '../store';
 interface PanelProps {
   title: string;
   count: number;
+  /** When a filter or search is active, pass the filtered count to show "N / total". */
+  filteredCount?: number;
   searchValue: string;
   onSearchChange: (value: string) => void;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
@@ -20,6 +22,7 @@ interface PanelProps {
 export default function Panel({
   title,
   count,
+  filteredCount,
   searchValue,
   onSearchChange,
   searchInputRef,
@@ -60,7 +63,16 @@ export default function Panel({
           {title}
         </Typography>
         {count > 0 && (
-          <Chip label={count > 999 ? '999+' : count} color="primary" size="small" sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }} />
+          <Chip
+            label={
+              filteredCount != null && filteredCount !== count
+                ? `${filteredCount > 999 ? '999+' : filteredCount} / ${count > 999 ? '999+' : count}`
+                : count > 999 ? '999+' : count
+            }
+            color="primary"
+            size="small"
+            sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+          />
         )}
         <TextField
           id={`${title.toLowerCase().replace(/\s+/g, '-')}-search`}

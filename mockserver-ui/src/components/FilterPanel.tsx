@@ -349,7 +349,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
           </Box>
           <Box sx={{ mt: 2 }}>
             <ChipCluster
-              label="Action Type"
+              label="Action Type (expectations only)"
               options={ACTION_TYPES}
               selected={actionTypeFilter}
               onChange={setActionTypeFilter}
@@ -357,7 +357,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
             />
             {hasLlmExpectations && (
               <ChipCluster
-                label="LLM Provider"
+                label="LLM Provider (expectations only)"
                 options={LLM_PROVIDERS}
                 selected={llmProviderFilter}
                 onChange={setLlmProviderFilter}

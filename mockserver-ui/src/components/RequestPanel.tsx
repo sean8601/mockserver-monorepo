@@ -6,16 +6,13 @@ import Typography from '@mui/material/Typography';
 import type { JsonListItem } from '../types';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
+import { matchesItemSearch } from '../lib/searchMatcher';
 
 interface RequestPanelProps {
   title: string;
   items: JsonListItem[];
   searchValue: string;
   onSearchChange: (value: string) => void;
-}
-
-function matchesSearch(item: JsonListItem, term: string): boolean {
-  return JSON.stringify(item).toLowerCase().includes(term.toLowerCase());
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +116,7 @@ export default function RequestPanel({
   onSearchChange,
 }: RequestPanelProps) {
   const filtered = useMemo(
-    () => (searchValue ? items.filter((e) => matchesSearch(e, searchValue)) : items),
+    () => (searchValue ? items.filter((e) => matchesItemSearch(e.value, searchValue)) : items),
     [items, searchValue],
   );
 
@@ -127,6 +124,7 @@ export default function RequestPanel({
     <Panel
       title={title}
       count={items.length}
+      filteredCount={searchValue ? filtered.length : undefined}
       searchValue={searchValue}
       onSearchChange={onSearchChange}
     >
@@ -139,7 +137,7 @@ export default function RequestPanel({
           const tp = extractTraceparentFromItem(item);
           return (
             <Box key={item.key}>
-              <JsonListItemComponent item={item} index={items.length - index} />
+              <JsonListItemComponent item={item} index={filtered.length - index} />
               {tp && (
                 <Box sx={{ pl: 6, pb: 0.5 }}>
                   <TraceparentPill info={tp} />

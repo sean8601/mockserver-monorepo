@@ -110,6 +110,20 @@ describe('conversationToJava', () => {
 
     expect(java).toContain('.streaming()');
   });
+
+  it('emits timeToFirstToken as Delay with TimeUnit import', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { timeToFirstToken: 200, tokensPerSecond: 50 };
+    const java = conversationToJava(draft);
+
+    expect(java).toContain('timeToFirstToken(200L, TimeUnit.MILLISECONDS)');
+    expect(java).toContain('import java.util.concurrent.TimeUnit;');
+    // tokensPerSecond is a plain number, not a Delay
+    expect(java).toContain('tokensPerSecond(50)');
+    // fragments are passed as varargs to withStreamingPhysics, not chained
+    expect(java).toContain('.withStreamingPhysics(timeToFirstToken(200L, TimeUnit.MILLISECONDS), tokensPerSecond(50))');
+  });
 });
 
 describe('conversationToJson', () => {
@@ -166,6 +180,29 @@ describe('conversationToJson', () => {
       path: '/v1/messages',
     });
   });
+
+  it('emits timeToFirstToken as a Delay object (not a plain number)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { timeToFirstToken: 200, tokensPerSecond: 50, jitter: 0.1 };
+    const parsed = JSON.parse(conversationToJson(draft));
+    const sp = parsed[0].httpLlmResponse.completion.streamingPhysics;
+
+    expect(sp.timeToFirstToken).toEqual({ timeUnit: 'MILLISECONDS', value: 200 });
+    // tokensPerSecond and jitter are plain numbers
+    expect(sp.tokensPerSecond).toBe(50);
+    expect(sp.jitter).toBe(0.1);
+  });
+
+  it('emits outputSchema as a raw string, not a parsed object', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.outputSchema = '{"type":"object","properties":{"name":{"type":"string"}}}';
+    const parsed = JSON.parse(conversationToJson(draft));
+    const schema = parsed[0].httpLlmResponse.completion.outputSchema;
+
+    expect(typeof schema).toBe('string');
+    expect(schema).toBe('{"type":"object","properties":{"name":{"type":"string"}}}');
+  });
 });
 
 describe('conversationToMcpArgs', () => {
@@ -214,6 +251,29 @@ describe('conversationToMcpArgs', () => {
     const args = conversationToMcpArgs(draft);
 
     expect(args).not.toHaveProperty('model');
+  });
+
+  it('emits timeToFirstToken as a Delay object in MCP args', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { timeToFirstToken: 300 };
+    const args = conversationToMcpArgs(draft);
+    const turns = args['turns'] as Record<string, unknown>[];
+    const response = turns[0]!['response'] as Record<string, unknown>;
+    const sp = response['streamingPhysics'] as Record<string, unknown>;
+
+    expect(sp['timeToFirstToken']).toEqual({ timeUnit: 'MILLISECONDS', value: 300 });
+  });
+
+  it('emits outputSchema as a raw string in MCP args', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.outputSchema = '{"type":"object"}';
+    const args = conversationToMcpArgs(draft);
+    const turns = args['turns'] as Record<string, unknown>[];
+    const response = turns[0]!['response'] as Record<string, unknown>;
+
+    expect(typeof response['outputSchema']).toBe('string');
+    expect(response['outputSchema']).toBe('{"type":"object"}');
   });
 });
 
@@ -391,5 +451,49 @@ describe('chaos profile', () => {
     const chaos = turns[0]!['chaos'] as Record<string, unknown>;
     expect(chaos['truncateMode']).toBeUndefined();
     expect(chaos['errorStatus']).toBe(500);
+  });
+});
+
+describe('timeToFirstToken Delay round-trip', () => {
+  function streamingDraft(): ConversationDraft {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { timeToFirstToken: 200, tokensPerSecond: 50, jitter: 0.1 };
+    return draft;
+  }
+
+  it('round-trips timeToFirstToken Delay through draftFromScenarioExpectations', () => {
+    const json = JSON.parse(conversationToJson(streamingDraft())) as Array<Record<string, unknown>>;
+    const { draft } = draftFromScenarioExpectations(
+      json.map((value, i) => ({ key: `k${i}`, value })),
+    );
+    expect(draft.turns[0]!.response.streamingPhysics?.timeToFirstToken).toBe(200);
+    expect(draft.turns[0]!.response.streamingPhysics?.tokensPerSecond).toBe(50);
+    expect(draft.turns[0]!.response.streamingPhysics?.jitter).toBe(0.1);
+  });
+});
+
+describe('outputSchema as string', () => {
+  it('round-trips outputSchema string through draftFromScenarioExpectations', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.outputSchema = '{"type":"object","properties":{"name":{"type":"string"}}}';
+    const json = JSON.parse(conversationToJson(draft)) as Array<Record<string, unknown>>;
+    const { draft: reloaded } = draftFromScenarioExpectations(
+      json.map((value, i) => ({ key: `k${i}`, value })),
+    );
+    expect(reloaded.turns[0]!.response.outputSchema).toBe('{"type":"object","properties":{"name":{"type":"string"}}}');
+  });
+
+  it('does not JSON.parse outputSchema in the wire format', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.outputSchema = '{"type":"object"}';
+    // JSON path
+    const parsed = JSON.parse(conversationToJson(draft));
+    expect(typeof parsed[0].httpLlmResponse.completion.outputSchema).toBe('string');
+    // MCP path
+    const args = conversationToMcpArgs(draft);
+    const turns = args['turns'] as Array<Record<string, unknown>>;
+    const response = turns[0]!['response'] as Record<string, unknown>;
+    expect(typeof response['outputSchema']).toBe('string');
   });
 });

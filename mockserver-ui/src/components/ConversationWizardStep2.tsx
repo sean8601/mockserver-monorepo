@@ -14,7 +14,7 @@ import Collapse from '@mui/material/Collapse';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PredicatePills from './PredicatePills';
-import type { TurnDraft, TurnMatchPredicates, TurnResponse, NormalizationDraft, ChaosDraft } from '../lib/conversationCodegen';
+import type { TurnDraft, TurnMatchPredicates, TurnResponse, NormalizationDraft, ChaosDraft, StreamingPhysicsDraft } from '../lib/conversationCodegen';
 import type { ToolCallDraft } from '../lib/expectationFromCapture';
 
 // ---------------------------------------------------------------------------
@@ -380,7 +380,68 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.75rem' } }}
                 />
               </Box>
+              <Collapse in={turn.response.streaming} unmountOnExit>
+                <Box sx={{ pl: 1.5, mb: 1, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: '100%', mb: 0.5 }}>
+                    Streaming physics — controls the timing of SSE token delivery.
+                  </Typography>
+                  <TextField
+                    label="Time to first token (ms)"
+                    size="small"
+                    type="number"
+                    value={turn.response.streamingPhysics?.timeToFirstToken ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
+                      const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), timeToFirstToken: val };
+                      const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
+                      updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
+                    }}
+                    sx={{ width: 180 }}
+                  />
+                  <TextField
+                    label="Tokens/sec"
+                    size="small"
+                    type="number"
+                    value={turn.response.streamingPhysics?.tokensPerSecond ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
+                      const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), tokensPerSecond: val };
+                      const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
+                      updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
+                    }}
+                    sx={{ width: 120 }}
+                  />
+                  <TextField
+                    label="Jitter (0-1)"
+                    size="small"
+                    type="number"
+                    value={turn.response.streamingPhysics?.jitter ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                      const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), jitter: val };
+                      const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
+                      updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
+                    }}
+                    sx={{ width: 120 }}
+                  />
+                </Box>
+              </Collapse>
             </Box>
+
+            {/* Structured output schema */}
+            <TextField
+              label="Output schema (JSON Schema for structured output)"
+              size="small"
+              fullWidth
+              multiline
+              minRows={1}
+              maxRows={4}
+              value={turn.response.outputSchema ?? ''}
+              onChange={(e) => updateResponse(i, { outputSchema: e.target.value || undefined })}
+              placeholder='{"type":"object","properties":{"answer":{"type":"string"}}}'
+              helperText="Optional JSON Schema to validate the response text against"
+              sx={{ mt: 0.5 }}
+            />
 
             {/* Fault / chaos injection (resilience testing) */}
             <FormControlLabel

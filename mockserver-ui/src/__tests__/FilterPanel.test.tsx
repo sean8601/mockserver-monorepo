@@ -81,7 +81,7 @@ describe('FilterPanel', () => {
 
     await user.click(screen.getByText('Request Filter'));
 
-    expect(screen.getByText('Action Type')).toBeInTheDocument();
+    expect(screen.getByText('Action Type (expectations only)')).toBeInTheDocument();
     expect(screen.getByText('httpResponse')).toBeInTheDocument();
     expect(screen.getByText('httpLlmResponse')).toBeInTheDocument();
   });
@@ -98,7 +98,7 @@ describe('FilterPanel', () => {
 
     await user.click(screen.getByText('Request Filter'));
 
-    expect(screen.getByText('LLM Provider')).toBeInTheDocument();
+    expect(screen.getByText('LLM Provider (expectations only)')).toBeInTheDocument();
     expect(screen.getByText('Anthropic')).toBeInTheDocument();
     expect(screen.getByText('Gemini')).toBeInTheDocument();
   });
@@ -115,7 +115,7 @@ describe('FilterPanel', () => {
 
     await user.click(screen.getByText('Request Filter'));
 
-    expect(screen.queryByText('LLM Provider')).not.toBeInTheDocument();
+    expect(screen.queryByText('LLM Provider (expectations only)')).not.toBeInTheDocument();
   });
 });
 

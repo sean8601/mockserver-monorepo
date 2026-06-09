@@ -182,11 +182,21 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
       </Typography>
 
       {loadError && (
-        <Alert severity="error" sx={{ mb: 1.5 }} action={
-          <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry"><RefreshIcon fontSize="small" /></IconButton>
-        }>
-          <AlertTitle>Could not load drift records</AlertTitle>
-          {loadError}
+        <Alert
+          severity={loadError.includes('404') || loadError.includes('Not Found') ? 'info' : 'error'}
+          sx={{ mb: 1.5 }}
+          action={
+            <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry"><RefreshIcon fontSize="small" /></IconButton>
+          }
+        >
+          <AlertTitle>
+            {loadError.includes('404') || loadError.includes('Not Found')
+              ? 'Drift detection not available'
+              : 'Could not load drift records'}
+          </AlertTitle>
+          {loadError.includes('404') || loadError.includes('Not Found')
+            ? 'The connected server does not support drift detection. This feature requires a newer version of MockServer.'
+            : loadError}
         </Alert>
       )}
 

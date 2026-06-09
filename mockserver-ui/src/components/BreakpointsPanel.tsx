@@ -377,7 +377,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
 
           {loadError && (
             <Alert
-              severity="error"
+              severity={loadError.includes('404') || loadError.includes('Not Found') ? 'info' : 'error'}
               sx={{ mb: 1.5 }}
               action={
                 <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry">
@@ -385,8 +385,14 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 </IconButton>
               }
             >
-              <AlertTitle>Could not load paused exchanges</AlertTitle>
-              {loadError}
+              <AlertTitle>
+                {loadError.includes('404') || loadError.includes('Not Found')
+                  ? 'Breakpoints not available'
+                  : 'Could not load paused exchanges'}
+              </AlertTitle>
+              {loadError.includes('404') || loadError.includes('Not Found')
+                ? 'The connected server does not support breakpoints. This feature requires a newer version of MockServer.'
+                : loadError}
             </Alert>
           )}
 
@@ -519,7 +525,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
 
           {streamLoadError && (
             <Alert
-              severity="error"
+              severity={streamLoadError.includes('404') || streamLoadError.includes('Not Found') ? 'info' : 'error'}
               sx={{ mb: 1.5 }}
               action={
                 <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry streams">
@@ -527,8 +533,14 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 </IconButton>
               }
             >
-              <AlertTitle>Could not load stream frames</AlertTitle>
-              {streamLoadError}
+              <AlertTitle>
+                {streamLoadError.includes('404') || streamLoadError.includes('Not Found')
+                  ? 'Stream breakpoints not available'
+                  : 'Could not load stream frames'}
+              </AlertTitle>
+              {streamLoadError.includes('404') || streamLoadError.includes('Not Found')
+                ? 'The connected server does not support stream breakpoints. This feature requires a newer version of MockServer.'
+                : streamLoadError}
             </Alert>
           )}
 

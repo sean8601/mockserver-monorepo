@@ -432,6 +432,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
             <MenuItem value="xpath">XPath</MenuItem>
             <MenuItem value="regex">Regex</MenuItem>
             <MenuItem value="parameters">Parameters</MenuItem>
+            <MenuItem value="wasm">WASM module</MenuItem>
           </TextField>
         </Box>
         <TextField
@@ -454,7 +455,9 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                             ? 'Regex pattern'
                             : matcher.bodyMatcherType === 'parameters'
                               ? 'Parameters (key=value per line)'
-                              : 'Body matcher (string or JSON)'
+                              : matcher.bodyMatcherType === 'wasm'
+                                ? 'WASM module name'
+                                : 'Body matcher (string or JSON)'
           }
           fullWidth
           multiline
@@ -481,7 +484,9 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                             ? '^Hello.*World$'
                             : matcher.bodyMatcherType === 'parameters'
                               ? 'username=admin\npassword=secret'
-                              : 'e.g. {"foo":"bar"}'
+                              : matcher.bodyMatcherType === 'wasm'
+                                ? 'myMatcher'
+                                : 'e.g. {"foo":"bar"}'
           }
           slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
         />

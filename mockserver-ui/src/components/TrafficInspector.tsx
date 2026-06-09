@@ -98,15 +98,7 @@ function kindColor(parsed: ParsedTraffic): 'primary' | 'secondary' | 'info' | 'd
 // Scripted turns extraction from active expectations
 // ---------------------------------------------------------------------------
 
-const SCENARIO_STATE_ORDER: Record<string, number> = { Started: 0 };
-
-function scenarioStateSortKey(state: string): number {
-  if (state in SCENARIO_STATE_ORDER) return SCENARIO_STATE_ORDER[state]!;
-  const match = /turn_(\d+)/.exec(state);
-  if (match) return parseInt(match[1]!, 10) + 1;
-  if (state === '__done') return 999999;
-  return 500000; // unknown states sort near the end
-}
+import { scenarioStateSortKey } from '../lib/scenarioState';
 
 /**
  * Gather scripted turns from expectations sharing the same scenarioName.
@@ -786,11 +778,20 @@ function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogPro
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ fontSize: '0.95rem' }}>Replay Request</DialogTitle>
       <DialogContent dividers>
-        {!replayResponse && !error && !loading && (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Re-issue this request to its original target and view the response.
-          </Typography>
-        )}
+        {!replayResponse && !error && !loading && (() => {
+          const httpRequest = (item.value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
+          const method = typeof httpRequest['method'] === 'string' ? httpRequest['method'] : 'GET';
+          const isNonGet = method !== 'GET';
+          return (
+            <>
+              <Alert severity="warning" sx={{ mb: 1 }}>
+                This will make a real outbound HTTP request to the original upstream target.
+                {isNonGet && ` The method is ${method}, which may mutate state or incur costs (e.g. LLM API charges).`}
+                {!isNonGet && ' It may incur costs if the target is a paid API (e.g. LLM provider).'}
+              </Alert>
+            </>
+          );
+        })()}
         {loading && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
             <CircularProgress size={20} />

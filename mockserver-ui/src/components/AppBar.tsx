@@ -37,8 +37,7 @@ import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import Select from '@mui/material/Select';
 import type { SelectChangeEvent } from '@mui/material/Select';
-import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
+// Snackbar/Alert removed — mode errors now use the app-wide notification store
 import BuildIcon from '@mui/icons-material/Build';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -135,7 +134,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [crudOpen, setCrudOpen] = useState(false);
   const [fileStoreOpen, setFileStoreOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const [modeError, setModeError] = useState<string | null>(null);
+  // Mode errors are now surfaced through the app-wide notification store.
   const [http3Status, setHttp3Status] = useState<Http3Status | null>(null);
   const setNotification = useDashboardStore((s) => s.setNotification);
   // Confirmation for destructive actions (reset / bulk clear). Holds the pending action.
@@ -184,7 +183,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       })
       .catch((e) => {
         setModeState(previous); // revert on failure
-        setModeError(e instanceof Error ? e.message : 'Failed to change mode');
+        setNotification({ message: e instanceof Error ? e.message : 'Failed to change mode', severity: 'error' });
       });
   };
 
@@ -516,15 +515,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           onClose={() => setPactOpen(false)}
           connectionParams={connectionParams}
         />
-        <Snackbar
-          open={modeError !== null}
-          autoHideDuration={4000}
-          onClose={() => setModeError(null)}
-        >
-          <Alert severity="error" onClose={() => setModeError(null)} sx={{ width: '100%' }}>
-            {modeError}
-          </Alert>
-        </Snackbar>
+        {/* Mode errors are surfaced through the app-wide notification store */}
       </Toolbar>
       <ClockDialog open={clockOpen} onClose={() => setClockOpen(false)} connectionParams={connectionParams} />
       <ConfigurationDialog open={configOpen} onClose={() => setConfigOpen(false)} connectionParams={connectionParams} />

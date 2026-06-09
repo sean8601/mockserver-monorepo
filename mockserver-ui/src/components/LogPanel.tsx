@@ -2,16 +2,10 @@ import { useRef, useMemo } from 'react';
 import Typography from '@mui/material/Typography';
 import { useDashboardStore } from '../store';
 import { isLogGroup } from '../types';
-import type { LogMessage } from '../types';
 import Panel from './Panel';
 import LogEntry from './LogEntry';
 import LogGroup from './LogGroup';
-
-function matchesSearch(message: LogMessage, term: string): boolean {
-  const lower = term.toLowerCase();
-  const json = JSON.stringify(message).toLowerCase();
-  return json.includes(lower);
-}
+import { matchesLogSearch } from '../lib/searchMatcher';
 
 export default function LogPanel() {
   const logMessages = useDashboardStore((s) => s.logMessages);
@@ -20,7 +14,7 @@ export default function LogPanel() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(
-    () => (search ? logMessages.filter((m) => matchesSearch(m, search)) : logMessages),
+    () => (search ? logMessages.filter((m) => matchesLogSearch(m, search)) : logMessages),
     [logMessages, search],
   );
 
@@ -28,6 +22,7 @@ export default function LogPanel() {
     <Panel
       title="Log Messages"
       count={logMessages.length}
+      filteredCount={search ? filtered.length : undefined}
       searchValue={search}
       onSearchChange={setSearch}
       searchInputRef={searchRef}

@@ -43,11 +43,20 @@ export interface TurnMatchPredicates {
   normalization?: NormalizationDraft;
 }
 
+export interface StreamingPhysicsDraft {
+  timeToFirstToken?: number;
+  tokensPerSecond?: number;
+  jitter?: number;
+}
+
 export interface TurnResponse {
   text: string;
   toolCalls: ToolCallDraft[];
   stopReason: string;
   streaming: boolean;
+  streamingPhysics?: StreamingPhysicsDraft;
+  /** JSON Schema for structured output validation (Completion.outputSchema). */
+  outputSchema?: string;
 }
 
 /**
@@ -166,6 +175,10 @@ export function conversationToJava(draft: ConversationDraft): string {
   if (draft.turns.some((t) => t.predicates.latestMessageRole)) {
     lines.push('import org.mockserver.llm.ParsedMessage;');
   }
+  // timeToFirstToken(long, TimeUnit) requires the TimeUnit import.
+  if (draft.turns.some((t) => t.response.streaming && t.response.streamingPhysics?.timeToFirstToken != null)) {
+    lines.push('import java.util.concurrent.TimeUnit;');
+  }
   lines.push('');
 
   // Start builder chain
@@ -237,6 +250,16 @@ export function conversationToJava(draft: ConversationDraft): string {
     }
     if (turn.response.streaming) {
       completionParts.push('.streaming()');
+      if (turn.response.streamingPhysics) {
+        const sp = turn.response.streamingPhysics;
+        const spFragments: string[] = [];
+        if (sp.timeToFirstToken != null) spFragments.push(`timeToFirstToken(${sp.timeToFirstToken}L, TimeUnit.MILLISECONDS)`);
+        if (sp.tokensPerSecond != null) spFragments.push(`tokensPerSecond(${sp.tokensPerSecond})`);
+        if (sp.jitter != null) spFragments.push(`jitter(${sp.jitter})`);
+        if (spFragments.length > 0) {
+          completionParts.push(`.withStreamingPhysics(${spFragments.join(', ')})`);
+        }
+      }
     }
 
     lines.push('        .respondingWith(');
@@ -305,6 +328,17 @@ export function conversationToJson(draft: ConversationDraft): string {
     }
     if (turn.response.streaming) {
       completion['streaming'] = true;
+      if (turn.response.streamingPhysics) {
+        const sp = turn.response.streamingPhysics;
+        const physics: Record<string, unknown> = {};
+        if (sp.timeToFirstToken != null) physics['timeToFirstToken'] = { timeUnit: 'MILLISECONDS', value: sp.timeToFirstToken };
+        if (sp.tokensPerSecond != null) physics['tokensPerSecond'] = sp.tokensPerSecond;
+        if (sp.jitter != null) physics['jitter'] = sp.jitter;
+        if (Object.keys(physics).length > 0) completion['streamingPhysics'] = physics;
+      }
+    }
+    if (turn.response.outputSchema) {
+      completion['outputSchema'] = turn.response.outputSchema;
     }
 
     const predicates: Record<string, unknown> = {};
@@ -448,6 +482,17 @@ export function conversationToMcpArgs(
     }
     if (turn.response.streaming) {
       response['streaming'] = true;
+      if (turn.response.streamingPhysics) {
+        const sp = turn.response.streamingPhysics;
+        const physics: Record<string, unknown> = {};
+        if (sp.timeToFirstToken != null) physics['timeToFirstToken'] = { timeUnit: 'MILLISECONDS', value: sp.timeToFirstToken };
+        if (sp.tokensPerSecond != null) physics['tokensPerSecond'] = sp.tokensPerSecond;
+        if (sp.jitter != null) physics['jitter'] = sp.jitter;
+        if (Object.keys(physics).length > 0) response['streamingPhysics'] = physics;
+      }
+    }
+    if (turn.response.outputSchema) {
+      response['outputSchema'] = turn.response.outputSchema;
     }
     if (Object.keys(response).length > 0) {
       turnObj['response'] = response;
@@ -622,6 +667,28 @@ export function draftFromScenarioExpectations(
         // streaming lives inside the completion object (Completion.streaming), matching what
         // conversationToJson / the server write — not at the httpLlmResponse top level.
         streaming: completion['streaming'] === true,
+        streamingPhysics: (() => {
+          const sp = completion['streamingPhysics'];
+          if (!sp || typeof sp !== 'object') return undefined;
+          const s = sp as Record<string, unknown>;
+          const draft: StreamingPhysicsDraft = {};
+          // timeToFirstToken is a Delay object { timeUnit, value }, not a plain number.
+          const ttft = s['timeToFirstToken'];
+          if (ttft != null && typeof ttft === 'object') {
+            const d = ttft as Record<string, unknown>;
+            if (typeof d['value'] === 'number') {
+              draft.timeToFirstToken = d['value'] as number;
+            }
+          }
+          if (typeof s['tokensPerSecond'] === 'number') draft.tokensPerSecond = s['tokensPerSecond'] as number;
+          if (typeof s['jitter'] === 'number') draft.jitter = s['jitter'] as number;
+          return Object.keys(draft).length > 0 ? draft : undefined;
+        })(),
+        outputSchema: (() => {
+          const os = completion['outputSchema'];
+          if (os == null) return undefined;
+          return typeof os === 'string' ? os : JSON.stringify(os, null, 2);
+        })(),
       },
       chaos: parseChaos(llm['chaos']),
     };

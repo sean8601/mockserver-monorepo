@@ -1,0 +1,281 @@
+---
+title: Interactive Breakpoints
+shortTitle: Breakpoints
+description: Pause, inspect, modify, and resume proxied HTTP requests and responses in real time using MockServer interactive breakpoints.
+layout: page
+pageOrder: 5
+section: 'Verify & Test'
+subsection: true
+sitemap:
+  priority: 0.7
+  changefreq: 'monthly'
+  lastmod: 2026-06-09T00:00:00+00:00
+keywords: breakpoint, interactive debugging, http breakpoint, request inspection, response modification, stream breakpoint, sse breakpoint, mockserver proxy debug
+---
+
+<p>
+    Interactive breakpoints let you pause proxied or forwarded HTTP exchanges, inspect the request or response,
+    optionally modify it, and then continue or abort. This is useful for debugging integrations, testing error
+    handling with modified responses, and inspecting streaming (SSE/chunked) traffic frame by frame.
+</p>
+
+<p>Breakpoints are <strong>off by default</strong> and have zero overhead when disabled.</p>
+
+<ul>
+    <li><a href="#phases">Breakpoint phases</a></li>
+    <li><a href="#enable">Enabling breakpoints</a></li>
+    <li><a href="#workflow">Workflow: pause, inspect, decide</a></li>
+    <li><a href="#request_phase">Request-phase breakpoints</a></li>
+    <li><a href="#response_phase">Response-phase breakpoints</a></li>
+    <li><a href="#stream_phase">Stream-frame breakpoints</a></li>
+    <li><a href="#rest_api">REST API reference</a></li>
+    <li><a href="#dashboard">Dashboard UI</a></li>
+    <li><a href="#safety">Safety rails</a></li>
+</ul>
+
+<a id="phases" class="anchor" href="#phases">&nbsp;</a>
+<h2>Breakpoint Phases</h2>
+
+<p>You can pause an exchange at three points:</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Phase</th><th>What is paused</th><th>Actions available</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Request</strong></td>
+            <td>The outbound request, before it is forwarded to the upstream server</td>
+            <td>Continue (forward as-is), Modify (forward a changed request), Abort (return error to client)</td>
+        </tr>
+        <tr>
+            <td><strong>Response</strong></td>
+            <td>The upstream response, before it is written to the client</td>
+            <td>Continue (write as-is), Modify (write a changed response), Abort (return error to client)</td>
+        </tr>
+        <tr>
+            <td><strong>Stream frame</strong></td>
+            <td>Each individual chunk of a streaming response (SSE or HTTP/1.1 chunked)</td>
+            <td>Continue, Modify, Drop (discard frame), Inject (write original + extra frame), Close (end stream)</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="enable" class="anchor" href="#enable">&nbsp;</a>
+<h2>Enabling Breakpoints</h2>
+
+<p>Each phase has its own configuration property. Enable only the phases you need:</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Property</th><th>Env var</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="inline_code">mockserver.breakpointEnabled</span></td>
+            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_ENABLED</span></td>
+            <td><span class="inline_code">false</span></td>
+            <td>Enable request-phase breakpoints</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">mockserver.breakpointResponseEnabled</span></td>
+            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED</span></td>
+            <td><span class="inline_code">false</span></td>
+            <td>Enable response-phase breakpoints</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">mockserver.breakpointStreamEnabled</span></td>
+            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_STREAM_ENABLED</span></td>
+            <td><span class="inline_code">false</span></td>
+            <td>Enable stream-frame breakpoints (SSE / chunked)</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">mockserver.breakpointTimeoutMillis</span></td>
+            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS</span></td>
+            <td><span class="inline_code">30000</span></td>
+            <td>Auto-continue timeout in milliseconds (shared across all phases)</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">mockserver.breakpointMaxHeld</span></td>
+            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_MAX_HELD</span></td>
+            <td><span class="inline_code">50</span></td>
+            <td>Maximum number of concurrently paused exchanges or frames</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="workflow" class="anchor" href="#workflow">&nbsp;</a>
+<h2>Workflow</h2>
+
+<p>The typical workflow is:</p>
+
+<ol>
+    <li><strong>Enable</strong> the breakpoint phase(s) you want via configuration properties or the REST API</li>
+    <li><strong>Send a request</strong> through MockServer (proxy or forward mode)</li>
+    <li><strong>List paused exchanges</strong> &mdash; <span class="inline_code">GET /mockserver/breakpoint</span> returns all currently held exchanges with their IDs, phase, and captured request/response data</li>
+    <li><strong>Inspect</strong> the paused request or response</li>
+    <li><strong>Decide</strong> &mdash; continue, modify, or abort via the REST API (or click in the dashboard)</li>
+</ol>
+
+<p>If you do not resolve a paused exchange within the timeout (default 30 seconds), it auto-continues.</p>
+
+<a id="request_phase" class="anchor" href="#request_phase">&nbsp;</a>
+<h2>Request-Phase Breakpoints</h2>
+
+<p>
+    When <span class="inline_code">breakpointEnabled</span> is <span class="inline_code">true</span>, every proxied
+    or forwarded request pauses before being sent to the upstream server. You can inspect the request and then:
+</p>
+
+<ul>
+    <li><strong>Continue</strong> &mdash; forward the original request unchanged</li>
+    <li><strong>Modify</strong> &mdash; forward a replacement request (e.g. add a header, change the body)</li>
+    <li><strong>Abort</strong> &mdash; return an error response to the client without forwarding</li>
+</ul>
+
+<p>Example: modify a paused request to add an authorization header:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code"># List paused exchanges
+curl -s http://localhost:1080/mockserver/breakpoint
+
+# Modify the request
+curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
+  -d '{
+    "id": "pause-id-from-list",
+    "httpRequest": {
+      "headers": {
+        "Authorization": ["Bearer test-token"]
+      }
+    }
+  }'</code></pre>
+
+<a id="response_phase" class="anchor" href="#response_phase">&nbsp;</a>
+<h2>Response-Phase Breakpoints</h2>
+
+<p>
+    When <span class="inline_code">breakpointResponseEnabled</span> is <span class="inline_code">true</span>, the upstream
+    response is held before being written to the client. This applies to non-streaming (buffered) responses only &mdash;
+    streaming responses use stream-frame breakpoints instead.
+</p>
+
+<p>
+    The paused exchange includes the response <span class="inline_code">statusCode</span> and
+    <span class="inline_code">reasonPhrase</span> in the list output. To modify the response:
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
+  -d '{
+    "id": "pause-id-from-list",
+    "httpResponse": {
+      "statusCode": 200,
+      "body": "{\"modified\": true}"
+    }
+  }'</code></pre>
+
+<a id="stream_phase" class="anchor" href="#stream_phase">&nbsp;</a>
+<h2>Stream-Frame Breakpoints</h2>
+
+<p>
+    When <span class="inline_code">breakpointStreamEnabled</span> is <span class="inline_code">true</span>, each chunk
+    of a streaming response (SSE or HTTP/1.1 chunked) is held individually before being written to the client.
+    This lets you inspect and manipulate streaming traffic frame by frame.
+</p>
+
+<p>Available actions for each frame:</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Action</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>Continue</strong></td><td>Write the original frame to the client</td></tr>
+        <tr><td><strong>Modify</strong></td><td>Write a replacement body for this frame</td></tr>
+        <tr><td><strong>Drop</strong></td><td>Discard the frame (client never sees it)</td></tr>
+        <tr><td><strong>Inject</strong></td><td>Write the original frame plus an extra frame after it</td></tr>
+        <tr><td><strong>Close</strong></td><td>End the stream at this frame (sends a final close and evicts remaining held frames)</td></tr>
+    </tbody>
+</table>
+
+<p>Frames within a stream must be resolved in order &mdash; resolving frame 3 before frame 2 is rejected. The upstream is automatically back-pressured while a frame is held.</p>
+
+<a id="rest_api" class="anchor" href="#rest_api">&nbsp;</a>
+<h2>REST API Reference</h2>
+
+<h3>Request / response breakpoints</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint</span></td><td>List all paused exchanges (includes <span class="inline_code">phase</span>, request/response data)</td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/continue</span></td><td>Continue a paused exchange: <span class="inline_code">{"id": "..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/modify</span></td><td>Modify: <span class="inline_code">{"id": "...", "httpRequest": {...}}</span> for request phase, or <span class="inline_code">{"id": "...", "httpResponse": {...}}</span> for response phase</td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/abort</span></td><td>Abort: return error to client without forwarding: <span class="inline_code">{"id": "..."}</span></td></tr>
+    </tbody>
+</table>
+
+<h3>Stream-frame breakpoints</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>GET</td><td><span class="inline_code">/mockserver/breakpoint/streams</span></td><td>List all held frames grouped by stream</td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/continue</span></td><td>Continue a held frame: <span class="inline_code">{"id": "..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/modify</span></td><td>Modify a frame: <span class="inline_code">{"id": "...", "body": "..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/drop</span></td><td>Drop a frame: <span class="inline_code">{"id": "..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/inject</span></td><td>Inject after a frame: <span class="inline_code">{"id": "...", "body": "..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/close</span></td><td>Close stream at a frame: <span class="inline_code">{"id": "..."}</span></td></tr>
+    </tbody>
+</table>
+
+<a id="dashboard" class="anchor" href="#dashboard">&nbsp;</a>
+<h2>Dashboard UI</h2>
+
+<p>
+    The MockServer dashboard includes a <strong>Breakpoints</strong> panel that shows all currently paused exchanges.
+    Each paused exchange displays:
+</p>
+
+<ul>
+    <li>A <strong>Phase</strong> indicator (<span class="inline_code">REQUEST</span> or <span class="inline_code">RESPONSE</span>)</li>
+    <li>For request-phase: the HTTP method and path</li>
+    <li>For response-phase: the status code and reason phrase</li>
+    <li><strong>Continue</strong>, <strong>Modify</strong>, and <strong>Abort</strong> buttons</li>
+</ul>
+
+<p>
+    The Modify dialog provides a JSON editor: edit the request JSON for request-phase exchanges, or the
+    response JSON for response-phase exchanges. Click "Apply" to send the modified exchange.
+</p>
+
+<a id="safety" class="anchor" href="#safety">&nbsp;</a>
+<h2>Safety Rails</h2>
+
+<ul>
+    <li><strong>Timeout auto-continue:</strong> paused exchanges auto-continue after <span class="inline_code">breakpointTimeoutMillis</span> (default 30 seconds) if not resolved, preventing requests from hanging indefinitely.</li>
+    <li><strong>Max-held cap:</strong> when <span class="inline_code">breakpointMaxHeld</span> (default 50) exchanges are held simultaneously, new intercepts are skipped (pass through without pausing).</li>
+    <li><strong>Non-blocking:</strong> the breakpoint mechanism is fully asynchronous. No Netty event-loop or scheduler thread is blocked while waiting for a decision.</li>
+    <li><strong>Stream-close eviction:</strong> when a stream completes or errors, all held frames for that stream are auto-continued.</li>
+</ul>
+
+<h2>Java Client</h2>
+
+<p>
+    <span class="inline_code">MockServerClient</span> provides typed methods for breakpoint resolution:
+</p>
+
+<pre class="prettyprint lang-java code"><code class="code">// Request-phase modify
+mockServerClient.modifyBreakpoint(pauseId, modifiedRequest);
+
+// Response-phase modify
+mockServerClient.modifyBreakpointResponse(pauseId, modifiedResponse);</code></pre>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/configuration_properties.html">Configuration Properties</a> &mdash; full reference for breakpoint properties</li>
+    <li><a href="/mock_server/mockserver_ui.html">MockServer UI</a> &mdash; dashboard including the Breakpoints panel</li>
+</ul>

@@ -26,15 +26,10 @@ interface JsonListItemProps {
   turnPosition?: { position: number; total: number };
 }
 
-const PROVIDER_LABELS: Record<string, string> = {
-  ANTHROPIC: 'Anthropic',
-  OPENAI: 'OpenAI',
-  OPENAI_RESPONSES: 'OpenAI Responses',
-  GEMINI: 'Gemini',
-  BEDROCK: 'Bedrock',
-  AZURE_OPENAI: 'Azure OpenAI',
-  OLLAMA: 'Ollama',
-};
+import { PROVIDER_DISPLAY } from '../lib/clientFilters';
+
+// Re-use the canonical provider display map from clientFilters
+const PROVIDER_LABELS = PROVIDER_DISPLAY;
 
 interface LlmBadgeInfo {
   provider: string;

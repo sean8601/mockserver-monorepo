@@ -80,6 +80,7 @@ import AddIcon from '@mui/icons-material/Add';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import LinearProgress from '@mui/material/LinearProgress';
+import { getConfiguration, updateConfiguration, type Configuration } from '../lib/configuration';
 
 interface ServiceChaosPanelProps {
   connectionParams: ConnectionParams;
@@ -466,6 +467,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [grpcChaosData, setGrpcChaosData] = useState<GrpcChaosResponse>({ services: {} });
   const [grpcChaosForm, setGrpcChaosForm] = useState<GrpcChaosFormState>(EMPTY_GRPC_CHAOS_FORM);
 
+  // --- Auto-halt state (effects below, after `refresh` is declared) ---
+  const [autoHaltEnabled, setAutoHaltEnabled] = useState<boolean | null>(null);
+  const [autoHaltThreshold, setAutoHaltThreshold] = useState<string>('');
+  const [autoHaltWindow, setAutoHaltWindow] = useState<string>('');
+
   // --- Chaos Experiments state ---
   const [experimentsExpanded, setExperimentsExpanded] = useState(false);
   const [experimentStatus, setExperimentStatus] = useState<ExperimentStatusDTO | null>(null);
@@ -487,6 +493,31 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   }]);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
+
+  // --- Auto-halt configuration fetch + apply ---
+  useEffect(() => {
+    const controller = new AbortController();
+    void getConfiguration(connectionParams, controller.signal)
+      .then((config) => {
+        if (!controller.signal.aborted) {
+          setAutoHaltEnabled(config['chaosAutoHaltEnabled'] === true);
+          if (typeof config['chaosAutoHaltErrorThreshold'] === 'number') setAutoHaltThreshold(String(config['chaosAutoHaltErrorThreshold']));
+          if (typeof config['chaosAutoHaltWindowMillis'] === 'number') setAutoHaltWindow(String(config['chaosAutoHaltWindowMillis']));
+        }
+      })
+      .catch(() => { /* config endpoint unavailable */ });
+    return () => controller.abort();
+  }, [connectionParams, refreshTick]);
+
+  const applyAutoHaltConfig = useCallback(async (partial: Configuration) => {
+    setActionError(null);
+    try {
+      await updateConfiguration(connectionParams, partial);
+      refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    }
+  }, [connectionParams, refresh]);
 
   // Poll the registry on an interval.
   useEffect(() => {
@@ -964,11 +995,21 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       </Box>
 
       {loadError && (
-        <Alert severity="error" sx={{ mb: 1.5 }} action={
-          <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry"><RefreshIcon fontSize="small" /></IconButton>
-        }>
-          <AlertTitle>Could not load service chaos</AlertTitle>
-          {loadError}
+        <Alert
+          severity={loadError.includes('404') || loadError.includes('Not Found') ? 'info' : 'error'}
+          sx={{ mb: 1.5 }}
+          action={
+            <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry"><RefreshIcon fontSize="small" /></IconButton>
+          }
+        >
+          <AlertTitle>
+            {loadError.includes('404') || loadError.includes('Not Found')
+              ? 'Service chaos not available'
+              : 'Could not load service chaos'}
+          </AlertTitle>
+          {loadError.includes('404') || loadError.includes('Not Found')
+            ? 'The connected server does not support service chaos. This feature requires a newer version of MockServer.'
+            : loadError}
         </Alert>
       )}
 
@@ -976,6 +1017,59 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setActionError(null)}>
           {actionError}
         </Alert>
+      )}
+
+      {/* Auto-halt controls (inline) */}
+      {autoHaltEnabled !== null && (
+        <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+              Auto-halt
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={autoHaltEnabled}
+                  onChange={(e) => {
+                    setAutoHaltEnabled(e.target.checked);
+                    void applyAutoHaltConfig({ chaosAutoHaltEnabled: e.target.checked });
+                  }}
+                />
+              }
+              label={<Typography variant="caption">{autoHaltEnabled ? 'Armed' : 'Off'}</Typography>}
+            />
+            <TextField
+              size="small"
+              label="Error threshold"
+              type="number"
+              value={autoHaltThreshold}
+              disabled={!autoHaltEnabled}
+              onChange={(e) => setAutoHaltThreshold(e.target.value)}
+              onBlur={() => {
+                const v = parseInt(autoHaltThreshold, 10);
+                if (!isNaN(v)) void applyAutoHaltConfig({ chaosAutoHaltErrorThreshold: v });
+              }}
+              sx={{ width: 130 }}
+            />
+            <TextField
+              size="small"
+              label="Window (ms)"
+              type="number"
+              value={autoHaltWindow}
+              disabled={!autoHaltEnabled}
+              onChange={(e) => setAutoHaltWindow(e.target.value)}
+              onBlur={() => {
+                const v = parseInt(autoHaltWindow, 10);
+                if (!isNaN(v)) void applyAutoHaltConfig({ chaosAutoHaltWindowMillis: v });
+              }}
+              sx={{ width: 130 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+              Automatically halt chaos when errors exceed the threshold within the window.
+            </Typography>
+          </Box>
+        </Paper>
       )}
 
       {/* HTTP Service Chaos */}

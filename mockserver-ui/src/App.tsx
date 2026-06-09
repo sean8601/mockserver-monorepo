@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
@@ -28,6 +28,7 @@ import BreakpointsPanel from './components/BreakpointsPanel';
 import OnboardingPanel from './components/OnboardingPanel';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import GenerateStubDialog from './components/GenerateStubDialog';
+import ConfirmDialog from './components/ConfirmDialog';
 import type { RequestFilter } from './types';
 
 // Lazy-loaded so the @mui/x-charts bundle only loads when the Metrics tab is
@@ -68,23 +69,21 @@ export default function App() {
   );
 
   const logSearchInputRef = useRef<HTMLInputElement>(null);
+  const [clearLogsConfirm, setClearLogsConfirm] = useState(false);
 
   const shortcutHandlers = useMemo(
     () => ({
       onSearch: () => {
         logSearchInputRef.current?.focus();
       },
-      // ⌘L clears the server LOGS only — a benign, frequent action. A full reset (which also
-      // drops every expectation and recorded request) is intentionally NOT bound to a keystroke;
-      // it lives behind a confirmation in the Clear menu.
       onClear: () => {
-        void clearServer('log');
+        setClearLogsConfirm(true);
       },
       onToggleFilter: () => {
         useDashboardStore.getState().toggleFilterExpanded();
       },
     }),
-    [clearServer],
+    [],
   );
 
   useKeyboardShortcuts(shortcutHandlers);
@@ -161,6 +160,14 @@ export default function App() {
           suggestions={generateStubSuggestions}
           confidence={generateStubConfidence}
           connectionParams={params}
+        />
+        <ConfirmDialog
+          open={clearLogsConfirm}
+          title="Clear server logs?"
+          message="This removes all server log messages. Expectations and recorded requests are kept."
+          confirmLabel="Clear logs"
+          onConfirm={() => { void clearServer('log'); }}
+          onClose={() => setClearLogsConfirm(false)}
         />
       </GenerateStubContext.Provider>
       </DebugMismatchContext.Provider>

@@ -49,6 +49,17 @@ sitemap:
 
 {% include_subpage _includes/verification_summary.html %}
 
+<a id="next_steps" class="anchor" href="#next_steps">&nbsp;</a>
+
+<h2>Next Steps</h2>
+
+<ul>
+    <li><a href="/mock_server/creating_expectations.html">Creating Expectations</a> &mdash; the full reference for request matchers and response, forward, callback, and error actions</li>
+    <li><a href="/mock_server/verification.html">Verify Requests</a> &mdash; assert that your code under test sent the requests you expected</li>
+    <li><a href="/mock_server/mockserver_testcontainers.html">Testcontainers Integration</a> &mdash; start a MockServer container for your JVM tests with the official Testcontainers module</li>
+    <li><a href="/mock_server/importing_expectations.html">Importing Expectations</a> &mdash; load expectations in bulk from JSON or an OpenAPI specification instead of one at a time</li>
+</ul>
+
 <a id="spring_boot_compatibility" class="anchor" href="#spring_boot_compatibility">&nbsp;</a>
 
 <h2>Spring Boot Compatibility</h2>
@@ -110,14 +121,3 @@ sitemap:
 <h2>Single Port Architecture</h2>
 
 <p>MockServer serves both mock and proxy traffic on the same port (default 1080). There is no separate port for proxying. The <span class="inline_code">proxyRemotePort</span> and <span class="inline_code">proxyRemoteHost</span> settings specify the upstream target server that unmatched requests are forwarded to — they do not open a separate listening port. All expectations, proxy forwarding, and protocol support (HTTP, HTTPS, SOCKS) share the single <span class="inline_code">serverPort</span>.</p>
-
-<a id="next_steps" class="anchor" href="#next_steps">&nbsp;</a>
-
-<h2>Next Steps</h2>
-
-<ul>
-    <li><a href="/mock_server/creating_expectations.html">Creating Expectations</a> &mdash; the full reference for request matchers and response, forward, callback, and error actions</li>
-    <li><a href="/mock_server/verification.html">Verify Requests</a> &mdash; assert that your code under test sent the requests you expected</li>
-    <li><a href="/mock_server/mockserver_testcontainers.html">Testcontainers Integration</a> &mdash; start a MockServer container for your JVM tests with the official Testcontainers module</li>
-    <li><a href="/mock_server/importing_expectations.html">Importing Expectations</a> &mdash; load expectations in bulk from JSON or an OpenAPI specification instead of one at a time</li>
-</ul>

@@ -141,7 +141,8 @@ export type BodyMatcherType =
   | 'xml-schema'
   | 'xpath'
   | 'regex'
-  | 'parameters';
+  | 'parameters'
+  | 'wasm';
 
 export interface GraphQLMatcherOptions {
   selectionSetMatchType: SelectionSetMatchType;
@@ -524,6 +525,8 @@ export function buildExpectationJson(
       } else if (matcher.bodyMatcherType === 'parameters') {
         const params = parseKeyValueLines(matcher.body, '=');
         httpRequest['body'] = { type: 'PARAMETERS', parameters: params ?? {} };
+      } else if (matcher.bodyMatcherType === 'wasm') {
+        httpRequest['body'] = { type: 'WASM', moduleName: matcher.body.trim() };
       } else {
         httpRequest['body'] = matcher.body;
       }
@@ -1147,6 +1150,8 @@ function matcherToJava(matcher: StandardMatcher): string {
           .join(', ');
         lines.push(`    .withBody(params(${paramEntries}))`);
       }
+    } else if (matcher.bodyMatcherType === 'wasm') {
+      lines.push(`    .withBody(WasmBody.wasmBody("${escapeJava(matcher.body.trim())}"))`);
     } else {
       lines.push(`    .withBody("${escapeJava(matcher.body)}")`);
     }
@@ -1449,6 +1454,8 @@ function collectJavaImports(
       } else if (matcher.bodyMatcherType === 'parameters') {
         imp.add('import static org.mockserver.model.ParameterBody.params;');
         imp.add('import static org.mockserver.model.Parameter.param;');
+      } else if (matcher.bodyMatcherType === 'wasm') {
+        imp.add('import org.mockserver.model.WasmBody;');
       }
     }
   }

@@ -13,11 +13,11 @@ For the user-facing rendition of the same properties (with examples and cross-li
 `ConfigurationProperties` is a static holder in `mockserver/mockserver-core/src/main/java/org/mockserver/configuration/`. Every property has a typed getter (e.g. `serverPort()`, `tlsMutualAuthenticationRequired()`) that resolves the value in this order — first hit wins:
 
 1. **JVM system property** — `-Dmockserver.serverPort=1080`
-2. **Environment variable** — `MOCKSERVER_SERVER_PORT=1080` (upper-snake form of the system-property suffix)
-3. **Properties file** — pointed to by `-Dmockserver.propertyFile=…` (default: `./mockserver.properties` if present)
+2. **Properties file** — pointed to by `-Dmockserver.propertyFile=…` (default: `./mockserver.properties` if present)
+3. **Environment variable** — `MOCKSERVER_SERVER_PORT=1080` (upper-snake form of the system-property suffix)
 4. **Built-in default** — coded into the typed getter
 
-This means env vars override file properties, system properties override env vars, and explicit `Configuration` instance setters override all of the above (see "Instance-scoped configuration" below).
+This means properties file entries override environment variables, system properties override properties file entries, and explicit `Configuration` instance setters override all of the above (see "Instance-scoped configuration" below). The resolution is implemented in `readPropertyHierarchically`: `System.getProperty(key, properties.getProperty(key, envOrDefault))`.
 
 The loader logs the resolved property source on startup at `TRACE` — useful when a value isn't what you expect.
 
