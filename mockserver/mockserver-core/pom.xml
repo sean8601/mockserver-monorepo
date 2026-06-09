@@ -515,6 +515,11 @@
                         <exclude>**/HttpActionHandlerGraphQLChaosTest.java</exclude>
                         <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
                         <exclude>**/BreakpointConfigurationTest.java</exclude>
+                        <!-- Mutate shared static singleton registries (BreakpointRegistry, StreamFrameBreakpointRegistry) -->
+                        <exclude>**/BreakpointRegistryTest.java</exclude>
+                        <exclude>**/StreamFrameBreakpointRegistryTest.java</exclude>
+                        <!-- Mutates ServiceChaosRegistry + ChaosAutoHaltMonitor singletons, Metrics, ConfigurationProperties -->
+                        <exclude>**/ChaosExperimentOrchestratorTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -558,6 +563,9 @@
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
                                 <include>**/BreakpointConfigurationTest.java</include>
+                                <include>**/BreakpointRegistryTest.java</include>
+                                <include>**/StreamFrameBreakpointRegistryTest.java</include>
+                                <include>**/ChaosExperimentOrchestratorTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

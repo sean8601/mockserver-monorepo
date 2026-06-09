@@ -92,12 +92,22 @@ public class NettyResponseWriter extends ResponseWriter {
 
         // Determine if stream-frame breakpoints are active for this response
         final boolean streamBreakpointsActive = configuration.breakpointStreamEnabled();
-        // Use the request's log correlation id as the stream identifier
-        final String streamId = request.getLogCorrelationId() != null
-            ? request.getLogCorrelationId() + "-stream"
-            : java.util.UUID.randomUUID() + "-stream";
-        final String reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
-        final String reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+        // Stream identifier and request metadata are only needed when breakpoints
+        // are active — keep them out of the default-off hot path (zero allocation).
+        final String streamId;
+        final String reqMethod;
+        final String reqPath;
+        if (streamBreakpointsActive) {
+            streamId = request.getLogCorrelationId() != null
+                ? request.getLogCorrelationId() + "-stream"
+                : java.util.UUID.randomUUID() + "-stream";
+            reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
+            reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+        } else {
+            streamId = null;
+            reqMethod = null;
+            reqPath = null;
+        }
 
         // Subscribe to the streaming body to forward chunks as they arrive.
         // After each chunk write completes, call streamingBody.requestMore() to trigger
@@ -188,6 +198,19 @@ public class NettyResponseWriter extends ResponseWriter {
                                     ctx.close();
                                     // Do NOT request more — stream is ended
                                 });
+                                break;
+                            }
+                            default: {
+                                // Unrecognised action — log a warning and request more to avoid
+                                // hanging the stream if a future action type is added without
+                                // updating this switch.
+                                if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(WARN)) {
+                                    mockServerLogger.logEvent(new LogEntry()
+                                        .setLogLevel(WARN)
+                                        .setMessageFormat("unrecognised stream frame breakpoint action: " + decision.getAction())
+                                    );
+                                }
+                                streamingBody.requestMore();
                                 break;
                             }
                         }

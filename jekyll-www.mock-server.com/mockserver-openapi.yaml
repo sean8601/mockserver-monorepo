@@ -1812,6 +1812,363 @@ paths:
                 properties:
                   error:
                     type: string
+  /mockserver/breakpoint/streams:
+    get:
+      tags:
+        - control
+      summary: list all currently paused stream frames
+      description: >-
+        Returns a JSON object listing all stream frames currently held at a breakpoint.
+        Each entry includes the frame id, stream id, sequence number, captured bytes (Base64),
+        request method and path, and age. Requires breakpointStreamEnabled=true to have any entries.
+      responses:
+        '200':
+          description: list of paused stream frames
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pausedFrames:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        frameId:
+                          type: string
+                        streamId:
+                          type: string
+                        sequenceNumber:
+                          type: integer
+                        capturedBytes:
+                          type: string
+                          description: Base64-encoded frame payload
+                        requestMethod:
+                          type: string
+                        requestPath:
+                          type: string
+                        ageMillis:
+                          type: integer
+                  count:
+                    type: integer
+                  activeStreams:
+                    type: array
+                    items:
+                      type: string
+  /mockserver/breakpoint/stream/continue:
+    put:
+      tags:
+        - control
+      summary: continue a paused stream frame unchanged
+      description: >-
+        Resolves a breakpointed stream frame as CONTINUE — the original captured bytes
+        are written to the client. Frames within a stream must be resolved in sequence-number order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - frameId
+              properties:
+                frameId:
+                  type: string
+                  description: the frame id of the paused stream frame to continue
+      responses:
+        '200':
+          description: frame continued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [continued]
+                  frameId:
+                    type: string
+        '400':
+          description: missing or unparseable body, or missing 'frameId' field
+        '404':
+          description: no paused frame found with the given id, or frame is not next in sequence order
+  /mockserver/breakpoint/stream/modify:
+    put:
+      tags:
+        - control
+      summary: modify and continue a paused stream frame
+      description: >-
+        Resolves a breakpointed stream frame as MODIFY — the replacement body bytes
+        are written to the client instead of the original captured bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - frameId
+                - body
+              properties:
+                frameId:
+                  type: string
+                  description: the frame id of the paused stream frame to modify
+                body:
+                  type: string
+                  description: Base64-encoded replacement body bytes
+      responses:
+        '200':
+          description: frame modified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [modified]
+                  frameId:
+                    type: string
+        '400':
+          description: missing body, missing 'frameId', or missing 'body' field
+        '404':
+          description: no paused frame found with the given id, or frame is not next in sequence order
+  /mockserver/breakpoint/stream/drop:
+    put:
+      tags:
+        - control
+      summary: drop a paused stream frame (discard without writing to client)
+      description: >-
+        Resolves a breakpointed stream frame as DROP — the frame is discarded and nothing
+        is written to the client for this frame.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - frameId
+              properties:
+                frameId:
+                  type: string
+                  description: the frame id of the paused stream frame to drop
+      responses:
+        '200':
+          description: frame dropped successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [dropped]
+                  frameId:
+                    type: string
+        '400':
+          description: missing or unparseable body, or missing 'frameId' field
+        '404':
+          description: no paused frame found with the given id, or frame is not next in sequence order
+  /mockserver/breakpoint/stream/inject:
+    put:
+      tags:
+        - control
+      summary: continue a paused stream frame and inject an additional frame after it
+      description: >-
+        Resolves a breakpointed stream frame as INJECT — the original captured bytes are
+        written to the client, followed by the additional injected body bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - frameId
+                - body
+              properties:
+                frameId:
+                  type: string
+                  description: the frame id of the paused stream frame
+                body:
+                  type: string
+                  description: Base64-encoded additional body bytes to inject after the original frame
+      responses:
+        '200':
+          description: frame continued and additional frame injected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [injected]
+                  frameId:
+                    type: string
+        '400':
+          description: missing body, missing 'frameId', or missing 'body' field
+        '404':
+          description: no paused frame found with the given id, or frame is not next in sequence order
+  /mockserver/breakpoint/stream/close:
+    put:
+      tags:
+        - control
+      summary: close a stream at the current frame
+      description: >-
+        Resolves a breakpointed stream frame as CLOSE — sends LastHttpContent and closes
+        the channel. Any subsequent paused frames for the same stream are evicted (dropped).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - frameId
+              properties:
+                frameId:
+                  type: string
+                  description: the frame id of the paused stream frame at which to close
+      responses:
+        '200':
+          description: stream closed at the specified frame
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [closed]
+                  frameId:
+                    type: string
+        '400':
+          description: missing or unparseable body, or missing 'frameId' field
+        '404':
+          description: no paused frame found with the given id, or frame is not next in sequence order
+  /mockserver/chaosExperiment:
+    put:
+      tags:
+        - chaos
+      summary: start a scheduled multi-stage chaos experiment
+      description: >-
+        Starts a chaos experiment with an ordered sequence of stages, each applying service-scoped
+        chaos profiles to one or more hosts for a specified duration. Stages progress automatically.
+        Only one experiment may be active at a time; starting a new one stops the previous one.
+        Safety limits: max 50 stages, max 24h per stage duration, auto-halt integration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - stages
+              properties:
+                name:
+                  type: string
+                  description: human-readable experiment name
+                loop:
+                  type: boolean
+                  description: whether to loop back to stage 0 after the last stage completes (default false)
+                stages:
+                  type: array
+                  description: ordered sequence of stages
+                  items:
+                    type: object
+                    required:
+                      - durationMillis
+                      - profiles
+                    properties:
+                      durationMillis:
+                        type: integer
+                        description: how long this stage runs before advancing (max 86400000 = 24h)
+                      profiles:
+                        type: object
+                        description: >-
+                          map of host -> chaos profile to apply during this stage
+                        additionalProperties:
+                          $ref: "#/components/schemas/HttpChaosProfile"
+      responses:
+        '200':
+          description: experiment started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [started]
+                  name:
+                    type: string
+        '400':
+          description: invalid experiment definition (missing name, empty stages, invalid duration, etc.)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    get:
+      tags:
+        - chaos
+      summary: get the status of the current chaos experiment
+      description: >-
+        Returns the current experiment status including name, running status
+        (running/completed/halted_by_auto_halt/stopped), current stage index, total stages,
+        elapsed/remaining time, loop iteration count, and the full experiment definition.
+        Returns null/empty when no experiment is or was recently active.
+      responses:
+        '200':
+          description: experiment status (or empty if none active)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  status:
+                    type: string
+                    enum: [running, completed, halted_by_auto_halt, stopped]
+                  currentStageIndex:
+                    type: integer
+                  totalStages:
+                    type: integer
+                  stageElapsedMillis:
+                    type: integer
+                  stageRemainingMillis:
+                    type: integer
+                  loopIteration:
+                    type: integer
+                  totalElapsedMillis:
+                    type: integer
+                  experiment:
+                    type: object
+                    description: the full experiment definition
+    delete:
+      tags:
+        - chaos
+      summary: stop the current chaos experiment
+      description: >-
+        Stops the current experiment and clears all chaos from the service registry.
+        Idempotent — no-op if no experiment is running.
+      responses:
+        '200':
+          description: experiment stopped (or no experiment was running)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [stopped]
   /mockserver/generateExpectation:
     put:
       tags:
@@ -3022,3 +3379,27 @@ components:
           format: int64
           minimum: 1
           description: "optional time-to-live in milliseconds after which the registration auto-reverts"
+    HttpChaosProfile:
+      description: "chaos profile controlling fault injection for a host or expectation"
+      type: object
+      additionalProperties: true
+      properties:
+        errorStatus:
+          type: integer
+          description: "HTTP error status code to return instead of the real response"
+        errorProbability:
+          type: number
+          description: "probability (0.0 to 1.0) that a request triggers the error"
+        latency:
+          type: object
+          properties:
+            value:
+              type: integer
+            timeUnit:
+              type: string
+        connectionDrop:
+          type: boolean
+          description: "when true, drops the TCP connection without responding"
+        seed:
+          type: integer
+          description: "fixed seed for deterministic probabilistic outcomes"

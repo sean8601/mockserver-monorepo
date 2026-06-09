@@ -1057,6 +1057,73 @@ new MockServerClient("localhost", 1080)
 
 <p>In a single-node deployment, chaos registrations live in memory on that node. When MockServer runs as a <a href="/mock_server/centralized_deployment.html#option2">clustered HA fleet</a> (a shared, replicated state backend across several nodes), the control-plane chaos registrations — <strong>service-scoped HTTP chaos</strong> (<code class="inline code">PUT /mockserver/serviceChaos</code>), <strong>TCP chaos</strong> (<code class="inline code">PUT /mockserver/tcpChaos</code>) and <strong>gRPC chaos</strong> (<code class="inline code">PUT /mockserver/grpcChaos</code>) — <strong>replicate across all nodes</strong>. Register a fault once on any node and every node enforces it; remove or clear it on any node and it is reverted fleet-wide. TTL auto-revert and clearing on server reset apply consistently across the cluster, so you can break a host for the whole fleet with a single call. With no clustered backend configured (the default) this is a no-op and chaos stays node-local.</p>
 
+<a id="chaos_experiments" class="anchor" href="#chaos_experiments">&nbsp;</a>
+
+<h2>Scheduled Multi-Stage Chaos Experiments</h2>
+
+<p>For complex resilience scenarios that progress through multiple fault phases, MockServer supports <strong>scheduled multi-stage chaos experiments</strong>. An experiment is an ordered sequence of stages, each applying service-scoped chaos profiles to one or more hosts for a specified duration, advancing automatically when the stage timer elapses.</p>
+
+<h3>Starting an experiment</h3>
+
+<p>Start an experiment with <code class="inline code">PUT /mockserver/chaosExperiment</code>. The payload defines a name, an ordered list of stages (each with a duration and per-host chaos profiles), and an optional <code class="inline code">loop</code> flag:</p>
+
+<pre class="code"><code class="code">curl -sf -X PUT http://mockserver:1080/mockserver/chaosExperiment \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "progressive-degradation",
+    "loop": false,
+    "stages": [
+      {
+        "durationMillis": 60000,
+        "profiles": {
+          "payments.svc": {"errorStatus": 429, "errorProbability": 0.1, "latency": {"timeUnit": "MILLISECONDS", "value": 200}}
+        }
+      },
+      {
+        "durationMillis": 60000,
+        "profiles": {
+          "payments.svc": {"errorStatus": 503, "errorProbability": 0.5, "latency": {"timeUnit": "MILLISECONDS", "value": 1000}}
+        }
+      },
+      {
+        "durationMillis": 30000,
+        "profiles": {
+          "payments.svc": {"connectionDrop": true, "errorProbability": 1.0}
+        }
+      }
+    ]
+  }'</code></pre>
+
+<p>This experiment progressively degrades <code class="inline code">payments.svc</code>: first light errors and latency for one minute, then heavier errors for another minute, then a complete connection drop for 30 seconds. After the last stage completes, chaos is cleared automatically.</p>
+
+<h3>Safety limits</h3>
+
+<ul>
+    <li><strong>Maximum 50 stages</strong> per experiment</li>
+    <li><strong>Maximum 24 hours</strong> per stage duration</li>
+    <li><strong>Only one experiment at a time</strong> &mdash; starting a new experiment stops the previous one</li>
+    <li><strong>Auto-halt integration</strong> &mdash; if the <a href="#chaos_auto_halt">auto-halt circuit-breaker</a> fires while an experiment is running, the experiment stops immediately (status: <code class="inline code">halted_by_auto_halt</code>)</li>
+</ul>
+
+<h3>Monitoring</h3>
+
+<p>Check the current experiment status with <code class="inline code">GET /mockserver/chaosExperiment</code>:</p>
+
+<pre class="code"><code class="code">curl -sf http://mockserver:1080/mockserver/chaosExperiment
+# -> {"name":"progressive-degradation","status":"running","currentStageIndex":1,
+#     "totalStages":3,"stageElapsedMillis":15000,"stageRemainingMillis":45000,
+#     "loopIteration":0,"totalElapsedMillis":75000,"experiment":{...}}</code></pre>
+
+<p>The <code class="inline code">status</code> field is one of: <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, or <code class="inline code">halted_by_auto_halt</code>.</p>
+
+<h3>Stopping</h3>
+
+<p>Stop a running experiment and clear all chaos with <code class="inline code">DELETE /mockserver/chaosExperiment</code>:</p>
+
+<pre class="code"><code class="code">curl -sf -X DELETE http://mockserver:1080/mockserver/chaosExperiment</code></pre>
+
+<p>Stopping is idempotent &mdash; calling it when no experiment is running is a no-op.</p>
+
 <a id="coming_soon" class="anchor" href="#coming_soon">&nbsp;</a>
 
 <h2>Roadmap</h2>

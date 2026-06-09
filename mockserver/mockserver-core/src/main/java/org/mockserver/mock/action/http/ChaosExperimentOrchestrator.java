@@ -46,6 +46,14 @@ import java.util.function.LongSupplier;
  * {@link TimeService#currentTimeMillis()}) so tests can drive advancement
  * deterministically without wall-clock sleeps.
  *
+ * <p><b>Shared-registry exclusivity:</b> A running experiment takes exclusive ownership
+ * of {@link ServiceChaosRegistry}. Manual service-chaos registrations are overwritten
+ * at the next stage advance (which calls {@code registry.reset()} then re-applies the
+ * stage profiles). A manual {@code reset()} of the registry is detected as an auto-halt
+ * condition at the next stage boundary (see the {@code entries().isEmpty()} check in
+ * {@link #advanceStage(RunningExperiment)}). Users should stop the experiment before
+ * making manual service-chaos changes.
+ *
  * <p>The singleton instance is shared process-wide, consistent with
  * {@link ServiceChaosRegistry}'s singleton pattern.
  */
@@ -70,6 +78,10 @@ public class ChaosExperimentOrchestrator {
     private final LongSupplier clock;
     private final ScheduledExecutorService scheduler;
     private final AtomicReference<RunningExperiment> current = new AtomicReference<>(null);
+    /** Terminal status of the last experiment after it detaches from {@link #current}.
+     *  Allows {@link #getStatus()} to report {@code halted_by_auto_halt}, {@code completed},
+     *  or {@code stopped} for a short window after the experiment ends (instead of null). */
+    private volatile String lastTerminatedStatus;
 
     ChaosExperimentOrchestrator(LongSupplier clock, ScheduledExecutorService scheduler) {
         this.clock = clock;
@@ -118,20 +130,28 @@ public class ChaosExperimentOrchestrator {
     }
 
     /**
-     * Resets the orchestrator: stops any running experiment and clears chaos.
+     * Resets the orchestrator: stops any running experiment, clears chaos,
+     * and clears the terminal status so {@link #getStatus()} returns null.
      * Called on server reset.
      */
     public void reset() {
         stopInternal(false);
+        lastTerminatedStatus = null;
     }
 
     /**
-     * Returns the current experiment status, or {@code null} if no experiment
-     * is running or was recently active.
+     * Returns the current experiment status. If no experiment is currently running
+     * but one recently terminated, returns a status with the terminal status
+     * ({@code halted_by_auto_halt}, {@code completed}, or {@code stopped}).
+     * Returns {@code null} only when no experiment has ever run (or after reset).
      */
     public ExperimentStatus getStatus() {
         RunningExperiment exp = current.get();
         if (exp == null) {
+            String terminated = lastTerminatedStatus;
+            if (terminated != null) {
+                return new ExperimentStatus(null, terminated, 0, 0, 0, 0, 0, 0, null);
+            }
             return null;
         }
         long now = clock.getAsLong();
@@ -163,6 +183,7 @@ public class ChaosExperimentOrchestrator {
                 pending.cancel(false);
             }
             exp.status = autoHalted ? "halted_by_auto_halt" : "stopped";
+            lastTerminatedStatus = exp.status;
             // Clear chaos from the registry
             ServiceChaosRegistry.getInstance().reset();
             LOG.info("chaos experiment '{}' {}", exp.definition.name, exp.status);
@@ -199,11 +220,14 @@ public class ChaosExperimentOrchestrator {
         }
 
         // C1 auto-halt integration: if the registry was cleared by auto-halt
-        // while this stage was running, stop the experiment
+        // (or a manual reset) while this stage was running, stop the experiment.
+        // Note: a running experiment takes exclusive ownership of ServiceChaosRegistry —
+        // manual service-chaos registrations are overwritten at the next stage advance.
         if (ServiceChaosRegistry.getInstance().entries().isEmpty() && experiment.status.equals("running")) {
             LOG.warn("chaos experiment '{}' halted by auto-halt safety circuit-breaker at stage {}",
                 experiment.definition.name, experiment.currentStageIndex);
             experiment.status = "halted_by_auto_halt";
+            lastTerminatedStatus = experiment.status;
             current.compareAndSet(experiment, null);
             return;
         }
@@ -222,6 +246,7 @@ public class ChaosExperimentOrchestrator {
             } else {
                 // Experiment complete
                 experiment.status = "completed";
+                lastTerminatedStatus = experiment.status;
                 ServiceChaosRegistry.getInstance().reset();
                 current.compareAndSet(experiment, null);
                 LOG.info("chaos experiment '{}' completed after {} stage(s)",

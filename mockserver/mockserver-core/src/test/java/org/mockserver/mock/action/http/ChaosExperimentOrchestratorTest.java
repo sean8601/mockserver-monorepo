@@ -158,8 +158,9 @@ public class ChaosExperimentOrchestratorTest {
         // then - experiment completed, chaos cleared
         assertThat("chaos cleared after completion",
             ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
-        assertThat("status is null after completion (experiment removed)",
-            orchestrator.getStatus(), is(nullValue()));
+        // After completion, getStatus() returns the terminal status (not null)
+        ChaosExperimentOrchestrator.ExperimentStatus completedStatus = orchestrator.getStatus();
+        assertThat("terminal status is 'completed'", completedStatus.status, is("completed"));
     }
 
     @Test
@@ -244,7 +245,9 @@ public class ChaosExperimentOrchestratorTest {
         // then
         assertThat("chaos cleared on stop",
             ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
-        assertThat("status null after stop", orchestrator.getStatus(), is(nullValue()));
+        // After stop, getStatus() returns the terminal status (not null)
+        ChaosExperimentOrchestrator.ExperimentStatus stoppedStatus = orchestrator.getStatus();
+        assertThat("terminal status is 'stopped'", stoppedStatus.status, is("stopped"));
     }
 
     @Test
@@ -316,8 +319,9 @@ public class ChaosExperimentOrchestratorTest {
         orchestrator.advanceNow();
 
         // then - experiment should be halted, not advancing
-        assertThat("experiment stopped by auto-halt",
-            orchestrator.getStatus(), is(nullValue()));
+        ChaosExperimentOrchestrator.ExperimentStatus haltedStatus = orchestrator.getStatus();
+        assertThat("terminal status is 'halted_by_auto_halt'",
+            haltedStatus.status, is("halted_by_auto_halt"));
         assertThat("chaos stays empty",
             ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
     }
@@ -352,8 +356,9 @@ public class ChaosExperimentOrchestratorTest {
         orchestrator.advanceNow();
 
         // then - experiment detects the empty registry and stops
-        assertThat("experiment stopped after real auto-halt",
-            orchestrator.getStatus(), is(nullValue()));
+        ChaosExperimentOrchestrator.ExperimentStatus realHaltedStatus = orchestrator.getStatus();
+        assertThat("terminal status is 'halted_by_auto_halt' after real auto-halt",
+            realHaltedStatus.status, is("halted_by_auto_halt"));
     }
 
     // --- Validation ---

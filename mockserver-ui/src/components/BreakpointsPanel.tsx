@@ -250,7 +250,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                       <TableCell>
                         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
                           {isResponse
-                            ? (exchange.response?.reasonPhrase ?? exchange.request?.path ?? '-')
+                            ? (exchange.response?.reasonPhrase ?? '-')
                             : (exchange.request?.path ?? '/')}
                         </Typography>
                       </TableCell>
