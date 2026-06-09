@@ -16,6 +16,7 @@ import {
   conversationToMcpArgs,
   draftFromScenarioExpectations,
   listConversationScenarios,
+  hasRangeErrors,
 } from '../lib/conversationCodegen';
 import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
 import { useDashboardStore } from '../store';
@@ -104,7 +105,7 @@ export default function LlmConversationForm({
     }
   }, [connectionParams, draft, editingScenario, existingIds]);
 
-  const canRegister = draft.path.trim().length > 0 && draft.turns.length > 0;
+  const canRegister = draft.path.trim().length > 0 && draft.turns.length > 0 && !hasRangeErrors(draft.turns);
 
   return (
     <>

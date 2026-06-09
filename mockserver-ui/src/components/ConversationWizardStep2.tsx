@@ -40,6 +40,53 @@ function emptyTurn(): TurnDraft {
 }
 
 // ---------------------------------------------------------------------------
+// Range validation — bounds verified against server source:
+//   StreamingPhysics.java: tokensPerSecond 1–10000, jitter 0.0–1.0
+//   LlmChaosProfile.java: errorStatus 100–599, errorProbability 0.0–1.0,
+//                          truncateAtFraction 0.0–1.0
+// ---------------------------------------------------------------------------
+
+function tokensPerSecondError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (v < 1 || v > 10000) return '1–10000';
+  return undefined;
+}
+
+function jitterError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (v < 0 || v > 1) return '0.0–1.0';
+  return undefined;
+}
+
+function chaosErrorStatusError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (!Number.isInteger(v) || v < 100 || v > 599) return '100–599';
+  return undefined;
+}
+
+function errorProbabilityError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (v < 0 || v > 1) return '0.0–1.0';
+  return undefined;
+}
+
+function truncateAtFractionError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (v < 0 || v > 1) return '0.0–1.0';
+  return undefined;
+}
+
+function outputSchemaWarning(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  try {
+    JSON.parse(v);
+    return undefined;
+  } catch {
+    return 'Invalid JSON';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -403,6 +450,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                     size="small"
                     type="number"
                     value={turn.response.streamingPhysics?.tokensPerSecond ?? ''}
+                    error={!!tokensPerSecondError(turn.response.streamingPhysics?.tokensPerSecond)}
+                    helperText={tokensPerSecondError(turn.response.streamingPhysics?.tokensPerSecond)}
                     onChange={(e) => {
                       const val = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
                       const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), tokensPerSecond: val };
@@ -416,6 +465,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                     size="small"
                     type="number"
                     value={turn.response.streamingPhysics?.jitter ?? ''}
+                    error={!!jitterError(turn.response.streamingPhysics?.jitter)}
+                    helperText={jitterError(turn.response.streamingPhysics?.jitter)}
                     onChange={(e) => {
                       const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
                       const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), jitter: val };
@@ -439,7 +490,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
               value={turn.response.outputSchema ?? ''}
               onChange={(e) => updateResponse(i, { outputSchema: e.target.value || undefined })}
               placeholder='{"type":"object","properties":{"answer":{"type":"string"}}}'
-              helperText="Optional JSON Schema to validate the response text against"
+              error={!!outputSchemaWarning(turn.response.outputSchema)}
+              helperText={outputSchemaWarning(turn.response.outputSchema) ?? 'Optional JSON Schema to validate the response text against'}
               sx={{ mt: 0.5 }}
             />
 
@@ -462,6 +514,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   size="small"
                   type="number"
                   value={turn.chaos?.errorStatus ?? ''}
+                  error={!!chaosErrorStatusError(turn.chaos?.errorStatus)}
+                  helperText={chaosErrorStatusError(turn.chaos?.errorStatus)}
                   onChange={(e) => updateChaos(i, { errorStatus: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
                   sx={{ width: 110 }}
                 />
@@ -477,6 +531,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   size="small"
                   type="number"
                   value={turn.chaos?.errorProbability ?? ''}
+                  error={!!errorProbabilityError(turn.chaos?.errorProbability)}
+                  helperText={errorProbabilityError(turn.chaos?.errorProbability)}
                   onChange={(e) => updateChaos(i, { errorProbability: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                   sx={{ width: 130 }}
                 />
@@ -496,6 +552,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   size="small"
                   type="number"
                   value={turn.chaos?.truncateAtFraction ?? ''}
+                  error={!!truncateAtFractionError(turn.chaos?.truncateAtFraction)}
+                  helperText={truncateAtFractionError(turn.chaos?.truncateAtFraction)}
                   onChange={(e) => updateChaos(i, { truncateAtFraction: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
                   sx={{ width: 120 }}
                 />

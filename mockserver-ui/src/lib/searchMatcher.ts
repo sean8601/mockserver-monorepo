@@ -4,7 +4,7 @@
  * "type") and re-serialises on every keystroke.
  *
  * The TrafficInspector already used a field-based approach; this module
- * generalises it for all panels.
+ * generalises it for the request / expectation / log panels.
  */
 
 /**

@@ -297,6 +297,7 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
         <tr><td><span class="inline_code">latestMessageMatches</span></td><td>Match when the last message matches this regex pattern</td></tr>
         <tr><td><span class="inline_code">latestMessageRole</span></td><td>Match when the last message has this role (e.g. <span class="inline_code">user</span>, <span class="inline_code">tool</span>)</td></tr>
         <tr><td><span class="inline_code">containsToolResultFor</span></td><td>Match when the conversation contains a tool result for this tool name</td></tr>
+        <tr><td><span class="inline_code">semanticMatchAgainst</span></td><td>Opt-in, exploratory: the expected meaning the latest message should express, judged by a runtime LLM. Off by default &mdash; ignored unless <span class="inline_code">mockserver.llmSemanticMatchingEnabled</span> is set and a backend resolves. Non-deterministic; for exploration only, never for CI assertions.</td></tr>
     </tbody>
 </table>
 
@@ -327,7 +328,10 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
 </p>
 
 <p>
-    Session isolation is configured when using the conversation builder via the Java client or MCP tools.
+    Session isolation is configured via the Java client&rsquo;s conversation builder (<span class="inline_code">isolateBy(IsolationSource.header("x-session-id"))</span>)
+    or the <a href="/mock_server/ai_mcp_tools.html#create_llm_conversation"><span class="inline_code">create_llm_conversation</span></a> MCP tool&rsquo;s
+    <span class="inline_code">isolateBy</span> parameter. The isolation source is encoded into the
+    expectation&rsquo;s scenario name &mdash; it is not a separate field in the raw expectation JSON.
     Common isolation sources:
 </p>
 
@@ -336,6 +340,23 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     <li><strong>Query parameter:</strong> extract from a URL query parameter</li>
     <li><strong>Cookie:</strong> extract from a cookie value</li>
 </ul>
+
+<p>Example using the <span class="inline_code">create_llm_conversation</span> MCP tool:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "provider": "OPENAI",
+  "path": "/v1/chat/completions",
+  "isolateBy": {
+    "source": "header",
+    "name": "x-session-id"
+  },
+  "turns": [
+    {
+      "match": { "turnIndex": 0 },
+      "response": { "text": "Hello!", "stopReason": "stop" }
+    }
+  ]
+}</code></pre>
 
 <p>
     Each unique isolation key value creates an independent conversation state machine, so multiple agents
@@ -397,6 +418,7 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     "chaos": {
       "errorStatus": 503,
       "errorProbability": 0.3,
+      "truncateMode": "MID_STREAM",
       "truncateAtFraction": 0.5,
       "malformedSse": true
     }
@@ -409,8 +431,10 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     </thead>
     <tbody>
         <tr><td><span class="inline_code">errorStatus</span></td><td>Return this HTTP status as a provider error (e.g. 503, 429). With no <span class="inline_code">errorProbability</span>, always fires.</td></tr>
+        <tr><td><span class="inline_code">retryAfter</span></td><td>Value for the <span class="inline_code">Retry-After</span> header on an injected error (e.g. <span class="inline_code">"30"</span>). Useful alongside <span class="inline_code">errorStatus: 429</span> to test retry-after handling.</td></tr>
         <tr><td><span class="inline_code">errorProbability</span></td><td>Probability (0.0 &ndash; 1.0) that the error fires on each request</td></tr>
-        <tr><td><span class="inline_code">truncateAtFraction</span></td><td>For streaming responses, cut the stream short at this fraction (0.0 &ndash; 1.0)</td></tr>
+        <tr><td><span class="inline_code">truncateMode</span></td><td><span class="inline_code">NONE</span> (default) or <span class="inline_code">MID_STREAM</span>. Must be set to <span class="inline_code">MID_STREAM</span> for <span class="inline_code">truncateAtFraction</span> to take effect.</td></tr>
+        <tr><td><span class="inline_code">truncateAtFraction</span></td><td>For streaming responses, cut the stream short at this fraction of SSE events (0.0 &ndash; 1.0, default 0.5). Only applies when <span class="inline_code">truncateMode</span> is <span class="inline_code">MID_STREAM</span>.</td></tr>
         <tr><td><span class="inline_code">malformedSse</span></td><td>Inject a deliberately broken-JSON SSE chunk</td></tr>
         <tr><td><span class="inline_code">quotaName</span> / <span class="inline_code">quotaLimit</span> / <span class="inline_code">quotaWindowMillis</span></td><td>Deterministic fixed-window rate limit</td></tr>
         <tr><td><span class="inline_code">seed</span></td><td>PRNG seed for reproducible probabilistic faults</td></tr>

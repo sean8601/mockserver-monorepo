@@ -127,7 +127,7 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
 <ul>
     <li><span class="inline_code">mock_server_http_chaos_injected_total</span> &mdash; counter with a <span class="inline_code">fault_type</span> label (drop, error, latency, truncate, malformed, slow, quota, graphql)</li>
     <li><span class="inline_code">mock_server_active_service_chaos</span> &mdash; gauge per <span class="inline_code">fault_type</span> of currently active chaos profiles</li>
-    <li><span class="inline_code">mock_server_chaos_auto_halt</span> &mdash; counter that increments each time the <a href="/mock_server/chaos_testing.html">chaos auto-halt circuit-breaker</a> triggers</li>
+    <li><span class="inline_code">mock_server_chaos_auto_halt_total</span> &mdash; counter that increments each time the <a href="/mock_server/chaos_testing.html">chaos auto-halt circuit-breaker</a> triggers</li>
 </ul>
 
 <a id="llm_metrics" class="anchor" href="#llm_metrics">&nbsp;</a>
@@ -144,17 +144,17 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
     </thead>
     <tbody>
         <tr>
-            <td><span class="inline_code">mock_server_llm_input_tokens</span></td>
+            <td><span class="inline_code">mock_server_llm_input_tokens_total</span></td>
             <td><span class="inline_code">provider</span>, <span class="inline_code">model</span></td>
             <td>Cumulative input tokens</td>
         </tr>
         <tr>
-            <td><span class="inline_code">mock_server_llm_output_tokens</span></td>
+            <td><span class="inline_code">mock_server_llm_output_tokens_total</span></td>
             <td><span class="inline_code">provider</span>, <span class="inline_code">model</span></td>
             <td>Cumulative output tokens</td>
         </tr>
         <tr>
-            <td><span class="inline_code">mock_server_llm_cost_usd</span></td>
+            <td><span class="inline_code">mock_server_llm_cost_usd_total</span></td>
             <td><span class="inline_code">provider</span>, <span class="inline_code">model</span></td>
             <td>Cumulative estimated cost in USD</td>
         </tr>
@@ -167,10 +167,10 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
     requests to a real LLM provider). Cost estimation uses an internal pricing table and is approximate.
 </p>
 
-<p>The cost-budget circuit-breaker (<span class="inline_code">mock_server_llm_cost_budget_tripped</span> counter) is documented in <a href="/mock_server/llm_response_mocking.html#cost_budget">LLM Response Mocking &rarr; Cost Budget</a>.</p>
+<p>The cost-budget circuit-breaker (<span class="inline_code">mock_server_llm_cost_budget_tripped_total</span> counter) is documented in <a href="/mock_server/llm_response_mocking.html#cost_budget">LLM Response Mocking &rarr; Cost Budget</a>.</p>
 
 <pre class="prettyprint lang-text code"><code class="code"># Example: total LLM cost rate per hour
-sum(rate(mock_server_llm_cost_usd[1h]))</code></pre>
+sum(rate(mock_server_llm_cost_usd_total[1h]))</code></pre>
 
 <a id="otel" class="anchor" href="#otel">&nbsp;</a>
 <h2>OpenTelemetry (OTLP) Export</h2>

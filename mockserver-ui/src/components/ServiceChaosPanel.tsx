@@ -1045,10 +1045,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               type="number"
               value={autoHaltThreshold}
               disabled={!autoHaltEnabled}
+              error={autoHaltThreshold.trim() !== '' && (isNaN(parseInt(autoHaltThreshold, 10)) || parseInt(autoHaltThreshold, 10) <= 0)}
+              helperText={autoHaltThreshold.trim() !== '' && (isNaN(parseInt(autoHaltThreshold, 10)) || parseInt(autoHaltThreshold, 10) <= 0) ? '> 0' : undefined}
               onChange={(e) => setAutoHaltThreshold(e.target.value)}
               onBlur={() => {
                 const v = parseInt(autoHaltThreshold, 10);
-                if (!isNaN(v)) void applyAutoHaltConfig({ chaosAutoHaltErrorThreshold: v });
+                if (!isNaN(v) && v > 0) void applyAutoHaltConfig({ chaosAutoHaltErrorThreshold: v });
               }}
               sx={{ width: 130 }}
             />
@@ -1058,10 +1060,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               type="number"
               value={autoHaltWindow}
               disabled={!autoHaltEnabled}
+              error={autoHaltWindow.trim() !== '' && (isNaN(parseInt(autoHaltWindow, 10)) || parseInt(autoHaltWindow, 10) <= 0)}
+              helperText={autoHaltWindow.trim() !== '' && (isNaN(parseInt(autoHaltWindow, 10)) || parseInt(autoHaltWindow, 10) <= 0) ? '> 0' : undefined}
               onChange={(e) => setAutoHaltWindow(e.target.value)}
               onBlur={() => {
                 const v = parseInt(autoHaltWindow, 10);
-                if (!isNaN(v)) void applyAutoHaltConfig({ chaosAutoHaltWindowMillis: v });
+                if (!isNaN(v) && v > 0) void applyAutoHaltConfig({ chaosAutoHaltWindowMillis: v });
               }}
               sx={{ width: 130 }}
             />

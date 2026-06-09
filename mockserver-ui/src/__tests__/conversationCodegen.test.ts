@@ -5,6 +5,7 @@ import {
   conversationToMcpArgs,
   conversationToMcpCall,
   draftFromScenarioExpectations,
+  hasRangeErrors,
   type ConversationDraft,
 } from '../lib/conversationCodegen';
 
@@ -495,5 +496,125 @@ describe('outputSchema as string', () => {
     const turns = args['turns'] as Array<Record<string, unknown>>;
     const response = turns[0]!['response'] as Record<string, unknown>;
     expect(typeof response['outputSchema']).toBe('string');
+  });
+});
+
+describe('outputSchema in Java codegen', () => {
+  it('emits withOutputSchema in Java when outputSchema is set', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.outputSchema = '{"type":"object","properties":{"name":{"type":"string"}}}';
+    const java = conversationToJava(draft);
+    expect(java).toContain('.withOutputSchema("{\\"type\\":\\"object\\",\\"properties\\":{\\"name\\":{\\"type\\":\\"string\\"}}}")');
+  });
+
+  it('omits withOutputSchema in Java when outputSchema is not set', () => {
+    const java = conversationToJava(baseDraft());
+    expect(java).not.toContain('withOutputSchema');
+  });
+
+  it('Java / JSON / MCP all emit outputSchema consistently', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.outputSchema = '{"type":"object"}';
+    const java = conversationToJava(draft);
+    const json = JSON.parse(conversationToJson(draft));
+    const args = conversationToMcpArgs(draft);
+    const turns = args['turns'] as Array<Record<string, unknown>>;
+    const response = turns[0]!['response'] as Record<string, unknown>;
+
+    // Java emits withOutputSchema
+    expect(java).toContain('.withOutputSchema("{\\"type\\":\\"object\\"}")');
+    // JSON emits outputSchema string
+    expect(json[0].httpLlmResponse.completion.outputSchema).toBe('{"type":"object"}');
+    // MCP emits outputSchema string
+    expect(response['outputSchema']).toBe('{"type":"object"}');
+  });
+});
+
+describe('hasRangeErrors', () => {
+  it('returns false for valid turns', () => {
+    expect(hasRangeErrors(baseDraft().turns)).toBe(false);
+  });
+
+  it('returns true when tokensPerSecond is out of range (server: 1–10000)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { tokensPerSecond: 0 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.response.streamingPhysics = { tokensPerSecond: 10001 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.response.streamingPhysics = { tokensPerSecond: 50 };
+    expect(hasRangeErrors(draft.turns)).toBe(false);
+  });
+
+  it('returns true when jitter is out of range (server: 0.0–1.0)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { jitter: -0.1 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.response.streamingPhysics = { jitter: 1.5 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.response.streamingPhysics = { jitter: 0.5 };
+    expect(hasRangeErrors(draft.turns)).toBe(false);
+  });
+
+  it('returns true for NaN values in numeric fields (e.g. from a partially-typed input)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = true;
+    draft.turns[0]!.response.streamingPhysics = { jitter: NaN };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.response.streamingPhysics = { tokensPerSecond: NaN };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.response.streamingPhysics = undefined;
+    draft.turns[0]!.chaos = { truncateAtFraction: NaN };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+  });
+
+  it('returns true when chaos errorStatus is out of range (server: 100–599)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.chaos = { errorStatus: 99 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.chaos = { errorStatus: 600 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.chaos = { errorStatus: 429 };
+    expect(hasRangeErrors(draft.turns)).toBe(false);
+  });
+
+  it('returns true when chaos errorProbability is out of range (server: 0.0–1.0)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.chaos = { errorProbability: -0.5 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.chaos = { errorProbability: 1.1 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.chaos = { errorProbability: 0.5 };
+    expect(hasRangeErrors(draft.turns)).toBe(false);
+  });
+
+  it('returns true when chaos truncateAtFraction is out of range (server: 0.0–1.0)', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.chaos = { truncateAtFraction: -0.1 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.chaos = { truncateAtFraction: 1.5 };
+    expect(hasRangeErrors(draft.turns)).toBe(true);
+
+    draft.turns[0]!.chaos = { truncateAtFraction: 0.8 };
+    expect(hasRangeErrors(draft.turns)).toBe(false);
+  });
+
+  it('does not flag streaming physics errors when streaming is off', () => {
+    const draft = baseDraft();
+    draft.turns[0]!.response.streaming = false;
+    draft.turns[0]!.response.streamingPhysics = { tokensPerSecond: 0 };
+    expect(hasRangeErrors(draft.turns)).toBe(false);
   });
 });

@@ -88,6 +88,30 @@ export interface ConversationDraft {
 }
 
 // ---------------------------------------------------------------------------
+// Validation — server-side bounds:
+//   StreamingPhysics.java: tokensPerSecond 1–10000, jitter 0.0–1.0
+//   LlmChaosProfile.java: errorStatus 100–599, errorProbability 0.0–1.0,
+//                          truncateAtFraction 0.0–1.0
+// ---------------------------------------------------------------------------
+
+/** Returns true when any turn has a range-validation error that the server would reject. */
+export function hasRangeErrors(turns: TurnDraft[]): boolean {
+  return turns.some((turn) => {
+    if (turn.response.streaming && turn.response.streamingPhysics) {
+      const sp = turn.response.streamingPhysics;
+      if (sp.tokensPerSecond != null && (!Number.isFinite(sp.tokensPerSecond) || sp.tokensPerSecond < 1 || sp.tokensPerSecond > 10000)) return true;
+      if (sp.jitter != null && (!Number.isFinite(sp.jitter) || sp.jitter < 0 || sp.jitter > 1)) return true;
+    }
+    if (turn.chaos) {
+      if (turn.chaos.errorStatus != null && (!Number.isInteger(turn.chaos.errorStatus) || turn.chaos.errorStatus < 100 || turn.chaos.errorStatus > 599)) return true;
+      if (turn.chaos.errorProbability != null && (!Number.isFinite(turn.chaos.errorProbability) || turn.chaos.errorProbability < 0 || turn.chaos.errorProbability > 1)) return true;
+      if (turn.chaos.truncateAtFraction != null && (!Number.isFinite(turn.chaos.truncateAtFraction) || turn.chaos.truncateAtFraction < 0 || turn.chaos.truncateAtFraction > 1)) return true;
+    }
+    return false;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -247,6 +271,9 @@ export function conversationToJava(draft: ConversationDraft): string {
     }
     if (turn.response.stopReason) {
       completionParts.push(`.withStopReason("${escapeJava(turn.response.stopReason)}")`);
+    }
+    if (turn.response.outputSchema) {
+      completionParts.push(`.withOutputSchema("${escapeJava(turn.response.outputSchema)}")`);
     }
     if (turn.response.streaming) {
       completionParts.push('.streaming()');
