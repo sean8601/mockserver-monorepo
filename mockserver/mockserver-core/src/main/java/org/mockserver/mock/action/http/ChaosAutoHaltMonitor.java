@@ -104,13 +104,15 @@ public class ChaosAutoHaltMonitor {
             return;
         }
 
-        long now = clock.getAsLong();
-        errorTimestamps.addLast(now);
-
         long threshold = ConfigurationProperties.chaosAutoHaltErrorThreshold();
         if (threshold <= 0) {
+            // With a non-positive threshold the circuit-breaker can never fire,
+            // so skip recording to avoid unbounded timestamp accumulation.
             return;
         }
+
+        long now = clock.getAsLong();
+        errorTimestamps.addLast(now);
 
         // Evict expired entries and read the window size under the same lock to
         // prevent the TOCTOU race where two threads both peek the same expired

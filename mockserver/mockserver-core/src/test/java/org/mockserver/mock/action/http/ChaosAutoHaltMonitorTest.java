@@ -477,6 +477,54 @@ public class ChaosAutoHaltMonitorTest {
     }
 
     @Test
+    public void shouldNotAccumulateTimestampsWhenThresholdIsZero() {
+        AtomicLong now = new AtomicLong(1000L);
+        ChaosAutoHaltMonitor monitor = new ChaosAutoHaltMonitor(now::get);
+
+        ConfigurationProperties.chaosAutoHaltEnabled(true);
+        ConfigurationProperties.chaosAutoHaltErrorThreshold(0);
+        ConfigurationProperties.chaosAutoHaltWindowMillis(10_000L);
+
+        ServiceChaosRegistry.getInstance().put("upstream.svc", httpChaosProfile().withErrorStatus(503));
+
+        // when - record many destructive errors with threshold <= 0
+        for (int i = 0; i < 100; i++) {
+            monitor.recordError("error");
+        }
+
+        // then - no timestamps accumulated and chaos is NOT halted
+        assertThat("window must remain empty when threshold is zero",
+            monitor.currentWindowSize(), is(0));
+        assertThat("chaos must not be halted when threshold is zero",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(false));
+        assertThat(monitor.getHaltCount(), is(0L));
+    }
+
+    @Test
+    public void shouldNotAccumulateTimestampsWhenThresholdIsNegative() {
+        AtomicLong now = new AtomicLong(1000L);
+        ChaosAutoHaltMonitor monitor = new ChaosAutoHaltMonitor(now::get);
+
+        ConfigurationProperties.chaosAutoHaltEnabled(true);
+        ConfigurationProperties.chaosAutoHaltErrorThreshold(-5);
+        ConfigurationProperties.chaosAutoHaltWindowMillis(10_000L);
+
+        ServiceChaosRegistry.getInstance().put("upstream.svc", httpChaosProfile().withErrorStatus(503));
+
+        // when - record many destructive errors with negative threshold
+        for (int i = 0; i < 100; i++) {
+            monitor.recordError("error");
+        }
+
+        // then - no timestamps accumulated and chaos is NOT halted
+        assertThat("window must remain empty when threshold is negative",
+            monitor.currentWindowSize(), is(0));
+        assertThat("chaos must not be halted when threshold is negative",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(false));
+        assertThat(monitor.getHaltCount(), is(0L));
+    }
+
+    @Test
     public void shouldFireHaltCorrectlyUnderConcurrency() throws Exception {
         // Verify the circuit breaker actually fires under concurrent load.
         // Multiple threads record errors; with a low threshold the halt must fire

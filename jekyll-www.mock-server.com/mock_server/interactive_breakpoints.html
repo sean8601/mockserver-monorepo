@@ -229,9 +229,10 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
 </p>
 
 <p>
-    Inbound frame breakpoints currently cover WebSocket bidirectional and GraphQL subscription connections.
-    gRPC bidirectional inbound frames are not yet intercepted (they require careful HTTP/2 flow-control
-    window management). This feature is <strong>off by default</strong> and experimental.
+    Inbound frame breakpoints cover WebSocket bidirectional, GraphQL subscription, and gRPC bidirectional
+    connections. For gRPC-bidi, the implementation releases each HTTP/2 DATA frame immediately (refunding
+    the flow-control window) and uses pull-based <span class="inline_code">ctx.read()</span> backpressure.
+    This feature is <strong>off by default</strong> and experimental.
 </p>
 
 <p>
