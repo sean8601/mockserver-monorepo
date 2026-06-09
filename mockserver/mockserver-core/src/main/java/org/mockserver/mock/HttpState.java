@@ -400,6 +400,7 @@ public class HttpState {
         org.mockserver.mock.action.http.HttpQuotaRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ChaosAutoHaltMonitor.getInstance().reset();
+        org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
@@ -1685,6 +1686,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosExperimentPut(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2105,6 +2113,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosExperimentGet()), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleServiceChaosGet()), true);
@@ -2228,6 +2242,12 @@ public class HttpState {
                             responseWriter.writeResponse(request, NOT_FOUND, "WASM module '" + moduleName + "' not found", MediaType.create("text", "plain").toString());
                         }
                     }
+                }
+                return true;
+            }
+            if (request.matches("DELETE", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosExperimentDelete()), true);
                 }
                 return true;
             }
@@ -2521,6 +2541,103 @@ public class HttpState {
         } catch (Exception jsonError) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to process service chaos request\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    // --- Chaos Experiment endpoint helpers ---
+
+    private HttpResponse handleChaosExperimentPut(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return chaosExperimentError(objectMapper, "request body is required with an experiment definition");
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator.ExperimentDefinition definition =
+                org.mockserver.mock.action.http.ChaosExperimentOrchestrator.ExperimentDefinition.fromJson(node);
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator orchestrator =
+                org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance();
+            String error = orchestrator.start(definition);
+            if (error != null) {
+                return chaosExperimentError(objectMapper, error);
+            }
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("started chaos experiment:{}")
+                        .setArguments(definition.name)
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "started");
+            result.put("name", definition.name);
+            result.put("stages", definition.stages.size());
+            result.put("loop", definition.loop);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return chaosExperimentError(objectMapper, "invalid experiment definition: " + e.getMessage());
+        } catch (Exception e) {
+            return chaosExperimentError(objectMapper, "failed to process chaos experiment request: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleChaosExperimentGet() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator orchestrator =
+                org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance();
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+            if (status == null) {
+                com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+                result.put("status", "none");
+                return response().withStatusCode(OK.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(status.toJson()), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get chaos experiment status\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleChaosExperimentDelete() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator orchestrator =
+                org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance();
+            orchestrator.stop();
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setMessageFormat("stopped chaos experiment")
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "stopped");
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to stop chaos experiment\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse chaosExperimentError(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String message) {
+        try {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                    objectMapper.createObjectNode().put("error", message)), MediaType.JSON_UTF_8);
+        } catch (Exception jsonError) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to process chaos experiment request\"}", MediaType.JSON_UTF_8);
         }
     }
 
