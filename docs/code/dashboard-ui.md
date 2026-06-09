@@ -92,14 +92,23 @@ The `DashboardWebSocketHandler` implements both `MockServerLogListener` and `Moc
 
 ## Top-Level Views
 
-The dashboard has **ten top-level views** controlled by a toggle strip in the AppBar: **Dashboard**, **Traffic**, **Sessions**, **Mocks**, **Library**, **Chaos**, **Drift**, **Verification**, **AsyncAPI**, and **Metrics**. The view state is stored in Zustand as `view: ViewMode` where `ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async'`. Note that the `'composer'` value is surfaced in the UI under the button label **Mocks**, and `'async'` is the **AsyncAPI** broker view.
+The dashboard has **twelve top-level views** controlled by a toggle strip in the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
 
-The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on Mocks (composer), Library, Chaos, Drift, Verification, AsyncAPI, and Metrics.
+```
+ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'
+         | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async'
+         | 'breakpoints' | 'get-started'
+```
+
+`'composer'` is surfaced in the UI under the button label **Mocks**; `'async'` is the **AsyncAPI** broker view; `'get-started'` is the initial onboarding view shown to new users before any data arrives.
+
+The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on all other views.
 
 | View | Button label | Component | Description |
 |------|--------------|-----------|-------------|
+| `get-started` | — | `OnboardingPanel.tsx` | Onboarding / empty-state view shown automatically on first load; auto-switches to `dashboard` when the first data arrives |
 | `dashboard` | Dashboard | `DashboardGrid.tsx` | 2×2 grid of Log Messages, Active Expectations, Received Requests, Proxied Requests panels |
-| `traffic` | Traffic | `TrafficInspector.tsx` | Full-width master/detail list of all captured traffic (mock-matched + proxied) |
+| `traffic` | Traffic | `TrafficInspector.tsx` | Full-width master/detail list of all captured traffic (mock-matched + proxied), with per-row Replay and Compare buttons |
 | `sessions` | Sessions | `SessionInspector.tsx` | Swim-lane grouped view of isolated LLM conversation sessions |
 | `composer` | Mocks | `ComposerView.tsx` | Unified expectation creator/editor for Standard HTTP and LLM Conversation expectations |
 | `library` | Library | `LibraryView.tsx` | Fixture cassettes, run comparison, and export (HAR / OpenAPI / Postman / Bruno) |
@@ -108,14 +117,17 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 | `verification` | Verify | `VerificationView.tsx` | Build and run verifications — request matchers, expected counts (atLeast/atMost/exactly/between), or an ordered sequence — against received requests |
 | `async` | Async | `AsyncApiPanel.tsx` | AsyncAPI broker mock status: loaded spec, channels/topics, publisher/subscriber summary, and recorded broker messages |
 | `metrics` | Metrics | `MetricsView.tsx` | Prometheus metrics polling: request counters, latency percentiles, JVM stats, chaos gauges |
+| `breakpoints` | Breakpoints | `BreakpointsPanel.tsx` | Live table of paused HTTP exchanges and held streaming frames; continue / modify / abort each (see [Breakpoints Panel](#breakpoints-panel)) |
 
 ```mermaid
 graph TB
     APP["App.tsx"]
     AB["AppBar.tsx
-10-button toggle strip"]
+12-button toggle strip"]
     FP["FilterPanel.tsx
 (dashboard, traffic, sessions only)"]
+    GS["OnboardingPanel.tsx
+(view = 'get-started')"]
     DG["DashboardGrid.tsx
 (view = 'dashboard')"]
     TI["TrafficInspector.tsx
@@ -136,10 +148,13 @@ graph TB
 (view = 'async')"]
     MV["MetricsView.tsx
 (view = 'metrics')"]
+    BP["BreakpointsPanel.tsx
+(view = 'breakpoints')"]
 
     APP --> AB
     APP --> FP
     AB -->|setView| APP
+    APP -->|view = get-started| GS
     APP -->|view = dashboard| DG
     APP -->|view = traffic| TI
     APP -->|view = sessions| SI
@@ -150,6 +165,7 @@ graph TB
     APP -->|view = verification| VV
     APP -->|view = async| AAP
     APP -->|view = metrics| MV
+    APP -->|view = breakpoints| BP
 ```
 
 ## Metrics View
@@ -313,6 +329,8 @@ At the top is an **Expectation kind** radio: **Standard HTTP expectation** or **
 
 ### Standard HTTP Expectation
 
+A **template snippet palette** (`SnippetPalette.tsx`) is available in both the Response Template and Forward Template steps. It is engine-aware — clicking a snippet inserts the correct Velocity, Mustache, or JavaScript syntax for the currently selected template engine. Each snippet shows a description and example output.
+
 - An **Edit existing or add new** dropdown lists every active non-LLM expectation by `<id-short>… · METHOD path`. Picking one prefills the matcher + response-action panel. A Reset button clears the selection.
 - **Step 1 · Match a request**: Expectation ID (optional), Method, Path, Headers (Name: value lines), Query string parameters (key=value lines), Cookies (name=value lines), Path parameters (name=value lines), Body matcher, "Body is binary (base64)" toggle, HTTPS-only toggle, Priority (higher = wins), Times (0 = unlimited). All string fields and per-line entries accept a leading `!` to negate via MockServer's NottableString convention.
 - **Step 2 · Respond with**: radio for the response action — Static HTTP response / Forward to upstream / Forward with override / Class callback / Response template / Error / fault injection.
@@ -363,9 +381,42 @@ When the `mockserver-async` jar is not on the server's classpath the helper retu
 
 Prior to this, any UI feature that called an MCP tool was broken with a session-not-initialized error.
 
+## Breakpoints Panel
+
+`BreakpointsPanel.tsx` (view = `breakpoints`) shows HTTP exchanges and streaming frames currently paused by breakpoint expectations. It **polls** two endpoints every 2 seconds:
+
+- `GET /mockserver/breakpoint` — paused request/response exchanges (`PausedExchange[]`)
+- `GET /mockserver/breakpoint/streams` — held stream frames grouped by `streamId`
+
+The panel has two tabs:
+
+**Exchanges tab** — one row per paused exchange. Each row shows the phase (`REQUEST` or `RESPONSE`), method or status code, path or reason phrase, age, exchange ID, and expectation ID. Three action buttons:
+
+| Button | Endpoint | Effect |
+|--------|----------|--------|
+| Continue | `PUT /mockserver/breakpoint/continue` | Forward the exchange unchanged |
+| Modify | `PUT /mockserver/breakpoint/modify` (REQUEST phase) or `PUT /mockserver/breakpoint/modify` with response body (RESPONSE phase) | Opens a JSON editor prefilled with the request or response; submits the modified JSON |
+| Abort | `PUT /mockserver/breakpoint/abort` | Drop the exchange without forwarding |
+
+**Streams tab** — paused frames from forwarded streaming responses (SSE, chunked transfer), grouped by `streamId`. Per-frame actions: continue, modify body, drop (discard), inject extra frame after this one, close stream. The modify and inject actions each open a text editor dialog.
+
+See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture (`BreakpointRegistry`, `PausedExchange`, phases).
+
+## Get-Started / Onboarding View
+
+`OnboardingPanel.tsx` (view = `get-started`) is the initial empty-state view shown to new users. The Zustand store starts with `view: 'get-started'` and automatically switches to `'dashboard'` the first time `applyMessage` receives a non-empty payload. This prevents new users from seeing an empty dashboard on first load.
+
+## Traffic View: Replay and Compare
+
+`TrafficInspector.tsx` exposes two extra per-row actions in the detail pane for captured requests:
+
+**Replay button** — appears top-right of the detail pane for each traffic row. Clicking opens `ReplayDialog`, which calls `PUT /mockserver/replay` with the captured `HttpRequest` JSON and displays the upstream response (or an error) in a `JsonViewer`. This uses the same `NettyHttpClient`-backed handler as any other forward request (see [Request Replay](request-processing.md#request-replay)).
+
+**Compare (diff) button** — a `CompareArrowsIcon` checkbox on each row. Selecting two rows enables structural comparison of those two requests or their responses via the `DiffPanel` (`PUT /mockserver/diff`). This is the same diff engine used by the Tools menu "Diff two requests" dialog.
+
 ## AppBar Styling
 
-The AppBar renders the ten toggle buttons (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics) as a `ToggleButtonGroup`. The **Mocks** button maps to `view = 'composer'`, **Verify** to `view = 'verification'`, and **Async** to `view = 'async'` (the AsyncAPI broker view). The HAR download lives in Library → Export rather than as a top-bar icon.
+The AppBar renders the twelve toggle buttons (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics / Breakpoints / Get Started) as a `ToggleButtonGroup`. The **Mocks** button maps to `view = 'composer'`, **Verify** to `view = 'verification'`, and **Async** to `view = 'async'` (the AsyncAPI broker view). The HAR download lives in Library → Export rather than as a top-bar icon.
 
 **Light mode**: toggle buttons use `primary.contrastText` (white) text with a translucent white border (`rgba(255,255,255,0.3)`) and a translucent-white selected state. The status chip uses pale colour tints (`#7fffa0` connected, `#ffd180` connecting, `#ff8a80` error) so colour semantics remain readable against the blue AppBar background.
 
@@ -424,7 +475,7 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
   receivedSearch: '',
   proxiedSearch: '',
   trafficSearch: '',
-  view: 'dashboard',        // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async'  (composer is labelled "Mocks", async is the AsyncAPI view)
+  view: 'get-started',      // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view)
   selectedTrafficIndex: null,
   actionTypeFilter: [],
   llmProviderFilter: [],
@@ -453,7 +504,7 @@ graph TB
 Orchestrator: theme, WebSocket, shortcuts"]
     AB["AppBar.tsx
 Title bar: status, theme, clear menu
-10-button view toggle"]
+12-button view toggle"]
     FP["FilterPanel.tsx
 Collapsible request filter form"]
     DG["DashboardGrid.tsx
@@ -533,7 +584,7 @@ Expandable match failure reasons"]
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu, 10-button view toggle (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics) |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu, 12-button view toggle (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics / Breakpoints / Get Started) |
 | `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send; shown on dashboard/traffic/sessions |
 | `DashboardGrid` | `DashboardGrid.tsx` | 2×2 CSS grid layout for the four panels |
 | `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for all captured traffic (mock-matched + proxied) |

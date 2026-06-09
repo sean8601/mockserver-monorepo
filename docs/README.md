@@ -21,7 +21,7 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [Netty Pipeline](code/netty-pipeline.md) | Medium | Port unification, protocol detection, channel handlers, MCP handler, relay pattern |
 | [Request Processing](code/request-processing.md) | Medium | Mock matching, proxy forwarding, action dispatch, WAR bridge |
 | [Event System](code/event-system.md) | Medium | LMAX Disruptor ring buffer, verification, persistence, observers |
-| [Dashboard UI](code/dashboard-ui.md) | Medium | React SPA, Zustand state, ten top-level views (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verification / AsyncAPI / Metrics), WebSocket communication, data assembly |
+| [Dashboard UI](code/dashboard-ui.md) | Medium | React SPA, Zustand state, twelve top-level views (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verification / AsyncAPI / Metrics / Breakpoints / Get Started), WebSocket communication, data assembly |
 | [Domain Model](code/domain-model.md) | Low | Model hierarchy, matchers, codecs, OpenAPI support, configuration (incl. MCP) |
 | [TLS & Security](code/tls-and-security.md) | Low | BouncyCastle CA, SNI, mTLS, JWT auth, control plane security |
 | [Client & Integrations](code/client-and-integrations.md) | Low | MockServerClient, JUnit 4/5, Spring, WebSocket callbacks |
@@ -33,6 +33,8 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [LLM Codec Golden Files](code/llm-codec-fixtures.md) | Low | Automated wire-format drift detection for the LLM provider codecs: golden-master fixtures, normalization, refresh process |
 | [CLI](code/cli.md) | Low | picocli command tree, subcommands, preprocessArguments heuristic, legacy flag compatibility, how to add a subcommand |
 | [Configuration Reference](code/configuration-reference.md) | Low | Property mechanism, resolution order, four equivalent forms, how to add a property |
+| [Chaos Experiments](code/chaos.md) | Low | Scheduled multi-stage chaos experiments: ChaosExperimentOrchestrator, ordered stages, auto-halt integration, PUT/GET/DELETE /chaosExperiment |
+| [Breakpoints](code/breakpoints.md) | Low | Request/response/stream breakpoints: BreakpointRegistry, PausedExchange, request and response phases, stream frame interception |
 | [Drift Detection](code/drift-detection.md) | Low | Mock drift detection: comparing forwarded responses against stub expectations |
 | [WASM Rules](code/wasm-rules.md) | Low | WASM custom rule engine: chicory interpreter, module ABI, REST endpoints, configuration |
 | [Async Messaging](code/async-messaging.md) | Low | AsyncAPI broker mocking: spec parsing, example generation, Kafka/MQTT publisher adapters, orchestrator |

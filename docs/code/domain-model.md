@@ -753,6 +753,31 @@ Schema → example values"]
 
 `OpenAPIConverter` creates one `Expectation` per operation, with an `OpenAPIDefinition` matcher and an example `HttpResponse` built from the spec's response schemas, headers, and examples.
 
+### Realistic Example Values (`generateRealisticExampleValues`)
+
+By default `ExampleBuilder` produces generic placeholder values (`"string"`, `0`, `true`). When the `generateRealisticExampleValues` configuration property is set to `true`, `ExampleBuilder` constructs a `SampleDataGenerator` instance and delegates format-aware value generation to it. `SampleDataGenerator` (`mockserver-core/.../openapi/examples/SampleDataGenerator.java`) uses [Datafaker](https://www.datafaker.net/) with a fixed seed (`42L`) so every run produces the same output — generated examples are deterministic and safe to commit as fixtures.
+
+Coverage by schema format:
+
+| Format | Generated value |
+|--------|----------------|
+| `email` | `faker.internet().emailAddress()` |
+| `uuid` | Seeded UUID v4 |
+| `date` | ISO-8601 date (e.g. `2022-07-14`) |
+| `date-time` | ISO-8601 offset date-time (UTC) |
+| `uri` / `url` | `faker.internet().url()` |
+| `hostname` | `faker.internet().domainName()` |
+| `ipv4` / `ipv6` | `faker.internet().ipV4Address()` / `ipV6Address()` |
+| `password` | Mixed-case alphanumeric 8–16 chars |
+| `byte` | Base64-encoded 12 random bytes |
+| `string` (no format) | `faker.lorem().word()`, respecting `minLength`/`maxLength` |
+| `integer` / `int32` | Random int within `minimum`/`maximum` (default 0–1000) |
+| `int64` | Random long within bounds (default 0–10 000) |
+| `float` / `number` | Random float/double/decimal within bounds (2 decimal places) |
+| `boolean` | `random.nextBoolean()` |
+
+This feature is off by default (`generateRealisticExampleValues=false`). Enabling it affects all paths that call `ExampleBuilder`: `PUT /mockserver/openapi`, `initializationOpenAPIPath`, the `run_contract_test` and `run_resiliency_test` MCP tools, and `OpenApiContractTest` used by WSDL-generated callbacks.
+
 ## Configuration
 
 Two complementary configuration mechanisms:
