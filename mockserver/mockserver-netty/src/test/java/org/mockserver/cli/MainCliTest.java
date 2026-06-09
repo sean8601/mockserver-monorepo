@@ -97,6 +97,28 @@ public class MainCliTest {
     }
 
     @Test
+    public void shouldNotPrependRunWhenUiSubcommandPresent() {
+        String[] result = Main.preprocessArguments("ui", "-p", "1080");
+        assertThat(result[0], is("ui"));
+        assertThat(result.length, is(3));
+    }
+
+    @Test
+    public void shouldNormalizeLegacySingleDashHelpToTopLevel() {
+        // "-help" should behave like "--help" (top-level overview), not cluster into "run -h"
+        String[] result = Main.preprocessArguments("-help");
+        assertThat(result[0], is("--help"));
+        assertThat(result.length, is(1));
+    }
+
+    @Test
+    public void shouldNormalizeLegacySingleDashVersionToTopLevel() {
+        String[] result = Main.preprocessArguments("-version");
+        assertThat(result[0], is("--version"));
+        assertThat(result.length, is(1));
+    }
+
+    @Test
     public void shouldNotPrependRunWhenOpenApiSubcommandPresent() {
         String[] result = Main.preprocessArguments("openapi", "./petstore.yaml", "-p", "1080");
         assertThat(result[0], is("openapi"));
@@ -788,6 +810,182 @@ public class MainCliTest {
             ConfigurationProperties.maxLogEntries(heapBasedMaxLogEntries);
             ConfigurationProperties.maxExpectations(heapBasedMaxExpectations);
             stopQuietly(mockServerClient);
+        }
+    }
+
+    // ---- No-port path shows a clean CLI usage error (not the legacy blob or empty config dump) ----
+
+    @Test
+    public void shouldShowCliUsageWhenNoPortSpecified() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        PrintStream originalErr = Main.systemErr;
+        String originalSysProp = System.getProperty("mockserver.serverPort");
+        Object originalProp = ConfigurationProperties.PROPERTIES.get("mockserver.serverPort");
+        try {
+            // Ensure no port is resolvable from any source so we hit the "no port" branch
+            System.clearProperty("mockserver.serverPort");
+            ConfigurationProperties.PROPERTIES.remove("mockserver.serverPort");
+
+            ByteArrayOutputStream outBaos = new ByteArrayOutputStream();
+            ByteArrayOutputStream errBaos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(outBaos, true, StandardCharsets.UTF_8.name());
+            Main.systemErr = new PrintStream(errBaos, true, StandardCharsets.UTF_8.name());
+
+            Main.main(); // no arguments → run with no resolvable port
+
+            String out = new String(outBaos.toByteArray(), StandardCharsets.UTF_8);
+            String err = new String(errBaos.toByteArray(), StandardCharsets.UTF_8);
+            // Clean picocli usage for the run command
+            assertThat("should show picocli --port option", out, containsString("--port"));
+            // Actionable, concise error
+            assertThat("should give a 'no port specified' error", err, containsString("no port specified"));
+            // Not the legacy multi-line USAGE blob
+            assertThat("should not print the legacy '-proxyRemotePort <port>' blob line",
+                (out + err), not(containsString("-proxyRemotePort <port>")));
+        } finally {
+            Main.systemOut = originalOut;
+            Main.systemErr = originalErr;
+            if (originalSysProp != null) {
+                System.setProperty("mockserver.serverPort", originalSysProp);
+            }
+            if (originalProp != null) {
+                ConfigurationProperties.PROPERTIES.put("mockserver.serverPort", originalProp);
+            }
+        }
+    }
+
+    @Test
+    public void shouldUseLauncherNameInNoPortError() throws UnsupportedEncodingException {
+        PrintStream originalErr = Main.systemErr;
+        PrintStream originalOut = Main.systemOut;
+        String originalSysProp = System.getProperty("mockserver.serverPort");
+        Object originalProp = ConfigurationProperties.PROPERTIES.get("mockserver.serverPort");
+        try {
+            System.clearProperty("mockserver.serverPort");
+            ConfigurationProperties.PROPERTIES.remove("mockserver.serverPort");
+            System.setProperty("mockserver.launcherName", "mockserver");
+
+            ByteArrayOutputStream errBaos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8.name());
+            Main.systemErr = new PrintStream(errBaos, true, StandardCharsets.UTF_8.name());
+
+            Main.main();
+
+            String err = new String(errBaos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("error should use the launcher command name, not java -jar",
+                err, containsString("mockserver -p 1080"));
+            assertThat("error should not use the java -jar form when launched via a launcher",
+                err, not(containsString("java -jar")));
+        } finally {
+            System.clearProperty("mockserver.launcherName");
+            Main.systemOut = originalOut;
+            Main.systemErr = originalErr;
+            if (originalSysProp != null) {
+                System.setProperty("mockserver.serverPort", originalSysProp);
+            }
+            if (originalProp != null) {
+                ConfigurationProperties.PROPERTIES.put("mockserver.serverPort", originalProp);
+            }
+        }
+    }
+
+    // ---- -D property passthrough ----
+
+    @Test
+    public void shouldApplyDSystemPropertyFromCommandLine() {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+        String key = "mockserver.someUnusedTestProperty";
+        String originalValue = System.getProperty(key);
+        try {
+            System.clearProperty(key);
+
+            Main.main("run", "-p", String.valueOf(freePort), "-D" + key + "=hello");
+
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            assertThat("-D should set the system property", System.getProperty(key), is("hello"));
+        } finally {
+            if (originalValue != null) {
+                System.setProperty(key, originalValue);
+            } else {
+                System.clearProperty(key);
+            }
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    // ---- ui subcommand ----
+
+    @Test
+    public void shouldListUiInTopLevelHelp() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("--help");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat(output, containsString("ui"));
+        } finally {
+            Main.systemOut = originalOut;
+        }
+    }
+
+    @Test
+    public void shouldStartUiAndPrintDashboardUrl() throws UnsupportedEncodingException {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+        PrintStream originalOut = Main.systemOut;
+        // Run headless so the dashboard URL is printed but no real browser is launched on the
+        // developer's machine (this is exactly how `ui` degrades on a server/CI/SSH host).
+        String originalHeadless = System.getProperty("java.awt.headless");
+        try {
+            System.setProperty("java.awt.headless", "true");
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("ui", "-p", String.valueOf(freePort));
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            assertThat("ui should print the dashboard URL",
+                output, containsString("/mockserver/dashboard"));
+            assertThat("ui should print the dashboard URL for the chosen port",
+                output, containsString("localhost:" + freePort + "/mockserver/dashboard"));
+        } finally {
+            Main.systemOut = originalOut;
+            if (originalHeadless != null) {
+                System.setProperty("java.awt.headless", originalHeadless);
+            } else {
+                System.clearProperty("java.awt.headless");
+            }
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
+    public void shouldNotPrintDashboardUrlWhenUiFailsToStart() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        String originalHeadless = System.getProperty("java.awt.headless");
+        try {
+            System.setProperty("java.awt.headless", "true");
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            // invalid port → run() reports a validation error and never starts the server
+            Main.main("ui", "-p", "notaport");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("a failed start must not print a misleading dashboard URL",
+                output, not(containsString("Dashboard UI")));
+        } finally {
+            Main.systemOut = originalOut;
+            if (originalHeadless != null) {
+                System.setProperty("java.awt.headless", originalHeadless);
+            } else {
+                System.clearProperty("java.awt.headless");
+            }
         }
     }
 

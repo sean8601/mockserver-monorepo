@@ -12,7 +12,10 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
+import java.awt.Desktop;
+import java.awt.GraphicsEnvironment;
 import java.io.PrintStream;
+import java.net.URI;
 import java.util.*;
 
 import static org.apache.commons.lang3.StringUtils.*;
@@ -33,6 +36,7 @@ import static org.slf4j.event.Level.*;
         "",
         "Examples:",
         "  mockserver run -p 1080",
+        "  mockserver ui -p 1080",
         "  mockserver proxy --to https://api.example.com",
         "  mockserver openapi ./petstore.yaml -p 1080",
         "  mockserver -p 1080",
@@ -41,6 +45,7 @@ import static org.slf4j.event.Level.*;
     },
     subcommands = {
         Main.RunCommand.class,
+        Main.UiCommand.class,
         Main.ProxyCommand.class,
         Main.OpenApiCommand.class,
         Main.VersionCommand.class,
@@ -49,11 +54,32 @@ import static org.slf4j.event.Level.*;
 )
 public class Main {
 
+    /**
+     * The command shown in usage/help text. When MockServer is started via a bundled
+     * launcher (the JVM-less binary), the launcher exports MOCKSERVER_LAUNCHER with its
+     * own name (e.g. "mockserver"), so usage reads "mockserver -serverPort ..." instead
+     * of the "java -jar <jar>" form. The "mockserver.launcherName" system property takes
+     * precedence (used by tests). When neither is set it falls back to "java -jar <jar>".
+     */
+    private static String launcherName() {
+        return System.getProperty("mockserver.launcherName", System.getenv("MOCKSERVER_LAUNCHER"));
+    }
+
+    static String launchCommand() {
+        String launcher = launcherName();
+        return isNotBlank(launcher) ? launcher : "java -jar <path to mockserver-netty-jar-with-dependencies.jar>";
+    }
+
+    static String launchExample() {
+        String launcher = launcherName();
+        return isNotBlank(launcher) ? launcher : "java -jar ./mockserver-netty-jar-with-dependencies.jar";
+    }
+
     // Kept for backward compatibility with tests that reference Main.USAGE
     static final String USAGE = "" +
         "   version: " + Version.getVersion() + NEW_LINE +
         "    " + NEW_LINE +
-        "   java -jar <path to mockserver-netty-jar-with-dependencies.jar> -serverPort <port> [-proxyRemotePort <port>] [-proxyRemoteHost <hostname>] [-logLevel <level>] " + NEW_LINE +
+        "   " + launchCommand() + " -serverPort <port> [-proxyRemotePort <port>] [-proxyRemoteHost <hostname>] [-logLevel <level>] " + NEW_LINE +
         "                                                                                                                                                                 " + NEW_LINE +
         "     valid options are:                                                                                                                                          " + NEW_LINE +
         "        -serverPort <port>           The HTTP, HTTPS, SOCKS and HTTP CONNECT                                                                                     " + NEW_LINE +
@@ -83,7 +109,7 @@ public class Main {
         "                                     Logger levels: FINEST, FINE, INFO, WARNING,                                                                                 " + NEW_LINE +
         "                                     SEVERE or OFF. If not specified default is INFO                                                                             " + NEW_LINE +
         "                                                                                                                                                                 " + NEW_LINE +
-        "   i.e. java -jar ./mockserver-netty-jar-with-dependencies.jar -serverPort 1080 -proxyRemotePort 80 -proxyRemoteHost www.mock-server.com -logLevel WARN                         " + NEW_LINE +
+        "   i.e. " + launchExample() + " -serverPort 1080 -proxyRemotePort 80 -proxyRemoteHost www.mock-server.com -logLevel WARN                         " + NEW_LINE +
         "                                                                                                                                                                 " + NEW_LINE;
     private static final MockServerLogger MOCK_SERVER_LOGGER = new MockServerLogger(Main.class);
     private static final IntegerStringListParser INTEGER_STRING_LIST_PARSER = new IntegerStringListParser();
@@ -154,10 +180,19 @@ public class Main {
         if (arguments == null || arguments.length == 0) {
             return new String[]{"run"};
         }
-        Set<String> subcommands = Set.of("run", "proxy", "openapi", "version", "help");
+        Set<String> subcommands = Set.of("run", "ui", "proxy", "openapi", "version", "help");
         // Top-level help/version flags should NOT be prepended with "run"
         Set<String> topLevelFlags = Set.of("--help", "-h", "--version", "-V");
         String first = arguments[0];
+        // Normalise legacy single-dash long forms so "mockserver -help"/"-version" behave like
+        // "--help"/"--version" (a top-level overview) instead of clustering into "run -h".
+        if (first.equals("-help")) {
+            arguments = arguments.clone();
+            arguments[0] = first = "--help";
+        } else if (first.equals("-version")) {
+            arguments = arguments.clone();
+            arguments[0] = first = "--version";
+        }
         // If the first token is a known subcommand, leave it alone
         if (subcommands.contains(first)) {
             return arguments;
@@ -180,8 +215,8 @@ public class Main {
      *
      * Then start the MockServer.
      */
-    static void startServer(String serverPortValue, String proxyRemotePortValue,
-                            String proxyRemoteHostValue, String logLevelValue) {
+    static boolean startServer(String serverPortValue, String proxyRemotePortValue,
+                               String proxyRemoteHostValue, String logLevelValue) {
         Map<String, String> parsedArguments = new HashMap<>();
         Map<String, String> commandLineArguments = new HashMap<>();
         Map<String, String> environmentVariableArguments = new HashMap<>();
@@ -205,13 +240,15 @@ public class Main {
         }
 
         System.getenv().forEach((key, value) -> {
-            if (key.startsWith("MOCKSERVER_") && isNotBlank(value)) {
+            // MOCKSERVER_LAUNCHER is an internal hint set by the binary launcher for usage
+            // text, not a configuration value, so keep it out of the resolved-config dump.
+            if (key.startsWith("MOCKSERVER_") && !key.equals("MOCKSERVER_LAUNCHER") && isNotBlank(value)) {
                 environmentVariableArguments.put(key, value);
             }
         });
         System.getProperties().forEach((key, value) -> {
             if (key instanceof String && value instanceof String) {
-                if (((String) key).startsWith("mockserver") && isNotBlank((String) value)) {
+                if (((String) key).startsWith("mockserver") && !key.equals("mockserver.launcherName") && isNotBlank((String) value)) {
                     systemPropertyArguments.put((String) key, (String) value);
                 }
             }
@@ -244,21 +281,23 @@ public class Main {
             }
         }
 
-        if (MockServerLogger.isEnabled(INFO)) {
-            MOCK_SERVER_LOGGER.logEvent(
-                new LogEntry()
-                    .setType(SERVER_CONFIGURATION)
-                    .setLogLevel(INFO)
-                    .setMessageFormat("using environment variables:{}and system properties:{}and command line options:{}")
-                    .setArguments(
-                        "[\n\t" + Joiner.on(",\n\t").withKeyValueSeparator("=").join(environmentVariableArguments) + "\n]",
-                        "[\n\t" + Joiner.on(",\n\t").withKeyValueSeparator("=").join(systemPropertyArguments) + "\n]",
-                        "[\n\t" + Joiner.on(",\n\t").withKeyValueSeparator("=").join(commandLineArguments) + "\n]"
-                    )
-            );
-        }
-
         if (parsedArguments.size() > 0 && parsedArguments.containsKey(Arguments.serverPort.name())) {
+            // Only log the resolved configuration when MockServer is actually starting, so the
+            // no-port error path below stays clean (no empty "using environment variables: []
+            // and system properties: [] ..." dump preceding a CLI usage error).
+            if (MockServerLogger.isEnabled(INFO)) {
+                MOCK_SERVER_LOGGER.logEvent(
+                    new LogEntry()
+                        .setType(SERVER_CONFIGURATION)
+                        .setLogLevel(INFO)
+                        .setMessageFormat("using environment variables:{}and system properties:{}and command line options:{}")
+                        .setArguments(
+                            "[\n\t" + Joiner.on(",\n\t").withKeyValueSeparator("=").join(environmentVariableArguments) + "\n]",
+                            "[\n\t" + Joiner.on(",\n\t").withKeyValueSeparator("=").join(systemPropertyArguments) + "\n]",
+                            "[\n\t" + Joiner.on(",\n\t").withKeyValueSeparator("=").join(commandLineArguments) + "\n]"
+                        )
+                );
+            }
             if (parsedArguments.containsKey(Arguments.logLevel.name())) {
                 ConfigurationProperties.logLevel(parsedArguments.get(Arguments.logLevel.name()));
             }
@@ -282,8 +321,59 @@ public class Main {
                         .setMessageFormat("logger level is " + ConfigurationProperties.logLevel() + ", change using:\n - 'ConfigurationProperties.logLevel(String level)' in Java code,\n - '-logLevel' command line argument,\n - 'mockserver.logLevel' JVM system property or,\n - 'mockserver.logLevel' property value in 'mockserver.properties'")
                 );
             }
+            return true;
         } else {
-            showUsage("\"" + Arguments.serverPort.name() + "\" not specified");
+            // No serverPort could be resolved from any source (CLI flag, system property, env
+            // var, or properties file). Report it like a normal CLI usage error — picocli's
+            // concise "run" usage plus a concise, actionable message — rather than the legacy
+            // "java -jar" blob.
+            systemOut.print(new CommandLine(new RunCommand()).getUsageMessage());
+            systemOut.flush();
+            systemErr.print(NEW_LINE + "ERROR:  no port specified — set a port with -p/--port (e.g. "
+                + launchCommand() + " -p 1080), the " + Arguments.serverPort.longEnvironmentVariableName()
+                + " environment variable, or the " + Arguments.serverPort.systemPropertyName() + " property" + NEW_LINE + NEW_LINE);
+            systemErr.flush();
+            return false;
+        }
+    }
+
+    /**
+     * Open the MockServer dashboard for the given port in the user's default browser. Best-effort:
+     * the URL is always printed; the browser launch is attempted via AWT Desktop, falling back to
+     * the platform "open" command. On a headless host (no display — server, CI, SSH session) no
+     * launch is attempted and the printed URL is the user's hook, so there is no need for a flag to
+     * suppress the browser — that is just `mockserver run`.
+     */
+    static void openDashboard(int port) {
+        String url = "http://localhost:" + port + "/mockserver/dashboard";
+        systemOut.println(NEW_LINE + "Dashboard UI: " + url + NEW_LINE);
+        systemOut.flush();
+        if (GraphicsEnvironment.isHeadless()) {
+            return;
+        }
+        try {
+            if (Desktop.isDesktopSupported()
+                && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(URI.create(url));
+                return;
+            }
+        } catch (Exception ignore) {
+            // fall through to the platform launcher
+        }
+        try {
+            String os = System.getProperty("os.name", "").toLowerCase();
+            ProcessBuilder processBuilder;
+            if (os.contains("mac")) {
+                processBuilder = new ProcessBuilder("open", url);
+            } else if (os.contains("win")) {
+                processBuilder = new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url);
+            } else {
+                processBuilder = new ProcessBuilder("xdg-open", url);
+            }
+            processBuilder.start();
+        } catch (Exception ignore) {
+            systemOut.println("Could not launch a browser automatically — open the dashboard manually: " + url);
+            systemOut.flush();
         }
     }
 
@@ -308,8 +398,15 @@ public class Main {
     )
     static class RunCommand implements Runnable {
 
-        @Option(names = {"-p", "--port"}, description = "Port(s) to listen on (comma-separated list, e.g. 1080,1081).")
+        /** Set true after the server has actually started, so callers (e.g. UiCommand) can tell a
+         *  successful start from a no-port/validation/startup failure that run() handled internally. */
+        boolean started;
+
+        @Option(names = {"-p", "--port"}, description = "Port(s) to listen on (comma-separated list, e.g. 1080,1081). Required unless set via the MOCKSERVER_SERVER_PORT environment variable, the mockserver.serverPort system property, or a properties file.")
         String port;
+
+        @Option(names = "-D", paramLabel = "<key=value>", description = "Set a JVM system property before startup, e.g. -Dmockserver.metricsEnabled=true (repeatable). Equivalent to a JVM -D but accepted after the launcher/jar. Any system property is accepted; use mockserver.* keys for MockServer configuration.")
+        Map<String, String> systemProperties = new LinkedHashMap<>();
 
         @Option(names = "--proxy-to", description = "Forward unmatched requests to host[:port] (enables port-forwarding mode).")
         String proxyTo;
@@ -351,6 +448,16 @@ public class Main {
         @Override
         public void run() {
             try {
+                // Apply -D system properties first so they are visible to every downstream
+                // ConfigurationProperties read (port resolution, dev mode, server startup).
+                if (systemProperties != null) {
+                    systemProperties.forEach((key, value) -> {
+                        if (isNotBlank(key)) {
+                            System.setProperty(key, value == null ? "" : value);
+                        }
+                    });
+                }
+
                 // Merge new flags with legacy flags (new flags take precedence)
                 String resolvedPort = isNotBlank(port) ? port : legacyServerPort;
                 String resolvedLogLevel = isNotBlank(logLevel) ? logLevel : legacyLogLevel;
@@ -409,7 +516,7 @@ public class Main {
                     throw new IllegalArgumentException(errorMessages.toString());
                 }
 
-                startServer(resolvedPort, resolvedProxyRemotePort, resolvedProxyRemoteHost, resolvedLogLevel);
+                started = startServer(resolvedPort, resolvedProxyRemotePort, resolvedProxyRemoteHost, resolvedLogLevel);
             } catch (IllegalArgumentException e) {
                 // Already handled — validation errors printed and usage shown via startServer
                 showUsage(null);
@@ -430,6 +537,46 @@ public class Main {
     }
 
     @Command(
+        name = "ui",
+        description = "Start MockServer and open the dashboard UI in a browser.",
+        mixinStandardHelpOptions = true
+    )
+    static class UiCommand implements Runnable {
+
+        @Option(names = {"-p", "--port"}, description = "Port(s) to listen on (comma-separated list). Defaults to 1080 if not specified.")
+        String port;
+
+        @Option(names = "-D", paramLabel = "<key=value>", description = "Set a JVM system property before startup, e.g. -Dmockserver.metricsEnabled=true (repeatable). Any system property is accepted; use mockserver.* keys for MockServer configuration.")
+        Map<String, String> systemProperties = new LinkedHashMap<>();
+
+        @Option(names = {"-l", "--log-level"}, description = "Log level.")
+        String logLevel;
+
+        @Option(names = "--dev", description = "Enable developer-friendly defaults.")
+        boolean dev;
+
+        @Override
+        public void run() {
+            String resolvedPort = isNotBlank(port) ? port : "1080";
+            RunCommand runCmd = new RunCommand();
+            runCmd.port = resolvedPort;
+            runCmd.logLevel = logLevel;
+            runCmd.dev = dev;
+            runCmd.systemProperties = systemProperties;
+            runCmd.run();
+            // Only open the dashboard if the server actually started — run() handles (and prints)
+            // no-port, validation, and bind failures internally without re-throwing, so a failed
+            // start must not produce a misleading "Dashboard UI: ..." line pointing at nothing.
+            if (runCmd.started) {
+                Integer[] localPorts = INTEGER_STRING_LIST_PARSER.toArray(resolvedPort);
+                if (localPorts.length > 0) {
+                    openDashboard(localPorts[0]);
+                }
+            }
+        }
+    }
+
+    @Command(
         name = "proxy",
         description = "Start MockServer in port-forwarding (proxy) mode.",
         mixinStandardHelpOptions = true
@@ -441,6 +588,9 @@ public class Main {
 
         @Option(names = {"-p", "--port"}, description = "Port(s) to listen on (comma-separated list).")
         String port;
+
+        @Option(names = "-D", paramLabel = "<key=value>", description = "Set a JVM system property before startup, e.g. -Dmockserver.metricsEnabled=true (repeatable). Any system property is accepted; use mockserver.* keys for MockServer configuration.")
+        Map<String, String> systemProperties = new LinkedHashMap<>();
 
         @Option(names = {"-l", "--log-level"}, description = "Log level.")
         String logLevel;
@@ -462,6 +612,7 @@ public class Main {
             runCmd.proxyTo = to;
             runCmd.logLevel = logLevel;
             runCmd.dev = dev;
+            runCmd.systemProperties = systemProperties;
             runCmd.validateOpenapi = validateOpenapi;
             runCmd.validateEnforce = validateEnforce;
             runCmd.run();
@@ -481,6 +632,9 @@ public class Main {
         @Option(names = {"-p", "--port"}, description = "Port(s) to listen on (comma-separated list).")
         String port;
 
+        @Option(names = "-D", paramLabel = "<key=value>", description = "Set a JVM system property before startup, e.g. -Dmockserver.metricsEnabled=true (repeatable). Any system property is accepted; use mockserver.* keys for MockServer configuration.")
+        Map<String, String> systemProperties = new LinkedHashMap<>();
+
         @Option(names = {"-l", "--log-level"}, description = "Log level.")
         String logLevel;
 
@@ -494,6 +648,7 @@ public class Main {
             runCmd.openapi = specPath;
             runCmd.logLevel = logLevel;
             runCmd.dev = dev;
+            runCmd.systemProperties = systemProperties;
             runCmd.run();
         }
     }
