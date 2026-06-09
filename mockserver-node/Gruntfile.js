@@ -18,6 +18,9 @@ module.exports = function (grunt) {
             all: [
                 'Gruntfile.js',
                 'tasks/*.js',
+                'downloadBinary.js',
+                'bin/mockserver.js',
+                'test/downloadBinary_test.js',
                 'test/grunt/started/*_test.js',
                 'test/grunt/stopped/*_test.js',
                 'test/grunt/failure/*_test.js'
