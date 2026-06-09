@@ -2,140 +2,78 @@
 
 ## TL;DR
 
-Five PRs into five community awesome-lists. Each PR adds one bullet in alphabetical order within
-the appropriate section. The exact file path, section heading, and bullet text for each target
-list are specified below. MockServer's Apache 2.0 licence satisfies every list's criteria,
-including awesome-selfhosted.
+MockServer is being added to the community "awesome" lists. **3 PRs are open**, **1 list already
+lists MockServer**, and **1 was skipped as out of scope**.
+
+| List | Outcome | Link |
+|------|---------|------|
+| `TheJambo/awesome-testing` | ✅ PR open | [#150](https://github.com/TheJambo/awesome-testing/pull/150) |
+| `mfornos/awesome-microservices` | ✅ PR open | [#314](https://github.com/mfornos/awesome-microservices/pull/314) |
+| `Kikobeats/awesome-api` | ✅ PR open | [#98](https://github.com/Kikobeats/awesome-api/pull/98) |
+| `atinfo/awesome-test-automation` | ✔️ already listed | `java-test-automation.md` → "Useful libs" |
+| `awesome-selfhosted/awesome-selfhosted` | ⏭️ skipped (out of scope) | see below |
+
+All three PRs are OPEN and MERGEABLE; no CI checks have run against them yet. None of the three
+runs `awesome-lint`, but TheJambo/awesome-testing runs a dead-link checker + Copilot review and
+mfornos/awesome-microservices runs a link linter (the added URLs are live, so these should pass);
+Kikobeats/awesome-api has no workflows. Each PR adds one bullet, in the correct section, matching
+the list's house style. Raised from forks `jamesdbloom/awesome-testing`,
+`jamesdbloom/awesome-microservices`, and `jamesdbloom/awesome-api`, each on branch `add-mockserver`.
 
 ---
 
-## License check: awesome-selfhosted
+## ✅ Target 1 — `TheJambo/awesome-testing` → PR #150
 
-`awesome-selfhosted/awesome-selfhosted` requires software to be self-hostable and to carry an
-[OSI-approved licence](https://opensource.org/licenses). MockServer is licensed under
-**Apache License 2.0** (see `LICENSE.md`), which is OSI-approved. It is self-hostable via Docker
-(`docker run mockserver/mockserver`) and Helm. It qualifies.
-
----
-
-## Target 1 — `TheJambo/awesome-testing`
-
-**Repo:** `https://github.com/TheJambo/awesome-testing`
-
-**File:** `README.md`
-
-**Section:** look for a heading along the lines of `## Mock Servers / Service Virtualisation` or
-`## API Mocking`. If no such heading exists, use the most relevant existing section (e.g.
-`## Tools`). Insert **alphabetically by tool name** within that section.
-
-**Bullet to add:**
+Section **`### Service Virtualization`** in `README.md`, inserted after `mockd` and before
+`WireMock` (the section isn't strictly alphabetical, but this matches the existing ordering). Entry
+(matches the section's GitHub-repo link style):
 
 ```markdown
-- [MockServer](https://github.com/mock-server/mockserver-monorepo) - Mock HTTP(S), gRPC, WebSocket and LLM/AI services; verify requests; record and replay traffic; inject chaos. Docker, Helm, Java, and multi-language clients (JS, Python, Ruby, Go, .NET, Rust). Apache 2.0.
+- [MockServer](https://github.com/mock-server/mockserver-monorepo) - Open-source mock server and proxy for HTTP(S), REST, gRPC and LLM APIs with request verification, record/replay, and chaos injection; runs as a Docker image, JAR, Helm chart, or embedded Java library.
 ```
 
-**PR title:** `Add MockServer — HTTP/gRPC/LLM mock server and proxy`
+## ✅ Target 2 — `mfornos/awesome-microservices` → PR #314
 
----
-
-## Target 2 — `atinfo/awesome-test-automation`
-
-**Repo:** `https://github.com/atinfo/awesome-test-automation`
-
-**File:** `java-test-automation.md` (and optionally `python-test-automation.md` / `javascript-test-automation.md` for the respective clients)
-
-**Section (Java file):** `## Mock frameworks`
-
-**Bullet to add (Java file):**
+Section **`### Testing`** in `README.md`, alphabetically between `Mitmproxy` and `Mountebank`.
+Entry (homepage link, matching neighbours like Mountebank/WireMock):
 
 ```markdown
-- [MockServer](https://github.com/mock-server/mockserver-monorepo) - Mock and proxy any system over HTTP(S), gRPC, WebSockets; verify requests; record traffic. Includes JUnit 4/5 extensions, Spring test listener, Maven plugin, and clients for Java, JS, Python, Ruby, Go, .NET, Rust.
+- [MockServer](https://www.mock-server.com) - Mock server and proxy for HTTP(S), REST, gRPC and LLM APIs with request verification, record/replay, and chaos injection for resilience testing.
 ```
 
-Insert alphabetically by tool name within the section.
+## ✅ Target 3 — `Kikobeats/awesome-api` → PR #98
 
-**PR title:** `Add MockServer to Mock frameworks`
-
----
-
-## Target 3 — `mfornos/awesome-microservices`
-
-**Repo:** `https://github.com/mfornos/awesome-microservices`
-
-**File:** `README.md`
-
-**Section:** `## Testing` (or the closest equivalent — search for `WireMock` or `Hoverfly` to find
-where mock/service-virtualisation tools sit).
-
-**Bullet to add:**
+Section **`### Mocking`** in `README.md` (uses `*` bullets), placed among the mock-server tools
+after `json-server`:
 
 ```markdown
-- [MockServer](https://www.mock-server.com) - Mock and proxy HTTP(S), gRPC, WebSocket and AI/LLM services for microservice integration tests and chaos testing. [Apache 2.0](https://github.com/mock-server/mockserver-monorepo/blob/master/LICENSE.md)
+* [MockServer](https://www.mock-server.com) - Mock any HTTP(S), REST, gRPC or LLM API; proxy, record/replay, verify requests, and inject chaos. Runs as a Docker image, JAR, or Helm chart.
 ```
 
-Insert alphabetically by tool name within the section.
+## ✔️ Target 4 — `atinfo/awesome-test-automation` (already listed)
 
-**PR title:** `Add MockServer to Testing section`
+No PR needed — MockServer is **already present** in `java-test-automation.md` under "Useful libs":
+`[MockServer](http://www.mock-server.com/) can be used for mocking any system you integrate with
+via HTTP or HTTPS …`. Optional future tidy: refresh that description and the `http://` URL to
+`https://`, but not worth a PR on its own.
 
----
+## ⏭️ Target 5 — `awesome-selfhosted/awesome-selfhosted` (skipped — out of scope)
 
-## Target 4 — `Kikobeats/awesome-api`
-
-**Repo:** `https://github.com/Kikobeats/awesome-api`
-
-**File:** `README.md`
-
-**Section:** Look for `## Mock` or `## Testing` or `## Tools`. Search the file for `WireMock`,
-`Mockoon`, or `Hoverfly` to find the right heading.
-
-**Bullet to add (adapt indentation/icon style to match the list's house style):**
-
-```markdown
-- [MockServer](https://www.mock-server.com) — Mock & proxy HTTP(S), gRPC, WebSockets and LLM/AI APIs; verify requests; inject chaos. Docker, Helm, multi-language clients.
-```
-
-**PR title:** `Add MockServer — HTTP/gRPC/LLM mock server`
-
-**Note:** this list uses varying formats (sometimes with an emoji or leading dash). Match exactly
-whatever style the adjacent entries use.
-
----
-
-## Target 5 — `awesome-selfhosted/awesome-selfhosted`
-
-**Repo:** `https://github.com/awesome-selfhosted/awesome-selfhosted`
-
-**File:** `README.md`
-
-**Section:** `## Software Development - Testing` (search for the exact heading — it changes
-between list versions; alternatively search for `WireMock` to locate the section).
-
-**Bullet to add (follow the list's strict format: `[Name](URL) - Description. ([Language](lang-url), [License](license-url))`):**
-
-```markdown
-- [MockServer](https://www.mock-server.com) - Mock and proxy HTTP(S), gRPC, WebSocket and AI/LLM services; verify requests; record traffic; inject chaos for resilience testing. ([Java](https://www.java.com), [Apache-2.0](https://github.com/mock-server/mockserver-monorepo/blob/master/LICENSE.md))
-```
-
-Insert **alphabetically by name** — `MockServer` sorts between `Mockoon` and `N` entries.
-
-**PR title:** `Add MockServer to Software Development - Testing`
-
-**Notes specific to awesome-selfhosted:**
-- The list requires a working demo or Docker-runnable image. MockServer satisfies this:
-  `docker run -d --rm -p 1080:1080 mockserver/mockserver`
-- They require an active project. MockServer 7.0.0 was released June 2026.
-- They may ask for a `dependent` tag if the tool requires Java. Add `Java 17+` to the description
-  if a reviewer requests it.
-- Read their `CONTRIBUTING.md` before opening the PR — they enforce strict review criteria and
-  close PRs that do not follow the template.
+**Skipped.** Despite MockServer being Apache-2.0 and Docker/Helm self-hostable, awesome-selfhosted
+curates **self-hosted end-user network services/applications** (the kind you host instead of a SaaS),
+**not developer testing tools/libraries**. A mock-server/test tool falls outside the list's scope
+and would very likely be closed. (This corrects the earlier draft's "it qualifies" note.) Also note
+the list is now maintained as data in `awesome-selfhosted/awesome-selfhosted-data` (one YAML file per
+entry), not by editing the README. Revisit only if their scope changes.
 
 ---
 
 ## Shared notes
 
-- All PRs go to external repos. A human with a GitHub account must open each one.
-- Check each list's `CONTRIBUTING.md` before submitting — many have a PR template.
-- All five lists auto-deploy their README on merge; no further action is needed once merged.
-- Do not open these PRs until MockServer is actually published in each channel the bullet
-  references (currently: Docker Hub confirmed live, Helm OCI confirmed live, clients confirmed
-  live — all valid).
+- All PRs are to external repos under the maintainer's GitHub account (`jamesdbloom`); merging is up
+  to each list's maintainer.
+- Entries follow `awesome-lint` style (sentence-case, trailing period) where it fits the house style.
+  Note Kikobeats/awesome-api uses `*` bullets (not `-`), so that entry matches `*` to fit the list.
+- The bullets only claim channels that are live (Docker Hub, Helm OCI, multi-language clients).
+- On merge each list regenerates its README automatically. If a PR is instead closed (e.g. the
+  maintainer requests changes or deems it out of scope), record the reason and update the table above.
