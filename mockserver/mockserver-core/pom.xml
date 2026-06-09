@@ -516,6 +516,10 @@
                         <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
                         <exclude>**/LlmCostBudgetMonitorTest.java</exclude>
                         <exclude>**/LlmMetricsTest.java</exclude>
+                        <!-- Mutate global ConfigurationProperties.llmProvider/llmApiKey/llmModel/llmBaseUrl/llmBackendsConfig -->
+                        <exclude>**/LlmBackendResolverTest.java</exclude>
+                        <exclude>**/LlmProviderSnifferTest.java</exclude>
+                        <exclude>**/ForwardPathGenAiSpansTest.java</exclude>
                         <exclude>**/BreakpointConfigurationTest.java</exclude>
                         <!-- Mutate shared static singleton registries (BreakpointRegistry, StreamFrameBreakpointRegistry) -->
                         <exclude>**/BreakpointRegistryTest.java</exclude>
@@ -568,6 +572,9 @@
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
                                 <include>**/LlmCostBudgetMonitorTest.java</include>
                                 <include>**/LlmMetricsTest.java</include>
+                                <include>**/LlmBackendResolverTest.java</include>
+                                <include>**/LlmProviderSnifferTest.java</include>
+                                <include>**/ForwardPathGenAiSpansTest.java</include>
                                 <include>**/BreakpointConfigurationTest.java</include>
                                 <include>**/BreakpointRegistryTest.java</include>
                                 <include>**/StreamFrameBreakpointRegistryTest.java</include>
