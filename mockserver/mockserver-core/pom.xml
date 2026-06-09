@@ -104,6 +104,14 @@
         <dependency>
             <groupId>com.fasterxml.uuid</groupId>
             <artifactId>java-uuid-generator</artifactId>
+            <exclusions>
+                <!-- prune the stale slf4j-api 1.7.x this drags in; this module declares slf4j-api directly
+                     (the version the build already resolves to) so downstream dependencyConvergence passes -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- SSL X509 -->
@@ -223,10 +231,29 @@
         <dependency>
             <groupId>com.networknt</groupId>
             <artifactId>json-schema-validator</artifactId>
+            <exclusions>
+                <!-- prune the older slf4j-api and the jackson-annotations 2.21 (pulled via its Jackson 3
+                     transitive); this module declares both directly at the versions the build resolves to -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-annotations</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>
             <artifactId>json-path</artifactId>
+            <exclusions>
+                <!-- prune the older slf4j-api; declared directly by this module -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- open api -->
@@ -254,6 +281,13 @@
         <dependency>
             <groupId>org.xmlunit</groupId>
             <artifactId>xmlunit-core</artifactId>
+            <exclusions>
+                <!-- prune the stale jakarta.xml.bind-api 2.3.3; this module declares 4.0.x directly (above) -->
+                <exclusion>
+                    <groupId>jakarta.xml.bind</groupId>
+                    <artifactId>jakarta.xml.bind-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.xmlunit</groupId>
