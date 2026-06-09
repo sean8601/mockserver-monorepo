@@ -61,9 +61,12 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
     bidirectional response frames (A1d). The FrameSender intercepts each response frame.
   - `HttpWebSocketResponseActionHandler.installGraphQLSubscriptionHandler` — GraphQL
     subscription push frames (A1d). The FrameSender intercepts each `next` message.
+  - `Http3GrpcResponseWriter.scheduleStreamMessages` — gRPC server-streaming mock
+    responses over HTTP/3 (QUIC). Each gRPC message DATA frame is intercepted before
+    `ctx.writeAndFlush`. Uses stream-id suffix `-h3-grpc-stream` (distinct from
+    HTTP/2's `-grpc-stream`). Decision callbacks run on the QUIC stream's event loop.
 - Scope: all streaming response types (SSE/chunked forwarded AND mock-generated,
-  gRPC server-streaming, WebSocket, and GraphQL subscriptions). HTTP/3 gRPC
-  server-streaming is NOT yet intercepted (follow-up).
+  gRPC server-streaming over HTTP/2 and HTTP/3, WebSocket, and GraphQL subscriptions).
 - Decision actions: CONTINUE (write original frame), MODIFY (write replacement
   body), DROP (discard frame), INJECT (write original + extra frame), CLOSE
   (send stream-end signal and close the stream).

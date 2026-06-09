@@ -12,6 +12,9 @@ import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.GrpcStreamMessageEncoder;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.breakpoint.PausedStreamFrame;
+import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
+import org.mockserver.mock.breakpoint.StreamFrameDecision;
 import org.mockserver.model.Delay;
 import org.mockserver.model.GrpcStreamMessage;
 import org.mockserver.model.GrpcStreamResponse;
@@ -196,10 +199,35 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
      * Mirrors the HTTP/2 {@link org.mockserver.mock.action.http.GrpcStreamResponseActionHandler}
      * scheduling pattern, reusing {@link GrpcStreamMessageEncoder} for byte-identical framing.
      * Delays are scheduled on the QUIC stream's own event-loop executor so writes stay ordered.
+     * <p>
+     * When {@code breakpointStreamEnabled} is on, each outbound DATA frame is parked in the
+     * {@link StreamFrameBreakpointRegistry} (with stream-id suffix {@code -h3-grpc-stream})
+     * before writing. Frame bytes are already {@code byte[]} from
+     * {@link GrpcStreamMessageEncoder#encode} -- no ByteBuf is retained across the hold period.
+     * The decision future callback runs on the QUIC stream's event loop via
+     * {@code ctx.channel().eventLoop().execute()}, preserving frame ordering and respecting
+     * HTTP/3/QUIC flow control (Netty's outbound write path handles QUIC flow-control windows
+     * transparently). On stream close or error, all held frames are evicted.
      */
     @Override
     public void writeGrpcStreamResponse(GrpcStreamResponse grpcStreamResponse, HttpRequest request) {
         Descriptors.MethodDescriptor methodDescriptor = resolveMethodDescriptor();
+
+        // Determine if stream-frame breakpoints are active
+        final boolean streamBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointStreamEnabled());
+        final String streamId;
+        final String reqMethod;
+        final String reqPath;
+        if (streamBreakpointsActive) {
+            streamId = (request.getLogCorrelationId() != null
+                ? request.getLogCorrelationId() : java.util.UUID.randomUUID().toString()) + "-h3-grpc-stream";
+            reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
+            reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+        } else {
+            streamId = null;
+            reqMethod = null;
+            reqPath = null;
+        }
 
         DefaultHttp3HeadersFrame initialHeaders = GrpcHttp3Adapter.buildInitialHeadersFrame();
         addConfiguredHeaders(initialHeaders, grpcStreamResponse.getHeaders());
@@ -208,9 +236,10 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
 
         List<GrpcStreamMessage> messages = grpcStreamResponse.getMessages();
         if (messages != null && !messages.isEmpty()) {
-            scheduleStreamMessages(messages, 0, grpcStreamResponse, methodDescriptor, request);
+            scheduleStreamMessages(messages, 0, grpcStreamResponse, methodDescriptor, request,
+                streamBreakpointsActive, streamId, reqMethod, reqPath);
         } else {
-            finishGrpcStream(grpcStreamResponse);
+            finishGrpcStream(grpcStreamResponse, streamBreakpointsActive, streamId);
         }
     }
 
@@ -235,10 +264,11 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
 
     private void scheduleStreamMessages(
         List<GrpcStreamMessage> messages, int index, GrpcStreamResponse action,
-        Descriptors.MethodDescriptor methodDescriptor, HttpRequest request
+        Descriptors.MethodDescriptor methodDescriptor, HttpRequest request,
+        boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath
     ) {
         if (index >= messages.size() || !ctx.channel().isActive()) {
-            finishGrpcStream(action);
+            finishGrpcStream(action, streamBreakpointsActive, streamId);
             return;
         }
 
@@ -252,13 +282,80 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
             }
             try {
                 byte[] frameBytes = GrpcStreamMessageEncoder.encode(message, methodDescriptor, descriptorStore);
-                DefaultHttp3DataFrame dataFrame = new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(frameBytes));
-                ctx.writeAndFlush(dataFrame).addListener(future -> {
-                    if (future.isSuccess()) {
-                        scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request);
-                    } else {
-                        finishGrpcStream(action);
+
+                if (!streamBreakpointsActive) {
+                    // Default-off fast path: write immediately
+                    writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
+                        streamBreakpointsActive, streamId, reqMethod, reqPath);
+                    return;
+                }
+
+                // --- Stream-frame breakpoint path ---
+                // frameBytes is already a byte[] copy (from GrpcStreamMessageEncoder.encode)
+                // -- no ByteBuf refcount concern
+                PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                    .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+
+                if (pausedFrame == null) {
+                    // Cap reached -- write immediately
+                    writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
+                        streamBreakpointsActive, streamId, reqMethod, reqPath);
+                    return;
+                }
+
+                // Frame is parked. Chain the decision callback onto the QUIC stream's event loop.
+                pausedFrame.getDecisionFuture().thenAccept(decision ->
+                    ctx.channel().eventLoop().execute(() -> {
+                        if (!ctx.channel().isActive()) {
+                            scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request,
+                                streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            return;
+                        }
+                        switch (decision.getAction()) {
+                            case CONTINUE -> writeH3GrpcFrame(pausedFrame.getCapturedBytes(), messages, index,
+                                action, methodDescriptor, request, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case MODIFY -> writeH3GrpcFrame(decision.getReplacementBody(), messages, index,
+                                action, methodDescriptor, request, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case DROP ->
+                                // Skip this frame -- proceed to next message
+                                scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request,
+                                    streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case INJECT -> {
+                                // Write original frame, then inject an extra frame, then proceed
+                                DefaultHttp3DataFrame originalData = new DefaultHttp3DataFrame(
+                                    Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                ctx.writeAndFlush(originalData).addListener(future -> {
+                                    if (ctx.channel().isActive()) {
+                                        DefaultHttp3DataFrame injectedData = new DefaultHttp3DataFrame(
+                                            Unpooled.wrappedBuffer(decision.getInjectedBody()));
+                                        ctx.writeAndFlush(injectedData).addListener(f2 ->
+                                            scheduleStreamMessages(messages, index + 1, action, methodDescriptor,
+                                                request, streamBreakpointsActive, streamId, reqMethod, reqPath));
+                                    } else {
+                                        scheduleStreamMessages(messages, index + 1, action, methodDescriptor,
+                                            request, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                    }
+                                });
+                            }
+                            case CLOSE -> {
+                                // End the stream: evict remaining frames and send trailers
+                                StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+                                finishGrpcStream(action, false, null);
+                            }
+                        }
+                    })
+                ).exceptionally(ex -> {
+                    if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.DEBUG)
+                                .setCorrelationId(request.getLogCorrelationId())
+                                .setHttpRequest(request)
+                                .setMessageFormat("stream frame decision callback failed for H3 gRPC stream{}:{}")
+                                .setArguments(streamId, ex.getMessage())
+                        );
                     }
+                    return null;
                 });
             } catch (Exception e) {
                 mockServerLogger.logEvent(
@@ -269,7 +366,7 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                         .setArguments(index + 1, request)
                         .setThrowable(e)
                 );
-                finishGrpcStream(action);
+                finishGrpcStream(action, streamBreakpointsActive, streamId);
             }
         };
 
@@ -280,7 +377,30 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
         }
     }
 
-    private void finishGrpcStream(GrpcStreamResponse action) {
+    /**
+     * Writes a gRPC frame (byte[]) as an HTTP/3 DATA frame to the QUIC stream channel
+     * and chains to the next message on success. Shared between the default-off fast
+     * path and the breakpoint resume path.
+     */
+    private void writeH3GrpcFrame(byte[] frameBytes, List<GrpcStreamMessage> messages, int index,
+                                  GrpcStreamResponse action, Descriptors.MethodDescriptor methodDescriptor,
+                                  HttpRequest request, boolean streamBreakpointsActive, String streamId,
+                                  String reqMethod, String reqPath) {
+        DefaultHttp3DataFrame dataFrame = new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(frameBytes));
+        ctx.writeAndFlush(dataFrame).addListener(future -> {
+            if (future.isSuccess()) {
+                scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request,
+                    streamBreakpointsActive, streamId, reqMethod, reqPath);
+            } else {
+                finishGrpcStream(action, streamBreakpointsActive, streamId);
+            }
+        });
+    }
+
+    private void finishGrpcStream(GrpcStreamResponse action, boolean streamBreakpointsActive, String streamId) {
+        if (streamBreakpointsActive && streamId != null) {
+            StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
+        }
         if (!ctx.channel().isActive()) {
             return;
         }

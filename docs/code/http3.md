@@ -300,7 +300,12 @@ declarations are needed -- they resolve automatically.
   shared with the HTTP/2 path via `GrpcStreamMessageEncoder`, and `HttpActionHandler`
   routes the `GRPC_STREAM_RESPONSE` action to the transport-specific
   `GrpcStreamResponseWriter` (implemented by `Http3GrpcResponseWriter`) when the request
-  arrived over HTTP/3.
+  arrived over HTTP/3. When `breakpointStreamEnabled` is on, each outbound DATA frame
+  is parked in `StreamFrameBreakpointRegistry` (stream-id suffix `-h3-grpc-stream`,
+  `Direction.OUTBOUND`) before writing, supporting per-frame continue/modify/drop/
+  inject/close decisions. Frame bytes are `byte[]` from `GrpcStreamMessageEncoder` --
+  no ByteBuf is retained. Decision callbacks run on the QUIC stream's event loop.
+  Held frames are evicted on stream close.
 - **gRPC bidi-streaming over HTTP/3**: a `grpcBidiResponse` expectation drives true
   bidirectional streaming on a single (full-duplex) QUIC stream. Enabled by
   `grpcBidiStreamingEnabled` (same flag as HTTP/2). At HEADERS time the stream is routed
