@@ -21,6 +21,8 @@ const ACTIVE_CHAOS_METRIC = 'mock_server_active_service_chaos';
 const EXPECTATIONS_BY_TYPE_METRIC = 'mock_server_expectations_by_type';
 const MCP_TOOL_CALLS_METRIC = 'mock_server_mcp_tool_calls_total';
 const AUTO_HALT_METRIC = 'mock_server_chaos_auto_halt';
+const LLM_COST_BUDGET_TRIPPED_METRIC = 'mock_server_llm_cost_budget_tripped';
+const LLM_COST_USD_METRIC = 'mock_server_llm_cost_usd';
 const ASYNC_PUBLISHED_METRIC = 'mock_server_async_messages_published_total';
 const ASYNC_CONSUMED_METRIC = 'mock_server_async_messages_consumed_total';
 
@@ -112,10 +114,16 @@ export default function MetricsView({ connectionParams }: MetricsViewProps) {
   const autoHaltTotal = latest ? metricValue(latest.samples, AUTO_HALT_METRIC) : 0;
   const autoHaltEnabled = latest ? hasMetric(latest.samples, AUTO_HALT_METRIC) : false;
 
-  const chaosEnabled = latest ? (hasMetric(latest.samples, CHAOS_METRIC) || activeServiceChaosEnabled || autoHaltEnabled) : false;
-  // The auto-halt counter is meaningful even at zero (it means the circuit-breaker
-  // is configured and has not fired), so its presence alone qualifies as "has data".
-  const chaosHasData = chaosFaultTotals.some((f) => f.value > 0) || activeChaosTotal > 0 || autoHaltEnabled;
+  // LLM cost-budget circuit-breaker counter and cumulative cost
+  const llmCostBudgetTrippedTotal = latest ? metricValue(latest.samples, LLM_COST_BUDGET_TRIPPED_METRIC) : 0;
+  const llmCostBudgetEnabled = latest ? hasMetric(latest.samples, LLM_COST_BUDGET_TRIPPED_METRIC) : false;
+  const llmCostUsdTotal = latest ? metricSum(latest.samples, LLM_COST_USD_METRIC) : 0;
+
+  const chaosEnabled = latest ? (hasMetric(latest.samples, CHAOS_METRIC) || activeServiceChaosEnabled || autoHaltEnabled || llmCostBudgetEnabled) : false;
+  // The auto-halt and LLM cost-budget counters are meaningful even at zero (they
+  // mean the circuit-breaker is configured and has not fired), so their presence
+  // alone qualifies as "has data".
+  const chaosHasData = chaosFaultTotals.some((f) => f.value > 0) || activeChaosTotal > 0 || autoHaltEnabled || llmCostBudgetEnabled;
 
   // Expectations by type — gauge labeled by action_type
   const expectationActionTypes = latest
@@ -293,25 +301,56 @@ MOCKSERVER_METRICS_ENABLED=true`}
                   />
                 </Box>
               )}
-              {autoHaltEnabled && (
+              {(autoHaltEnabled || llmCostBudgetEnabled) && (
                 <Box sx={{ mt: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                    <Typography variant="caption" color="text.secondary">Auto-halt circuit breaker</Typography>
-                    <Chip
-                      size="small"
-                      label={autoHaltTotal > 0 ? `${autoHaltTotal} halt${autoHaltTotal === 1 ? '' : 's'}` : 'no halts'}
-                      color={autoHaltTotal > 0 ? 'error' : 'success'}
-                      variant="outlined"
-                    />
-                  </Box>
-                  <MetricsLineChart
-                    height={100}
-                    valueFormatter={(v) => Math.round(v).toLocaleString()}
-                    series={[{
-                      data: gaugeSeries(history, AUTO_HALT_METRIC),
-                      label: 'auto-halt count',
-                    }]}
-                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Circuit Breakers</Typography>
+                  {autoHaltEnabled && (
+                    <Box sx={{ mt: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                        <Typography variant="caption" color="text.secondary">Chaos auto-halt</Typography>
+                        <Chip
+                          size="small"
+                          label={autoHaltTotal > 0 ? `${autoHaltTotal} halt${autoHaltTotal === 1 ? '' : 's'}` : 'no halts'}
+                          color={autoHaltTotal > 0 ? 'error' : 'success'}
+                          variant="outlined"
+                        />
+                      </Box>
+                      <MetricsLineChart
+                        height={100}
+                        valueFormatter={(v) => Math.round(v).toLocaleString()}
+                        series={[{
+                          data: gaugeSeries(history, AUTO_HALT_METRIC),
+                          label: 'auto-halt count',
+                        }]}
+                      />
+                    </Box>
+                  )}
+                  {llmCostBudgetEnabled && (
+                    <Box sx={{ mt: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                        <Typography variant="caption" color="text.secondary">LLM cost-budget</Typography>
+                        <Chip
+                          size="small"
+                          label={llmCostBudgetTrippedTotal > 0 ? `${llmCostBudgetTrippedTotal} trip${llmCostBudgetTrippedTotal === 1 ? '' : 's'}` : 'within budget'}
+                          color={llmCostBudgetTrippedTotal > 0 ? 'error' : 'success'}
+                          variant="outlined"
+                        />
+                        {llmCostUsdTotal > 0 && (
+                          <Typography variant="caption" color="text.secondary">
+                            ${llmCostUsdTotal.toFixed(4)} spent
+                          </Typography>
+                        )}
+                      </Box>
+                      <MetricsLineChart
+                        height={100}
+                        valueFormatter={(v) => Math.round(v).toLocaleString()}
+                        series={[{
+                          data: gaugeSeries(history, LLM_COST_BUDGET_TRIPPED_METRIC),
+                          label: 'budget trips',
+                        }]}
+                      />
+                    </Box>
+                  )}
                 </Box>
               )}
             </Paper>

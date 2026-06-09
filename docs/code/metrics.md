@@ -191,7 +191,14 @@ sum(rate(mock_server_llm_cost_usd[1h]))
 
 ### LLM Cost Budget Circuit-Breaker
 
-`mock_server_llm_cost_budget_tripped` is a Prometheus `Counter` that increments each time the LLM cost-budget circuit-breaker triggers. The breaker is configured by `mockserver.llmCostBudgetUsd` (a cumulative USD budget); when the running cost total exceeds it, further LLM forwards are blocked with a 429 response. The budget is tracked independently of the Prometheus counter (via `LlmCostBudgetMonitor`) so it works even when `metricsEnabled` is false. The breaker is deterministic and fail-open: a negative, unset, or malformed budget never blocks traffic. It resets on `HttpState.reset()`.
+`mock_server_llm_cost_budget_tripped` is a Prometheus `Counter` that increments each time the LLM cost-budget circuit-breaker triggers. The breaker is configured by `mockserver.llmCostBudgetUsd` (a cumulative USD budget); when the running cost total exceeds it, further LLM forwards are blocked with a 429 response. The budget is **enforced on all forward paths**: matched FORWARD actions (FORWARD, FORWARD_TEMPLATE, FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE, FORWARD_WITH_FALLBACK), breakpoint-continuation forwards, unmatched proxy-pass forwards, and `proxyPassMappings` reverse-proxy routes. For matched FORWARD actions, the guard resolves the forward target host from the action (e.g. `HttpForward.getHost()`) so the sniffer checks the upstream host, not the inbound request host. The budget is tracked independently of the Prometheus counter (via `LlmCostBudgetMonitor`) so it works even when `metricsEnabled` is false. The breaker is deterministic and fail-open: a negative, unset, or malformed budget never blocks traffic. It resets on `HttpState.reset()`.
+
+The sole excluded forward path is `FORWARD_OBJECT_CALLBACK`, intentionally excluded because its upstream target is determined by arbitrary user callback code at runtime (the same architectural exclusion as chaos injection on that path).
+
+The cost-budget trip shares the same operator-facing observability surface as the chaos auto-halt:
+- **Prometheus counter**: `mock_server_llm_cost_budget_tripped`
+- **WARN log**: emitted on each trip with cumulative cost and budget values
+- **Dashboard**: the MetricsView "Circuit Breakers" section (inside the HTTP Chaos Faults panel) shows both the chaos auto-halt and the LLM cost-budget trip count, with cumulative cost display
 
 | Property | Default | Description |
 |----------|---------|-------------|

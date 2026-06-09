@@ -267,7 +267,7 @@ describe('MetricsView', () => {
       ].join('\n'),
     );
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Auto-halt circuit breaker')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Chaos auto-halt')).toBeInTheDocument());
     expect(screen.getByText('3 halts')).toBeInTheDocument();
   });
 
@@ -281,7 +281,7 @@ describe('MetricsView', () => {
       ].join('\n'),
     );
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Auto-halt circuit breaker')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Chaos auto-halt')).toBeInTheDocument());
     expect(screen.getByText('no halts')).toBeInTheDocument();
   });
 
@@ -295,7 +295,7 @@ describe('MetricsView', () => {
       ].join('\n'),
     );
     render(<MetricsView connectionParams={params} />);
-    await waitFor(() => expect(screen.getByText('Auto-halt circuit breaker')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Chaos auto-halt')).toBeInTheDocument());
     expect(screen.getByText('1 halt')).toBeInTheDocument();
   });
 
@@ -303,7 +303,51 @@ describe('MetricsView', () => {
     stubFetch(200, 'requests_received_count 5.0\n');
     render(<MetricsView connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
-    expect(screen.queryByText('Auto-halt circuit breaker')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chaos auto-halt')).not.toBeInTheDocument();
+  });
+
+  it('renders LLM cost-budget circuit breaker with trips', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_llm_cost_budget_tripped 2.0',
+        'mock_server_llm_cost_usd{provider="openai",model="gpt-4"} 1.5',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('LLM cost-budget')).toBeInTheDocument());
+    expect(screen.getByText('2 trips')).toBeInTheDocument();
+    expect(screen.getByText('$1.5000 spent')).toBeInTheDocument();
+  });
+
+  it('renders LLM cost-budget within budget when no trips', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_llm_cost_budget_tripped 0.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('LLM cost-budget')).toBeInTheDocument());
+    expect(screen.getByText('within budget')).toBeInTheDocument();
+  });
+
+  it('shows singular "trip" for LLM cost-budget count of 1', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 10.0',
+        'mock_server_llm_cost_budget_tripped 1.0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('LLM cost-budget')).toBeInTheDocument());
+    expect(screen.getByText('1 trip')).toBeInTheDocument();
   });
 
   it('hides zero-value expectation types from the chart', async () => {

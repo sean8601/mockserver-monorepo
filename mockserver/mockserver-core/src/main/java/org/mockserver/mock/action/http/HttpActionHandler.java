@@ -339,14 +339,23 @@ public class HttpActionHandler {
             // FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE). Deferred: FORWARD_OBJECT_CALLBACK has
             // its own write path and the unmatched/anonymous proxy-pass path.
             case FORWARD -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
+                    return;
+                }
                 final HttpForwardActionResult responseFuture = getHttpForwardActionHandler().handle((HttpForward) action, request);
                 writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
+                    return;
+                }
                 final HttpForwardActionResult responseFuture = getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, request);
                 writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
+                    return;
+                }
                 final HttpForwardActionResult responseFuture = getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, request);
                 writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
@@ -355,14 +364,23 @@ public class HttpActionHandler {
                     getHttpForwardObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
                 synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_REPLACE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
+                    return;
+                }
                 final HttpForwardActionResult responseFuture = getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, request);
                 writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
+                    return;
+                }
                 final HttpForwardActionResult responseFuture = getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, request);
                 writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_WITH_FALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+                if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
+                    return;
+                }
                 final HttpForwardActionResult responseFuture = getHttpForwardWithFallbackActionHandler().handle((HttpForwardWithFallback) action, request);
                 writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
@@ -972,6 +990,14 @@ public class HttpActionHandler {
                                          InetSocketAddress remoteAddress, boolean potentiallyHttpProxy,
                                          boolean validationEnabled, ResponseWriter responseWriter) {
         try {
+            // LLM cost-budget circuit-breaker: re-check after breakpoint resolution
+            // because the request may have been modified to target a different host.
+            HttpResponse costBudgetResponse = checkLlmCostBudget(requestToForward);
+            if (costBudgetResponse != null) {
+                responseWriter.writeResponse(originalRequest, costBudgetResponse, false);
+                return;
+            }
+
             long forwardStartNanos = System.nanoTime();
             final HttpForwardActionResult responseFuture = new HttpForwardActionResult(
                 requestToForward,
@@ -1173,6 +1199,13 @@ public class HttpActionHandler {
                                 responseWriter.writeResponse(request, rejectResponse, false);
                                 return;
                             }
+                        }
+
+                        // LLM cost-budget circuit-breaker: check before upstream send
+                        HttpResponse costBudgetResponse = checkLlmCostBudgetByHost(mapping.getTargetHost(), clonedRequest);
+                        if (costBudgetResponse != null) {
+                            responseWriter.writeResponse(request, costBudgetResponse, false);
+                            return;
                         }
 
                         final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, targetAddress), null, targetAddress);
@@ -2946,12 +2979,64 @@ public class HttpActionHandler {
      * or detection failure.
      */
     private HttpResponse checkLlmCostBudget(HttpRequest request) {
+        return checkLlmCostBudgetByHost(null, request);
+    }
+
+    /**
+     * Check the LLM cost budget before a matched FORWARD action. Resolves the
+     * forward target host from the action (if available) so the sniffer checks
+     * the upstream host, not the inbound request host. Falls back to the request
+     * host when the action type doesn't carry an explicit host (e.g.
+     * FORWARD_TEMPLATE, FORWARD_CLASS_CALLBACK). Fail-open on misconfig or
+     * detection failure.
+     *
+     * @param request the inbound HTTP request
+     * @param action  the matched forward action
+     * @return a 429 response if the budget is exceeded, or {@code null} to proceed
+     */
+    private HttpResponse checkLlmCostBudgetForForward(HttpRequest request, Action action) {
+        String forwardHost = resolveForwardTargetHost(action);
+        return checkLlmCostBudgetByHost(forwardHost, request);
+    }
+
+    /**
+     * Single-call helper used by each matched FORWARD case arm. Checks the LLM
+     * cost budget; if exceeded, writes the 429 response, runs the expectation
+     * post-processor, and returns {@code true} (caller should {@code return}).
+     * Returns {@code false} when the request should proceed. Fail-open: any
+     * exception or misconfiguration returns {@code false}.
+     */
+    private boolean blockIfLlmCostBudgetExceeded(HttpRequest request, Action action,
+                                                 ResponseWriter responseWriter,
+                                                 Runnable expectationPostProcessor) {
+        HttpResponse costBudgetResponse = checkLlmCostBudgetForForward(request, action);
+        if (costBudgetResponse != null) {
+            responseWriter.writeResponse(request, costBudgetResponse, false);
+            expectationPostProcessor.run();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Shared LLM cost-budget guard. If {@code explicitHost} is non-null, sniffs
+     * it (with the request path for the configured-provider fallback gate);
+     * otherwise falls back to sniffing the request. Fail-open: a negative/unset
+     * budget, a non-LLM target, or any exception returns {@code null} (proceed).
+     */
+    private HttpResponse checkLlmCostBudgetByHost(String explicitHost, HttpRequest request) {
         try {
             if (org.mockserver.configuration.ConfigurationProperties.llmCostBudgetUsd() <= 0) {
                 return null; // budget not configured — pass through
             }
-            java.util.Optional<Provider> providerOpt =
-                org.mockserver.llm.client.LlmProviderSniffer.sniff(request);
+            java.util.Optional<Provider> providerOpt;
+            if (explicitHost != null) {
+                String path = request != null && request.getPath() != null
+                    ? request.getPath().getValue() : null;
+                providerOpt = org.mockserver.llm.client.LlmProviderSniffer.sniffByHostAndPath(explicitHost, path);
+            } else {
+                providerOpt = org.mockserver.llm.client.LlmProviderSniffer.sniff(request);
+            }
             if (providerOpt.isEmpty()) {
                 return null; // not LLM traffic
             }
@@ -2960,6 +3045,79 @@ public class HttpActionHandler {
             // fail-open: never block traffic on a detection/config error
             return null;
         }
+    }
+
+    /**
+     * Resolve the forward target host from a matched FORWARD action. Returns
+     * the explicit host when the action type carries one, or {@code null} to
+     * fall back to request-based sniffing.
+     */
+    private String resolveForwardTargetHost(Action action) {
+        if (action == null) {
+            return null;
+        }
+        switch (action.getType()) {
+            case FORWARD:
+                HttpForward fwd = (HttpForward) action;
+                return fwd.getHost();
+            case FORWARD_VALIDATE:
+                HttpForwardValidateAction fva = (HttpForwardValidateAction) action;
+                return fva.getHost();
+            case FORWARD_WITH_FALLBACK:
+                HttpForwardWithFallback fwf = (HttpForwardWithFallback) action;
+                if (fwf.getHttpForward() != null) {
+                    return fwf.getHttpForward().getHost();
+                }
+                return null;
+            case FORWARD_REPLACE:
+                HttpOverrideForwardedRequest ofr = (HttpOverrideForwardedRequest) action;
+                if (ofr.getRequestOverride() != null) {
+                    // Check socket address first, then Host header
+                    HttpRequest override = ofr.getRequestOverride();
+                    if (override.getSocketAddress() != null
+                        && override.getSocketAddress().getHost() != null
+                        && !override.getSocketAddress().getHost().isEmpty()) {
+                        return override.getSocketAddress().getHost();
+                    }
+                    String hostHeader = override.getFirstHeader("Host");
+                    if (hostHeader != null && !hostHeader.isEmpty()) {
+                        return stripPortFromHost(hostHeader);
+                    }
+                }
+                return null;
+            default:
+                // FORWARD_TEMPLATE, FORWARD_CLASS_CALLBACK, FORWARD_OBJECT_CALLBACK:
+                // target determined at runtime — fall back to request-based sniffing
+                return null;
+        }
+    }
+
+    /**
+     * Strip the port portion from a Host header value, handling both IPv4/DNS
+     * hosts ({@code example.com:443}) and bracketed IPv6 addresses
+     * ({@code [::1]:8080}). Fail-open: returns the input unchanged on any
+     * unexpected format.
+     *
+     * @param hostHeader the raw Host header value (non-null, non-empty)
+     * @return the hostname without the port suffix
+     */
+    static String stripPortFromHost(String hostHeader) {
+        if (hostHeader.startsWith("[")) {
+            // Bracketed IPv6: [addr]:port or [addr]
+            int closeBracket = hostHeader.indexOf(']');
+            if (closeBracket < 0) {
+                return hostHeader; // malformed — fail-open
+            }
+            // Return the address inside the brackets
+            return hostHeader.substring(1, closeBracket);
+        }
+        // Non-bracketed: only strip ":port" when there's exactly one colon
+        // (a bare IPv6 like "::1" has multiple colons — don't truncate it)
+        int firstColon = hostHeader.indexOf(':');
+        if (firstColon >= 0 && firstColon == hostHeader.lastIndexOf(':')) {
+            return hostHeader.substring(0, firstColon);
+        }
+        return hostHeader;
     }
 
     /**
