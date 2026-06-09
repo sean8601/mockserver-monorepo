@@ -11,8 +11,8 @@ adds an identical YAML block in each subcategory of `landscape.yml`, plus a mono
 
 **Current status (2026-06):** PR submitted —
 [`cncf/landscape#4868`](https://github.com/cncf/landscape/pull/4868) (OPEN, not draft; DCO green).
-Raised from fork `jamesdbloom/landscape`, branch `add-mockserver` (3 commits, tip `99443a20`,
-DCO-signed). Awaiting CNCF maintainer review/merge.
+Raised from fork `jamesdbloom/landscape`, branch `add-mockserver` (DCO-signed). Awaiting CNCF
+maintainer review/merge.
 
 ---
 
@@ -40,7 +40,7 @@ DCO-signed). Awaiting CNCF maintainer review/merge.
 ```yaml
           - item:
             name: MockServer
-            description: Mocking, debugging proxy and chaos engineering for HTTP, HTTPS, gRPC, TCP and more.
+            description: Mocking, debugging proxy and chaos engineering for HTTP, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more.
             homepage_url: https://www.mock-server.com
             repo_url: https://github.com/mock-server/mockserver-monorepo
             logo: mockserver.svg

@@ -19,7 +19,7 @@ target repos runs `awesome-lint`, though TheJambo/awesome-testing runs a dead-li
 review and mfornos/awesome-microservices runs a link linter (the added URLs are live, so these
 should pass); Kikobeats/awesome-api and atinfo have no blocking workflows. Every entry positions
 MockServer as a **mocking, debugging proxy and chaos engineering** tool for **multiple protocols
-(HTTP, HTTPS, gRPC, TCP and more)**.
+(HTTP, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more)**.
 
 ---
 
@@ -30,7 +30,7 @@ Section **`### Service Virtualization`** in `README.md`, inserted after `mockd` 
 (matches the section's GitHub-repo link style):
 
 ```markdown
-- [MockServer](https://github.com/mock-server/mockserver-monorepo) - Mocking, debugging proxy and chaos engineering tool for multiple protocols (HTTP, HTTPS, gRPC, TCP and more); mock any dependency, record/replay and inspect traffic, verify requests, and inject faults. Docker, JAR, Helm, multi-language clients.
+- [MockServer](https://github.com/mock-server/mockserver-monorepo) - Mocking, debugging proxy and chaos engineering tool for multiple protocols (HTTP, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more); mock any dependency, record/replay and inspect traffic, verify requests, and inject faults. Docker, JAR, Helm, multi-language clients.
 ```
 
 ## ✅ Target 2 — `mfornos/awesome-microservices` → PR #314
@@ -39,7 +39,7 @@ Section **`### Testing`** in `README.md`, alphabetically between `Mitmproxy` and
 Entry (homepage link, matching neighbours like Mountebank/WireMock):
 
 ```markdown
-- [MockServer](https://www.mock-server.com) - Mocking, debugging proxy and chaos engineering for multiple protocols (HTTP, HTTPS, gRPC, TCP and more); mock dependencies, record/replay traffic, verify requests, and inject faults for integration and resilience testing.
+- [MockServer](https://www.mock-server.com) - Mocking, debugging proxy and chaos engineering for multiple protocols (HTTP, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more); mock dependencies, record/replay traffic, verify requests, and inject faults for integration and resilience testing.
 ```
 
 ## ✅ Target 3 — `Kikobeats/awesome-api` → PR #98
@@ -48,7 +48,7 @@ Section **`### Mocking`** in `README.md` (uses `*` bullets), placed among the mo
 after `json-server`:
 
 ```markdown
-* [MockServer](https://www.mock-server.com) - Mocking, debugging proxy and chaos engineering for HTTP, HTTPS, gRPC, TCP and more; mock APIs, record/replay and inspect traffic, verify requests, and inject chaos. Docker, JAR, Helm.
+* [MockServer](https://www.mock-server.com) - Mocking, debugging proxy and chaos engineering for HTTP, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more; mock APIs, record/replay and inspect traffic, verify requests, and inject chaos. Docker, JAR, Helm.
 ```
 
 ## ✅ Target 4 — `atinfo/awesome-test-automation` → PR #551 (refresh existing entry)
@@ -59,7 +59,7 @@ current positioning (mocking, debugging proxy and chaos engineering across HTTP/
 switches the link to HTTPS. No new entry — only improved wording:
 
 ```markdown
-* [MockServer](https://www.mock-server.com/) is a mocking, debugging proxy and chaos engineering tool for multiple protocols (HTTP, HTTPS, gRPC, TCP and more) - mock any system you integrate with, record/replay and verify traffic, and inject faults for resilience testing.
+* [MockServer](https://www.mock-server.com/) is a mocking, debugging proxy and chaos engineering tool for multiple protocols (HTTP, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more) - mock any system you integrate with, record/replay and verify traffic, and inject faults for resilience testing.
 ```
 
 ## ⏭️ Target 5 — `awesome-selfhosted/awesome-selfhosted` (skipped — out of scope)
