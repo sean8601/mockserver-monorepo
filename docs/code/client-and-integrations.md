@@ -354,6 +354,47 @@ try (MockServerContainer mockServer = new MockServerContainer()) {
 }
 ```
 
+## On-Demand Binary Launcher (turnkey, no Java/Docker)
+
+Each language client can **start a real MockServer on demand** by downloading the self-contained,
+JVM-less binary bundle for the user's OS/arch — no Java install, no Docker. A user adds only the
+client; the server is fetched, cached, launched, and stopped programmatically. This mirrors the
+esbuild / Playwright "managed binary" model. `mockserver-node/downloadBinary.js` is the reference
+implementation; every other client mirrors the same contract.
+
+**Shared contract (identical across all clients):**
+
+| Aspect | Value |
+|--------|-------|
+| Bundle | `mockserver-<version>-<os>-<arch>.<ext>` — os ∈ {linux, darwin, windows}, arch ∈ {x86_64, aarch64}, ext = tar.gz (linux/darwin) / zip (windows) |
+| Source | `${MOCKSERVER_BINARY_BASE_URL:-https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-<version>}/<file>` |
+| Cache | `${MOCKSERVER_BINARY_CACHE:-<OS user cache>}/mockserver/binaries/<version>/<bundle>/bin/mockserver` (`mockserver.bat` on Windows); OS cache = `%LOCALAPPDATA%` (Windows) else `$XDG_CACHE_HOME` or `~/.cache` |
+| Integrity | downloads to a `.part` temp, verifies the published `<file>.sha256` (**fail-closed** on missing/empty/mismatch), atomic rename, then `tar -xf` extract |
+| Versioned cache GC | after a successful install, prunes other version dirs keeping the current + **one** previous (`maxPrevious = 1`); semver-aware so a **release outranks its `-SNAPSHOT`** (a stable release is never pruned in favour of a pre-release) |
+| Env knobs | `MOCKSERVER_BINARY_BASE_URL` (mirror / air-gap), `MOCKSERVER_BINARY_CACHE`, `MOCKSERVER_SKIP_BINARY_DOWNLOAD` (fail instead of download — pre-seeded caches) |
+| Default version | the shared MockServer version (`7.0.0`), pinned per client so all clients fetch the same server bundle and share one cache |
+
+**Per-client location & API:**
+
+| Client | File(s) | Entry point |
+|--------|---------|-------------|
+| Node | `mockserver-node/downloadBinary.js` | `ensureBinary` / `runBinary` (reference) |
+| Python | `mockserver-client-python/mockserver/launcher.py` | `start(port)` → handle, `stop()` |
+| Ruby | `mockserver-client-ruby/lib/mockserver/binary_launcher.rb` | `BinaryLauncher` start/stop |
+| Go | `mockserver-client-go/launcher.go` | `StartServer` / handle `Stop` |
+| .NET | `mockserver-client-dotnet/.../MockServerBinaryLauncher.cs` | `Start` / `Stop` |
+| Rust | `mockserver-client-rust/src/launcher.rs` | `start` / handle `stop` |
+| PHP | `mockserver-client-php/src/BinaryLauncher.php` (+ `BinaryHandle.php`) | `BinaryLauncher::start` / `BinaryHandle::stop` |
+
+Hardening common to all: version strings are validated and resolved cache paths are asserted to stay
+within the cache root (no path traversal); SHA-256 verification is mandatory on the public path; the
+Windows `.bat` launcher is spawned with safe quoting; child process stdout/stderr are drained to avoid
+pipe-buffer deadlock; HTTP downloads use timeouts and stream to disk. Tests are hermetic (no live
+network) using `file://` fixtures and a stubbed downloader, plus one integration test that runs only
+when a real bundle is available. *(Known minor follow-up: the PHP pruner relies on `version_compare`,
+which can treat `7.0.0` and `7.0.0-SNAPSHOT` as equal — prune order between those two is not
+guaranteed; tracked as a follow-up.)*
+
 ## WebSocket Callback System
 
 For object/closure callbacks, a WebSocket connection between the client JVM and MockServer enables the callback to execute on the client side:
