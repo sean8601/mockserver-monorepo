@@ -697,14 +697,29 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 
 <p><strong>Note:</strong> a bare hostname such as <span class="inline_code">--proxy-to api.example.com</span> (no port, no scheme) is rejected. Use <span class="inline_code">api.example.com:8080</span> or a scheme URL such as <span class="inline_code">https://api.example.com</span>.</p>
 
-<p>Start MockServer as a validating proxy — log OpenAPI violations without blocking traffic:</p>
+<a id="contract_validating_proxy" class="anchor" href="#contract_validating_proxy">&nbsp;</a>
+
+<h4>Contract-validating proxy</h4>
+
+<p>Combine <span class="inline_code">--validate-openapi</span> and <span class="inline_code">--validate-enforce</span> to turn MockServer into a contract-validating proxy that checks every request and response against an OpenAPI spec. This is useful in CI to catch API drift early, or in a staging environment to find clients that send non-conformant requests before they reach production.</p>
+
+<p><strong>Step 1 — Report-only mode:</strong> start without <span class="inline_code">--validate-enforce</span>. MockServer forwards all traffic unchanged and logs any violations as <span class="inline_code">OPENAPI_REQUEST_VALIDATION_FAILED</span> and <span class="inline_code">OPENAPI_RESPONSE_VALIDATION_FAILED</span> log events. Nothing is blocked, so existing clients are unaffected:</p>
 <pre><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar proxy --to https://api.example.com -p <span class="numeric_literal">1080</span> \
     --validate-openapi ./openapi-spec.yaml</code></pre>
 
-<p>Start MockServer as an enforcing validation proxy — reject non-conformant requests (400) and responses (502):</p>
+<p>Violations appear in the MockServer log (and in the dashboard <a href="/mock_server/mockserver_ui.html#ui_logs_section">Log Messages</a> panel) as <span class="inline_code">OPENAPI_REQUEST_VALIDATION_FAILED</span> or <span class="inline_code">OPENAPI_RESPONSE_VALIDATION_FAILED</span> events with the path, method, violation details, and schema location.</p>
+
+<p><strong>Step 2 — Enforce mode:</strong> add <span class="inline_code">--validate-enforce</span> to reject non-conformant traffic. A request that violates the spec receives a <span class="inline_code">400</span> response; an upstream response that violates the spec is replaced with a <span class="inline_code">502</span>:</p>
 <pre><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar proxy --to https://api.example.com -p <span class="numeric_literal">1080</span> \
     --validate-openapi ./openapi-spec.yaml \
     --validate-enforce</code></pre>
+
+<p><strong>Notes:</strong></p>
+<ul>
+    <li>The spec can be a local file path, a URL, or an inline JSON/YAML payload passed as a string.</li>
+    <li>Streaming responses (chunked transfer-encoding, SSE) are validated in report-only mode even when <span class="inline_code">--validate-enforce</span> is set, because the response headers have already been sent to the client before the body is fully available.</li>
+    <li>The same flags are available as configuration properties: <a href="/mock_server/configuration_properties.html#button_configuration_validate_proxy_openapi_spec"><span class="inline_code">mockserver.validateProxyOpenAPISpec</span></a> and <a href="/mock_server/configuration_properties.html#button_configuration_validate_proxy_enforce"><span class="inline_code">mockserver.validateProxyEnforce</span></a>, so you can set them via environment variables or a properties file in Docker.</li>
+</ul>
 
 <p>Start MockServer and pre-load expectations from a JSON file:</p>
 <pre><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar run -p <span class="numeric_literal">1080</span> --init ./expectations.json</code></pre>

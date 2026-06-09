@@ -8,16 +8,17 @@ subsection: true
 sitemap:
   priority: 0.7
   changefreq: 'monthly'
-  lastmod: 2026-06-08T00:00:00+01:00
+  lastmod: 2026-06-09T00:00:00+01:00
 ---
 
-<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Ten views are available from the navigation bar at the top of the page:</p>
+<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Eleven views are available from the navigation bar at the top of the page:</p>
 
 <ul>
+    <li><strong><a href="#ui_get_started_section">Get Started</a></strong> — guided first-run view: import an OpenAPI spec, set up a proxy, try a quick-start recipe, or browse the docs</li>
     <li><strong><a href="#ui_dashboard_section">Dashboard</a></strong> — four panels showing log messages, active expectations, received requests, and proxied requests</li>
-    <li><strong><a href="#ui_traffic_section">Traffic</a></strong> — every captured request in a master list, with a rich detail pane on the right for LLM and MCP traffic, plus a <strong>Compare</strong> toggle to diff two requests field-by-field</li>
+    <li><strong><a href="#ui_traffic_section">Traffic</a></strong> — every captured request in a master list, with a rich detail pane on the right for LLM and MCP traffic, a <strong>Replay</strong> button to re-issue a captured request, and a <strong>Compare</strong> toggle to diff two requests field-by-field</li>
     <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes, plus a <strong>Compare</strong> tab for diffing two captured runs side-by-side</li>
-    <li><strong><a href="#ui_composer_section">Mocks</a></strong> — create or edit expectations of every kind (HTTP, gRPC, DNS, MCP, LLM) and import them (OpenAPI, WSDL, HAR, Postman) without writing any code</li>
+    <li><strong><a href="#ui_composer_section">Mocks</a></strong> — create or edit expectations of every kind (HTTP, gRPC, DNS, MCP, LLM), import them (OpenAPI, WSDL, HAR, Postman), and insert engine-aware template snippets without writing any code</li>
     <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files, WASM modules, and export traffic</li>
     <li><strong><a href="#ui_chaos_section">Chaos</a></strong> — configure and inject HTTP, gRPC, and TCP faults that apply to all forwarded requests to a given upstream host or service. The HTTP fault set covers error responses, dropped connections, latency, body corruption, slow-response chunking, quotas/rate limits, count and time windows, gradual degradation, and a GraphQL error envelope, with a TTL so chaos auto-expires</li>
     <li><strong><a href="#ui_drift_section">Drift</a></strong> — review mock drift records where stubbed responses diverge from the real upstream</li>
@@ -51,6 +52,38 @@ sitemap:
 <p>The <span class="keyword">openUI()</span> method pauses for 1 second after launching the browser to allow the UI to start collecting logs. This ensures logs are visible even if MockServer is shutdown quickly by a test shutdown function (After, AfterClass, AfterAll, etc.). The pause period can be configured using <span class="keyword">openUI(TimeUnit timeUnit, long pause)</span>.</p>
 
 <p>To simplify debugging when multiple MockServer instances are created, if the <a href="/mock_server/debugging_issues.html#logging-levels">logLevel</a> is set to <span class="string_literal">DEBUG</span> and the <strong><a href="/mock_server/configuration_properties.html#button_configuration_launch_ui__debug">launchUIForLogLevelDebug</a></strong> configuration property is enabled (default: false), the <span class="this_value">ClientAndServer</span> constructor will automatically launch the UI.</p>
+
+<a id="ui_get_started_section" class="anchor" href="#ui_get_started_section">&nbsp;</a>
+
+<h2>Get Started</h2>
+
+<p>The <strong>Get Started</strong> view is the first screen you see when no expectations or traffic have been recorded yet. It presents four action cards to help you configure MockServer quickly without reading the full documentation:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Card</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Import an OpenAPI Spec</strong></td>
+            <td>Opens the <a href="#ui_import_section">OpenAPI import dialog</a> directly from the welcome screen. Upload an OpenAPI / Swagger spec and MockServer generates stubs for every endpoint automatically.</td>
+        </tr>
+        <tr>
+            <td><strong>Record Live Traffic</strong></td>
+            <td>Links to the proxy setup guide, explaining how to run MockServer as a forward proxy using the <code>--proxyRemoteHost</code> and <code>--proxyRemotePort</code> flags so it captures real API traffic for replay or drift analysis.</td>
+        </tr>
+        <tr>
+            <td><strong>Try a Quick-Start Recipe</strong></td>
+            <td>Links to the docker-compose examples on GitHub: mock from OpenAPI, record-replay proxy, validation proxy, and chaos proxy — all ready to run with a single <code>docker compose up</code>.</td>
+        </tr>
+        <tr>
+            <td><strong>Explore the Dashboard</strong></td>
+            <td>Links to this documentation page so you can learn about all the dashboard features before diving in.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>When the first expectation or traffic record arrives, MockServer automatically navigates to the Dashboard view. The Get Started view remains accessible at any time via the <strong>Get Started</strong> button (rocket icon) in the navigation bar.</p>
 
 <a id="ui_dashboard_section" class="anchor" href="#ui_dashboard_section">&nbsp;</a>
 
@@ -268,6 +301,25 @@ sitemap:
 
 <p>Click <strong>Compare</strong> again to leave compare mode and clear the selection. The diff is computed server-side via the <code>PUT /mockserver/diff</code> endpoint, which takes an <code>expected</code> and an <code>actual</code> request and returns the field-level differences, so the dashboard shows exactly what the server sees.</p>
 
+<a id="ui_traffic_replay_section" class="anchor" href="#ui_traffic_replay_section">&nbsp;</a>
+
+<h3>Request Replay</h3>
+
+<p>A <strong>Replay</strong> button appears in the top-right of the detail pane for any captured request. It re-issues that request to its original target and displays the upstream response — useful for checking whether an upstream has changed, or for comparing what a real upstream returns against what a mock returns.</p>
+
+<ol>
+    <li>Select any captured request in the master list to open its detail pane.</li>
+    <li>Click the <strong>Replay</strong> button in the detail pane header. A dialog opens showing the request that will be replayed.</li>
+    <li>Click <strong>Replay</strong> in the dialog. MockServer sends the captured <code>httpRequest</code> to its original target via <code>PUT /mockserver/replay</code> and displays the upstream response as JSON.</li>
+    <li>Click <strong>Replay Again</strong> to re-issue the same request without closing the dialog.</li>
+</ol>
+
+<p><strong>SSRF protection:</strong> replay uses the same host-allowlist policy as forward expectations. Requests targeting loopback addresses, private RFC-1918 ranges, or hosts not on the configured allowlist are blocked by the server. If a replay is blocked, the dialog shows the SSRF-policy error returned by the server.</p>
+
+<p><strong>Size limit:</strong> response bodies exceeding 10&nbsp;MB are not returned via the control plane. If the upstream response is larger, the server returns an error message explaining the cap; the upstream call was still made.</p>
+
+<p>Replay is distinct from <a href="/mock_server/persisting_expectations.html">cassette replay</a> (which loads saved expectations from a file) — it re-issues a single captured request to a live upstream and shows the live response.</p>
+
 <a id="ui_sessions_section" class="anchor" href="#ui_sessions_section">&nbsp;</a>
 
 <h2>Sessions</h2>
@@ -327,6 +379,77 @@ sitemap:
 </ol>
 
 <p>See <a href="/mock_server/ai_mcp_tools.html#create_llm_conversation">LLM Conversation Mocking</a> for full details on conversation predicates and isolation options.</p>
+
+<a id="ui_snippet_palette_section" class="anchor" href="#ui_snippet_palette_section">&nbsp;</a>
+
+<h3>Snippet Palette</h3>
+
+<p>When <strong>Response template</strong> is selected as the response action in the Standard HTTP Expectation form, an <strong>Insert snippet</strong> button appears next to the template body field. Clicking it opens the snippet palette — a popover menu of curated template expressions organised into three categories:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Category</th><th>What it inserts</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Request Echoes</strong></td>
+            <td>Expressions that mirror values from the incoming request back into the response — for example, the request method, path, a named header, a query parameter, or the request body.</td>
+        </tr>
+        <tr>
+            <td><strong>Dynamic Data</strong></td>
+            <td>Expressions that generate data at response time — for example, the current date/time, a random UUID, a random integer, or the current epoch timestamp.</td>
+        </tr>
+        <tr>
+            <td><strong>Structure</strong></td>
+            <td>Structural template constructs — for example, an <code>if / else</code> block, a <code>foreach</code> loop, or a JSON object wrapper.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>The palette is <strong>engine-aware</strong>: it shows the correct syntax for whichever template engine is currently selected in the form — Velocity, Mustache, or JavaScript. Each snippet entry shows the expression syntax as a chip, a short description, and an example rendered value. Click any snippet to insert it at the cursor position in the template body field.</p>
+
+<a id="ui_import_section" class="anchor" href="#ui_import_section">&nbsp;</a>
+
+<h3>Import</h3>
+
+<p>The <strong>Mocks</strong> view has an <strong>Import</strong> radio button at the top of the form (alongside Standard HTTP expectation and LLM Conversation). Selecting it replaces the composer form with an import form that lets you bulk-load expectations from an external source without writing any code.</p>
+
+<p>Five import formats are supported:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Format</th><th>How to supply</th><th>What MockServer creates</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Expectation JSON</strong></td>
+            <td>Paste JSON or enter a URL pointing to a raw JSON file</td>
+            <td>Expectations loaded directly from MockServer's own format — a lossless round-trip for previously exported expectations</td>
+        </tr>
+        <tr>
+            <td><strong>OpenAPI</strong></td>
+            <td>Paste an OpenAPI v3 spec (JSON or YAML) or enter a URL</td>
+            <td>One mock expectation per operation (method + path combination), with example responses where defined</td>
+        </tr>
+        <tr>
+            <td><strong>WSDL / SOAP</strong></td>
+            <td>Paste a WSDL 1.1 document</td>
+            <td>One mock expectation per SOAP operation, with a templated XML response body</td>
+        </tr>
+        <tr>
+            <td><strong>HAR (HTTP Archive)</strong></td>
+            <td>Paste a HAR JSON file captured from browser DevTools or a proxy</td>
+            <td>One mock expectation per request/response pair in the archive</td>
+        </tr>
+        <tr>
+            <td><strong>Postman collection</strong></td>
+            <td>Paste a Postman collection v2.x JSON export</td>
+            <td>One mock expectation per request, with the example response where available</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>All import operations call the relevant MockServer control-plane endpoint (<code>PUT /mockserver/expectation</code>, <code>PUT /mockserver/openapi</code>, <code>PUT /mockserver/wsdl</code>, or <code>PUT /mockserver/import?format=har|postman</code>) and report how many expectations were created. Import is additive — it does not clear existing expectations. See <a href="/mock_server/importing_expectations.html">Importing Expectations</a> for details on each format.</p>
 
 <a id="ui_library_section" class="anchor" href="#ui_library_section">&nbsp;</a>
 

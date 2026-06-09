@@ -9,7 +9,7 @@ subsection: true
 sitemap:
   priority: 0.9
   changefreq: 'monthly'
-  lastmod: 2026-05-30T08:00:00+00:00
+  lastmod: 2026-06-09T08:00:00+00:00
 keywords: chaos testing, fault injection, resilience testing, latency injection, connection drop, simulate outage, outage window, time-based fault injection, SRE testing, retry and backoff testing, mock 429 rate limit, chaos testing in kubernetes
 schema_faq:
   - question: "How do I simulate a 429 rate limit with MockServer?"
@@ -1123,6 +1123,90 @@ new MockServerClient("localhost", 1080)
 <pre class="code"><code class="code">curl -sf -X DELETE http://mockserver:1080/mockserver/chaosExperiment</code></pre>
 
 <p>Stopping is idempotent &mdash; calling it when no experiment is running is a no-op.</p>
+
+<a id="chaos_auto_halt" class="anchor" href="#chaos_auto_halt">&nbsp;</a>
+
+<h2>Chaos Auto-Halt Circuit-Breaker</h2>
+
+<p>The auto-halt circuit-breaker is a safety guardrail for service-scoped chaos experiments. When enabled, MockServer monitors the rate of <em>destructive</em> fault injections and automatically disables all active service-scoped chaos profiles if that rate exceeds a configurable threshold — the "steady-state guardrail" that prevents a chaos experiment from cascading into a wider outage.</p>
+
+<h3>Which fault types count</h3>
+
+<p>Only <strong>destructive</strong> fault types contribute to the sliding error window:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr><th>Fault type</th><th>Counts toward auto-halt?</th><th>Reason</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code class="inline code">error</code> (synthetic 5xx)</td><td><strong>Yes</strong></td><td>Returns an error status to callers — directly visible failure</td></tr>
+        <tr><td><code class="inline code">drop</code> (connection drop)</td><td><strong>Yes</strong></td><td>Hard connection kill — severe disruption</td></tr>
+        <tr><td><code class="inline code">quota</code> (rate-limit rejection)</td><td><strong>Yes</strong></td><td>Rejects calls with 429 / quota error — service disruption</td></tr>
+        <tr><td><code class="inline code">latency</code></td><td>No</td><td>Adds delay but does not fail calls — a latency-only experiment will never auto-halt</td></tr>
+        <tr><td><code class="inline code">slow</code> (dribbled response)</td><td>No</td><td>Slows delivery but the response is still returned</td></tr>
+        <tr><td><code class="inline code">truncate</code> (body truncation)</td><td>No</td><td>Corrupts payload but does not reject the call outright</td></tr>
+        <tr><td><code class="inline code">malformed</code> (body corruption)</td><td>No</td><td>Corrupts payload but does not reject the call outright</td></tr>
+        <tr><td><code class="inline code">graphql</code> (GraphQL error envelope)</td><td>No</td><td>Returns HTTP 200 with a GraphQL error body — benign at the transport layer</td></tr>
+    </tbody>
+</table>
+
+<h3>How it works</h3>
+
+<p>MockServer maintains a lock-free sliding window of timestamps for destructive fault injections. On every destructive fault injection, it trims timestamps older than <code class="inline code">chaosAutoHaltWindowMillis</code> from the head of the window, then checks whether the remaining count meets or exceeds <code class="inline code">chaosAutoHaltErrorThreshold</code>. If it does:</p>
+
+<ol>
+    <li>All active service-scoped HTTP, gRPC, and TCP chaos registrations are cleared (equivalent to sending <code class="inline code">PUT /mockserver/serviceChaos {"clear": true}</code>).</li>
+    <li>Any running <a href="#chaos_experiments">multi-stage chaos experiment</a> is stopped immediately with status <code class="inline code">halted_by_auto_halt</code>.</li>
+    <li>The <code class="inline code">mock_server_chaos_auto_halt</code> counter is incremented.</li>
+    <li>A warning is logged with the window size, threshold, and window duration.</li>
+    <li>The sliding window is cleared so that new registrations are not immediately re-halted.</li>
+</ol>
+
+<p>The circuit-breaker evaluates each fault injection on the event-loop thread without locking, using a <code class="inline code">ConcurrentLinkedDeque</code> of timestamps for O(1) adds and amortised O(1) eviction.</p>
+
+<h3>Configuration</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr><th>Property</th><th>Environment variable</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mockserver.chaosAutoHaltEnabled</code></td>
+            <td><code class="inline code">MOCKSERVER_CHAOS_AUTO_HALT_ENABLED</code></td>
+            <td><code class="inline code">false</code></td>
+            <td>Master switch. The circuit-breaker is <strong>disabled by default</strong> — set to <code class="inline code">true</code> to enable it.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.chaosAutoHaltErrorThreshold</code></td>
+            <td><code class="inline code">MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD</code></td>
+            <td><code class="inline code">50</code></td>
+            <td>Number of destructive fault injections within the window that triggers a halt. Lower values make the guardrail more sensitive.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.chaosAutoHaltWindowMillis</code></td>
+            <td><code class="inline code">MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS</code></td>
+            <td><code class="inline code">60000</code> (60&nbsp;s)</td>
+            <td>Sliding window duration in milliseconds. Error-class faults older than this are discarded from the window.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>Example: to halt when 20 or more error-class faults fire within a 30-second window:</p>
+
+<pre class="code"><code class="code">docker run -e MOCKSERVER_CHAOS_AUTO_HALT_ENABLED=true \
+           -e MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD=20 \
+           -e MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS=30000 \
+           mockserver/mockserver:latest</code></pre>
+
+<h3>Observability</h3>
+
+<p>When <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>, the <code class="inline code">mock_server_chaos_auto_halt</code> counter increments each time the circuit-breaker fires. Monitor it with:</p>
+
+<pre class="code"><code class="code"># Alert when the auto-halt has fired at least once
+mock_server_chaos_auto_halt &gt; 0</code></pre>
+
+<p>The counter is also reset on server reset. The circuit-breaker state (current window size, halt count) is not exposed as a separate endpoint — use the Prometheus metric to observe it.</p>
 
 <a id="coming_soon" class="anchor" href="#coming_soon">&nbsp;</a>
 
