@@ -61,6 +61,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD = "mockserver.chaosAutoHaltErrorThreshold";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS = "mockserver.chaosAutoHaltWindowMillis";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
+    private static final String MOCKSERVER_BREAKPOINT_ENABLED = "mockserver.breakpointEnabled";
+    private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
+    private static final String MOCKSERVER_BREAKPOINT_MAX_HELD = "mockserver.breakpointMaxHeld";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
     private static final String MOCKSERVER_COMPACT_LOG_FORMAT = "mockserver.compactLogFormat";
 
@@ -604,6 +607,51 @@ public class ConfigurationProperties {
      */
     public static void mcpEnabled(boolean enable) {
         setProperty(MOCKSERVER_MCP_ENABLED, "" + enable);
+    }
+
+    public static boolean breakpointEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_ENABLED, "MOCKSERVER_BREAKPOINT_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable interactive request breakpoints for proxied/forwarded requests. When enabled,
+     * forwarded requests are paused (held) and can be inspected, modified, or aborted via
+     * the control-plane REST API before being sent to the upstream. Default is false (off).
+     *
+     * @param enable enable breakpoints
+     */
+    public static void breakpointEnabled(boolean enable) {
+        setProperty(MOCKSERVER_BREAKPOINT_ENABLED, "" + enable);
+    }
+
+    public static long breakpointTimeoutMillis() {
+        return readLongProperty(MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS, "MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS", 30_000L);
+    }
+
+    /**
+     * Maximum time in milliseconds a request may be held at a breakpoint before it is
+     * automatically continued (forwarded with the original request). Prevents forgotten
+     * breakpoints from hanging indefinitely. Default is 30000 (30 seconds).
+     *
+     * @param millis timeout in milliseconds
+     */
+    public static void breakpointTimeoutMillis(long millis) {
+        setProperty(MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS, "" + millis);
+    }
+
+    public static int breakpointMaxHeld() {
+        return readIntegerProperty(MOCKSERVER_BREAKPOINT_MAX_HELD, "MOCKSERVER_BREAKPOINT_MAX_HELD", 50);
+    }
+
+    /**
+     * Maximum number of requests that can be simultaneously held at breakpoints. When
+     * this cap is reached, new breakpoint intercepts are skipped and requests are forwarded
+     * normally. This is a DoS prevention rail. Default is 50.
+     *
+     * @param maxHeld maximum concurrent held requests
+     */
+    public static void breakpointMaxHeld(int maxHeld) {
+        setProperty(MOCKSERVER_BREAKPOINT_MAX_HELD, "" + maxHeld);
     }
 
     public static boolean wasmEnabled() {

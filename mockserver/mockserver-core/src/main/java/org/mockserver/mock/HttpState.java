@@ -408,6 +408,7 @@ public class HttpState {
         CassetteRegistry.getInstance().reset();
         org.mockserver.mock.dns.DnsIntentRegistry.getInstance().clear();
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
+        org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().reset();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -1719,6 +1720,34 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/continue", "/breakpoint/continue")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointContinue(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/modify", "/breakpoint/modify")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointModify(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/abort", "/breakpoint/abort")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointAbort(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint", "/breakpoint")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointList()), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/debugMismatch", "/debugMismatch")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2067,6 +2096,12 @@ public class HttpState {
             if (request.matches("GET", PATH_PREFIX + "/cassettes", "/cassettes")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesGet()), true);
+                }
+                return true;
+            }
+            if (request.matches("GET", PATH_PREFIX + "/breakpoint", "/breakpoint")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointList()), true);
                 }
                 return true;
             }
@@ -3871,6 +3906,135 @@ public class HttpState {
             String message = String.valueOf(e.getMessage());
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to verify async messages: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    // --- breakpoint control endpoints ---
+
+    private HttpResponse handleBreakpointList() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.breakpoint.BreakpointRegistry registry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
+            com.fasterxml.jackson.databind.node.ArrayNode exchanges = objectMapper.createArrayNode();
+            for (java.util.Map.Entry<String, org.mockserver.mock.breakpoint.PausedExchange> entry : registry.entries().entrySet()) {
+                org.mockserver.mock.breakpoint.PausedExchange paused = entry.getValue();
+                com.fasterxml.jackson.databind.node.ObjectNode node = objectMapper.createObjectNode();
+                node.put("id", paused.getCorrelationId());
+                node.put("ageMillis", paused.ageMillis());
+                if (paused.getMatchedExpectationId() != null) {
+                    node.put("expectationId", paused.getMatchedExpectationId());
+                }
+                HttpRequest req = paused.getCapturedRequest();
+                if (req != null) {
+                    com.fasterxml.jackson.databind.node.ObjectNode requestSummary = objectMapper.createObjectNode();
+                    if (req.getMethod() != null) {
+                        requestSummary.put("method", req.getMethod().getValue());
+                    }
+                    if (req.getPath() != null) {
+                        requestSummary.put("path", req.getPath().getValue());
+                    }
+                    node.set("request", requestSummary);
+                }
+                exchanges.add(node);
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.set("pausedExchanges", exchanges);
+            result.put("count", registry.size());
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleBreakpointContinue(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with an 'id' field\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String id = node.path("id").asText(null);
+            if (isBlank(id)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().resolveContinue(id);
+            if (!resolved) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody("{\"error\":\"no paused exchange found with id: " + id.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody("{\"status\":\"continued\",\"id\":\"" + id + "\"}", MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleBreakpointModify(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with 'id' and 'httpRequest' fields\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String id = node.path("id").asText(null);
+            if (isBlank(id)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            if (!node.hasNonNull("httpRequest")) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'httpRequest' field is required for modify\"}", MediaType.JSON_UTF_8);
+            }
+            HttpRequest modifiedRequest = getHttpRequestSerializer().deserialize(objectMapper.writeValueAsString(node.get("httpRequest")));
+            boolean resolved = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().resolveModify(id, modifiedRequest);
+            if (!resolved) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody("{\"error\":\"no paused exchange found with id: " + id.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody("{\"status\":\"modified\",\"id\":\"" + id + "\"}", MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleBreakpointAbort(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with an 'id' field\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String id = node.path("id").asText(null);
+            if (isBlank(id)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+            HttpResponse abortResponse = null;
+            if (node.hasNonNull("httpResponse")) {
+                abortResponse = getHttpResponseSerializer().deserialize(objectMapper.writeValueAsString(node.get("httpResponse")));
+            }
+            boolean resolved = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().resolveAbort(id, abortResponse);
+            if (!resolved) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody("{\"error\":\"no paused exchange found with id: " + id.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody("{\"status\":\"aborted\",\"id\":\"" + id + "\"}", MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
         }
     }
 }

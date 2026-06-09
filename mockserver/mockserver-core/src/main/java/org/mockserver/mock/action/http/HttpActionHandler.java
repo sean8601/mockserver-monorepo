@@ -724,7 +724,56 @@ public class HttpActionHandler {
                             }
                         }
 
-                        final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, remoteAddress, potentiallyHttpProxy ? 1000 : configuration.socketConnectionTimeoutInMillis()), null, remoteAddress);
+                        // breakpoint intercept: pause the request if breakpoints are enabled (async mode only)
+                        HttpRequest requestToForward = clonedRequest;
+                        if (!synchronous && Boolean.TRUE.equals(configuration.breakpointEnabled())) {
+                            org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
+                            org.mockserver.mock.breakpoint.PausedExchange pausedExchange = breakpointRegistry.pause(
+                                request.getLogCorrelationId(), request, null, configuration
+                            );
+                            if (pausedExchange != null) {
+                                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setLogLevel(Level.INFO)
+                                            .setCorrelationId(request.getLogCorrelationId())
+                                            .setHttpRequest(request)
+                                            .setMessageFormat("request paused at breakpoint, awaiting resolution for:{}")
+                                            .setArguments(request)
+                                    );
+                                }
+                                // block on the decision future (safe: we are on a scheduler worker thread, not the event loop)
+                                org.mockserver.mock.breakpoint.BreakpointDecision decision;
+                                try {
+                                    decision = pausedExchange.getDecisionFuture().get(
+                                        configuration.breakpointTimeoutMillis() + 1000, java.util.concurrent.TimeUnit.MILLISECONDS
+                                    );
+                                } catch (Exception e) {
+                                    decision = org.mockserver.mock.breakpoint.BreakpointDecision.continueOriginal();
+                                }
+                                switch (decision.getAction()) {
+                                    case ABORT:
+                                        HttpResponse abortResponse = decision.getAbortResponse();
+                                        if (abortResponse == null) {
+                                            abortResponse = response().withStatusCode(503).withReasonPhrase("Breakpoint Aborted");
+                                        }
+                                        responseWriter.writeResponse(request, abortResponse, false);
+                                        return;
+                                    case MODIFY:
+                                        HttpRequest modified = decision.getModifiedRequest();
+                                        requestToForward = hopByHopHeaderFilter.onRequest(modified)
+                                            .withHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue());
+                                        adjustHostHeaderForUnmatchedRequest(requestToForward, remoteAddress);
+                                        break;
+                                    case CONTINUE:
+                                    default:
+                                        // use original clonedRequest
+                                        break;
+                                }
+                            }
+                        }
+
+                        final HttpForwardActionResult responseFuture = new HttpForwardActionResult(requestToForward, httpClient.sendRequest(requestToForward, remoteAddress, potentiallyHttpProxy ? 1000 : configuration.socketConnectionTimeoutInMillis()), null, remoteAddress);
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
                         if (response == null) {
                             response = badGatewayResponse();

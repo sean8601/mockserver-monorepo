@@ -46,6 +46,9 @@ public class Configuration {
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
     private Boolean mcpEnabled;
+    private Boolean breakpointEnabled;
+    private Long breakpointTimeoutMillis;
+    private Integer breakpointMaxHeld;
     private Boolean wasmEnabled;
     private Integer wasmMaxMemoryPages;
     private String grpcDescriptorDirectory;
@@ -530,6 +533,54 @@ public class Configuration {
 
     public Configuration mcpEnabled(Boolean mcpEnabled) {
         this.mcpEnabled = mcpEnabled;
+        return this;
+    }
+
+    public Boolean breakpointEnabled() {
+        if (breakpointEnabled == null) {
+            return ConfigurationProperties.breakpointEnabled();
+        }
+        return breakpointEnabled;
+    }
+
+    /**
+     * Enable interactive request breakpoints for proxied/forwarded requests.
+     * Default is false (off).
+     */
+    public Configuration breakpointEnabled(Boolean breakpointEnabled) {
+        this.breakpointEnabled = breakpointEnabled;
+        return this;
+    }
+
+    public Long breakpointTimeoutMillis() {
+        if (breakpointTimeoutMillis == null) {
+            return ConfigurationProperties.breakpointTimeoutMillis();
+        }
+        return breakpointTimeoutMillis;
+    }
+
+    /**
+     * Maximum time in milliseconds a request may be held at a breakpoint before auto-continue.
+     * Default is 30000 (30 seconds).
+     */
+    public Configuration breakpointTimeoutMillis(Long breakpointTimeoutMillis) {
+        this.breakpointTimeoutMillis = breakpointTimeoutMillis;
+        return this;
+    }
+
+    public Integer breakpointMaxHeld() {
+        if (breakpointMaxHeld == null) {
+            return ConfigurationProperties.breakpointMaxHeld();
+        }
+        return breakpointMaxHeld;
+    }
+
+    /**
+     * Maximum number of requests that can be simultaneously held at breakpoints (DoS rail).
+     * Default is 50.
+     */
+    public Configuration breakpointMaxHeld(Integer breakpointMaxHeld) {
+        this.breakpointMaxHeld = breakpointMaxHeld;
         return this;
     }
 

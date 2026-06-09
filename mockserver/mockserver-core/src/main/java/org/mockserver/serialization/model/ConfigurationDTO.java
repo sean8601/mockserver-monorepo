@@ -24,6 +24,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
     private Boolean mcpEnabled;
+    private Boolean breakpointEnabled;
+    private Long breakpointTimeoutMillis;
+    private Integer breakpointMaxHeld;
     private Map<String, String> logLevelOverrides;
     private Boolean compactLogFormat;
 
@@ -150,6 +153,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.chaosAutoHaltErrorThreshold = configuration.chaosAutoHaltErrorThreshold();
             this.chaosAutoHaltWindowMillis = configuration.chaosAutoHaltWindowMillis();
             this.mcpEnabled = configuration.mcpEnabled();
+            this.breakpointEnabled = configuration.breakpointEnabled();
+            this.breakpointTimeoutMillis = configuration.breakpointTimeoutMillis();
+            this.breakpointMaxHeld = configuration.breakpointMaxHeld();
             Map<String, String> overrides = configuration.logLevelOverrides();
             this.logLevelOverrides = overrides != null && !overrides.isEmpty() ? overrides : null;
             this.compactLogFormat = configuration.compactLogFormat();
@@ -326,6 +332,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.chaosAutoHaltErrorThreshold(chaosAutoHaltErrorThreshold);
         configuration.chaosAutoHaltWindowMillis(chaosAutoHaltWindowMillis);
         configuration.mcpEnabled(mcpEnabled);
+        configuration.breakpointEnabled(breakpointEnabled);
+        configuration.breakpointTimeoutMillis(breakpointTimeoutMillis);
+        configuration.breakpointMaxHeld(breakpointMaxHeld);
         configuration.logLevelOverrides(logLevelOverrides);
         configuration.compactLogFormat(compactLogFormat);
 
@@ -482,6 +491,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (mcpEnabled != null) {
             target.mcpEnabled(mcpEnabled);
+        }
+        if (breakpointEnabled != null) {
+            target.breakpointEnabled(breakpointEnabled);
+        }
+        if (breakpointTimeoutMillis != null) {
+            target.breakpointTimeoutMillis(breakpointTimeoutMillis);
+        }
+        if (breakpointMaxHeld != null) {
+            target.breakpointMaxHeld(breakpointMaxHeld);
         }
         if (logLevelOverrides != null) {
             target.logLevelOverrides(logLevelOverrides);
@@ -856,6 +874,33 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setMcpEnabled(Boolean mcpEnabled) {
         this.mcpEnabled = mcpEnabled;
+        return this;
+    }
+
+    public Boolean getBreakpointEnabled() {
+        return breakpointEnabled;
+    }
+
+    public ConfigurationDTO setBreakpointEnabled(Boolean breakpointEnabled) {
+        this.breakpointEnabled = breakpointEnabled;
+        return this;
+    }
+
+    public Long getBreakpointTimeoutMillis() {
+        return breakpointTimeoutMillis;
+    }
+
+    public ConfigurationDTO setBreakpointTimeoutMillis(Long breakpointTimeoutMillis) {
+        this.breakpointTimeoutMillis = breakpointTimeoutMillis;
+        return this;
+    }
+
+    public Integer getBreakpointMaxHeld() {
+        return breakpointMaxHeld;
+    }
+
+    public ConfigurationDTO setBreakpointMaxHeld(Integer breakpointMaxHeld) {
+        this.breakpointMaxHeld = breakpointMaxHeld;
         return this;
     }
 
