@@ -528,6 +528,24 @@
                         <exclude>**/MockStreamBreakpointTest.java</exclude>
                         <!-- Mutates ServiceChaosRegistry + ChaosAutoHaltMonitor singletons, Metrics, ConfigurationProperties -->
                         <exclude>**/ChaosExperimentOrchestratorTest.java</exclude>
+                        <!-- Mutate global ConfigurationProperties / singleton registries / Metrics (detected by GlobalStateMutationGuardTest) -->
+                        <exclude>**/MaxLlmConversationBodySizeTest.java</exclude>
+                        <exclude>**/SlowRequestConfigurationTest.java</exclude>
+                        <exclude>**/HttpActionHandlerLlmCostBudgetTest.java</exclude>
+                        <exclude>**/GrpcChaosRegistryTest.java</exclude>
+                        <exclude>**/ValidationProxyTest.java</exclude>
+                        <exclude>**/HttpLlmResponseActionHandlerTest.java</exclude>
+                        <exclude>**/DnsIntentRegistryTest.java</exclude>
+                        <exclude>**/WasmRuntimeTest.java</exclude>
+                        <exclude>**/WasmRuntimeRealModuleTest.java</exclude>
+                        <exclude>**/XPathEvaluatorTest.java</exclude>
+                        <exclude>**/WasmBodyMatcherTest.java</exclude>
+                        <exclude>**/GraphQLMatcherTest.java</exclude>
+                        <exclude>**/JsonRpcMatcherTest.java</exclude>
+                        <exclude>**/LlmConversationMatcherTest.java</exclude>
+                        <exclude>**/JsonStringMatcherTest.java</exclude>
+                        <exclude>**/RegexStringMatcherTest.java</exclude>
+                        <exclude>**/InetAddressValidatorTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -581,6 +599,23 @@
                                 <include>**/InboundBreakpointTest.java</include>
                                 <include>**/MockStreamBreakpointTest.java</include>
                                 <include>**/ChaosExperimentOrchestratorTest.java</include>
+                                <include>**/MaxLlmConversationBodySizeTest.java</include>
+                                <include>**/SlowRequestConfigurationTest.java</include>
+                                <include>**/HttpActionHandlerLlmCostBudgetTest.java</include>
+                                <include>**/GrpcChaosRegistryTest.java</include>
+                                <include>**/ValidationProxyTest.java</include>
+                                <include>**/HttpLlmResponseActionHandlerTest.java</include>
+                                <include>**/DnsIntentRegistryTest.java</include>
+                                <include>**/WasmRuntimeTest.java</include>
+                                <include>**/WasmRuntimeRealModuleTest.java</include>
+                                <include>**/XPathEvaluatorTest.java</include>
+                                <include>**/WasmBodyMatcherTest.java</include>
+                                <include>**/GraphQLMatcherTest.java</include>
+                                <include>**/JsonRpcMatcherTest.java</include>
+                                <include>**/LlmConversationMatcherTest.java</include>
+                                <include>**/JsonStringMatcherTest.java</include>
+                                <include>**/RegexStringMatcherTest.java</include>
+                                <include>**/InetAddressValidatorTest.java</include>
                             </includes>
                         </configuration>
                     </execution>
