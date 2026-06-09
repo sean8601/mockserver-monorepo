@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Paper from '@mui/material/Paper';
@@ -180,7 +180,10 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
   const scopeMeta = SCOPES.find((s) => s.value === scope)!;
   const availableFormats = FORMATS.filter((f) => f.scopes.includes(scope));
   const formatMeta = FORMATS.find((f) => f.value === format)!;
-  const detail = DETAILS[scope][format] ?? { description: '', filename: `mockserver-${scope}` };
+  const detail = useMemo(
+    () => DETAILS[scope][format] ?? { description: '', filename: `mockserver-${scope}` },
+    [scope, format],
+  );
 
   // The export caveat depends on the scope: exporting the expectation graph to a
   // request-collection format is lossy (dynamic behaviour becomes placeholders),

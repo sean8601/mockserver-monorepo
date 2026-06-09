@@ -187,6 +187,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       proxiedRequests: [],
       selectedTrafficKey: null,
       error: null,
+      notification: null,
       view: 'get-started' as ViewMode,
 
       debugMismatchOpen: false,

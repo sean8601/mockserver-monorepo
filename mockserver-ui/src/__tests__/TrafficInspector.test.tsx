@@ -579,4 +579,57 @@ describe('TrafficInspector — Replay button', () => {
     // The response should be displayed
     expect(await screen.findByText('Upstream Response')).toBeInTheDocument();
   });
+
+  it('shows error alert and clears loading spinner when replay returns a server error', async () => {
+    const user = userEvent.setup();
+
+    useDashboardStore.setState({
+      proxiedRequests: [
+        {
+          key: 'req-replay-err',
+          value: {
+            httpRequest: {
+              method: 'GET',
+              path: '/api/failing',
+              headers: [{ name: 'host', values: ['example.com'] }],
+            },
+            httpResponse: { statusCode: 200 },
+          },
+        },
+      ],
+    });
+
+    // Stub fetch to return a 503 error response
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: async () => 'Service Unavailable',
+    } as Response);
+
+    renderTrafficInspector();
+
+    // Select the request
+    const row = screen.getByText(/\/api\/failing/);
+    await user.click(row);
+
+    // Open the replay dialog
+    const replayBtn = screen.getByRole('button', { name: /Replay/i });
+    await user.click(replayBtn);
+
+    const dialog = screen.getByRole('dialog');
+
+    // Click the Replay button inside the dialog
+    const dialogReplayBtn = within(dialog).getByRole('button', { name: /Replay/i });
+    await user.click(dialogReplayBtn);
+
+    // An error Alert (severity="error") should appear with the status and message
+    const errorAlert = await within(dialog).findByRole('alert');
+    expect(errorAlert).toBeInTheDocument();
+    expect(errorAlert).toHaveTextContent('503');
+    expect(errorAlert).toHaveTextContent('Service Unavailable');
+
+    // The loading spinner should be gone (dialog replay button should be re-enabled)
+    expect(within(dialog).getByRole('button', { name: /Replay/i })).toBeEnabled();
+    expect(within(dialog).queryByRole('progressbar')).not.toBeInTheDocument();
+  });
 });

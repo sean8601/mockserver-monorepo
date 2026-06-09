@@ -127,7 +127,7 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
             <Button
               size="small"
               variant="outlined"
-              href="https://github.com/mock-server/mockserver/tree/master/examples/docker-compose"
+              href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose"
               target="_blank"
               rel="noopener"
             >

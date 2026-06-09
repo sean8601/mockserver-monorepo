@@ -36,6 +36,8 @@ export type MatcherPrecision = (typeof MATCHER_PRECISIONS)[number];
 // Provider enum (matches Java org.mockserver.model.Provider)
 // ---------------------------------------------------------------------------
 
+// BEDROCK and AZURE_OPENAI are user-selectable-only — kindToProvider() never
+// auto-detects them because no parser kind maps to those providers.
 export const PROVIDERS = [
   'ANTHROPIC',
   'OPENAI',
