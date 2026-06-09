@@ -258,6 +258,7 @@ function NumberField({
   }
 
   const commit = useCallback(() => {
+    if (draft.trim() === '') return;          // empty → don't PUT (Number('') === 0)
     const parsed = Number(draft);
     if (!Number.isNaN(parsed)) {
       void onApply({ [configKey]: parsed });

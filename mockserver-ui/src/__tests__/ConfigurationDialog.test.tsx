@@ -182,6 +182,32 @@ describe('ConfigurationDialog', () => {
     expect(bodies).toContainEqual({ chaosAutoHaltErrorThreshold: 100 });
   });
 
+  it('clearing a number field does NOT issue a PUT with 0', async () => {
+    stubFetchWithConfig(fullConfig());
+    const user = userEvent.setup();
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Error threshold')).toBeInTheDocument();
+    });
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    // Record the call count after initial GET(s) so we only inspect new PUTs.
+    const callsBefore = fetchMock.mock.calls.length;
+
+    const input = screen.getByLabelText('Error threshold') as HTMLInputElement;
+    // Select all and delete, then press Enter to commit the empty value.
+    await user.tripleClick(input);
+    await user.keyboard('{Backspace}{Enter}');
+
+    const newCalls = fetchMock.mock.calls.slice(callsBefore);
+    const putCalls = newCalls.filter(
+      (c: unknown[]) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+    );
+    // No PUT should have been issued — an empty number field must not send 0.
+    expect(putCalls).toHaveLength(0);
+  });
+
   it('renders group headers for descriptor groups', async () => {
     stubFetchWithConfig(fullConfig());
     renderDialog();
