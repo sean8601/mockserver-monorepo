@@ -29,6 +29,7 @@
 mod model;
 mod client;
 mod error;
+pub mod launcher;
 
 pub use client::{ClientBuilder, MockServerClient, ForwardChainExpectation};
 pub use error::{Error, Result};
