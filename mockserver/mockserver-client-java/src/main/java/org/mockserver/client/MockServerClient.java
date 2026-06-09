@@ -2271,6 +2271,209 @@ public class MockServerClient implements Stoppable {
     }
 
     // -------------------------------------------------------------------
+    // Stream Frame Breakpoint Control
+    // -------------------------------------------------------------------
+
+    /**
+     * List all currently held stream frames (forwarded-stream breakpoints).
+     * Returns a JSON string with the structure:
+     * <pre>
+     * {
+     *   "streams": [
+     *     {
+     *       "streamId": "...",
+     *       "frames": [
+     *         { "frameId": "...", "sequenceNumber": 0, "ageMillis": 1234, "bodyLength": 42, "bodyPreview": "..." }
+     *       ]
+     *     }
+     *   ],
+     *   "totalHeldFrames": 1
+     * }
+     * </pre>
+     *
+     * @return JSON string describing all held stream frames
+     */
+    public String listStreamFrameBreakpoints() {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("breakpoint/streams")),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Continue a held stream frame, allowing the original frame bytes to proceed
+     * unmodified to the downstream client.
+     *
+     * @param id the frame id of the held stream frame to continue
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank
+     */
+    public MockServerClient continueStreamFrame(String id) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("continueStreamFrame requires a non-blank id");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            body.put("id", id);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/stream/continue"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception continuing stream frame with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Modify a held stream frame by replacing its body content, then allow it
+     * to proceed to the downstream client with the replacement body.
+     *
+     * @param id   the frame id of the held stream frame to modify
+     * @param body the replacement body content for the frame
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank or body is null
+     */
+    public MockServerClient modifyStreamFrame(String id, String body) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("modifyStreamFrame requires a non-blank id");
+        }
+        if (body == null) {
+            throw new IllegalArgumentException("modifyStreamFrame requires a non-null body");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("id", id);
+            payload.put("body", body);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/stream/modify"))
+                    .withBody(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception modifying stream frame with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Drop a held stream frame, preventing it from reaching the downstream client.
+     * The frame bytes are silently discarded.
+     *
+     * @param id the frame id of the held stream frame to drop
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank
+     */
+    public MockServerClient dropStreamFrame(String id) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("dropStreamFrame requires a non-blank id");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            body.put("id", id);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/stream/drop"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception dropping stream frame with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Inject additional content into a held stream frame, then allow both the
+     * injected content and the original frame to proceed to the downstream client.
+     *
+     * @param id   the frame id of the held stream frame to inject into
+     * @param body the content to inject ahead of the original frame
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank or body is null
+     */
+    public MockServerClient injectStreamFrame(String id, String body) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("injectStreamFrame requires a non-blank id");
+        }
+        if (body == null) {
+            throw new IllegalArgumentException("injectStreamFrame requires a non-null body");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("id", id);
+            payload.put("body", body);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/stream/inject"))
+                    .withBody(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception injecting stream frame with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Close the stream associated with a held frame, terminating the forwarded
+     * connection (SSE/chunked) to the downstream client.
+     *
+     * @param id the frame id of the held stream frame whose stream to close
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank
+     */
+    public MockServerClient closeStreamFrame(String id) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("closeStreamFrame requires a non-blank id");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            body.put("id", id);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/stream/close"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception closing stream frame with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    // -------------------------------------------------------------------
     // Replay
     // -------------------------------------------------------------------
 

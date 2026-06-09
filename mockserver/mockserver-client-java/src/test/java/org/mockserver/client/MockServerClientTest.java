@@ -1807,6 +1807,166 @@ public class MockServerClientTest {
     }
 
     // -------------------------------------------------------------------
+    // Stream Frame Breakpoint Control
+    // -------------------------------------------------------------------
+
+    @Test
+    public void shouldSendListStreamFrameBreakpointsRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"streams\":[],\"totalHeldFrames\":0}"));
+
+        // when
+        String result = mockServerClient.listStreamFrameBreakpoints();
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("GET")
+                .withPath("/mockserver/breakpoint/streams"),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+        assertThat(result, containsString("streams"));
+    }
+
+    @Test
+    public void shouldSendContinueStreamFrameRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"status\":\"continued\",\"frameId\":\"frame-1\"}"));
+
+        // when
+        mockServerClient.continueStreamFrame("frame-1");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sentRequest = httpRequestArgumentCaptor.getValue();
+        assertThat(sentRequest.getMethod().getValue(), is("PUT"));
+        assertThat(sentRequest.getPath().getValue(), is("/mockserver/breakpoint/stream/continue"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"id\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("frame-1"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForBlankContinueStreamFrameId() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.continueStreamFrame(""));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.continueStreamFrame(null));
+    }
+
+    @Test
+    public void shouldSendModifyStreamFrameRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"status\":\"modified\",\"frameId\":\"frame-1\"}"));
+
+        // when
+        mockServerClient.modifyStreamFrame("frame-1", "replacement body");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sentRequest = httpRequestArgumentCaptor.getValue();
+        assertThat(sentRequest.getMethod().getValue(), is("PUT"));
+        assertThat(sentRequest.getPath().getValue(), is("/mockserver/breakpoint/stream/modify"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"id\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("frame-1"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"body\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("replacement body"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForBlankModifyStreamFrameId() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.modifyStreamFrame("", "body"));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.modifyStreamFrame(null, "body"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForNullModifyStreamFrameBody() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.modifyStreamFrame("frame-1", null));
+    }
+
+    @Test
+    public void shouldSendDropStreamFrameRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"status\":\"dropped\",\"frameId\":\"frame-1\"}"));
+
+        // when
+        mockServerClient.dropStreamFrame("frame-1");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sentRequest = httpRequestArgumentCaptor.getValue();
+        assertThat(sentRequest.getMethod().getValue(), is("PUT"));
+        assertThat(sentRequest.getPath().getValue(), is("/mockserver/breakpoint/stream/drop"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"id\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("frame-1"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForBlankDropStreamFrameId() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.dropStreamFrame(""));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.dropStreamFrame(null));
+    }
+
+    @Test
+    public void shouldSendInjectStreamFrameRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"status\":\"injected\",\"frameId\":\"frame-1\"}"));
+
+        // when
+        mockServerClient.injectStreamFrame("frame-1", "injected content");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sentRequest = httpRequestArgumentCaptor.getValue();
+        assertThat(sentRequest.getMethod().getValue(), is("PUT"));
+        assertThat(sentRequest.getPath().getValue(), is("/mockserver/breakpoint/stream/inject"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"id\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("frame-1"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"body\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("injected content"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForBlankInjectStreamFrameId() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.injectStreamFrame("", "body"));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.injectStreamFrame(null, "body"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForNullInjectStreamFrameBody() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.injectStreamFrame("frame-1", null));
+    }
+
+    @Test
+    public void shouldSendCloseStreamFrameRequest() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("{\"status\":\"closed\",\"frameId\":\"frame-1\"}"));
+
+        // when
+        mockServerClient.closeStreamFrame("frame-1");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sentRequest = httpRequestArgumentCaptor.getValue();
+        assertThat(sentRequest.getMethod().getValue(), is("PUT"));
+        assertThat(sentRequest.getPath().getValue(), is("/mockserver/breakpoint/stream/close"));
+        assertThat(sentRequest.getBodyAsString(), containsString("\"id\""));
+        assertThat(sentRequest.getBodyAsString(), containsString("frame-1"));
+    }
+
+    @Test
+    public void shouldThrowIllegalArgumentForBlankCloseStreamFrameId() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.closeStreamFrame(""));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.closeStreamFrame(null));
+    }
+
+    // -------------------------------------------------------------------
     // Replay
     // -------------------------------------------------------------------
 
