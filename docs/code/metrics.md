@@ -142,7 +142,7 @@ Both chaos metrics are also mirrored over OTLP by `OtelMetricsExporter` (`regist
 
 ### Chaos Auto-Halt Counter
 
-`mock_server_chaos_auto_halt` is a Prometheus `Counter` that increments each time the chaos auto-halt circuit-breaker triggers. The circuit-breaker is a safety mechanism that automatically disables all active service-scoped chaos profiles when the number of **error-class** chaos faults within a sliding window exceeds a configured threshold. This prevents chaos experiments from driving cascading outages.
+`mock_server_chaos_auto_halt` is a Prometheus `Counter` that increments each time the chaos auto-halt circuit-breaker triggers. The circuit-breaker is a safety mechanism that automatically disables all active service-scoped chaos profiles when the number of **destructive** chaos faults within a sliding window exceeds a configured threshold. This prevents chaos experiments from driving cascading outages.
 
 Only **destructive** fault types contribute to the window: `"error"` (synthetic 5xx), `"drop"` (connection kill), and `"quota"` (429/503). Benign fault types (`"latency"`, `"slow"`, `"truncate"`, `"malformed"`, `"graphql"`) are excluded -- a latency-only experiment will never auto-halt.
 

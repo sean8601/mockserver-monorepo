@@ -228,6 +228,8 @@ The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumb
 ### Inbound frame breakpoints
 - `BidirectionalWebSocketFrameHandler.channelRead0` — hold point for WebSocket bidi inbound frames
 - `GraphQLSubscriptionHandler.channelRead0` — hold point for GraphQL subscription inbound frames
+- `GrpcBidiStreamHandler.handleData` — hold point for gRPC bidi inbound DATA frames
+- `GrpcBidiRouterHandler` — routes gRPC bidi streams to `GrpcBidiStreamHandler`
 - Uses the same `StreamFrameBreakpointRegistry` with `direction=INBOUND`
 
 ## Behavioural notes
@@ -265,9 +267,3 @@ The Breakpoints panel in the dashboard is phase-aware:
 - `modifyBreakpoint(String id, HttpRequest modifiedRequest)` — request-phase modify
 - `modifyBreakpointResponse(String id, HttpResponse modifiedResponse)` — response-phase modify
 
-## Future work
-
-- HTTP/3 gRPC server-streaming breakpoints (`Http3GrpcResponseWriter`)
-- gRPC-bidi inbound frame breakpoints (requires careful HTTP/2 flow-control window management)
-- Dashboard UI for stream frame breakpoints (frame list, per-frame actions, direction badge)
-- Dashboard UI for inbound frame breakpoints

@@ -398,7 +398,7 @@ The panel has two tabs:
 | Modify | `PUT /mockserver/breakpoint/modify` (REQUEST phase) or `PUT /mockserver/breakpoint/modify` with response body (RESPONSE phase) | Opens a JSON editor prefilled with the request or response; submits the modified JSON |
 | Abort | `PUT /mockserver/breakpoint/abort` | Drop the exchange without forwarding |
 
-**Streams tab** — paused frames from forwarded streaming responses (SSE, chunked transfer), grouped by `streamId`. Per-frame actions: continue, modify body, drop (discard), inject extra frame after this one, close stream. The modify and inject actions each open a text editor dialog.
+**Streams tab** — paused frames from forwarded streaming responses (SSE, chunked transfer, gRPC server-streaming, gRPC bidi inbound), grouped by `streamId`. Each row shows a direction badge (`Inbound` / `Outbound`) alongside the sequence number, method, path, body preview, size, and age. Per-frame actions: continue, modify body, drop (discard), inject extra frame after this one, close stream. The modify and inject actions each open a text editor dialog.
 
 See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture (`BreakpointRegistry`, `PausedExchange`, phases).
 

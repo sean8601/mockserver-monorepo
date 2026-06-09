@@ -118,9 +118,9 @@ mockserver-monorepo/
 ├── terraform/                      # Terraform IaC (Buildkite agents + pipelines)
 ├── scripts/                        # Build, deploy, and utility scripts
 └── docs/                           # This documentation (you are here)
-    ├── code/                       #   Code architecture (21 docs)
+    ├── code/                       #   Code architecture (24 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm, Service Mesh (6 docs)
-    ├── operations/                 #   Build, release, deps, security, website, perf (13 docs)
+    ├── operations/                 #   Build, release, deps, security, website, perf (15 docs)
     ├── plans/                      #   Active plans and RFCs (1 doc)
     └── testing.md                  #   Test frameworks, architecture, config, coverage, CI
 ```
