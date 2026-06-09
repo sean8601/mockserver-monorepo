@@ -297,9 +297,11 @@ The component is a pure renderer — it receives a parsed object from `llmTraffi
 
 `SessionInspector.tsx` groups all captured requests into swim-lanes by `<scenarioName> / <isolation-value>`. Each swim-lane displays chips for the captured turns, where each chip shows the turn index, method, path, and status code. Clicking a chip opens a per-request detail panel directly below the swim-lane, showing the Conversation view for the selected turn.
 
-A separate **Unscoped requests** strip at the bottom holds requests that did not match any isolated scenario.
+Requests that do not match any isolated scenario are grouped by upstream host (from the `Host` header) into **unscoped** sessions. This proxy-aware fallback means proxied traffic to different LLM providers (e.g. `api.anthropic.com` vs `api.openai.com`) appears in separate swim-lanes even without any conversation-isolation expectations configured.
 
-The grouping logic lives in `src/lib/sessionGrouping.ts`. It uses `scenarioName` and `scenarioState` from the request data to identify which requests belong to which conversation session.
+The correlated call graph (via `AgentRunGraph.tsx` and the `explain_agent_run` MCP tool) is shown for all sessions where a provider can be detected, including unscoped/proxy sessions.
+
+The grouping logic lives in `src/lib/sessionGrouping.ts`. It uses `scenarioName` and `scenarioState` from the request data to identify which requests belong to which conversation session, with a host-based fallback for unscoped traffic.
 
 ## Mocks (composer) View
 

@@ -12,6 +12,7 @@ import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.llm.IsolationSource;
 import org.mockserver.llm.ProviderCodecRegistry;
+import org.mockserver.llm.ProviderDetector;
 import org.mockserver.llm.analysis.AgentRunAnalyzer;
 import org.mockserver.llm.client.LlmBackend;
 import org.mockserver.llm.client.LlmBackendResolver;
@@ -3149,8 +3150,9 @@ public class McpToolRegistry {
         schema.put("type", "object");
         ObjectNode properties = schema.putObject("properties");
         ObjectNode providerProp = properties.putObject("provider");
-        providerProp.put("type", "string").put("description", "LLM provider whose recorded requests to inspect");
+        providerProp.put("type", "string").put("description", "LLM provider whose recorded requests to inspect. Use AUTO to detect the provider from the recorded request paths (useful for proxied traffic where the provider is implicit in the upstream URL).");
         ArrayNode providerEnum = providerProp.putArray("enum");
+        providerEnum.add("AUTO");
         for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
             providerEnum.add(name);
         }
@@ -3165,7 +3167,7 @@ public class McpToolRegistry {
 
         tools.put("verify_tool_call", new ToolDefinition(
             "verify_tool_call",
-            "Assert that an agent called a named tool (optionally with arguments matching a regex) a given number of times, by inspecting LLM requests recorded through MockServer.",
+            "Assert that an agent called a named tool (optionally with arguments matching a regex) a given number of times, by inspecting LLM requests recorded through MockServer. Works with both mock-backed and proxied/forwarded traffic.",
             schema,
             this::handleVerifyToolCall
         ));
@@ -3176,10 +3178,6 @@ public class McpToolRegistry {
             String providerStr = params.path("provider").asText(null);
             if (providerStr == null || providerStr.trim().isEmpty()) {
                 return errorResult("'provider' is required");
-            }
-            Provider provider = parseProviderParam(params);
-            if (provider == null) {
-                return unsupportedLlmProviderResult(providerStr);
             }
             String toolName = params.path("toolName").asText(null);
             if (toolName == null || toolName.trim().isEmpty()) {
@@ -3194,6 +3192,13 @@ public class McpToolRegistry {
             }
 
             List<HttpRequest> requests = retrieveRecordedHttpRequests(path);
+            Provider provider = resolveProviderOrAuto(params, requests);
+            if (provider == null) {
+                return "AUTO".equalsIgnoreCase(providerStr.trim())
+                    ? errorResult("could not auto-detect LLM provider from recorded request paths; specify the provider explicitly")
+                    : unsupportedLlmProviderResult(providerStr);
+            }
+
             AgentRunAnalyzer.ToolCallReport report;
             try {
                 report = new AgentRunAnalyzer().inspectToolCalls(requests, provider, toolName, argumentsRegex);
@@ -3204,6 +3209,7 @@ public class McpToolRegistry {
 
             ObjectNode resultNode = objectMapper.createObjectNode();
             resultNode.put("toolName", toolName);
+            resultNode.put("provider", provider.name());
             resultNode.put("count", report.getCount());
             resultNode.put("atLeast", atLeast);
             if (atMost != null) {
@@ -3522,8 +3528,9 @@ public class McpToolRegistry {
         schema.put("type", "object");
         ObjectNode properties = schema.putObject("properties");
         ObjectNode providerProp = properties.putObject("provider");
-        providerProp.put("type", "string").put("description", "LLM provider whose recorded requests to summarise");
+        providerProp.put("type", "string").put("description", "LLM provider whose recorded requests to summarise. Use AUTO to detect the provider from the recorded request paths (useful for proxied traffic where the provider is implicit in the upstream URL).");
         ArrayNode providerEnum = providerProp.putArray("enum");
+        providerEnum.add("AUTO");
         for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
             providerEnum.add(name);
         }
@@ -3533,7 +3540,7 @@ public class McpToolRegistry {
 
         tools.put("explain_agent_run", new ToolDefinition(
             "explain_agent_run",
-            "Summarise an agent run reconstructed from recorded LLM requests: message and assistant-turn counts, the ordered tool-call sequence, tool results, and the latest message role.",
+            "Summarise an agent run reconstructed from recorded LLM requests: message and assistant-turn counts, the ordered tool-call sequence, tool results, and the latest message role. Works with both mock-backed and proxied/forwarded traffic.",
             schema,
             this::handleExplainAgentRun
         ));
@@ -3545,15 +3552,19 @@ public class McpToolRegistry {
             if (providerStr == null || providerStr.trim().isEmpty()) {
                 return errorResult("'provider' is required");
             }
-            Provider provider = parseProviderParam(params);
-            if (provider == null) {
-                return unsupportedLlmProviderResult(providerStr);
-            }
             String path = emptyToNull(params.path("path").asText(null));
             List<HttpRequest> requests = retrieveRecordedHttpRequests(path);
+            Provider provider = resolveProviderOrAuto(params, requests);
+            if (provider == null) {
+                return "AUTO".equalsIgnoreCase(providerStr.trim())
+                    ? errorResult("could not auto-detect LLM provider from recorded request paths; specify the provider explicitly")
+                    : unsupportedLlmProviderResult(providerStr);
+            }
+
             Optional<AgentRunAnalyzer.RunSummary> summaryOpt = new AgentRunAnalyzer().summarise(requests, provider);
 
             ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("provider", provider.name());
             if (!summaryOpt.isPresent()) {
                 resultNode.put("message", "no decodable " + provider + " conversation found in recorded requests");
                 resultNode.put("messageCount", 0);
@@ -3833,6 +3844,19 @@ public class McpToolRegistry {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    /**
+     * Resolve the provider from the params, supporting {@code "AUTO"} as a
+     * special value that auto-detects the provider from the recorded requests'
+     * paths. Returns null if the provider cannot be resolved.
+     */
+    private Provider resolveProviderOrAuto(JsonNode params, List<HttpRequest> requests) {
+        String providerStr = params.path("provider").asText(null);
+        if (providerStr != null && "AUTO".equalsIgnoreCase(providerStr.trim())) {
+            return ProviderDetector.detectFromRequests(requests).orElse(null);
+        }
+        return parseProviderParam(params);
     }
 
     private static String emptyToNull(String value) {

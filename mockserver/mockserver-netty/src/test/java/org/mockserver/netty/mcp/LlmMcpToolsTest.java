@@ -556,6 +556,73 @@ public class LlmMcpToolsTest {
         assertThat(result.has("message"), is(true));
     }
 
+    // --- AUTO provider detection ---
+
+    @Test
+    public void shouldAutoDetectProviderForVerifyToolCall() throws InterruptedException {
+        logToolUseConversation();
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "AUTO");
+        params.put("toolName", "get_weather");
+
+        JsonNode result = toolRegistry.callTool("verify_tool_call", params);
+        assertThat(result.path("satisfied").asBoolean(), is(true));
+        assertThat(result.path("count").asInt(), is(1));
+        assertThat(result.path("provider").asText(), is("ANTHROPIC"));
+    }
+
+    @Test
+    public void shouldAutoDetectProviderForExplainAgentRun() throws InterruptedException {
+        logToolUseConversation();
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "AUTO");
+
+        JsonNode result = toolRegistry.callTool("explain_agent_run", params);
+        assertThat(result.path("messageCount").asInt(), is(3));
+        assertThat(result.path("provider").asText(), is("ANTHROPIC"));
+    }
+
+    @Test
+    public void shouldErrorWhenAutoDetectFailsWithNoRecordedRequests() throws InterruptedException {
+        // Log a non-LLM request so the event log is initialized, but no LLM
+        // request paths are present for auto-detection
+        httpState.log(new LogEntry()
+            .setType(RECEIVED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("GET").withPath("/api/health"))
+            .setMessageFormat("received request")
+        );
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "AUTO");
+        params.put("toolName", "get_weather");
+
+        JsonNode result = toolRegistry.callTool("verify_tool_call", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("auto-detect"));
+    }
+
+    @Test
+    public void shouldErrorWhenAutoDetectFailsForExplainAgentRun() throws InterruptedException {
+        // Log a non-LLM request so the event log is initialized, but no LLM
+        // request paths are present for auto-detection
+        httpState.log(new LogEntry()
+            .setType(RECEIVED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("GET").withPath("/api/health"))
+            .setMessageFormat("received request")
+        );
+        Thread.sleep(500);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("provider", "AUTO");
+
+        JsonNode result = toolRegistry.callTool("explain_agent_run", params);
+        assertThat(result.path("error").asBoolean(), is(true));
+        assertThat(result.path("message").asText(), containsString("auto-detect"));
+    }
+
     // --- chaos profiles ---
 
     @Test

@@ -178,10 +178,10 @@ describe('SessionInspector', () => {
     expect(screen.getByLabelText('Run B')).toBeInTheDocument();
   });
 
-  it('renders unscoped session for requests without isolation', () => {
+  it('renders unscoped session with upstream host for proxy traffic without isolation', () => {
     useDashboardStore.setState({
       proxiedRequests: [
-        makeAnthropicRequest('req-1'), // no agent id header
+        makeAnthropicRequest('req-1'), // no agent id header, but has host: api.anthropic.com
       ],
       activeExpectations: [
         makeIsolatedExpectation('__llm_conv_chat__iso=header:x-agent-id'),
@@ -190,6 +190,51 @@ describe('SessionInspector', () => {
 
     renderInspector();
 
+    // The host header provides the upstream host for unscoped proxy traffic
+    expect(screen.getByText('Unscoped requests (api.anthropic.com)')).toBeInTheDocument();
+  });
+
+  it('renders plain "Unscoped requests" when no host header is present', () => {
+    // Build a request with no host header so isolationKey falls back to <unscoped>
+    const noHostRequest: JsonListItem = {
+      key: 'req-no-host',
+      value: {
+        httpRequest: {
+          method: 'POST',
+          path: '/v1/messages',
+          headers: [], // no host header
+          body: {
+            type: 'JSON',
+            json: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              messages: [{ role: 'user', content: 'Hello' }],
+            }),
+          },
+        },
+        httpResponse: {
+          statusCode: 200,
+          body: {
+            type: 'JSON',
+            json: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              content: [{ type: 'text', text: 'Hi!' }],
+              usage: { input_tokens: 10, output_tokens: 5 },
+              stop_reason: 'end_turn',
+            }),
+          },
+        },
+      },
+    };
+
+    useDashboardStore.setState({
+      proxiedRequests: [noHostRequest],
+      activeExpectations: [],
+    });
+
+    renderInspector();
+
+    // With no host header, isolationKey is the <unscoped> sentinel,
+    // so the label should be plain "Unscoped requests" without a parenthetical.
     expect(screen.getByText('Unscoped requests')).toBeInTheDocument();
   });
 });

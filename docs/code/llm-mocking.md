@@ -172,8 +172,8 @@ Two MCP tools expose the LLM mocking feature to agents:
 |------|-------------|
 | `mock_llm_completion` | Creates a single LLM expectation from provider, path, text, tool calls, usage, and an optional `outputSchema` (response-path structured-output validation) |
 | `create_llm_conversation` | Creates a multi-turn conversation with scenario state chain, optional isolation, and an optional per-turn `match.normalization` object |
-| `verify_tool_call` | Asserts an agent called a named tool `atLeast`/`atMost` times (optional args regex), by decoding recorded LLM requests |
-| `explain_agent_run` | Summarises a recorded agent run: turn/tool-call sequence, tool results, latest role |
+| `verify_tool_call` | Asserts an agent called a named tool `atLeast`/`atMost` times (optional args regex), by decoding recorded LLM requests. Supports `provider=AUTO` to auto-detect from request paths |
+| `explain_agent_run` | Summarises a recorded agent run: turn/tool-call sequence, tool results, latest role. Supports `provider=AUTO` to auto-detect from request paths |
 | `verify_structured_output` | Validates the JSON output text of recorded LLM responses against a JSON Schema (decodes each response via the runtime-LLM client SPI, then `JsonSchemaValidator`); reports per-response conformance |
 | `verify_cost_budget` | Sums input/output tokens from recorded responses' usage, prices them via `org.mockserver.llm.cost.LlmPricing`, and asserts the total USD cost is within `maxCostUsd` — a deterministic CI cost gate. Unpriceable models are reported and excluded |
 
@@ -211,6 +211,14 @@ Truncation, malformed-SSE, and the stateful quota are fully deterministic; the p
 - `buildCallGraph(requests, provider)` → a `CallGraph` of nodes (one per message, one per assistant tool call) and directed edges: `NEXT` (message sequence), `INVOKES` (assistant turn → the tool calls it made), `RESULT` (tool call → the tool message that returned its result, correlated by tool-call id). Powers the dashboard call-graph view.
 
 No LLM is called and no network is used — it reads the structure the codecs already produce, so assertions are reproducible. The MCP tools are thin wrappers that retrieve recorded requests (`/mockserver/retrieve?type=REQUESTS`) and format the analyzer's output; `explain_agent_run` includes the `callGraph` (nodes + edges). The dashboard **Sessions** view (`SessionInspector` → `AgentRunGraph.tsx`, with the pure transform `mockserver-ui/src/lib/callGraph.ts`) loads the graph per session via `explain_agent_run` and renders it as a step list (role + invoked tool calls + result indicator) plus a copyable Mermaid `flowchart`.
+
+### Proxied/forwarded traffic support
+
+Agent-run analysis works identically for **proxied/forwarded** traffic. Every incoming request — whether it matches a mock expectation or is forwarded to an upstream provider — is recorded as a `RECEIVED_REQUEST` log entry with the full request body. The `type=REQUESTS` retrieval returns these entries, and `AgentRunAnalyzer` decodes them with the appropriate `ProviderCodec`.
+
+**Provider auto-detection.** The `verify_tool_call` and `explain_agent_run` MCP tools accept `"AUTO"` as the `provider` parameter. `ProviderDetector` (`org.mockserver.llm.ProviderDetector`) infers the provider from recorded request paths (e.g. `/v1/messages` maps to `ANTHROPIC`, `/v1/chat/completions` to `OPENAI`), mirroring the UI-side detection in `llmTraffic.ts`. This is especially useful for proxy users who route real LLM calls through MockServer and may not know or want to specify the provider explicitly.
+
+**Dashboard Sessions view.** The Sessions view groups proxied LLM traffic by upstream host (from the `Host` header) when no conversation-isolation expectations are configured, so proxy traffic to different providers appears in separate session lanes. The call graph (via `AgentRunGraph`) is shown for all sessions including these host-grouped proxy sessions.
 
 ## Dashboard Rendering
 
@@ -486,6 +494,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/client/LlmBackendResolver.java` | Three-layer backend resolution (env / properties / named JSON) |
 | `llm/client/LlmCompletionService.java` | Orchestrator: off-unless-configured, fail-closed, cached |
 | `llm/client/LlmTransport.java` + `NettyHttpClientLlmTransport.java` | Transport seam over `NettyHttpClient` |
+| `llm/ProviderDetector.java` | Heuristic provider detection from request path; mirrors UI-side detection; powers `AUTO` provider for MCP tools |
 | `llm/analysis/AgentRunAnalyzer.java` | Deterministic read-only agent-run inspection (tool-call counts, run summary, call graph) |
 | `llm/semantic/SemanticPromptMatcher.java` + `SemanticMatching.java` | Opt-in LLM-judge fuzzy match + its off-by-default static gate |
 | `llm/adversarial/AdversarialResponseLibrary.java` | Curated adversarial-response payloads for agent-resilience testing |

@@ -176,7 +176,9 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
           }}
         >
           {isUnscoped
-            ? 'Unscoped requests'
+            ? (session.isolationKey !== '<unscoped>'
+              ? `Unscoped requests (${session.isolationKey})`
+              : 'Unscoped requests')
             : `${displayName} / ${session.isolationKey}`
           }
         </Typography>
@@ -220,8 +222,10 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
         </>
       )}
 
-      {/* Correlated call graph (fetched on demand via explain_agent_run) */}
-      {!isUnscoped && graphProvider && (
+      {/* Correlated call graph (fetched on demand via explain_agent_run).
+          Shown for all sessions (including unscoped proxy traffic) as long as
+          a provider can be detected from the requests. */}
+      {graphProvider && (
         <Box sx={{ px: 1.5, pb: 0.75 }}>
           <AgentRunGraph connectionParams={connectionParams} provider={graphProvider} path={graphPath} />
         </Box>
