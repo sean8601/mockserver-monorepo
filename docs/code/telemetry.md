@@ -15,7 +15,7 @@ Emits explicit OpenTelemetry GenAI semantic-convention spans for LLM completions
 
 GenAI spans fire on two paths:
 1. **Mock action path** — `HttpLlmResponseActionHandler` calls `GenAiSpans.recordCompletion()` for mocked LLM responses (streaming and non-streaming).
-2. **Forward/proxy path** — `HttpActionHandler.emitForwardGenAiSpan()` detects LLM traffic via `LlmProviderSniffer`, parses the upstream response using the provider's `LlmClient`, and records a completion span. Covers matched-expectation forwards, unmatched proxy-pass, and breakpoint-continuation forwards. Streaming forward paths emit the GenAI span in the completion listener after the full SSE body is captured.
+2. **Forward/proxy path** — `HttpActionHandler.emitForwardGenAiSpan()` detects LLM traffic via `LlmProviderSniffer`, parses the upstream response using the provider's `LlmClient`, and records a completion span. Covers matched-expectation forwards and unmatched proxy-pass. Streaming forward paths emit the GenAI span in the completion listener after the full SSE body is captured.
 
 ### LLM Provider Sniffer (`LlmProviderSniffer`)
 
@@ -139,4 +139,3 @@ and **all** forwarded-response write points in `HttpActionHandler`, each guarded
 - Mocked response path (`writeResponseActionResponse`)
 - Matched-expectation forward path (`writeForwardActionResponse` — both streaming and non-streaming)
 - Unmatched proxy-pass path (`handleUnmatchedProxyForward` — both streaming and non-streaming)
-- Breakpoint-continuation forward path (`executeUnmatchedForward` — both streaming and non-streaming)
