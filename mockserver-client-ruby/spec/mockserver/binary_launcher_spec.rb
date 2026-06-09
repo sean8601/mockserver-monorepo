@@ -2,6 +2,7 @@
 
 require 'digest'
 require 'fileutils'
+require 'timeout'
 require 'tmpdir'
 
 RSpec.describe MockServer::BinaryLauncher do
@@ -208,6 +209,24 @@ RSpec.describe MockServer::BinaryLauncher do
       ENV['MOCKSERVER_BINARY_BASE_URL'] = 'https://mirror.example.com/files///'
       url = described_class.asset_url('7.0.0', 'file.tar.gz')
       expect(url).to eq('https://mirror.example.com/files/file.tar.gz')
+    end
+
+    it 'preserves interior slashes while stripping only trailing ones' do
+      ENV['MOCKSERVER_BINARY_BASE_URL'] = 'https://host//a//b//'
+      url = described_class.asset_url('7.0.0', 'file.tar.gz')
+      expect(url).to eq('https://host//a//b/file.tar.gz')
+    end
+
+    it 'handles a pathological slash run without quadratic backtracking (ReDoS guard)' do
+      ENV['MOCKSERVER_BINARY_BASE_URL'] = "https://host/#{'/' * 100_000}x"
+      result = nil
+      expect do
+        Timeout.timeout(2) do
+          result = described_class.asset_url('7.0.0', 'file.tar.gz')
+        end
+      end.not_to raise_error
+      # No trailing slash to strip, so the base is returned unchanged.
+      expect(result).to end_with('x/file.tar.gz')
     end
   end
 
