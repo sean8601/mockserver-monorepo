@@ -226,8 +226,9 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                 value={turn.predicates.turnIndex ?? ''}
                 onChange={(e) => {
                   const v = e.target.value;
+                  const n = parseInt(v, 10);
                   updatePredicates(i, {
-                    turnIndex: v === '' ? undefined : parseInt(v, 10),
+                    turnIndex: v === '' || Number.isNaN(n) ? undefined : n,
                   });
                 }}
                 sx={{ width: 110 }}
@@ -438,7 +439,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                     type="number"
                     value={turn.response.streamingPhysics?.timeToFirstToken ?? ''}
                     onChange={(e) => {
-                      const val = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
+                      const n = parseInt(e.target.value, 10);
+                      const val = e.target.value === '' || Number.isNaN(n) ? undefined : n;
                       const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), timeToFirstToken: val };
                       const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
                       updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
@@ -453,7 +455,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                     error={!!tokensPerSecondError(turn.response.streamingPhysics?.tokensPerSecond)}
                     helperText={tokensPerSecondError(turn.response.streamingPhysics?.tokensPerSecond)}
                     onChange={(e) => {
-                      const val = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
+                      const n = parseInt(e.target.value, 10);
+                      const val = e.target.value === '' || Number.isNaN(n) ? undefined : n;
                       const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), tokensPerSecond: val };
                       const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
                       updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
@@ -468,7 +471,8 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                     error={!!jitterError(turn.response.streamingPhysics?.jitter)}
                     helperText={jitterError(turn.response.streamingPhysics?.jitter)}
                     onChange={(e) => {
-                      const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                      const n = parseFloat(e.target.value);
+                      const val = e.target.value === '' || Number.isNaN(n) ? undefined : n;
                       const sp: StreamingPhysicsDraft = { ...(turn.response.streamingPhysics ?? {}), jitter: val };
                       const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
                       updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
@@ -516,7 +520,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   value={turn.chaos?.errorStatus ?? ''}
                   error={!!chaosErrorStatusError(turn.chaos?.errorStatus)}
                   helperText={chaosErrorStatusError(turn.chaos?.errorStatus)}
-                  onChange={(e) => updateChaos(i, { errorStatus: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  onChange={(e) => { const n = parseInt(e.target.value, 10); updateChaos(i, { errorStatus: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
                   sx={{ width: 110 }}
                 />
                 <TextField
@@ -533,7 +537,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   value={turn.chaos?.errorProbability ?? ''}
                   error={!!errorProbabilityError(turn.chaos?.errorProbability)}
                   helperText={errorProbabilityError(turn.chaos?.errorProbability)}
-                  onChange={(e) => updateChaos(i, { errorProbability: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                  onChange={(e) => { const n = parseFloat(e.target.value); updateChaos(i, { errorProbability: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
                   sx={{ width: 130 }}
                 />
                 <TextField
@@ -554,7 +558,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   value={turn.chaos?.truncateAtFraction ?? ''}
                   error={!!truncateAtFractionError(turn.chaos?.truncateAtFraction)}
                   helperText={truncateAtFractionError(turn.chaos?.truncateAtFraction)}
-                  onChange={(e) => updateChaos(i, { truncateAtFraction: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                  onChange={(e) => { const n = parseFloat(e.target.value); updateChaos(i, { truncateAtFraction: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
                   sx={{ width: 120 }}
                 />
                 <FormControlLabel
@@ -573,7 +577,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   size="small"
                   type="number"
                   value={turn.chaos?.seed ?? ''}
-                  onChange={(e) => updateChaos(i, { seed: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                  onChange={(e) => { const n = parseInt(e.target.value, 10); updateChaos(i, { seed: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
                   sx={{ width: 100 }}
                   helperText="reproducible prob"
                 />

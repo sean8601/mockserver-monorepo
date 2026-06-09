@@ -37,6 +37,9 @@ import {
   STEP_ACTION_TYPES,
   STEP_ACTION_LABELS,
   RESPONDER_CAPABLE_ACTIONS,
+  standardChaosErrorStatusError,
+  standardChaosErrorProbabilityError,
+  hasStandardChaosRangeErrors,
   type StandardActionPayload,
   type StandardChaosDraft,
   type ChaosDelayUnit,
@@ -1845,18 +1848,20 @@ function ChaosPanel({
           size="small"
           type="number"
           value={chaos.errorStatus ?? ''}
-          onChange={(e) => setChaos({ ...chaos, errorStatus: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+          error={!!standardChaosErrorStatusError(chaos.errorStatus)}
+          onChange={(e) => { const n = parseInt(e.target.value, 10); setChaos({ ...chaos, errorStatus: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
           sx={{ width: 120 }}
-          helperText="e.g. 500, 503, 429"
+          helperText={standardChaosErrorStatusError(chaos.errorStatus) ?? 'e.g. 500, 503, 429'}
         />
         <TextField
           label="Error prob (0-1)"
           size="small"
           type="number"
           value={chaos.errorProbability ?? ''}
-          onChange={(e) => setChaos({ ...chaos, errorProbability: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+          error={!!standardChaosErrorProbabilityError(chaos.errorProbability)}
+          onChange={(e) => { const n = parseFloat(e.target.value); setChaos({ ...chaos, errorProbability: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
           sx={{ width: 130 }}
-          helperText="1.0 = always"
+          helperText={standardChaosErrorProbabilityError(chaos.errorProbability) ?? '1.0 = always'}
         />
         <TextField
           label="Retry-After"
@@ -3628,6 +3633,15 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   if (dnsMatcher.dnsName.trim().length === 0) return 'Enter a DNS name to match';
                 } else {
                   if (matcher.path.trim().length === 0) return 'Enter a request path to match';
+                }
+
+                // Cross-cutting chaos validation — applies regardless of action type.
+                // Checked early so a chaos range error is surfaced before the per-action
+                // checks (which return directly).
+                // Bounds verified against HttpChaosProfile.java: errorStatus 100–599,
+                // errorProbability 0.0–1.0
+                if (chaosEnabled && hasStandardChaosRangeErrors(chaosState)) {
+                  return 'Chaos profile has out-of-range values (errorStatus: 100–599, errorProbability: 0.0–1.0)';
                 }
 
                 // Steps mode validation — exactly one responder required

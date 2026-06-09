@@ -86,6 +86,28 @@ export default function LlmConversationForm({
         editingScenario && existingIds.length === draft.turns.length
           ? existingIds
           : undefined;
+
+      // When editing an existing conversation and the turn count has changed,
+      // the old expectations can't be reused 1:1. Clear them first so we don't
+      // orphan a duplicate scenario with stale expectations.
+      if (editingScenario && existingIds.length > 0 && !idsToReuse) {
+        for (const oldId of existingIds) {
+          const clearRes = await fetch(`${baseUrl}/mockserver/clear?type=expectations`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: oldId }),
+          });
+          // Abort if a clear fails (e.g. auth-enforced 403) — otherwise we'd
+          // register the new turns on top of the un-cleared old ones, recreating
+          // the duplicate-scenario bug this is meant to prevent.
+          if (!clearRes.ok) {
+            setError(`Failed to clear existing turn ${oldId} (HTTP ${clearRes.status}); aborted to avoid duplicating the conversation.`);
+            setRegistering(false);
+            return;
+          }
+        }
+      }
+
       const args = conversationToMcpArgs(draft, idsToReuse);
       const result = await callMcpTool(baseUrl, 'create_llm_conversation', args);
       if (result.ok) {
@@ -156,13 +178,21 @@ export default function LlmConversationForm({
             {registering
               ? 'Registering…'
               : editingScenario
-                ? `Update ${existingIds.length} expectation${existingIds.length === 1 ? '' : 's'}`
+                ? existingIds.length === draft.turns.length
+                  ? `Update ${existingIds.length} expectation${existingIds.length === 1 ? '' : 's'}`
+                  : `Replace conversation (${existingIds.length} → ${draft.turns.length} turns)`
                 : 'Register on server'}
           </Button>
           {editingScenario ? (
-            <Typography variant="caption" color="success.main" sx={{ fontSize: '0.7rem' }}>
-              Editing — the existing expectation IDs will be reused so this updates in place.
-            </Typography>
+            existingIds.length === draft.turns.length ? (
+              <Typography variant="caption" color="success.main" sx={{ fontSize: '0.7rem' }}>
+                Editing — the existing expectation IDs will be reused so this updates in place.
+              </Typography>
+            ) : (
+              <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.7rem' }}>
+                Turn count changed — the old expectations will be removed and replaced.
+              </Typography>
+            )
           ) : (
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
               Pick an existing conversation above to update it in place, or leave blank to create a new one.

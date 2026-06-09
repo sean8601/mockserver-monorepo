@@ -1048,10 +1048,10 @@ export function ScriptedTurnsPanel({ turns }: { turns: ScriptedTurn[] }) {
 
         return (
           <Fragment key={`scripted-turn-${i}`}>
-            {conversationHeader && i > 0 && (
+            {conversationHeader && (
               <Typography
                 variant="overline"
-                sx={{ fontSize: '0.6rem', color: 'text.secondary', textAlign: 'center', mt: 1 }}
+                sx={{ fontSize: '0.6rem', color: 'text.secondary', textAlign: 'center', mt: i > 0 ? 1 : 0 }}
               >
                 {conversationHeader}
               </Typography>

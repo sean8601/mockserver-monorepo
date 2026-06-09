@@ -48,6 +48,21 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
 
 <h3>Available metrics</h3>
 
+<p>
+    <strong>Naming convention:</strong> the core request-tracking gauges are exposed with
+    unprefixed names (e.g. <span class="inline_code">requests_received_count</span>,
+    <span class="inline_code">expectations_not_matched_count</span>). Counter and histogram metrics,
+    and the operational gauges (<span class="inline_code">mock_server_active_service_chaos</span>,
+    <span class="inline_code">mock_server_expectations_by_type</span>,
+    <span class="inline_code">mock_server_build_info</span>), all use a
+    <span class="inline_code">mock_server_</span> prefix (e.g.
+    <span class="inline_code">mock_server_request_duration_seconds</span>). Note that the
+    <span class="inline_code">_total</span> suffix is appended to counter names in the
+    exposition output, so <span class="inline_code">mock_server_http_chaos_injected</span> appears
+    as <span class="inline_code">mock_server_http_chaos_injected_total</span> on the
+    <span class="inline_code">/mockserver/metrics</span> endpoint and in PromQL queries and Grafana.
+</p>
+
 <h4>Request and expectation matching</h4>
 
 <table class="table table-bordered table-striped">

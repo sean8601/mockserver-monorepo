@@ -530,6 +530,36 @@ describe('outputSchema in Java codegen', () => {
   });
 });
 
+describe('conversationToMcpArgs with existingIds (edit flow)', () => {
+  it('includes ids when existingIds length matches turn count (in-place update)', () => {
+    const draft = baseDraft(); // 2 turns
+    const ids = ['id-1', 'id-2'];
+    const args = conversationToMcpArgs(draft, ids);
+    expect(args['ids']).toEqual(['id-1', 'id-2']);
+  });
+
+  it('omits ids when existingIds is undefined (new conversation)', () => {
+    const args = conversationToMcpArgs(baseDraft());
+    expect(args).not.toHaveProperty('ids');
+  });
+
+  it('omits ids when existingIds is empty', () => {
+    const args = conversationToMcpArgs(baseDraft(), []);
+    expect(args).not.toHaveProperty('ids');
+  });
+
+  it('includes ids even when lengths differ (caller decides whether to pass them)', () => {
+    // When the LlmConversationForm detects a turn-count mismatch, it passes
+    // undefined for existingIds and clears the old expectations separately.
+    // The conversationToMcpArgs function itself is agnostic — it includes whatever
+    // ids the caller passes. This test documents that the function trusts the caller.
+    const draft = baseDraft(); // 2 turns
+    const ids = ['id-1']; // only 1 id
+    const args = conversationToMcpArgs(draft, ids);
+    expect(args['ids']).toEqual(['id-1']);
+  });
+});
+
 describe('hasRangeErrors', () => {
   it('returns false for valid turns', () => {
     expect(hasRangeErrors(baseDraft().turns)).toBe(false);

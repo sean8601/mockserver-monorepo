@@ -16,7 +16,7 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
 <p>
     Interactive breakpoints let you pause proxied or forwarded HTTP exchanges, inspect the request or response,
     optionally modify it, and then continue or abort. This is useful for debugging integrations, testing error
-    handling with modified responses, and inspecting streaming (SSE/chunked) traffic frame by frame.
+    handling with modified responses, and inspecting streaming traffic (SSE, chunked, gRPC, WebSocket, GraphQL subscription) frame by frame.
 </p>
 
 <p>Breakpoints are <strong>off by default</strong> and have zero overhead when disabled.</p>
@@ -28,6 +28,7 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
     <li><a href="#request_phase">Request-phase breakpoints</a></li>
     <li><a href="#response_phase">Response-phase breakpoints</a></li>
     <li><a href="#stream_phase">Stream-frame breakpoints</a></li>
+    <li><a href="#inbound_phase">Inbound frame breakpoints</a></li>
     <li><a href="#rest_api">REST API reference</a></li>
     <li><a href="#dashboard">Dashboard UI</a></li>
     <li><a href="#safety">Safety rails</a></li>
@@ -36,7 +37,7 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
 <a id="phases" class="anchor" href="#phases">&nbsp;</a>
 <h2>Breakpoint Phases</h2>
 
-<p>You can pause an exchange at three points:</p>
+<p>You can pause an exchange at four points:</p>
 
 <table class="table table-bordered table-striped">
     <thead>
@@ -55,8 +56,13 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
         </tr>
         <tr>
             <td><strong>Stream frame</strong></td>
-            <td>Each individual chunk of a streaming response (SSE or HTTP/1.1 chunked)</td>
+            <td>Each individual frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, or GraphQL subscription)</td>
             <td>Continue, Modify, Drop (discard frame), Inject (write original + extra frame), Close (end stream)</td>
+        </tr>
+        <tr>
+            <td><strong>Inbound frame</strong></td>
+            <td>Each client-to-server frame on a bidirectional connection (WebSocket or GraphQL subscription). <em>Experimental, off by default.</em></td>
+            <td>Continue, Modify, Drop (discard frame), Inject (process original + extra frame), Close (close connection)</td>
         </tr>
     </tbody>
 </table>
@@ -87,7 +93,13 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
             <td><span class="inline_code">mockserver.breakpointStreamEnabled</span></td>
             <td><span class="inline_code">MOCKSERVER_BREAKPOINT_STREAM_ENABLED</span></td>
             <td><span class="inline_code">false</span></td>
-            <td>Enable stream-frame breakpoints (SSE / chunked)</td>
+            <td>Enable stream-frame breakpoints (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, GraphQL subscription)</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">mockserver.breakpointInboundEnabled</span></td>
+            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_INBOUND_ENABLED</span></td>
+            <td><span class="inline_code">false</span></td>
+            <td>Enable inbound frame breakpoints &mdash; intercept client-to-server frames on WebSocket and GraphQL subscription connections (experimental)</td>
         </tr>
         <tr>
             <td><span class="inline_code">mockserver.breakpointTimeoutMillis</span></td>
@@ -176,9 +188,10 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
 <h2>Stream-Frame Breakpoints</h2>
 
 <p>
-    When <span class="inline_code">breakpointStreamEnabled</span> is <span class="inline_code">true</span>, each chunk
-    of a streaming response (SSE or HTTP/1.1 chunked) is held individually before being written to the client.
-    This lets you inspect and manipulate streaming traffic frame by frame.
+    When <span class="inline_code">breakpointStreamEnabled</span> is <span class="inline_code">true</span>, each frame
+    of a streaming response is held individually before being written to the client.
+    This covers SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket (eager/scripted and bidirectional),
+    and GraphQL subscription pushes. It lets you inspect and manipulate streaming traffic frame by frame.
 </p>
 
 <p>Available actions for each frame:</p>
@@ -196,7 +209,38 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
     </tbody>
 </table>
 
-<p>Frames within a stream must be resolved in order &mdash; resolving frame 3 before frame 2 is rejected. The upstream is automatically back-pressured while a frame is held.</p>
+<p>
+    Frames within a stream must be resolved in order &mdash; resolving frame 3 before frame 2 is rejected.
+    For SSE/HTTP-chunked streams and sequenced gRPC/WebSocket streams, the upstream is automatically back-pressured
+    while a frame is held (the next chunk or message is not requested until the current frame is resolved).
+    However, bidirectional WebSocket and GraphQL subscription pushes are <strong>not</strong> back-pressured &mdash;
+    frames are parked concurrently as they arrive and can hit the
+    <span class="inline_code">breakpointMaxHeld</span> cap under high throughput.
+</p>
+
+<a id="inbound_phase" class="anchor" href="#inbound_phase">&nbsp;</a>
+<h2>Inbound Frame Breakpoints</h2>
+
+<p>
+    When <span class="inline_code">breakpointInboundEnabled</span> is <span class="inline_code">true</span>, each
+    client-to-server frame on a bidirectional WebSocket or GraphQL subscription connection is held before
+    MockServer processes it. This lets you inspect, modify, drop, or inject inbound frames &mdash;
+    useful for testing how an upstream server handles manipulated client messages.
+</p>
+
+<p>
+    Inbound frame breakpoints currently cover WebSocket bidirectional and GraphQL subscription connections.
+    gRPC bidirectional inbound frames are not yet intercepted (they require careful HTTP/2 flow-control
+    window management). This feature is <strong>off by default</strong> and experimental.
+</p>
+
+<p>
+    Inbound frames use the same REST API endpoints as stream-frame breakpoints
+    (<span class="inline_code">/mockserver/breakpoint/stream/*</span>).
+    The <span class="inline_code">/mockserver/breakpoint/streams</span> list endpoint includes a
+    <span class="inline_code">direction</span> field (<span class="inline_code">INBOUND</span> for client-to-server,
+    <span class="inline_code">OUTBOUND</span> for server-to-client) so you can distinguish them.
+</p>
 
 <a id="rest_api" class="anchor" href="#rest_api">&nbsp;</a>
 <h2>REST API Reference</h2>

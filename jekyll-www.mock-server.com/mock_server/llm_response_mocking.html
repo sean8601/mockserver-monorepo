@@ -437,6 +437,7 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
         <tr><td><span class="inline_code">truncateAtFraction</span></td><td>For streaming responses, cut the stream short at this fraction of SSE events (0.0 &ndash; 1.0, default 0.5). Only applies when <span class="inline_code">truncateMode</span> is <span class="inline_code">MID_STREAM</span>.</td></tr>
         <tr><td><span class="inline_code">malformedSse</span></td><td>Inject a deliberately broken-JSON SSE chunk</td></tr>
         <tr><td><span class="inline_code">quotaName</span> / <span class="inline_code">quotaLimit</span> / <span class="inline_code">quotaWindowMillis</span></td><td>Deterministic fixed-window rate limit</td></tr>
+        <tr><td><span class="inline_code">quotaErrorStatus</span></td><td>HTTP status returned when the quota is exceeded (default <span class="inline_code">429</span>). Must be between 100 and 599.</td></tr>
         <tr><td><span class="inline_code">seed</span></td><td>PRNG seed for reproducible probabilistic faults</td></tr>
     </tbody>
 </table>

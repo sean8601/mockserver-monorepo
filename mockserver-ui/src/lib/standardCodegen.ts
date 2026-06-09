@@ -289,6 +289,31 @@ export interface StandardChaosDraft {
 }
 
 // ---------------------------------------------------------------------------
+// Standard chaos range validation — bounds verified against server source:
+//   HttpChaosProfile.java: errorStatus 100–599, errorProbability 0.0–1.0
+// ---------------------------------------------------------------------------
+
+/** Returns an error hint when errorStatus is outside the server's accepted range (100–599). */
+export function standardChaosErrorStatusError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (!Number.isInteger(v) || v < 100 || v > 599) return '100–599';
+  return undefined;
+}
+
+/** Returns an error hint when errorProbability is outside 0.0–1.0. */
+export function standardChaosErrorProbabilityError(v: number | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (!Number.isFinite(v) || v < 0 || v > 1) return '0.0–1.0';
+  return undefined;
+}
+
+/** Returns true when the standard chaos draft has any range error the server would reject. */
+export function hasStandardChaosRangeErrors(chaos: StandardChaosDraft): boolean {
+  return !!standardChaosErrorStatusError(chaos.errorStatus) ||
+    !!standardChaosErrorProbabilityError(chaos.errorProbability);
+}
+
+// ---------------------------------------------------------------------------
 // Expectation steps — ordered multi-action pipeline (M1 increment-2)
 // ---------------------------------------------------------------------------
 
