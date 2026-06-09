@@ -298,6 +298,7 @@ pub fn bundle_base_name(version: &str) -> LauncherResult<BundleName> {
 /// 1. `MOCKSERVER_BINARY_CACHE` env var
 /// 2. Windows: `%LOCALAPPDATA%` (fallback `~/AppData/Local`)
 /// 3. Unix: `$XDG_CACHE_HOME` or `~/.cache`
+///
 /// Then append `/mockserver/binaries`.
 pub fn cache_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("MOCKSERVER_BINARY_CACHE") {
@@ -492,7 +493,6 @@ pub fn ensure_binary(version: &str, opts: &EnsureOptions) -> LauncherResult<Path
 
         let sha_content = fs::read_to_string(&sha_file)?;
         let expected = sha_content
-            .trim()
             .split_whitespace()
             .next()
             .unwrap_or("")
@@ -1726,10 +1726,7 @@ mod tests {
 
         let result = ensure_binary(
             VERSION,
-            &EnsureOptions {
-                verbose: true,
-                ..Default::default()
-            },
+            &EnsureOptions { verbose: true },
         );
         match result {
             Ok(path) => {
