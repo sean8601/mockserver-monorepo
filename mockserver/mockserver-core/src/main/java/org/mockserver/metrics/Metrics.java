@@ -282,8 +282,9 @@ public class Metrics {
             counter.labelValues(faultType).inc();
         }
         // Evaluate the chaos auto-halt circuit-breaker on every chaos fault injection.
-        // ChaosAutoHaltMonitor.recordError() is a no-op when the feature is disabled.
-        ChaosAutoHaltMonitor.getInstance().recordError();
+        // ChaosAutoHaltMonitor.recordError() is a no-op when the feature is disabled
+        // or when the fault type is non-destructive (e.g. latency, slow).
+        ChaosAutoHaltMonitor.getInstance().recordError(faultType);
     }
 
     /**

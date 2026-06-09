@@ -142,14 +142,16 @@ Both chaos metrics are also mirrored over OTLP by `OtelMetricsExporter` (`regist
 
 ### Chaos Auto-Halt Counter
 
-`mock_server_chaos_auto_halt` is a Prometheus `Counter` that increments each time the chaos auto-halt circuit-breaker triggers. The circuit-breaker is a safety mechanism that automatically disables all active service-scoped chaos profiles when the number of chaos-injected errors within a sliding window exceeds a configured threshold. This prevents chaos experiments from driving cascading outages.
+`mock_server_chaos_auto_halt` is a Prometheus `Counter` that increments each time the chaos auto-halt circuit-breaker triggers. The circuit-breaker is a safety mechanism that automatically disables all active service-scoped chaos profiles when the number of **error-class** chaos faults within a sliding window exceeds a configured threshold. This prevents chaos experiments from driving cascading outages.
+
+Only **destructive** fault types contribute to the window: `"error"` (synthetic 5xx), `"drop"` (connection kill), and `"quota"` (429/503). Benign fault types (`"latency"`, `"slow"`, `"truncate"`, `"malformed"`, `"graphql"`) are excluded -- a latency-only experiment will never auto-halt.
 
 The auto-halt feature is controlled by three configuration properties (all off/inert by default):
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `chaosAutoHaltEnabled` | `false` | Master switch for the circuit-breaker |
-| `chaosAutoHaltErrorThreshold` | `50` | Number of errors in the window that triggers halt |
+| `chaosAutoHaltErrorThreshold` | `50` | Number of error-class faults (5xx/dropped/quota) in the window that triggers halt |
 | `chaosAutoHaltWindowMillis` | `60000` | Sliding window duration in milliseconds |
 
 When the circuit-breaker fires:
@@ -159,7 +161,9 @@ When the circuit-breaker fires:
 4. A WARN-level log event is emitted with the error count, window, and threshold
 5. The sliding window is cleared so the breaker does not immediately re-trigger
 
-The auto-halt is evaluated per chaos fault injection (called from `Metrics.incrementHttpChaosInjected`). It uses a lock-free `ConcurrentLinkedDeque` of timestamps and does not block the event loop. When the feature is disabled (`chaosAutoHaltEnabled=false`), the evaluation is a no-op with zero overhead.
+The monitor is also reset by `HttpState.reset()` (alongside `ServiceChaosRegistry.reset()`), so a server reset clears stale errors from the window and prevents them from halting freshly-registered chaos.
+
+The auto-halt is evaluated per chaos fault injection (called from `Metrics.incrementHttpChaosInjected`). It uses a lock-free `ConcurrentLinkedDeque` of timestamps with an `AtomicInteger` window counter (O(1) size check) and an `AtomicBoolean` guard to prevent concurrent double-trigger. When the feature is disabled (`chaosAutoHaltEnabled=false`), the evaluation is a no-op with zero overhead.
 
 Example PromQL alert rule:
 ```promql

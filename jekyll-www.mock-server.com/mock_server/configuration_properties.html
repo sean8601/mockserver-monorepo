@@ -1142,8 +1142,9 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 <button id="button_configuration_chaos_auto_halt" class="accordion title"><strong>Chaos Auto-Halt Circuit-Breaker</strong></button>
 <div class="panel title">
-    <p>A safety circuit-breaker for service-scoped chaos experiments. When enabled, MockServer counts chaos-injected errors (from chaos profiles) in a sliding time window. If the count exceeds the configured threshold, all active service-scoped chaos profiles are automatically disabled, preventing a chaos experiment from causing cascading failures.</p>
-    <p>This provides the "steady-state guardrail" SREs expect: chaos experiments automatically stop if they produce too many errors too quickly. The auto-halt state is reflected in the <code>mock_server_active_service_chaos</code> gauge (all values drop to 0) and a <code>mock_server_chaos_auto_halt</code> counter is incremented.</p>
+    <p>A safety circuit-breaker for service-scoped chaos experiments. When enabled, MockServer counts <strong>error-class</strong> chaos faults &mdash; synthetic 5xx errors (<code>error</code>), dropped connections (<code>drop</code>), and quota-limit responses (<code>quota</code>) &mdash; in a sliding time window. If the count exceeds the configured threshold, all active service-scoped chaos profiles are automatically disabled, preventing a chaos experiment from causing cascading failures.</p>
+    <p>Benign fault types such as <code>latency</code>, <code>slow</code>, <code>truncate</code>, <code>malformed</code>, and <code>graphql</code> do <strong>not</strong> count toward the threshold. This means a latency-only chaos experiment will never auto-halt.</p>
+    <p>This provides the "steady-state guardrail" SREs expect: chaos experiments automatically stop if they produce too many destructive errors too quickly. The auto-halt state is reflected in the <code>mock_server_active_service_chaos</code> gauge (all values drop to 0) and a <code>mock_server_chaos_auto_halt</code> counter is incremented.</p>
     <p><strong>Enable chaos auto-halt</strong> &mdash; master switch for the circuit-breaker. Default is <code>false</code> (feature off &mdash; no overhead when disabled).</p>
     <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
     <p>Java Code:</p>
@@ -1152,7 +1153,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.chaosAutoHaltEnabled=...</code></pre>
     <p>Environment Variable:</p>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CHAOS_AUTO_HALT_ENABLED=...</code></pre>
-    <p><strong>Error threshold</strong> &mdash; the number of chaos-injected errors within the window that triggers the halt. Default is <code>50</code>.</p>
+    <p><strong>Error threshold</strong> &mdash; the number of error-class chaos faults (5xx/dropped/quota) within the window that triggers the halt. Default is <code>50</code>.</p>
     <p>Type: <span class="keyword">long</span> Default: <span class="this_value">50</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.chaosAutoHaltErrorThreshold(long threshold)</code></pre>
