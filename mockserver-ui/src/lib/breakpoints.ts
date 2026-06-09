@@ -116,3 +116,108 @@ export async function abortBreakpoint(
   });
   await ensureOk(res);
 }
+
+// ---------------------------------------------------------------------------
+// Stream frame breakpoints (forwarded-stream frame-level inspection)
+// ---------------------------------------------------------------------------
+
+export interface StreamFrame {
+  frameId: string;
+  sequenceNumber: number;
+  ageMillis: number;
+  bodyLength: number;
+  requestMethod?: string;
+  requestPath?: string;
+  bodyPreview?: string;
+}
+
+export interface StreamGroup {
+  streamId: string;
+  frames: StreamFrame[];
+}
+
+export interface StreamFrameListResponse {
+  streams: StreamGroup[];
+  totalHeldFrames: number;
+}
+
+function streamEndpoint(params: ConnectionParams): string {
+  return `${buildBaseUrl(params)}/mockserver/breakpoint/stream`;
+}
+
+/** Fetch the list of currently held stream frames, grouped by stream. */
+export async function fetchStreamFrames(
+  params: ConnectionParams,
+  signal?: AbortSignal,
+): Promise<StreamFrameListResponse> {
+  const res = await fetch(`${streamEndpoint(params)}s`, { signal });
+  await ensureOk(res);
+  return res.json() as Promise<StreamFrameListResponse>;
+}
+
+/** Continue a held stream frame (write the original frame body). */
+export async function continueStreamFrame(
+  params: ConnectionParams,
+  id: string,
+): Promise<void> {
+  const res = await fetch(`${streamEndpoint(params)}/continue`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  await ensureOk(res);
+}
+
+/** Modify a held stream frame (write a replacement body). */
+export async function modifyStreamFrame(
+  params: ConnectionParams,
+  id: string,
+  body: string,
+): Promise<void> {
+  const res = await fetch(`${streamEndpoint(params)}/modify`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, body }),
+  });
+  await ensureOk(res);
+}
+
+/** Drop a held stream frame (discard without writing). */
+export async function dropStreamFrame(
+  params: ConnectionParams,
+  id: string,
+): Promise<void> {
+  const res = await fetch(`${streamEndpoint(params)}/drop`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  await ensureOk(res);
+}
+
+/** Inject an extra frame after continuing the held frame. */
+export async function injectStreamFrame(
+  params: ConnectionParams,
+  id: string,
+  body: string,
+): Promise<void> {
+  const res = await fetch(`${streamEndpoint(params)}/inject`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, body }),
+  });
+  await ensureOk(res);
+}
+
+/** Close a stream (drop the frame and end the stream). */
+export async function closeStreamFrame(
+  params: ConnectionParams,
+  id: string,
+): Promise<void> {
+  const res = await fetch(`${streamEndpoint(params)}/close`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  await ensureOk(res);
+}
