@@ -148,6 +148,27 @@ Provides two Liquid tags:
 
 Both tags strip YAML front matter before rendering.
 
+## Branding & Fonts
+
+- **Title font:** page titles (`.page_header h1`) and the site/brand header (`.header h1`) use the
+  Google web font **Permanent Marker**, loaded via `_includes/head.html` alongside
+  `Averia Sans Libre`. Section headings (`h2`) intentionally stay on `Averia Sans Libre` for
+  readability. Rules live in `_sass/_styles.scss`. (Apple's *Marker Felt* is **not** usable here —
+  it is a proprietary system font with no web-font licence, so it only renders on Apple devices;
+  Permanent Marker is the cross-platform equivalent.)
+- **Brand "M" icon / favicons:** the marker-style "M" is shared across the site and the dashboard:
+  - Website: `favicon.svg` (adaptive `prefers-color-scheme` fill), `favicon.ico`
+    (native 16/32/48/64/128/256 frames), `apple-touch-icon.png` (180×180),
+    `images/mockserver-icon.png` (195×195). Wired up in `_includes/head.html` (SVG first, `.ico`
+    fallback).
+  - Dashboard: `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` in `mockserver-ui/public/`
+    (no `mockserver-icon.png` — that one is website-only), referenced from `mockserver-ui/index.html`
+    under the `/mockserver/dashboard/` base path.
+- **How the icons/logo are generated:** the "M" and the "MockServer" wordmark are outlined from the
+  *Permanent Marker* font with `fonttools` (text → vector paths, so there is no font dependency),
+  filled `#333333`, with path coordinates rounded to 2 dp. The same source produces the CNCF
+  Landscape wordmark — see [../distribution/cncf-landscape-entry.md](../distribution/cncf-landscape-entry.md).
+
 ## Building the Website
 
 ```bash
