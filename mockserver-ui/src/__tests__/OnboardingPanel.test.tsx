@@ -53,7 +53,7 @@ describe('OnboardingPanel', () => {
 
   it('renders the five key-feature cards', () => {
     renderPanel();
-    expect(screen.getByText('Breakpoints & Request/Response Editing')).toBeInTheDocument();
+    expect(screen.getByText('Breakpoints')).toBeInTheDocument();
     expect(screen.getByText('Debugging Proxy')).toBeInTheDocument();
     expect(screen.getByText('LLM / AI Debugging')).toBeInTheDocument();
     expect(screen.getByText('Mocking')).toBeInTheDocument();
@@ -65,9 +65,15 @@ describe('OnboardingPanel', () => {
     expect(screen.queryByText(/No expectations or traffic recorded/i)).not.toBeInTheDocument();
   });
 
-  it('points users to the other tabs for more features', () => {
+  it('gives every tile a Docs link', () => {
     renderPanel();
-    expect(screen.getByText(/More in the tabs above/i)).toBeInTheDocument();
+    const docsLinks = screen.getAllByRole('link', { name: 'Docs' });
+    expect(docsLinks).toHaveLength(5);
+    // the Breakpoints tile links to the interactive-breakpoints docs page
+    expect(docsLinks.map((l) => l.getAttribute('href'))).toContain(
+      'https://www.mock-server.com/mock_server/interactive_breakpoints.html',
+    );
+    docsLinks.forEach((l) => expect(l).toHaveAttribute('target', '_blank'));
   });
 
   it('renders the Import OpenAPI button', () => {
@@ -86,11 +92,23 @@ describe('OnboardingPanel', () => {
     expect(useDashboardStore.getState().view).toBe('chaos');
   });
 
-  it('links to the proxy debugging guide', () => {
+  it('lists the other tabs as in-app navigation links', async () => {
+    const user = userEvent.setup();
     renderPanel();
-    const proxyLink = screen.getByRole('link', { name: /Proxy guide/i });
-    expect(proxyLink).toHaveAttribute('href', 'https://www.mock-server.com/proxy/debugging_proxied_traffic.html');
-    expect(proxyLink).toHaveAttribute('target', '_blank');
+
+    expect(screen.getByText(/More in the tabs above/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Drift' }));
+    expect(useDashboardStore.getState().view).toBe('drift');
+
+    await user.click(screen.getByRole('button', { name: 'Metrics' }));
+    expect(useDashboardStore.getState().view).toBe('metrics');
+  });
+
+  it('links to the UI docs at the bottom', () => {
+    renderPanel();
+    const uiDocs = screen.getByRole('link', { name: 'UI docs' });
+    expect(uiDocs).toHaveAttribute('href', 'https://www.mock-server.com/mock_server/mockserver_ui.html');
+    expect(uiDocs).toHaveAttribute('target', '_blank');
   });
 
   it('opens the OpenAPI import dialog when the button is clicked', async () => {

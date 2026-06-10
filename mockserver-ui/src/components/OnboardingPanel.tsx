@@ -23,16 +23,18 @@ interface ActionCardProps {
   icon: React.ReactNode;
   title: string;
   description: string;
-  action: React.ReactNode;
+  actionLabel: string;
+  onAction: () => void;
+  docsHref: string;
 }
 
-function ActionCard({ icon, title, description, action }: ActionCardProps) {
+function ActionCard({ icon, title, description, actionLabel, onAction, docsHref }: ActionCardProps) {
   return (
     <Card
       variant="outlined"
       sx={{
-        flex: '1 1 260px',
-        maxWidth: 340,
+        flex: '1 1 0',
+        minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -48,10 +50,26 @@ function ActionCard({ icon, title, description, action }: ActionCardProps) {
           {description}
         </Typography>
       </CardContent>
-      <CardActions sx={{ px: 2, pb: 2, gap: 1, flexWrap: 'wrap' }}>{action}</CardActions>
+      <CardActions sx={{ px: 2, pb: 2, gap: 1, flexWrap: 'wrap' }}>
+        <Button size="small" variant="contained" onClick={onAction}>
+          {actionLabel}
+        </Button>
+        <Button size="small" variant="text" href={docsHref} target="_blank" rel="noopener">
+          Docs
+        </Button>
+      </CardActions>
     </Card>
   );
 }
+
+const OTHER_TABS: { view: ViewMode; label: string; description: string }[] = [
+  { view: 'dashboard', label: 'Dashboard', description: 'active mocks & live event log' },
+  { view: 'library', label: 'Library', description: 'import / export, Postman, WSDL, HAR' },
+  { view: 'verification', label: 'Verification', description: 'assert which requests were received' },
+  { view: 'drift', label: 'Drift', description: 'spot when an upstream API changes' },
+  { view: 'async', label: 'Async', description: 'Kafka / MQTT / AMQP broker mocking' },
+  { view: 'metrics', label: 'Metrics', description: 'Prometheus stats' },
+];
 
 export default function OnboardingPanel({ connectionParams }: OnboardingPanelProps) {
   const [openApiOpen, setOpenApiOpen] = useState(false);
@@ -87,107 +105,86 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
       <Box
         sx={{
           display: 'flex',
-          flexWrap: 'wrap',
+          flexWrap: 'nowrap',
           gap: 2,
+          alignItems: 'stretch',
           justifyContent: 'center',
-          maxWidth: 1100,
+          width: '100%',
+          maxWidth: 1200,
         }}
       >
         <ActionCard
           icon={<PauseCircleIcon color="primary" />}
-          title="Breakpoints & Request/Response Editing"
-          description="Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them. Like browser DevTools for any API."
-          action={
-            <Button size="small" variant="contained" onClick={go('breakpoints')}>
-              Open Breakpoints
-            </Button>
-          }
+          title="Breakpoints"
+          description="Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them."
+          actionLabel="Open Breakpoints"
+          onAction={go('breakpoints')}
+          docsHref="https://www.mock-server.com/mock_server/interactive_breakpoints.html"
         />
 
         <ActionCard
           icon={<SwapHorizIcon color="primary" />}
           title="Debugging Proxy"
           description="Sit MockServer between your app and a real API to record, inspect, and replay live traffic — and validate or rewrite it on the way through."
-          action={
-            <>
-              <Button size="small" variant="contained" onClick={go('traffic')}>
-                View Traffic
-              </Button>
-              <Button
-                size="small"
-                variant="text"
-                href="https://www.mock-server.com/proxy/debugging_proxied_traffic.html"
-                target="_blank"
-                rel="noopener"
-              >
-                Proxy guide
-              </Button>
-            </>
-          }
+          actionLabel="View Traffic"
+          onAction={go('traffic')}
+          docsHref="https://www.mock-server.com/proxy/debugging_proxied_traffic.html"
         />
 
         <ActionCard
           icon={<SmartToyIcon color="primary" />}
           title="LLM / AI Debugging"
           description="Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session."
-          action={
-            <Button size="small" variant="contained" onClick={go('sessions')}>
-              Open Sessions
-            </Button>
-          }
+          actionLabel="Open Sessions"
+          onAction={go('sessions')}
+          docsHref="https://www.mock-server.com/mock_server/ai_debugging.html"
         />
 
         <ActionCard
           icon={<UploadFileIcon color="primary" />}
           title="Mocking"
           description="Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically."
-          action={
-            <>
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<UploadFileIcon />}
-                onClick={() => setOpenApiOpen(true)}
-              >
-                Import OpenAPI
-              </Button>
-              <Button size="small" variant="text" onClick={go('composer')}>
-                Create a mock
-              </Button>
-            </>
-          }
+          actionLabel="Import OpenAPI"
+          onAction={() => setOpenApiOpen(true)}
+          docsHref="https://www.mock-server.com/mock_server/creating_expectations.html"
         />
 
         <ActionCard
           icon={<BoltIcon color="primary" />}
           title="Chaos Testing"
           description="Inject latency, errors, and dropped connections to test how your system copes when the APIs it depends on misbehave."
-          action={
-            <Button size="small" variant="contained" onClick={go('chaos')}>
-              Open Chaos
-            </Button>
-          }
+          actionLabel="Open Chaos"
+          onAction={go('chaos')}
+          docsHref="https://www.mock-server.com/mock_server/chaos_testing.html"
         />
       </Box>
 
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        sx={{ mt: 4, maxWidth: 760, textAlign: 'center' }}
-      >
-        More in the tabs above:{' '}
-        <Box component="span" sx={{ fontWeight: 600 }}>Dashboard</Box> (active mocks &amp; live event log),{' '}
-        <Box component="span" sx={{ fontWeight: 600 }}>Library</Box> (import / export, Postman, WSDL, HAR),{' '}
-        <Box component="span" sx={{ fontWeight: 600 }}>Verification</Box> (assert which requests were received),{' '}
-        <Box component="span" sx={{ fontWeight: 600 }}>Drift</Box> (spot when an upstream API changes),{' '}
-        <Box component="span" sx={{ fontWeight: 600 }}>Async</Box> (Kafka / MQTT / AMQP broker mocking), and{' '}
-        <Box component="span" sx={{ fontWeight: 600 }}>Metrics</Box> (Prometheus stats).{' '}
+      <Box sx={{ mt: 4, maxWidth: 760, width: '100%' }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          More in the tabs above:
+        </Typography>
+        <Box component="ul" sx={{ m: 0, pl: 3 }}>
+          {OTHER_TABS.map((tab) => (
+            <Box component="li" key={tab.view} sx={{ mb: 0.5 }}>
+              <Link component="button" type="button" onClick={go(tab.view)} sx={{ verticalAlign: 'baseline' }}>
+                {tab.label}
+              </Link>
+              <Typography component="span" variant="body2" color="text.secondary">
+                {' '}— {tab.description}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
+        See{' '}
         <Link
           href="https://www.mock-server.com/mock_server/mockserver_ui.html"
           target="_blank"
           rel="noopener"
         >
-          Dashboard docs
+          UI docs
         </Link>
       </Typography>
 
