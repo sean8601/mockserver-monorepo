@@ -124,7 +124,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -212,7 +212,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -276,7 +276,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -333,7 +333,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -397,7 +397,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -506,7 +506,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -552,7 +552,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -606,7 +606,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -686,7 +686,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -738,7 +738,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);
@@ -793,7 +793,7 @@ public class GrpcBidiInboundBreakpointTest {
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
             chatMethod, converter, echoResponder, null, new org.mockserver.grpc.IncrementalGrpcFrameDecoder(),
-            null, config, streamId
+            null, config, streamId, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);

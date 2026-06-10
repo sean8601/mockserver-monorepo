@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.*;
 import io.netty.handler.ssl.SslHandler;
+import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.codec.MockServerHttpServerCodec;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
@@ -30,11 +31,13 @@ public class HttpWebSocketResponseActionHandler {
     private final MockServerLogger mockServerLogger;
     private final Scheduler scheduler;
     private final Configuration configuration;
+    private final WebSocketClientRegistry webSocketClientRegistry;
 
-    public HttpWebSocketResponseActionHandler(MockServerLogger mockServerLogger, Scheduler scheduler, Configuration configuration) {
+    public HttpWebSocketResponseActionHandler(MockServerLogger mockServerLogger, Scheduler scheduler, Configuration configuration, WebSocketClientRegistry webSocketClientRegistry) {
         this.mockServerLogger = mockServerLogger;
         this.scheduler = scheduler;
         this.configuration = configuration;
+        this.webSocketClientRegistry = webSocketClientRegistry;
     }
 
     public void handle(HttpWebSocketResponse httpWebSocketResponse, ChannelHandlerContext ctx, org.mockserver.model.HttpRequest request) {
@@ -56,23 +59,32 @@ public class HttpWebSocketResponseActionHandler {
             return;
         }
 
-        // Determine if stream-frame breakpoints are active
-        final boolean streamBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM) != null;
-        final boolean inboundBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM) != null;
+        // Pre-compute breakpoint matchers once per stream/connection (CPX-01: reuse for all frames)
+        final org.mockserver.mock.breakpoint.BreakpointMatcher streamBreakpointMatcher = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM);
+        final boolean streamBreakpointsActive = streamBreakpointMatcher != null;
+        final org.mockserver.mock.breakpoint.BreakpointMatcher inboundBreakpointMatcher = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
+        final boolean inboundBreakpointsActive = inboundBreakpointMatcher != null;
         final String streamId;
         final String reqMethod;
         final String reqPath;
         final String inboundStreamId;
+        // Pre-compute WS dispatch flag (CPX-01: compute once, reuse for all frames)
+        final boolean useWsDispatch;
+        final String breakpointClientId;
         String correlationId = (request.getLogCorrelationId() != null
             ? request.getLogCorrelationId() : java.util.UUID.randomUUID().toString());
         if (streamBreakpointsActive) {
             streamId = correlationId + "-ws-stream";
             reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
             reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+            breakpointClientId = streamBreakpointMatcher.getClientId();
+            useWsDispatch = breakpointClientId != null && webSocketClientRegistry != null;
         } else {
             streamId = null;
             reqMethod = null;
             reqPath = null;
+            useWsDispatch = false;
+            breakpointClientId = null;
         }
         if (inboundBreakpointsActive) {
             inboundStreamId = correlationId + "-ws-inbound";
@@ -95,15 +107,17 @@ public class HttpWebSocketResponseActionHandler {
                     if (GraphQLSubscriptionHandler.isGraphQLWebSocketProtocol(httpWebSocketResponse.getSubprotocol())
                         && httpWebSocketResponse.getGraphqlSubscriptionFilter() != null) {
                         installGraphQLSubscriptionHandler(ctx, httpWebSocketResponse, handshaker,
-                            streamBreakpointsActive, streamId, reqMethod, reqPath, inboundStreamId);
+                            streamBreakpointsActive, streamId, reqMethod, reqPath, inboundStreamId,
+                            useWsDispatch, breakpointClientId);
                     } else {
                         installBidirectionalHandler(ctx, httpWebSocketResponse, handshaker,
-                            streamBreakpointsActive, streamId, reqMethod, reqPath, inboundStreamId);
+                            streamBreakpointsActive, streamId, reqMethod, reqPath, inboundStreamId,
+                            useWsDispatch, breakpointClientId);
 
                         List<WebSocketMessage> messages = httpWebSocketResponse.getMessages();
                         if (messages != null && !messages.isEmpty()) {
                             scheduleMessages(messages, 0, ctx, httpWebSocketResponse, request, handshaker,
-                                streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
                         } else if (httpWebSocketResponse.getMatchers() == null || httpWebSocketResponse.getMatchers().isEmpty()) {
                             finishWebSocket(ctx, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId);
                         }
@@ -146,7 +160,8 @@ public class HttpWebSocketResponseActionHandler {
     private void scheduleMessages(List<WebSocketMessage> messages, int index, ChannelHandlerContext ctx,
                                   HttpWebSocketResponse httpWebSocketResponse, org.mockserver.model.HttpRequest request,
                                   WebSocketServerHandshaker handshaker,
-                                  boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath) {
+                                  boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath,
+                                  boolean useWsDispatch, String breakpointClientId) {
         if (index >= messages.size() || !ctx.channel().isActive()) {
             boolean hasMatchers = httpWebSocketResponse.getMatchers() != null && !httpWebSocketResponse.getMatchers().isEmpty();
             if (!hasMatchers) {
@@ -175,50 +190,72 @@ public class HttpWebSocketResponseActionHandler {
                     isBinary = false;
                 } else {
                     scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
-                        streamBreakpointsActive, streamId, reqMethod, reqPath);
+                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
                     return;
                 }
 
                 if (!streamBreakpointsActive) {
                     // Default-off fast path: write immediately
                     writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
-                        handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                        handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
                     return;
                 }
 
                 // --- Stream-frame breakpoint path ---
-                PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                    .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-
-                if (pausedFrame == null) {
-                    // Cap reached -- write immediately
-                    writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
-                        handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
-                    return;
+                // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
+                if (useWsDispatch) {
+                    int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                            breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                            org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                            frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                    if (wsFuture != null) {
+                        decisionFuture = wsFuture;
+                    } else {
+                        // WS dispatch rejected (cap/not connected) -- write immediately
+                        writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
+                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                        return;
+                    }
+                } else {
+                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                        .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+                    if (pausedFrame == null) {
+                        // Cap reached -- write immediately
+                        writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
+                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                        return;
+                    }
+                    decisionFuture = pausedFrame.getDecisionFuture();
                 }
 
                 // Frame is parked. Chain the decision callback onto the channel's event loop.
                 final boolean finalIsBinary = isBinary;
-                pausedFrame.getDecisionFuture().thenAccept(decision ->
+                final byte[] capturedFrameBytes = frameBytes;
+                decisionFuture.thenAccept(decision ->
                     ctx.channel().eventLoop().execute(() -> {
                         if (!ctx.channel().isActive()) {
                             scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
-                                streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
                             return;
                         }
                         switch (decision.getAction()) {
-                            case CONTINUE -> writeWebSocketFrame(pausedFrame.getCapturedBytes(), finalIsBinary, ctx, request,
-                                messages, index, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                            case CONTINUE -> writeWebSocketFrame(capturedFrameBytes, finalIsBinary, ctx, request,
+                                messages, index, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId,
+                                reqMethod, reqPath, useWsDispatch, breakpointClientId);
                             case MODIFY -> writeWebSocketFrame(decision.getReplacementBody(), finalIsBinary, ctx, request,
-                                messages, index, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                messages, index, httpWebSocketResponse, handshaker, streamBreakpointsActive, streamId,
+                                reqMethod, reqPath, useWsDispatch, breakpointClientId);
                             case DROP ->
                                 scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
-                                    streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
                             case INJECT -> {
                                 // Write original frame, then inject extra, then proceed
                                 WebSocketFrame originalFrame = finalIsBinary
-                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()))
-                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(capturedFrameBytes))
+                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(capturedFrameBytes));
                                 ctx.writeAndFlush(originalFrame).addListener(future -> {
                                     if (ctx.channel().isActive()) {
                                         WebSocketFrame injectedFrame = finalIsBinary
@@ -226,10 +263,12 @@ public class HttpWebSocketResponseActionHandler {
                                             : new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getInjectedBody()));
                                         ctx.writeAndFlush(injectedFrame).addListener(f2 ->
                                             scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request,
-                                                handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath));
+                                                handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath,
+                                                useWsDispatch, breakpointClientId));
                                     } else {
                                         scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request,
-                                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath);
+                                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath,
+                                            useWsDispatch, breakpointClientId);
                                     }
                                 });
                             }
@@ -283,7 +322,8 @@ public class HttpWebSocketResponseActionHandler {
                                      org.mockserver.model.HttpRequest request, List<WebSocketMessage> messages,
                                      int index, HttpWebSocketResponse httpWebSocketResponse,
                                      WebSocketServerHandshaker handshaker,
-                                     boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath) {
+                                     boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath,
+                                     boolean useWsDispatch, String breakpointClientId) {
         WebSocketFrame frame = isBinary
             ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
             : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
@@ -302,7 +342,7 @@ public class HttpWebSocketResponseActionHandler {
                     );
                 }
                 scheduleMessages(messages, index + 1, ctx, httpWebSocketResponse, request, handshaker,
-                    streamBreakpointsActive, streamId, reqMethod, reqPath);
+                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
             } else {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                     mockServerLogger.logEvent(
@@ -337,7 +377,8 @@ public class HttpWebSocketResponseActionHandler {
                                                       WebSocketServerHandshaker handshaker,
                                                       boolean streamBreakpointsActive, String streamId,
                                                       String reqMethod, String reqPath,
-                                                      String inboundStreamId) {
+                                                      String inboundStreamId,
+                                                      boolean useWsDispatch, String breakpointClientId) {
         GraphQLSubscriptionHandler.FrameSender frameSender = (senderCtx, text, delay) -> {
             if (!senderCtx.channel().isActive()) {
                 return;
@@ -346,27 +387,47 @@ public class HttpWebSocketResponseActionHandler {
             if (streamBreakpointsActive) {
                 writeAction = () -> {
                     byte[] frameBytes = text.getBytes(StandardCharsets.UTF_8);
-                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                        .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-                    if (pausedFrame == null) {
-                        // Cap reached -- write immediately
-                        senderCtx.writeAndFlush(new TextWebSocketFrame(text));
-                        return;
+
+                    // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                    final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
+                    if (useWsDispatch) {
+                        int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                        java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                            org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                                breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                                org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                                frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                        if (wsFuture != null) {
+                            decisionFuture = wsFuture;
+                        } else {
+                            senderCtx.writeAndFlush(new TextWebSocketFrame(text));
+                            return;
+                        }
+                    } else {
+                        PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                            .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+                        if (pausedFrame == null) {
+                            senderCtx.writeAndFlush(new TextWebSocketFrame(text));
+                            return;
+                        }
+                        decisionFuture = pausedFrame.getDecisionFuture();
                     }
-                    pausedFrame.getDecisionFuture().thenAccept(decision ->
+
+                    final byte[] capturedBytes = frameBytes;
+                    decisionFuture.thenAccept(decision ->
                         senderCtx.channel().eventLoop().execute(() -> {
                             if (!senderCtx.channel().isActive()) {
                                 return;
                             }
                             switch (decision.getAction()) {
                                 case CONTINUE -> senderCtx.writeAndFlush(
-                                    new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes())));
+                                    new TextWebSocketFrame(Unpooled.wrappedBuffer(capturedBytes)));
                                 case MODIFY -> senderCtx.writeAndFlush(
                                     new TextWebSocketFrame(Unpooled.wrappedBuffer(decision.getReplacementBody())));
                                 case DROP -> { /* discard -- do not write */ }
                                 case INJECT -> {
                                     senderCtx.writeAndFlush(
-                                        new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes())))
+                                        new TextWebSocketFrame(Unpooled.wrappedBuffer(capturedBytes)))
                                         .addListener(f -> {
                                             if (senderCtx.channel().isActive()) {
                                                 senderCtx.writeAndFlush(
@@ -411,7 +472,8 @@ public class HttpWebSocketResponseActionHandler {
                 frameSender,
                 handshaker,
                 configuration,
-                inboundStreamId
+                inboundStreamId,
+                webSocketClientRegistry
             ));
     }
 
@@ -419,7 +481,8 @@ public class HttpWebSocketResponseActionHandler {
                                              WebSocketServerHandshaker handshaker,
                                              boolean streamBreakpointsActive, String streamId,
                                              String reqMethod, String reqPath,
-                                             String inboundStreamId) {
+                                             String inboundStreamId,
+                                             boolean useWsDispatch, String breakpointClientId) {
         List<WebSocketMessageMatcher> matchers = httpWebSocketResponse.getMatchers();
         if (matchers != null && !matchers.isEmpty()) {
             BidirectionalWebSocketFrameHandler.FrameSender frameSender = (senderCtx, message) -> {
@@ -441,18 +504,40 @@ public class HttpWebSocketResponseActionHandler {
                 Runnable writeAction;
                 if (streamBreakpointsActive) {
                     writeAction = () -> {
-                        PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                            .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-                        if (pausedFrame == null) {
-                            // Cap reached -- write immediately
-                            WebSocketFrame frame = isBinary
-                                ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
-                                : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
-                            senderCtx.writeAndFlush(frame);
-                            return;
+                        // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                        final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
+                        if (useWsDispatch) {
+                            int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                            java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                                org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                                    breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                                    org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                                    frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                            if (wsFuture != null) {
+                                decisionFuture = wsFuture;
+                            } else {
+                                WebSocketFrame frame = isBinary
+                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
+                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
+                                senderCtx.writeAndFlush(frame);
+                                return;
+                            }
+                        } else {
+                            PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                                .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
+                            if (pausedFrame == null) {
+                                WebSocketFrame frame = isBinary
+                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
+                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
+                                senderCtx.writeAndFlush(frame);
+                                return;
+                            }
+                            decisionFuture = pausedFrame.getDecisionFuture();
                         }
+
                         final boolean finalIsBinary = isBinary;
-                        pausedFrame.getDecisionFuture().thenAccept(decision ->
+                        final byte[] capturedBytes = frameBytes;
+                        decisionFuture.thenAccept(decision ->
                             senderCtx.channel().eventLoop().execute(() -> {
                                 if (!senderCtx.channel().isActive()) {
                                     return;
@@ -460,8 +545,8 @@ public class HttpWebSocketResponseActionHandler {
                                 switch (decision.getAction()) {
                                     case CONTINUE -> {
                                         WebSocketFrame f = finalIsBinary
-                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()))
-                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(capturedBytes))
+                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(capturedBytes));
                                         senderCtx.writeAndFlush(f);
                                     }
                                     case MODIFY -> {
@@ -473,8 +558,8 @@ public class HttpWebSocketResponseActionHandler {
                                     case DROP -> { /* discard -- do not write */ }
                                     case INJECT -> {
                                         WebSocketFrame orig = finalIsBinary
-                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()))
-                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                            ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(capturedBytes))
+                                            : new TextWebSocketFrame(Unpooled.wrappedBuffer(capturedBytes));
                                         senderCtx.writeAndFlush(orig).addListener(f -> {
                                             if (senderCtx.channel().isActive()) {
                                                 WebSocketFrame inj = finalIsBinary
@@ -521,7 +606,7 @@ public class HttpWebSocketResponseActionHandler {
                 }
             };
             ctx.pipeline().addLast("bidirectionalWebSocketHandler",
-                new BidirectionalWebSocketFrameHandler(matchers, frameSender, configuration, inboundStreamId));
+                new BidirectionalWebSocketFrameHandler(matchers, frameSender, configuration, inboundStreamId, webSocketClientRegistry));
         }
     }
 

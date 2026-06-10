@@ -91,22 +91,34 @@ public class NettyResponseWriter extends ResponseWriter {
         ctx.writeAndFlush(nettyResponse);
 
         // Determine if stream-frame breakpoints are active for this response
-        final boolean streamBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM) != null;
+        final org.mockserver.mock.breakpoint.BreakpointMatcher streamBreakpointMatcher = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM);
+        final boolean streamBreakpointsActive = streamBreakpointMatcher != null;
         // Stream identifier and request metadata are only needed when breakpoints
         // are active — keep them out of the default-off hot path (zero allocation).
         final String streamId;
         final String reqMethod;
         final String reqPath;
+        // WS-callback dispatch: when the matched breakpoint has a non-null clientId
+        // AND the per-server WS registry is available on the channel, dispatch over WS
+        final boolean useWsDispatch;
+        final String breakpointClientId;
+        final org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry wsRegistry;
         if (streamBreakpointsActive) {
             streamId = request.getLogCorrelationId() != null
                 ? request.getLogCorrelationId() + "-stream"
                 : java.util.UUID.randomUUID() + "-stream";
             reqMethod = request.getMethod() != null ? request.getMethod().getValue() : null;
             reqPath = request.getPath() != null ? request.getPath().getValue() : null;
+            breakpointClientId = streamBreakpointMatcher.getClientId();
+            wsRegistry = ctx.channel().attr(org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WS_REGISTRY_KEY).get();
+            useWsDispatch = breakpointClientId != null && wsRegistry != null;
         } else {
             streamId = null;
             reqMethod = null;
             reqPath = null;
+            useWsDispatch = false;
+            breakpointClientId = null;
+            wsRegistry = null;
         }
 
         // Subscribe to the streaming body to forward chunks as they arrive.
@@ -135,24 +147,54 @@ public class NettyResponseWriter extends ResponseWriter {
                 byte[] chunkBytes = new byte[chunk.readableBytes()];
                 chunk.getBytes(chunk.readerIndex(), chunkBytes);
 
-                PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                    .pauseFrame(streamId, chunkBytes, reqMethod, reqPath, configuration);
+                // Obtain the decision future — either from WS-callback dispatch or REST-park registry
+                final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
 
-                if (pausedFrame == null) {
-                    // Cap reached — write the frame immediately (no breakpoint)
-                    DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
-                    ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
-                    return;
+                if (useWsDispatch) {
+                    // WS-callback path: dispatch the frame to the owning client
+                    // Sequence numbers: use a simple counter per stream (the dispatcher does
+                    // not enforce ordering — that is the caller's responsibility via backpressure)
+                    int seq = StreamFrameBreakpointRegistry.getInstance()
+                        .nextSequenceNumber(streamId);
+                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                            breakpointClientId, streamId, seq,
+                            PausedStreamFrame.Direction.OUTBOUND,
+                            org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                            chunkBytes, reqMethod, reqPath,
+                            wsRegistry,
+                            configuration, mockServerLogger
+                        );
+                    if (wsFuture == null) {
+                        // Cap reached or client not connected — write immediately
+                        DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
+                        ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                        return;
+                    }
+                    decisionFuture = wsFuture;
+                } else {
+                    // REST-park path (existing)
+                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
+                        .pauseFrame(streamId, chunkBytes, reqMethod, reqPath, configuration);
+
+                    if (pausedFrame == null) {
+                        // Cap reached — write the frame immediately (no breakpoint)
+                        DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
+                        ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                        return;
+                    }
+                    decisionFuture = pausedFrame.getDecisionFuture();
                 }
 
-                // Frame is parked. The original chunk ByteBuf is NOT retained — we copied
-                // the bytes above. The chunk will be released by StreamingBody after onChunk returns.
+                // Frame is parked (either in registry or dispatched via WS). The original
+                // chunk ByteBuf is NOT retained — we copied the bytes above. The chunk will
+                // be released by StreamingBody after onChunk returns.
                 // We do NOT call streamingBody.requestMore() — this stops the upstream from
                 // sending more chunks (backpressure). We will call it after the frame is resolved.
 
-                // When the decision future completes (from control-plane API or timeout),
+                // When the decision future completes (from control-plane API, WS reply, or timeout),
                 // execute the action on the channel's event loop to ensure thread safety.
-                pausedFrame.getDecisionFuture().thenAccept(decision -> {
+                decisionFuture.thenAccept(decision -> {
                     // Marshal onto the channel's event loop
                     ctx.channel().eventLoop().execute(() -> {
                         if (!ctx.channel().isActive()) {
@@ -162,7 +204,7 @@ public class NettyResponseWriter extends ResponseWriter {
                         switch (decision.getAction()) {
                             case CONTINUE: {
                                 DefaultHttpContent content = new DefaultHttpContent(
-                                    Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                    Unpooled.wrappedBuffer(chunkBytes));
                                 ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
                                 break;
                             }
@@ -180,7 +222,7 @@ public class NettyResponseWriter extends ResponseWriter {
                             case INJECT: {
                                 // Write the original frame, then inject an additional frame
                                 DefaultHttpContent originalContent = new DefaultHttpContent(
-                                    Unpooled.wrappedBuffer(pausedFrame.getCapturedBytes()));
+                                    Unpooled.wrappedBuffer(chunkBytes));
                                 ctx.writeAndFlush(originalContent).addListener(future -> {
                                     if (ctx.channel().isActive()) {
                                         DefaultHttpContent injectedContent = new DefaultHttpContent(

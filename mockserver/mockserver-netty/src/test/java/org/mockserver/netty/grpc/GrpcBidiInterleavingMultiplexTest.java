@@ -1255,7 +1255,7 @@ public class GrpcBidiInterleavingMultiplexTest {
             new org.mockserver.grpc.IncrementalGrpcFrameDecoder(16);
 
         GrpcBidiStreamHandler handler = new GrpcBidiStreamHandler(
-            chatMethod, converter, null, bidiConfig, smallDecoder, () -> callbackInvoked.set(true), null, null
+            chatMethod, converter, null, bidiConfig, smallDecoder, () -> callbackInvoked.set(true), null, null, null
         );
 
         EmbeddedChannel channel = new EmbeddedChannel(captureHandler, handler);

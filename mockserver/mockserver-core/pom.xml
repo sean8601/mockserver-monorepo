@@ -526,6 +526,7 @@
                         <exclude>**/BreakpointMatcherRegistryTest.java</exclude>
                         <exclude>**/BreakpointMatcherEndpointTest.java</exclude>
                         <exclude>**/BreakpointCallbackDispatcherTest.java</exclude>
+                        <exclude>**/StreamFrameCallbackDispatcherTest.java</exclude>
                         <exclude>**/StreamFrameBreakpointRegistryTest.java</exclude>
                         <exclude>**/InboundBreakpointTest.java</exclude>
                         <exclude>**/MockStreamBreakpointTest.java</exclude>
@@ -601,6 +602,7 @@
                                 <include>**/BreakpointMatcherRegistryTest.java</include>
                                 <include>**/BreakpointMatcherEndpointTest.java</include>
                                 <include>**/BreakpointCallbackDispatcherTest.java</include>
+                                <include>**/StreamFrameCallbackDispatcherTest.java</include>
                                 <include>**/StreamFrameBreakpointRegistryTest.java</include>
                                 <include>**/InboundBreakpointTest.java</include>
                                 <include>**/MockStreamBreakpointTest.java</include>

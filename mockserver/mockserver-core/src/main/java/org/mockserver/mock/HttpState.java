@@ -413,6 +413,7 @@ public class HttpState {
         org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().reset();
         org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().reset();
         org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().reset();
+        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().reset();
         org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().clear();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(

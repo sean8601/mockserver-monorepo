@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.websocketx.*;
+import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.mock.breakpoint.PausedStreamFrame;
 import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
@@ -43,6 +44,10 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
     // Inbound breakpoint fields — null when inbound breakpoints are disabled
     private final Configuration configuration;
     private final String inboundStreamId;
+    // Pre-computed inbound breakpoint WS dispatch fields (CPX-01)
+    private final boolean inboundUseWsDispatch;
+    private final String inboundBreakpointClientId;
+    private final WebSocketClientRegistry webSocketClientRegistry;
 
     /**
      * Callback interface for sending response frames to the client.
@@ -55,24 +60,43 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
      * Original constructor — no inbound breakpoint support (backward compatible).
      */
     public BidirectionalWebSocketFrameHandler(List<WebSocketMessageMatcher> matchers, FrameSender frameSender) {
-        this(matchers, frameSender, null, null);
+        this(matchers, frameSender, null, null, null);
     }
 
     /**
      * Constructor with inbound breakpoint support.
      *
-     * @param matchers         the matcher list for bidirectional matching
-     * @param frameSender      callback for sending response frames
-     * @param configuration    the active server configuration (null to disable inbound breakpoints)
-     * @param inboundStreamId  the stream ID for inbound breakpoints (null to disable)
+     * @param matchers                the matcher list for bidirectional matching
+     * @param frameSender             callback for sending response frames
+     * @param configuration           the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId         the stream ID for inbound breakpoints (null to disable)
+     * @param webSocketClientRegistry the per-server WS registry for callback dispatch (null to disable WS dispatch)
      */
     public BidirectionalWebSocketFrameHandler(List<WebSocketMessageMatcher> matchers, FrameSender frameSender,
-                                              Configuration configuration, String inboundStreamId) {
+                                              Configuration configuration, String inboundStreamId,
+                                              WebSocketClientRegistry webSocketClientRegistry) {
         super(false); // don't auto-release frames — retain for pass-through if unmatched
         this.matchers = matchers;
         this.frameSender = frameSender;
         this.configuration = configuration;
         this.inboundStreamId = inboundStreamId;
+        this.webSocketClientRegistry = webSocketClientRegistry;
+        // Pre-compute inbound WS dispatch at construction time (effectively per-stream)
+        if (inboundStreamId != null) {
+            org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
+                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                    .findMatch(null, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
+            if (inboundMatcher != null && inboundMatcher.getClientId() != null && webSocketClientRegistry != null) {
+                this.inboundUseWsDispatch = true;
+                this.inboundBreakpointClientId = inboundMatcher.getClientId();
+            } else {
+                this.inboundUseWsDispatch = false;
+                this.inboundBreakpointClientId = null;
+            }
+        } else {
+            this.inboundUseWsDispatch = false;
+            this.inboundBreakpointClientId = null;
+        }
     }
 
     @Override
@@ -92,21 +116,39 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
             // This is safe because we NEVER touch the frame after this point.
             frame.release();
 
-            PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
-                .pauseFrame(inboundStreamId, frameBytes, "WS-INBOUND", "/",
-                    configuration, PausedStreamFrame.Direction.INBOUND);
-
-            if (paused == null) {
-                // Cap reached — process immediately with the copied bytes
-                processInboundFrame(ctx, frameBytes, isBinary, isText, isPing, isPong);
-                return;
+            // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+            final java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> decisionFuture;
+            if (inboundUseWsDispatch) {
+                int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
+                java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> wsFuture =
+                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                        inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                        org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
+                        frameBytes, "WS-INBOUND", "/", webSocketClientRegistry, configuration, null);
+                if (wsFuture != null) {
+                    decisionFuture = wsFuture;
+                } else {
+                    // WS dispatch rejected (cap/not connected) -- process immediately
+                    processInboundFrame(ctx, frameBytes, isBinary, isText, isPing, isPong);
+                    return;
+                }
+            } else {
+                PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
+                    .pauseFrame(inboundStreamId, frameBytes, "WS-INBOUND", "/",
+                        configuration, PausedStreamFrame.Direction.INBOUND);
+                if (paused == null) {
+                    // Cap reached — process immediately with the copied bytes
+                    processInboundFrame(ctx, frameBytes, isBinary, isText, isPing, isPong);
+                    return;
+                }
+                decisionFuture = paused.getDecisionFuture();
             }
 
             // Apply backpressure: stop reading more inbound frames
             ctx.channel().config().setAutoRead(false);
 
             // Chain the decision onto the channel's event loop (NEVER block the event loop)
-            paused.getDecisionFuture().thenAccept(decision ->
+            decisionFuture.thenAccept(decision ->
                 ctx.channel().eventLoop().execute(() -> {
                     try {
                         if (!ctx.channel().isActive()) {
@@ -119,7 +161,7 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
 
                         switch (decision.getAction()) {
                             case CONTINUE ->
-                                processInboundFrame(ctx, paused.getCapturedBytes(), isBinary, isText, isPing, isPong);
+                                processInboundFrame(ctx, frameBytes, isBinary, isText, isPing, isPong);
                             case MODIFY ->
                                 processInboundFrame(ctx, decision.getReplacementBody(), isBinary, isText, isPing, isPong);
                             case DROP -> {
@@ -127,7 +169,7 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
                             }
                             case INJECT -> {
                                 // Process the original frame, then also process the injected frame
-                                processInboundFrame(ctx, paused.getCapturedBytes(), isBinary, isText, isPing, isPong);
+                                processInboundFrame(ctx, frameBytes, isBinary, isText, isPing, isPong);
                                 processInboundFrame(ctx, decision.getInjectedBody(), isBinary, isText, isPing, isPong);
                             }
                             case CLOSE -> {

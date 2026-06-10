@@ -185,7 +185,8 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
 
                 GrpcBidiStreamHandler bidiHandler = new GrpcBidiStreamHandler(
                     methodDescriptor, converter, matchResult.bidiResponse, completionCallback,
-                    configuration, inboundStreamId
+                    configuration, inboundStreamId,
+                    httpState != null ? httpState.getWebSocketClientRegistry() : null
                 );
 
                 pipeline.replace(this, "grpcBidiStream", bidiHandler);

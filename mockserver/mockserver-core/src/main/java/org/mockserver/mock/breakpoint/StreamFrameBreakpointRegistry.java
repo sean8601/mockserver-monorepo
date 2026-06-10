@@ -264,6 +264,20 @@ public class StreamFrameBreakpointRegistry {
     }
 
     /**
+     * Returns the next monotonic sequence number for the given stream without parking
+     * a frame. Used by the WS-callback dispatch path which manages its own futures
+     * but needs to share the per-stream sequence counter for consistency with the
+     * REST-park path.
+     *
+     * @param streamId the stream to get the next sequence number for
+     * @return the next sequence number (0-based, monotonically increasing)
+     */
+    public int nextSequenceNumber(String streamId) {
+        AtomicInteger seqCounter = streamSequences.computeIfAbsent(streamId, k -> new AtomicInteger(0));
+        return seqCounter.getAndIncrement();
+    }
+
+    /**
      * Returns a snapshot of all currently held frames.
      */
     public Map<String, PausedStreamFrame> entries() {

@@ -247,13 +247,90 @@ in each entry when present.
 ### Dispatcher
 
 `BreakpointCallbackDispatcher` is the process-wide singleton that manages
-WS-callback breakpoint dispatch. It tracks in-flight dispatches per correlation
-id, schedules timeouts, and provides `autoCompleteForClient(clientId)` for
-disconnect cleanup. It is called from the hold-point gate sites in
-`HttpActionHandler` when the matched breakpoint has a non-null `clientId`.
+WS-callback breakpoint dispatch for buffered REQUEST/RESPONSE phases. It tracks
+in-flight dispatches per correlation id, schedules timeouts, and provides
+`autoCompleteForClient(clientId)` for disconnect cleanup. It is called from the
+hold-point gate sites in `HttpActionHandler` when the matched breakpoint has a
+non-null `clientId`.
 
-> **Note:** stream-frame phases (RESPONSE_STREAM, INBOUND_STREAM) are not yet
-> dispatched over the callback WS — that is planned for a later unit.
+### Per-frame WS protocol (RESPONSE_STREAM / INBOUND_STREAM)
+
+When a stream-frame breakpoint matcher has a non-null `clientId` and the
+owning client's callback WebSocket is connected, each held frame is dispatched
+over the WS for interactive resolution -- using the same
+`/_mockserver_callback_websocket` endpoint as the buffered request/response
+dispatch. This is the **frozen contract** that all language clients and the
+dashboard UI implement.
+
+`StreamFrameCallbackDispatcher` is the process-wide singleton that manages
+per-frame WS dispatch. It mirrors `BreakpointCallbackDispatcher` with the same
+safety rails (timeout auto-continue, max-held cap, disconnect cleanup) and
+the same non-blocking, event-loop-safe dispatch pattern. The dispatcher is
+stateless with respect to server identity: the per-server
+`WebSocketClientRegistry` is passed as a parameter at each dispatch site
+(obtained from `HttpState` at core sites, or from a channel
+`AttributeKey<WebSocketClientRegistry>` at netty sites), so multiple
+`HttpState`/server instances in the same JVM dispatch to their own clients.
+
+When `clientId` is absent (null), the frame is parked in
+`StreamFrameBreakpointRegistry` for REST-poll resolution (the existing path).
+Both paths coexist.
+
+#### Server-to-client: `PausedStreamFrameDTO`
+
+Sent over the callback WS to the owning client when a frame is held. The
+client inspects the frame and replies with a `StreamFrameDecisionDTO`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `correlationId` | String | Unique ID; client MUST echo in reply |
+| `streamId` | String | Stream this frame belongs to |
+| `sequenceNumber` | int | 0-based monotonic index within the stream |
+| `direction` | String | `"INBOUND"` or `"OUTBOUND"` |
+| `phase` | String | `"RESPONSE_STREAM"` or `"INBOUND_STREAM"` |
+| `body` | String | Frame payload, Base64-encoded (RFC 4648 section 4) |
+| `requestMethod` | String (nullable) | HTTP method of the original request |
+| `requestPath` | String (nullable) | Path of the original request |
+
+**Encoding:** the `body` is standard Base64 with no line breaks. Frames are
+arbitrary bytes (gRPC length-prefixed, WebSocket text/binary, SSE/chunked).
+
+#### Client-to-server: `StreamFrameDecisionDTO`
+
+The client's reply carrying the resolution decision.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `correlationId` | String | MUST match the `PausedStreamFrameDTO` |
+| `action` | String | `"CONTINUE"`, `"MODIFY"`, `"DROP"`, `"INJECT"`, or `"CLOSE"` |
+| `body` | String (nullable) | Base64-encoded replacement/injected bytes; required for `MODIFY` and `INJECT` |
+
+**Action semantics:**
+
+| Action | Effect |
+|--------|--------|
+| `CONTINUE` | Write the original frame unchanged |
+| `MODIFY` | Write the `body` bytes instead of the original |
+| `DROP` | Discard the frame (do not write / do not process inbound) |
+| `INJECT` | Write the original frame AND an additional frame with `body` bytes |
+| `CLOSE` | End the stream (drop frame, send stream-end signal, evict remaining) |
+
+#### Safety rails
+
+- **Timeout auto-continue:** if the client does not reply within
+  `breakpointTimeoutMillis`, the frame auto-continues with the original bytes.
+- **Max-held cap:** WS stream-frame dispatches share the `breakpointMaxHeld`
+  cap with all other breakpoint registries and dispatchers. When the cap is
+  reached, new frames are written immediately (no breakpoint).
+- **Disconnect cleanup:** when a callback client disconnects, all its in-flight
+  stream-frame dispatches are auto-completed to CONTINUE via
+  `StreamFrameCallbackDispatcher.autoCompleteForClient(clientId)`.
+- **Frame ordering:** ordering is preserved by the existing backpressure
+  mechanisms (streaming body `requestMore()`, `autoRead=false`, withhold
+  `ctx.read()`). The next frame is not delivered until the current one resolves.
+- **Event-loop safety:** the WS dispatch future's `thenAccept` callback is
+  marshalled onto the channel's event loop via `ctx.channel().eventLoop().execute()`.
+  No blocking occurs on the Netty event loop.
 
 ## Control-plane endpoints
 
@@ -309,8 +386,15 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
 
 ### Request/response breakpoints (WS-callback path)
 - `BreakpointCallbackDispatcher` — process-wide singleton for WS-callback breakpoint dispatch; dispatches to owning client via `WebSocketClientRegistry`, manages in-flight tracking, timeouts, and disconnect cleanup
-- `WebSocketClientRegistry.unregisterClient` — on disconnect, calls `BreakpointMatcherRegistry.removeByClientId` and `BreakpointCallbackDispatcher.autoCompleteForClient` to clean up the client's breakpoints and in-flight dispatches
+- `WebSocketClientRegistry.unregisterClient` — on disconnect, calls `BreakpointMatcherRegistry.removeByClientId`, `BreakpointCallbackDispatcher.autoCompleteForClient`, and `StreamFrameCallbackDispatcher.autoCompleteForClient` to clean up the client's breakpoints and in-flight dispatches
 - `HttpActionHandler.attemptResponseBreakpoint` — helper that branches between WS-callback and REST-park for RESPONSE phase
+
+### Stream frame breakpoints (WS-callback path)
+- `StreamFrameCallbackDispatcher` — process-wide singleton for per-frame WS-callback dispatch; dispatches `PausedStreamFrameDTO` to owning client, receives `StreamFrameDecisionDTO` replies, manages in-flight tracking, timeouts, and disconnect cleanup
+- `PausedStreamFrameDTO` — server-to-client WS message: correlationId, streamId, sequenceNumber, direction, phase, body (Base64), requestMethod, requestPath
+- `StreamFrameDecisionDTO` — client-to-server WS reply: correlationId, action (CONTINUE/MODIFY/DROP/INJECT/CLOSE), optional body (Base64)
+- `WebSocketClientRegistry.sendStreamFrameMessage` — sends a `PausedStreamFrameDTO` to a client
+- `WebSocketClientRegistry.registerStreamFrameCallbackHandler` — registers a callback for `StreamFrameDecisionDTO` replies by correlationId
 
 ### Stream frame breakpoints
 - `StreamFrameBreakpointRegistry` — process-wide singleton managing paused stream frames

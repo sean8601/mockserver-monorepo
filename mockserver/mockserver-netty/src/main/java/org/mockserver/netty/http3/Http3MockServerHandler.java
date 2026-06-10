@@ -387,7 +387,8 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             // expectations match, and the response writer will frame
             // grpc-status correctly in trailing HEADERS.
             Http3GrpcResponseWriter grpcResponseWriter = new Http3GrpcResponseWriter(
-                configuration, mockServerLogger, ctx, descriptorStore, null, null
+                configuration, mockServerLogger, ctx, descriptorStore, null, null,
+                httpState.getWebSocketClientRegistry()
             );
             processRequestThroughPipeline(ctx, request, grpcResponseWriter);
             return;
@@ -400,7 +401,8 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             String grpcService = grpcRequest.getFirstHeader("x-grpc-service");
             String grpcMethod = grpcRequest.getFirstHeader("x-grpc-method");
             Http3GrpcResponseWriter grpcResponseWriter = new Http3GrpcResponseWriter(
-                configuration, mockServerLogger, ctx, descriptorStore, grpcService, grpcMethod
+                configuration, mockServerLogger, ctx, descriptorStore, grpcService, grpcMethod,
+                httpState.getWebSocketClientRegistry()
             );
             processRequestThroughPipeline(ctx, grpcRequest, grpcResponseWriter);
         } catch (GrpcException e) {

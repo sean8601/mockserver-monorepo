@@ -77,7 +77,8 @@ public class InboundBreakpointTest {
             List.of(webSocketMessageMatcher().withText("ping").withResponses(webSocketMessage("pong"))),
             (ctx, msg) -> sentMessages.add(msg),
             config,
-            streamId
+            streamId,
+            null
         );
 
         // Create a text frame

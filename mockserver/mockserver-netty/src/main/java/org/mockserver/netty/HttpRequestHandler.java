@@ -117,6 +117,13 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
             metrics.increment(REQUESTS_RECEIVED_COUNT);
         }
 
+        // Ensure the per-server WebSocketClientRegistry is available as a channel attribute
+        // so that NettyResponseWriter (and other Netty handlers) can obtain it without
+        // holding a process-global singleton reference (COR-06).
+        if (ctx.channel().attr(org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WS_REGISTRY_KEY).get() == null) {
+            ctx.channel().attr(org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WS_REGISTRY_KEY)
+                .set(httpState.getWebSocketClientRegistry());
+        }
         ResponseWriter responseWriter = new NettyResponseWriter(configuration, mockServerLogger, ctx, httpState.getScheduler());
         try {
             configuration.addSubjectAlternativeName(request.getFirstHeader(HOST.toString()));

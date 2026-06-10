@@ -94,9 +94,9 @@ public class BreakpointCallbackDispatcher {
         Configuration configuration,
         MockServerLogger logger
     ) {
-        // max-held cap (shared with BreakpointRegistry)
+        // max-held cap (shared with all breakpoint registries and dispatchers)
         int maxHeld = configuration.breakpointMaxHeld();
-        int totalHeld = BreakpointRegistry.getInstance().size() + inFlight.size();
+        int totalHeld = totalHeldCount();
         if (totalHeld >= maxHeld) {
             if (logger != null && logger.isEnabledForInstance(INFO)) {
                 logger.logEvent(new LogEntry().setLogLevel(INFO)
@@ -192,9 +192,9 @@ public class BreakpointCallbackDispatcher {
         Configuration configuration,
         MockServerLogger logger
     ) {
-        // max-held cap (shared with BreakpointRegistry)
+        // max-held cap (shared with all breakpoint registries and dispatchers)
         int maxHeld = configuration.breakpointMaxHeld();
-        int totalHeld = BreakpointRegistry.getInstance().size() + inFlight.size();
+        int totalHeld = totalHeldCount();
         if (totalHeld >= maxHeld) {
             if (logger != null && logger.isEnabledForInstance(INFO)) {
                 logger.logEvent(new LogEntry().setLogLevel(INFO)
@@ -250,6 +250,20 @@ public class BreakpointCallbackDispatcher {
         }
 
         return future;
+    }
+
+    /**
+     * Returns the total held count across all 4 breakpoint sources:
+     * BreakpointRegistry (REST-park requests/responses),
+     * this dispatcher's in-flight WS dispatches,
+     * StreamFrameBreakpointRegistry (REST-park stream frames), and
+     * StreamFrameCallbackDispatcher's in-flight WS stream frame dispatches.
+     */
+    static int totalHeldCount() {
+        return BreakpointRegistry.getInstance().size()
+            + BreakpointCallbackDispatcher.getInstance().inFlightCount()
+            + StreamFrameBreakpointRegistry.getInstance().size()
+            + StreamFrameCallbackDispatcher.getInstance().inFlightCount();
     }
 
     /**

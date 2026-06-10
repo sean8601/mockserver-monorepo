@@ -11,6 +11,7 @@ import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshaker;
+import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.matchers.GraphQLAstMatcher;
 import org.mockserver.mock.breakpoint.PausedStreamFrame;
@@ -66,6 +67,10 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
     // Inbound breakpoint fields — null when inbound breakpoints are disabled
     private final Configuration configuration;
     private final String inboundStreamId;
+    // Pre-computed inbound breakpoint WS dispatch fields (CPX-01)
+    private final boolean inboundUseWsDispatch;
+    private final String inboundBreakpointClientId;
+    private final WebSocketClientRegistry webSocketClientRegistry;
 
     /**
      * Tracks active subscription IDs so that a client {@code complete} message
@@ -104,7 +109,7 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
         FrameSender frameSender,
         WebSocketServerHandshaker handshaker
     ) {
-        this(expectedSubscriptionQuery, subscriptionPayloads, frameSender, handshaker, null, null);
+        this(expectedSubscriptionQuery, subscriptionPayloads, frameSender, handshaker, null, null, null);
     }
 
     /**
@@ -116,6 +121,7 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
      * @param handshaker                the WebSocket handshaker for closing the connection
      * @param configuration             the active server configuration (null to disable inbound breakpoints)
      * @param inboundStreamId           the stream ID for inbound breakpoints (null to disable)
+     * @param webSocketClientRegistry   the per-server WS registry for callback dispatch (null to disable WS dispatch)
      */
     public GraphQLSubscriptionHandler(
         GraphQLBody expectedSubscriptionQuery,
@@ -123,7 +129,8 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
         FrameSender frameSender,
         WebSocketServerHandshaker handshaker,
         Configuration configuration,
-        String inboundStreamId
+        String inboundStreamId,
+        WebSocketClientRegistry webSocketClientRegistry
     ) {
         super(false); // don't auto-release frames
         this.astMatcher = createMatcher(expectedSubscriptionQuery);
@@ -132,6 +139,23 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
         this.handshaker = handshaker;
         this.configuration = configuration;
         this.inboundStreamId = inboundStreamId;
+        this.webSocketClientRegistry = webSocketClientRegistry;
+        // Pre-compute inbound WS dispatch at construction time (effectively per-stream)
+        if (inboundStreamId != null) {
+            org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
+                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                    .findMatch(null, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
+            if (inboundMatcher != null && inboundMatcher.getClientId() != null && webSocketClientRegistry != null) {
+                this.inboundUseWsDispatch = true;
+                this.inboundBreakpointClientId = inboundMatcher.getClientId();
+            } else {
+                this.inboundUseWsDispatch = false;
+                this.inboundBreakpointClientId = null;
+            }
+        } else {
+            this.inboundUseWsDispatch = false;
+            this.inboundBreakpointClientId = null;
+        }
     }
 
     private static GraphQLAstMatcher createMatcher(GraphQLBody body) {
@@ -171,20 +195,36 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
 
             byte[] frameBytes = text.getBytes(StandardCharsets.UTF_8);
 
-            PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
-                .pauseFrame(inboundStreamId, frameBytes, "GQL-INBOUND", "/",
-                    configuration, PausedStreamFrame.Direction.INBOUND);
-
-            if (paused == null) {
-                // Cap reached — process immediately
-                processText(ctx, text);
-                return;
+            // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+            final java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> decisionFuture;
+            if (inboundUseWsDispatch) {
+                int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
+                java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> wsFuture =
+                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                        inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                        org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
+                        frameBytes, "GQL-INBOUND", "/", webSocketClientRegistry, configuration, null);
+                if (wsFuture != null) {
+                    decisionFuture = wsFuture;
+                } else {
+                    processText(ctx, text);
+                    return;
+                }
+            } else {
+                PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
+                    .pauseFrame(inboundStreamId, frameBytes, "GQL-INBOUND", "/",
+                        configuration, PausedStreamFrame.Direction.INBOUND);
+                if (paused == null) {
+                    processText(ctx, text);
+                    return;
+                }
+                decisionFuture = paused.getDecisionFuture();
             }
 
             // Apply backpressure
             ctx.channel().config().setAutoRead(false);
 
-            paused.getDecisionFuture().thenAccept(decision ->
+            decisionFuture.thenAccept(decision ->
                 ctx.channel().eventLoop().execute(() -> {
                     try {
                         if (!ctx.channel().isActive()) {
@@ -197,14 +237,14 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
 
                         switch (decision.getAction()) {
                             case CONTINUE ->
-                                processText(ctx, new String(paused.getCapturedBytes(), StandardCharsets.UTF_8));
+                                processText(ctx, new String(frameBytes, StandardCharsets.UTF_8));
                             case MODIFY ->
                                 processText(ctx, new String(decision.getReplacementBody(), StandardCharsets.UTF_8));
                             case DROP -> {
                                 // Discard — do not process
                             }
                             case INJECT -> {
-                                processText(ctx, new String(paused.getCapturedBytes(), StandardCharsets.UTF_8));
+                                processText(ctx, new String(frameBytes, StandardCharsets.UTF_8));
                                 processText(ctx, new String(decision.getInjectedBody(), StandardCharsets.UTF_8));
                             }
                             case CLOSE -> {

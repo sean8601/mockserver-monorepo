@@ -9,6 +9,7 @@ import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
 import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
+import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.grpc.GrpcException;
 import org.mockserver.grpc.GrpcBidiRuleMatcher;
@@ -103,6 +104,10 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
     // Inbound breakpoint fields — null when inbound breakpoints are disabled
     private final Configuration configuration;
     private final String inboundStreamId;
+    // Pre-computed inbound breakpoint WS dispatch fields (CPX-01)
+    private final boolean inboundUseWsDispatch;
+    private final String inboundBreakpointClientId;
+    private final WebSocketClientRegistry webSocketClientRegistry;
 
     /**
      * Phase 3a constructor: function-based responder (backward compatible).
@@ -117,7 +122,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         Function<String, List<String>> responder
     ) {
-        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null, null, null);
+        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null, null, null, null);
     }
 
     /**
@@ -132,7 +137,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         GrpcBidiResponse config
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null, null, null);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null, null, null, null);
     }
 
     /**
@@ -151,18 +156,18 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcBidiResponse config,
         Runnable completionCallback
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, null, null);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, null, null, null);
     }
 
     /**
      * Phase 3b constructor: GrpcBidiResponse-driven with completion callback and inbound breakpoints.
      *
-     * @param methodDescriptor   the resolved gRPC method descriptor
-     * @param converter          JSON/protobuf converter for the method's message types
-     * @param config             the GrpcBidiResponse configuration from the matched expectation
-     * @param completionCallback invoked once on stream finish to clear responseInProgress
-     * @param configuration      the active server configuration (null to disable inbound breakpoints)
-     * @param inboundStreamId    the stream ID for inbound breakpoints (null to disable)
+     * @param methodDescriptor        the resolved gRPC method descriptor
+     * @param converter               JSON/protobuf converter for the method's message types
+     * @param config                  the GrpcBidiResponse configuration from the matched expectation
+     * @param completionCallback      invoked once on stream finish to clear responseInProgress
+     * @param configuration           the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId         the stream ID for inbound breakpoints (null to disable)
      */
     public GrpcBidiStreamHandler(
         Descriptors.MethodDescriptor methodDescriptor,
@@ -172,7 +177,31 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         Configuration configuration,
         String inboundStreamId
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId, null);
+    }
+
+    /**
+     * Phase 3b constructor: GrpcBidiResponse-driven with completion callback, inbound breakpoints,
+     * and per-server WebSocket registry.
+     *
+     * @param methodDescriptor        the resolved gRPC method descriptor
+     * @param converter               JSON/protobuf converter for the method's message types
+     * @param config                  the GrpcBidiResponse configuration from the matched expectation
+     * @param completionCallback      invoked once on stream finish to clear responseInProgress
+     * @param configuration           the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId         the stream ID for inbound breakpoints (null to disable)
+     * @param webSocketClientRegistry the per-server WS registry for callback dispatch (null to disable)
+     */
+    public GrpcBidiStreamHandler(
+        Descriptors.MethodDescriptor methodDescriptor,
+        GrpcJsonMessageConverter converter,
+        GrpcBidiResponse config,
+        Runnable completionCallback,
+        Configuration configuration,
+        String inboundStreamId,
+        WebSocketClientRegistry webSocketClientRegistry
+    ) {
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId, webSocketClientRegistry);
     }
 
     /**
@@ -186,7 +215,8 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         IncrementalGrpcFrameDecoder decoder,
         Runnable completionCallback,
         Configuration configuration,
-        String inboundStreamId
+        String inboundStreamId,
+        WebSocketClientRegistry webSocketClientRegistry
     ) {
         this.methodDescriptor = methodDescriptor;
         this.converter = converter;
@@ -196,7 +226,24 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         this.completionCallback = completionCallback;
         this.configuration = configuration;
         this.inboundStreamId = inboundStreamId;
+        this.webSocketClientRegistry = webSocketClientRegistry;
         this.finished = false;
+        // Pre-compute inbound WS dispatch at construction time (effectively per-stream)
+        if (inboundStreamId != null) {
+            org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
+                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                    .findMatch(null, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
+            if (inboundMatcher != null && inboundMatcher.getClientId() != null && webSocketClientRegistry != null) {
+                this.inboundUseWsDispatch = true;
+                this.inboundBreakpointClientId = inboundMatcher.getClientId();
+            } else {
+                this.inboundUseWsDispatch = false;
+                this.inboundBreakpointClientId = null;
+            }
+        } else {
+            this.inboundUseWsDispatch = false;
+            this.inboundBreakpointClientId = null;
+        }
     }
 
     @Override
@@ -294,18 +341,35 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
             // deliver the next DATA frame until we explicitly request it.
             if (inboundStreamId != null) {
 
-                PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
-                    .pauseFrame(inboundStreamId, bytes, "GRPC-INBOUND",
-                        methodDescriptor.getFullName(), configuration, PausedStreamFrame.Direction.INBOUND);
-
-                if (paused == null) {
-                    // Cap reached — process immediately (fall through to normal path)
-                    processDataBytes(ctx, bytes, endStream);
-                    return;
+                // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
+                if (inboundUseWsDispatch) {
+                    int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
+                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                            inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                            org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
+                            bytes, "GRPC-INBOUND", methodDescriptor.getFullName(), webSocketClientRegistry, configuration, null);
+                    if (wsFuture != null) {
+                        decisionFuture = wsFuture;
+                    } else {
+                        processDataBytes(ctx, bytes, endStream);
+                        return;
+                    }
+                } else {
+                    PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
+                        .pauseFrame(inboundStreamId, bytes, "GRPC-INBOUND",
+                            methodDescriptor.getFullName(), configuration, PausedStreamFrame.Direction.INBOUND);
+                    if (paused == null) {
+                        processDataBytes(ctx, bytes, endStream);
+                        return;
+                    }
+                    decisionFuture = paused.getDecisionFuture();
                 }
 
                 // Park: chain the decision onto the channel's event loop (NEVER block)
-                paused.getDecisionFuture().thenAccept(decision ->
+                final byte[] capturedBytes = bytes;
+                decisionFuture.thenAccept(decision ->
                     ctx.channel().eventLoop().execute(() -> {
                         try {
                             if (!ctx.channel().isActive()) {
@@ -314,7 +378,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
 
                             switch (decision.getAction()) {
                                 case CONTINUE ->
-                                    processDataBytes(ctx, paused.getCapturedBytes(), endStream);
+                                    processDataBytes(ctx, capturedBytes, endStream);
                                 case MODIFY ->
                                     processDataBytes(ctx, decision.getReplacementBody(), endStream);
                                 case DROP -> {
@@ -327,7 +391,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
                                 }
                                 case INJECT -> {
                                     // Process original, then also process the injected bytes
-                                    processDataBytes(ctx, paused.getCapturedBytes(), false);
+                                    processDataBytes(ctx, capturedBytes, false);
                                     processDataBytes(ctx, decision.getInjectedBody(), endStream);
                                 }
                                 case CLOSE -> {
