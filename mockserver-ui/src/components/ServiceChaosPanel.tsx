@@ -82,6 +82,10 @@ import StopIcon from '@mui/icons-material/Stop';
 import LinearProgress from '@mui/material/LinearProgress';
 import { getConfiguration, updateConfiguration, type Configuration } from '../lib/configuration';
 
+// Uniform width for every chaos field so the HTTP / gRPC / TCP sections line
+// up in columns and the longest labels are not truncated.
+const CHAOS_FIELD_W = 180;
+
 interface ServiceChaosPanelProps {
   connectionParams: ConnectionParams;
 }
@@ -1119,39 +1123,39 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               <Typography variant="caption" color="text.secondary">Register chaos for a host</Typography>
               {/* Row 1: host + core fault fields */}
               <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <TextField size="small" label="Host" placeholder="upstream.svc" value={form.host} onChange={setField('host')} onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }} sx={{ minWidth: 180 }} />
-                <TextField size="small" label="Error status" placeholder="503" value={form.errorStatus} onChange={setField('errorStatus')} sx={{ width: 110 }} />
-                <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: 100 }} />
-                <TextField size="small" label="Retry-After" placeholder="120" value={form.retryAfter} onChange={setField('retryAfter')} sx={{ width: 110 }} />
-                <TextField size="small" label="Drop prob (0–1)" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: 100 }} />
-                <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: 100 }} />
-                <TextField size="small" label="TTL ms" placeholder="60000" value={form.ttlMs} onChange={setField('ttlMs')} sx={{ width: 110 }} />
+                <TextField size="small" label="Host" placeholder="upstream.svc" value={form.host} onChange={setField('host')} onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Error status" placeholder="503" value={form.errorStatus} onChange={setField('errorStatus')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Retry-After" placeholder="120" value={form.retryAfter} onChange={setField('retryAfter')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Drop prob (0–1)" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="TTL ms" placeholder="60000" value={form.ttlMs} onChange={setField('ttlMs')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
               {/* Row 2: body corruption + slow response */}
               <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                <TextField size="small" label="Truncate body (0–1)" placeholder="0.5" value={form.truncateBodyAtFraction} onChange={setField('truncateBodyAtFraction')} sx={{ width: 130 }} />
+                <TextField size="small" label="Truncate body (0–1)" placeholder="0.5" value={form.truncateBodyAtFraction} onChange={setField('truncateBodyAtFraction')} sx={{ width: CHAOS_FIELD_W }} />
                 <FormControlLabel
                   control={<Switch size="small" checked={form.malformedBody} onChange={setFormToggle('malformedBody')} />}
                   label="Malformed body"
                 />
-                <TextField size="small" label="Slow chunk bytes" placeholder="64" value={form.slowResponseChunkSize} onChange={setField('slowResponseChunkSize')} sx={{ width: 120 }} />
-                <TextField size="small" label="Slow chunk delay ms" placeholder="500" value={form.slowResponseChunkDelayMs} onChange={setField('slowResponseChunkDelayMs')} sx={{ width: 140 }} />
+                <TextField size="small" label="Slow chunk bytes" placeholder="64" value={form.slowResponseChunkSize} onChange={setField('slowResponseChunkSize')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Slow chunk delay ms" placeholder="500" value={form.slowResponseChunkDelayMs} onChange={setField('slowResponseChunkDelayMs')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
               {/* Row 3: quota (rate limit) */}
               <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <TextField size="small" label="Quota name" placeholder="api-quota" value={form.quotaName} onChange={setField('quotaName')} sx={{ width: 140 }} />
-                <TextField size="small" label="Quota limit" placeholder="100" value={form.quotaLimit} onChange={setField('quotaLimit')} sx={{ width: 100 }} />
-                <TextField size="small" label="Quota window ms" placeholder="60000" value={form.quotaWindowMillis} onChange={setField('quotaWindowMillis')} sx={{ width: 130 }} />
-                <TextField size="small" label="Quota error status" placeholder="429" value={form.quotaErrorStatus} onChange={setField('quotaErrorStatus')} sx={{ width: 130 }} />
+                <TextField size="small" label="Quota name" placeholder="api-quota" value={form.quotaName} onChange={setField('quotaName')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Quota limit" placeholder="100" value={form.quotaLimit} onChange={setField('quotaLimit')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Quota window ms" placeholder="60000" value={form.quotaWindowMillis} onChange={setField('quotaWindowMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Quota error status" placeholder="429" value={form.quotaErrorStatus} onChange={setField('quotaErrorStatus')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
               {/* Row 4: count/time windows + degradation + seed */}
               <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <TextField size="small" label="Seed" placeholder="42" value={form.seed} onChange={setField('seed')} sx={{ width: 90 }} />
-                <TextField size="small" label="Succeed first" placeholder="5" value={form.succeedFirst} onChange={setField('succeedFirst')} sx={{ width: 110 }} />
-                <TextField size="small" label="Fail count" placeholder="10" value={form.failRequestCount} onChange={setField('failRequestCount')} sx={{ width: 100 }} />
-                <TextField size="small" label="Outage after ms" placeholder="5000" value={form.outageAfterMillis} onChange={setField('outageAfterMillis')} sx={{ width: 120 }} />
-                <TextField size="small" label="Outage duration ms" placeholder="30000" value={form.outageDurationMillis} onChange={setField('outageDurationMillis')} sx={{ width: 140 }} />
-                <TextField size="small" label="Degradation ramp ms" placeholder="60000" value={form.degradationRampMillis} onChange={setField('degradationRampMillis')} sx={{ width: 150 }} />
+                <TextField size="small" label="Seed" placeholder="42" value={form.seed} onChange={setField('seed')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Succeed first" placeholder="5" value={form.succeedFirst} onChange={setField('succeedFirst')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Fail count" placeholder="10" value={form.failRequestCount} onChange={setField('failRequestCount')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Outage after ms" placeholder="5000" value={form.outageAfterMillis} onChange={setField('outageAfterMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Outage duration ms" placeholder="30000" value={form.outageDurationMillis} onChange={setField('outageDurationMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Degradation ramp ms" placeholder="60000" value={form.degradationRampMillis} onChange={setField('degradationRampMillis')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
               {/* Row 5: GraphQL + register */}
               <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1161,8 +1165,8 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 />
                 {form.graphqlErrors && (
                   <>
-                    <TextField size="small" label="Error message" placeholder="Internal error" value={form.graphqlErrorMessage} onChange={setField('graphqlErrorMessage')} sx={{ width: 160 }} />
-                    <TextField size="small" label="Error code" placeholder="INTERNAL_ERROR" value={form.graphqlErrorCode} onChange={setField('graphqlErrorCode')} sx={{ width: 160 }} />
+                    <TextField size="small" label="Error message" placeholder="Internal error" value={form.graphqlErrorMessage} onChange={setField('graphqlErrorMessage')} sx={{ width: CHAOS_FIELD_W }} />
+                    <TextField size="small" label="Error code" placeholder="INTERNAL_ERROR" value={form.graphqlErrorCode} onChange={setField('graphqlErrorCode')} sx={{ width: CHAOS_FIELD_W }} />
                     <FormControlLabel
                       control={<Switch size="small" checked={form.graphqlNullifyData} onChange={setFormToggle('graphqlNullifyData')} />}
                       label="Nullify data"
@@ -1226,37 +1230,37 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                         <Box sx={{ py: 0.75, pl: 2, bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
                           {/* Edit row 1: core fault fields */}
                           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                            <TextField size="small" label="Error status" value={editForm.errorStatus} onChange={setEditField('errorStatus')} sx={{ width: 110 }} />
-                            <TextField size="small" label="Error prob (0–1)" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: 100 }} />
-                            <TextField size="small" label="Retry-After" value={editForm.retryAfter} onChange={setEditField('retryAfter')} sx={{ width: 110 }} />
-                            <TextField size="small" label="Drop prob (0–1)" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: 100 }} />
-                            <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: 100 }} />
+                            <TextField size="small" label="Error status" value={editForm.errorStatus} onChange={setEditField('errorStatus')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Error prob (0–1)" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Retry-After" value={editForm.retryAfter} onChange={setEditField('retryAfter')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Drop prob (0–1)" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: CHAOS_FIELD_W }} />
                           </Box>
                           {/* Edit row 2: body corruption + slow response */}
                           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <TextField size="small" label="Truncate body (0–1)" value={editForm.truncateBodyAtFraction} onChange={setEditField('truncateBodyAtFraction')} sx={{ width: 130 }} />
+                            <TextField size="small" label="Truncate body (0–1)" value={editForm.truncateBodyAtFraction} onChange={setEditField('truncateBodyAtFraction')} sx={{ width: CHAOS_FIELD_W }} />
                             <FormControlLabel
                               control={<Switch size="small" checked={editForm.malformedBody} onChange={setEditToggle('malformedBody')} />}
                               label="Malformed body"
                             />
-                            <TextField size="small" label="Slow chunk bytes" value={editForm.slowResponseChunkSize} onChange={setEditField('slowResponseChunkSize')} sx={{ width: 120 }} />
-                            <TextField size="small" label="Slow chunk delay ms" value={editForm.slowResponseChunkDelayMs} onChange={setEditField('slowResponseChunkDelayMs')} sx={{ width: 140 }} />
+                            <TextField size="small" label="Slow chunk bytes" value={editForm.slowResponseChunkSize} onChange={setEditField('slowResponseChunkSize')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Slow chunk delay ms" value={editForm.slowResponseChunkDelayMs} onChange={setEditField('slowResponseChunkDelayMs')} sx={{ width: CHAOS_FIELD_W }} />
                           </Box>
                           {/* Edit row 3: quota */}
                           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                            <TextField size="small" label="Quota name" value={editForm.quotaName} onChange={setEditField('quotaName')} sx={{ width: 140 }} />
-                            <TextField size="small" label="Quota limit" value={editForm.quotaLimit} onChange={setEditField('quotaLimit')} sx={{ width: 100 }} />
-                            <TextField size="small" label="Quota window ms" value={editForm.quotaWindowMillis} onChange={setEditField('quotaWindowMillis')} sx={{ width: 130 }} />
-                            <TextField size="small" label="Quota error status" value={editForm.quotaErrorStatus} onChange={setEditField('quotaErrorStatus')} sx={{ width: 130 }} />
+                            <TextField size="small" label="Quota name" value={editForm.quotaName} onChange={setEditField('quotaName')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Quota limit" value={editForm.quotaLimit} onChange={setEditField('quotaLimit')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Quota window ms" value={editForm.quotaWindowMillis} onChange={setEditField('quotaWindowMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Quota error status" value={editForm.quotaErrorStatus} onChange={setEditField('quotaErrorStatus')} sx={{ width: CHAOS_FIELD_W }} />
                           </Box>
                           {/* Edit row 4: count/time windows + degradation + seed */}
                           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                            <TextField size="small" label="Seed" value={editForm.seed} onChange={setEditField('seed')} sx={{ width: 90 }} />
-                            <TextField size="small" label="Succeed first" value={editForm.succeedFirst} onChange={setEditField('succeedFirst')} sx={{ width: 110 }} />
-                            <TextField size="small" label="Fail count" value={editForm.failRequestCount} onChange={setEditField('failRequestCount')} sx={{ width: 100 }} />
-                            <TextField size="small" label="Outage after ms" value={editForm.outageAfterMillis} onChange={setEditField('outageAfterMillis')} sx={{ width: 120 }} />
-                            <TextField size="small" label="Outage duration ms" value={editForm.outageDurationMillis} onChange={setEditField('outageDurationMillis')} sx={{ width: 140 }} />
-                            <TextField size="small" label="Degradation ramp ms" value={editForm.degradationRampMillis} onChange={setEditField('degradationRampMillis')} sx={{ width: 150 }} />
+                            <TextField size="small" label="Seed" value={editForm.seed} onChange={setEditField('seed')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Succeed first" value={editForm.succeedFirst} onChange={setEditField('succeedFirst')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Fail count" value={editForm.failRequestCount} onChange={setEditField('failRequestCount')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Outage after ms" value={editForm.outageAfterMillis} onChange={setEditField('outageAfterMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Outage duration ms" value={editForm.outageDurationMillis} onChange={setEditField('outageDurationMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Degradation ramp ms" value={editForm.degradationRampMillis} onChange={setEditField('degradationRampMillis')} sx={{ width: CHAOS_FIELD_W }} />
                           </Box>
                           {/* Edit row 5: GraphQL + apply/cancel */}
                           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1266,8 +1270,8 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                             />
                             {editForm.graphqlErrors && (
                               <>
-                                <TextField size="small" label="Error message" value={editForm.graphqlErrorMessage} onChange={setEditField('graphqlErrorMessage')} sx={{ width: 160 }} />
-                                <TextField size="small" label="Error code" value={editForm.graphqlErrorCode} onChange={setEditField('graphqlErrorCode')} sx={{ width: 160 }} />
+                                <TextField size="small" label="Error message" value={editForm.graphqlErrorMessage} onChange={setEditField('graphqlErrorMessage')} sx={{ width: CHAOS_FIELD_W }} />
+                                <TextField size="small" label="Error code" value={editForm.graphqlErrorCode} onChange={setEditField('graphqlErrorCode')} sx={{ width: CHAOS_FIELD_W }} />
                                 <FormControlLabel
                                   control={<Switch size="small" checked={editForm.graphqlNullifyData} onChange={setEditToggle('graphqlNullifyData')} />}
                                   label="Nullify data"
@@ -1455,36 +1459,36 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                     <Typography variant="caption" color="text.secondary">Register gRPC chaos for a service</Typography>
                     {/* Row 1: core fields */}
                     <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                      <TextField size="small" label="Service" placeholder="my.grpc.Service" value={grpcChaosForm.service} onChange={setGrpcChaosField('service')} onKeyDown={(e) => { if (e.key === 'Enter') handleRegisterGrpcChaos(); }} sx={{ minWidth: 200 }} />
+                      <TextField size="small" label="Service" placeholder="my.grpc.Service" value={grpcChaosForm.service} onChange={setGrpcChaosField('service')} onKeyDown={(e) => { if (e.key === 'Enter') handleRegisterGrpcChaos(); }} sx={{ width: CHAOS_FIELD_W }} />
                       <Select
                         size="small"
                         value={grpcChaosForm.errorStatusCode}
                         onChange={(e) => setGrpcChaosForm((prev) => ({ ...prev, errorStatusCode: e.target.value }))}
-                        sx={{ minWidth: 180 }}
+                        sx={{ width: CHAOS_FIELD_W }}
                       >
                         {GRPC_STATUS_CODES.map((code) => (
                           <MenuItem key={code} value={code}>{code}</MenuItem>
                         ))}
                       </Select>
-                      <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={grpcChaosForm.errorProbability} onChange={setGrpcChaosField('errorProbability')} sx={{ width: 100 }} />
-                      <TextField size="small" label="Error message" placeholder="service unavailable" value={grpcChaosForm.errorMessage} onChange={setGrpcChaosField('errorMessage')} sx={{ width: 160 }} />
-                      <TextField size="small" label="Latency ms" placeholder="200" value={grpcChaosForm.latencyMs} onChange={setGrpcChaosField('latencyMs')} sx={{ width: 100 }} />
-                      <TextField size="small" label="TTL ms" placeholder="60000" value={grpcChaosForm.ttlMs} onChange={setGrpcChaosField('ttlMs')} sx={{ width: 110 }} />
+                      <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={grpcChaosForm.errorProbability} onChange={setGrpcChaosField('errorProbability')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Error message" placeholder="service unavailable" value={grpcChaosForm.errorMessage} onChange={setGrpcChaosField('errorMessage')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Latency ms" placeholder="200" value={grpcChaosForm.latencyMs} onChange={setGrpcChaosField('latencyMs')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="TTL ms" placeholder="60000" value={grpcChaosForm.ttlMs} onChange={setGrpcChaosField('ttlMs')} sx={{ width: CHAOS_FIELD_W }} />
                     </Box>
                     {/* Row 2: quota + count-window + seed */}
                     <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                      <TextField size="small" label="Quota name" placeholder="rpc-quota" value={grpcChaosForm.quotaName} onChange={setGrpcChaosField('quotaName')} sx={{ width: 140 }} />
-                      <TextField size="small" label="Quota limit" placeholder="100" value={grpcChaosForm.quotaLimit} onChange={setGrpcChaosField('quotaLimit')} sx={{ width: 100 }} />
-                      <TextField size="small" label="Quota window ms" placeholder="60000" value={grpcChaosForm.quotaWindowMillis} onChange={setGrpcChaosField('quotaWindowMillis')} sx={{ width: 130 }} />
-                      <TextField size="small" label="Seed" placeholder="42" value={grpcChaosForm.seed} onChange={setGrpcChaosField('seed')} sx={{ width: 90 }} />
-                      <TextField size="small" label="Succeed first" placeholder="5" value={grpcChaosForm.succeedFirst} onChange={setGrpcChaosField('succeedFirst')} sx={{ width: 110 }} />
-                      <TextField size="small" label="Fail count" placeholder="10" value={grpcChaosForm.failRequestCount} onChange={setGrpcChaosField('failRequestCount')} sx={{ width: 100 }} />
+                      <TextField size="small" label="Quota name" placeholder="rpc-quota" value={grpcChaosForm.quotaName} onChange={setGrpcChaosField('quotaName')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Quota limit" placeholder="100" value={grpcChaosForm.quotaLimit} onChange={setGrpcChaosField('quotaLimit')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Quota window ms" placeholder="60000" value={grpcChaosForm.quotaWindowMillis} onChange={setGrpcChaosField('quotaWindowMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Seed" placeholder="42" value={grpcChaosForm.seed} onChange={setGrpcChaosField('seed')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Succeed first" placeholder="5" value={grpcChaosForm.succeedFirst} onChange={setGrpcChaosField('succeedFirst')} sx={{ width: CHAOS_FIELD_W }} />
+                      <TextField size="small" label="Fail count" placeholder="10" value={grpcChaosForm.failRequestCount} onChange={setGrpcChaosField('failRequestCount')} sx={{ width: CHAOS_FIELD_W }} />
                     </Box>
                     {/* Row 3: streaming/trailer faults */}
                     <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                       <FormControlLabel control={<Switch size="small" checked={grpcChaosForm.omitGrpcStatus} onChange={setGrpcChaosToggle('omitGrpcStatus')} />} label="Omit grpc-status" />
                       <FormControlLabel control={<Switch size="small" checked={grpcChaosForm.corruptGrpcStatus} onChange={setGrpcChaosToggle('corruptGrpcStatus')} />} label="Corrupt grpc-status" />
-                      <TextField size="small" label="Abort after N msgs" placeholder="3" value={grpcChaosForm.abortAfterMessages} onChange={setGrpcChaosField('abortAfterMessages')} sx={{ width: 140 }} />
+                      <TextField size="small" label="Abort after N msgs" placeholder="3" value={grpcChaosForm.abortAfterMessages} onChange={setGrpcChaosField('abortAfterMessages')} sx={{ width: CHAOS_FIELD_W }} />
                     </Box>
                     {/* Row 4: custom trailers textarea + register button */}
                     <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -1596,12 +1600,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
             <Paper variant="outlined" sx={{ p: 1, mb: 1 }}>
               <Typography variant="caption" color="text.secondary">Register TCP chaos for a host</Typography>
               <Box sx={{ display: 'flex', gap: 1, mt: 0.75, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <TextField size="small" label="Host" placeholder="upstream.svc" value={tcpForm.host} onChange={setTcpField('host')} onKeyDown={(e) => { if (e.key === 'Enter') handleRegisterTcp(); }} sx={{ minWidth: 160 }} />
-                <TextField size="small" label="Latency ms" placeholder="200" value={tcpForm.latencyMs} onChange={setTcpField('latencyMs')} sx={{ width: 100 }} />
-                <TextField size="small" label="Bandwidth B/s" placeholder="1024" value={tcpForm.bandwidthBytesPerSec} onChange={setTcpField('bandwidthBytesPerSec')} sx={{ width: 120 }} />
-                <TextField size="small" label="Slicer bytes" placeholder="64" value={tcpForm.slicerChunkSize} onChange={setTcpField('slicerChunkSize')} sx={{ width: 100 }} />
-                <TextField size="small" label="Limit bytes" placeholder="4096" value={tcpForm.limitDataBytes} onChange={setTcpField('limitDataBytes')} sx={{ width: 100 }} />
-                <TextField size="small" label="TTL ms" placeholder="60000" value={tcpForm.ttlMs} onChange={setTcpField('ttlMs')} sx={{ width: 100 }} />
+                <TextField size="small" label="Host" placeholder="upstream.svc" value={tcpForm.host} onChange={setTcpField('host')} onKeyDown={(e) => { if (e.key === 'Enter') handleRegisterTcp(); }} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Latency ms" placeholder="200" value={tcpForm.latencyMs} onChange={setTcpField('latencyMs')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Bandwidth B/s" placeholder="1024" value={tcpForm.bandwidthBytesPerSec} onChange={setTcpField('bandwidthBytesPerSec')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Slicer bytes" placeholder="64" value={tcpForm.slicerChunkSize} onChange={setTcpField('slicerChunkSize')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Limit bytes" placeholder="4096" value={tcpForm.limitDataBytes} onChange={setTcpField('limitDataBytes')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="TTL ms" placeholder="60000" value={tcpForm.ttlMs} onChange={setTcpField('ttlMs')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
               <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                 <FormControlLabel control={<Switch size="small" checked={tcpForm.down} onChange={setTcpToggle('down')} />} label="Down" />
