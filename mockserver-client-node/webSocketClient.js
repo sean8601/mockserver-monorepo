@@ -159,6 +159,17 @@
                 } else if (requestHandler) {
                     return requestHandler(request);
                 }
+                // breakpoint message with no matching handler — auto-continue with the
+                // original request so the server-side exchange is not left to time out
+                // (consistent with the stream-frame phase and the other language clients)
+                if (correlationId) {
+                    if (!request.headers) { request.headers = {}; }
+                    request.headers["WebSocketCorrelationId"] = Array.isArray(correlationId) ? correlationId : [correlationId];
+                    return {
+                        type: "org.mockserver.model.HttpRequest",
+                        value: JSON.stringify(request)
+                    };
+                }
                 return null;
             } else if (payload.type === "org.mockserver.model.HttpRequestAndHttpResponse") {
                 var requestAndResponse = JSON.parse(payload.value);
@@ -197,6 +208,17 @@
                     }
                 } else if (requestAndResponseHandler) {
                     return requestAndResponseHandler(requestAndResponse);
+                }
+                // breakpoint message with no matching handler — auto-continue with the
+                // original response (consistent with the other phases and language clients)
+                if (corrId2) {
+                    var origResp2 = requestAndResponse.httpResponse || {};
+                    if (!origResp2.headers) { origResp2.headers = {}; }
+                    origResp2.headers["WebSocketCorrelationId"] = Array.isArray(corrId2) ? corrId2 : [corrId2];
+                    return {
+                        type: "org.mockserver.model.HttpResponse",
+                        value: JSON.stringify(origResp2)
+                    };
                 }
                 return null;
             } else if (payload.type === "org.mockserver.serialization.model.PausedStreamFrameDTO") {

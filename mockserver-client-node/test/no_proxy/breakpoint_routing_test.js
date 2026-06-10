@@ -295,12 +295,17 @@ describe('routeBreakpointMessage — HttpRequest', function () {
         assert.equal(inner.path, "/b-handled");
     });
 
-    it('unknown breakpoint id with no legacy handler: returns null', function () {
+    it('unknown breakpoint id with no legacy handler: auto-continues with the original request', function () {
+        // A real breakpoint push always carries a WebSocketCorrelationId; if no handler
+        // matches the breakpoint id we must auto-continue (send the original back) rather
+        // than leave the server-side exchange to time out — consistent with the other
+        // phases and the other language clients.
         var payload = makeRequestPayload({
             method: "GET",
             path: "/unknown",
             headers: {
-                "X-MockServer-BreakpointId": "bp-nonexistent"
+                "X-MockServer-BreakpointId": "bp-nonexistent",
+                "WebSocketCorrelationId": "corr-unknown"
             }
         });
         var handlers = {
@@ -309,6 +314,21 @@ describe('routeBreakpointMessage — HttpRequest', function () {
             }
         };
         var reply = routeBreakpointMessage(payload, handlers);
+        assert.equal(reply.type, "org.mockserver.model.HttpRequest");
+        var inner = parseReplyValue(reply);
+        assert.equal(inner.path, "/unknown");
+        assert.deepEqual(inner.headers["WebSocketCorrelationId"], ["corr-unknown"]);
+    });
+
+    it('unknown breakpoint id with no correlation id: returns null (not a callback exchange)', function () {
+        var payload = makeRequestPayload({
+            method: "GET",
+            path: "/unknown",
+            headers: {
+                "X-MockServer-BreakpointId": "bp-nonexistent"
+            }
+        });
+        var reply = routeBreakpointMessage(payload, { breakpointRequestHandlers: {} });
         assert.equal(reply, null);
     });
 
