@@ -40,7 +40,7 @@ public class BreakpointMatcherRegistry {
     }
 
     /**
-     * Registers a new breakpoint matcher.
+     * Registers a new breakpoint matcher (REST-park resolution, no owner client).
      *
      * @param matcher       the request definition to match against
      * @param phases        the set of phases at which matching exchanges should break
@@ -50,9 +50,29 @@ public class BreakpointMatcherRegistry {
      */
     public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
                            Configuration configuration, MockServerLogger logger) {
+        return register(matcher, phases, null, configuration, logger);
+    }
+
+    /**
+     * Registers a new breakpoint matcher with an optional owner clientId.
+     *
+     * <p>When {@code clientId} is non-null, matched exchanges are dispatched over
+     * the callback WebSocket to that client for interactive resolution. When null,
+     * the existing REST-park behaviour is used.
+     *
+     * @param matcher       the request definition to match against
+     * @param phases        the set of phases at which matching exchanges should break
+     * @param clientId      the callback WS client that owns this breakpoint, or null
+     * @param configuration the active server configuration (passed to MatcherBuilder)
+     * @param logger        the server logger (passed to MatcherBuilder)
+     * @return the assigned UUID id for the registered breakpoint
+     */
+    public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
+                           String clientId,
+                           Configuration configuration, MockServerLogger logger) {
         String id = UUIDService.getUUID();
         HttpRequestMatcher prebuilt = new MatcherBuilder(configuration, logger).transformsToMatcher(matcher);
-        BreakpointMatcher entry = new BreakpointMatcher(id, matcher, phases, prebuilt);
+        BreakpointMatcher entry = new BreakpointMatcher(id, matcher, phases, prebuilt, clientId);
         entries.add(entry);
         return id;
     }
@@ -87,6 +107,31 @@ public class BreakpointMatcherRegistry {
      */
     public boolean remove(String id) {
         return entries.removeIf(entry -> entry.getId().equals(id));
+    }
+
+    /**
+     * Removes all breakpoints owned by the given callback client.
+     * Called when a WebSocket client disconnects so its breakpoints are cleaned up.
+     *
+     * @param clientId the client id whose breakpoints should be removed
+     * @return the number of breakpoints removed
+     */
+    public int removeByClientId(String clientId) {
+        if (clientId == null) {
+            return 0;
+        }
+        int removed = 0;
+        // CopyOnWriteArrayList.removeIf atomically removes all matching entries
+        // but does not return a count — iterate explicitly for the count.
+        java.util.Iterator<BreakpointMatcher> it = entries.iterator();
+        while (it.hasNext()) {
+            BreakpointMatcher entry = it.next();
+            if (clientId.equals(entry.getClientId())) {
+                entries.remove(entry);
+                removed++;
+            }
+        }
+        return removed;
     }
 
     /**

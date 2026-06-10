@@ -130,6 +130,9 @@ public class WebSocketClientRegistry {
         if (removeChannel != null && removeChannel.isOpen()) {
             removeChannel.close();
         }
+        // Clean up breakpoint matchers and in-flight WS dispatches owned by this client
+        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().removeByClientId(clientId);
+        org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().autoCompleteForClient(clientId);
         metrics.set(WEBSOCKET_CALLBACK_CLIENTS_COUNT, clientRegistry.size());
         if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(

@@ -16,6 +16,11 @@ import java.util.Set;
  * (via {@link org.mockserver.matchers.MatcherBuilder#transformsToMatcher(RequestDefinition)})
  * and reused for every {@code findMatch} call — no allocation on the hot path.
  *
+ * <p>When {@link #clientId} is non-null, matched exchanges are dispatched to
+ * the owning client over the callback WebSocket instead of being parked in the
+ * REST-based {@code BreakpointRegistry}. When null, the existing REST-park
+ * behaviour is preserved.
+ *
  * <p>Value-equality is on {@link #id} only (UUID assigned at registration).
  */
 public class BreakpointMatcher {
@@ -24,13 +29,21 @@ public class BreakpointMatcher {
     private final RequestDefinition requestMatcher;
     private final Set<BreakpointPhase> phases;
     private final transient HttpRequestMatcher prebuiltMatcher;
+    private final String clientId;
 
     public BreakpointMatcher(String id, RequestDefinition requestMatcher,
                              Set<BreakpointPhase> phases, HttpRequestMatcher prebuiltMatcher) {
+        this(id, requestMatcher, phases, prebuiltMatcher, null);
+    }
+
+    public BreakpointMatcher(String id, RequestDefinition requestMatcher,
+                             Set<BreakpointPhase> phases, HttpRequestMatcher prebuiltMatcher,
+                             String clientId) {
         this.id = id;
         this.requestMatcher = requestMatcher;
         this.phases = Collections.unmodifiableSet(EnumSet.copyOf(phases));
         this.prebuiltMatcher = prebuiltMatcher;
+        this.clientId = clientId;
     }
 
     public String getId() {
@@ -47,6 +60,14 @@ public class BreakpointMatcher {
 
     public HttpRequestMatcher getPrebuiltMatcher() {
         return prebuiltMatcher;
+    }
+
+    /**
+     * The callback WebSocket client id that owns this breakpoint, or {@code null}
+     * if the breakpoint should be resolved via the REST-park path.
+     */
+    public String getClientId() {
+        return clientId;
     }
 
     @Override
@@ -68,6 +89,9 @@ public class BreakpointMatcher {
 
     @Override
     public String toString() {
-        return "BreakpointMatcher{id='" + id + "', phases=" + phases + ", matcher=" + requestMatcher + "}";
+        return "BreakpointMatcher{id='" + id + "'"
+            + ", phases=" + phases
+            + (clientId != null ? ", clientId='" + clientId + "'" : "")
+            + ", matcher=" + requestMatcher + "}";
     }
 }

@@ -411,6 +411,7 @@ public class HttpState {
         org.mockserver.mock.dns.DnsIntentRegistry.getInstance().clear();
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().reset();
+        org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().reset();
         org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().reset();
         org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().clear();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -4150,9 +4151,14 @@ public class HttpState {
             // deserialize the request matcher
             RequestDefinition requestMatcher = getRequestDefinitionSerializer().deserialize(objectMapper.writeValueAsString(httpRequestNode));
 
+            // optional clientId — when present, breakpoint dispatches over the callback WS
+            com.fasterxml.jackson.databind.JsonNode clientIdNode = node.get("clientId");
+            String clientId = (clientIdNode != null && !clientIdNode.isNull() && clientIdNode.isTextual())
+                ? clientIdNode.asText(null) : null;
+
             // register
             String id = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                .register(requestMatcher, phases, configuration, mockServerLogger);
+                .register(requestMatcher, phases, clientId, configuration, mockServerLogger);
 
             // build response
             com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
@@ -4162,6 +4168,9 @@ public class HttpState {
                 phasesArray.add(phase.name());
             }
             result.set("phases", phasesArray);
+            if (clientId != null) {
+                result.put("clientId", clientId);
+            }
 
             return response().withStatusCode(CREATED.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
@@ -4188,6 +4197,9 @@ public class HttpState {
                     phasesArray.add(phase.name());
                 }
                 matcherNode.set("phases", phasesArray);
+                if (matcher.getClientId() != null) {
+                    matcherNode.put("clientId", matcher.getClientId());
+                }
                 matchersArray.add(matcherNode);
             }
 

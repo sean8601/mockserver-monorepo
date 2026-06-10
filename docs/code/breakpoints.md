@@ -191,7 +191,69 @@ Any forwarded/proxied request that matches `httpRequest` will be paused at the s
 
 **Matching semantics:** the `httpRequest` body uses the same matcher fields as an expectation request matcher (`method`, `path`, `headers`, `queryStringParameters`, `body`, etc.). An exchange pauses at a phase if any registered matcher matches the request for that phase.
 
-> **Forward-looking note:** interactive resolution over the callback WebSocket (instead of the REST poll/continue/modify/abort endpoints) is being introduced in a later unit.
+## WebSocket callback resolution (optional `clientId`)
+
+Breakpoint matchers support an optional `clientId` field that, when present,
+dispatches matched exchanges over the existing callback WebSocket
+(`/_mockserver_callback_websocket`) to the owning client for interactive
+resolution — reusing the same `WebSocketClientRegistry` dispatch primitives
+that the object-callback (`forwardObject` / `responseObject`) feature uses.
+
+When `clientId` is absent (null), the breakpoint is resolved via the existing
+REST-park path (`BreakpointRegistry` + `/mockserver/breakpoint/continue|modify|abort`).
+Both paths coexist: the dashboard and REST-only flows keep working unchanged
+while connected WS clients (any language client or future dashboard WS client)
+can resolve breakpoints interactively.
+
+### Registration with `clientId`
+
+```
+PUT /mockserver/breakpoint/matcher
+{
+  "httpRequest": { "method": "GET", "path": "/api/.*" },
+  "phases": ["REQUEST", "RESPONSE"],
+  "clientId": "my-ws-client-id"
+}
+```
+
+The list endpoint (`GET /mockserver/breakpoint/matchers`) includes `clientId`
+in each entry when present.
+
+### Resolution protocol
+
+- **REQUEST phase:** the paused request is sent to the client over the callback
+  WS (with a `WebSocketCorrelationId` header). The client replies with either:
+  - An `HttpRequest` — forward that request (MODIFY if different, CONTINUE if
+    identical to the original).
+  - An `HttpResponse` — ABORT (write that response to the downstream client,
+    do not forward upstream).
+
+- **RESPONSE phase:** the paused request+response are sent to the client. The
+  client replies with an `HttpResponse` — the server writes it to the
+  downstream client (MODIFY/CONTINUE).
+
+### Safety rails
+
+- **Timeout auto-continue:** if the client does not reply within
+  `breakpointTimeoutMillis`, the exchange auto-continues with the original
+  request/response.
+- **Max-held cap:** WS-callback dispatches share the `breakpointMaxHeld` cap
+  with the REST-park registry. When the cap is reached, new breakpoints are
+  skipped.
+- **Disconnect cleanup:** when a callback client disconnects, all its registered
+  breakpoint matchers are removed and any in-flight dispatches are auto-completed
+  to CONTINUE (no hung exchanges).
+
+### Dispatcher
+
+`BreakpointCallbackDispatcher` is the process-wide singleton that manages
+WS-callback breakpoint dispatch. It tracks in-flight dispatches per correlation
+id, schedules timeouts, and provides `autoCompleteForClient(clientId)` for
+disconnect cleanup. It is called from the hold-point gate sites in
+`HttpActionHandler` when the matched breakpoint has a non-null `clientId`.
+
+> **Note:** stream-frame phases (RESPONSE_STREAM, INBOUND_STREAM) are not yet
+> dispatched over the callback WS — that is planned for a later unit.
 
 ## Control-plane endpoints
 
@@ -231,14 +293,24 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
 
 ## Key classes
 
-### Request/response breakpoints
-- `BreakpointRegistry` — process-wide singleton managing paused exchanges
+### Breakpoint matcher registry
+- `BreakpointMatcher` — a registered breakpoint: request matcher, phases, optional `clientId`
+- `BreakpointMatcherRegistry` — process-wide singleton registry of breakpoint matchers with `findMatch`, `removeByClientId`
+- `BreakpointPhase` — enum: REQUEST, RESPONSE, RESPONSE_STREAM, INBOUND_STREAM
+
+### Request/response breakpoints (REST-park path)
+- `BreakpointRegistry` — process-wide singleton managing paused exchanges (REST resolution)
 - `PausedExchange` — holds phase, captured request/response, `CompletableFuture<BreakpointDecision>`
 - `BreakpointDecision` — CONTINUE / MODIFY (request or response) / ABORT resolution
 - `HttpActionHandler.handleUnmatchedProxyForward` — request-phase breakpoint intercept
 - `HttpActionHandler.writeForwardActionResponse` — response-phase breakpoint intercept (matched)
 - `HttpActionHandler.executeUnmatchedForward` — response-phase breakpoint intercept (unmatched)
 - `HttpState.handleBreakpointContinue/Modify/Abort` — control-plane handlers
+
+### Request/response breakpoints (WS-callback path)
+- `BreakpointCallbackDispatcher` — process-wide singleton for WS-callback breakpoint dispatch; dispatches to owning client via `WebSocketClientRegistry`, manages in-flight tracking, timeouts, and disconnect cleanup
+- `WebSocketClientRegistry.unregisterClient` — on disconnect, calls `BreakpointMatcherRegistry.removeByClientId` and `BreakpointCallbackDispatcher.autoCompleteForClient` to clean up the client's breakpoints and in-flight dispatches
+- `HttpActionHandler.attemptResponseBreakpoint` — helper that branches between WS-callback and REST-park for RESPONSE phase
 
 ### Stream frame breakpoints
 - `StreamFrameBreakpointRegistry` — process-wide singleton managing paused stream frames
