@@ -272,6 +272,10 @@ var mockServerClient;
             };
         };
 
+        // Import the shared routing function — available in both Node and
+        // browser-bundler contexts because webSocketClient.js exports it.
+        var _routeBreakpointMessage = (runningInNode() ? require('./webSocketClient').routeBreakpointMessage : null);
+
         var WebSocketClient = (runningInNode() ? require('./webSocketClient').webSocketClient(tls, caCertPemFilePath) : function (host, port, contextPath) {
             var clientId;
             var clientIdHandler;
@@ -301,125 +305,9 @@ var mockServerClient;
                             var socket = new WebSocket(webSocketLocation);
                             socket.onmessage = function (event) {
                                 var message = JSON.parse(event.data);
-                                if (message.type === "org.mockserver.model.HttpRequest") {
-                                    var request = JSON.parse(message.value);
-                                    // Check for breakpoint-id-routed handler
-                                    var bpId = null;
-                                    var corrId = null;
-                                    if (request.headers) {
-                                        for (var hk in request.headers) {
-                                            if (request.headers.hasOwnProperty(hk)) {
-                                                if (hk === "X-MockServer-BreakpointId" || hk === "x-mockserver-breakpointid") {
-                                                    bpId = Array.isArray(request.headers[hk]) ? request.headers[hk][0] : request.headers[hk];
-                                                }
-                                                if (hk === "WebSocketCorrelationId" || hk === "websocketcorrelationid") {
-                                                    corrId = Array.isArray(request.headers[hk]) ? request.headers[hk][0] : request.headers[hk];
-                                                }
-                                            }
-                                        }
-                                    }
-                                    var bpReqHandler = bpId ? breakpointRequestHandlers[bpId] : null;
-                                    if (bpReqHandler) {
-                                        try {
-                                            var bpResult = bpReqHandler(request);
-                                            if (bpResult === null || bpResult === undefined) { bpResult = request; }
-                                            if (corrId) {
-                                                if (!bpResult.headers) { bpResult.headers = {}; }
-                                                bpResult.headers["WebSocketCorrelationId"] = Array.isArray(corrId) ? corrId : [corrId];
-                                            }
-                                            var bpResultType = bpResult.statusCode !== undefined
-                                                ? "org.mockserver.model.HttpResponse"
-                                                : "org.mockserver.model.HttpRequest";
-                                            if (socket.readyState === WebSocket.OPEN) {
-                                                socket.send(JSON.stringify({ type: bpResultType, value: JSON.stringify(bpResult) }));
-                                            }
-                                        } catch (e) {
-                                            if (corrId) {
-                                                if (!request.headers) { request.headers = {}; }
-                                                request.headers["WebSocketCorrelationId"] = Array.isArray(corrId) ? corrId : [corrId];
-                                            }
-                                            if (socket.readyState === WebSocket.OPEN) {
-                                                socket.send(JSON.stringify({ type: "org.mockserver.model.HttpRequest", value: JSON.stringify(request) }));
-                                            }
-                                        }
-                                    } else if (requestHandler) {
-                                        var response = requestHandler(request);
-                                        if (socket.readyState === WebSocket.OPEN) {
-                                            socket.send(JSON.stringify(response));
-                                        } else {
-                                            throw "The socket is not open.";
-                                        }
-                                    }
-                                } else if (message.type === "org.mockserver.model.HttpRequestAndHttpResponse") {
-                                    var requestAndResponse = JSON.parse(message.value);
-                                    var bpId2 = null;
-                                    var corrId2 = null;
-                                    if (requestAndResponse.httpRequest && requestAndResponse.httpRequest.headers) {
-                                        var h2 = requestAndResponse.httpRequest.headers;
-                                        for (var hk2 in h2) {
-                                            if (h2.hasOwnProperty(hk2)) {
-                                                if (hk2 === "X-MockServer-BreakpointId" || hk2 === "x-mockserver-breakpointid") {
-                                                    bpId2 = Array.isArray(h2[hk2]) ? h2[hk2][0] : h2[hk2];
-                                                }
-                                                if (hk2 === "WebSocketCorrelationId" || hk2 === "websocketcorrelationid") {
-                                                    corrId2 = Array.isArray(h2[hk2]) ? h2[hk2][0] : h2[hk2];
-                                                }
-                                            }
-                                        }
-                                    }
-                                    var bpRespHandler = bpId2 ? breakpointResponseHandlers[bpId2] : null;
-                                    if (bpRespHandler) {
-                                        try {
-                                            var bpResp = bpRespHandler(requestAndResponse.httpRequest, requestAndResponse.httpResponse);
-                                            if (bpResp === null || bpResp === undefined) { bpResp = requestAndResponse.httpResponse; }
-                                            if (corrId2) {
-                                                if (!bpResp.headers) { bpResp.headers = {}; }
-                                                bpResp.headers["WebSocketCorrelationId"] = Array.isArray(corrId2) ? corrId2 : [corrId2];
-                                            }
-                                            if (socket.readyState === WebSocket.OPEN) {
-                                                socket.send(JSON.stringify({ type: "org.mockserver.model.HttpResponse", value: JSON.stringify(bpResp) }));
-                                            }
-                                        } catch (e) {
-                                            var origResp = requestAndResponse.httpResponse || {};
-                                            if (corrId2) {
-                                                if (!origResp.headers) { origResp.headers = {}; }
-                                                origResp.headers["WebSocketCorrelationId"] = Array.isArray(corrId2) ? corrId2 : [corrId2];
-                                            }
-                                            if (socket.readyState === WebSocket.OPEN) {
-                                                socket.send(JSON.stringify({ type: "org.mockserver.model.HttpResponse", value: JSON.stringify(origResp) }));
-                                            }
-                                        }
-                                    } else if (requestAndResponseHandler) {
-                                        var responseResult = requestAndResponseHandler(requestAndResponse);
-                                        if (socket.readyState === WebSocket.OPEN) {
-                                            socket.send(JSON.stringify(responseResult));
-                                        } else {
-                                            throw "The socket is not open.";
-                                        }
-                                    }
-                                } else if (message.type === "org.mockserver.serialization.model.PausedStreamFrameDTO") {
-                                    var pausedFrame = JSON.parse(message.value);
-                                    var sfBpId = pausedFrame.breakpointId;
-                                    var sfHandler = sfBpId ? breakpointStreamFrameHandlers[sfBpId] : null;
-                                    var decision;
-                                    if (sfHandler) {
-                                        try {
-                                            decision = sfHandler(pausedFrame);
-                                            if (!decision) { decision = { correlationId: pausedFrame.correlationId, action: "CONTINUE" }; }
-                                            else { decision.correlationId = pausedFrame.correlationId; }
-                                        } catch (e) {
-                                            decision = { correlationId: pausedFrame.correlationId, action: "CONTINUE" };
-                                        }
-                                    } else {
-                                        decision = { correlationId: pausedFrame.correlationId, action: "CONTINUE" };
-                                    }
-                                    if (socket.readyState === WebSocket.OPEN) {
-                                        socket.send(JSON.stringify({
-                                            type: "org.mockserver.serialization.model.StreamFrameDecisionDTO",
-                                            value: JSON.stringify(decision)
-                                        }));
-                                    }
-                                } else if (message.type === "org.mockserver.serialization.model.WebSocketClientIdDTO") {
+
+                                // Handle client-id registration directly
+                                if (message.type === "org.mockserver.serialization.model.WebSocketClientIdDTO") {
                                     var registration = JSON.parse(message.value);
                                     if (registration.clientId) {
                                         clientId = registration.clientId;
@@ -427,6 +315,19 @@ var mockServerClient;
                                             clientIdHandler(clientId);
                                         }
                                     }
+                                    return;
+                                }
+
+                                // Route breakpoint / callback messages via the shared pure function
+                                var reply = _routeBreakpointMessage(message, {
+                                    breakpointRequestHandlers: breakpointRequestHandlers,
+                                    breakpointResponseHandlers: breakpointResponseHandlers,
+                                    breakpointStreamFrameHandlers: breakpointStreamFrameHandlers,
+                                    requestHandler: requestHandler,
+                                    requestAndResponseHandler: requestAndResponseHandler
+                                });
+                                if (reply && socket.readyState === WebSocket.OPEN) {
+                                    socket.send(JSON.stringify(reply));
                                 }
                             };
                             socket.onopen = function (event) {
