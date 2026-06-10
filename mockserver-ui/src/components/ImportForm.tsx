@@ -143,7 +143,9 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
             <FormControlLabel
               key={f.value}
               value={f.value}
-              control={<Radio size="small" />}
+              // Zero vertical padding on the radio so its circle top-aligns with the title row
+              // rather than centring on the whole title+description block.
+              control={<Radio size="small" sx={{ py: 0 }} />}
               label={
                 <Box>
                   <Typography variant="body2" sx={{ fontSize: '0.82rem', fontWeight: 600 }}>
