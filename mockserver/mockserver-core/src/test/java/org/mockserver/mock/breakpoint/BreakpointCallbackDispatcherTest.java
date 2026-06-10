@@ -130,6 +130,7 @@ public class BreakpointCallbackDispatcherTest {
     @Test
     public void requestPhase_modify_whenClientRepliesWithDifferentRequest() throws Exception {
         HttpRequest originalRequest = request().withMethod("GET").withPath("/api/original");
+        originalRequest.withReceivedTimestamp(123456789L);
 
         CompletableFuture<BreakpointDecision> future = dispatcher.dispatchRequest(
             CLIENT_ID, originalRequest, webSocketClientRegistry, configuration, logger
@@ -151,6 +152,10 @@ public class BreakpointCallbackDispatcherTest {
         assertThat(decision.getAction(), is(BreakpointDecision.Action.MODIFY));
         assertThat(decision.getModifiedRequest().getPath().getValue(), is("/api/modified"));
         assertThat(decision.getModifiedRequest().getMethod().getValue(), is("POST"));
+        // The client's echoed/modified request lost the transient receivedTimestamp
+        // (it is @JsonIgnore); the dispatcher re-applies the ORIGINAL request's value
+        // so the subsequent RESPONSE phase groups by the original request time.
+        assertThat(decision.getModifiedRequest().getReceivedTimestamp(), is(123456789L));
     }
 
     @Test

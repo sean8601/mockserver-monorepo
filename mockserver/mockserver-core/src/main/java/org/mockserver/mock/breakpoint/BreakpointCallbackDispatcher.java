@@ -153,6 +153,12 @@ public class BreakpointCallbackDispatcher {
                     .removeHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME)
                     .removeHeader(BREAKPOINT_ID_HEADER_NAME)
                     .removeHeader(REQUEST_TIMESTAMP_HEADER_NAME);
+                // The client's echoed request is a fresh deserialized object that has
+                // lost the transient receivedTimestamp (it is @JsonIgnore). Re-apply
+                // the ORIGINAL request's timestamp so the subsequent RESPONSE-phase
+                // breakpoint (and the dashboard's Live Exchanges sort) groups by the
+                // original request time instead of when the response paused.
+                cleaned.withReceivedTimestamp(request.getReceivedTimestamp());
                 future.complete(BreakpointDecision.modify(cleaned));
             }
 
