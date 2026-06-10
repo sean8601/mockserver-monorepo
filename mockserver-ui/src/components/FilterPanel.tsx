@@ -74,7 +74,7 @@ interface MultiValueFieldProps {
   disabled: boolean;
 }
 
-function MultiValueField({ label, items, onChange, disabled }: MultiValueFieldProps) {
+export function MultiValueField({ label, items, onChange, disabled }: MultiValueFieldProps) {
   const addRow = () => onChange([...items, { name: '', values: [''] }]);
   const removeRow = (i: number) => onChange(items.filter((_, idx) => idx !== i));
   const setName = (i: number, name: string) =>
@@ -152,7 +152,7 @@ interface SingleValueFieldProps {
   disabled: boolean;
 }
 
-function SingleValueField({ label, items, onChange, disabled }: SingleValueFieldProps) {
+export function SingleValueField({ label, items, onChange, disabled }: SingleValueFieldProps) {
   const addRow = () => onChange([...items, { name: '', value: '' }]);
   const removeRow = (i: number) => onChange(items.filter((_, idx) => idx !== i));
   const setField = (i: number, field: 'name' | 'value', val: string) =>

@@ -52,6 +52,8 @@ import {
   type PausedStreamFrame,
   type StreamFrameDecision,
 } from '../lib/breakpointCallbackClient';
+import { MultiValueField, SingleValueField } from './FilterPanel';
+import type { KeyToMultiValue, KeyToValue } from '../types';
 
 interface BreakpointsPanelProps {
   connectionParams: ConnectionParams;
@@ -97,6 +99,9 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   // Registration form
   const [formMethod, setFormMethod] = useState('');
   const [formPath, setFormPath] = useState('');
+  const [formHeaders, setFormHeaders] = useState<KeyToMultiValue[]>([{ name: '', values: [''] }]);
+  const [formQueryParams, setFormQueryParams] = useState<KeyToMultiValue[]>([{ name: '', values: [''] }]);
+  const [formCookies, setFormCookies] = useState<KeyToValue[]>([{ name: '', value: '' }]);
   const [formPhases, setFormPhases] = useState<Set<MatcherPhase>>(new Set(['REQUEST', 'RESPONSE']));
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -196,6 +201,16 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     const httpRequest: Record<string, unknown> = {};
     if (formMethod) httpRequest.method = formMethod;
     if (formPath) httpRequest.path = formPath;
+    const validHeaders = formHeaders
+      .map((h) => ({ name: h.name, values: h.values.filter((v) => v !== '') }))
+      .filter((h) => h.name && h.values.length > 0);
+    if (validHeaders.length > 0) httpRequest.headers = validHeaders;
+    const validParams = formQueryParams
+      .map((q) => ({ name: q.name, values: q.values.filter((v) => v !== '') }))
+      .filter((q) => q.name && q.values.length > 0);
+    if (validParams.length > 0) httpRequest.queryStringParameters = validParams;
+    const validCookies = formCookies.filter((c) => c.name && c.value);
+    if (validCookies.length > 0) httpRequest.cookies = validCookies;
     // If no fields specified, it matches everything
     if (Object.keys(httpRequest).length === 0) {
       httpRequest.path = '.*';
@@ -214,12 +229,15 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       // Reset form
       setFormMethod('');
       setFormPath('');
+      setFormHeaders([{ name: '', values: [''] }]);
+      setFormQueryParams([{ name: '', values: [''] }]);
+      setFormCookies([{ name: '', value: '' }]);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setFormBusy(false);
     }
-  }, [connectionParams, clientId, formMethod, formPath, formPhases, refreshMatchers]);
+  }, [connectionParams, clientId, formMethod, formPath, formHeaders, formQueryParams, formCookies, formPhases, refreshMatchers]);
 
   const handleRemoveMatcher = useCallback(async (id: string) => {
     setBusy(true);
@@ -477,7 +495,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 onChange={(e) => setFormMethod(e.target.value)}
                 size="small"
                 sx={{ minWidth: 120 }}
-                slotProps={{ select: { displayEmpty: true } }}
+                slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
               >
                 {HTTP_METHODS.map((m) => (
                   <MenuItem key={m || '__any'} value={m}>
@@ -494,6 +512,9 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 sx={{ flex: 1, minWidth: 200 }}
               />
             </Box>
+            <MultiValueField label="Headers" items={formHeaders} onChange={setFormHeaders} disabled={formBusy} />
+            <MultiValueField label="Query parameters" items={formQueryParams} onChange={setFormQueryParams} disabled={formBusy} />
+            <SingleValueField label="Cookies" items={formCookies} onChange={setFormCookies} disabled={formBusy} />
             <FormGroup row sx={{ mb: 1 }}>
               {ALL_PHASES.map((p) => (
                 <FormControlLabel
