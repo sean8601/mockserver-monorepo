@@ -610,6 +610,26 @@ All data items are **collapsed by default** across all four dashboard panels:
 - **Standalone log entries** (`LogEntry` with `collapsible=true`): Show a chevron, description (timestamp + type), and a grey summary (first 80 chars of message text, truncated with `…`). Click to expand and see the full message parts.
 - **Grouped log entries** (`LogGroup`): Show an expand button with the group header entry. Click to expand and reveal all child entries.
 
+### Rendering Performance
+
+The four dashboard panels can each hold up to 100 rows and receive a full state
+snapshot over the WebSocket up to once per second, so the panels are tuned to
+avoid re-render storms and keep interaction smooth:
+
+| Technique | Where | Effect |
+|-----------|-------|--------|
+| Reference-stable reconciliation | `store` `reconcileByKey` (in `applyMessage`) | Each push reuses the previous object reference for any row whose content is unchanged (matched by stable `key`, structural compare), so memoized rows and their `useMemo([item.value])` hooks stay valid across pushes |
+| Row memoization | `React.memo` on `LogEntry`, `JsonListItem` | Unchanged rows skip re-rendering entirely on each push |
+| Deferred expand body | `useDeferredValue(expanded)` in `LogEntry` / `JsonListItem` | The chevron/layout reacts to the click immediately; the expensive expanded JSON tree (`@uiw/react-json-view`) builds in a non-blocking follow-up render |
+| Progressive rendering | `ProgressiveList` (used by `LogPanel`, `ExpectationPanel`, `RequestPanel`) | Mounts an initial batch (~visible rows) on first paint, then appends the rest in batches during browser idle time (`requestIdleCallback`, `setTimeout` fallback). The full list ends up laid out, so native scrolling stays smooth with no per-scroll work |
+| Lifted expand state | `useExpansion` hook (per panel) | Expand/collapse state is held in the panel keyed by row key, passed to rows as controlled `expanded`/`onToggle` props (with an uncontrolled fallback for standalone use), so it survives independently of any row remount |
+
+An earlier attempt used true windowing (`@tanstack/react-virtual`) but was
+reverted: it rendered the full list then re-rendered windowed (slower first
+paint) and its JS-driven per-scroll re-measuring made scrolling janky.
+Progressive rendering keeps the fast-first-paint benefit without the
+scroll-time cost.
+
 ### Copy to Clipboard
 
 Copy buttons appear on hover (CSS `opacity: 0` → `opacity: 1` on parent `:hover .copy-btn`):
