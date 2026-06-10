@@ -24,6 +24,13 @@ interface JsonListItemProps {
    * `turnIndex` predicate (e.g. matches via `containsToolResultFor`).
    */
   turnPosition?: { position: number; total: number };
+  /**
+   * Controlled expand state, lifted to the panel so it survives the row being
+   * unmounted while scrolled out of a virtualized list. When omitted the row
+   * falls back to its own internal state (standalone use / tests).
+   */
+  expanded?: boolean;
+  onToggleExpand?: (key: string) => void;
 }
 
 import { PROVIDER_DISPLAY } from '../lib/clientFilters';
@@ -159,8 +166,13 @@ function extractChaosSummary(value: Record<string, unknown>): string | null {
   return parts.length > 0 ? parts.join(', ') : 'enabled';
 }
 
-function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
-  const [expanded, setExpanded] = useState(false);
+function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onToggleExpand }: JsonListItemProps) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = expandedProp ?? internalExpanded;
+  const handleToggle = () => {
+    if (onToggleExpand) onToggleExpand(item.key);
+    else setInternalExpanded((prev) => !prev);
+  };
   // The chevron + row layout react to `expanded` urgently (instant click
   // feedback), but the expensive expanded JSON tree is gated on the deferred
   // value so building it (the @uiw/react-json-view subtree) happens in a
@@ -190,7 +202,7 @@ function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
           cursor: 'pointer',
           userSelect: 'none',
         }}
-        onClick={() => setExpanded((prev) => !prev)}
+        onClick={handleToggle}
       >
         {/* First row: expand toggle + position + (optional) expectation id +
             method on the left, path on the right. The expectation id is only

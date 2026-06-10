@@ -6,7 +6,8 @@ import Typography from '@mui/material/Typography';
 import type { JsonListItem } from '../types';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
-import { listRowSx } from './listRowSx';
+import VirtualList from './VirtualList';
+import { useExpansion } from '../hooks/useExpansion';
 import { matchesItemSearch } from '../lib/searchMatcher';
 
 interface RequestPanelProps {
@@ -115,11 +116,21 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
 // unchanged entries). traceparent extraction is done here via useMemo keyed on
 // the stable `item`, rather than in the parent's `.map()` where it re-ran for
 // every item on every parent render.
-const RequestRow = memo(function RequestRow({ item, index }: { item: JsonListItem; index: number }) {
+const RequestRow = memo(function RequestRow({
+  item,
+  index,
+  expanded,
+  onToggleExpand,
+}: {
+  item: JsonListItem;
+  index: number;
+  expanded: boolean;
+  onToggleExpand: (key: string) => void;
+}) {
   const tp = useMemo(() => extractTraceparentFromItem(item), [item]);
   return (
-    <Box sx={listRowSx}>
-      <JsonListItemComponent item={item} index={index} />
+    <Box>
+      <JsonListItemComponent item={item} index={index} expanded={expanded} onToggleExpand={onToggleExpand} />
       {tp && (
         <Box sx={{ pl: 6, pb: 0.5 }}>
           <TraceparentPill info={tp} />
@@ -140,6 +151,8 @@ export default function RequestPanel({
     [items, searchValue],
   );
 
+  const expansion = useExpansion();
+
   return (
     <Panel
       title={title}
@@ -153,9 +166,19 @@ export default function RequestPanel({
           {items.length === 0 ? 'No requests yet — recorded requests appear here as traffic reaches the server.' : 'No matching requests'}
         </Typography>
       ) : (
-        filtered.map((item, index) => (
-          <RequestRow key={item.key} item={item} index={filtered.length - index} />
-        ))
+        <VirtualList
+          count={filtered.length}
+          getKey={(i) => filtered[i]!.key}
+          estimateSize={48}
+          renderRow={(i) => (
+            <RequestRow
+              item={filtered[i]!}
+              index={filtered.length - i}
+              expanded={expansion.isExpanded(filtered[i]!.key)}
+              onToggleExpand={expansion.toggle}
+            />
+          )}
+        />
       )}
     </Panel>
   );

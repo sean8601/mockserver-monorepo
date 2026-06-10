@@ -1,12 +1,12 @@
 import { useRef, useMemo } from 'react';
-import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useDashboardStore } from '../store';
 import { isLogGroup } from '../types';
 import Panel from './Panel';
 import LogEntry from './LogEntry';
 import LogGroup from './LogGroup';
-import { listRowSx } from './listRowSx';
+import VirtualList from './VirtualList';
+import { useExpansion } from '../hooks/useExpansion';
 import { matchesLogSearch } from '../lib/searchMatcher';
 
 export default function LogPanel() {
@@ -19,6 +19,8 @@ export default function LogPanel() {
     () => (search ? logMessages.filter((m) => matchesLogSearch(m, search)) : logMessages),
     [logMessages, search],
   );
+
+  const expansion = useExpansion();
 
   return (
     <Panel
@@ -34,15 +36,30 @@ export default function LogPanel() {
           {logMessages.length === 0 ? 'No log messages yet — server activity appears here as requests are handled.' : 'No matching log messages'}
         </Typography>
       ) : (
-        filtered.map((message) => (
-          <Box key={message.key} sx={listRowSx}>
-            {isLogGroup(message) ? (
-              <LogGroup group={message} />
+        <VirtualList
+          count={filtered.length}
+          getKey={(i) => filtered[i]!.key}
+          estimateSize={40}
+          renderRow={(i) => {
+            const message = filtered[i]!;
+            return isLogGroup(message) ? (
+              <LogGroup
+                group={message}
+                open={expansion.isExpanded(message.key)}
+                onToggleOpen={() => expansion.toggle(message.key)}
+              />
             ) : (
-              <LogEntry entry={message.value} divider collapsible />
-            )}
-          </Box>
-        ))
+              <LogEntry
+                entry={message.value}
+                entryKey={message.key}
+                expanded={expansion.isExpanded(message.key)}
+                onToggleExpand={expansion.toggle}
+                divider
+                collapsible
+              />
+            );
+          }}
+        />
       )}
     </Panel>
   );

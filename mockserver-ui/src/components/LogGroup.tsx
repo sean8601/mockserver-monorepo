@@ -13,6 +13,13 @@ import CopyButton from './CopyButton';
 
 interface LogGroupProps {
   group: LogGroupType;
+  /**
+   * Controlled open state, lifted to the panel so it survives the group being
+   * unmounted while scrolled out of a virtualized list. When omitted the group
+   * falls back to its own internal state.
+   */
+  open?: boolean;
+  onToggleOpen?: () => void;
 }
 
 function extractCorrelationId(group: LogGroupType): string | null {
@@ -24,8 +31,13 @@ function extractCorrelationId(group: LogGroupType): string | null {
   return null;
 }
 
-export default function LogGroup({ group }: LogGroupProps) {
-  const [open, setOpen] = useState(false);
+export default function LogGroup({ group, open: openProp, onToggleOpen }: LogGroupProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const handleToggleOpen = () => {
+    if (onToggleOpen) onToggleOpen();
+    else setInternalOpen((prev) => !prev);
+  };
   const correlationId = useMemo(() => extractCorrelationId(group), [group]);
 
   const groupText = useMemo(() => {
@@ -52,7 +64,7 @@ export default function LogGroup({ group }: LogGroupProps) {
       <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
         <IconButton
           size="small"
-          onClick={() => setOpen(!open)}
+          onClick={handleToggleOpen}
           sx={{ color: 'rgb(222, 147, 95)', mt: 0.25 }}
         >
           {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}

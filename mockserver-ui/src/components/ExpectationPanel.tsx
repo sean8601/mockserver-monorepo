@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useDashboardStore } from '../store';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
-import { listRowSx } from './listRowSx';
+import VirtualList from './VirtualList';
+import { useExpansion } from '../hooks/useExpansion';
 import { applyClientFilters } from '../lib/clientFilters';
 import { matchesItemSearch } from '../lib/searchMatcher';
 import { buildTurnPositionMap } from '../lib/scenarioState';
@@ -31,6 +31,8 @@ export default function ExpectationPanel() {
     [clientFiltered, search],
   );
 
+  const expansion = useExpansion();
+
   return (
     <Panel
       title="Active Expectations"
@@ -46,15 +48,23 @@ export default function ExpectationPanel() {
             : 'No matching expectations'}
         </Typography>
       ) : (
-        filtered.map((item, index) => (
-          <Box key={item.key} sx={listRowSx}>
-            <JsonListItemComponent
-              item={item}
-              index={index + 1}
-              turnPosition={turnPositions.get(item.key)}
-            />
-          </Box>
-        ))
+        <VirtualList
+          count={filtered.length}
+          getKey={(i) => filtered[i]!.key}
+          estimateSize={56}
+          renderRow={(i) => {
+            const item = filtered[i]!;
+            return (
+              <JsonListItemComponent
+                item={item}
+                index={i + 1}
+                turnPosition={turnPositions.get(item.key)}
+                expanded={expansion.isExpanded(item.key)}
+                onToggleExpand={expansion.toggle}
+              />
+            );
+          }}
+        />
       )}
     </Panel>
   );

@@ -141,6 +141,15 @@ interface LogEntryProps {
   indent?: boolean;
   divider?: boolean;
   collapsible?: boolean;
+  /**
+   * Controlled expand state, lifted to the panel so it survives the row being
+   * unmounted while scrolled out of a virtualized list. `entryKey` is the
+   * stable key of the enclosing log message (LogEntryValue itself carries no
+   * key). When omitted the row falls back to its own internal state.
+   */
+  entryKey?: string;
+  expanded?: boolean;
+  onToggleExpand?: (key: string) => void;
 }
 
 function addLinks(value: string) {
@@ -262,11 +271,16 @@ function extractRequestFromEntry(entry: LogEntryValue): Record<string, unknown> 
   return null;
 }
 
-function LogEntry({ entry, indent = false, divider = false, collapsible = false }: LogEntryProps) {
+function LogEntry({ entry, indent = false, divider = false, collapsible = false, entryKey, expanded: expandedProp, onToggleExpand }: LogEntryProps) {
   const style = entry.style ?? {};
   const hasBody = entry.messageParts && entry.messageParts.length > 0;
   const canCollapse = collapsible && hasBody;
-  const [expanded, setExpanded] = useState(false);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = expandedProp ?? internalExpanded;
+  const handleToggle = () => {
+    if (onToggleExpand && entryKey !== undefined) onToggleExpand(entryKey);
+    else setInternalExpanded((prev) => !prev);
+  };
   // Defer the expanded body (which may contain a heavy JsonViewer for JSON
   // message parts) so the click toggling `expanded` repaints the chevron
   // immediately and the body builds in a non-blocking follow-up render.
@@ -307,7 +321,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false 
               cursor: 'pointer',
               userSelect: 'none',
             }}
-            onClick={() => setExpanded((prev) => !prev)}
+            onClick={handleToggle}
           >
             <IconButton size="small" sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}>
               {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
