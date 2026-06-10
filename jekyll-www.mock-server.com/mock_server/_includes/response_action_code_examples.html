@@ -31,6 +31,66 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+# this request matcher matches every request
+client.when(
+    HttpRequest.request()
+).respond(
+    HttpResponse.response(body="some_response_body")
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+# this request matcher matches every request
+client.when(
+    MockServer::HttpRequest.new
+).respond(
+    MockServer::HttpResponse.new(body: 'some_response_body')
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+
+client := mockserver.New("localhost", 1080)
+// this request matcher matches every request
+client.When(
+    mockserver.Request(),
+).Respond(
+    mockserver.Response().Body("some_response_body"),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+
+using var client = new MockServerClient("localhost", 1080);
+// this request matcher matches every request
+client.When(
+    HttpRequest.Request()
+).Respond(
+    HttpResponse.Response().WithBody("some_response_body")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::{ClientBuilder, HttpRequest, HttpResponse};
+
+let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+// this request matcher matches every request
+client.when(HttpRequest::new())
+    .respond(HttpResponse::new().body("some_response_body"))
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code"># if no request matcher is specified then every request matched
@@ -91,6 +151,118 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "path": "/api/data"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "FILE",
+            "filePath": "/path/to/response.json",
+            "contentType": "application/json"
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "path": "/api/data"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "FILE",
+            "filePath": "/path/to/response.json",
+            "contentType": "application/json"
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "path": "/api/data"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "FILE",
+            "filePath": "/path/to/response.json",
+            "contentType": "application/json"
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""path"": ""/api/data""
+    },
+    ""httpResponse"": {
+        ""body"": {
+            ""type"": ""FILE"",
+            ""filePath"": ""/path/to/response.json"",
+            ""contentType"": ""application/json""
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "path": "/api/data"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "FILE",
+            "filePath": "/path/to/response.json",
+            "contentType": "application/json"
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -149,6 +321,113 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpResponse": {
+        "headers": {
+            "content-type": ["text/plain; charset=utf-16"]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "/v9iEYv0Ti1W/Yvd"
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpResponse": {
+        "headers": {
+            "content-type": ["text/plain; charset=utf-16"]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "/v9iEYv0Ti1W/Yvd"
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpResponse": {
+        "headers": {
+            "content-type": ["text/plain; charset=utf-16"]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "/v9iEYv0Ti1W/Yvd"
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpResponse"": {
+        ""headers"": {
+            ""content-type"": [""text/plain; charset=utf-16""]
+        },
+        ""body"": {
+            ""type"": ""BINARY"",
+            ""base64Bytes"": ""/v9iEYv0Ti1W/Yvd""
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpResponse": {
+        "headers": {
+            "content-type": ["text/plain; charset=utf-16"]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "/v9iEYv0Ti1W/Yvd"
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -210,6 +489,138 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "method": "GET",
+        "path": "/simple"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "STRING",
+            "string": "\u0633\u0644\u0627\u0645",
+            "contentType": "text/plain; charset=utf-8"
+         }
+    },
+    "times": {
+        "unlimited": true
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "method": "GET",
+        "path": "/simple"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "STRING",
+            "string": "\u0633\u0644\u0627\u0645",
+            "contentType": "text/plain; charset=utf-8"
+         }
+    },
+    "times": {
+        "unlimited": true
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/simple"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "STRING",
+            "string": "\u0633\u0644\u0627\u0645",
+            "contentType": "text/plain; charset=utf-8"
+         }
+    },
+    "times": {
+        "unlimited": true
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""method"": ""GET"",
+        ""path"": ""/simple""
+    },
+    ""httpResponse"": {
+        ""body"": {
+            ""type"": ""STRING"",
+            ""string"": ""\u0633\u0644\u0627\u0645"",
+            ""contentType"": ""text/plain; charset=utf-8""
+         }
+    },
+    ""times"": {
+        ""unlimited"": true
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/simple"
+    },
+    "httpResponse": {
+        "body": {
+            "type": "STRING",
+            "string": "\u0633\u0644\u0627\u0645",
+            "contentType": "text/plain; charset=utf-8"
+         }
+    },
+    "times": {
+        "unlimited": true
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT http://localhost:1080/mockserver/expectation -H "Content-Type: application/json; charset=utf-8" --data '{
@@ -267,6 +678,80 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+# this request matcher matches every request
+client.when(
+    HttpRequest.request()
+).respond(
+    HttpResponse.response(body="some_response_body")
+        .with_header("Content-Type", "plain/text")
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+# this request matcher matches every request
+client.when(
+    MockServer::HttpRequest.new
+).respond(
+    MockServer::HttpResponse.new(
+        body: 'some_response_body',
+        headers: [MockServer::KeyToMultiValue.new(
+            name: 'Content-Type', values: ['plain/text']
+        )]
+    )
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+
+client := mockserver.New("localhost", 1080)
+// this request matcher matches every request
+client.When(
+    mockserver.Request(),
+).Respond(
+    mockserver.Response().
+        Body("some_response_body").
+        Header("Content-Type", "plain/text"),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+
+using var client = new MockServerClient("localhost", 1080);
+// this request matcher matches every request
+client.When(
+    HttpRequest.Request()
+).Respond(
+    HttpResponse.Response()
+        .WithBody("some_response_body")
+        .WithHeader("Content-Type", "plain/text")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::{ClientBuilder, HttpRequest, HttpResponse};
+
+let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+// this request matcher matches every request
+client.when(HttpRequest::new())
+    .respond(
+        HttpResponse::new()
+            .body("some_response_body")
+            .header("Content-Type", "plain/text")
+    )
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT http://localhost:1080/mockserver/expectation -H "Content-Type: application/json; charset=utf-8" --data '{
@@ -319,6 +804,100 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+# this request matcher matches every request
+client.when(
+    HttpRequest.request()
+).respond(
+    HttpResponse.response(body="some_response_body")
+        .with_header("Content-Type", "plain/text")
+        .with_cookie("Session", "97d43b1e-fe03-4855-926a-f448eddac32f")
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+# this request matcher matches every request
+client.when(
+    MockServer::HttpRequest.new
+).respond(
+    MockServer::HttpResponse.new(
+        body: 'some_response_body',
+        headers: [MockServer::KeyToMultiValue.new(
+            name: 'Content-Type', values: ['plain/text']
+        )],
+        cookies: [MockServer::KeyToMultiValue.new(
+            name: 'Session', values: ['97d43b1e-fe03-4855-926a-f448eddac32f']
+        )]
+    )
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+
+client := mockserver.New("localhost", 1080)
+// this request matcher matches every request
+client.When(
+    mockserver.Request(),
+).Respond(
+    mockserver.Response().
+        Body("some_response_body").
+        Header("Content-Type", "plain/text").
+        Cookie("Session", "97d43b1e-fe03-4855-926a-f448eddac32f"),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpResponse"": {
+        ""headers"": {
+            ""Content-Type"": [""plain/text""]
+        },
+        ""cookies"": {
+            ""Session"": ""97d43b1e-fe03-4855-926a-f448eddac32f""
+        },
+        ""body"": ""some_response_body""
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpResponse": {
+        "headers": {
+            "Content-Type": ["plain/text"]
+        },
+        "cookies": {
+            "Session": "97d43b1e-fe03-4855-926a-f448eddac32f"
+        },
+        "body": "some_response_body"
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -374,6 +953,74 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+client.when(
+    HttpRequest.request(path="/some/path").with_method("POST")
+).respond(
+    HttpResponse.response()
+        .with_status_code(418)
+        .with_reason_phrase("I'm a teapot")
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.when(
+    MockServer::HttpRequest.new(method: 'POST', path: '/some/path')
+).respond(
+    MockServer::HttpResponse.new(
+        status_code: 418,
+        reason_phrase: "I'm a teapot"
+    )
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+
+client := mockserver.New("localhost", 1080)
+client.When(
+    mockserver.Request().Method("POST").Path("/some/path"),
+).Respond(
+    mockserver.Response().
+        StatusCode(418).
+        ReasonPhrase("I'm a teapot"),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+
+using var client = new MockServerClient("localhost", 1080);
+client.When(
+    HttpRequest.Request().WithMethod("POST").WithPath("/some/path")
+).Respond(
+    HttpResponse.Response()
+        .WithStatusCode(418)
+        .WithReasonPhrase("I'm a teapot")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::{ClientBuilder, HttpRequest, HttpResponse};
+
+let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+client.when(
+    HttpRequest::new().method("POST").path("/some/path")
+).respond(
+    HttpResponse::new().status_code(418)
+).unwrap();
+// Note: the Rust client does not expose reason_phrase;
+// use a raw PUT /mockserver/expectation request for that field</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -438,6 +1085,138 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "path": "/ws/rest/user/[0-9]+/icon/[0-9]+\\.png"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "headers": {
+            "content-type": ["image/png"],
+            "content-disposition": ["form-data; name=\"test.png\"; filename=\"test.png\""]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "iVBORw0KGgoAAAANSUhEUgAAAqwAAAAp..."
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "path": "/ws/rest/user/[0-9]+/icon/[0-9]+\\.png"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "headers": {
+            "content-type": ["image/png"],
+            "content-disposition": ["form-data; name=\"test.png\"; filename=\"test.png\""]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "iVBORw0KGgoAAAANSUhEUgAAAqwAAAAp..."
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "path": "/ws/rest/user/[0-9]+/icon/[0-9]+\\.png"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "headers": {
+            "content-type": ["image/png"],
+            "content-disposition": ["form-data; name=\"test.png\"; filename=\"test.png\""]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "iVBORw0KGgoAAAANSUhEUgAAAqwAAAAp..."
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""path"": ""/ws/rest/user/[0-9]+/icon/[0-9]+\\.png""
+    },
+    ""httpResponse"": {
+        ""statusCode"": 200,
+        ""headers"": {
+            ""content-type"": [""image/png""],
+            ""content-disposition"": [""form-data; name=\""test.png\""; filename=\""test.png\""""]
+        },
+        ""body"": {
+            ""type"": ""BINARY"",
+            ""base64Bytes"": ""iVBORw0KGgoAAAANSUhEUgAAAqwAAAAp...""
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "path": "/ws/rest/user/[0-9]+/icon/[0-9]+\\.png"
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "headers": {
+            "content-type": ["image/png"],
+            "content-disposition": ["form-data; name=\"test.png\"; filename=\"test.png\""]
+        },
+        "body": {
+            "type": "BINARY",
+            "base64Bytes": "iVBORw0KGgoAAAANSUhEUgAAAqwAAAAp..."
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -497,6 +1276,71 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Delay, HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+client.when(
+    HttpRequest.request(path="/some/path")
+).respond_with_delay(
+    HttpResponse.response(body="some_response_body"),
+    Delay(time_unit="SECONDS", value=10)
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.when(
+    MockServer::HttpRequest.new(path: '/some/path')
+).respond_with_delay(
+    MockServer::HttpResponse.new(body: 'some_response_body'),
+    MockServer::Delay.new(time_unit: 'SECONDS', value: 10)
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+
+client := mockserver.New("localhost", 1080)
+client.When(
+    mockserver.Request().Path("/some/path"),
+).Respond(
+    mockserver.Response().
+        Body("some_response_body").
+        WithDelay("SECONDS", 10),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+
+using var client = new MockServerClient("localhost", 1080);
+client.When(
+    HttpRequest.Request().WithPath("/some/path")
+).Respond(
+    HttpResponse.Response()
+        .WithBody("some_response_body")
+        .WithDelay(TimeUnit.SECONDS, 10)
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::{ClientBuilder, Delay, HttpRequest, HttpResponse};
+
+let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+client.when(
+    HttpRequest::new().path("/some/path")
+).respond(
+    HttpResponse::new()
+        .body("some_response_body")
+        .delay(Delay::seconds(10))
+).unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -642,6 +1486,138 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponse": {
+        "body": "some_response_body",
+        "delay": {
+            "timeUnit": "MILLISECONDS",
+            "distribution": {
+                "type": "UNIFORM",
+                "min": 100,
+                "max": 500
+            }
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponse": {
+        "body": "some_response_body",
+        "delay": {
+            "timeUnit": "MILLISECONDS",
+            "distribution": {
+                "type": "UNIFORM",
+                "min": 100,
+                "max": 500
+            }
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponse": {
+        "body": "some_response_body",
+        "delay": {
+            "timeUnit": "MILLISECONDS",
+            "distribution": {
+                "type": "UNIFORM",
+                "min": 100,
+                "max": 500
+            }
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""path"": ""/some/path""
+    },
+    ""httpResponse"": {
+        ""body"": ""some_response_body"",
+        ""delay"": {
+            ""timeUnit"": ""MILLISECONDS"",
+            ""distribution"": {
+                ""type"": ""UNIFORM"",
+                ""min"": 100,
+                ""max"": 500
+            }
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponse": {
+        "body": "some_response_body",
+        "delay": {
+            "timeUnit": "MILLISECONDS",
+            "distribution": {
+                "type": "UNIFORM",
+                "min": 100,
+                "max": 500
+            }
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code"># uniform random delay between 100ms and 500ms
@@ -777,6 +1753,114 @@ client.mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import HttpRequest, HttpResponse, Times
+
+client = MockServerClient("localhost", 1080)
+
+# respond once with 200, then respond twice with 204, then
+# respond with 404 as no remaining active expectations
+client.when(
+    HttpRequest.request(path="/some/path"),
+    times=Times.exactly(1)
+).respond(
+    HttpResponse.response(status_code=200)
+)
+
+client.when(
+    HttpRequest.request(path="/some/path"),
+    times=Times.exactly(2)
+).respond(
+    HttpResponse.response(status_code=204)
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+
+# respond once with 200, then respond twice with 204, then
+# respond with 404 as no remaining active expectations
+client.when(
+    MockServer::HttpRequest.new(path: '/some/path'),
+    times: MockServer::Times.exactly(1)
+).respond(
+    MockServer::HttpResponse.new(status_code: 200)
+)
+
+client.when(
+    MockServer::HttpRequest.new(path: '/some/path'),
+    times: MockServer::Times.exactly(2)
+).respond(
+    MockServer::HttpResponse.new(status_code: 204)
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+
+client := mockserver.New("localhost", 1080)
+
+// respond once with 200, then respond twice with 204, then
+// respond with 404 as no remaining active expectations
+client.When(
+    mockserver.Request().Path("/some/path"),
+    mockserver.WithTimes(mockserver.Exactly(1)),
+).Respond(
+    mockserver.Response().StatusCode(200),
+)
+
+client.When(
+    mockserver.Request().Path("/some/path"),
+    mockserver.WithTimes(mockserver.Exactly(2)),
+).Respond(
+    mockserver.Response().StatusCode(204),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+
+using var client = new MockServerClient("localhost", 1080);
+
+// respond once with 200, then respond twice with 204, then
+// respond with 404 as no remaining active expectations
+client.When(
+    HttpRequest.Request().WithPath("/some/path"),
+    times: Times.Exactly(1)
+).Respond(
+    HttpResponse.Response().WithStatusCode(200)
+);
+
+client.When(
+    HttpRequest.Request().WithPath("/some/path"),
+    times: Times.Exactly(2)
+).Respond(
+    HttpResponse.Response().WithStatusCode(204)
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::{ClientBuilder, HttpRequest, HttpResponse, Times};
+
+let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+
+// respond once with 200, then respond twice with 204, then
+// respond with 404 as no remaining active expectations
+client.when(HttpRequest::new().path("/some/path"))
+    .times(Times::once())
+    .respond(HttpResponse::new().status_code(200))
+    .unwrap();
+
+client.when(HttpRequest::new().path("/some/path"))
+    .times(Times::exactly(2))
+    .respond(HttpResponse::new().status_code(204))
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code"># respond once with 200, then respond twice with 204, then
@@ -853,6 +1937,118 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "suppressContentLengthHeader" : true,
+            "suppressConnectionHeader" : true
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "suppressContentLengthHeader" : true,
+            "suppressConnectionHeader" : true
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "suppressContentLengthHeader" : true,
+            "suppressConnectionHeader" : true
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"" : {
+        ""path"" : ""/some/path""
+    },
+    ""httpResponse"" : {
+        ""body"" : ""some_response_body"",
+        ""connectionOptions"" : {
+            ""suppressContentLengthHeader"" : true,
+            ""suppressConnectionHeader"" : true
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "suppressContentLengthHeader" : true,
+            "suppressConnectionHeader" : true
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -913,6 +2109,118 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "contentLengthHeaderOverride" : 10,
+            "keepAliveOverride" : false
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "contentLengthHeaderOverride" : 10,
+            "keepAliveOverride" : false
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "contentLengthHeaderOverride" : 10,
+            "keepAliveOverride" : false
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"" : {
+        ""path"" : ""/some/path""
+    },
+    ""httpResponse"" : {
+        ""body"" : ""some_response_body"",
+        ""connectionOptions"" : {
+            ""contentLengthHeaderOverride"" : 10,
+            ""keepAliveOverride"" : false
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "contentLengthHeaderOverride" : 10,
+            "keepAliveOverride" : false
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -970,6 +2278,113 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"" : {
+        ""path"" : ""/some/path""
+    },
+    ""httpResponse"" : {
+        ""body"" : ""some_response_body"",
+        ""connectionOptions"" : {
+            ""closeSocket"" : true
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1033,6 +2448,133 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true,
+            "closeSocketDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true,
+            "closeSocketDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true,
+            "closeSocketDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"" : {
+        ""path"" : ""/some/path""
+    },
+    ""httpResponse"" : {
+        ""body"" : ""some_response_body"",
+        ""connectionOptions"" : {
+            ""closeSocket"" : true,
+            ""closeSocketDelay"" : {
+                ""timeUnit"" : ""MILLISECONDS"",
+                ""value"" : 500
+            }
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_response_body",
+        "connectionOptions" : {
+            "closeSocket" : true,
+            "closeSocketDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -1071,6 +2613,133 @@ mockServerClient("localhost", 1080).mockAnyResponse({
                     .withChunkDelay(new Delay(MILLISECONDS, 500))
             )
     );</code></pre>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_long_response_body_delivered_in_chunks",
+        "connectionOptions" : {
+            "chunkSize" : 10,
+            "chunkDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_long_response_body_delivered_in_chunks",
+        "connectionOptions" : {
+            "chunkSize" : 10,
+            "chunkDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_long_response_body_delivered_in_chunks",
+        "connectionOptions" : {
+            "chunkSize" : 10,
+            "chunkDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"" : {
+        ""path"" : ""/some/path""
+    },
+    ""httpResponse"" : {
+        ""body"" : ""some_long_response_body_delivered_in_chunks"",
+        ""connectionOptions"" : {
+            ""chunkSize"" : 10,
+            ""chunkDelay"" : {
+                ""timeUnit"" : ""MILLISECONDS"",
+                ""value"" : 500
+            }
+        }
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpResponse" : {
+        "body" : "some_long_response_body_delivered_in_chunks",
+        "connectionOptions" : {
+            "chunkSize" : 10,
+            "chunkDelay" : {
+                "timeUnit" : "MILLISECONDS",
+                "value" : 500
+            }
+        }
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1146,6 +2815,103 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, cookies: { session: request.headers[\"Session-Id\"] &amp;&amp; request.headers[\"Session-Id\"][0] }, headers: { Date: [ Date() ] }, body: JSON.stringify({method: request.method, path: request.path, body: request.body}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, cookies: { session: request.headers[\"Session-Id\"] &amp;&amp; request.headers[\"Session-Id\"][0] }, headers: { Date: [ Date() ] }, body: JSON.stringify({method: request.method, path: request.path, body: request.body}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, cookies: { session: request.headers[\"Session-Id\"] &amp;&amp; request.headers[\"Session-Id\"][0] }, headers: { Date: [ Date() ] }, body: JSON.stringify({method: request.method, path: request.path, body: request.body}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""path"": ""/some/path""
+    },
+    ""httpResponseTemplate"": {
+        ""template"": ""return { statusCode: 200, cookies: { session: request.headers[\""Session-Id\""] &amp;&amp; request.headers[\""Session-Id\""][0] }, headers: { Date: [ Date() ] }, body: JSON.stringify({method: request.method, path: request.path, body: request.body}) };"",
+        ""templateType"": ""JAVASCRIPT""
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, cookies: { session: request.headers[\"Session-Id\"] &amp;&amp; request.headers[\"Session-Id\"][0] }, headers: { Date: [ Date() ] }, body: JSON.stringify({method: request.method, path: request.path, body: request.body}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -1197,6 +2963,103 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, headers: { Date: [ Date() ] }, body: JSON.stringify({is_active: JSON.parse(request.bodyAsString).is_active, id: \"1234\", name: \"taras\"}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, headers: { Date: [ Date() ] }, body: JSON.stringify({is_active: JSON.parse(request.bodyAsString).is_active, id: \"1234\", name: \"taras\"}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, headers: { Date: [ Date() ] }, body: JSON.stringify({is_active: JSON.parse(request.bodyAsString).is_active, id: \"1234\", name: \"taras\"}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""path"": ""/some/path""
+    },
+    ""httpResponseTemplate"": {
+        ""template"": ""return { statusCode: 200, headers: { Date: [ Date() ] }, body: JSON.stringify({is_active: JSON.parse(request.bodyAsString).is_active, id: \""1234\"", name: \""taras\""}) };"",
+        ""templateType"": ""JAVASCRIPT""
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "return { statusCode: 200, headers: { Date: [ Date() ] }, body: JSON.stringify({is_active: JSON.parse(request.bodyAsString).is_active, id: \"1234\", name: \"taras\"}) };",
+        "templateType": "JAVASCRIPT"
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1260,6 +3123,98 @@ mockServerClient("localhost", 1080).mockAnyResponse({
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {"path": "/some/path"},
+    "httpResponseTemplate": {
+        "template": "if (request.method === \"POST\" &amp;&amp; request.path === \"/some/path\") { return { statusCode: 200, body: JSON.stringify({name: \"value\"}) }; } else { return { statusCode: 406, body: request.body }; }",
+        "templateType": "JAVASCRIPT",
+        "delay": {"timeUnit": "MINUTES", "value": 2}
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {"path": "/some/path"},
+    "httpResponseTemplate": {
+        "template": "if (request.method === \"POST\" &amp;&amp; request.path === \"/some/path\") { return { statusCode: 200, body: JSON.stringify({name: \"value\"}) }; } else { return { statusCode: 406, body: request.body }; }",
+        "templateType": "JAVASCRIPT",
+        "delay": {"timeUnit": "MINUTES", "value": 2}
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {"path": "/some/path"},
+    "httpResponseTemplate": {
+        "template": "if (request.method === \"POST\" &amp;&amp; request.path === \"/some/path\") { return { statusCode: 200, body: JSON.stringify({name: \"value\"}) }; } else { return { statusCode: 406, body: request.body }; }",
+        "templateType": "JAVASCRIPT",
+        "delay": {"timeUnit": "MINUTES", "value": 2}
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {""path"": ""/some/path""},
+    ""httpResponseTemplate"": {
+        ""template"": ""if (request.method === \""POST\"" &amp;&amp; request.path === \""/some/path\"") { return { statusCode: 200, body: JSON.stringify({name: \""value\""}) }; } else { return { statusCode: 406, body: request.body }; }"",
+        ""templateType"": ""JAVASCRIPT"",
+        ""delay"": {""timeUnit"": ""MINUTES"", ""value"": 2}
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {"path": "/some/path"},
+    "httpResponseTemplate": {
+        "template": "if (request.method === \"POST\" &amp;&amp; request.path === \"/some/path\") { return { statusCode: 200, body: JSON.stringify({name: \"value\"}) }; } else { return { statusCode: 406, body: request.body }; }",
+        "templateType": "JAVASCRIPT",
+        "delay": {"timeUnit": "MINUTES", "value": 2}
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -1322,6 +3277,103 @@ mockServerClient("localhost", 1080).mockAnyResponse({
     }
 );</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "{ \"statusCode\": 200, \"cookies\": { \"session\": \"$!request.headers[\"Session-Id\"][0]\" }, \"headers\": { \"Client-User-Agent\": [ \"$!request.headers[\"User-Agent\"][0]\" ] }, \"body\": \"$!request.body\" }",
+        "templateType": "VELOCITY"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "{ \"statusCode\": 200, \"cookies\": { \"session\": \"$!request.headers[\"Session-Id\"][0]\" }, \"headers\": { \"Client-User-Agent\": [ \"$!request.headers[\"User-Agent\"][0]\" ] }, \"body\": \"$!request.body\" }",
+        "templateType": "VELOCITY"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "{ \"statusCode\": 200, \"cookies\": { \"session\": \"$!request.headers[\"Session-Id\"][0]\" }, \"headers\": { \"Client-User-Agent\": [ \"$!request.headers[\"User-Agent\"][0]\" ] }, \"body\": \"$!request.body\" }",
+        "templateType": "VELOCITY"
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"": {
+        ""path"": ""/some/path""
+    },
+    ""httpResponseTemplate"": {
+        ""template"": ""{ \""statusCode\"": 200, \""cookies\"": { \""session\"": \""$!request.headers[\""Session-Id\""][0]\"" }, \""headers\"": { \""Client-User-Agent\"": [ \""$!request.headers[\""User-Agent\""][0]\"" ] }, \""body\"": \""$!request.body\"" }"",
+        ""templateType"": ""VELOCITY""
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponseTemplate": {
+        "template": "{ \"statusCode\": 200, \"cookies\": { \"session\": \"$!request.headers[\"Session-Id\"][0]\" }, \"headers\": { \"Client-User-Agent\": [ \"$!request.headers[\"User-Agent\"][0]\" ] }, \"body\": \"$!request.body\" }",
+        "templateType": "VELOCITY"
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1394,6 +3446,98 @@ mockServerClient("localhost", 1080).mockAnyResponse({
         console.log(error);
     }
 );</code></pre>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+    "httpRequest" : {
+        "path" : "/some.*"
+    },
+    "httpResponseClassCallback" : {
+        "callbackClass" : "org.mockserver.examples.mockserver.CallbackActionExamples$TestExpectationResponseCallback"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+    "httpRequest" : {
+        "path" : "/some.*"
+    },
+    "httpResponseClassCallback" : {
+        "callbackClass" : "org.mockserver.examples.mockserver.CallbackActionExamples$TestExpectationResponseCallback"
+    }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+    "httpRequest" : {
+        "path" : "/some.*"
+    },
+    "httpResponseClassCallback" : {
+        "callbackClass" : "org.mockserver.examples.mockserver.CallbackActionExamples$TestExpectationResponseCallback"
+    }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+    ""httpRequest"" : {
+        ""path"" : ""/some.*""
+    },
+    ""httpResponseClassCallback"" : {
+        ""callbackClass"" : ""org.mockserver.examples.mockserver.CallbackActionExamples$TestExpectationResponseCallback""
+    }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+    "httpRequest" : {
+        "path" : "/some.*"
+    },
+    "httpResponseClassCallback" : {
+        "callbackClass" : "org.mockserver.examples.mockserver.CallbackActionExamples$TestExpectationResponseCallback"
+    }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
