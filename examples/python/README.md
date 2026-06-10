@@ -30,6 +30,7 @@ Runnable examples demonstrating the MockServer Python client.
 | [verify_requests](verify_requests/) | Verify that MockServer received specific requests a certain number of times. |
 | [retrieve_recorded_requests](retrieve_recorded_requests/) | Retrieve requests that MockServer recorded while proxying. |
 | [reverse_proxy](reverse_proxy/) | Use MockServer as a reverse proxy, forwarding traffic to different backends. |
+| [breakpoint_modify_proxied](breakpoint_modify_proxied/) | Modify a proxied exchange with an interactive breakpoint (RESPONSE phase). |
 
 Each folder contains a runnable Python script and its own `README.md` with
 instructions.

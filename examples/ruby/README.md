@@ -29,3 +29,4 @@ Runnable examples demonstrating the [MockServer Ruby client](../../mockserver-cl
 | [verify_requests](verify_requests/) | Verify that MockServer received specific requests |
 | [retrieve_recorded_requests](retrieve_recorded_requests/) | Retrieve requests that MockServer has recorded |
 | [reverse_proxy](reverse_proxy/) | Use MockServer as a reverse proxy in front of real services |
+| [breakpoint_modify_proxied](breakpoint_modify_proxied/) | Modify a proxied exchange with an interactive breakpoint (RESPONSE phase) |
