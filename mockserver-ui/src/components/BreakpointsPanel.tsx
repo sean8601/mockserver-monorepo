@@ -149,11 +149,19 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       setPausedItems((prev) => [...prev, keyed]);
     });
 
+    // Seed from the singleton so a re-mount after a tab change immediately
+    // reflects the live connection + clientId (connect() below is idempotent and
+    // will not fire a fresh state-change event when already connected).
+    setWsState(client.state);
+    setClientId(client.clientId);
+
     client.connect(connectionParams);
 
-    return () => {
-      client.disconnect();
-    };
+    // Intentionally NO disconnect on unmount: the callback WebSocket is an
+    // app-lifetime singleton. Keeping it open across tab changes preserves the
+    // server clientId and the breakpoint matchers registered under it, so
+    // breakpoints stay active and registered when navigating away from and back
+    // to this tab.
   }, [connectionParams]);
 
   // -------------------------------------------------------------------------

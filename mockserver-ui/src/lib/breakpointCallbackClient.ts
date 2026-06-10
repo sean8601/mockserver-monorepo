@@ -167,6 +167,21 @@ export class BreakpointCallbackClient {
 
   /** Open the callback WS connection. Reconnects automatically on close. */
   connect(params: ConnectionParams): void {
+    // Idempotent across UI re-mounts: if we are already connected (or connecting)
+    // to the same server, keep the existing connection — and, crucially, its
+    // server-assigned clientId and the breakpoint matchers registered under it —
+    // alive. Tearing the socket down and reconnecting would assign a new clientId
+    // and orphan those matchers (e.g. when navigating away from and back to the
+    // Breakpoints tab).
+    const sameServer =
+      this.connectionParams !== null &&
+      JSON.stringify(this.connectionParams) === JSON.stringify(params);
+    if (sameServer && (this._state === 'connected' || this._state === 'connecting')) {
+      return;
+    }
+    if (this.ws) {
+      this.disconnect();
+    }
     this.connectionParams = params;
     this.reconnectAttempts = 0;
     this._connect();
