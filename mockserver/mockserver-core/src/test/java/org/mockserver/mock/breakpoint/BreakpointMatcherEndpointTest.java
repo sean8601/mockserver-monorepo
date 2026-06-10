@@ -47,7 +47,6 @@ public class BreakpointMatcherEndpointTest {
         // before the next test class creates fresh singletons state.
         Thread.sleep(100);
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
         BreakpointCallbackDispatcher.getInstance().reset();
         StreamFrameCallbackDispatcher.getInstance().reset();
@@ -71,7 +70,6 @@ public class BreakpointMatcherEndpointTest {
 
     private void resetAllBreakpointSingletons() {
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
         BreakpointCallbackDispatcher.getInstance().reset();
         StreamFrameCallbackDispatcher.getInstance().reset();

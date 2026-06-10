@@ -107,6 +107,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
     // Pre-computed inbound breakpoint WS dispatch fields (CPX-01)
     private final boolean inboundUseWsDispatch;
     private final String inboundBreakpointClientId;
+    private final String inboundBreakpointId;
     private final WebSocketClientRegistry webSocketClientRegistry;
 
     /**
@@ -122,7 +123,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         Function<String, List<String>> responder
     ) {
-        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null, null, null, null);
+        this(methodDescriptor, converter, responder, null, new IncrementalGrpcFrameDecoder(), null, null, null, null, null, null);
     }
 
     /**
@@ -137,7 +138,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcJsonMessageConverter converter,
         GrpcBidiResponse config
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null, null, null, null);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), null, null, null, null, null, null);
     }
 
     /**
@@ -156,7 +157,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         GrpcBidiResponse config,
         Runnable completionCallback
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, null, null, null);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, null, null, null, null, null);
     }
 
     /**
@@ -177,7 +178,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         Configuration configuration,
         String inboundStreamId
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId, null);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId, null, null, null);
     }
 
     /**
@@ -192,6 +193,13 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
      * @param inboundStreamId         the stream ID for inbound breakpoints (null to disable)
      * @param webSocketClientRegistry the per-server WS registry for callback dispatch (null to disable)
      */
+    /**
+     * Phase 3b constructor: GrpcBidiResponse-driven with completion callback, inbound breakpoints,
+     * and per-server WebSocket registry. Performs its own findMatch for inbound breakpoints.
+     *
+     * @deprecated use the constructor that accepts inboundBreakpointClientId and inboundBreakpointId
+     *     from the outer caller to avoid mis-routing across clients
+     */
     public GrpcBidiStreamHandler(
         Descriptors.MethodDescriptor methodDescriptor,
         GrpcJsonMessageConverter converter,
@@ -201,7 +209,36 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         String inboundStreamId,
         WebSocketClientRegistry webSocketClientRegistry
     ) {
-        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId, webSocketClientRegistry);
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback, configuration, inboundStreamId, webSocketClientRegistry, null, null);
+    }
+
+    /**
+     * Phase 3b constructor: GrpcBidiResponse-driven with completion callback, inbound breakpoints,
+     * per-server WebSocket registry, and pre-resolved breakpoint identity from the outer caller.
+     *
+     * @param methodDescriptor           the resolved gRPC method descriptor
+     * @param converter                  JSON/protobuf converter for the method's message types
+     * @param config                     the GrpcBidiResponse configuration from the matched expectation
+     * @param completionCallback         invoked once on stream finish to clear responseInProgress
+     * @param configuration              the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId            the stream ID for inbound breakpoints (null to disable)
+     * @param webSocketClientRegistry    the per-server WS registry for callback dispatch (null to disable)
+     * @param inboundBreakpointClientId  the matched inbound breakpoint's owning clientId (from outer caller)
+     * @param inboundBreakpointId        the matched inbound breakpoint's id (from outer caller)
+     */
+    public GrpcBidiStreamHandler(
+        Descriptors.MethodDescriptor methodDescriptor,
+        GrpcJsonMessageConverter converter,
+        GrpcBidiResponse config,
+        Runnable completionCallback,
+        Configuration configuration,
+        String inboundStreamId,
+        WebSocketClientRegistry webSocketClientRegistry,
+        String inboundBreakpointClientId,
+        String inboundBreakpointId
+    ) {
+        this(methodDescriptor, converter, null, config, new IncrementalGrpcFrameDecoder(), completionCallback,
+            configuration, inboundStreamId, webSocketClientRegistry, inboundBreakpointClientId, inboundBreakpointId);
     }
 
     /**
@@ -216,7 +253,9 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         Runnable completionCallback,
         Configuration configuration,
         String inboundStreamId,
-        WebSocketClientRegistry webSocketClientRegistry
+        WebSocketClientRegistry webSocketClientRegistry,
+        String inboundBreakpointClientId,
+        String inboundBreakpointId
     ) {
         this.methodDescriptor = methodDescriptor;
         this.converter = converter;
@@ -228,21 +267,16 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         this.inboundStreamId = inboundStreamId;
         this.webSocketClientRegistry = webSocketClientRegistry;
         this.finished = false;
-        // Pre-compute inbound WS dispatch at construction time (effectively per-stream)
-        if (inboundStreamId != null) {
-            org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
-                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                    .findMatch(null, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
-            if (inboundMatcher != null && inboundMatcher.getClientId() != null && webSocketClientRegistry != null) {
-                this.inboundUseWsDispatch = true;
-                this.inboundBreakpointClientId = inboundMatcher.getClientId();
-            } else {
-                this.inboundUseWsDispatch = false;
-                this.inboundBreakpointClientId = null;
-            }
+        // Use the matched breakpoint's clientId and id passed from the outer caller
+        // (avoids re-matching with null request which can pick the wrong breakpoint)
+        if (inboundStreamId != null && inboundBreakpointClientId != null && webSocketClientRegistry != null) {
+            this.inboundUseWsDispatch = true;
+            this.inboundBreakpointClientId = inboundBreakpointClientId;
+            this.inboundBreakpointId = inboundBreakpointId;
         } else {
             this.inboundUseWsDispatch = false;
             this.inboundBreakpointClientId = null;
+            this.inboundBreakpointId = null;
         }
     }
 
@@ -346,7 +380,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
                 int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
                 java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
                     org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                        inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                        inboundBreakpointClientId, inboundBreakpointId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
                         org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
                         bytes, "GRPC-INBOUND", methodDescriptor.getFullName(), webSocketClientRegistry, configuration, null);
                 if (wsFuture != null) {

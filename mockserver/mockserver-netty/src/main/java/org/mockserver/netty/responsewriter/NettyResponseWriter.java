@@ -153,7 +153,7 @@ public class NettyResponseWriter extends ResponseWriter {
                     .nextSequenceNumber(streamId);
                 java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
                     org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                        breakpointClientId, streamId, seq,
+                        breakpointClientId, streamBreakpointMatcher.getId(), streamId, seq,
                         PausedStreamFrame.Direction.OUTBOUND,
                         org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
                         chunkBytes, reqMethod, reqPath,

@@ -33,7 +33,7 @@ import static org.mockserver.model.HttpRequest.request;
  * produce the correct {@link StreamFrameDecision} outcomes.
  * <p>
  * This test mutates the global singletons {@link StreamFrameCallbackDispatcher},
- * {@link BreakpointMatcherRegistry}, {@link BreakpointRegistry}, and
+ * {@link BreakpointMatcherRegistry}, and
  * {@link StreamFrameBreakpointRegistry}, so it must run in the sequential
  * Surefire phase.
  */
@@ -52,7 +52,7 @@ public class StreamFrameCallbackDispatcherTest {
     public void setUp() {
         // Clean all breakpoint singletons FIRST, before creating any test infrastructure
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
+
         StreamFrameBreakpointRegistry.getInstance().reset();
         BreakpointCallbackDispatcher.getInstance().reset();
         StreamFrameCallbackDispatcher.getInstance().reset();
@@ -81,7 +81,7 @@ public class StreamFrameCallbackDispatcherTest {
     @After
     public void tearDown() {
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
+
         StreamFrameBreakpointRegistry.getInstance().reset();
         BreakpointCallbackDispatcher.getInstance().reset();
         dispatcher.reset();
@@ -518,5 +518,139 @@ public class StreamFrameCallbackDispatcherTest {
         assertThat(sentDto.getBody(), is(Base64.getEncoder().encodeToString(frameBody)));
         assertThat(sentDto.getRequestMethod(), is("POST"));
         assertThat(sentDto.getRequestPath(), is("/grpc/service"));
+    }
+
+    // ---- breakpointId wiring (MAJOR 1 fix) ----
+
+    @Test
+    public void shouldSetBreakpointIdOnDispatchedDTO() throws Exception {
+        byte[] frameBody = "breakpoint-id-test".getBytes();
+        String breakpointId = "bp-matcher-123";
+
+        dispatcher.dispatchFrame(
+            CLIENT_ID, breakpointId, "stream-bp-id", 0,
+            PausedStreamFrame.Direction.OUTBOUND, BreakpointPhase.RESPONSE_STREAM,
+            frameBody, "GET", "/api/test",
+            webSocketClientRegistry, configuration, logger
+        );
+
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        PausedStreamFrameDTO sentDto = (PausedStreamFrameDTO) serializer.deserialize(sentFrame.text());
+
+        assertThat("breakpointId must be non-null and equal to the registered breakpoint id",
+            sentDto.getBreakpointId(), is(breakpointId));
+    }
+
+    @Test
+    public void shouldSetBreakpointIdViaDeprecatedOverload() throws Exception {
+        // The deprecated (no breakpointId) overload should set breakpointId to null
+        byte[] frameBody = "deprecated-overload-test".getBytes();
+
+        dispatcher.dispatchFrame(
+            CLIENT_ID, "stream-deprecated", 0,
+            PausedStreamFrame.Direction.OUTBOUND, BreakpointPhase.RESPONSE_STREAM,
+            frameBody, "GET", "/api/test",
+            webSocketClientRegistry, configuration, logger
+        );
+
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        PausedStreamFrameDTO sentDto = (PausedStreamFrameDTO) serializer.deserialize(sentFrame.text());
+
+        assertThat("deprecated overload should set breakpointId to null",
+            sentDto.getBreakpointId(), is(nullValue()));
+    }
+
+    // ---- Multi-client / multi-breakpoint routing (MINOR 3 fix) ----
+
+    @Test
+    public void shouldRouteFrameToCorrectClientWithBreakpointId() throws Exception {
+        // Register a second client
+        String client2Id = "test-stream-frame-client-2";
+        EmbeddedChannel client2Channel = new EmbeddedChannel();
+        ChannelHandlerContext ctx2 = mock(ChannelHandlerContext.class);
+        when(ctx2.channel()).thenReturn(client2Channel);
+        webSocketClientRegistry.registerClient(client2Id, ctx2);
+        client2Channel.readOutbound(); // drain registration message
+
+        byte[] frameBody = "multi-client-frame".getBytes();
+        String bp1Id = "bp-client1";
+        String bp2Id = "bp-client2";
+
+        // Dispatch a frame to client 1 with bp1Id
+        CompletableFuture<StreamFrameDecision> future1 = dispatcher.dispatchFrame(
+            CLIENT_ID, bp1Id, "stream-mc-1", 0,
+            PausedStreamFrame.Direction.OUTBOUND, BreakpointPhase.RESPONSE_STREAM,
+            frameBody, "GET", "/api/client1",
+            webSocketClientRegistry, configuration, logger
+        );
+        assertThat(future1, is(notNullValue()));
+
+        // Dispatch a frame to client 2 with bp2Id
+        CompletableFuture<StreamFrameDecision> future2 = dispatcher.dispatchFrame(
+            client2Id, bp2Id, "stream-mc-2", 0,
+            PausedStreamFrame.Direction.INBOUND, BreakpointPhase.INBOUND_STREAM,
+            frameBody, "POST", "/api/client2",
+            webSocketClientRegistry, configuration, logger
+        );
+        assertThat(future2, is(notNullValue()));
+
+        // Verify client 1 received a frame with bp1Id
+        TextWebSocketFrame sent1 = clientChannel.readOutbound();
+        PausedStreamFrameDTO dto1 = (PausedStreamFrameDTO) serializer.deserialize(sent1.text());
+        assertThat("client 1 should receive breakpointId=bp-client1", dto1.getBreakpointId(), is(bp1Id));
+        assertThat(dto1.getRequestPath(), is("/api/client1"));
+
+        // Verify client 2 received a frame with bp2Id
+        TextWebSocketFrame sent2 = client2Channel.readOutbound();
+        PausedStreamFrameDTO dto2 = (PausedStreamFrameDTO) serializer.deserialize(sent2.text());
+        assertThat("client 2 should receive breakpointId=bp-client2", dto2.getBreakpointId(), is(bp2Id));
+        assertThat(dto2.getRequestPath(), is("/api/client2"));
+
+        // Resolve both
+        StreamFrameDecisionDTO reply1 = new StreamFrameDecisionDTO()
+            .setCorrelationId(dto1.getCorrelationId())
+            .setAction("CONTINUE");
+        webSocketClientRegistry.receivedTextWebSocketFrame(
+            new TextWebSocketFrame(serializer.serialize(reply1)));
+
+        StreamFrameDecisionDTO reply2 = new StreamFrameDecisionDTO()
+            .setCorrelationId(dto2.getCorrelationId())
+            .setAction("CONTINUE");
+        webSocketClientRegistry.receivedTextWebSocketFrame(
+            new TextWebSocketFrame(serializer.serialize(reply2)));
+
+        assertThat(future1.get(5, TimeUnit.SECONDS).getAction(), is(StreamFrameDecision.Action.CONTINUE));
+        assertThat(future2.get(5, TimeUnit.SECONDS).getAction(), is(StreamFrameDecision.Action.CONTINUE));
+
+        // cleanup
+        if (client2Channel.isOpen()) {
+            client2Channel.close();
+        }
+    }
+
+    // ---- tryWsDispatch sets breakpointId ----
+
+    @Test
+    public void tryWsDispatchShouldSetBreakpointIdFromMatcher() throws Exception {
+        BreakpointMatcher matcherWithClientId = new BreakpointMatcher(
+            "bp-try-ws", request().withPath("/test"),
+            EnumSet.of(BreakpointPhase.RESPONSE_STREAM),
+            null, CLIENT_ID
+        );
+
+        CompletableFuture<StreamFrameDecision> result = dispatcher.tryWsDispatch(
+            matcherWithClientId, "stream-try-ws", 0,
+            PausedStreamFrame.Direction.OUTBOUND, BreakpointPhase.RESPONSE_STREAM,
+            "test".getBytes(), "GET", "/test", configuration, logger, webSocketClientRegistry
+        );
+        assertThat(result, is(notNullValue()));
+
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        PausedStreamFrameDTO sentDto = (PausedStreamFrameDTO) serializer.deserialize(sentFrame.text());
+        assertThat("tryWsDispatch should set breakpointId from the matcher",
+            sentDto.getBreakpointId(), is("bp-try-ws"));
+
+        // cleanup
+        result.complete(StreamFrameDecision.continueFrame());
     }
 }

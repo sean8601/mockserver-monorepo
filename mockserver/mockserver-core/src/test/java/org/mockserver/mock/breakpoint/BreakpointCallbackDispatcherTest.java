@@ -33,7 +33,7 @@ import static org.mockserver.model.HttpResponse.response;
  * produce the correct {@link BreakpointDecision} outcomes.
  * <p>
  * This test mutates the global singletons {@link BreakpointCallbackDispatcher},
- * {@link BreakpointMatcherRegistry}, and {@link BreakpointRegistry}, so it must
+ * {@link BreakpointMatcherRegistry}, so it must
  * run in the sequential Surefire phase.
  */
 public class BreakpointCallbackDispatcherTest {
@@ -52,7 +52,6 @@ public class BreakpointCallbackDispatcherTest {
         // Clean all breakpoint singletons FIRST, before creating any test infrastructure,
         // so that stale async callbacks from previous test classes cannot race with new state.
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
         BreakpointCallbackDispatcher.getInstance().reset();
         StreamFrameCallbackDispatcher.getInstance().reset();
@@ -81,7 +80,6 @@ public class BreakpointCallbackDispatcherTest {
     @After
     public void tearDown() {
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
         StreamFrameCallbackDispatcher.getInstance().reset();
         dispatcher.reset();

@@ -70,6 +70,7 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
     // Pre-computed inbound breakpoint WS dispatch fields (CPX-01)
     private final boolean inboundUseWsDispatch;
     private final String inboundBreakpointClientId;
+    private final String inboundBreakpointId;
     private final WebSocketClientRegistry webSocketClientRegistry;
 
     /**
@@ -113,15 +114,9 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
     }
 
     /**
-     * Constructor with inbound breakpoint support.
+     * Constructor with inbound breakpoint support (performs its own findMatch for backward compatibility).
      *
-     * @param expectedSubscriptionQuery a GraphQLBody describing the subscription query to match
-     * @param subscriptionPayloads      the sequence of payloads to push as {@code next} messages
-     * @param frameSender               callback for sending text frames with optional delays
-     * @param handshaker                the WebSocket handshaker for closing the connection
-     * @param configuration             the active server configuration (null to disable inbound breakpoints)
-     * @param inboundStreamId           the stream ID for inbound breakpoints (null to disable)
-     * @param webSocketClientRegistry   the per-server WS registry for callback dispatch (null to disable WS dispatch)
+     * @deprecated use the constructor that accepts inboundBreakpointClientId and inboundBreakpointId
      */
     public GraphQLSubscriptionHandler(
         GraphQLBody expectedSubscriptionQuery,
@@ -132,6 +127,34 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
         String inboundStreamId,
         WebSocketClientRegistry webSocketClientRegistry
     ) {
+        this(expectedSubscriptionQuery, subscriptionPayloads, frameSender, handshaker,
+            configuration, inboundStreamId, webSocketClientRegistry, null, null);
+    }
+
+    /**
+     * Constructor with inbound breakpoint support and pre-resolved breakpoint identity.
+     *
+     * @param expectedSubscriptionQuery  a GraphQLBody describing the subscription query to match
+     * @param subscriptionPayloads       the sequence of payloads to push as {@code next} messages
+     * @param frameSender                callback for sending text frames with optional delays
+     * @param handshaker                 the WebSocket handshaker for closing the connection
+     * @param configuration              the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId            the stream ID for inbound breakpoints (null to disable)
+     * @param webSocketClientRegistry    the per-server WS registry for callback dispatch (null to disable WS dispatch)
+     * @param inboundBreakpointClientId  the matched inbound breakpoint's owning clientId (from outer caller)
+     * @param inboundBreakpointId        the matched inbound breakpoint's id (from outer caller)
+     */
+    public GraphQLSubscriptionHandler(
+        GraphQLBody expectedSubscriptionQuery,
+        List<WebSocketMessage> subscriptionPayloads,
+        FrameSender frameSender,
+        WebSocketServerHandshaker handshaker,
+        Configuration configuration,
+        String inboundStreamId,
+        WebSocketClientRegistry webSocketClientRegistry,
+        String inboundBreakpointClientId,
+        String inboundBreakpointId
+    ) {
         super(false); // don't auto-release frames
         this.astMatcher = createMatcher(expectedSubscriptionQuery);
         this.subscriptionPayloads = subscriptionPayloads != null ? subscriptionPayloads : Collections.emptyList();
@@ -140,21 +163,16 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
         this.configuration = configuration;
         this.inboundStreamId = inboundStreamId;
         this.webSocketClientRegistry = webSocketClientRegistry;
-        // Pre-compute inbound WS dispatch at construction time (effectively per-stream)
-        if (inboundStreamId != null) {
-            org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
-                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                    .findMatch(null, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
-            if (inboundMatcher != null && inboundMatcher.getClientId() != null && webSocketClientRegistry != null) {
-                this.inboundUseWsDispatch = true;
-                this.inboundBreakpointClientId = inboundMatcher.getClientId();
-            } else {
-                this.inboundUseWsDispatch = false;
-                this.inboundBreakpointClientId = null;
-            }
+        // Use the matched breakpoint's clientId and id passed from the outer caller
+        // (avoids re-matching with null request which can pick the wrong breakpoint)
+        if (inboundStreamId != null && inboundBreakpointClientId != null && webSocketClientRegistry != null) {
+            this.inboundUseWsDispatch = true;
+            this.inboundBreakpointClientId = inboundBreakpointClientId;
+            this.inboundBreakpointId = inboundBreakpointId;
         } else {
             this.inboundUseWsDispatch = false;
             this.inboundBreakpointClientId = null;
+            this.inboundBreakpointId = null;
         }
     }
 
@@ -200,7 +218,7 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
             int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
             java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> wsFuture =
                 org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                    inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                    inboundBreakpointClientId, inboundBreakpointId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
                     org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
                     frameBytes, "GQL-INBOUND", "/", webSocketClientRegistry, configuration, null);
             if (wsFuture != null) {

@@ -175,18 +175,27 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
                 // if the matcher registry has an INBOUND_STREAM breakpoint matching this request.
                 // When no matcher matches, inboundStreamId is null and no frames are parked.
                 final String inboundStreamId;
+                final String inboundBreakpointClientId;
+                final String inboundBreakpointId;
                 HttpRequest syntheticRequest = HttpRequest.request().withMethod("POST").withPath(path);
-                if (org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                    .findMatch(syntheticRequest, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM) != null) {
+                org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
+                    org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                        .findMatch(syntheticRequest, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
+                if (inboundMatcher != null) {
                     inboundStreamId = "grpc-bidi-inbound-" + path + "-" + UUIDService.getUUID();
+                    inboundBreakpointClientId = inboundMatcher.getClientId();
+                    inboundBreakpointId = inboundMatcher.getId();
                 } else {
                     inboundStreamId = null;
+                    inboundBreakpointClientId = null;
+                    inboundBreakpointId = null;
                 }
 
                 GrpcBidiStreamHandler bidiHandler = new GrpcBidiStreamHandler(
                     methodDescriptor, converter, matchResult.bidiResponse, completionCallback,
                     configuration, inboundStreamId,
-                    httpState != null ? httpState.getWebSocketClientRegistry() : null
+                    httpState != null ? httpState.getWebSocketClientRegistry() : null,
+                    inboundBreakpointClientId, inboundBreakpointId
                 );
 
                 pipeline.replace(this, "grpcBidiStream", bidiHandler);

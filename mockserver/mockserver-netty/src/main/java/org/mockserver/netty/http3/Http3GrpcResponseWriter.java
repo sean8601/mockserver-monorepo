@@ -259,7 +259,8 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
         List<GrpcStreamMessage> messages = grpcStreamResponse.getMessages();
         if (messages != null && !messages.isEmpty()) {
             scheduleStreamMessages(messages, 0, grpcStreamResponse, methodDescriptor, request,
-                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId,
+                streamBreakpointMatcher != null ? streamBreakpointMatcher.getId() : null);
         } else {
             finishGrpcStream(grpcStreamResponse, streamBreakpointsActive, streamId);
         }
@@ -288,7 +289,7 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
         List<GrpcStreamMessage> messages, int index, GrpcStreamResponse action,
         Descriptors.MethodDescriptor methodDescriptor, HttpRequest request,
         boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath,
-        boolean useWsDispatch, String breakpointClientId
+        boolean useWsDispatch, String breakpointClientId, String streamBreakpointId
     ) {
         if (index >= messages.size() || !ctx.channel().isActive()) {
             finishGrpcStream(action, streamBreakpointsActive, streamId);
@@ -309,7 +310,7 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                 if (!streamBreakpointsActive) {
                     // Default-off fast path: write immediately
                     writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
-                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                     return;
                 }
 
@@ -318,14 +319,14 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                 int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
                 java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
                     org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                        breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                        breakpointClientId, streamBreakpointId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
                         org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
                         frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
                 if (wsFuture != null) {
                     decisionFuture = wsFuture;
                 } else {
                     writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
-                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                     return;
                 }
 
@@ -335,20 +336,20 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                     ctx.channel().eventLoop().execute(() -> {
                         if (!ctx.channel().isActive()) {
                             scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request,
-                                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                             return;
                         }
                         switch (decision.getAction()) {
                             case CONTINUE -> writeH3GrpcFrame(capturedFrameBytes, messages, index,
                                 action, methodDescriptor, request, streamBreakpointsActive, streamId, reqMethod, reqPath,
-                                useWsDispatch, breakpointClientId);
+                                useWsDispatch, breakpointClientId, streamBreakpointId);
                             case MODIFY -> writeH3GrpcFrame(decision.getReplacementBody(), messages, index,
                                 action, methodDescriptor, request, streamBreakpointsActive, streamId, reqMethod, reqPath,
-                                useWsDispatch, breakpointClientId);
+                                useWsDispatch, breakpointClientId, streamBreakpointId);
                             case DROP ->
                                 // Skip this frame -- proceed to next message
                                 scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request,
-                                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                             case INJECT -> {
                                 // Write original frame, then inject an extra frame, then proceed
                                 DefaultHttp3DataFrame originalData = new DefaultHttp3DataFrame(
@@ -360,11 +361,11 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                                         ctx.writeAndFlush(injectedData).addListener(f2 ->
                                             scheduleStreamMessages(messages, index + 1, action, methodDescriptor,
                                                 request, streamBreakpointsActive, streamId, reqMethod, reqPath,
-                                                useWsDispatch, breakpointClientId));
+                                                useWsDispatch, breakpointClientId, streamBreakpointId));
                                     } else {
                                         scheduleStreamMessages(messages, index + 1, action, methodDescriptor,
                                             request, streamBreakpointsActive, streamId, reqMethod, reqPath,
-                                            useWsDispatch, breakpointClientId);
+                                            useWsDispatch, breakpointClientId, streamBreakpointId);
                                     }
                                 });
                             }
@@ -416,12 +417,13 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
     private void writeH3GrpcFrame(byte[] frameBytes, List<GrpcStreamMessage> messages, int index,
                                   GrpcStreamResponse action, Descriptors.MethodDescriptor methodDescriptor,
                                   HttpRequest request, boolean streamBreakpointsActive, String streamId,
-                                  String reqMethod, String reqPath, boolean useWsDispatch, String breakpointClientId) {
+                                  String reqMethod, String reqPath, boolean useWsDispatch, String breakpointClientId,
+                                  String streamBreakpointId) {
         DefaultHttp3DataFrame dataFrame = new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(frameBytes));
         ctx.writeAndFlush(dataFrame).addListener(future -> {
             if (future.isSuccess()) {
                 scheduleStreamMessages(messages, index + 1, action, methodDescriptor, request,
-                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
             } else {
                 finishGrpcStream(action, streamBreakpointsActive, streamId);
             }

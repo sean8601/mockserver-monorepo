@@ -122,18 +122,9 @@ public class BreakpointMatcherRegistry {
         if (clientId == null) {
             return 0;
         }
-        int removed = 0;
-        // CopyOnWriteArrayList.removeIf atomically removes all matching entries
-        // but does not return a count — iterate explicitly for the count.
-        java.util.Iterator<BreakpointMatcher> it = entries.iterator();
-        while (it.hasNext()) {
-            BreakpointMatcher entry = it.next();
-            if (clientId.equals(entry.getClientId())) {
-                entries.remove(entry);
-                removed++;
-            }
-        }
-        return removed;
+        int sizeBefore = entries.size();
+        entries.removeIf(e -> clientId.equals(e.getClientId()));
+        return sizeBefore - entries.size();
     }
 
     /**

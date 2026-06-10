@@ -47,6 +47,7 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
     // Pre-computed inbound breakpoint WS dispatch fields (CPX-01)
     private final boolean inboundUseWsDispatch;
     private final String inboundBreakpointClientId;
+    private final String inboundBreakpointId;
     private final WebSocketClientRegistry webSocketClientRegistry;
 
     /**
@@ -64,38 +65,47 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
     }
 
     /**
-     * Constructor with inbound breakpoint support.
+     * Constructor with inbound breakpoint support (performs its own findMatch for backward compatibility).
      *
-     * @param matchers                the matcher list for bidirectional matching
-     * @param frameSender             callback for sending response frames
-     * @param configuration           the active server configuration (null to disable inbound breakpoints)
-     * @param inboundStreamId         the stream ID for inbound breakpoints (null to disable)
-     * @param webSocketClientRegistry the per-server WS registry for callback dispatch (null to disable WS dispatch)
+     * @deprecated use the constructor that accepts inboundBreakpointClientId and inboundBreakpointId
      */
     public BidirectionalWebSocketFrameHandler(List<WebSocketMessageMatcher> matchers, FrameSender frameSender,
                                               Configuration configuration, String inboundStreamId,
                                               WebSocketClientRegistry webSocketClientRegistry) {
+        this(matchers, frameSender, configuration, inboundStreamId, webSocketClientRegistry, null, null);
+    }
+
+    /**
+     * Constructor with inbound breakpoint support and pre-resolved breakpoint identity.
+     *
+     * @param matchers                   the matcher list for bidirectional matching
+     * @param frameSender                callback for sending response frames
+     * @param configuration              the active server configuration (null to disable inbound breakpoints)
+     * @param inboundStreamId            the stream ID for inbound breakpoints (null to disable)
+     * @param webSocketClientRegistry    the per-server WS registry for callback dispatch (null to disable WS dispatch)
+     * @param inboundBreakpointClientId  the matched inbound breakpoint's owning clientId (from outer caller)
+     * @param inboundBreakpointId        the matched inbound breakpoint's id (from outer caller)
+     */
+    public BidirectionalWebSocketFrameHandler(List<WebSocketMessageMatcher> matchers, FrameSender frameSender,
+                                              Configuration configuration, String inboundStreamId,
+                                              WebSocketClientRegistry webSocketClientRegistry,
+                                              String inboundBreakpointClientId, String inboundBreakpointId) {
         super(false); // don't auto-release frames — retain for pass-through if unmatched
         this.matchers = matchers;
         this.frameSender = frameSender;
         this.configuration = configuration;
         this.inboundStreamId = inboundStreamId;
         this.webSocketClientRegistry = webSocketClientRegistry;
-        // Pre-compute inbound WS dispatch at construction time (effectively per-stream)
-        if (inboundStreamId != null) {
-            org.mockserver.mock.breakpoint.BreakpointMatcher inboundMatcher =
-                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                    .findMatch(null, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM);
-            if (inboundMatcher != null && inboundMatcher.getClientId() != null && webSocketClientRegistry != null) {
-                this.inboundUseWsDispatch = true;
-                this.inboundBreakpointClientId = inboundMatcher.getClientId();
-            } else {
-                this.inboundUseWsDispatch = false;
-                this.inboundBreakpointClientId = null;
-            }
+        // Use the matched breakpoint's clientId and id passed from the outer caller
+        // (avoids re-matching with null request which can pick the wrong breakpoint)
+        if (inboundStreamId != null && inboundBreakpointClientId != null && webSocketClientRegistry != null) {
+            this.inboundUseWsDispatch = true;
+            this.inboundBreakpointClientId = inboundBreakpointClientId;
+            this.inboundBreakpointId = inboundBreakpointId;
         } else {
             this.inboundUseWsDispatch = false;
             this.inboundBreakpointClientId = null;
+            this.inboundBreakpointId = null;
         }
     }
 
@@ -122,7 +132,7 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
                 int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
                 java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> wsFuture =
                     org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                        inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                        inboundBreakpointClientId, inboundBreakpointId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
                         org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
                         frameBytes, "WS-INBOUND", "/", webSocketClientRegistry, configuration, null);
                 if (wsFuture != null) {

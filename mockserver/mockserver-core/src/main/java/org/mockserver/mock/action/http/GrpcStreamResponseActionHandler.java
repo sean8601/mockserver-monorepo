@@ -92,7 +92,8 @@ public class GrpcStreamResponseActionHandler {
 
         List<GrpcStreamMessage> messages = grpcStreamResponse.getMessages();
         if (messages != null && !messages.isEmpty()) {
-            scheduleMessages(messages, 0, ctx, grpcStreamResponse, request, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+            scheduleMessages(messages, 0, ctx, grpcStreamResponse, request, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId,
+                streamBreakpointMatcher != null ? streamBreakpointMatcher.getId() : null);
         } else {
             finishStream(ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
         }
@@ -102,7 +103,7 @@ public class GrpcStreamResponseActionHandler {
                                    GrpcStreamResponse grpcStreamResponse, org.mockserver.model.HttpRequest request,
                                    com.google.protobuf.Descriptors.MethodDescriptor methodDescriptor,
                                    boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath,
-                                   boolean useWsDispatch, String breakpointClientId) {
+                                   boolean useWsDispatch, String breakpointClientId, String streamBreakpointId) {
         if (index >= messages.size() || !ctx.channel().isActive()) {
             finishStream(ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
             return;
@@ -121,7 +122,7 @@ public class GrpcStreamResponseActionHandler {
                 if (!streamBreakpointsActive) {
                     // Default-off fast path: write immediately
                     writeGrpcFrame(frameBytes, ctx, request, messages, index, grpcStreamResponse, methodDescriptor,
-                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                     return;
                 }
 
@@ -133,7 +134,7 @@ public class GrpcStreamResponseActionHandler {
                 int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
                 java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
                     org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                        breakpointClientId, streamId, seq,
+                        breakpointClientId, streamBreakpointId, streamId, seq,
                         PausedStreamFrame.Direction.OUTBOUND,
                         org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
                         frameBytes, reqMethod, reqPath,
@@ -143,7 +144,7 @@ public class GrpcStreamResponseActionHandler {
                 if (wsFuture == null) {
                     // Cap reached or client not connected -- write immediately
                     writeGrpcFrame(frameBytes, ctx, request, messages, index, grpcStreamResponse, methodDescriptor,
-                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                     return;
                 }
                 decisionFuture = wsFuture;
@@ -154,18 +155,18 @@ public class GrpcStreamResponseActionHandler {
                     ctx.channel().eventLoop().execute(() -> {
                         if (!ctx.channel().isActive()) {
                             scheduleMessages(messages, index + 1, ctx, grpcStreamResponse, request, methodDescriptor,
-                                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                             return;
                         }
                         switch (decision.getAction()) {
                             case CONTINUE -> writeGrpcFrame(capturedFrameBytes, ctx, request, messages, index,
-                                grpcStreamResponse, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                grpcStreamResponse, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                             case MODIFY -> writeGrpcFrame(decision.getReplacementBody(), ctx, request, messages, index,
-                                grpcStreamResponse, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                grpcStreamResponse, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                             case DROP ->
                                 // Skip this frame -- proceed to next message
                                 scheduleMessages(messages, index + 1, ctx, grpcStreamResponse, request, methodDescriptor,
-                                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                             case INJECT -> {
                                 // Write original frame, then inject an extra frame, then proceed
                                 DefaultHttpContent originalContent = new DefaultHttpContent(
@@ -176,10 +177,10 @@ public class GrpcStreamResponseActionHandler {
                                             Unpooled.wrappedBuffer(decision.getInjectedBody()));
                                         ctx.writeAndFlush(injectedContent).addListener(f2 ->
                                             scheduleMessages(messages, index + 1, ctx, grpcStreamResponse, request,
-                                                methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId));
+                                                methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId));
                                     } else {
                                         scheduleMessages(messages, index + 1, ctx, grpcStreamResponse, request,
-                                            methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                                            methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
                                     }
                                 });
                             }
@@ -234,7 +235,7 @@ public class GrpcStreamResponseActionHandler {
                                 List<GrpcStreamMessage> messages, int index, GrpcStreamResponse grpcStreamResponse,
                                 com.google.protobuf.Descriptors.MethodDescriptor methodDescriptor,
                                 boolean streamBreakpointsActive, String streamId, String reqMethod, String reqPath,
-                                boolean useWsDispatch, String breakpointClientId) {
+                                boolean useWsDispatch, String breakpointClientId, String streamBreakpointId) {
         DefaultHttpContent content = new DefaultHttpContent(Unpooled.wrappedBuffer(frameBytes));
         ctx.writeAndFlush(content).addListener(future -> {
             if (future.isSuccess()) {
@@ -250,7 +251,7 @@ public class GrpcStreamResponseActionHandler {
                     );
                 }
                 scheduleMessages(messages, index + 1, ctx, grpcStreamResponse, request, methodDescriptor,
-                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                    streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId);
             } else {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                     mockServerLogger.logEvent(

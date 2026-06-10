@@ -27,7 +27,6 @@ public class StreamFrameBreakpointRegistryTest {
 
     private void resetAllBreakpointSingletons() {
         BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
         BreakpointCallbackDispatcher.getInstance().reset();
         StreamFrameCallbackDispatcher.getInstance().reset();
