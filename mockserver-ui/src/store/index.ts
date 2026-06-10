@@ -174,31 +174,17 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   }),
 
   applyMessage: (message) =>
-    set((s) => {
-      const expectations = message.activeExpectations ?? [];
-      const recorded = message.recordedRequests ?? [];
-      const proxied = message.proxiedRequests ?? [];
-      // Auto-navigate from the onboarding view to the dashboard only on the
-      // empty→has-data transition (i.e. the PREVIOUS state had zero data and
-      // the incoming message brings some). This preserves the first-run
-      // auto-advance while letting users revisit the onboarding view at will.
-      const previouslyEmpty =
-        s.activeExpectations.length === 0 &&
-        s.recordedRequests.length === 0 &&
-        s.proxiedRequests.length === 0;
-      const hasData =
-        expectations.length > 0 || recorded.length > 0 || proxied.length > 0;
-      const autoSwitch =
-        s.view === 'get-started' && previouslyEmpty && hasData;
-      return {
-        logMessages: reconcileByKey(s.logMessages, message.logMessages ?? []),
-        activeExpectations: reconcileByKey(s.activeExpectations, expectations),
-        recordedRequests: reconcileByKey(s.recordedRequests, recorded),
-        proxiedRequests: reconcileByKey(s.proxiedRequests, proxied),
-        error: message.error ?? null,
-        ...(autoSwitch ? { view: 'dashboard' as ViewMode } : {}),
-      };
-    }),
+    // The view is never changed here: the user stays on whatever view they are
+    // on (the initial view is 'get-started') until they navigate themselves.
+    // We deliberately do NOT auto-advance to the dashboard when the first data
+    // arrives — landing on Get Started should be sticky.
+    set((s) => ({
+      logMessages: reconcileByKey(s.logMessages, message.logMessages ?? []),
+      activeExpectations: reconcileByKey(s.activeExpectations, message.activeExpectations ?? []),
+      recordedRequests: reconcileByKey(s.recordedRequests, message.recordedRequests ?? []),
+      proxiedRequests: reconcileByKey(s.proxiedRequests, message.proxiedRequests ?? []),
+      error: message.error ?? null,
+    })),
 
   clearUI: () =>
     set({

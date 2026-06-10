@@ -132,7 +132,7 @@ describe('OnboardingPanel default-selection logic', () => {
     expect(useDashboardStore.getState().view).toBe('get-started');
   });
 
-  it('auto-switches to dashboard when expectations arrive', () => {
+  it('stays on get-started when expectations arrive (no auto-switch)', () => {
     const message: WebSocketMessage = {
       logMessages: [],
       activeExpectations: [{ key: 'exp1', value: { httpRequest: { path: '/test' } } }],
@@ -140,10 +140,10 @@ describe('OnboardingPanel default-selection logic', () => {
       proxiedRequests: [],
     };
     useDashboardStore.getState().applyMessage(message);
-    expect(useDashboardStore.getState().view).toBe('dashboard');
+    expect(useDashboardStore.getState().view).toBe('get-started');
   });
 
-  it('auto-switches to dashboard when recorded requests arrive', () => {
+  it('stays on get-started when recorded requests arrive (no auto-switch)', () => {
     const message: WebSocketMessage = {
       logMessages: [],
       activeExpectations: [],
@@ -151,10 +151,10 @@ describe('OnboardingPanel default-selection logic', () => {
       proxiedRequests: [],
     };
     useDashboardStore.getState().applyMessage(message);
-    expect(useDashboardStore.getState().view).toBe('dashboard');
+    expect(useDashboardStore.getState().view).toBe('get-started');
   });
 
-  it('auto-switches to dashboard when proxied requests arrive', () => {
+  it('stays on get-started when proxied requests arrive (no auto-switch)', () => {
     const message: WebSocketMessage = {
       logMessages: [],
       activeExpectations: [],
@@ -162,10 +162,10 @@ describe('OnboardingPanel default-selection logic', () => {
       proxiedRequests: [{ key: 'prx1', value: { path: '/proxied' } }],
     };
     useDashboardStore.getState().applyMessage(message);
-    expect(useDashboardStore.getState().view).toBe('dashboard');
+    expect(useDashboardStore.getState().view).toBe('get-started');
   });
 
-  it('does not auto-switch when view has been manually changed', () => {
+  it('leaves a manually-chosen view untouched when data arrives', () => {
     useDashboardStore.getState().setView('traffic');
     const message: WebSocketMessage = {
       logMessages: [],
@@ -177,7 +177,7 @@ describe('OnboardingPanel default-selection logic', () => {
     expect(useDashboardStore.getState().view).toBe('traffic');
   });
 
-  it('does not auto-switch when log messages arrive without other data', () => {
+  it('stays on get-started when log messages arrive without other data', () => {
     const message: WebSocketMessage = {
       logMessages: [{ key: 'log1', value: { messageParts: [] } }],
       activeExpectations: [],

@@ -106,7 +106,7 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 
 | View | Button label | Component | Description |
 |------|--------------|-----------|-------------|
-| `get-started` | — | `OnboardingPanel.tsx` | Onboarding / empty-state view shown automatically on first load; auto-switches to `dashboard` when the first data arrives |
+| `get-started` | — | `OnboardingPanel.tsx` | Onboarding view shown on first load; stays until the user navigates away (no auto-switch) |
 | `dashboard` | Dashboard | `DashboardGrid.tsx` | 2×2 grid of Log Messages, Active Expectations, Received Requests, Proxied Requests panels |
 | `traffic` | Traffic | `TrafficInspector.tsx` | Full-width master/detail list of all captured traffic (mock-matched + proxied), with per-row Replay and Compare buttons |
 | `sessions` | Sessions | `SessionInspector.tsx` | Swim-lane grouped view of isolated LLM conversation sessions |
@@ -404,7 +404,7 @@ See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture 
 
 ## Get-Started / Onboarding View
 
-`OnboardingPanel.tsx` (view = `get-started`) is the initial empty-state view shown to new users. The Zustand store starts with `view: 'get-started'` and automatically switches to `'dashboard'` the first time `applyMessage` receives a non-empty payload. This prevents new users from seeing an empty dashboard on first load.
+`OnboardingPanel.tsx` (view = `get-started`) is the initial landing view. The Zustand store starts with `view: 'get-started'` and **stays there** — `applyMessage` never changes the view, so incoming data does not bounce the user to the dashboard. The user navigates away themselves via the AppBar. (A reset returns the view to `get-started`.)
 
 ## Traffic View: Replay and Compare
 

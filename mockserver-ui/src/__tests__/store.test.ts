@@ -80,7 +80,7 @@ describe('DashboardStore', () => {
       expect(useDashboardStore.getState().error).toBeNull();
     });
 
-    it('auto-switches from get-started to dashboard on empty→has-data transition', () => {
+    it('stays on get-started when the first data arrives (no auto-switch)', () => {
       // Start on get-started with no data (first-run scenario)
       useDashboardStore.setState({
         view: 'get-started',
@@ -96,7 +96,8 @@ describe('DashboardStore', () => {
         proxiedRequests: [],
       });
 
-      expect(useDashboardStore.getState().view).toBe('dashboard');
+      // Landing on Get Started is sticky — the user navigates away themselves.
+      expect(useDashboardStore.getState().view).toBe('get-started');
     });
 
     it('does NOT bounce user off get-started when data already exists', () => {
