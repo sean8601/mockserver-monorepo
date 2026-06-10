@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography';
 import type { JsonListItem } from '../types';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
+import { listRowSx } from './listRowSx';
 import { matchesItemSearch } from '../lib/searchMatcher';
 
 interface RequestPanelProps {
@@ -117,7 +118,7 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
 const RequestRow = memo(function RequestRow({ item, index }: { item: JsonListItem; index: number }) {
   const tp = useMemo(() => extractTraceparentFromItem(item), [item]);
   return (
-    <Box>
+    <Box sx={listRowSx}>
       <JsonListItemComponent item={item} index={index} />
       {tp && (
         <Box sx={{ pl: 6, pb: 0.5 }}>

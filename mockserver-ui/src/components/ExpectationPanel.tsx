@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
+import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useDashboardStore } from '../store';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
+import { listRowSx } from './listRowSx';
 import { applyClientFilters } from '../lib/clientFilters';
 import { matchesItemSearch } from '../lib/searchMatcher';
 import { buildTurnPositionMap } from '../lib/scenarioState';
@@ -45,12 +47,13 @@ export default function ExpectationPanel() {
         </Typography>
       ) : (
         filtered.map((item, index) => (
-          <JsonListItemComponent
-            key={item.key}
-            item={item}
-            index={index + 1}
-            turnPosition={turnPositions.get(item.key)}
-          />
+          <Box key={item.key} sx={listRowSx}>
+            <JsonListItemComponent
+              item={item}
+              index={index + 1}
+              turnPosition={turnPositions.get(item.key)}
+            />
+          </Box>
         ))
       )}
     </Panel>
