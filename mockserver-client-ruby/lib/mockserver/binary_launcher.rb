@@ -34,6 +34,9 @@ module MockServer
   class BinaryLauncher
     REPO = 'mock-server/mockserver-monorepo'
 
+    # CDN base URL used for SNAPSHOT version downloads.
+    SNAPSHOT_CDN = 'https://downloads.mock-server.com'
+
     # Maximum number of previous version directories to keep (in addition to the current).
     MAX_PREVIOUS_VERSIONS_TO_KEEP = 1
 
@@ -92,12 +95,20 @@ module MockServer
 
       # Return the download URL for a release asset.
       #
+      # Uses +MOCKSERVER_BINARY_BASE_URL+ if set; otherwise defaults to GitHub
+      # Releases for release versions and the downloads.mock-server.com CDN for
+      # SNAPSHOT versions.
+      #
       # @param version [String]
       # @param file [String]
       # @return [String]
       def asset_url(version, file)
         base = ENV['MOCKSERVER_BINARY_BASE_URL'] ||
-               "https://github.com/#{REPO}/releases/download/mockserver-#{version}"
+               if snapshot?(version)
+                 "#{SNAPSHOT_CDN}/mockserver-#{version}"
+               else
+                 "https://github.com/#{REPO}/releases/download/mockserver-#{version}"
+               end
         # Strip trailing slashes with a single linear scan rather than a regex,
         # so there is no ReDoS surface at all (CWE-1333) on the operator-supplied
         # MOCKSERVER_BINARY_BASE_URL. Interior slashes are preserved; only the
@@ -490,6 +501,11 @@ module MockServer
         core = parts[0].split('.').map { |s| s.match?(/\A\d+\z/) ? s.to_i : 0 }
         pre = parts[1] ? parts[1].split(/[.\-]/) : nil
         [core, pre]
+      end
+
+      # @return [Boolean] true if the version contains '-SNAPSHOT' (case-insensitive)
+      def snapshot?(version)
+        version.upcase.include?('-SNAPSHOT')
       end
 
       # @return [Boolean] true if the current platform is Windows

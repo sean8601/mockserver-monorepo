@@ -172,14 +172,28 @@ func cacheDirForOS(goos string) string {
 	return filepath.Join(base, "mockserver", "binaries")
 }
 
+// snapshotCDN is the base URL for SNAPSHOT version downloads.
+const snapshotCDN = "https://downloads.mock-server.com"
+
+// isSnapshot returns true if the version string contains "-SNAPSHOT"
+// (case-insensitive), indicating a pre-release snapshot build.
+func isSnapshot(version string) bool {
+	return strings.Contains(strings.ToUpper(version), "-SNAPSHOT")
+}
+
 // AssetURL returns the full download URL for an asset file.
 //
 // It uses MOCKSERVER_BINARY_BASE_URL if set, otherwise defaults to the GitHub
-// release URL for the given version.
+// release URL for release versions, or the downloads.mock-server.com CDN for
+// SNAPSHOT versions.
 func AssetURL(version, file string) string {
 	base := os.Getenv("MOCKSERVER_BINARY_BASE_URL")
 	if base == "" {
-		base = "https://github.com/" + repo + "/releases/download/mockserver-" + version
+		if isSnapshot(version) {
+			base = snapshotCDN + "/mockserver-" + version
+		} else {
+			base = "https://github.com/" + repo + "/releases/download/mockserver-" + version
+		}
 	}
 	return strings.TrimRight(base, "/") + "/" + file
 }

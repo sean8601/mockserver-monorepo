@@ -48,6 +48,8 @@ _CLIENT_VERSION = "7.0.0"
 
 _REPO = "mock-server/mockserver-monorepo"
 
+_SNAPSHOT_CDN = "https://downloads.mock-server.com"
+
 # Maximum number of previous version directories to keep (in addition to the
 # current one) during cache pruning.
 _MAX_PREVIOUS_VERSIONS = 1
@@ -163,11 +165,24 @@ def cache_dir() -> Path:
     return Path(base) / "mockserver" / "binaries"
 
 
+def _is_snapshot(version: str) -> bool:
+    """Return True if *version* contains '-SNAPSHOT' (case-insensitive)."""
+    return "-SNAPSHOT" in version.upper()
+
+
 def asset_url(version: str, filename: str) -> str:
-    """Return the download URL for a release asset."""
-    base = os.environ.get("MOCKSERVER_BINARY_BASE_URL") or (
-        f"https://github.com/{_REPO}/releases/download/mockserver-{version}"
-    )
+    """Return the download URL for a release asset.
+
+    Uses ``MOCKSERVER_BINARY_BASE_URL`` if set; otherwise defaults to GitHub
+    Releases for release versions and the downloads.mock-server.com CDN for
+    SNAPSHOT versions.
+    """
+    base = os.environ.get("MOCKSERVER_BINARY_BASE_URL")
+    if not base:
+        if _is_snapshot(version):
+            base = f"{_SNAPSHOT_CDN}/mockserver-{version}"
+        else:
+            base = f"https://github.com/{_REPO}/releases/download/mockserver-{version}"
     return base.rstrip("/") + "/" + filename
 
 

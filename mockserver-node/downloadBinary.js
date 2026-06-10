@@ -31,6 +31,7 @@ var spawnSync = child_process.spawnSync;
 var followRedirects = require('follow-redirects');
 
 var REPO = 'mock-server/mockserver-monorepo';
+var SNAPSHOT_CDN = 'https://downloads.mock-server.com';
 
 /**
  * Strict semver-ish version pattern. Rejects path separators, '..', and
@@ -125,15 +126,29 @@ function cacheDir() {
 // ---------- URL helpers ----------
 
 /**
+ * Return true if version contains '-SNAPSHOT' (case-insensitive).
+ * @param {string} version
+ * @returns {boolean}
+ */
+function isSnapshot(version) {
+  return version.toUpperCase().indexOf('-SNAPSHOT') !== -1;
+}
+
+/**
  * Build the download URL for an asset file within a version's release.
- * Strips trailing slashes from MOCKSERVER_BINARY_BASE_URL if set.
+ * Uses MOCKSERVER_BINARY_BASE_URL if set; otherwise defaults to GitHub Releases
+ * for release versions and the downloads.mock-server.com CDN for SNAPSHOT versions.
  * @param {string} version
  * @param {string} file  asset filename
  * @returns {string}
  */
 function assetUrl(version, file) {
-  var base = process.env.MOCKSERVER_BINARY_BASE_URL ||
-    ('https://github.com/' + REPO + '/releases/download/mockserver-' + version);
+  var base = process.env.MOCKSERVER_BINARY_BASE_URL;
+  if (!base) {
+    base = isSnapshot(version) ?
+      (SNAPSHOT_CDN + '/mockserver-' + version) :
+      ('https://github.com/' + REPO + '/releases/download/mockserver-' + version);
+  }
   return base.replace(/\/+$/, '') + '/' + file;
 }
 
@@ -568,6 +583,7 @@ module.exports = {
     parseVersionSegments: parseVersionSegments,
     assertWithinBase: assertWithinBase,
     escapeCmdArg: escapeCmdArg,
+    isSnapshot: isSnapshot,
     download: download,
     sha256: sha256,
     VERSION_PATTERN: VERSION_PATTERN

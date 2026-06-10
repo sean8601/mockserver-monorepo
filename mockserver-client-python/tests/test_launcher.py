@@ -20,6 +20,7 @@ from mockserver.launcher import (
     MockServerProcess,
     _CLIENT_VERSION,
     _MAX_PREVIOUS_VERSIONS,
+    _is_snapshot,
     _parse_semver_tuple,
     _prune_old_versions,
     _sha256,
@@ -233,6 +234,35 @@ class TestAssetUrl:
         with mock.patch.dict(os.environ, {"MOCKSERVER_BINARY_BASE_URL": "https://mirror.local///"}):
             url = asset_url("7.0.0", "foo.tar.gz")
             assert url == "https://mirror.local/foo.tar.gz"
+
+    def test_snapshot_uses_cdn(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MOCKSERVER_BINARY_BASE_URL", None)
+            url = asset_url("7.1.0-SNAPSHOT", "mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz")
+            assert url == (
+                "https://downloads.mock-server.com/mockserver-7.1.0-SNAPSHOT"
+                "/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz"
+            )
+
+    def test_release_uses_github(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MOCKSERVER_BINARY_BASE_URL", None)
+            url = asset_url("7.0.0", "foo.tar.gz")
+            assert url == (
+                "https://github.com/mock-server/mockserver-monorepo"
+                "/releases/download/mockserver-7.0.0/foo.tar.gz"
+            )
+
+    def test_env_override_wins_over_snapshot(self):
+        with mock.patch.dict(os.environ, {"MOCKSERVER_BINARY_BASE_URL": "https://custom-mirror.example.com/bins"}):
+            url = asset_url("7.1.0-SNAPSHOT", "mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz")
+            assert url == "https://custom-mirror.example.com/bins/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz"
+
+    def test_snapshot_case_insensitive(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MOCKSERVER_BINARY_BASE_URL", None)
+            url = asset_url("7.1.0-snapshot", "file.tar.gz")
+            assert url.startswith("https://downloads.mock-server.com/")
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +601,21 @@ class TestStart:
 # ---------------------------------------------------------------------------
 # Version validation (H1)
 # ---------------------------------------------------------------------------
+
+class TestIsSnapshot:
+    """Verify _is_snapshot detects SNAPSHOT versions case-insensitively."""
+
+    def test_snapshot_detected(self):
+        assert _is_snapshot("7.0.0-SNAPSHOT") is True
+        assert _is_snapshot("7.0.0-snapshot") is True
+        assert _is_snapshot("7.0.0-Snapshot") is True
+        assert _is_snapshot("7.1.0-SNAPSHOT") is True
+
+    def test_release_not_snapshot(self):
+        assert _is_snapshot("7.0.0") is False
+        assert _is_snapshot("7.0.0-beta.1") is False
+        assert _is_snapshot("7.0.0-rc.1") is False
+
 
 class TestVersionValidation:
     """Verify _validate_version rejects path-traversal and malformed strings."""

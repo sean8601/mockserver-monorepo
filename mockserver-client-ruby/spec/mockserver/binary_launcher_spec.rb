@@ -228,6 +228,36 @@ RSpec.describe MockServer::BinaryLauncher do
       # No trailing slash to strip, so the base is returned unchanged.
       expect(result).to end_with('x/file.tar.gz')
     end
+
+    it 'uses the CDN URL for SNAPSHOT versions' do
+      ENV.delete('MOCKSERVER_BINARY_BASE_URL')
+      url = described_class.asset_url('7.1.0-SNAPSHOT', 'mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz')
+      expect(url).to eq(
+        'https://downloads.mock-server.com/mockserver-7.1.0-SNAPSHOT/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz'
+      )
+    end
+
+    it 'uses GitHub Releases for release versions' do
+      ENV.delete('MOCKSERVER_BINARY_BASE_URL')
+      url = described_class.asset_url('7.0.0', 'mockserver-7.0.0-linux-x86_64.tar.gz')
+      expect(url).to eq(
+        'https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-7.0.0/mockserver-7.0.0-linux-x86_64.tar.gz'
+      )
+    end
+
+    it 'uses MOCKSERVER_BINARY_BASE_URL even for SNAPSHOT versions when set' do
+      ENV['MOCKSERVER_BINARY_BASE_URL'] = 'https://custom-mirror.example.com/bins'
+      url = described_class.asset_url('7.1.0-SNAPSHOT', 'mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz')
+      expect(url).to eq(
+        'https://custom-mirror.example.com/bins/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz'
+      )
+    end
+
+    it 'detects SNAPSHOT case-insensitively' do
+      ENV.delete('MOCKSERVER_BINARY_BASE_URL')
+      url = described_class.asset_url('7.1.0-snapshot', 'file.tar.gz')
+      expect(url).to start_with('https://downloads.mock-server.com/')
+    end
   end
 
   # -------------------------------------------------------------------

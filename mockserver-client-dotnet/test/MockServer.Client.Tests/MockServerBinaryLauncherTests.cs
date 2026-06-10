@@ -263,6 +263,51 @@ public class MockServerBinaryLauncherTests : IDisposable
         url.Should().Be("https://mirror.example.com/assets/file.tar.gz");
     }
 
+    [Theory]
+    [InlineData("7.0.0-SNAPSHOT", true)]
+    [InlineData("7.0.0-snapshot", true)]
+    [InlineData("7.0.0-Snapshot", true)]
+    [InlineData("7.1.0-SNAPSHOT", true)]
+    [InlineData("7.0.0", false)]
+    [InlineData("7.0.0-beta.1", false)]
+    [InlineData("7.0.0-rc.1", false)]
+    public void IsSnapshot_DetectsSnapshotVersions(string version, bool expected)
+    {
+        MockServerBinaryLauncher.IsSnapshot(version).Should().Be(expected);
+    }
+
+    [Fact]
+    public void AssetUrl_SnapshotVersionUsesCdn()
+    {
+        SetEnv("MOCKSERVER_BINARY_BASE_URL", null);
+
+        var url = MockServerBinaryLauncher.AssetUrl("7.1.0-SNAPSHOT", "mockserver-7.1.0-SNAPSHOT-darwin-aarch64.tar.gz");
+
+        url.Should().Be(
+            "https://downloads.mock-server.com/mockserver-7.1.0-SNAPSHOT/mockserver-7.1.0-SNAPSHOT-darwin-aarch64.tar.gz");
+    }
+
+    [Fact]
+    public void AssetUrl_ReleaseVersionUsesGitHub()
+    {
+        SetEnv("MOCKSERVER_BINARY_BASE_URL", null);
+
+        var url = MockServerBinaryLauncher.AssetUrl("7.0.0", "mockserver-7.0.0-darwin-aarch64.tar.gz");
+
+        url.Should().Be(
+            "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-7.0.0/mockserver-7.0.0-darwin-aarch64.tar.gz");
+    }
+
+    [Fact]
+    public void AssetUrl_EnvOverrideWinsOverSnapshot()
+    {
+        SetEnv("MOCKSERVER_BINARY_BASE_URL", "https://custom-mirror.example.com/bins");
+
+        var url = MockServerBinaryLauncher.AssetUrl("7.1.0-SNAPSHOT", "mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz");
+
+        url.Should().Be("https://custom-mirror.example.com/bins/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz");
+    }
+
     // ---------------------------------------------------------------
     // Launcher path
     // ---------------------------------------------------------------

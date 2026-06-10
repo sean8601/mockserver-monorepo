@@ -331,14 +331,29 @@ pub fn cache_dir() -> PathBuf {
 // Asset URL
 // ---------------------------------------------------------------------------
 
+/// The CDN base URL used for SNAPSHOT version downloads.
+const SNAPSHOT_CDN: &str = "https://downloads.mock-server.com";
+
+/// Returns `true` if the version string contains "-SNAPSHOT" (case-insensitive),
+/// indicating a pre-release snapshot build.
+pub fn is_snapshot(version: &str) -> bool {
+    version.to_ascii_uppercase().contains("-SNAPSHOT")
+}
+
 /// Compute the download URL for a release asset.
 ///
-/// Uses `MOCKSERVER_BINARY_BASE_URL` if set, otherwise the GitHub release URL.
+/// Uses `MOCKSERVER_BINARY_BASE_URL` if set; otherwise defaults to GitHub
+/// Releases for release versions and the downloads.mock-server.com CDN for
+/// SNAPSHOT versions.
 pub fn asset_url(version: &str, file: &str) -> String {
     let base = std::env::var("MOCKSERVER_BINARY_BASE_URL").unwrap_or_else(|_| {
-        format!(
-            "https://github.com/{REPO}/releases/download/mockserver-{version}"
-        )
+        if is_snapshot(version) {
+            format!("{SNAPSHOT_CDN}/mockserver-{version}")
+        } else {
+            format!(
+                "https://github.com/{REPO}/releases/download/mockserver-{version}"
+            )
+        }
     });
     let base = base.trim_end_matches('/');
     format!("{base}/{file}")
@@ -1061,6 +1076,63 @@ mod tests {
         );
         let url = asset_url("7.0.0", "file.tar.gz");
         assert_eq!(url, "https://mirror.internal/file.tar.gz");
+    }
+
+    // -----------------------------------------------------------------------
+    // SNAPSHOT vs Release URL selection
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_is_snapshot() {
+        assert!(is_snapshot("7.0.0-SNAPSHOT"));
+        assert!(is_snapshot("7.0.0-snapshot"));
+        assert!(is_snapshot("7.0.0-Snapshot"));
+        assert!(is_snapshot("7.1.0-SNAPSHOT"));
+        assert!(!is_snapshot("7.0.0"));
+        assert!(!is_snapshot("7.0.0-beta.1"));
+        assert!(!is_snapshot("7.0.0-rc.1"));
+    }
+
+    #[test]
+    fn test_asset_url_snapshot_uses_cdn() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let _guard = EnvGuard::new("MOCKSERVER_BINARY_BASE_URL", None);
+        let url = asset_url(
+            "7.1.0-SNAPSHOT",
+            "mockserver-7.1.0-SNAPSHOT-darwin-aarch64.tar.gz",
+        );
+        assert_eq!(
+            url,
+            "https://downloads.mock-server.com/mockserver-7.1.0-SNAPSHOT/mockserver-7.1.0-SNAPSHOT-darwin-aarch64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_asset_url_release_uses_github() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let _guard = EnvGuard::new("MOCKSERVER_BINARY_BASE_URL", None);
+        let url = asset_url("7.0.0", "mockserver-7.0.0-darwin-aarch64.tar.gz");
+        assert_eq!(
+            url,
+            "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-7.0.0/mockserver-7.0.0-darwin-aarch64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_asset_url_env_override_wins_over_snapshot() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let _guard = EnvGuard::new(
+            "MOCKSERVER_BINARY_BASE_URL",
+            Some("https://custom-mirror.example.com/bins"),
+        );
+        let url = asset_url(
+            "7.1.0-SNAPSHOT",
+            "mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz",
+        );
+        assert_eq!(
+            url,
+            "https://custom-mirror.example.com/bins/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz"
+        );
     }
 
     // -----------------------------------------------------------------------

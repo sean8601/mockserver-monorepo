@@ -138,6 +138,56 @@ test('assetUrl defaults to the GitHub Release for the version tag', function () 
   }
 });
 
+test('isSnapshot detects SNAPSHOT versions case-insensitively', function () {
+  var isSnapshot = binary._internal.isSnapshot;
+  assert.strictEqual(isSnapshot('7.0.0-SNAPSHOT'), true);
+  assert.strictEqual(isSnapshot('7.0.0-snapshot'), true);
+  assert.strictEqual(isSnapshot('7.0.0-Snapshot'), true);
+  assert.strictEqual(isSnapshot('7.1.0-SNAPSHOT'), true);
+  assert.strictEqual(isSnapshot('7.0.0'), false);
+  assert.strictEqual(isSnapshot('7.0.0-beta.1'), false);
+  assert.strictEqual(isSnapshot('7.0.0-rc.1'), false);
+});
+
+test('assetUrl uses CDN for SNAPSHOT versions', function () {
+  var prev = process.env.MOCKSERVER_BINARY_BASE_URL;
+  delete process.env.MOCKSERVER_BINARY_BASE_URL;
+  try {
+    assert.strictEqual(
+      binary.assetUrl('7.1.0-SNAPSHOT', 'mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz'),
+      'https://downloads.mock-server.com/mockserver-7.1.0-SNAPSHOT/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz');
+  } finally {
+    if (prev !== undefined) { process.env.MOCKSERVER_BINARY_BASE_URL = prev; }
+    else { delete process.env.MOCKSERVER_BINARY_BASE_URL; }
+  }
+});
+
+test('assetUrl uses GitHub for release versions', function () {
+  var prev = process.env.MOCKSERVER_BINARY_BASE_URL;
+  delete process.env.MOCKSERVER_BINARY_BASE_URL;
+  try {
+    assert.strictEqual(
+      binary.assetUrl('7.0.0', 'mockserver-7.0.0-darwin-aarch64.tar.gz'),
+      'https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-7.0.0/mockserver-7.0.0-darwin-aarch64.tar.gz');
+  } finally {
+    if (prev !== undefined) { process.env.MOCKSERVER_BINARY_BASE_URL = prev; }
+    else { delete process.env.MOCKSERVER_BINARY_BASE_URL; }
+  }
+});
+
+test('assetUrl env override wins over SNAPSHOT detection', function () {
+  var prev = process.env.MOCKSERVER_BINARY_BASE_URL;
+  process.env.MOCKSERVER_BINARY_BASE_URL = 'https://custom-mirror.example.com/bins';
+  try {
+    assert.strictEqual(
+      binary.assetUrl('7.1.0-SNAPSHOT', 'mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz'),
+      'https://custom-mirror.example.com/bins/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz');
+  } finally {
+    if (prev === undefined) { delete process.env.MOCKSERVER_BINARY_BASE_URL; }
+    else { process.env.MOCKSERVER_BINARY_BASE_URL = prev; }
+  }
+});
+
 // ================================================================
 // 3. Cache directory resolution
 // ================================================================

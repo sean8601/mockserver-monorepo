@@ -237,6 +237,56 @@ func TestAssetURL_CustomBaseNoTrailingSlash(t *testing.T) {
 	}
 }
 
+// --- SNAPSHOT vs Release URL selection ---
+
+func TestIsSnapshot(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"7.0.0", false},
+		{"7.0.0-SNAPSHOT", true},
+		{"7.0.0-snapshot", true},
+		{"7.0.0-Snapshot", true},
+		{"7.0.0-beta.1", false},
+		{"7.0.0-rc.1", false},
+		{"7.1.0-SNAPSHOT", true},
+	}
+	for _, tt := range tests {
+		got := isSnapshot(tt.version)
+		if got != tt.want {
+			t.Errorf("isSnapshot(%q) = %v, want %v", tt.version, got, tt.want)
+		}
+	}
+}
+
+func TestAssetURL_SnapshotUsesCDN(t *testing.T) {
+	t.Setenv("MOCKSERVER_BINARY_BASE_URL", "")
+	url := AssetURL("7.1.0-SNAPSHOT", "mockserver-7.1.0-SNAPSHOT-darwin-aarch64.tar.gz")
+	want := "https://downloads.mock-server.com/mockserver-7.1.0-SNAPSHOT/mockserver-7.1.0-SNAPSHOT-darwin-aarch64.tar.gz"
+	if url != want {
+		t.Errorf("expected %s, got %s", want, url)
+	}
+}
+
+func TestAssetURL_ReleaseUsesGitHub(t *testing.T) {
+	t.Setenv("MOCKSERVER_BINARY_BASE_URL", "")
+	url := AssetURL("7.0.0", "mockserver-7.0.0-darwin-aarch64.tar.gz")
+	want := "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-7.0.0/mockserver-7.0.0-darwin-aarch64.tar.gz"
+	if url != want {
+		t.Errorf("expected %s, got %s", want, url)
+	}
+}
+
+func TestAssetURL_EnvOverrideWinsOverSnapshot(t *testing.T) {
+	t.Setenv("MOCKSERVER_BINARY_BASE_URL", "https://custom-mirror.example.com/bins")
+	url := AssetURL("7.1.0-SNAPSHOT", "mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz")
+	want := "https://custom-mirror.example.com/bins/mockserver-7.1.0-SNAPSHOT-linux-x86_64.tar.gz"
+	if url != want {
+		t.Errorf("expected %s, got %s", want, url)
+	}
+}
+
 // --- Launcher Path Tests ---
 
 func TestLauncherPath_Unix(t *testing.T) {

@@ -255,13 +255,31 @@ public sealed class MockServerBinaryLauncher : IDisposable
     // ---------------------------------------------------------------
 
     /// <summary>
+    /// The CDN base URL used for SNAPSHOT version downloads.
+    /// </summary>
+    private const string SnapshotCdn = "https://downloads.mock-server.com";
+
+    /// <summary>
+    /// Returns true if the version string contains "-SNAPSHOT" (case-insensitive),
+    /// indicating a pre-release snapshot build.
+    /// </summary>
+    internal static bool IsSnapshot(string version)
+        => version.IndexOf("-SNAPSHOT", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    /// <summary>
     /// Returns the download URL for a given asset file.
+    /// Uses MOCKSERVER_BINARY_BASE_URL if set; otherwise defaults to GitHub Releases
+    /// for release versions and the downloads.mock-server.com CDN for SNAPSHOT versions.
     /// </summary>
     public static string AssetUrl(string version, string file)
     {
         var baseUrl = Environment.GetEnvironmentVariable("MOCKSERVER_BINARY_BASE_URL");
         if (string.IsNullOrEmpty(baseUrl))
-            baseUrl = $"https://github.com/{Repo}/releases/download/mockserver-{version}";
+        {
+            baseUrl = IsSnapshot(version)
+                ? $"{SnapshotCdn}/mockserver-{version}"
+                : $"https://github.com/{Repo}/releases/download/mockserver-{version}";
+        }
 
         return baseUrl.TrimEnd('/') + "/" + file;
     }
