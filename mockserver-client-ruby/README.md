@@ -145,6 +145,64 @@ client.remove_breakpoint_matcher(bp_id)
 client.clear_breakpoint_matchers
 ```
 
+## Start / Launch MockServer
+
+The Ruby client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.
+
+### Quick start
+
+```ruby
+require 'mockserver-client'
+
+# Download (first run) and start MockServer on port 1080
+handle = MockServer::BinaryLauncher.start(port: 1080)
+puts "MockServer running on port #{handle.port}, PID #{handle.pid}"
+
+# ... use MockServer ...
+
+handle.stop
+```
+
+### Just ensure the binary is present
+
+```ruby
+launcher_path = MockServer::BinaryLauncher.ensure_launcher
+```
+
+### Specify a version
+
+```ruby
+handle = MockServer::BinaryLauncher.start(port: 1080, version: '7.0.0')
+```
+
+### API reference
+
+| Method / Class | Description |
+|---|---|
+| `MockServer::BinaryLauncher.ensure_launcher(version:, log:)` | Download, verify, cache, and return the launcher path. Defaults to `MockServer::VERSION`. |
+| `MockServer::BinaryLauncher.start(port:, version:, extra_args:, log:)` | Ensure the binary and start MockServer. Returns a `ServerHandle`. |
+| `MockServer::BinaryLauncher::ServerHandle` | Handle to the running process. Methods: `stop(timeout:)`, `running?`. Attributes: `pid`, `port`, `launcher`. |
+
+### Supported platforms
+
+| OS | Architecture |
+|---|---|
+| Linux | x86_64, aarch64 |
+| macOS (darwin) | x86_64, aarch64 |
+| Windows | x86_64, aarch64 |
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `MOCKSERVER_BINARY_BASE_URL` | Mirror host for the release assets (corporate / air-gapped networks) |
+| `MOCKSERVER_BINARY_CACHE` | Override the cache directory (default: `~/.cache/mockserver/binaries` on Unix) |
+| `MOCKSERVER_SKIP_BINARY_DOWNLOAD` | Fail instead of downloading (use with a pre-seeded cache in CI) |
+
+### Version
+
+By default the launcher downloads the MockServer version matching this client gem (currently `MockServer::VERSION` from `lib/mockserver/version.rb`). Pass an explicit `version:` keyword to override.
+
 ## License
 
 Apache-2.0

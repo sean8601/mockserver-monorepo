@@ -203,6 +203,81 @@ client.CloseBreakpointWebSocket()
 
 **Stream frame decisions:** `ContinueFrame`, `ModifyFrame`, `DropFrame`, `InjectFrame`, `CloseFrame`.
 
+## Start / Launch MockServer
+
+The Go client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.
+
+### Quick start
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
+)
+
+func main() {
+    handle, err := mockserver.StartServer(1080, "", nil)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer handle.Stop()
+
+    fmt.Printf("MockServer running on port %d\n", handle.Port)
+    // ... use MockServer ...
+}
+```
+
+### Just ensure the binary is present
+
+```go
+launcherPath, err := mockserver.EnsureBinary(mockserver.Version, nil)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("Launcher at:", launcherPath)
+```
+
+### Specify a version
+
+```go
+handle, err := mockserver.StartServer(1080, "7.0.0", nil)
+```
+
+### API reference
+
+| Function / Type | Description |
+|---|---|
+| `EnsureBinary(version string, opts *EnsureOptions) (string, error)` | Download, verify, cache, and return the launcher path. |
+| `StartServer(port int, version string, opts *EnsureOptions) (*ServerHandle, error)` | Ensure the binary and start MockServer. Pass `""` for version to use the default. |
+| `ServerHandle` | Handle to the running process. Fields: `Port`, `Launcher`. Methods: `Stop() error`, `Wait() error`. |
+| `Version` | The default MockServer version this client targets (from embedded `VERSION` file). |
+| `ResolvePlatform() (PlatformInfo, error)` | Detect the current OS and architecture. |
+| `CacheDir() string` | Return the binary cache directory path. |
+
+### Supported platforms
+
+| OS | Architecture |
+|---|---|
+| Linux | x86_64, aarch64 |
+| macOS (darwin) | x86_64, aarch64 |
+| Windows | x86_64, aarch64 |
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `MOCKSERVER_BINARY_BASE_URL` | Mirror host for the release assets (corporate / air-gapped networks) |
+| `MOCKSERVER_BINARY_CACHE` | Override the cache directory (default: `~/.cache/mockserver/binaries` on Unix) |
+| `MOCKSERVER_SKIP_BINARY_DOWNLOAD` | Fail instead of downloading (use with a pre-seeded cache in CI) |
+
+### Version
+
+By default the launcher downloads the MockServer version embedded in the `VERSION` file at build time. The release pipeline updates this file automatically. Pass an explicit version string to `StartServer` or `EnsureBinary` to override.
+
 ## Build & Test
 
 ```bash

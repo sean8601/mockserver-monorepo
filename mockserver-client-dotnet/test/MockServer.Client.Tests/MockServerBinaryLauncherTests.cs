@@ -973,8 +973,12 @@ public class MockServerBinaryLauncherTests : IDisposable
     [Fact]
     public void DefaultVersion_MatchesPackageVersion()
     {
-        // This should match the Version in MockServer.Client.csproj
-        MockServerBinaryLauncher.DefaultVersion.Should().Be("7.0.0");
+        // DefaultVersion is now derived from the assembly's informational version
+        // attribute, which is populated from <Version> in MockServer.Client.csproj.
+        // It should be a valid semver-ish string (X.Y.Z or X.Y.Z-prerelease).
+        var version = MockServerBinaryLauncher.DefaultVersion;
+        version.Should().NotBeNullOrEmpty();
+        version.Should().MatchRegex(@"^\d+\.\d+\.\d+");
     }
 }
 

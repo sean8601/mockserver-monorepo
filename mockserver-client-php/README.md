@@ -148,6 +148,17 @@ if ($client->hasStarted()) {
 }
 ```
 
+## Start / Launch MockServer
+
+The PHP client does not include a binary launcher (PHP lacks the native WebSocket and subprocess management required for embedded launch). To start MockServer, use one of the following approaches:
+
+- **Docker:** `docker run -d -p 1080:1080 mockserver/mockserver`
+- **Executable JAR:** `java -jar mockserver-netty-no-dependencies-<version>.jar -serverPort 1080`
+- **Homebrew:** `brew install mockserver && mockserver -serverPort 1080`
+- **Another client's launcher:** The Node, Python, Ruby, Go, .NET, and Rust clients can each download and launch MockServer automatically without Java or Docker.
+
+See the [Running MockServer](https://www.mock-server.com/mock_server/running_mock_server.html) documentation for all available options.
+
 ## Building
 
 ```bash

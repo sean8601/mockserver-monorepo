@@ -293,6 +293,68 @@ client.clear_breakpoint_matchers()
 
 The async client (`AsyncMockServerClient`) exposes the same methods as coroutines.
 
+## Start / Launch MockServer
+
+The Python client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.
+
+### Quick start
+
+```python
+from mockserver.launcher import start, MockServerProcess
+
+# Download (first run) and start MockServer on port 1080
+with start(port=1080) as server:
+    print(f"MockServer running on port {server.port}, PID {server.pid}")
+    # ... use MockServer ...
+# Server is stopped automatically when the context manager exits
+```
+
+### Just ensure the binary is present
+
+```python
+from mockserver.launcher import ensure_binary
+
+launcher_path = ensure_binary()  # returns Path to the launcher executable
+```
+
+### Specify a version
+
+```python
+from mockserver.launcher import start
+
+server = start(port=1080, version="7.0.0")
+# ...
+server.stop()
+```
+
+### API reference
+
+| Function / Class | Description |
+|---|---|
+| `ensure_binary(version=None, *, log=True)` | Download, verify, cache, and return the launcher `Path`. Defaults to the client's own version. |
+| `start(port, version=None, *, extra_args=None, log=True)` | Ensure the binary and start MockServer. Returns a `MockServerProcess`. |
+| `MockServerProcess` | Handle to the running process. Properties: `port`, `pid`, `launcher`, `returncode`. Methods: `stop(timeout=10.0)`. Supports `with` statement. |
+
+### Supported platforms
+
+| OS | Architecture |
+|---|---|
+| Linux | x86_64, aarch64 |
+| macOS (darwin) | x86_64, aarch64 |
+| Windows | x86_64, aarch64 |
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `MOCKSERVER_BINARY_BASE_URL` | Mirror host for the release assets (corporate / air-gapped networks) |
+| `MOCKSERVER_BINARY_CACHE` | Override the cache directory (default: `~/.cache/mockserver/binaries` on Unix) |
+| `MOCKSERVER_SKIP_BINARY_DOWNLOAD` | Fail instead of downloading (use with a pre-seeded cache in CI) |
+
+### Version
+
+By default the launcher downloads the MockServer version matching this client package (currently the version set in `pyproject.toml`). Pass an explicit `version` argument to override.
+
 ## Requirements
 
 - Python 3.9+

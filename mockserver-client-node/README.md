@@ -206,6 +206,16 @@ client.removeBreakpointMatcher(breakpointId);
 client.clearBreakpointMatchers();
 ```
 
+## Start / Launch MockServer
+
+This package (`mockserver-client`) is the REST/WebSocket client for communicating with a running MockServer. To **download and launch** a local MockServer instance (no Java or Docker required), use the companion [`mockserver-node`](https://www.npmjs.org/package/mockserver-node) package:
+
+```shell
+npx -p mockserver-node mockserver run -p 1080
+```
+
+`mockserver-node` downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it. See the [mockserver-node README](https://www.npmjs.org/package/mockserver-node) for full details including environment variables (`MOCKSERVER_BINARY_BASE_URL`, `MOCKSERVER_BINARY_CACHE`, `MOCKSERVER_SKIP_BINARY_DOWNLOAD`) and supported platforms (linux/darwin/windows on x86_64/aarch64).
+
 ## Contributing
 In lieu of a formal styleguide, take care to maintain the existing coding style. Add unit tests for any new or changed functionality. Lint and test your code using [Grunt](http://gruntjs.com/).
 

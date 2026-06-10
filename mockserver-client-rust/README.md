@@ -140,6 +140,72 @@ client.close_breakpoint_websocket();
 
 **Stream frame decisions:** `StreamFrameDecision::continue_frame`, `::modify`, `::drop_frame`, `::inject`, `::close`.
 
+## Start / Launch MockServer
+
+The Rust client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.
+
+### Quick start
+
+```rust
+use mockserver_client::launcher;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut handle = launcher::start(1080)?;
+    println!("MockServer running on port {}", handle.port());
+
+    // ... use MockServer ...
+
+    handle.stop()?;
+    Ok(())
+}
+```
+
+### Just ensure the binary is present
+
+```rust
+let launcher_path = launcher::ensure_launcher()?;
+println!("Launcher at: {}", launcher_path.display());
+```
+
+### Specify a version
+
+```rust
+let mut handle = launcher::start_with_version(
+    "7.0.0", 1080, &launcher::EnsureOptions::default()
+)?;
+```
+
+### API reference
+
+| Function / Type | Description |
+|---|---|
+| `launcher::ensure_launcher()` | Download, verify, cache the default-version binary, and return the launcher `PathBuf`. |
+| `launcher::ensure_binary(version, opts)` | Same as above, but for a specific version. |
+| `launcher::start(port)` | Ensure the binary and start MockServer at the default version. Returns a `ServerHandle`. |
+| `launcher::start_with_version(version, port, opts)` | Start MockServer at a specific version. Returns a `ServerHandle`. |
+| `launcher::ServerHandle` | Handle to the running process. Methods: `stop()`, `wait()`, `port()`. |
+| `launcher::VERSION` | The default MockServer version, derived from `Cargo.toml` at compile time via `env!("CARGO_PKG_VERSION")`. |
+
+### Supported platforms
+
+| OS | Architecture |
+|---|---|
+| Linux | x86_64, aarch64 |
+| macOS (darwin) | x86_64, aarch64 |
+| Windows | x86_64, aarch64 |
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `MOCKSERVER_BINARY_BASE_URL` | Mirror host for the release assets (corporate / air-gapped networks) |
+| `MOCKSERVER_BINARY_CACHE` | Override the cache directory (default: `~/.cache/mockserver/binaries` on Unix) |
+| `MOCKSERVER_SKIP_BINARY_DOWNLOAD` | Fail instead of downloading (use with a pre-seeded cache in CI) |
+
+### Version
+
+By default the launcher downloads the MockServer version matching this crate (derived from `Cargo.toml` at compile time via `env!("CARGO_PKG_VERSION")`). Pass an explicit version to override.
+
 ## Building
 
 ```sh

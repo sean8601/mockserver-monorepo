@@ -22,9 +22,54 @@ namespace MockServer.Client;
 public sealed class MockServerBinaryLauncher : IDisposable
 {
     /// <summary>
-    /// The default MockServer version, matching this client package version.
+    /// Fallback version used only when the assembly version cannot be determined
+    /// at runtime (e.g. single-file publish, trimmed AOT, or unexpected packaging).
+    /// The assembly version is the authoritative source — it is set by the
+    /// &lt;Version&gt; property in MockServer.Client.csproj and bumped automatically
+    /// by the release pipeline.
     /// </summary>
-    public const string DefaultVersion = "7.0.0";
+    private const string FallbackVersion = "7.0.0";
+
+    /// <summary>
+    /// The default MockServer version, derived from this assembly's package version
+    /// (set by the &lt;Version&gt; property in the .csproj).  Falls back to
+    /// <see cref="FallbackVersion"/> when the assembly metadata is unavailable.
+    /// </summary>
+    public static string DefaultVersion { get; } = ResolvePackageVersion();
+
+    /// <summary>
+    /// Extracts the X.Y.Z version from the assembly's informational version attribute,
+    /// which is populated from the csproj &lt;Version&gt; property at build time.
+    /// Strips any "+build" or "-prerelease" suffix so the result is a clean semver core.
+    /// </summary>
+    private static string ResolvePackageVersion()
+    {
+        try
+        {
+            // AssemblyInformationalVersionAttribute is populated from <Version> in the csproj.
+            // It may include a "+commitsha" suffix added by SourceLink / deterministic builds.
+            var attr = typeof(MockServerBinaryLauncher).Assembly
+                .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false);
+            if (attr.Length > 0)
+            {
+                var infoVersion = ((System.Reflection.AssemblyInformationalVersionAttribute)attr[0]).InformationalVersion;
+                if (!string.IsNullOrEmpty(infoVersion))
+                {
+                    // Strip "+build" metadata (e.g. "7.0.0+abc123" -> "7.0.0")
+                    var plusIdx = infoVersion.IndexOf('+');
+                    var version = plusIdx >= 0 ? infoVersion.Substring(0, plusIdx) : infoVersion;
+                    if (!string.IsNullOrEmpty(version))
+                        return version;
+                }
+            }
+        }
+        catch
+        {
+            // Reflection may fail in constrained environments (e.g. trimmed AOT).
+            // Fall through to the hardcoded fallback.
+        }
+        return FallbackVersion;
+    }
 
     private const string Repo = "mock-server/mockserver-monorepo";
 

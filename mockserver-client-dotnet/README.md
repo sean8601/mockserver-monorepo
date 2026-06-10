@@ -128,6 +128,76 @@ client.ClearBreakpointMatchers();
 
 **Stream frame decisions:** `StreamFrameDecision.Continue`, `.Modify`, `.Drop`, `.Inject`, `.Close`.
 
+## Start / Launch MockServer
+
+The .NET client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.
+
+### Quick start
+
+```csharp
+using MockServer.Client;
+
+// Download (first run) and start MockServer on port 1080
+using var launcher = MockServerBinaryLauncher.Start(port: 1080);
+Console.WriteLine($"MockServer started, PID {launcher.Process?.Id}");
+
+// ... use MockServer ...
+
+launcher.Stop();
+// or let the using statement dispose and stop it automatically
+```
+
+### Async API
+
+```csharp
+using var launcher = await MockServerBinaryLauncher.StartAsync(port: 1080);
+```
+
+### Just ensure the binary is present
+
+```csharp
+string launcherPath = await MockServerBinaryLauncher.EnsureBinaryAsync();
+// or synchronously:
+string launcherPath = MockServerBinaryLauncher.EnsureBinary();
+```
+
+### Specify a version
+
+```csharp
+using var launcher = MockServerBinaryLauncher.Start(port: 1080, version: "7.0.0");
+```
+
+### API reference
+
+| Method / Class | Description |
+|---|---|
+| `MockServerBinaryLauncher.EnsureBinaryAsync(version?, options?)` | Download, verify, cache, and return the launcher path. Defaults to `DefaultVersion`. |
+| `MockServerBinaryLauncher.EnsureBinary(version?, options?)` | Synchronous wrapper for `EnsureBinaryAsync`. |
+| `MockServerBinaryLauncher.StartAsync(port, version?, options?)` | Ensure the binary and start MockServer. Returns a `MockServerBinaryLauncher` instance. |
+| `MockServerBinaryLauncher.Start(port, version?, options?)` | Synchronous wrapper for `StartAsync`. |
+| `MockServerBinaryLauncher` | Implements `IDisposable`. Properties: `Process`. Methods: `Stop()`, `Dispose()`. |
+| `MockServerBinaryLauncher.DefaultVersion` | The default MockServer version, derived from the NuGet package version at runtime. |
+
+### Supported platforms
+
+| OS | Architecture |
+|---|---|
+| Linux | x86_64, aarch64 |
+| macOS (darwin) | x86_64, aarch64 |
+| Windows | x86_64, aarch64 |
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `MOCKSERVER_BINARY_BASE_URL` | Mirror host for the release assets (corporate / air-gapped networks) |
+| `MOCKSERVER_BINARY_CACHE` | Override the cache directory (default: `~/.cache/mockserver/binaries` on Unix, `%LOCALAPPDATA%` on Windows) |
+| `MOCKSERVER_SKIP_BINARY_DOWNLOAD` | Fail instead of downloading (use with a pre-seeded cache in CI) |
+
+### Version
+
+By default the launcher downloads the MockServer version matching this NuGet package (derived from the `<Version>` property in the `.csproj` at build time). Pass an explicit `version` argument to override.
+
 ## Building
 
 ```bash

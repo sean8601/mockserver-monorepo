@@ -830,6 +830,63 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 
 {% include_subpage ../mock_server/_includes/running_npm_module.html %}
 
+<a id="client_library_launcher" class="anchor" href="#client_library_launcher">&nbsp;</a>
+
+<h2>Run via a Client Library (Binary Bundle)</h2>
+
+<p>Most MockServer client libraries can <strong>download and launch a local MockServer instance</strong> automatically &mdash;
+no Java installation and no Docker required. Each client downloads a self-contained platform bundle that includes a
+trimmed JVM runtime, the MockServer server, and a launcher script. The bundle is fetched from the
+<a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/releases" rel="noopener noreferrer">GitHub Release</a>,
+verified against its published SHA-256 checksum, and cached per-user so subsequent launches are instant.</p>
+
+<h3>Supported clients</h3>
+
+<table class="table table-bordered">
+	<thead>
+		<tr><th>Client</th><th>Language</th><th>Launch API</th></tr>
+	</thead>
+	<tbody>
+		<tr><td><a target="_blank" href="https://www.npmjs.org/package/mockserver-node" rel="noopener noreferrer">mockserver-node</a></td><td>Node.js</td><td><code>npx -p mockserver-node mockserver run -p 1080</code> or <code>ensureBinary(version)</code> / <code>runBinary(version, args)</code></td></tr>
+		<tr><td><a target="_blank" href="https://pypi.org/project/mockserver-client/" rel="noopener noreferrer">mockserver-client</a></td><td>Python</td><td><code>start(port=1080)</code> / <code>ensure_binary()</code></td></tr>
+		<tr><td><a target="_blank" href="https://rubygems.org/gems/mockserver-client" rel="noopener noreferrer">mockserver-client</a></td><td>Ruby</td><td><code>MockServer::BinaryLauncher.start(port: 1080)</code> / <code>.ensure_launcher</code></td></tr>
+		<tr><td><a target="_blank" href="https://pkg.go.dev/github.com/mock-server/mockserver-monorepo/mockserver-client-go" rel="noopener noreferrer">mockserver-client-go</a></td><td>Go</td><td><code>mockserver.StartServer(1080, "", nil)</code> / <code>mockserver.EnsureBinary(version, nil)</code></td></tr>
+		<tr><td><a target="_blank" href="https://www.nuget.org/packages/MockServer.Client" rel="noopener noreferrer">MockServer.Client</a></td><td>.NET</td><td><code>MockServerBinaryLauncher.Start(port: 1080)</code> / <code>.EnsureBinary()</code></td></tr>
+		<tr><td><a target="_blank" href="https://crates.io/crates/mockserver-client" rel="noopener noreferrer">mockserver-client</a></td><td>Rust</td><td><code>launcher::start(1080)</code> / <code>launcher::ensure_launcher()</code></td></tr>
+		<tr><td>PHP</td><td>PHP</td><td><em>Not supported</em> &mdash; start MockServer via Docker, the executable JAR, or another client&rsquo;s launcher.</td></tr>
+	</tbody>
+</table>
+
+<h3>Binary bundle format</h3>
+
+<p>Each bundle is named <code>mockserver-&lt;version&gt;-&lt;os&gt;-&lt;arch&gt;.tar.gz</code> (or <code>.zip</code> on Windows), where:</p>
+
+<ul>
+	<li><strong>os</strong>: <code>linux</code>, <code>darwin</code>, or <code>windows</code></li>
+	<li><strong>arch</strong>: <code>x86_64</code> or <code>aarch64</code></li>
+</ul>
+
+<p>The bundle is a jlink-assembled custom JVM image &mdash; it runs on any machine with a compatible OS and CPU, with no external Java dependency.</p>
+
+<h3>Environment variables</h3>
+
+<p>All client launchers honour the same set of environment variables for customisation:</p>
+
+<table class="table table-bordered">
+	<thead>
+		<tr><th>Variable</th><th>Purpose</th></tr>
+	</thead>
+	<tbody>
+		<tr><td><code>MOCKSERVER_BINARY_BASE_URL</code></td><td>Override the download base URL. Use this to point at a corporate mirror or an air-gapped artifact store instead of GitHub.</td></tr>
+		<tr><td><code>MOCKSERVER_BINARY_CACHE</code></td><td>Override the per-user cache directory. Default: <code>~/.cache/mockserver/binaries</code> (Unix) or <code>%LOCALAPPDATA%\mockserver\binaries</code> (Windows).</td></tr>
+		<tr><td><code>MOCKSERVER_SKIP_BINARY_DOWNLOAD</code></td><td>Set to any value to prevent the launcher from downloading. If no cached binary exists, the launcher fails immediately. Useful in CI with a pre-seeded cache.</td></tr>
+	</tbody>
+</table>
+
+<h3>Version</h3>
+
+<p>By default, each client downloads the MockServer version that matches its own package version. You can override this by passing an explicit version to the start/ensure function.</p>
+
 <a id="docker_container" class="anchor" href="#docker_container">&nbsp;</a>
 
 <h2>Docker Container</h2>

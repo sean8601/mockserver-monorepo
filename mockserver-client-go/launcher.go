@@ -2,6 +2,7 @@ package mockserver
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -19,9 +20,17 @@ import (
 	"time"
 )
 
+// versionEmbed is the raw content of the VERSION file, embedded at compile time.
+// The release pipeline updates this file so the launcher version tracks the
+// module version automatically — no hardcoded constant to forget.
+//
+//go:embed VERSION
+var versionEmbed string
+
 // Version is the MockServer version this client targets. It is used as the
 // default version for binary downloads when no explicit version is provided.
-const Version = "7.0.0"
+// Derived from the embedded VERSION file (updated by the release pipeline).
+var Version = strings.TrimSpace(versionEmbed)
 
 // repo is the GitHub repository path for download URL construction.
 const repo = "mock-server/mockserver-monorepo"

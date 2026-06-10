@@ -14,6 +14,7 @@
 	<li>as a <a href="/mock_server/running_mock_server.html#mockserver_node"><strong>Node.js (npm) module</strong></a> from any Node.js code</li>
 	<li>as a <a href="/mock_server/running_mock_server.html#mockserver_node"><strong>Grunt plugin</strong></a> as part of a Grunt build cycle</li>
 	<li>as a <a href="/mock_server/running_mock_server.html#deployable_war"><strong>deployable WAR</strong></a> to an existing application server</li>
+	<li>via a <a href="/mock_server/running_mock_server.html#client_library_launcher"><strong>client library binary launcher</strong></a> (Node, Python, Ruby, Go, .NET, Rust) &mdash; downloads a cross-platform, JVM-less binary bundle automatically</li>
 </ul>
 
 <p>To simplify configuration all versions (except the deployable WAR) use a single port to support the control plane and data plane in HTTP, HTTPS or SOCKS.</p>
@@ -30,6 +31,7 @@
 	<li><a target="_blank" href="https://www.npmjs.org/package/mockserver-node" rel="noopener noreferrer">npm plugin</a></li>
 	<li><a target="_blank" href="https://www.npmjs.org/package/mockserver-node" rel="noopener noreferrer">Grunt plugin</a></li>
 	<li><a target="_blank" href="https://search.maven.org/remotecontent?filepath=org/mock-server/mockserver-war/{{ site.mockserver_version }}/mockserver-war-{{ site.mockserver_version }}.war" rel="noopener noreferrer">deployable WAR</a> that runs on JEE web servers</li>
+	<li><a href="#client_library_launcher">client library binary bundle</a> &mdash; a self-contained, cross-platform binary (no Java required) downloaded automatically by the Node, Python, Ruby, Go, .NET, and Rust clients</li>
 </ul>
 
 <p>It is also possible to <a href="/mock_server/running_mock_server.html#build-and-run-from-source">build and run MockServer directly from source code</a></p>
