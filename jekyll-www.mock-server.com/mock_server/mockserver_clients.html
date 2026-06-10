@@ -27,6 +27,7 @@ sitemap:
 
 <p>The following activities are supported:</p>
 <ul>
+    <li><a href="/mock_server/running_mock_server.html#client_library_launcher">starting a local MockServer</a> by downloading and launching the self-contained platform binary (Node, Python, Ruby, Go, .NET and Rust clients)</li>
     <li><a href="#button_client_create_expectation">creating expectations</a></li>
     <li><a href="#button_client_verify_reqs">verifying which requests have been received</a></li>
     <li><a href="#button_client_clear">clearing</a> or <a href="#button_client_reset">resetting</a> recorded request, expectations or logs (selectively)</li>
@@ -59,6 +60,38 @@ sitemap:
     <li><a href="#button_client_create_expectation"><strong>org.mockserver.integration.ClientAndServer</strong></a> - starts a local MockServer instance and makes HTTP requests to it</li>
 </ul>
 
+<p>Install via Maven:</p>
+
+<pre class="prettyprint code"><code class="code">&lt;dependency&gt;
+    &lt;groupId&gt;org.mock-server&lt;/groupId&gt;
+    &lt;artifactId&gt;mockserver-client-java&lt;/artifactId&gt;
+    &lt;version&gt;{{ site.mockserver_version }}&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+
+<p>Create an expectation:</p>
+
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
+
+new MockServerClient(&quot;localhost&quot;, 1080)
+    .when(
+        request().withMethod(&quot;GET&quot;).withPath(&quot;/hello&quot;)
+    )
+    .respond(
+        response().withStatusCode(200).withBody(&quot;world&quot;)
+    );</code></pre>
+
+<p>Verify a request was received:</p>
+
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.HttpRequest.request;
+import org.mockserver.verify.VerificationTimes;
+
+new MockServerClient(&quot;localhost&quot;, 1080)
+    .verify(
+        request().withPath(&quot;/some/path&quot;),
+        VerificationTimes.atLeast(1)
+    );</code></pre>
+
 <a id="javascript-mockserver-client" class="anchor" href="#javascript-mockserver-client">&nbsp;</a>
 
 <h2>JavaScript Client</h2>
@@ -73,6 +106,30 @@ sitemap:
 <p>To include the browser based client in an HTML page as follows:</p>
 
 <pre class="prettyprint lang-java code"><code class="code">&lt;script src=&quot;https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver-client-node/mockServerClient.js&quot;&gt;&lt;/script&gt;</code></pre>
+
+<p>Or install the Node.js module via npm:</p>
+
+<pre class="prettyprint code"><code class="code">npm install mockserver-client --save-dev</code></pre>
+
+<p>Create an expectation:</p>
+
+<pre class="prettyprint lang-javascript code"><code class="code">const mockServerClient = require('mockserver-client').mockServerClient;
+
+mockServerClient(&quot;localhost&quot;, 1080).mockAnyResponse({
+    httpRequest: { method: &quot;GET&quot;, path: &quot;/hello&quot; },
+    httpResponse: { statusCode: 200, body: &quot;world&quot; }
+});</code></pre>
+
+<p>Verify a request was received:</p>
+
+<pre class="prettyprint lang-javascript code"><code class="code">const mockServerClient = require('mockserver-client').mockServerClient;
+
+mockServerClient(&quot;localhost&quot;, 1080)
+    .verify({ path: &quot;/some/path&quot; }, 1)
+    .then(
+        function () { /* request was received at least once */ },
+        function () { /* verification failed */ }
+    );</code></pre>
 
 <a id="python-mockserver-client" class="anchor" href="#python-mockserver-client">&nbsp;</a>
 
