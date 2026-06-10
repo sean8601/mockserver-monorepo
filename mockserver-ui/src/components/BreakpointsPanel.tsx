@@ -494,7 +494,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 value={formMethod}
                 onChange={(e) => setFormMethod(e.target.value)}
                 size="small"
-                sx={{ minWidth: 120 }}
+                sx={{ width: 140, flexShrink: 0 }}
                 slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
               >
                 {HTTP_METHODS.map((m) => (
