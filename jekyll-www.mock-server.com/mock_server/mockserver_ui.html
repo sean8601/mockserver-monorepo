@@ -17,14 +17,14 @@ sitemap:
     <li><strong><a href="#ui_get_started_section">Get Started</a></strong> — guided first-run view: import an OpenAPI spec, set up a proxy, try a quick-start recipe, or browse the docs</li>
     <li><strong><a href="#ui_dashboard_section">Dashboard</a></strong> — four panels showing log messages, active expectations, received requests, and proxied requests</li>
     <li><strong><a href="#ui_traffic_section">Traffic</a></strong> — every captured request in a master list, with a rich detail pane on the right for LLM and MCP traffic, a <strong>Replay</strong> button to re-issue a captured request, and a <strong>Compare</strong> toggle to diff two requests field-by-field</li>
-    <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes, plus a <strong>Compare</strong> tab for diffing two captured runs side-by-side</li>
+    <li><strong><a href="#ui_breakpoints_section">Breakpoints</a></strong> — pause, inspect, and manipulate live stream frames (SSE, gRPC, WebSocket, GraphQL subscription) and request/response exchanges; see <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a></li>
     <li><strong><a href="#ui_composer_section">Mocks</a></strong> — create or edit expectations of every kind (HTTP, gRPC, DNS, MCP, LLM), import them (OpenAPI, WSDL, HAR, Postman), and insert engine-aware template snippets without writing any code</li>
-    <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files, WASM modules, and export traffic</li>
     <li><strong><a href="#ui_chaos_section">Chaos</a></strong> — configure and inject HTTP, gRPC, and TCP faults (chaos experiments) that apply to all forwarded requests to a given upstream host or service. The HTTP fault set covers error responses, dropped connections, latency, body corruption, slow-response chunking, quotas/rate limits, count and time windows, gradual degradation, and a GraphQL error envelope, with a TTL so chaos auto-expires</li>
+    <li><strong><a href="#ui_async_section">AsyncAPI</a></strong> — inspect the AsyncAPI broker mock: loaded spec, active channels, and messages recorded from broker subscriptions</li>
+    <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes, plus a <strong>Compare</strong> tab for diffing two captured runs side-by-side</li>
+    <li><strong><a href="#ui_library_section">Library</a></strong> — manage cassette files, WASM modules, and export traffic</li>
     <li><strong><a href="#ui_drift_section">Drift</a></strong> — review mock drift records where stubbed responses diverge from the real upstream</li>
     <li><strong><a href="#ui_verification_section">Verification</a></strong> — assert that MockServer received the requests you expected (a single request a given number of times, or an ordered sequence) without writing test code</li>
-    <li><strong><a href="#ui_async_section">AsyncAPI</a></strong> — inspect the AsyncAPI broker mock: loaded spec, active channels, and messages recorded from broker subscriptions</li>
-    <li><strong><a href="#ui_breakpoints_section">Breakpoints</a></strong> — pause, inspect, and manipulate live stream frames (SSE, gRPC, WebSocket, GraphQL subscription) and request/response exchanges; see <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a></li>
     <li><strong><a href="#ui_metrics_section">Metrics</a></strong> — JVM, request-latency, chaos, expectations-by-type, and MCP-tool-call charts (shown when metrics are enabled)</li>
 </ul>
 
@@ -154,6 +154,21 @@ sitemap:
     <li><strong>Clear server expectations</strong> — removes all active expectations while keeping logs and request history</li>
     <li><strong>Reset server (all)</strong> — clears everything: logs, expectations, received requests, and proxied requests</li>
 </ul>
+
+<h3>Menu Bar (left side)</h3>
+
+<p>The far left of the menu bar shows the product name and live status indicators (the navigation tabs sit to their right, and the title-bar tools to the far right):</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Item</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>MockServer</strong></td><td>The product wordmark — clicking it has no action; it simply marks the dashboard.</td></tr>
+        <tr><td><strong>Connection status</strong></td><td>A chip showing the dashboard's WebSocket connection to the server: <em>connected</em> (green), <em>connecting</em> (amber), or <em>disconnected</em> (red). The dashboard reconnects automatically, so a brief <em>connecting</em>/<em>disconnected</em> state during a restart is normal.</td></tr>
+        <tr><td><strong>HTTP/3 (H3) chip</strong></td><td>Shown only when <a href="/mock_server/http3.html">HTTP/3 (QUIC)</a> is enabled. Displays the UDP port and the number of active HTTP/3 connections, e.g. <code>H3 :1080 (2)</code>.</td></tr>
+    </tbody>
+</table>
 
 <h3>Title Bar Tools</h3>
 
@@ -357,23 +372,15 @@ sitemap:
 
 <p>Replay is distinct from <a href="/mock_server/persisting_expectations.html">cassette replay</a> (which loads saved expectations from a file) — it re-issues a single captured request to a live upstream and shows the live response.</p>
 
-<a id="ui_sessions_section" class="anchor" href="#ui_sessions_section">&nbsp;</a>
+<a id="ui_breakpoints_section" class="anchor" href="#ui_breakpoints_section">&nbsp;</a>
 
-<h2>Sessions</h2>
+<h2>Breakpoints</h2>
 
-<img class="ui_image" src="/images/MockServerSessions.png" alt="MockServer Sessions">
+<p>The Breakpoints view is the dashboard control panel for <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> — the ability to pause live HTTP exchanges and streaming frames mid-flight, inspect them, and decide how to continue. Breakpoints are activated by registering a request matcher via <code>PUT /mockserver/breakpoint/matcher</code>; the view shows <em>no active matchers</em> when none are registered.</p>
 
-<p>The Sessions view organises captured LLM traffic into swim-lanes grouped by isolated conversation session. Each swim-lane is labelled <code>&lt;scenarioName&gt; / &lt;isolation-value&gt;</code> (for example, <code>weather-agent / agent-A</code>) and shows chips for each captured turn. Click a chip to open the conversation view for that turn directly below the swim-lane.</p>
+<p>The view lists all currently paused exchanges and stream frames, grouped by stream. For each frame you can see the frame id, age, body preview, and direction (INBOUND/OUTBOUND). Actions available on each paused item: <strong>Continue</strong> (release unchanged), <strong>Modify</strong> (replace the body), <strong>Drop</strong> (discard), <strong>Inject</strong> (continue and add a new frame after it), or <strong>Close</strong> (terminate the stream). Request and response breakpoints show the full request or response for inspection and allow modification or abort before the exchange is forwarded.</p>
 
-<p>The scenario name is the conversation name you supplied (or that MockServer auto-generated) when you registered the LLM conversation mock. The isolation value is the specific header, query parameter, or cookie value that identifies this session within the scenario — for example, the value of the <code>x-session-id</code> request header.</p>
-
-<p>An <strong>Unscoped requests</strong> strip at the bottom holds requests that did not match any isolated scenario — for example, requests made outside a scripted conversation or without an isolation header.</p>
-
-<p>Sessions are most useful when you have set up <a href="/mock_server/ai_mcp_tools.html#create_llm_conversation">LLM conversation mocks with per-session isolation</a>. Each unique session identifier (header, query parameter, or cookie value) gets its own swim-lane, so you can trace multiple concurrent test sessions independently.</p>
-
-<h3>Compare</h3>
-
-<p>The Sessions view has a second tab, <strong>Compare</strong>, for comparing two captured conversation runs side-by-side. Pick <strong>Run A</strong> and <strong>Run B</strong> from the available sessions and the view shows a structural trajectory diff: the tool-call chain for each run and a per-turn token usage table. This makes it easy to spot regressions in agent behaviour between test runs.</p>
+<p>See <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> for the full matcher API reference, callback WebSocket protocol, and configuration details.</p>
 
 <a id="ui_composer_section" class="anchor" href="#ui_composer_section">&nbsp;</a>
 
@@ -488,42 +495,6 @@ sitemap:
 
 <p>All import operations call the relevant MockServer control-plane endpoint (<code>PUT /mockserver/expectation</code>, <code>PUT /mockserver/openapi</code>, <code>PUT /mockserver/wsdl</code>, or <code>PUT /mockserver/import?format=har|postman</code>) and report how many expectations were created. Import is additive — it does not clear existing expectations. See <a href="/mock_server/importing_expectations.html">Importing Expectations</a> for details on each format.</p>
 
-<a id="ui_library_section" class="anchor" href="#ui_library_section">&nbsp;</a>
-
-<h2>Library</h2>
-
-<p>The Library view consolidates fixture file management and traffic export. It has two sub-tabs: <strong>Export</strong> and <strong>Cassettes</strong>.</p>
-
-<img class="ui_image" src="/images/MockServerLibrary.png" alt="MockServer Library">
-
-<h3>Cassettes</h3>
-
-<p>The Cassettes sub-tab lets you record the current MockServer state into a JSON cassette file and load one back. A recorded cassette file contains all captured LLM/MCP traffic as mock expectations, with sensitive headers (API keys, auth tokens, cookies) automatically redacted. The file can be committed to version control and loaded in tests for deterministic, offline replay.</p>
-
-<p>To record: set the output file path and click <strong>Record</strong>. To load a cassette for replay: enter the file path and click <strong>Load</strong>. These operations call the <code>record_llm_fixtures</code> and <code>load_expectations_from_file</code> <a href="/mock_server/ai_mcp_tools.html">MCP tools</a> on your behalf.</p>
-
-<h3>Export</h3>
-
-<p>The Export sub-tab lets you download captured content from the running MockServer instance. Pick the export to perform from the dropdown and click <strong>Download</strong>. Each option crosses one of two scopes &mdash; the currently <strong>registered expectations</strong> or the <strong>recorded requests</strong> MockServer has handled &mdash; with one of eight file formats. A few formats apply to only one scope (the dropdown filters itself to the scope you pick):</p>
-
-<table class="table">
-    <thead>
-        <tr><th>Format</th><th>Contents</th><th>Re-importable into</th></tr>
-    </thead>
-    <tbody>
-        <tr><td><strong>MockServer JSON</strong></td><td>Round-trippable JSON in MockServer's own expectation format.</td><td>MockServer (<code>PUT /mockserver/expectation</code> or <code>load_expectations_from_file</code>).</td></tr>
-        <tr><td><strong>MockServer Java DSL</strong> <em>(expectations only)</em></td><td>Java code using the MockServer DSL that recreates each expectation.</td><td>A JUnit test or MockServer Java client &mdash; paste the code in directly.</td></tr>
-        <tr><td><strong>HAR (HTTP Archive)</strong></td><td>Each item as a request/response pair, in the standard HAR format.</td><td>Browser DevTools, HAR analysis tools, performance analysers.</td></tr>
-        <tr><td><strong>OpenAPI 3 spec</strong></td><td>One operation per (method, path) with the response body as an example.</td><td>Swagger UI, Redoc, code generators, API gateways.</td></tr>
-        <tr><td><strong>Postman collection v2.1</strong></td><td>Each item as a Postman request with its example response.</td><td>Postman, Newman, Insomnia (via import).</td></tr>
-        <tr><td><strong>Bruno collection (.zip)</strong></td><td>One <code>.bru</code> file per request, plus a <code>bruno.json</code> manifest, packaged as a zip.</td><td><a href="https://www.usebruno.com/">Bruno</a> &mdash; unzip and open the folder as a collection.</td></tr>
-        <tr><td><strong>Log entries (JSON)</strong> <em>(requests only)</em></td><td>Raw MockServer log events for the captured request/response pairs (verbose JSON, mainly for debugging).</td><td>MockServer log tooling or manual inspection.</td></tr>
-        <tr><td><strong>cURL commands</strong> <em>(requests only)</em></td><td>One cURL command per captured request.</td><td>Any shell &mdash; paste in to replay the captured traffic.</td></tr>
-    </tbody>
-</table>
-
-<p>OpenAPI, Postman, and Bruno exports are <em>best-effort</em>: positive-string matchers round-trip cleanly, but MockServer's NottableString negation, regex bodies, and dynamic actions (forward / template / callback / error / LLM) appear as placeholder text since those formats describe client requests + example responses rather than full mock-server expectation graphs. Use MockServer JSON when you need a lossless round-trip.</p>
-
 <a id="ui_chaos_section" class="anchor" href="#ui_chaos_section">&nbsp;</a>
 
 <h2>Chaos</h2>
@@ -587,6 +558,78 @@ sitemap:
 
 <p>The <strong>Active registrations</strong> panel lists each host with chaos in force and its remaining auto-revert countdown (or shows <em>No service-scoped chaos registered</em> when none is set). Each registration can be edited in place or removed with its remove icon (trash), or use the section's <strong>Clear HTTP</strong> / <strong>Clear gRPC</strong> / <strong>Clear TCP</strong> button to remove everything in that section at once. Injected faults are also counted in the <a href="#ui_metrics_section">Metrics</a> view under <strong>HTTP Chaos Faults</strong>.</p>
 
+<a id="ui_async_section" class="anchor" href="#ui_async_section">&nbsp;</a>
+
+<h2>AsyncAPI</h2>
+
+<p>The AsyncAPI view shows the live status of the <a href="/mock_server/asyncapi_messaging.html">AsyncAPI broker mock</a> — MockServer's message-broker mocking for Kafka, AMQP, MQTT, and other async transports. Switch to it using the <strong>Async</strong> button in the navigation bar. The view polls the server every few seconds and refreshes automatically; you can also refresh on demand.</p>
+
+<img class="ui_image" src="/images/MockServerAsyncAPI.png" alt="MockServer AsyncAPI Broker Mock">
+
+<p>At the top a status chip shows whether a spec is loaded (and its title and version). The view then shows:</p>
+
+<ul>
+    <li><strong>Channels</strong> — each channel (topic) defined by the loaded AsyncAPI spec, whether it has a message schema, and how many example messages it carries.</li>
+    <li><strong>Publisher / subscriber summary</strong> — how many publishers and subscribers are active, and how many messages have been recorded.</li>
+    <li><strong>Recorded Messages</strong> — messages captured from broker subscriptions, showing the channel, message key, payload, schema-validity, and time. A filter box narrows the list by channel, key, or payload.</li>
+</ul>
+
+<p>Load a spec from the <strong>AsyncAPI broker mock</strong> entry in the title-bar Tools menu (or via the <code>PUT /mockserver/asyncapi</code> endpoint). To see recorded messages, enable consumers in your broker configuration and publish messages to the channels. If the optional AsyncAPI module is not on the server's classpath, the view shows an <em>unavailable</em> notice instead.</p>
+
+<a id="ui_sessions_section" class="anchor" href="#ui_sessions_section">&nbsp;</a>
+
+<h2>Sessions</h2>
+
+<img class="ui_image" src="/images/MockServerSessions.png" alt="MockServer Sessions">
+
+<p>The Sessions view organises captured LLM traffic into swim-lanes grouped by isolated conversation session. Each swim-lane is labelled <code>&lt;scenarioName&gt; / &lt;isolation-value&gt;</code> (for example, <code>weather-agent / agent-A</code>) and shows chips for each captured turn. Click a chip to open the conversation view for that turn directly below the swim-lane.</p>
+
+<p>The scenario name is the conversation name you supplied (or that MockServer auto-generated) when you registered the LLM conversation mock. The isolation value is the specific header, query parameter, or cookie value that identifies this session within the scenario — for example, the value of the <code>x-session-id</code> request header.</p>
+
+<p>An <strong>Unscoped requests</strong> strip at the bottom holds requests that did not match any isolated scenario — for example, requests made outside a scripted conversation or without an isolation header.</p>
+
+<p>Sessions are most useful when you have set up <a href="/mock_server/ai_mcp_tools.html#create_llm_conversation">LLM conversation mocks with per-session isolation</a>. Each unique session identifier (header, query parameter, or cookie value) gets its own swim-lane, so you can trace multiple concurrent test sessions independently.</p>
+
+<h3>Compare</h3>
+
+<p>The Sessions view has a second tab, <strong>Compare</strong>, for comparing two captured conversation runs side-by-side. Pick <strong>Run A</strong> and <strong>Run B</strong> from the available sessions and the view shows a structural trajectory diff: the tool-call chain for each run and a per-turn token usage table. This makes it easy to spot regressions in agent behaviour between test runs.</p>
+
+<a id="ui_library_section" class="anchor" href="#ui_library_section">&nbsp;</a>
+
+<h2>Library</h2>
+
+<p>The Library view consolidates fixture file management and traffic export. It has two sub-tabs: <strong>Export</strong> and <strong>Cassettes</strong>.</p>
+
+<img class="ui_image" src="/images/MockServerLibrary.png" alt="MockServer Library">
+
+<h3>Cassettes</h3>
+
+<p>The Cassettes sub-tab lets you record the current MockServer state into a JSON cassette file and load one back. A recorded cassette file contains all captured LLM/MCP traffic as mock expectations, with sensitive headers (API keys, auth tokens, cookies) automatically redacted. The file can be committed to version control and loaded in tests for deterministic, offline replay.</p>
+
+<p>To record: set the output file path and click <strong>Record</strong>. To load a cassette for replay: enter the file path and click <strong>Load</strong>. These operations call the <code>record_llm_fixtures</code> and <code>load_expectations_from_file</code> <a href="/mock_server/ai_mcp_tools.html">MCP tools</a> on your behalf.</p>
+
+<h3>Export</h3>
+
+<p>The Export sub-tab lets you download captured content from the running MockServer instance. Pick the export to perform from the dropdown and click <strong>Download</strong>. Each option crosses one of two scopes &mdash; the currently <strong>registered expectations</strong> or the <strong>recorded requests</strong> MockServer has handled &mdash; with one of eight file formats. A few formats apply to only one scope (the dropdown filters itself to the scope you pick):</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Format</th><th>Contents</th><th>Re-importable into</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>MockServer JSON</strong></td><td>Round-trippable JSON in MockServer's own expectation format.</td><td>MockServer (<code>PUT /mockserver/expectation</code> or <code>load_expectations_from_file</code>).</td></tr>
+        <tr><td><strong>MockServer Java DSL</strong> <em>(expectations only)</em></td><td>Java code using the MockServer DSL that recreates each expectation.</td><td>A JUnit test or MockServer Java client &mdash; paste the code in directly.</td></tr>
+        <tr><td><strong>HAR (HTTP Archive)</strong></td><td>Each item as a request/response pair, in the standard HAR format.</td><td>Browser DevTools, HAR analysis tools, performance analysers.</td></tr>
+        <tr><td><strong>OpenAPI 3 spec</strong></td><td>One operation per (method, path) with the response body as an example.</td><td>Swagger UI, Redoc, code generators, API gateways.</td></tr>
+        <tr><td><strong>Postman collection v2.1</strong></td><td>Each item as a Postman request with its example response.</td><td>Postman, Newman, Insomnia (via import).</td></tr>
+        <tr><td><strong>Bruno collection (.zip)</strong></td><td>One <code>.bru</code> file per request, plus a <code>bruno.json</code> manifest, packaged as a zip.</td><td><a href="https://www.usebruno.com/">Bruno</a> &mdash; unzip and open the folder as a collection.</td></tr>
+        <tr><td><strong>Log entries (JSON)</strong> <em>(requests only)</em></td><td>Raw MockServer log events for the captured request/response pairs (verbose JSON, mainly for debugging).</td><td>MockServer log tooling or manual inspection.</td></tr>
+        <tr><td><strong>cURL commands</strong> <em>(requests only)</em></td><td>One cURL command per captured request.</td><td>Any shell &mdash; paste in to replay the captured traffic.</td></tr>
+    </tbody>
+</table>
+
+<p>OpenAPI, Postman, and Bruno exports are <em>best-effort</em>: positive-string matchers round-trip cleanly, but MockServer's NottableString negation, regex bodies, and dynamic actions (forward / template / callback / error / LLM) appear as placeholder text since those formats describe client requests + example responses rather than full mock-server expectation graphs. Use MockServer JSON when you need a lossless round-trip.</p>
+
 <a id="ui_drift_section" class="anchor" href="#ui_drift_section">&nbsp;</a>
 
 <h2>Drift</h2>
@@ -611,34 +654,6 @@ sitemap:
 </ul>
 
 <p>Each request matcher accepts the same fields as the rest of MockServer: a method, a path, header name/value lines, query <code>key=value</code> lines, and a body to match as a substring or JSON. Leave a field blank to match any value. This is the visual equivalent of the <a href="/mock_server/verification.html">verification API</a> — handy for confirming, during exploratory testing, that a client made the calls you expected.</p>
-
-<a id="ui_async_section" class="anchor" href="#ui_async_section">&nbsp;</a>
-
-<h2>AsyncAPI</h2>
-
-<p>The AsyncAPI view shows the live status of the <a href="/mock_server/asyncapi_messaging.html">AsyncAPI broker mock</a> — MockServer's message-broker mocking for Kafka, AMQP, MQTT, and other async transports. Switch to it using the <strong>Async</strong> button in the navigation bar. The view polls the server every few seconds and refreshes automatically; you can also refresh on demand.</p>
-
-<img class="ui_image" src="/images/MockServerAsyncAPI.png" alt="MockServer AsyncAPI Broker Mock">
-
-<p>At the top a status chip shows whether a spec is loaded (and its title and version). The view then shows:</p>
-
-<ul>
-    <li><strong>Channels</strong> — each channel (topic) defined by the loaded AsyncAPI spec, whether it has a message schema, and how many example messages it carries.</li>
-    <li><strong>Publisher / subscriber summary</strong> — how many publishers and subscribers are active, and how many messages have been recorded.</li>
-    <li><strong>Recorded Messages</strong> — messages captured from broker subscriptions, showing the channel, message key, payload, schema-validity, and time. A filter box narrows the list by channel, key, or payload.</li>
-</ul>
-
-<p>Load a spec from the <strong>AsyncAPI broker mock</strong> entry in the title-bar Tools menu (or via the <code>PUT /mockserver/asyncapi</code> endpoint). To see recorded messages, enable consumers in your broker configuration and publish messages to the channels. If the optional AsyncAPI module is not on the server's classpath, the view shows an <em>unavailable</em> notice instead.</p>
-
-<a id="ui_breakpoints_section" class="anchor" href="#ui_breakpoints_section">&nbsp;</a>
-
-<h2>Breakpoints</h2>
-
-<p>The Breakpoints view is the dashboard control panel for <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> — the ability to pause live HTTP exchanges and streaming frames mid-flight, inspect them, and decide how to continue. Breakpoints are activated by registering a request matcher via <code>PUT /mockserver/breakpoint/matcher</code>; the view shows <em>no active matchers</em> when none are registered.</p>
-
-<p>The view lists all currently paused exchanges and stream frames, grouped by stream. For each frame you can see the frame id, age, body preview, and direction (INBOUND/OUTBOUND). Actions available on each paused item: <strong>Continue</strong> (release unchanged), <strong>Modify</strong> (replace the body), <strong>Drop</strong> (discard), <strong>Inject</strong> (continue and add a new frame after it), or <strong>Close</strong> (terminate the stream). Request and response breakpoints show the full request or response for inspection and allow modification or abort before the exchange is forwarded.</p>
-
-<p>See <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> for the full matcher API reference, callback WebSocket protocol, and configuration details.</p>
 
 <a id="ui_metrics_section" class="anchor" href="#ui_metrics_section">&nbsp;</a>
 
