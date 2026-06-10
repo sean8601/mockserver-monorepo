@@ -1,5 +1,6 @@
 domain                       = "mock-server.com"
 build_account_agent_role_arn = "arn:aws:iam::814548061024:role/buildkite-mockserver-release-95bef2c5-Role"
+build_account_default_role_arn = "arn:aws:iam::814548061024:role/buildkite-mockserver-e40b8a59-Role"
 zone_id                      = "Z1R2IC6XAWK4Y6"
 acm_certificate_arn          = "arn:aws:acm:us-east-1:014848309742:certificate/80ca7e79-1a03-406a-a0ef-d75317459232"
 latest_version              = "7-0"
