@@ -4,13 +4,16 @@ import CardContent from '@mui/material/CardContent';
 import CardActions from '@mui/material/CardActions';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
+import Link from '@mui/material/Link';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
-import PlayCircleIcon from '@mui/icons-material/PlayCircle';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import BoltIcon from '@mui/icons-material/Bolt';
 import { useState } from 'react';
 import OpenApiImportDialog from './OpenApiImportDialog';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
+import { useDashboardStore, type ViewMode } from '../store';
 
 interface OnboardingPanelProps {
   connectionParams: ConnectionParams;
@@ -45,13 +48,16 @@ function ActionCard({ icon, title, description, action }: ActionCardProps) {
           {description}
         </Typography>
       </CardContent>
-      <CardActions sx={{ px: 2, pb: 2 }}>{action}</CardActions>
+      <CardActions sx={{ px: 2, pb: 2, gap: 1, flexWrap: 'wrap' }}>{action}</CardActions>
     </Card>
   );
 }
 
 export default function OnboardingPanel({ connectionParams }: OnboardingPanelProps) {
   const [openApiOpen, setOpenApiOpen] = useState(false);
+  const setView = useDashboardStore((s) => s.setView);
+
+  const go = (view: ViewMode) => () => setView(view);
 
   return (
     <Box
@@ -71,10 +77,11 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
       <Typography
         variant="body1"
         color="text.secondary"
-        sx={{ mb: 4, maxWidth: 600, textAlign: 'center' }}
+        sx={{ mb: 4, maxWidth: 640, textAlign: 'center' }}
       >
-        No expectations or traffic recorded yet. Pick an action below to get
-        started, or switch to any tab when you are ready.
+        Mock, proxy, and debug HTTP, HTTPS, and other APIs. These are the key
+        things you can do — open any one below, or use the tabs above for the
+        full feature set.
       </Typography>
 
       <Box
@@ -87,72 +94,102 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
         }}
       >
         <ActionCard
-          icon={<UploadFileIcon color="primary" />}
-          title="Import an OpenAPI Spec"
-          description="Upload an OpenAPI / Swagger definition and MockServer will generate stubs for every endpoint automatically."
+          icon={<PauseCircleIcon color="primary" />}
+          title="Breakpoints & Request/Response Editing"
+          description="Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them. Like browser DevTools for any API."
           action={
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<UploadFileIcon />}
-              onClick={() => setOpenApiOpen(true)}
-            >
-              Import OpenAPI
+            <Button size="small" variant="contained" onClick={go('breakpoints')}>
+              Open Breakpoints
             </Button>
           }
         />
 
         <ActionCard
           icon={<SwapHorizIcon color="primary" />}
-          title="Record Live Traffic"
-          description="Run MockServer as a proxy to capture real API traffic. Start with the --proxyRemoteHost and --proxyRemotePort flags, or use the docker-compose proxy recipe."
+          title="Debugging Proxy"
+          description="Sit MockServer between your app and a real API to record, inspect, and replay live traffic — and validate or rewrite it on the way through."
           action={
-            <Button
-              size="small"
-              variant="outlined"
-              href="https://www.mock-server.com/mock_server/self_hosting_mockserver.html"
-              target="_blank"
-              rel="noopener"
-            >
-              Proxy setup guide
+            <>
+              <Button size="small" variant="contained" onClick={go('traffic')}>
+                View Traffic
+              </Button>
+              <Button
+                size="small"
+                variant="text"
+                href="https://www.mock-server.com/proxy/debugging_proxied_traffic.html"
+                target="_blank"
+                rel="noopener"
+              >
+                Proxy guide
+              </Button>
+            </>
+          }
+        />
+
+        <ActionCard
+          icon={<SmartToyIcon color="primary" />}
+          title="LLM / AI Debugging"
+          description="Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session."
+          action={
+            <Button size="small" variant="contained" onClick={go('sessions')}>
+              Open Sessions
             </Button>
           }
         />
 
         <ActionCard
-          icon={<PlayCircleIcon color="primary" />}
-          title="Try a Quick-Start Recipe"
-          description="Spin up a ready-made docker-compose example: mock from OpenAPI, record-replay proxy, validation proxy, or chaos proxy."
+          icon={<UploadFileIcon color="primary" />}
+          title="Mocking"
+          description="Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically."
           action={
-            <Button
-              size="small"
-              variant="outlined"
-              href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose"
-              target="_blank"
-              rel="noopener"
-            >
-              View recipes
-            </Button>
+            <>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<UploadFileIcon />}
+                onClick={() => setOpenApiOpen(true)}
+              >
+                Import OpenAPI
+              </Button>
+              <Button size="small" variant="text" onClick={go('composer')}>
+                Create a mock
+              </Button>
+            </>
           }
         />
 
         <ActionCard
-          icon={<MenuBookIcon color="primary" />}
-          title="Explore the Dashboard"
-          description="Learn about all the features available in the dashboard: live traffic inspection, mock composition, chaos testing, drift detection, and more."
+          icon={<BoltIcon color="primary" />}
+          title="Chaos Testing"
+          description="Inject latency, errors, and dropped connections to test how your system copes when the APIs it depends on misbehave."
           action={
-            <Button
-              size="small"
-              variant="outlined"
-              href="https://www.mock-server.com/mock_server/mockserver_ui.html"
-              target="_blank"
-              rel="noopener"
-            >
-              Dashboard docs
+            <Button size="small" variant="contained" onClick={go('chaos')}>
+              Open Chaos
             </Button>
           }
         />
       </Box>
+
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ mt: 4, maxWidth: 760, textAlign: 'center' }}
+      >
+        More in the tabs above:{' '}
+        <Box component="span" sx={{ fontWeight: 600 }}>Dashboard</Box> (active mocks &amp; live event log),{' '}
+        <Box component="span" sx={{ fontWeight: 600 }}>Library</Box> (import / export, Postman, WSDL, HAR),{' '}
+        <Box component="span" sx={{ fontWeight: 600 }}>Verification</Box> (assert which requests were received),{' '}
+        <Box component="span" sx={{ fontWeight: 600 }}>Drift</Box> (spot when an upstream API changes),{' '}
+        <Box component="span" sx={{ fontWeight: 600 }}>Async</Box> (Kafka / MQTT / AMQP broker mocking), and{' '}
+        <Box component="span" sx={{ fontWeight: 600 }}>Metrics</Box> (Prometheus stats).{' '}
+        <Link
+          href="https://www.mock-server.com/mock_server/mockserver_ui.html"
+          target="_blank"
+          rel="noopener"
+        >
+          Dashboard docs
+        </Link>
+      </Typography>
 
       <OpenApiImportDialog
         open={openApiOpen}

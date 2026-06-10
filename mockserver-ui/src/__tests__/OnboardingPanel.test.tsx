@@ -51,12 +51,23 @@ describe('OnboardingPanel', () => {
     expect(screen.getByText('Welcome to MockServer')).toBeInTheDocument();
   });
 
-  it('renders all four action cards', () => {
+  it('renders the five key-feature cards', () => {
     renderPanel();
-    expect(screen.getByText('Import an OpenAPI Spec')).toBeInTheDocument();
-    expect(screen.getByText('Record Live Traffic')).toBeInTheDocument();
-    expect(screen.getByText('Try a Quick-Start Recipe')).toBeInTheDocument();
-    expect(screen.getByText('Explore the Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Breakpoints & Request/Response Editing')).toBeInTheDocument();
+    expect(screen.getByText('Debugging Proxy')).toBeInTheDocument();
+    expect(screen.getByText('LLM / AI Debugging')).toBeInTheDocument();
+    expect(screen.getByText('Mocking')).toBeInTheDocument();
+    expect(screen.getByText('Chaos Testing')).toBeInTheDocument();
+  });
+
+  it('no longer claims that no expectations or traffic are recorded', () => {
+    renderPanel();
+    expect(screen.queryByText(/No expectations or traffic recorded/i)).not.toBeInTheDocument();
+  });
+
+  it('points users to the other tabs for more features', () => {
+    renderPanel();
+    expect(screen.getByText(/More in the tabs above/i)).toBeInTheDocument();
   });
 
   it('renders the Import OpenAPI button', () => {
@@ -64,17 +75,22 @@ describe('OnboardingPanel', () => {
     expect(screen.getByRole('button', { name: /Import OpenAPI/i })).toBeInTheDocument();
   });
 
-  it('renders external links to documentation', () => {
+  it('navigates to a feature page when a tile action is clicked', async () => {
+    const user = userEvent.setup();
     renderPanel();
-    const proxyLink = screen.getByRole('link', { name: /Proxy setup guide/i });
-    expect(proxyLink).toHaveAttribute('href', 'https://www.mock-server.com/mock_server/self_hosting_mockserver.html');
+
+    await user.click(screen.getByRole('button', { name: /Open Breakpoints/i }));
+    expect(useDashboardStore.getState().view).toBe('breakpoints');
+
+    await user.click(screen.getByRole('button', { name: /Open Chaos/i }));
+    expect(useDashboardStore.getState().view).toBe('chaos');
+  });
+
+  it('links to the proxy debugging guide', () => {
+    renderPanel();
+    const proxyLink = screen.getByRole('link', { name: /Proxy guide/i });
+    expect(proxyLink).toHaveAttribute('href', 'https://www.mock-server.com/proxy/debugging_proxied_traffic.html');
     expect(proxyLink).toHaveAttribute('target', '_blank');
-
-    const recipesLink = screen.getByRole('link', { name: /View recipes/i });
-    expect(recipesLink).toHaveAttribute('href', expect.stringContaining('examples/docker-compose'));
-
-    const docsLink = screen.getByRole('link', { name: /Dashboard docs/i });
-    expect(docsLink).toHaveAttribute('href', 'https://www.mock-server.com/mock_server/mockserver_ui.html');
   });
 
   it('opens the OpenAPI import dialog when the button is clicked', async () => {
