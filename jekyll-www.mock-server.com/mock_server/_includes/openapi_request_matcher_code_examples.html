@@ -130,6 +130,25 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+        ],
+        'httpResponse' =&gt; ['body' =&gt; 'some_response_body'],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -277,6 +296,26 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+            'operationId' =&gt; 'showPetById',
+        ],
+        'httpResponse' =&gt; ['body' =&gt; 'some_response_body'],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -418,6 +457,25 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'file:/Users/jamesbloom/git/mockserver/mockserver/mockserver-core/target/test-classes/org/mockserver/openapi/openapi_petstore_example.json',
+        ],
+        'httpResponse' =&gt; ['body' =&gt; 'some_response_body'],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -557,6 +615,25 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'org/mockserver/openapi/openapi_petstore_example.json',
+        ],
+        'httpResponse' =&gt; ['body' =&gt; 'some_response_body'],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -722,6 +799,27 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body)
     .send()
     .unwrap();</code></pre>{% endraw %}
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$specJson = file_get_contents('/path/to/openapi_petstore_example.json');
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; json_decode($specJson, true),
+            'operationId' =&gt; 'listPets',
+        ],
+        'httpResponse' =&gt; ['body' =&gt; 'some_response_body'],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API using cat</button>
     <div class="panel">
@@ -1525,6 +1623,27 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$yamlSpec = file_get_contents('/path/to/openapi_petstore_example.yaml');
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; $yamlSpec,
+            'operationId' =&gt; 'listPets',
+        ],
+        'httpResponse' =&gt; ['body' =&gt; 'some_response_body'],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -1706,6 +1825,27 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+            'operationId' =&gt; 'showPetById',
+        ],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; 'some_body'],
+        'times' =&gt; ['remainingTimes' =&gt; 2],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1915,6 +2055,30 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'id' =&gt; '630a6e5b-9d61-4668-a18f-a0d3df558583',
+        'priority' =&gt; 0,
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+            'operationId' =&gt; 'showPetById',
+        ],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; 'some_response_body'],
+        'times' =&gt; ['unlimited' =&gt; true],
+        'timeToLive' =&gt; ['unlimited' =&gt; true],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">

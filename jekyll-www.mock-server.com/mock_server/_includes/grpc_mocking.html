@@ -278,6 +278,27 @@ client.when(
         .body(r#"{"greeting": "Hello World"}"#)
 ).unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+    <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpResponse;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;method('POST')
+        -&gt;path('/com.example.grpc.GreetingService/Greeting')
+        -&gt;header('x-grpc-service', 'com.example.grpc.GreetingService')
+        -&gt;header('x-grpc-method', 'Greeting')
+        -&gt;jsonBody(['name' =&gt; 'World'])
+)-&gt;respond(
+    HttpResponse::response()
+        -&gt;statusCode(200)
+        -&gt;header('grpc-status', '0')
+        -&gt;body('{"greeting": "Hello World"}')
+);</code></pre>
+    </div>
 </div>
 
 <a id="server_streaming_rpc" class="anchor" href="#server_streaming_rpc">&nbsp;</a>
@@ -496,6 +517,37 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+    {% raw %}<pre class="prettyprint lang-php code"><code class="code">// gRPC stream responses are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'method' =&gt; 'POST',
+            'path' =&gt; '/com.example.grpc.GreetingService/ListGreetings',
+            'headers' =&gt; [
+                'x-grpc-service' =&gt; ['com.example.grpc.GreetingService'],
+                'x-grpc-method' =&gt; ['ListGreetings'],
+            ],
+        ],
+        'grpcStreamResponse' =&gt; [
+            'statusName' =&gt; 'OK',
+            'messages' =&gt; [
+                ['json' =&gt; '{"greeting": "Hello Alice"}'],
+                ['json' =&gt; '{"greeting": "Hello Bob"}', 'delay' =&gt; ['timeUnit' =&gt; 'MILLISECONDS', 'value' =&gt; 100]],
+                ['json' =&gt; '{"greeting": "Hello Charlie"}', 'delay' =&gt; ['timeUnit' =&gt; 'MILLISECONDS', 'value' =&gt; 200]],
+            ],
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
 </div>
 
@@ -804,6 +856,45 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+    {% raw %}<pre class="prettyprint lang-php code"><code class="code">// gRPC bidi responses are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; [
+            'method' =&gt; 'POST',
+            'path' =&gt; '/com.example.grpc.ChatService/BidiChat',
+            'headers' =&gt; [
+                'x-grpc-service' =&gt; ['com.example.grpc.ChatService'],
+                'x-grpc-method' =&gt; ['BidiChat'],
+            ],
+        ],
+        'grpcBidiResponse' =&gt; [
+            'statusName' =&gt; 'OK',
+            'messages' =&gt; [
+                ['json' =&gt; '{"message": "Welcome to the chat!"}'],
+            ],
+            'rules' =&gt; [
+                [
+                    'matchJson' =&gt; '{"message": "hello"}',
+                    'responses' =&gt; [['json' =&gt; '{"message": "Hello! How can I help?"}']],
+                ],
+                [
+                    'matchJson' =&gt; '.*goodbye.*',
+                    'responses' =&gt; [['json' =&gt; '{"message": "Goodbye! Have a nice day."}']],
+                ],
+            ],
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
 </div>
 

@@ -150,6 +150,28 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/service'],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; '{"status":"ok"}'],
+        'chaos' =&gt; [
+            'errorStatus' =&gt; 503,
+            'errorProbability' =&gt; 0.3,
+            'retryAfter' =&gt; '30',
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -319,6 +341,28 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/external-service'],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; '{"data":"result"}'],
+        'chaos' =&gt; [
+            'errorStatus' =&gt; 429,
+            'errorProbability' =&gt; 1.0,
+            'retryAfter' =&gt; '60',
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -493,6 +537,26 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/slow-dependency'],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; '{"result":"delayed"}'],
+        'chaos' =&gt; [
+            'latency' =&gt; ['timeUnit' =&gt; 'MILLISECONDS', 'value' =&gt; 2000],
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -701,6 +765,30 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/payments'],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; '{"transactionId":"abc-123"}'],
+        'chaos' =&gt; [
+            'errorStatus' =&gt; 500,
+            'errorProbability' =&gt; 0.1,
+            'retryAfter' =&gt; '10',
+            'latency' =&gt; ['timeUnit' =&gt; 'MILLISECONDS', 'value' =&gt; 500],
+            'seed' =&gt; 42,
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -903,6 +991,32 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/upstream-service'],
+        'httpForward' =&gt; [
+            'host' =&gt; 'upstream.example.com',
+            'port' =&gt; 443,
+            'scheme' =&gt; 'HTTPS',
+        ],
+        'chaos' =&gt; [
+            'errorStatus' =&gt; 503,
+            'errorProbability' =&gt; 0.5,
+            'latency' =&gt; ['timeUnit' =&gt; 'MILLISECONDS', 'value' =&gt; 1000],
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -1077,6 +1191,28 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/service'],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; '{"status":"ok"}'],
+        'chaos' =&gt; [
+            'errorStatus' =&gt; 503,
+            'errorProbability' =&gt; 1.0,
+            'failRequestCount' =&gt; 2,
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -1246,6 +1382,28 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// chaos profiles are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([[
+        'httpRequest' =&gt; ['path' =&gt; '/api/critical-service'],
+        'httpResponse' =&gt; ['statusCode' =&gt; 200, 'body' =&gt; '{"healthy":true}'],
+        'chaos' =&gt; [
+            'errorStatus' =&gt; 503,
+            'errorProbability' =&gt; 1.0,
+            'retryAfter' =&gt; '120',
+        ],
+    ]]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">

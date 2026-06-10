@@ -2,7 +2,7 @@
 
 <button class="accordion"><strong>Java Code Example</strong></button>
 <div class="panel">
-    <p><em><strong>Please Note:</strong> There are over 100 more detailed code examples in Java, JavaScript, Python, Ruby, Go, .NET, Rust and the REST API below.</em></p>
+    <p><em><strong>Please Note:</strong> There are over 100 more detailed code examples in Java, JavaScript, Python, Ruby, Go, .NET, Rust, PHP and the REST API below.</em></p>
 
     <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
     .when(
@@ -25,7 +25,7 @@
 
 <button class="accordion"><strong>JavaScript Code Example</strong></button>
 <div class="panel">
-    <p><em><strong>Please Note:</strong> There are over 100 more detailed code examples in Java, JavaScript, Python, Ruby, Go, .NET, Rust and the REST API below.</em></p>
+    <p><em><strong>Please Note:</strong> There are over 100 more detailed code examples in Java, JavaScript, Python, Ruby, Go, .NET, Rust, PHP and the REST API below.</em></p>
 
     <pre class="prettyprint lang-java code"><code class="code">var mockServerClient = require('mockserver-client').mockServerClient;
 mockServerClient("localhost", 1080).mockAnyResponse({
@@ -147,6 +147,25 @@ client.when(
         .status_code(302)
         .header("Location", "https://www.mock-server.com"),
 ).unwrap();</code></pre>
+</div>
+
+<button class="accordion"><strong>PHP Code Example</strong></button>
+<div class="panel">
+    <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpResponse;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;method('POST')
+        -&gt;path('/login')
+        -&gt;body("{username: 'foo', password: 'bar'}")
+)-&gt;respond(
+    HttpResponse::response()
+        -&gt;statusCode(302)
+        -&gt;header('Location', 'https://www.mock-server.com')
+);</code></pre>
 </div>
 
 <p>To use the Java client add the <strong>org.mock-server:mockserver-client-java-no-dependencies:{{ site.mockserver_version }}</strong> dependency. The <code>-no-dependencies</code> artifact bundles all dependencies with relocated packages, so it declares zero transitive dependencies — this avoids classpath conflicts and CVE scanning noise from unused transitive dependencies.</p>

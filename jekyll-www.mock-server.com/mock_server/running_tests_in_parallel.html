@@ -172,3 +172,23 @@ client.when(
         .status_code(200)
         .body("{ \"name\": \"value\" }")
 ).unwrap();</code></pre>
+
+<p><strong>PHP</strong></p>
+
+<pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpResponse;
+
+$sessionId = bin2hex(random_bytes(16));
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;method('GET')
+        -&gt;path('/somePath')
+        -&gt;cookie('sessionId', $sessionId)
+)-&gt;respond(
+    HttpResponse::response()
+        -&gt;statusCode(200)
+        -&gt;body('{ "name": "value" }')
+);</code></pre>

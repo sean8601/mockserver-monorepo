@@ -134,6 +134,18 @@ client.verify(
     VerificationTimes::at_least(2),
 ).unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verify(
+    HttpRequest::request()-&gt;path('/some/path'),
+    VerificationTimes::atLeast(2)
+);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verify" -d '{
@@ -228,6 +240,18 @@ client.verify(
     VerificationTimes::at_most(2),
 ).unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verify(
+    HttpRequest::request()-&gt;path('/some/path'),
+    VerificationTimes::atMost(2)
+);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verify" -d '{
@@ -321,6 +345,18 @@ client.verify(
     HttpRequest::new().path("/some/path"),
     VerificationTimes::exactly(2),
 ).unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verify(
+    HttpRequest::request()-&gt;path('/some/path'),
+    VerificationTimes::exactly(2)
+);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -466,6 +502,25 @@ client.put("http://localhost:1080/mockserver/verify")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/verify');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+        ],
+        'times' =&gt; ['atLeast' =&gt; 2],
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -622,6 +677,26 @@ client.put("http://localhost:1080/mockserver/verify")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers are not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/verify');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'httpRequest' =&gt; [
+            'specUrlOrPayload' =&gt; 'org/mockserver/openapi/openapi_petstore_example.json',
+            'operationId' =&gt; 'showPetById',
+        ],
+        'times' =&gt; ['atLeast' =&gt; 1, 'atMost' =&gt; 1],
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verify" -d '{
@@ -734,6 +809,20 @@ client.put("http://localhost:1080/mockserver/verify")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// verify by expectation ID is not supported in the PHP client;
+// use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/verify');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode(['id' =&gt; '31e4ca35-66c6-4645-afeb-6e66c4ca0559']),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verify" -d '{
@@ -823,6 +912,18 @@ client.verify(
     VerificationTimes::exactly(0),
 ).unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verify(
+    HttpRequest::request()-&gt;path('/some/path'),
+    VerificationTimes::exactly(0)
+);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verify" -d '{
@@ -906,6 +1007,19 @@ client.verify(
     HttpRequest::new(),
     VerificationTimes::at_most(0),
 ).unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+
+$client = new MockServerClient('localhost', 1080);
+// verify that no requests were received
+$client-&gt;verify(
+    HttpRequest::request(),
+    VerificationTimes::exactly(0)
+);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1023,6 +1137,18 @@ client.verify_sequence(vec![
     HttpRequest::new().path("/some/path/two"),
     HttpRequest::new().path("/some/path/three"),
 ]).unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verifySequence(
+    HttpRequest::request()-&gt;path('/some/path/one'),
+    HttpRequest::request()-&gt;path('/some/path/two'),
+    HttpRequest::request()-&gt;path('/some/path/three')
+);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1215,6 +1341,32 @@ client.put("http://localhost:1080/mockserver/verifySequence")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// OpenAPI matchers in verification sequences are not supported in the
+// PHP client; use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/verifySequence');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'httpRequests' =&gt; [
+            ['path' =&gt; '/status'],
+            [
+                'specUrlOrPayload' =&gt; 'org/mockserver/openapi/openapi_petstore_example.json',
+                'operationId' =&gt; 'listPets',
+            ],
+            [
+                'specUrlOrPayload' =&gt; 'org/mockserver/openapi/openapi_petstore_example.json',
+                'operationId' =&gt; 'showPetById',
+            ],
+        ],
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verifySequence" -d '{
@@ -1368,6 +1520,26 @@ client.put("http://localhost:1080/mockserver/verifySequence")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        {% raw %}<pre class="prettyprint lang-php code"><code class="code">// verify sequence by expectation IDs is not supported in the PHP
+// client; use the REST API directly
+$ch = curl_init('http://localhost:1080/mockserver/verifySequence');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'httpRequests' =&gt; [
+            ['id' =&gt; '31e4ca35-66c6-4645-afeb-6e66c4ca0559'],
+            ['id' =&gt; '66c6ca35-ca35-66f5-8feb-5e6ac7ca0559'],
+            ['id' =&gt; 'ca3531e4-23c8-ff45-88f5-4ca0c7ca0559'],
+        ],
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">

@@ -226,6 +226,21 @@ client.put("http://localhost:1080/mockserver/openapi")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">// PHP client submits OpenAPI expectations as raw JSON via the REST API
+$ch = curl_init('http://localhost:1080/mockserver/openapi');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$result = curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d '{
@@ -349,6 +364,25 @@ client.put("http://localhost:1080/mockserver/openapi")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">// PHP client submits OpenAPI expectations as raw JSON via the REST API
+$ch = curl_init('http://localhost:1080/mockserver/openapi');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'specUrlOrPayload' =&gt; 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+        'operationsAndResponses' =&gt; [
+            'showPetById' =&gt; '200',
+            'createPets' =&gt; '500',
+        ],
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$result = curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d '{
@@ -445,6 +479,20 @@ client.put("http://localhost:1080/mockserver/openapi")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$ch = curl_init('http://localhost:1080/mockserver/openapi');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'specUrlOrPayload' =&gt; 'file:/Users/jamesbloom/git/mockserver/mockserver/mockserver-core/target/test-classes/org/mockserver/openapi/openapi_petstore_example.json',
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$result = curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/openapi" -d '{
@@ -539,6 +587,22 @@ client.put("http://localhost:1080/mockserver/openapi")
     }"#)
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">// Classpath locations are resolved by the server-side JVM; the PHP client sends the string as-is
+$ch = curl_init('http://localhost:1080/mockserver/openapi');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'specUrlOrPayload' =&gt; 'org/mockserver/openapi/openapi_petstore_example.json',
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$result = curl_exec($ch);
+curl_close($ch);</code></pre>
+        <p><em>Note: classpath locations are resolved by the server-side JVM; the PHP client sends the string as-is.</em></p>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -651,6 +715,22 @@ client.put("http://localhost:1080/mockserver/openapi")
     .json(&amp;payload)
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$specContent = file_get_contents('/path/to/openapi_petstore_example.json');
+
+$ch = curl_init('http://localhost:1080/mockserver/openapi');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        'specUrlOrPayload' =&gt; $specContent,
+    ]),
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$result = curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">

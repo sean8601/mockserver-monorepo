@@ -122,6 +122,33 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpError": {
+        "dropConnection": true,
+        "delay": {
+            "timeUnit": "SECONDS",
+            "value": 5
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -243,6 +270,22 @@ client.when(HttpRequest::new().path("/some/path"))
     )
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpError;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;path('/some/path')
+)-&gt;error(
+    HttpError::error()
+        -&gt;dropConnection(true)
+        -&gt;responseBytes('eQqmdjEEoaXnCvcK6lOAIZeU+Pn+womxmg==')
+);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -345,6 +388,21 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 client.when(HttpRequest::new().path("/some/path"))
     .error(HttpError::new().drop_connection(true))
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpError;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;path('/some/path')
+)-&gt;error(
+    HttpError::error()
+        -&gt;dropConnection(true)
+);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -501,6 +559,35 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest" : {
+        "method" : "POST",
+        "path" : "/upload",
+        "respondBeforeBody" : true
+    },
+    "httpResponse" : {
+        "statusCode" : 403,
+        "body" : "forbidden",
+        "connectionOptions" : {
+            "keepAliveOverride" : false
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">

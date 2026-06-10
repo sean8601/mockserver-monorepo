@@ -91,6 +91,23 @@ client.when(HttpRequest::new().path("/some/path"))
     .forward(HttpForward::new("mock-server.com", 80).scheme("HTTP"))
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpForward;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;path('/some/path')
+)-&gt;forward(
+    HttpForward::forward()
+        -&gt;host('mock-server.com')
+        -&gt;port(80)
+        -&gt;scheme('HTTP')
+);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -198,6 +215,23 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 client.when(HttpRequest::new().path("/some/path"))
     .forward(HttpForward::new("mock-server.com", 443).scheme("HTTPS"))
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpForward;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;path('/some/path')
+)-&gt;forward(
+    HttpForward::forward()
+        -&gt;host('mock-server.com')
+        -&gt;port(443)
+        -&gt;scheme('HTTPS')
+);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -372,6 +406,34 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "httpRequest": {
+            "path": "/some/other/path",
+            "headers": {
+                "Host": ["target.host.com"]
+            }
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -569,6 +631,37 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "httpRequest": {
+            "path": "/some/other/path",
+            "headers": {
+                "Host": ["target.host.com"]
+            }
+        },
+        "httpResponse": {
+            "body": "some_overridden_body"
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -1242,6 +1335,107 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "requestOverride": {
+            "headers": {
+                "Host": [
+                    "target.host.com"
+                ]
+            },
+            "body": "some_overridden_body"
+        },
+        "requestModifier": {
+            "cookies": {
+                "add": {
+                    "cookieToAddOne": "addedValue",
+                    "cookieToAddTwo": "addedValue"
+                },
+                "remove": [
+                    "overrideCookieToRemove",
+                    "requestCookieToRemove"
+                ],
+                "replace": {
+                    "overrideCookieToReplace": "replacedValue",
+                    "requestCookieToReplace": "replacedValue",
+                    "extraCookieToReplace": "shouldBeIgnore"
+                }
+            },
+            "headers": {
+                "add": {
+                    "headerToAddTwo": [
+                        "addedValue"
+                    ],
+                    "headerToAddOne": [
+                        "addedValue"
+                    ]
+                },
+                "remove": [
+                    "overrideHeaderToRemove",
+                    "requestHeaderToRemove"
+                ],
+                "replace": {
+                    "requestHeaderToReplace": [
+                        "replacedValue"
+                    ],
+                    "overrideHeaderToReplace": [
+                        "replacedValue"
+                    ],
+                    "extraHeaderToReplace": [
+                        "shouldBeIgnore"
+                    ]
+                }
+            },
+            "path": {
+                "regex": "^/(.+)/(.+)$",
+                "substitution": "/prefix/$1/infix/$2/postfix"
+            },
+            "queryStringParameters": {
+                "add": {
+                    "parameterToAddTwo": [
+                        "addedValue"
+                    ],
+                    "parameterToAddOne": [
+                        "addedValue"
+                    ]
+                },
+                "remove": [
+                    "overrideParameterToRemove",
+                    "requestParameterToRemove"
+                ],
+                "replace": {
+                    "requestParameterToReplace": [
+                        "replacedValue"
+                    ],
+                    "overrideParameterToReplace": [
+                        "replacedValue"
+                    ],
+                    "extraParameterToReplace": [
+                        "shouldBeIgnore"
+                    ]
+                }
+            }
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -2135,6 +2329,152 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "requestOverride": {
+            "headers": {
+                "Host": [
+                    "target.host.com"
+                ]
+            },
+            "body": "some_overridden_body"
+        },
+        "requestModifier": {
+            "cookies": {
+                "add": {
+                    "cookieToAddOne": "addedValue",
+                    "cookieToAddTwo": "addedValue"
+                },
+                "remove": [
+                    "overrideCookieToRemove",
+                    "requestCookieToRemove"
+                ],
+                "replace": {
+                    "overrideCookieToReplace": "replacedValue",
+                    "requestCookieToReplace": "replacedValue",
+                    "extraCookieToReplace": "shouldBeIgnore"
+                }
+            },
+            "headers": {
+                "add": {
+                    "headerToAddTwo": [
+                        "addedValue"
+                    ],
+                    "headerToAddOne": [
+                        "addedValue"
+                    ]
+                },
+                "remove": [
+                    "overrideHeaderToRemove",
+                    "requestHeaderToRemove"
+                ],
+                "replace": {
+                    "requestHeaderToReplace": [
+                        "replacedValue"
+                    ],
+                    "overrideHeaderToReplace": [
+                        "replacedValue"
+                    ],
+                    "extraHeaderToReplace": [
+                        "shouldBeIgnore"
+                    ]
+                }
+            },
+            "path": {
+                "regex": "^/(.+)/(.+)$",
+                "substitution": "/prefix/$1/infix/$2/postfix"
+            },
+            "queryStringParameters": {
+                "add": {
+                    "parameterToAddTwo": [
+                        "addedValue"
+                    ],
+                    "parameterToAddOne": [
+                        "addedValue"
+                    ]
+                },
+                "remove": [
+                    "overrideParameterToRemove",
+                    "requestParameterToRemove"
+                ],
+                "replace": {
+                    "requestParameterToReplace": [
+                        "replacedValue"
+                    ],
+                    "overrideParameterToReplace": [
+                        "replacedValue"
+                    ],
+                    "extraParameterToReplace": [
+                        "shouldBeIgnore"
+                    ]
+                }
+            }
+        },
+        "responseOverride": {
+            "body": "some_overridden_body"
+        },
+        "responseModifier": {
+            "cookies": {
+                "add": {
+                    "cookieToAddOne": "addedValue",
+                    "cookieToAddTwo": "addedValue"
+                },
+                "remove": [
+                    "overrideCookieToRemove",
+                    "requestCookieToRemove"
+                ],
+                "replace": {
+                    "overrideCookieToReplace": "replacedValue",
+                    "requestCookieToReplace": "replacedValue",
+                    "extraCookieToReplace": "shouldBeIgnore"
+                }
+            },
+            "headers": {
+                "add": {
+                    "headerToAddTwo": [
+                        "addedValue"
+                    ],
+                    "headerToAddOne": [
+                        "addedValue"
+                    ]
+                },
+                "remove": [
+                    "overrideHeaderToRemove",
+                    "requestHeaderToRemove"
+                ],
+                "replace": {
+                    "requestHeaderToReplace": [
+                        "replacedValue"
+                    ],
+                    "overrideHeaderToReplace": [
+                        "replacedValue"
+                    ],
+                    "extraHeaderToReplace": [
+                        "shouldBeIgnore"
+                    ]
+                }
+            }
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -2461,6 +2801,39 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "httpRequest": {
+            "path": "/some/other/path",
+            "headers": {
+                "Host": ["any.host.com"]
+            },
+            "socketAddress": {
+                "host": "target.host.com",
+                "port": 1234,
+                "scheme": "HTTPS"
+            }
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -2672,6 +3045,39 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "httpRequest": {
+            "path": "/some/other/path",
+            "body": "some_overridden_body",
+            "headers": {
+                "Host": ["target.host.com"]
+            }
+        },
+        "delay": {
+            "timeUnit": "SECONDS",
+            "value": 10
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -2910,6 +3316,43 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "httpRequest": {
+            "path": "/some/other/path",
+            "body": "some_overridden_body",
+            "headers": {
+                "Host": ["target.host.com"]
+            }
+        },
+        "delay": {
+            "timeUnit": "MILLISECONDS",
+            "distribution": {
+                "type": "LOG_NORMAL",
+                "median": 200,
+                "p99": 800
+            }
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -3138,6 +3581,39 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpForwardTemplate": {
+        "template": "return {\n" +
+        "    'path' : \"/somePath\",\n" +
+        "    'queryStringParameters' : {\n" +
+        "        'userId' : request.queryStringParameters &amp;&amp; request.queryStringParameters['userId']\n" +
+        "    },\n" +
+        "    'headers' : {\n" +
+        "        'Host' : [ \"localhost:1081\" ]\n" +
+        "    },\n" +
+        "    'body': JSON.stringify({'name': 'value'})\n" +
+        "};",
+        "templateType": "JAVASCRIPT"
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -3331,6 +3807,35 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/somePrefix*"
+    },
+    "httpForwardTemplate": {
+        "template": "return {\n" +
+        "    'path' : request.path.substring(request.path.indexOf('/somePrefix')+'/somePrefix'.length,request.path.length),\n" +
+        "    'headers' : {\n" +
+        "        'Host' : [ \"localhost:1081\" ]\n" +
+        "    }\n" +
+        "};",
+        "templateType": "JAVASCRIPT"
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -3570,6 +4075,42 @@ client.put("http://localhost:1080/mockserver/expectation")
     .body(body.to_string())
     .send()
     .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpForwardTemplate": {
+        "template": "return {\n" +
+        "    'path' : \"/somePath\",\n" +
+        "    'cookies' : {\n" +
+        "        'SessionId' : request.cookies &amp;&amp; request.cookies['SessionId']\n" +
+        "    },\n" +
+        "    'headers' : {\n" +
+        "        'Host' : [ \"localhost:1081\" ]\n" +
+        "    },\n" +
+        "    'keepAlive' : true,\n" +
+        "    'secure' : true,\n" +
+        "    'body' : \"some_body\"\n" +
+        "};",
+        "templateType": "JAVASCRIPT",
+        "delay": {"timeUnit": "SECONDS", "value": 20}
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
@@ -3819,6 +4360,42 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpForwardTemplate": {
+        "template": "{\n" +
+        "    'path' : \"/somePath\",\n" +
+        "    'queryStringParameters' : {\n" +
+        "        'userId' : [ \"$!request.queryStringParameters['userId'][0]\" ]\n" +
+        "    },\n" +
+        "    'cookies' : {\n" +
+        "        'SessionId' : \"$!request.cookies['SessionId']\"\n" +
+        "    },\n" +
+        "    'headers' : {\n" +
+        "        'Host' : [ \"localhost:1081\" ]\n" +
+        "    },\n" +
+        "    'body': \"{'name': 'value'}\"\n" +
+        "}",
+        "templateType": "VELOCITY"
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -3981,6 +4558,37 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpOverrideForwardedRequest": {
+        "requestOverride": {
+            "headers": {
+                "Host": ["target.host.com"]
+            }
+        },
+        "responseTemplate": {
+            "templateType": "JAVASCRIPT",
+            "template": "return { 'statusCode': response.statusCode, 'headers': response.headers, 'body': JSON.stringify({ 'originalBody': response.body, 'requestPath': request.path }) };"
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -4127,6 +4735,35 @@ client.put("http://localhost:1080/mockserver/expectation")
     .send()
     .unwrap();</code></pre>
     </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpForwardTemplate": {
+        "templateType": "JAVASCRIPT",
+        "template": "return { 'path': '/target' + request.path, 'headers': { 'Host': ['target.host.com'] } };",
+        "responseOverride": {
+            "headers": {
+                "x-proxy": ["mockserver"]
+            }
+        }
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -4200,6 +4837,29 @@ mockServerClient("localhost", 1080).mockAnyResponse({
         console.log(error);
     }
 );</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+    "httpRequest" : {
+        "path" : "/some.*"
+    },
+    "httpForwardClassCallback" : {
+        "callbackClass" : "org.mockserver.examples.mockserver.CallbackActionExamples$TestExpectationForwardCallback"
+    }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
     </div>
     <button class="accordion inner">REST API</button>
     <div class="panel">

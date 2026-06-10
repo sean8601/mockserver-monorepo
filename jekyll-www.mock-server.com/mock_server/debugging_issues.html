@@ -111,6 +111,13 @@ var activeExpectations = client.RetrieveActiveExpectations();</code></pre>
 let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let active_expectations = client.retrieve_active_expectations(None).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+
+$client = new MockServerClient('localhost', 1080);
+$activeExpectations = $client-&gt;retrieveActiveExpectations();</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=ACTIVE_EXPECTATIONS"</code></pre>
@@ -190,6 +197,16 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let active_expectations = client.retrieve_active_expectations(
     Some(&amp;HttpRequest::new().path("/some/path").method("POST"))
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$activeExpectations = $client-&gt;retrieveActiveExpectations(
+    HttpRequest::request()-&gt;path('/some/path')-&gt;method('POST')
+);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -299,6 +316,17 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let active_expectations = client.retrieve_active_expectations(
     Some(&amp;HttpRequest::new().path("/some/path"))
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+// PHP client always returns JSON-deserialized arrays
+$activeExpectations = $client-&gt;retrieveActiveExpectations(
+    HttpRequest::request()-&gt;path('/some/path')
+);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -437,6 +465,13 @@ var logMessages = client.RetrieveLogMessages();</code></pre>
 let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let log_messages = client.retrieve_log_messages(None).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+
+$client = new MockServerClient('localhost', 1080);
+$logMessages = $client-&gt;retrieveLogMessages();</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=LOGS"</code></pre>
@@ -519,6 +554,16 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let log_messages = client.retrieve_log_messages(
     Some(&amp;HttpRequest::new().path("/some/path").method("POST"))
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$logMessages = $client-&gt;retrieveLogMessages(
+    HttpRequest::request()-&gt;path('/some/path')-&gt;method('POST')
+);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -608,6 +653,17 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let log_messages = client.retrieve_log_messages(
     Some(&amp;HttpRequest::new().path("/some/path"))
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+// returns an array of log message strings/arrays
+$logMessages = $client-&gt;retrieveLogMessages(
+    HttpRequest::request()-&gt;path('/some/path')
+);</code></pre>
         </div>
     </div>
 </div>

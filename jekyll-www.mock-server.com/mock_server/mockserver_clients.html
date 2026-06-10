@@ -1,6 +1,6 @@
 ---
 title: MockServer Clients
-description: Control MockServer from Java, JavaScript, Python, Ruby, Go, .NET, Rust, or the REST API to create expectations, verify requests, and retrieve recorded traffic.
+description: Control MockServer from Java, JavaScript, Python, Ruby, Go, .NET, Rust, PHP, or the REST API to create expectations, verify requests, and retrieve recorded traffic.
 layout: page
 pageOrder: 3
 section: 'Getting Started'
@@ -22,6 +22,7 @@ sitemap:
 	<li><a href="#go-mockserver-client">Go</a></li>
 	<li><a href="#dotnet-mockserver-client">.NET</a></li>
 	<li><a href="#rust-mockserver-client">Rust</a></li>
+	<li><a href="#php-mockserver-client">PHP</a></li>
 </ul>
 
 <p>The following activities are supported:</p>
@@ -303,6 +304,55 @@ client.verify(
 
 <p>Requires Rust 2021 edition.</p>
 
+<a id="php-mockserver-client" class="anchor" href="#php-mockserver-client">&nbsp;</a>
+
+<h2>PHP Client</h2>
+
+<p>The PHP client provides a fluent builder API using Guzzle for HTTP transport:</p>
+
+<ul>
+    <li><strong>MockServerClient</strong> - makes HTTP requests to a remote MockServer instance</li>
+</ul>
+
+<p>Install via Composer:</p>
+
+<pre class="prettyprint code"><code class="code">composer require mock-server/mockserver-client</code></pre>
+
+<p>Create an expectation using the fluent API:</p>
+
+<pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpResponse;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()-&gt;method('GET')-&gt;path('/hello')
+)-&gt;respond(
+    HttpResponse::response()-&gt;statusCode(200)-&gt;body('world')
+);</code></pre>
+
+<p>Verification failures throw <span class="inline_code">MockServer\Exception\VerificationException</span>. Connection failures throw <span class="inline_code">MockServer\Exception\ConnectionException</span>:</p>
+
+<pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+use MockServer\Exception\VerificationException;
+use MockServer\Exception\ConnectionException;
+
+try {
+    $client = new MockServerClient('localhost', 1080);
+    $client-&gt;verify(
+        HttpRequest::request()-&gt;path('/some/path'),
+        VerificationTimes::atLeast(1)
+    );
+} catch (VerificationException $e) {
+    echo "Verification failed: " . $e-&gt;getMessage();
+} catch (ConnectionException $e) {
+    echo "Connection failed: " . $e-&gt;getMessage();
+}</code></pre>
+
+<p>Requires PHP &gt;= 8.1.</p>
+
 <a id="client-code-examples" class="anchor" href="#client-code-examples">&nbsp;</a>
 
 <button id="button_client" class="accordion title"><strong>Client Code Examples</strong></button>
@@ -488,6 +538,23 @@ client.when(
     HttpResponse::new().body("some_response_body"),
 ).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpResponse;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;method('GET')
+        -&gt;path('/view/cart')
+        -&gt;cookie('session', '4930456C-C718-476F-971F-CB8E047AB349')
+        -&gt;queryStringParameter('cartId', '055CA455-1DF7-45BB-8535-4F83E7266092')
+)-&gt;respond(
+    HttpResponse::response()-&gt;body('some_response_body')
+);</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
@@ -658,6 +725,24 @@ client.when(
     HttpResponse::new().body("some_response_body"),
 ).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\HttpResponse;
+
+$client = new MockServerClient('localhost', 1080, secure: true, guzzleOptions: [
+    'verify' =&gt; false,
+]);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;method('GET')
+        -&gt;path('/view/cart')
+        -&gt;queryStringParameter('cartId', '055CA455-1DF7-45BB-8535-4F83E7266092')
+)-&gt;respond(
+    HttpResponse::response()-&gt;body('some_response_body')
+);</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -k -X PUT "https://localhost:1080/mockserver/expectation" -d '{
@@ -787,6 +872,18 @@ client.verify(
     HttpRequest::new().path("/some/path"),
     VerificationTimes::exactly(2),
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+use MockServer\VerificationTimes;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verify(
+    HttpRequest::request()-&gt;path('/some/path'),
+    VerificationTimes::exactly(2)
+);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -937,6 +1034,18 @@ client.verify_sequence(vec![
     HttpRequest::new().path("/some/path/three"),
 ]).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;verifySequence(
+    HttpRequest::request()-&gt;path('/some/path/one'),
+    HttpRequest::request()-&gt;path('/some/path/two'),
+    HttpRequest::request()-&gt;path('/some/path/three')
+);</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verifySequence" -d '{
@@ -1060,6 +1169,16 @@ let recorded_requests = client.retrieve_recorded_requests(
     Some(&amp;HttpRequest::new().path("/some/path").method("POST")),
 ).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$recordedRequests = $client-&gt;retrieveRecordedRequests(
+    HttpRequest::request()-&gt;path('/some/path')-&gt;method('POST')
+);</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUESTS" -d '{
@@ -1173,6 +1292,16 @@ let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let recorded_expectations = client.retrieve_recorded_expectations(
     Some(&amp;HttpRequest::new().path("/some/path").method("POST")),
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$recordedExpectations = $client-&gt;retrieveRecordedExpectations(
+    HttpRequest::request()-&gt;path('/some/path')-&gt;method('POST')
+);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -1294,6 +1423,16 @@ let log_messages = client.retrieve_log_messages(
     Some(&amp;HttpRequest::new().path("/some/path").method("POST")),
 ).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$logMessages = $client-&gt;retrieveLogMessages(
+    HttpRequest::request()-&gt;path('/some/path')-&gt;method('POST')
+);</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=LOGS" -d '{
@@ -1399,6 +1538,14 @@ client.clear(
     Some(&amp;HttpRequest::new().path("/some/path")),
     None,
 ).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;clear(HttpRequest::request()-&gt;path('/some/path'));</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -1507,6 +1654,14 @@ client.clear(
     Some(ClearType::Log),
 ).unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\HttpRequest;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;clear(HttpRequest::request()-&gt;path('/some/path'), 'LOG');</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/clear?type=log" -d '{
@@ -1592,6 +1747,13 @@ client.Reset();</code></pre>
 let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 client.reset().unwrap();</code></pre>
         </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;reset();</code></pre>
+        </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/reset</code></pre>
@@ -1648,6 +1810,13 @@ var boundPorts = client.Bind(0);</code></pre>
 
 let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let bound_ports = client.bind(&amp;[0]).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+
+$client = new MockServerClient('localhost', 1080);
+$boundPorts = $client-&gt;bind(0);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
@@ -1710,6 +1879,13 @@ var boundPorts = client.Bind(1081, 1082);</code></pre>
 
 let client = ClientBuilder::new("localhost", 1080).build().unwrap();
 let bound_ports = client.bind(&amp;[1081, 1082]).unwrap();</code></pre>
+        </div>
+        <button class="accordion inner">PHP</button>
+        <div class="panel">
+            <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+
+$client = new MockServerClient('localhost', 1080);
+$boundPorts = $client-&gt;bind(1081, 1082);</code></pre>
         </div>
         <button class="accordion inner">REST API</button>
         <div class="panel">
