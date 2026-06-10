@@ -270,6 +270,10 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Traffic
           </ToggleButton>
+          <ToggleButton value="breakpoints" aria-label="Breakpoints view">
+            <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Breakpoints
+          </ToggleButton>
           <ToggleButton value="sessions" aria-label="Session inspector view">
             <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Sessions
@@ -297,10 +301,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           <ToggleButton value="async" aria-label="AsyncAPI broker mock view">
             <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Async
-          </ToggleButton>
-          <ToggleButton value="breakpoints" aria-label="Breakpoints view">
-            <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Breakpoints
           </ToggleButton>
           <ToggleButton value="metrics" aria-label="Metrics view">
             <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
