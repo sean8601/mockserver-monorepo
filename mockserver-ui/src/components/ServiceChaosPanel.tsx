@@ -85,6 +85,9 @@ import { getConfiguration, updateConfiguration, type Configuration } from '../li
 // Uniform width for every chaos field so the HTTP / gRPC / TCP sections line
 // up in columns and the longest labels are not truncated.
 const CHAOS_FIELD_W = 180;
+// Wider variant for the longest-labelled column (Latency ms / Degradation ramp ms)
+// so 'Degradation ramp ms' is not truncated; both share a column so both use it.
+const CHAOS_FIELD_W_WIDE = 200;
 
 interface ServiceChaosPanelProps {
   connectionParams: ConnectionParams;
@@ -1128,16 +1131,19 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 <TextField size="small" label="Error prob (0–1)" placeholder="0.5" value={form.errorProbability} onChange={setField('errorProbability')} sx={{ width: CHAOS_FIELD_W }} />
                 <TextField size="small" label="Retry-After" placeholder="120" value={form.retryAfter} onChange={setField('retryAfter')} sx={{ width: CHAOS_FIELD_W }} />
                 <TextField size="small" label="Drop prob (0–1)" placeholder="0.2" value={form.dropProbability} onChange={setField('dropProbability')} sx={{ width: CHAOS_FIELD_W }} />
-                <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Latency ms" placeholder="250" value={form.latencyMs} onChange={setField('latencyMs')} sx={{ width: CHAOS_FIELD_W_WIDE }} />
                 <TextField size="small" label="TTL ms" placeholder="60000" value={form.ttlMs} onChange={setField('ttlMs')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
               {/* Row 2: body corruption + slow response */}
               <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                 <TextField size="small" label="Truncate body (0–1)" placeholder="0.5" value={form.truncateBodyAtFraction} onChange={setField('truncateBodyAtFraction')} sx={{ width: CHAOS_FIELD_W }} />
-                <FormControlLabel
-                  control={<Switch size="small" checked={form.malformedBody} onChange={setFormToggle('malformedBody')} />}
-                  label="Malformed body"
-                />
+                {/* occupy a full field-width column (with a little left padding) so 'Slow chunk bytes' lines up with 'Error prob' above */}
+                <Box sx={{ width: CHAOS_FIELD_W, display: 'flex', alignItems: 'center', pl: 1 }}>
+                  <FormControlLabel
+                    control={<Switch size="small" checked={form.malformedBody} onChange={setFormToggle('malformedBody')} />}
+                    label="Malformed body"
+                  />
+                </Box>
                 <TextField size="small" label="Slow chunk bytes" placeholder="64" value={form.slowResponseChunkSize} onChange={setField('slowResponseChunkSize')} sx={{ width: CHAOS_FIELD_W }} />
                 <TextField size="small" label="Slow chunk delay ms" placeholder="500" value={form.slowResponseChunkDelayMs} onChange={setField('slowResponseChunkDelayMs')} sx={{ width: CHAOS_FIELD_W }} />
               </Box>
@@ -1155,7 +1161,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 <TextField size="small" label="Fail count" placeholder="10" value={form.failRequestCount} onChange={setField('failRequestCount')} sx={{ width: CHAOS_FIELD_W }} />
                 <TextField size="small" label="Outage after ms" placeholder="5000" value={form.outageAfterMillis} onChange={setField('outageAfterMillis')} sx={{ width: CHAOS_FIELD_W }} />
                 <TextField size="small" label="Outage duration ms" placeholder="30000" value={form.outageDurationMillis} onChange={setField('outageDurationMillis')} sx={{ width: CHAOS_FIELD_W }} />
-                <TextField size="small" label="Degradation ramp ms" placeholder="60000" value={form.degradationRampMillis} onChange={setField('degradationRampMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                <TextField size="small" label="Degradation ramp ms" placeholder="60000" value={form.degradationRampMillis} onChange={setField('degradationRampMillis')} sx={{ width: CHAOS_FIELD_W_WIDE }} />
               </Box>
               {/* Row 5: GraphQL + register */}
               <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1234,15 +1240,17 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                             <TextField size="small" label="Error prob (0–1)" value={editForm.errorProbability} onChange={setEditField('errorProbability')} sx={{ width: CHAOS_FIELD_W }} />
                             <TextField size="small" label="Retry-After" value={editForm.retryAfter} onChange={setEditField('retryAfter')} sx={{ width: CHAOS_FIELD_W }} />
                             <TextField size="small" label="Drop prob (0–1)" value={editForm.dropProbability} onChange={setEditField('dropProbability')} sx={{ width: CHAOS_FIELD_W }} />
-                            <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Latency ms" value={editForm.latencyMs} onChange={setEditField('latencyMs')} sx={{ width: CHAOS_FIELD_W_WIDE }} />
                           </Box>
                           {/* Edit row 2: body corruption + slow response */}
                           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                             <TextField size="small" label="Truncate body (0–1)" value={editForm.truncateBodyAtFraction} onChange={setEditField('truncateBodyAtFraction')} sx={{ width: CHAOS_FIELD_W }} />
-                            <FormControlLabel
-                              control={<Switch size="small" checked={editForm.malformedBody} onChange={setEditToggle('malformedBody')} />}
-                              label="Malformed body"
-                            />
+                            <Box sx={{ width: CHAOS_FIELD_W, display: 'flex', alignItems: 'center', pl: 1 }}>
+                              <FormControlLabel
+                                control={<Switch size="small" checked={editForm.malformedBody} onChange={setEditToggle('malformedBody')} />}
+                                label="Malformed body"
+                              />
+                            </Box>
                             <TextField size="small" label="Slow chunk bytes" value={editForm.slowResponseChunkSize} onChange={setEditField('slowResponseChunkSize')} sx={{ width: CHAOS_FIELD_W }} />
                             <TextField size="small" label="Slow chunk delay ms" value={editForm.slowResponseChunkDelayMs} onChange={setEditField('slowResponseChunkDelayMs')} sx={{ width: CHAOS_FIELD_W }} />
                           </Box>
@@ -1260,7 +1268,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                             <TextField size="small" label="Fail count" value={editForm.failRequestCount} onChange={setEditField('failRequestCount')} sx={{ width: CHAOS_FIELD_W }} />
                             <TextField size="small" label="Outage after ms" value={editForm.outageAfterMillis} onChange={setEditField('outageAfterMillis')} sx={{ width: CHAOS_FIELD_W }} />
                             <TextField size="small" label="Outage duration ms" value={editForm.outageDurationMillis} onChange={setEditField('outageDurationMillis')} sx={{ width: CHAOS_FIELD_W }} />
-                            <TextField size="small" label="Degradation ramp ms" value={editForm.degradationRampMillis} onChange={setEditField('degradationRampMillis')} sx={{ width: CHAOS_FIELD_W }} />
+                            <TextField size="small" label="Degradation ramp ms" value={editForm.degradationRampMillis} onChange={setEditField('degradationRampMillis')} sx={{ width: CHAOS_FIELD_W_WIDE }} />
                           </Box>
                           {/* Edit row 5: GraphQL + apply/cancel */}
                           <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
