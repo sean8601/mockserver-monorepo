@@ -1,5 +1,25 @@
 # Interactive Breakpoints
 
+**TL;DR:** A breakpoint is a request matcher + set of phases. Register one via
+`PUT /mockserver/breakpoint/matcher`. When a forwarded/proxied request matches, the
+exchange is paused at each specified phase. Resolution is interactive: the paused item
+is dispatched to the owning client over the callback WebSocket (`/_mockserver_callback_websocket`)
+or parked in the REST queue. The client (any language client, the dashboard, or the REST API)
+inspects/modifies it and sends a decision; the server applies the decision and resumes. The
+four global flags are removed — matchers are the only activation mechanism.
+
+```mermaid
+flowchart LR
+  A["forwarded request"] --> B{"findMatch(request, phase)?"}
+  B -- no --> F["forward / write normally"]
+  B -- yes, clientId set --> C["dispatch over callback WS\nto owning client"]
+  B -- yes, no clientId --> G["park in REST queue\n(BreakpointRegistry)"]
+  C --> D["client / dashboard:\nreply with decision"]
+  G --> H["REST API:\ncontinue / modify / abort"]
+  D --> E["apply decision, resume"]
+  H --> E
+```
+
 Interactive breakpoints let you pause proxied/forwarded exchanges at four phases:
 
 1. **Request breakpoints** (A1a) — hold the outbound request before it reaches the upstream server
@@ -7,13 +27,19 @@ Interactive breakpoints let you pause proxied/forwarded exchanges at four phases
 3. **Stream frame breakpoints** (A1c + A1d) — hold each individual frame of a streaming response before it is written to the client. Covers both forwarded upstream streams (SSE / HTTP/1.1 chunked) and mock-generated streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted messages, WebSocket bidirectional responses, and GraphQL subscription pushes)
 4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription, gRPC-bidi) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
 
-Request and response breakpoints support inspect, modify, continue, and abort via the REST API.
-Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame.
+Request and response breakpoints support inspect, modify, continue, and abort — either interactively over the callback WebSocket or via the REST API.
+Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame — either over the callback WebSocket or via the REST API.
 
 ## Non-blocking architecture
 
-The breakpoint mechanism is fully asynchronous. When a breakpoint matches:
+The breakpoint mechanism is fully asynchronous on both resolution paths.
 
+**WS-callback path (when `clientId` is set):** the `BreakpointCallbackDispatcher` or
+`StreamFrameCallbackDispatcher` serialises the paused item into a WS message and sends
+it to the owning client. The continuation is chained onto a `CompletableFuture` that is
+completed when the client replies or the timeout fires. No thread is blocked.
+
+**REST-park path (no `clientId`):**
 1. A `PausedExchange` is registered in the `BreakpointRegistry` (a process-wide
    singleton backed by a `ConcurrentHashMap`).
 2. The scheduler worker thread returns immediately. The continuation (forward the
@@ -182,8 +208,8 @@ Any forwarded/proxied request that matches `httpRequest` will be paused at the s
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases}` | Register a matcher; returns `{id, phases}` |
-| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases}]}` |
+| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases, clientId?}` | Register a matcher; returns `{id, phases, clientId?}` |
+| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases,clientId?}]}` |
 | PUT | `/mockserver/breakpoint/matcher/remove` | `{id}` | Remove a matcher by id; returns `{status:"removed",id}` or 404 |
 | PUT | `/mockserver/breakpoint/matcher/clear` | — | Remove all matchers; returns `{status:"cleared",count}` |
 
@@ -442,14 +468,69 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
 
 ## Dashboard UI
 
-The Breakpoints panel in the dashboard is phase-aware:
+The dashboard is a **real callback client**: it opens a WebSocket to
+`/_mockserver_callback_websocket` (the same endpoint language clients use) and
+reads its server-assigned `clientId` from the first `WebSocketClientIdDTO`
+message. Browser WebSockets cannot set custom request headers, so the server
+generates the `clientId` server-side when the `CLIENT_REGISTRATION_ID_HEADER`
+is absent on the upgrade request (already handled in
+`CallbackWebSocketServerHandler.upgradeChannel`).
 
-- Each paused exchange displays a **Phase** chip (`REQUEST` or `RESPONSE`).
-- For **request-phase** exchanges: the table shows the HTTP method and path;
-  the Modify dialog edits the request JSON and sends `{id, httpRequest}`.
-- For **response-phase** exchanges: the table shows the status code and reason
-  phrase; the Modify dialog edits the response JSON and sends `{id, httpResponse}`.
-- Continue and Abort work identically for both phases.
+The Breakpoints panel has three tabs:
+
+### Matchers tab
+
+- A **matcher-builder form** to register a breakpoint matcher with method, path
+  (regex), and phase checkboxes (Request, Response, Response stream frames,
+  Inbound stream frames). On submit, calls
+  `PUT /mockserver/breakpoint/matcher {httpRequest, phases, clientId}` with the
+  dashboard's assigned `clientId`.
+- Lists all registered matchers (`GET /mockserver/breakpoint/matchers`) with
+  remove and clear-all actions.
+
+### Live Exchanges tab
+
+- When a registered matcher triggers on a forwarded request or response, the
+  server pushes the paused item over the callback WS (same `{type, value}`
+  envelope as language clients). The dashboard shows it in real time.
+- Resolution is interactive: **Continue** (send the original back), **Modify**
+  (edit the JSON in a dialog, send modified), or **Abort** (REQUEST phase only;
+  sends an `HttpResponse` with status 503 to skip forwarding).
+- The WS reply IS the resolution -- no REST endpoint is called.
+
+### Live Streams tab
+
+- Paused stream frames (`PausedStreamFrameDTO`) are pushed over the same
+  callback WS and shown in real time with direction, stream ID, sequence
+  number, and Base64-decoded body preview.
+- Resolution actions: **Continue**, **Modify** (edit body, Base64-encode),
+  **Drop**, **Inject** (extra frame after the held one), **Close** (end the
+  stream). Each sends a `StreamFrameDecisionDTO` back over the WS.
+
+### Header-less callback registration
+
+The `CallbackWebSocketServerHandler.upgradeChannel` method handles both
+registration modes:
+
+```java
+final String clientId = httpRequest.headers().contains(CLIENT_REGISTRATION_ID_HEADER)
+    ? httpRequest.headers().get(CLIENT_REGISTRATION_ID_HEADER)
+    : UUIDService.getUUID();
+```
+
+Language clients supply the header; the dashboard (browser WebSocket) does not,
+so the server generates a UUID. In both cases, `registerClient(clientId, ctx)`
+sends a `WebSocketClientIdDTO{clientId}` to the client and registers the
+channel. The dashboard reads its assigned `clientId` from that first message.
+
+### Connection lifecycle
+
+- The callback WS connection is opened when the Breakpoints panel mounts and
+  closed on unmount. It auto-reconnects on close with exponential backoff.
+- A connection-state indicator (green/yellow/red dot) shows the WS status.
+- On disconnect, the server automatically removes the dashboard's breakpoint
+  matchers and auto-continues any in-flight dispatches (same cleanup as any
+  other callback client).
 
 ## Java client
 

@@ -1586,6 +1586,9 @@ paths:
         Registers a request matcher that activates breakpoints for forwarded/proxied exchanges.
         When a proxied request matches the httpRequest definition, the exchange is paused at each
         specified phase. Returns the assigned matcher id and the registered phases.
+        When clientId is provided, paused items are dispatched over the callback WebSocket
+        (/_mockserver_callback_websocket) to the owning client for interactive resolution.
+        When clientId is absent, items are parked in the REST-poll queue.
       requestBody:
         required: true
         content:
@@ -1606,6 +1609,12 @@ paths:
                     type: string
                     enum: [REQUEST, RESPONSE, RESPONSE_STREAM, INBOUND_STREAM]
                   description: phases at which matching exchanges will be paused
+                clientId:
+                  type: string
+                  description: >-
+                    Optional. When set, paused items are dispatched over the callback WebSocket
+                    (/_mockserver_callback_websocket) to this client id for interactive resolution.
+                    When absent, items are parked in the REST-poll queue.
       responses:
         '200':
           description: matcher registered successfully
@@ -1621,6 +1630,9 @@ paths:
                     type: array
                     items:
                       type: string
+                  clientId:
+                    type: string
+                    description: echoed back when provided in the request
         '400':
           description: validation error (missing httpRequest, empty phases, or unknown phase value)
           content:
@@ -1637,7 +1649,7 @@ paths:
       summary: list all registered breakpoint matchers
       description: >-
         Returns all currently registered breakpoint matchers. Each entry includes the matcher id,
-        the httpRequest definition, and the set of phases.
+        the httpRequest definition, the set of phases, and the clientId when present.
       responses:
         '200':
           description: list of registered matchers
@@ -1659,6 +1671,9 @@ paths:
                           type: array
                           items:
                             type: string
+                        clientId:
+                          type: string
+                          description: callback WebSocket client id that owns this matcher, present only when set at registration
     put:
       tags:
         - control

@@ -1,7 +1,7 @@
 ---
 title: Interactive Breakpoints
 shortTitle: Breakpoints
-description: Pause, inspect, modify, and resume proxied HTTP requests and responses in real time using MockServer interactive breakpoints.
+description: Pause, inspect, modify, and resume proxied HTTP exchanges in real time with MockServer interactive breakpoints — driven by request matchers and resolved over a callback WebSocket or the dashboard.
 layout: page
 pageOrder: 5
 section: 'Verify & Test'
@@ -9,76 +9,114 @@ subsection: true
 sitemap:
   priority: 0.7
   changefreq: 'monthly'
-  lastmod: 2026-06-09T00:00:00+00:00
-keywords: breakpoint, interactive debugging, http breakpoint, request inspection, response modification, stream breakpoint, sse breakpoint, mockserver proxy debug
+  lastmod: 2026-06-10T00:00:00+00:00
+keywords: breakpoint, interactive debugging, http breakpoint, request inspection, response modification, stream breakpoint, sse breakpoint, websocket breakpoint, grpc breakpoint, mockserver proxy debug
 ---
 
 <p>
-    Interactive breakpoints let you pause proxied or forwarded HTTP exchanges, inspect the request or response,
-    optionally modify it, and then continue or abort. This is useful for debugging integrations, testing error
-    handling with modified responses, and inspecting streaming traffic (SSE, chunked, gRPC, WebSocket, GraphQL subscription) frame by frame.
+    Interactive breakpoints let you pause proxied or forwarded HTTP exchanges, inspect and optionally modify the
+    request, response, or individual stream frames, and then continue or abort. This is useful for debugging
+    integrations, testing error handling, and inspecting streaming traffic (SSE, gRPC, WebSocket, GraphQL
+    subscription) frame by frame.
 </p>
 
-<p>Breakpoints are <strong>off by default</strong> and have zero overhead when no matchers are registered.</p>
+<p>
+    Breakpoints are <strong>off by default</strong> — there is zero overhead when no matchers are registered.
+    Only forwarded/proxied traffic is intercepted; mock-only responses are not paused.
+</p>
 
 <ul>
+    <li><a href="#how_it_works">How it works</a></li>
     <li><a href="#phases">Breakpoint phases</a></li>
-    <li><a href="#register">Registering a breakpoint matcher</a></li>
-    <li><a href="#workflow">Workflow: pause, inspect, decide</a></li>
-    <li><a href="#request_phase">Request-phase breakpoints</a></li>
-    <li><a href="#response_phase">Response-phase breakpoints</a></li>
-    <li><a href="#stream_phase">Stream-frame breakpoints</a></li>
-    <li><a href="#inbound_phase">Inbound frame breakpoints</a></li>
-    <li><a href="#rest_api">REST API reference</a></li>
+    <li><a href="#register">Registering a matcher</a></li>
+    <li><a href="#callback_ws">Resolving via the callback WebSocket</a></li>
+    <li><a href="#rest_resolution">Resolving via the REST API</a></li>
     <li><a href="#dashboard">Dashboard UI</a></li>
+    <li><a href="#client_examples">Client examples</a></li>
+    <li><a href="#rest_api">REST API reference</a></li>
     <li><a href="#safety">Safety rails</a></li>
 </ul>
+
+<a id="how_it_works" class="anchor" href="#how_it_works">&nbsp;</a>
+<h2>How It Works</h2>
+
+<p>
+    A breakpoint is a <strong>request matcher + set of phases</strong>. When MockServer forwards a request that
+    matches the matcher, the exchange is paused at each requested phase. Resolution is interactive: a connected
+    client (or the dashboard) receives the paused item over a callback WebSocket, inspects it, and sends a
+    decision. The server applies the decision and resumes the exchange.
+</p>
+
+<pre class="prettyprint lang-text code"><code class="code">1. Register a matcher     PUT /mockserver/breakpoint/matcher
+                          { "httpRequest": {...}, "phases": ["REQUEST","RESPONSE"], "clientId": "..." }
+
+2. A proxied request      GET /api/users → matched → paused at REQUEST phase
+   matches the matcher
+
+3. Server pushes          /_mockserver_callback_websocket  →  client or dashboard receives paused request
+
+4. Client decides         → Continue (forward original)
+                          → Modify  (forward a changed request)
+                          → Abort   (return error without forwarding)
+
+5. Server applies         the decision and resumes the exchange</code></pre>
+
+<p>
+    The callback WebSocket (<span class="inline_code">/_mockserver_callback_websocket</span>) is the same endpoint
+    that object-callback expectations use. All supported language clients and the dashboard speak the same protocol,
+    so a breakpoint registered by the Java client can be inspected with identical server-side behaviour as one
+    registered via the dashboard.
+</p>
 
 <a id="phases" class="anchor" href="#phases">&nbsp;</a>
 <h2>Breakpoint Phases</h2>
 
-<p>You can pause an exchange at four points:</p>
+<p>You can pause an exchange at four points in its lifecycle:</p>
 
 <table class="table table-bordered table-striped">
     <thead>
-        <tr><th>Phase</th><th>What is paused</th><th>Actions available</th></tr>
+        <tr><th>Phase constant</th><th>What is paused</th><th>Available actions</th></tr>
     </thead>
     <tbody>
         <tr>
-            <td><strong>Request</strong></td>
-            <td>The outbound request, before it is forwarded to the upstream server</td>
-            <td>Continue (forward as-is), Modify (forward a changed request), Abort (return error to client)</td>
+            <td><strong>REQUEST</strong></td>
+            <td>The outbound request, <em>before</em> it is sent to the upstream server</td>
+            <td>Continue (forward unchanged), Modify (forward a changed request), Abort (return error to client)</td>
         </tr>
         <tr>
-            <td><strong>Response</strong></td>
-            <td>The upstream response, before it is written to the client</td>
-            <td>Continue (write as-is), Modify (write a changed response), Abort (return error to client)</td>
+            <td><strong>RESPONSE</strong></td>
+            <td>The upstream response, <em>after</em> it is received but <em>before</em> it is written to the client.
+                Non-streaming (buffered) responses only — streaming responses use RESPONSE_STREAM.</td>
+            <td>Continue (write unchanged), Modify (write a changed response), Abort (return error to client)</td>
         </tr>
         <tr>
-            <td><strong>Stream frame</strong></td>
-            <td>Each individual frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, or GraphQL subscription)</td>
-            <td>Continue, Modify, Drop (discard frame), Inject (write original + extra frame), Close (end stream)</td>
+            <td><strong>RESPONSE_STREAM</strong></td>
+            <td>Each individual frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming,
+                WebSocket, GraphQL subscription)</td>
+            <td>Continue, Modify (replace body), Drop (discard frame), Inject (write original + extra frame),
+                Close (end stream)</td>
         </tr>
         <tr>
-            <td><strong>Inbound frame</strong></td>
-            <td>Each client-to-server frame on a bidirectional connection (WebSocket or GraphQL subscription). <em>Experimental, off by default.</em></td>
-            <td>Continue, Modify, Drop (discard frame), Inject (process original + extra frame), Close (close connection)</td>
+            <td><strong>INBOUND_STREAM</strong></td>
+            <td>Each client-to-server frame on a bidirectional connection (WebSocket, GraphQL subscription,
+                gRPC bidirectional)</td>
+            <td>Continue, Modify (replace body), Drop (discard frame), Inject (process original + extra frame),
+                Close (close connection)</td>
         </tr>
     </tbody>
 </table>
 
 <a id="register" class="anchor" href="#register">&nbsp;</a>
-<h2>Registering a Breakpoint Matcher</h2>
+<h2>Registering a Matcher</h2>
 
 <p>
-    Breakpoints are activated by registering a <strong>request matcher</strong> — there are no global on/off flags.
-    A matcher describes which requests to intercept and at which phases. Only forwarded/proxied exchanges are matched;
-    mock-only responses are not paused.
+    Breakpoints are activated by registering a request matcher. There are no global on/off flags — a breakpoint
+    fires only for requests that match a registered matcher at the specified phases.
 </p>
 
-<p>Register a matcher with <span class="inline_code">PUT /mockserver/breakpoint/matcher</span>:</p>
+<p>Register with <span class="inline_code">PUT /mockserver/breakpoint/matcher</span>:</p>
 
-<pre class="prettyprint lang-bash code"><code class="code"># Pause all GET /api/users requests at the request and response phases
+<pre class="prettyprint lang-bash code"><code class="code"># Pause all forwarded GET /api/users requests — hold at both request and response phases
 curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
   -H "Content-Type: application/json" \
   -d '{
@@ -87,16 +125,46 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
       "path": "/api/users"
     },
     "phases": ["REQUEST", "RESPONSE"]
-  }'</code></pre>
+  }'
 
-<p>The <span class="inline_code">httpRequest</span> body uses the same matcher fields as an expectation request matcher
-(<span class="inline_code">method</span>, <span class="inline_code">path</span>, <span class="inline_code">headers</span>,
-<span class="inline_code">queryStringParameters</span>, <span class="inline_code">body</span>, etc.).
-The <span class="inline_code">phases</span> array may contain any combination of
-<span class="inline_code">REQUEST</span>, <span class="inline_code">RESPONSE</span>,
-<span class="inline_code">RESPONSE_STREAM</span>, and <span class="inline_code">INBOUND_STREAM</span>.</p>
+# Response: { "id": "a1b2c3d4-...", "phases": ["REQUEST", "RESPONSE"] }
+</code></pre>
 
-<p>The response includes an <span class="inline_code">id</span> you can use to remove the matcher later.</p>
+<p>
+    The <span class="inline_code">httpRequest</span> body uses the same matcher fields as an expectation request
+    matcher: <span class="inline_code">method</span>, <span class="inline_code">path</span> (supports regex),
+    <span class="inline_code">headers</span>, <span class="inline_code">queryStringParameters</span>,
+    <span class="inline_code">body</span>, etc. See
+    <a href="/mock_server/creating_expectations.html">Creating Expectations</a> for the full matcher reference.
+</p>
+
+<p>
+    The <span class="inline_code">id</span> returned is a UUID you can use to remove the matcher later.
+    Registrations persist until explicitly removed or until <span class="inline_code">PUT /mockserver/reset</span>
+    is called.
+</p>
+
+<h3>Registering with a clientId for callback-WebSocket resolution</h3>
+
+<p>
+    Add a <span class="inline_code">clientId</span> field to route paused items directly to a connected
+    callback-WebSocket client (a language client or the dashboard) instead of the REST-park queue:
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest": { "path": "/api/.*" },
+    "phases": ["REQUEST", "RESPONSE"],
+    "clientId": "my-ws-client-id"
+  }'
+</code></pre>
+
+<p>
+    When <span class="inline_code">clientId</span> is present, the server dispatches the paused item over the
+    callback WebSocket to that client for interactive resolution. When absent, the item is parked in the
+    REST-based queue (<span class="inline_code">GET /mockserver/breakpoint</span>).
+</p>
 
 <h3>Matcher management endpoints</h3>
 
@@ -108,17 +176,19 @@ The <span class="inline_code">phases</span> array may contain any combination of
         <tr>
             <td>PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matcher</span></td>
-            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...]}</span>. Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td>
+            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "..."}</span>.
+                Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td>
         </tr>
         <tr>
             <td>GET / PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matchers</span></td>
-            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases}]}</span>.</td>
+            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases, clientId?}]}</span>.</td>
         </tr>
         <tr>
             <td>PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matcher/remove</span></td>
-            <td>Remove a matcher by id. Body: <span class="inline_code">{"id": "..."}</span>. Returns <span class="inline_code">{"status": "removed", "id": "..."}</span> or 404.</td>
+            <td>Remove a matcher by id. Body: <span class="inline_code">{"id": "..."}</span>. Returns
+                <span class="inline_code">{"status": "removed", "id": "..."}</span> or 404.</td>
         </tr>
         <tr>
             <td>PUT</td>
@@ -128,9 +198,536 @@ The <span class="inline_code">phases</span> array may contain any combination of
     </tbody>
 </table>
 
-<p>All matchers are cleared when <span class="inline_code">PUT /mockserver/reset</span> is called.</p>
+<a id="callback_ws" class="anchor" href="#callback_ws">&nbsp;</a>
+<h2>Resolving via the Callback WebSocket (Recommended)</h2>
 
-<h3>Safety-rail configuration properties</h3>
+<p>
+    The callback WebSocket (<span class="inline_code">/_mockserver_callback_websocket</span>) is the primary
+    resolution mechanism when using a language client or the dashboard. Each client connects once, receives a
+    server-assigned <span class="inline_code">clientId</span>, and passes it when registering matchers. The server
+    then dispatches paused items only to that client.
+</p>
+
+<p>
+    Multiple clients can coexist — each breakpoint is owned by one client and dispatched only to it. When a
+    client disconnects, the server automatically removes its matchers and auto-continues any in-flight dispatches.
+</p>
+
+<h3>REQUEST and RESPONSE phases</h3>
+
+<p>
+    When a request/response exchange is paused, the server pushes it to the owning client over the callback WS.
+    The client replies with:
+</p>
+
+<ul>
+    <li>
+        <strong>REQUEST phase</strong> — an <span class="inline_code">HttpRequest</span> to continue/modify the
+        outbound request, or an <span class="inline_code">HttpResponse</span> to abort (write that response to
+        the downstream client without forwarding).
+    </li>
+    <li>
+        <strong>RESPONSE phase</strong> — an <span class="inline_code">HttpResponse</span> to write (continue
+        with the original, or a modified replacement).
+    </li>
+</ul>
+
+<p>
+    The matched breakpoint id is conveyed via the
+    <span class="inline_code">X-MockServer-BreakpointId</span> header on the dispatched
+    <span class="inline_code">HttpRequest</span>. This lets clients with multiple registered matchers route
+    each paused item to the correct handler.
+</p>
+
+<h3>RESPONSE_STREAM and INBOUND_STREAM phases (per-frame protocol)</h3>
+
+<p>
+    For streaming phases, each held frame is dispatched as a <span class="inline_code">PausedStreamFrameDTO</span>
+    message over the callback WS. The client sends back a <span class="inline_code">StreamFrameDecisionDTO</span>.
+</p>
+
+<h4>Server to client: PausedStreamFrameDTO</h4>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">correlationId</span></td><td>String</td><td>Unique per paused frame; the client MUST echo this in the reply</td></tr>
+        <tr><td><span class="inline_code">streamId</span></td><td>String</td><td>Groups frames from the same forwarded response or connection</td></tr>
+        <tr><td><span class="inline_code">sequenceNumber</span></td><td>int</td><td>0-based, monotonically increasing within the stream</td></tr>
+        <tr><td><span class="inline_code">direction</span></td><td>String</td><td><span class="inline_code">"OUTBOUND"</span> (server-to-client frames) or <span class="inline_code">"INBOUND"</span> (client-to-server frames)</td></tr>
+        <tr><td><span class="inline_code">phase</span></td><td>String</td><td><span class="inline_code">"RESPONSE_STREAM"</span> or <span class="inline_code">"INBOUND_STREAM"</span></td></tr>
+        <tr><td><span class="inline_code">body</span></td><td>String</td><td>Frame payload, Base64-encoded (RFC 4648, no line breaks). Frame bytes are protocol-specific — gRPC is length-prefixed, WebSocket may be text or binary, SSE is UTF-8 text.</td></tr>
+        <tr><td><span class="inline_code">requestMethod</span></td><td>String (nullable)</td><td>HTTP method of the original request</td></tr>
+        <tr><td><span class="inline_code">requestPath</span></td><td>String (nullable)</td><td>Path of the original request</td></tr>
+        <tr><td><span class="inline_code">breakpointId</span></td><td>String (nullable)</td><td>Id of the matched breakpoint matcher, for per-breakpoint handler routing</td></tr>
+    </tbody>
+</table>
+
+<h4>Client to server: StreamFrameDecisionDTO</h4>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">correlationId</span></td><td>String</td><td>MUST match <span class="inline_code">PausedStreamFrameDTO.correlationId</span></td></tr>
+        <tr><td><span class="inline_code">action</span></td><td>String</td><td>One of: <span class="inline_code">CONTINUE</span>, <span class="inline_code">MODIFY</span>, <span class="inline_code">DROP</span>, <span class="inline_code">INJECT</span>, <span class="inline_code">CLOSE</span></td></tr>
+        <tr><td><span class="inline_code">body</span></td><td>String (nullable)</td><td>Base64-encoded replacement or injected bytes; required for MODIFY and INJECT</td></tr>
+    </tbody>
+</table>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Action</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>CONTINUE</strong></td><td>Write the original frame unchanged</td></tr>
+        <tr><td><strong>MODIFY</strong></td><td>Write the <span class="inline_code">body</span> bytes instead of the original</td></tr>
+        <tr><td><strong>DROP</strong></td><td>Discard the frame (the downstream client never sees it)</td></tr>
+        <tr><td><strong>INJECT</strong></td><td>Write the original frame AND an additional frame with the <span class="inline_code">body</span> bytes</td></tr>
+        <tr><td><strong>CLOSE</strong></td><td>End the stream at this frame (sends a final close signal and evicts all remaining held frames)</td></tr>
+    </tbody>
+</table>
+
+<p>
+    <strong>gRPC framing note:</strong> for gRPC streams, replacement bytes for MODIFY and INJECT must be a
+    valid gRPC length-prefixed frame (1-byte compressed flag + 4-byte big-endian message length + message bytes).
+    The breakpoint engine passes bytes through opaquely and does not re-frame the content.
+</p>
+
+<a id="rest_resolution" class="anchor" href="#rest_resolution">&nbsp;</a>
+<h2>Resolving via the REST API</h2>
+
+<p>
+    When no <span class="inline_code">clientId</span> is set on a matcher, paused exchanges are parked in
+    the REST-based queue. This is useful for scripted tooling or when you want to poll and resolve breakpoints
+    without maintaining a persistent WebSocket connection.
+</p>
+
+<h3>Request/response exchanges</h3>
+
+<pre class="prettyprint lang-bash code"><code class="code"># List all currently paused exchanges
+curl -s http://localhost:1080/mockserver/breakpoint
+
+# Continue unchanged
+curl -X PUT http://localhost:1080/mockserver/breakpoint/continue \
+  -d '{"id": "pause-id-from-list"}'
+
+# Modify — add an Authorization header to the outbound request
+curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
+  -d '{
+    "id": "pause-id-from-list",
+    "httpRequest": {
+      "headers": { "Authorization": ["Bearer test-token"] }
+    }
+  }'
+
+# Modify a response
+curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
+  -d '{
+    "id": "pause-id-from-list",
+    "httpResponse": { "statusCode": 200, "body": "{\"ok\": true}" }
+  }'
+
+# Abort — return an error to the client without forwarding
+curl -X PUT http://localhost:1080/mockserver/breakpoint/abort \
+  -d '{"id": "pause-id-from-list"}'
+</code></pre>
+
+<h3>Stream frames</h3>
+
+<pre class="prettyprint lang-bash code"><code class="code"># List all held stream frames
+curl -s http://localhost:1080/mockserver/breakpoint/streams
+
+# Continue a frame unchanged
+curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/continue \
+  -d '{"id": "frame-id"}'
+
+# Modify a frame (replacement body as plain text; server Base64-encodes if needed)
+curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/modify \
+  -d '{"id": "frame-id", "body": "data: modified event\n\n"}'
+
+# Drop a frame
+curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/drop \
+  -d '{"id": "frame-id"}'
+
+# Inject an extra frame after the current one
+curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/inject \
+  -d '{"id": "frame-id", "body": "data: injected event\n\n"}'
+
+# Close the stream at this frame
+curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/close \
+  -d '{"id": "frame-id"}'
+</code></pre>
+
+<a id="dashboard" class="anchor" href="#dashboard">&nbsp;</a>
+<h2>Dashboard UI</h2>
+
+<p>
+    The MockServer dashboard includes a <strong>Breakpoints</strong> panel — the no-code way to use breakpoints.
+    The dashboard is a real callback-WebSocket client: it connects to
+    <span class="inline_code">/_mockserver_callback_websocket</span> exactly as a language client does,
+    receives a server-assigned <span class="inline_code">clientId</span>, and uses it when registering matchers.
+    The Breakpoints panel has three tabs:
+</p>
+
+<h3>Matchers tab</h3>
+<p>
+    A form to register a breakpoint matcher — enter a method (optional), a path pattern (supports regex),
+    and check which phases to intercept. On submit, the dashboard calls
+    <span class="inline_code">PUT /mockserver/breakpoint/matcher</span> with its own
+    <span class="inline_code">clientId</span>. The tab lists all registered matchers with remove and clear-all
+    actions.
+</p>
+
+<h3>Live Exchanges tab</h3>
+<p>
+    When a REQUEST or RESPONSE phase breakpoint fires on a forwarded exchange, the server pushes it to the
+    dashboard over the callback WS. The tab shows it in real time. Buttons:
+</p>
+<ul>
+    <li><strong>Continue</strong> — send the original request/response unchanged</li>
+    <li><strong>Modify</strong> — open a JSON editor, change the request or response, send the modified version</li>
+    <li><strong>Abort</strong> — REQUEST phase only; returns a 503 to the downstream client without forwarding</li>
+</ul>
+
+<h3>Live Streams tab</h3>
+<p>
+    Paused stream frames (RESPONSE_STREAM and INBOUND_STREAM phases) are shown in real time with direction,
+    stream ID, sequence number, and a decoded body preview. Buttons: <strong>Continue</strong>,
+    <strong>Modify</strong> (edit body and re-encode), <strong>Drop</strong>, <strong>Inject</strong>
+    (extra frame after the held one), <strong>Close</strong> (end the stream).
+</p>
+
+<p>
+    The Breakpoints panel shows a connection-state indicator (green = connected, yellow = reconnecting,
+    red = disconnected). It reconnects automatically with exponential backoff on disconnect.
+</p>
+
+<a id="client_examples" class="anchor" href="#client_examples">&nbsp;</a>
+<h2>Client Examples</h2>
+
+<p>
+    All supported language clients expose a breakpoint API that opens a callback WebSocket connection,
+    registers matchers with the assigned <span class="inline_code">clientId</span>, and invokes handler
+    callbacks when the server dispatches paused items. The WebSocket connection is opened lazily on the first
+    <span class="inline_code">addBreakpoint</span> call and reused for all subsequent registrations from
+    the same client instance.
+</p>
+
+<p>
+    <strong>PHP is not supported</strong> for breakpoints — PHP runtimes do not have practical WebSocket
+    support. Use the REST API (<a href="#rest_resolution">above</a>) for polling-based resolution from PHP.
+</p>
+
+<h3>Java</h3>
+
+<pre class="prettyprint lang-java code"><code class="code">import org.mockserver.client.MockServerClient;
+import org.mockserver.mock.breakpoint.BreakpointPhase;
+
+MockServerClient client = new MockServerClient("localhost", 1080);
+
+// REQUEST phase only — return a modified request or an HttpResponse to abort
+String id = client.addBreakpoint(
+    request().withPath("/api/.*"),
+    request -> request.withHeader("Authorization", "Bearer test-token")  // BreakpointRequestHandler
+);
+
+// REQUEST + RESPONSE
+String id2 = client.addBreakpoint(
+    request().withPath("/api/.*"),
+    request -> request,                              // BreakpointRequestHandler
+    (request, response) -> response.withBody("{}")   // BreakpointResponseHandler
+);
+
+// Streaming phases (RESPONSE_STREAM / INBOUND_STREAM)
+String id3 = client.addBreakpoint(
+    request().withPath("/stream/.*"),
+    EnumSet.of(BreakpointPhase.RESPONSE_STREAM),
+    null, null,
+    frame -> new StreamFrameDecisionDTO()            // BreakpointStreamFrameHandler
+        .setCorrelationId(frame.getCorrelationId())
+        .setAction("CONTINUE")
+);
+
+// Manage matchers
+client.listBreakpointMatchers();
+client.removeBreakpointMatcher(id);
+client.clearBreakpointMatchers();
+</code></pre>
+
+<h3>Node.js</h3>
+
+<pre class="prettyprint lang-js code"><code class="code">const mockserver = require('mockserver-client').mockServerClient;
+const client = mockserver('localhost', 1080);
+
+// REQUEST phase only
+client.addRequestBreakpoint(
+    { path: '/api/.*' },
+    function (request) {
+        request.headers = request.headers || [];
+        request.headers.push({ name: 'Authorization', values: ['Bearer test-token'] });
+        return request;  // return an HttpResponse object to abort instead
+    }
+).then(function (id) { console.log('registered:', id); });
+
+// REQUEST + RESPONSE
+client.addRequestAndResponseBreakpoint(
+    { path: '/api/.*' },
+    function (request) { return request; },
+    function (request, response) { return response; }
+);
+
+// Streaming phases
+client.addBreakpoint(
+    { path: '/stream/.*' },
+    ['RESPONSE_STREAM'],
+    null,    // no request handler
+    null,    // no response handler
+    function (frame) {
+        // frame: { correlationId, streamId, sequenceNumber, direction, phase, body (base64) }
+        return { action: 'CONTINUE' };
+        // Other actions: MODIFY (with body), DROP, INJECT (with body), CLOSE
+    }
+);
+
+// Manage matchers
+client.listBreakpointMatchers().then(result => console.log(result.matchers));
+client.removeBreakpointMatcher(id);
+client.clearBreakpointMatchers();
+</code></pre>
+
+<h3>Python</h3>
+
+<pre class="prettyprint lang-python code"><code class="code">from mockserver import MockServerClient, HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+
+# REQUEST phase only
+bp_id = client.add_request_breakpoint(
+    HttpRequest(path="/api/.*"),
+    lambda request: request,  # continue unchanged; return HttpResponse to abort
+)
+
+# REQUEST + RESPONSE
+bp_id2 = client.add_request_and_response_breakpoint(
+    HttpRequest(path="/api/.*"),
+    lambda request: request,
+    lambda request, response: response,
+)
+
+# Streaming phases
+bp_id3 = client.add_breakpoint(
+    HttpRequest(path="/stream/.*"),
+    ["RESPONSE_STREAM"],
+    stream_frame_handler=lambda frame: {"action": "CONTINUE"},
+    # Other actions: MODIFY (with body), DROP, INJECT (with body), CLOSE
+)
+
+# Manage matchers
+matchers = client.list_breakpoint_matchers()  # {"matchers": [...]}
+client.remove_breakpoint_matcher(bp_id)
+client.clear_breakpoint_matchers()
+
+# Async client: AsyncMockServerClient exposes the same methods as coroutines
+</code></pre>
+
+<h3>Ruby</h3>
+
+<pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver'
+
+client = MockServer::Client.new('localhost', 1080)
+
+# REQUEST phase only
+bp_id = client.add_request_breakpoint(
+  MockServer::HttpRequest.new(path: '/api/.*'),
+  ->(request) { request }  # continue unchanged; return HttpResponse to abort
+)
+
+# REQUEST + RESPONSE
+bp_id2 = client.add_request_and_response_breakpoint(
+  MockServer::HttpRequest.new(path: '/api/.*'),
+  ->(request) { request },
+  ->(request, response) { response }
+)
+
+# Streaming phases
+bp_id3 = client.add_breakpoint(
+  MockServer::HttpRequest.new(path: '/stream/.*'),
+  %w[RESPONSE_STREAM],
+  stream_frame_handler: ->(frame) { { 'action' => 'CONTINUE' } }
+  # Other actions: MODIFY (with body), DROP, INJECT (with body), CLOSE
+)
+
+# Manage matchers
+matchers = client.list_breakpoint_matchers   # {"matchers" => [...]}
+client.remove_breakpoint_matcher(bp_id)
+client.clear_breakpoint_matchers
+</code></pre>
+
+<h3>Go</h3>
+
+<pre class="prettyprint lang-go code"><code class="code">import (
+    mockserver "github.com/mock-server/mockserver-client-go"
+)
+
+client := mockserver.NewClient("localhost", 1080)
+
+// REQUEST-only breakpoint
+id, _ := client.AddRequestBreakpoint(
+    mockserver.Request().Path("/api/.*"),
+    func(req map[string]interface{}) interface{} {
+        return req // continue with original; return a response map to abort
+    },
+)
+
+// REQUEST + RESPONSE breakpoint
+id2, _ := client.AddRequestResponseBreakpoint(
+    mockserver.Request().Path("/api/.*"),
+    func(req map[string]interface{}) interface{} { return req },
+    func(req, resp map[string]interface{}) map[string]interface{} { return resp },
+)
+
+// Streaming breakpoint
+id3, _ := client.AddStreamBreakpoint(
+    mockserver.Request().Path("/stream/.*"),
+    []mockserver.BreakpointPhase{mockserver.PhaseResponseStream},
+    func(frame *mockserver.PausedStreamFrame) *mockserver.StreamFrameDecision {
+        d := mockserver.ContinueFrame(frame.CorrelationID)
+        return &d
+        // Other helpers: ModifyFrame, DropFrame, InjectFrame, CloseFrame
+    },
+)
+
+// Manage matchers
+list, _ := client.ListBreakpointMatchers()
+client.RemoveBreakpointMatcher(id)
+client.ClearBreakpointMatchers()
+client.CloseBreakpointWebSocket()
+</code></pre>
+
+<h3>.NET</h3>
+
+<pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+using System.Text.Json.Nodes;
+
+var client = new MockServerClient("localhost", 1080);
+
+// REQUEST-only breakpoint
+var id = client.AddRequestBreakpoint(
+    HttpRequest.Request().WithPath("/api/.*").Build(),
+    request => request  // continue with original; return an HttpResponse to abort
+);
+
+// REQUEST + RESPONSE breakpoint
+var id2 = client.AddRequestResponseBreakpoint(
+    HttpRequest.Request().WithPath("/api/.*").Build(),
+    request => request,
+    (request, response) => response
+);
+
+// Streaming breakpoint
+var id3 = client.AddStreamBreakpoint(
+    HttpRequest.Request().WithPath("/stream/.*").Build(),
+    new[] { BreakpointPhase.ResponseStream },
+    frame => StreamFrameDecision.Continue(frame.CorrelationId!)
+    // Other helpers: .Modify, .Drop, .Inject, .Close
+);
+
+// Manage matchers
+var list = client.ListBreakpointMatchers();
+client.RemoveBreakpointMatcher(id);
+client.ClearBreakpointMatchers();
+</code></pre>
+
+<h3>Rust</h3>
+
+<pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::*;
+
+let client = ClientBuilder::new("localhost", 1080).build()?;
+
+// REQUEST-only breakpoint
+let id = client.add_request_breakpoint(
+    HttpRequest::new().path("/api/.*"),
+    Box::new(|req| Some(req)),  // continue with original; return None to use original
+)?;
+
+// REQUEST + RESPONSE breakpoint
+let id2 = client.add_request_response_breakpoint(
+    HttpRequest::new().path("/api/.*"),
+    Box::new(|req| Some(req)),
+    Box::new(|_req, resp| Some(resp)),
+)?;
+
+// Streaming breakpoint
+let id3 = client.add_stream_breakpoint(
+    HttpRequest::new().path("/stream/.*"),
+    &[phase::RESPONSE_STREAM],
+    Box::new(|frame| {
+        Some(StreamFrameDecision::continue_frame(&frame.correlation_id))
+        // Other helpers: ::modify, ::drop_frame, ::inject, ::close
+    }),
+)?;
+
+// Manage matchers
+let list = client.list_breakpoint_matchers()?;
+client.remove_breakpoint_matcher(&id)?;
+client.clear_breakpoint_matchers()?;
+client.close_breakpoint_websocket();
+</code></pre>
+
+<a id="rest_api" class="anchor" href="#rest_api">&nbsp;</a>
+<h2>REST API Reference</h2>
+
+<h3>Matcher registration</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher</span></td><td>Register a matcher. Body: <span class="inline_code">{"httpRequest":{...}, "phases":[...], "clientId":"..."}</span>. Returns <span class="inline_code">{"id":"...", "phases":[...]}</span>.</td></tr>
+        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint/matchers</span></td><td>List all matchers: <span class="inline_code">{"matchers":[{id, httpRequest, phases, clientId?}]}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/remove</span></td><td>Remove by id: <span class="inline_code">{"id":"..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/clear</span></td><td>Remove all matchers</td></tr>
+    </tbody>
+</table>
+
+<h3>Request / response exchanges (REST-park resolution)</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint</span></td><td>List all paused exchanges. Includes <span class="inline_code">phase</span>, request summary, and (for RESPONSE phase) response summary.</td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/continue</span></td><td>Continue: <span class="inline_code">{"id":"..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/modify</span></td><td>Modify: <span class="inline_code">{"id":"...", "httpRequest":{...}}</span> for request phase; <span class="inline_code">{"id":"...", "httpResponse":{...}}</span> for response phase</td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/abort</span></td><td>Abort: <span class="inline_code">{"id":"..."}</span></td></tr>
+    </tbody>
+</table>
+
+<h3>Stream frames (REST-park resolution)</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>GET</td><td><span class="inline_code">/mockserver/breakpoint/streams</span></td><td>List all held frames grouped by stream. Includes <span class="inline_code">direction</span> (INBOUND/OUTBOUND).</td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/continue</span></td><td>Continue: <span class="inline_code">{"id":"..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/modify</span></td><td>Modify: <span class="inline_code">{"id":"...", "body":"..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/drop</span></td><td>Drop: <span class="inline_code">{"id":"..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/inject</span></td><td>Inject after frame: <span class="inline_code">{"id":"...", "body":"..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/close</span></td><td>Close stream: <span class="inline_code">{"id":"..."}</span></td></tr>
+    </tbody>
+</table>
+
+<a id="safety" class="anchor" href="#safety">&nbsp;</a>
+<h2>Safety Rails</h2>
 
 <table class="table table-bordered table-striped">
     <thead>
@@ -141,237 +738,37 @@ The <span class="inline_code">phases</span> array may contain any combination of
             <td><span class="inline_code">mockserver.breakpointTimeoutMillis</span></td>
             <td><span class="inline_code">MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS</span></td>
             <td><span class="inline_code">30000</span></td>
-            <td>Auto-continue timeout in milliseconds (shared across all phases)</td>
+            <td>Auto-continue timeout in milliseconds. A paused exchange or frame that is not resolved within
+                this period is automatically continued with the original request/response/frame. Shared across
+                all phases.</td>
         </tr>
         <tr>
             <td><span class="inline_code">mockserver.breakpointMaxHeld</span></td>
             <td><span class="inline_code">MOCKSERVER_BREAKPOINT_MAX_HELD</span></td>
             <td><span class="inline_code">50</span></td>
-            <td>Maximum number of concurrently paused exchanges or frames</td>
+            <td>Maximum number of concurrently paused exchanges and frames (across all phases and registries).
+                When the cap is reached, new intercepts are skipped — the exchange proceeds normally.</td>
         </tr>
     </tbody>
 </table>
 
-<a id="workflow" class="anchor" href="#workflow">&nbsp;</a>
-<h2>Workflow</h2>
-
-<p>The typical workflow is:</p>
-
-<ol>
-    <li><strong>Register</strong> a breakpoint matcher via <span class="inline_code">PUT /mockserver/breakpoint/matcher</span>, specifying the request to match and the phase(s) to intercept</li>
-    <li><strong>Send a request</strong> through MockServer (proxy or forward mode)</li>
-    <li><strong>List paused exchanges</strong> &mdash; <span class="inline_code">GET /mockserver/breakpoint</span> returns all currently held exchanges with their IDs, phase, and captured request/response data</li>
-    <li><strong>Inspect</strong> the paused request or response</li>
-    <li><strong>Decide</strong> &mdash; continue, modify, or abort via the REST API (or click in the dashboard)</li>
-</ol>
-
-<p>If you do not resolve a paused exchange within the timeout (default 30 seconds), it auto-continues.</p>
-
-<a id="request_phase" class="anchor" href="#request_phase">&nbsp;</a>
-<h2>Request-Phase Breakpoints</h2>
-
-<p>
-    When a matcher with the <span class="inline_code">REQUEST</span> phase is registered, every proxied or forwarded
-    request whose path and method match that matcher pauses before being sent to the upstream server. You can inspect
-    the request and then:
-</p>
-
+<p>Additional safety behaviours:</p>
 <ul>
-    <li><strong>Continue</strong> &mdash; forward the original request unchanged</li>
-    <li><strong>Modify</strong> &mdash; forward a replacement request (e.g. add a header, change the body)</li>
-    <li><strong>Abort</strong> &mdash; return an error response to the client without forwarding</li>
+    <li><strong>Non-blocking:</strong> the breakpoint mechanism is fully asynchronous. No Netty event-loop or
+        scheduler thread is blocked while waiting for a decision.</li>
+    <li><strong>Stream-close eviction:</strong> when a stream completes or errors, all held frames for that
+        stream are automatically continued, preventing resource leaks and hanging futures.</li>
+    <li><strong>Disconnect cleanup:</strong> when a callback-WebSocket client disconnects, the server removes
+        all its breakpoint matchers and auto-continues any in-flight dispatches.</li>
+    <li><strong>Frame ordering:</strong> frames within a stream must be resolved in sequence — attempting to
+        resolve frame N before frame N-1 is rejected.</li>
 </ul>
-
-<p>Example: modify a paused request to add an authorization header:</p>
-
-<pre class="prettyprint lang-bash code"><code class="code"># List paused exchanges
-curl -s http://localhost:1080/mockserver/breakpoint
-
-# Modify the request
-curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
-  -d '{
-    "id": "pause-id-from-list",
-    "httpRequest": {
-      "headers": {
-        "Authorization": ["Bearer test-token"]
-      }
-    }
-  }'</code></pre>
-
-<a id="response_phase" class="anchor" href="#response_phase">&nbsp;</a>
-<h2>Response-Phase Breakpoints</h2>
-
-<p>
-    When a matcher with the <span class="inline_code">RESPONSE</span> phase is registered, the upstream response is held
-    before being written to the client for any matching request. This applies to non-streaming (buffered) responses only
-    &mdash; streaming responses use stream-frame breakpoints instead.
-</p>
-
-<p>
-    The paused exchange includes the response <span class="inline_code">statusCode</span> and
-    <span class="inline_code">reasonPhrase</span> in the list output. To modify the response:
-</p>
-
-<pre class="prettyprint lang-bash code"><code class="code">curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
-  -d '{
-    "id": "pause-id-from-list",
-    "httpResponse": {
-      "statusCode": 200,
-      "body": "{\"modified\": true}"
-    }
-  }'</code></pre>
-
-<a id="stream_phase" class="anchor" href="#stream_phase">&nbsp;</a>
-<h2>Stream-Frame Breakpoints</h2>
-
-<p>
-    When a matcher with the <span class="inline_code">RESPONSE_STREAM</span> phase is registered, each frame
-    of a matching streaming response is held individually before being written to the client.
-    This covers SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket (eager/scripted and bidirectional),
-    and GraphQL subscription pushes. It lets you inspect and manipulate streaming traffic frame by frame.
-</p>
-
-<p>Available actions for each frame:</p>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Action</th><th>Effect</th></tr>
-    </thead>
-    <tbody>
-        <tr><td><strong>Continue</strong></td><td>Write the original frame to the client</td></tr>
-        <tr><td><strong>Modify</strong></td><td>Write a replacement body for this frame</td></tr>
-        <tr><td><strong>Drop</strong></td><td>Discard the frame (client never sees it)</td></tr>
-        <tr><td><strong>Inject</strong></td><td>Write the original frame plus an extra frame after it</td></tr>
-        <tr><td><strong>Close</strong></td><td>End the stream at this frame (sends a final close and evicts remaining held frames)</td></tr>
-    </tbody>
-</table>
-
-<p>
-    Frames within a stream must be resolved in order &mdash; resolving frame 3 before frame 2 is rejected.
-    For SSE/HTTP-chunked streams and sequenced gRPC/WebSocket streams, the upstream is automatically back-pressured
-    while a frame is held (the next chunk or message is not requested until the current frame is resolved).
-    However, bidirectional WebSocket and GraphQL subscription pushes are <strong>not</strong> back-pressured &mdash;
-    frames are parked concurrently as they arrive and can hit the
-    <span class="inline_code">breakpointMaxHeld</span> cap under high throughput.
-</p>
-
-<a id="inbound_phase" class="anchor" href="#inbound_phase">&nbsp;</a>
-<h2>Inbound Frame Breakpoints</h2>
-
-<p>
-    When a matcher with the <span class="inline_code">INBOUND_STREAM</span> phase is registered, each
-    client-to-server frame on a matching bidirectional WebSocket or GraphQL subscription connection is held before
-    MockServer processes it. This lets you inspect, modify, drop, or inject inbound frames &mdash;
-    useful for testing how an upstream server handles manipulated client messages.
-</p>
-
-<p>
-    Inbound frame breakpoints cover WebSocket bidirectional, GraphQL subscription, and gRPC bidirectional
-    connections. For gRPC-bidi, the implementation releases each HTTP/2 DATA frame immediately (refunding
-    the flow-control window) and uses pull-based <span class="inline_code">ctx.read()</span> backpressure.
-    This feature is <strong>off by default</strong> and experimental.
-</p>
-
-<p>
-    Inbound frames use the same REST API endpoints as stream-frame breakpoints
-    (<span class="inline_code">/mockserver/breakpoint/stream/*</span>).
-    The <span class="inline_code">/mockserver/breakpoint/streams</span> list endpoint includes a
-    <span class="inline_code">direction</span> field (<span class="inline_code">INBOUND</span> for client-to-server,
-    <span class="inline_code">OUTBOUND</span> for server-to-client) so you can distinguish them.
-</p>
-
-<a id="rest_api" class="anchor" href="#rest_api">&nbsp;</a>
-<h2>REST API Reference</h2>
-
-<h3>Breakpoint matcher registration</h3>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher</span></td><td>Register a matcher: <span class="inline_code">{"httpRequest": {...}, "phases": [...]}</span>. Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td></tr>
-        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint/matchers</span></td><td>List all registered matchers: <span class="inline_code">{"matchers": [{id, httpRequest, phases}]}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/remove</span></td><td>Remove a matcher: <span class="inline_code">{"id": "..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/clear</span></td><td>Remove all matchers</td></tr>
-    </tbody>
-</table>
-
-<h3>Request / response breakpoints</h3>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint</span></td><td>List all paused exchanges (includes <span class="inline_code">phase</span>, request/response data)</td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/continue</span></td><td>Continue a paused exchange: <span class="inline_code">{"id": "..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/modify</span></td><td>Modify: <span class="inline_code">{"id": "...", "httpRequest": {...}}</span> for request phase, or <span class="inline_code">{"id": "...", "httpResponse": {...}}</span> for response phase</td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/abort</span></td><td>Abort: return error to client without forwarding: <span class="inline_code">{"id": "..."}</span></td></tr>
-    </tbody>
-</table>
-
-<h3>Stream-frame breakpoints</h3>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-        <tr><td>GET</td><td><span class="inline_code">/mockserver/breakpoint/streams</span></td><td>List all held frames grouped by stream</td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/continue</span></td><td>Continue a held frame: <span class="inline_code">{"id": "..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/modify</span></td><td>Modify a frame: <span class="inline_code">{"id": "...", "body": "..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/drop</span></td><td>Drop a frame: <span class="inline_code">{"id": "..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/inject</span></td><td>Inject after a frame: <span class="inline_code">{"id": "...", "body": "..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/close</span></td><td>Close stream at a frame: <span class="inline_code">{"id": "..."}</span></td></tr>
-    </tbody>
-</table>
-
-<a id="dashboard" class="anchor" href="#dashboard">&nbsp;</a>
-<h2>Dashboard UI</h2>
-
-<p>
-    The MockServer dashboard includes a <strong>Breakpoints</strong> panel that shows all currently paused exchanges.
-    Each paused exchange displays:
-</p>
-
-<ul>
-    <li>A <strong>Phase</strong> indicator (<span class="inline_code">REQUEST</span> or <span class="inline_code">RESPONSE</span>)</li>
-    <li>For request-phase: the HTTP method and path</li>
-    <li>For response-phase: the status code and reason phrase</li>
-    <li><strong>Continue</strong>, <strong>Modify</strong>, and <strong>Abort</strong> buttons</li>
-</ul>
-
-<p>
-    The Modify dialog provides a JSON editor: edit the request JSON for request-phase exchanges, or the
-    response JSON for response-phase exchanges. Click "Apply" to send the modified exchange.
-</p>
-
-<a id="safety" class="anchor" href="#safety">&nbsp;</a>
-<h2>Safety Rails</h2>
-
-<ul>
-    <li><strong>Timeout auto-continue:</strong> paused exchanges auto-continue after <span class="inline_code">breakpointTimeoutMillis</span> (default 30 seconds) if not resolved, preventing requests from hanging indefinitely.</li>
-    <li><strong>Max-held cap:</strong> when <span class="inline_code">breakpointMaxHeld</span> (default 50) exchanges are held simultaneously, new intercepts are skipped (pass through without pausing).</li>
-    <li><strong>Non-blocking:</strong> the breakpoint mechanism is fully asynchronous. No Netty event-loop or scheduler thread is blocked while waiting for a decision.</li>
-    <li><strong>Stream-close eviction:</strong> when a stream completes or errors, all held frames for that stream are auto-continued.</li>
-</ul>
-
-<h2>Java Client</h2>
-
-<p>
-    <span class="inline_code">MockServerClient</span> provides typed methods for breakpoint resolution:
-</p>
-
-<pre class="prettyprint lang-java code"><code class="code">// Request-phase modify
-mockServerClient.modifyBreakpoint(pauseId, modifiedRequest);
-
-// Response-phase modify
-mockServerClient.modifyBreakpointResponse(pauseId, modifiedResponse);</code></pre>
 
 <h2>Related Pages</h2>
 
 <ul>
-    <li><a href="/mock_server/configuration_properties.html">Configuration Properties</a> &mdash; full reference for breakpoint properties</li>
-    <li><a href="/mock_server/mockserver_ui.html">MockServer UI</a> &mdash; dashboard including the Breakpoints panel</li>
+    <li><a href="/mock_server/configuration_properties.html">Configuration Properties</a> &mdash; full reference for <span class="inline_code">breakpointTimeoutMillis</span> and <span class="inline_code">breakpointMaxHeld</span></li>
+    <li><a href="/mock_server/mockserver_ui.html">MockServer Dashboard</a> &mdash; includes the Breakpoints panel</li>
+    <li><a href="/mock_server/creating_expectations.html">Creating Expectations</a> &mdash; request matcher field reference</li>
+    <li><a href="/mock_server/mockserver_clients.html">MockServer Clients</a> &mdash; client library overview</li>
 </ul>
