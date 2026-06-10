@@ -769,7 +769,7 @@ public class HttpActionHandler {
                                 java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.BreakpointDecision> decisionFuture = null;
                                 if (requestBreakpoint.getClientId() != null) {
                                     decisionFuture = org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchRequest(
-                                        requestBreakpoint.getClientId(), request,
+                                        requestBreakpoint.getClientId(), requestBreakpoint.getId(), request,
                                         httpStateHandler.getWebSocketClientRegistry(),
                                         configuration, mockServerLogger
                                     );
@@ -2375,7 +2375,7 @@ public class HttpActionHandler {
         if (breakpoint.getClientId() != null) {
             // WS-callback dispatch path
             decisionFuture = org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchResponse(
-                breakpoint.getClientId(), request, response,
+                breakpoint.getClientId(), breakpoint.getId(), request, response,
                 httpStateHandler.getWebSocketClientRegistry(),
                 configuration, mockServerLogger
             );

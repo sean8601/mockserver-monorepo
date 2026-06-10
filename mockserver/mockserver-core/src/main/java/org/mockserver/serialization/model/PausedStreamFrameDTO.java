@@ -42,6 +42,7 @@ public class PausedStreamFrameDTO extends ObjectWithReflectiveEqualsHashCodeToSt
     private String body;
     private String requestMethod;
     private String requestPath;
+    private String breakpointId;
 
     public String getCorrelationId() {
         return correlationId;
@@ -112,6 +113,15 @@ public class PausedStreamFrameDTO extends ObjectWithReflectiveEqualsHashCodeToSt
 
     public PausedStreamFrameDTO setRequestPath(String requestPath) {
         this.requestPath = requestPath;
+        return this;
+    }
+
+    public String getBreakpointId() {
+        return breakpointId;
+    }
+
+    public PausedStreamFrameDTO setBreakpointId(String breakpointId) {
+        this.breakpointId = breakpointId;
         return this;
     }
 }

@@ -35,6 +35,12 @@ public class WebSocketClientRegistry {
 
     public static final String WEB_SOCKET_CORRELATION_ID_HEADER_NAME = "WebSocketCorrelationId";
     /**
+     * Header name carrying the matched breakpoint id so the client can route each
+     * pushed paused item to the handler of the SPECIFIC breakpoint that matched.
+     * Set by the server dispatchers on REQUEST/RESPONSE phase messages.
+     */
+    public static final String BREAKPOINT_ID_HEADER_NAME = "X-MockServer-BreakpointId";
+    /**
      * Channel attribute key for the per-server {@link WebSocketClientRegistry}. Set once
      * on the parent/server channel at pipeline construction; read at hold points in Netty
      * handlers that need the registry but do not have {@code HttpState} in direct scope.

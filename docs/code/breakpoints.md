@@ -291,9 +291,18 @@ client inspects the frame and replies with a `StreamFrameDecisionDTO`.
 | `body` | String | Frame payload, Base64-encoded (RFC 4648 section 4) |
 | `requestMethod` | String (nullable) | HTTP method of the original request |
 | `requestPath` | String (nullable) | Path of the original request |
+| `breakpointId` | String (nullable) | The id of the breakpoint matcher that matched this frame, enabling per-breakpoint handler routing on the client |
 
 **Encoding:** the `body` is standard Base64 with no line breaks. Frames are
 arbitrary bytes (gRPC length-prefixed, WebSocket text/binary, SSE/chunked).
+
+**Breakpoint identification:** for REQUEST/RESPONSE phases (buffered), the
+matched breakpoint id is conveyed via the `X-MockServer-BreakpointId` header
+on the dispatched `HttpRequest`. For RESPONSE_STREAM/INBOUND_STREAM phases,
+the matched breakpoint id is the `breakpointId` field in the
+`PausedStreamFrameDTO`. Clients use this id to route each pushed item to the
+handler of the specific breakpoint that matched, supporting multiple concurrent
+breakpoints without handler overwriting.
 
 #### Client-to-server: `StreamFrameDecisionDTO`
 
@@ -444,8 +453,95 @@ The Breakpoints panel in the dashboard is phase-aware:
 
 ## Java client
 
-`MockServerClient` provides typed methods for both phases:
+### REST resolution methods
+
+`MockServerClient` provides typed methods for REST-park resolution:
 
 - `modifyBreakpoint(String id, HttpRequest modifiedRequest)` — request-phase modify
 - `modifyBreakpointResponse(String id, HttpResponse modifiedResponse)` — response-phase modify
+
+### Matcher-driven WS-callback breakpoints
+
+The Java client can register breakpoint matchers with callback handlers that are
+invoked over the callback WebSocket (`/_mockserver_callback_websocket`). The
+client opens a single WS connection (reused across all breakpoints), obtains a
+`clientId`, and passes it to the server during matcher registration so paused
+items are dispatched to the owning client.
+
+#### Handler interfaces
+
+Three handler interfaces cover all four breakpoint phases:
+
+| Interface | Phase(s) | Input | Output |
+|-----------|----------|-------|--------|
+| `BreakpointRequestHandler` | REQUEST | `HttpRequest` | `HttpRequest` (continue/modify) or `HttpResponse` (abort) |
+| `BreakpointResponseHandler` | RESPONSE | `HttpRequest` + `HttpResponse` | `HttpResponse` (continue/modify) |
+| `BreakpointStreamFrameHandler` | RESPONSE_STREAM, INBOUND_STREAM | `PausedStreamFrameDTO` | `StreamFrameDecisionDTO` |
+
+All three are `@FunctionalInterface` and can be expressed as lambdas.
+
+#### Registration API
+
+```java
+// Register with explicit phases and all handlers
+String id = mockServerClient.addBreakpoint(
+    request().withPath("/api/.*"),
+    EnumSet.of(BreakpointPhase.REQUEST, BreakpointPhase.RESPONSE),
+    request -> request,                          // REQUEST handler
+    (request, response) -> response,             // RESPONSE handler
+    null                                         // no stream-frame handler
+);
+
+// Convenience: REQUEST phase only
+String id = mockServerClient.addBreakpoint(
+    request().withPath("/api/.*"),
+    request -> modifiedRequest                   // BreakpointRequestHandler
+);
+
+// Convenience: REQUEST + RESPONSE
+String id = mockServerClient.addBreakpoint(
+    request().withPath("/api/.*"),
+    request -> request,                          // BreakpointRequestHandler
+    (request, response) -> response              // BreakpointResponseHandler
+);
+
+// Convenience: streaming phases
+String id = mockServerClient.addBreakpoint(
+    request().withPath("/stream/.*"),
+    EnumSet.of(BreakpointPhase.RESPONSE_STREAM),
+    frame -> new StreamFrameDecisionDTO()        // BreakpointStreamFrameHandler
+        .setCorrelationId(frame.getCorrelationId())
+        .setAction("CONTINUE")
+);
+```
+
+The returned `id` is the server-assigned breakpoint matcher id (UUID).
+
+#### Matcher management
+
+```java
+String json = mockServerClient.listBreakpointMatchers();      // GET /breakpoint/matchers
+mockServerClient.removeBreakpointMatcher(id);                  // PUT /breakpoint/matcher/remove
+mockServerClient.clearBreakpointMatchers();                    // PUT /breakpoint/matcher/clear
+```
+
+#### WS connection lifecycle
+
+- The breakpoint WS connection is opened lazily on the first `addBreakpoint` call.
+- The same connection and `clientId` are reused for all subsequent breakpoint
+  registrations from this `MockServerClient` instance.
+- On `stop()` / `reset`, the WS connection is closed and the server automatically
+  cleans up all matchers owned by that `clientId` and auto-continues any in-flight
+  dispatches.
+- If the WS connection drops, the server's disconnect cleanup removes the
+  client's matchers and auto-continues held items.
+
+#### Stream frame resolution
+
+For RESPONSE_STREAM and INBOUND_STREAM phases, the `BreakpointStreamFrameHandler`
+receives a `PausedStreamFrameDTO` (the frozen server-to-client contract from
+Unit 3) and returns a `StreamFrameDecisionDTO`. The `correlationId` is
+automatically echoed. The handler can return any of the five actions: CONTINUE,
+MODIFY, DROP, INJECT, CLOSE. If the handler throws, the client auto-continues
+the frame.
 

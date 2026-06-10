@@ -8,6 +8,10 @@ import io.netty.handler.ssl.SslContextBuilder;
 import org.mockserver.authentication.AuthenticationException;
 import org.mockserver.client.MockServerEventBus.EventType;
 import org.mockserver.closurecallback.websocketregistry.LocalCallbackRegistry;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.configuration.ClientConfiguration;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.NettyHttpClient;
@@ -18,12 +22,15 @@ import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.OpenAPIExpectation;
+import org.mockserver.mock.breakpoint.BreakpointPhase;
 import org.mockserver.model.*;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.*;
+import org.mockserver.serialization.model.HttpChaosProfileDTO;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.mockserver.stop.Stoppable;
+import org.mockserver.uuid.UUIDService;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationSequence;
 import org.mockserver.verify.VerificationTimes;
@@ -36,7 +43,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
+import java.util.*;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -95,6 +102,7 @@ public class MockServerClient implements Stoppable {
     private HttpRequestSerializer httpRequestSerializer = new HttpRequestSerializer(MOCK_SERVER_LOGGER);
     private HttpResponseSerializer httpResponseSerializer = new HttpResponseSerializer(MOCK_SERVER_LOGGER);
     private final CompletableFuture<MockServerClient> stopFuture = new CompletableFuture<>();
+    private volatile BreakpointWebSocketClient breakpointWebSocketClient;
 
     /**
      * Start the client communicating to a MockServer on localhost at the port
@@ -703,6 +711,10 @@ public class MockServerClient implements Stoppable {
                         );
                     }
                 }
+                // stopClient is handled by the event bus subscription (STOP event above
+                // triggers the lambda registered in ensureBreakpointWebSocketClient), so
+                // we do NOT call stopClient again here to avoid a double-stop. The field
+                // is nulled by the same lambda.
                 if (!eventLoopGroup.isShuttingDown()) {
                     eventLoopGroup.shutdownGracefully();
                 }
@@ -1930,10 +1942,10 @@ public class MockServerClient implements Stoppable {
      */
     public MockServerClient setServiceChaos(String host, HttpChaosProfile chaos, long ttlMillis) {
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("host", host);
-            body.set("chaos", objectMapper.valueToTree(new org.mockserver.serialization.model.HttpChaosProfileDTO(chaos)));
+            body.set("chaos", objectMapper.valueToTree(new HttpChaosProfileDTO(chaos)));
             if (ttlMillis > 0) {
                 body.put("ttlMillis", ttlMillis);
             }
@@ -1959,8 +1971,8 @@ public class MockServerClient implements Stoppable {
      */
     public MockServerClient removeServiceChaos(String host) {
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("host", host);
             body.put("remove", true);
             sendRequest(
@@ -2128,8 +2140,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("continueBreakpoint requires a non-blank id");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             sendRequest(
                 request()
@@ -2164,8 +2176,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("modifyBreakpoint requires a non-null modifiedRequest");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             String serializedRequest = httpRequestSerializer.serialize(modifiedRequest);
             body.set("httpRequest", objectMapper.readTree(serializedRequest));
@@ -2202,8 +2214,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("modifyBreakpointResponse requires a non-null modifiedResponse");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             String serializedResponse = httpResponseSerializer.serialize(modifiedResponse);
             body.set("httpResponse", objectMapper.readTree(serializedResponse));
@@ -2247,8 +2259,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("abortBreakpoint requires a non-blank id");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             if (response != null) {
                 String serializedResponse = httpResponseSerializer.serialize(response);
@@ -2316,8 +2328,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("continueStreamFrame requires a non-blank id");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             sendRequest(
                 request()
@@ -2352,8 +2364,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("modifyStreamFrame requires a non-null body");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode payload = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode payload = objectMapper.createObjectNode();
             payload.put("id", id);
             payload.put("body", body);
             sendRequest(
@@ -2385,8 +2397,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("dropStreamFrame requires a non-blank id");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             sendRequest(
                 request()
@@ -2421,8 +2433,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("injectStreamFrame requires a non-null body");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode payload = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode payload = objectMapper.createObjectNode();
             payload.put("id", id);
             payload.put("body", body);
             sendRequest(
@@ -2454,8 +2466,8 @@ public class MockServerClient implements Stoppable {
             throw new IllegalArgumentException("closeStreamFrame requires a non-blank id");
         }
         try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode body = objectMapper.createObjectNode();
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
             body.put("id", id);
             sendRequest(
                 request()
@@ -2469,6 +2481,302 @@ public class MockServerClient implements Stoppable {
             throw iae;
         } catch (Exception exception) {
             throw new RuntimeException("Exception closing stream frame with id \"" + id + "\"", exception);
+        }
+        return clientClass.cast(this);
+    }
+
+    // -------------------------------------------------------------------
+    // Breakpoint Matcher Registration (WS-callback)
+    // -------------------------------------------------------------------
+
+    /**
+     * Ensure the breakpoint callback WebSocket is connected, returning the
+     * {@link BreakpointWebSocketClient} instance. The caller should capture the
+     * returned reference to a local variable and use that throughout its method
+     * to avoid a data race with the STOP/RESET lambda that nulls the field.
+     * The WS connection is reused across all breakpoints registered by this client.
+     */
+    private synchronized BreakpointWebSocketClient ensureBreakpointWebSocketClient() {
+        if (breakpointWebSocketClient != null) {
+            return breakpointWebSocketClient;
+        }
+        try {
+            String bpClientId = UUIDService.getUUID();
+            BreakpointWebSocketClient wsClient = new BreakpointWebSocketClient(
+                new NioEventLoopGroup(
+                    configuration.webSocketClientEventLoopThreadCount(),
+                    new Scheduler.SchedulerThreadFactory("BreakpointWSClient-eventLoop")
+                ),
+                bpClientId,
+                MOCK_SERVER_LOGGER
+            );
+            wsClient.register(
+                remoteAddress(),
+                contextPath(),
+                isSecure()
+            ).get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+            this.breakpointWebSocketClient = wsClient;
+            // Subscribe a lambda (not a method ref) so we can null the field AND
+            // clear the handler map on both STOP and RESET. This ensures the next
+            // addBreakpoint after reset/stop transparently re-establishes the WS.
+            getMockServerEventBus().subscribe(() -> {
+                BreakpointWebSocketClient client = breakpointWebSocketClient;
+                breakpointWebSocketClient = null;
+                if (client != null) {
+                    try {
+                        client.clearHandlers();
+                        client.stopClient();
+                    } catch (Exception ignored) {
+                        // best-effort cleanup
+                    }
+                }
+            }, EventType.STOP, EventType.RESET);
+            return wsClient;
+        } catch (Exception e) {
+            throw new ClientException("Unable to establish breakpoint WebSocket connection", e);
+        }
+    }
+
+    /**
+     * Register a breakpoint matcher with request/response/stream-frame handlers.
+     * The client's callback WebSocket is opened if not already connected.
+     *
+     * <p>Handlers are stored per breakpoint id (the id returned by the server), so
+     * multiple concurrent breakpoints each route to their own handler. If a handler
+     * is null for a phase that is in the phase set, items for that phase will be
+     * auto-continued.
+     *
+     * @param matcher           the request definition to match against (same shape as an
+     *                          expectation request matcher)
+     * @param phases            the set of phases to intercept
+     * @param requestHandler    handler for REQUEST phase (may be null if REQUEST not in phases)
+     * @param responseHandler   handler for RESPONSE phase (may be null if RESPONSE not in phases)
+     * @param streamFrameHandler handler for RESPONSE_STREAM / INBOUND_STREAM phases (may be null
+     *                          if neither streaming phase is in phases)
+     * @return the breakpoint matcher id assigned by the server
+     */
+    public String addBreakpoint(RequestDefinition matcher,
+                                Set<BreakpointPhase> phases,
+                                BreakpointRequestHandler requestHandler,
+                                BreakpointResponseHandler responseHandler,
+                                BreakpointStreamFrameHandler streamFrameHandler) {
+        if (matcher == null) {
+            throw new IllegalArgumentException("addBreakpoint requires a non-null matcher");
+        }
+        if (phases == null || phases.isEmpty()) {
+            throw new IllegalArgumentException("addBreakpoint requires a non-null non-empty set of phases");
+        }
+
+        // Capture the WS client instance to a local to avoid data race (MAJOR C)
+        BreakpointWebSocketClient wsClient = ensureBreakpointWebSocketClient();
+        String wsClientId = wsClient.getClientId();
+
+        // register the breakpoint matcher on the server first to get the id
+        String breakpointId;
+        try {
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
+            String serializedMatcher = requestDefinitionSerializer.serialize(matcher);
+            body.set("httpRequest", objectMapper.readTree(serializedMatcher));
+            ArrayNode phasesArray = objectMapper.createArrayNode();
+            for (BreakpointPhase phase : phases) {
+                phasesArray.add(phase.name());
+            }
+            body.set("phases", phasesArray);
+            body.put("clientId", wsClientId);
+
+            HttpResponse httpResponse = sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/matcher"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+
+            // parse the response to get the id
+            if (httpResponse != null && isNotBlank(httpResponse.getBodyAsString())) {
+                JsonNode responseNode = objectMapper.readTree(httpResponse.getBodyAsString());
+                if (responseNode.has("id")) {
+                    breakpointId = responseNode.get("id").asText();
+                } else {
+                    throw new ClientException("Server did not return a breakpoint id");
+                }
+            } else {
+                throw new ClientException("Server did not return a breakpoint id");
+            }
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (ClientException ce) {
+            throw ce;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception registering breakpoint matcher", exception);
+        }
+
+        // Install handlers keyed by the server-assigned breakpoint id (MAJOR A)
+        wsClient.setRequestHandler(breakpointId, requestHandler);
+        wsClient.setResponseHandler(breakpointId, responseHandler);
+        wsClient.setStreamFrameHandler(breakpointId, streamFrameHandler);
+
+        return breakpointId;
+    }
+
+    /**
+     * Register a breakpoint matcher with a single request handler (REQUEST phase only).
+     *
+     * @param matcher        the request definition to match against
+     * @param requestHandler handler for REQUEST phase breakpoints
+     * @return the breakpoint matcher id
+     */
+    public String addBreakpoint(RequestDefinition matcher, BreakpointRequestHandler requestHandler) {
+        return addBreakpoint(matcher, EnumSet.of(BreakpointPhase.REQUEST), requestHandler, null, null);
+    }
+
+    /**
+     * Register a breakpoint matcher with request and response handlers.
+     *
+     * @param matcher         the request definition to match against
+     * @param requestHandler  handler for REQUEST phase
+     * @param responseHandler handler for RESPONSE phase
+     * @return the breakpoint matcher id
+     */
+    public String addBreakpoint(RequestDefinition matcher,
+                                BreakpointRequestHandler requestHandler,
+                                BreakpointResponseHandler responseHandler) {
+        return addBreakpoint(matcher, EnumSet.of(BreakpointPhase.REQUEST, BreakpointPhase.RESPONSE),
+            requestHandler, responseHandler, null);
+    }
+
+    /**
+     * Register a breakpoint matcher with a stream frame handler.
+     *
+     * @param matcher            the request definition to match against
+     * @param phases             the set of streaming phases to intercept
+     * @param streamFrameHandler handler for RESPONSE_STREAM / INBOUND_STREAM phases
+     * @return the breakpoint matcher id
+     */
+    public String addBreakpoint(RequestDefinition matcher, Set<BreakpointPhase> phases,
+                                BreakpointStreamFrameHandler streamFrameHandler) {
+        return addBreakpoint(matcher, phases, null, null, streamFrameHandler);
+    }
+
+    /**
+     * Register a breakpoint matcher with varargs phases and all handlers.
+     * If zero phases are passed, phases are inferred from the non-null handlers:
+     * requestHandler implies REQUEST, responseHandler implies RESPONSE,
+     * streamFrameHandler implies RESPONSE_STREAM and INBOUND_STREAM.
+     *
+     * @param matcher            the request definition to match against
+     * @param requestHandler     handler for REQUEST phase (may be null)
+     * @param responseHandler    handler for RESPONSE phase (may be null)
+     * @param streamFrameHandler handler for streaming phases (may be null)
+     * @param phases             the phases to intercept (if empty, inferred from handlers)
+     * @return the breakpoint matcher id
+     * @throws IllegalArgumentException if no phases can be determined
+     */
+    public String addBreakpoint(RequestDefinition matcher,
+                                BreakpointRequestHandler requestHandler,
+                                BreakpointResponseHandler responseHandler,
+                                BreakpointStreamFrameHandler streamFrameHandler,
+                                BreakpointPhase... phases) {
+        Set<BreakpointPhase> phaseSet;
+        if (phases.length > 0) {
+            phaseSet = EnumSet.copyOf(Arrays.asList(phases));
+        } else {
+            // Infer phases from non-null handlers
+            phaseSet = EnumSet.noneOf(BreakpointPhase.class);
+            if (requestHandler != null) {
+                phaseSet.add(BreakpointPhase.REQUEST);
+            }
+            if (responseHandler != null) {
+                phaseSet.add(BreakpointPhase.RESPONSE);
+            }
+            if (streamFrameHandler != null) {
+                phaseSet.add(BreakpointPhase.RESPONSE_STREAM);
+                phaseSet.add(BreakpointPhase.INBOUND_STREAM);
+            }
+            if (phaseSet.isEmpty()) {
+                throw new IllegalArgumentException("at least one phase or handler is required");
+            }
+        }
+        return addBreakpoint(matcher, phaseSet, requestHandler, responseHandler, streamFrameHandler);
+    }
+
+    /**
+     * List all registered breakpoint matchers.
+     * Returns a JSON string with the structure:
+     * <pre>
+     * {
+     *   "matchers": [
+     *     { "id": "...", "httpRequest": {...}, "phases": [...], "clientId": "..." }
+     *   ]
+     * }
+     * </pre>
+     *
+     * @return JSON string describing all registered breakpoint matchers
+     */
+    public String listBreakpointMatchers() {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("breakpoint/matchers")),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Remove a breakpoint matcher by id.
+     *
+     * @param id the breakpoint matcher id to remove
+     * @return this MockServerClient
+     * @throws IllegalArgumentException if the id is blank
+     */
+    public MockServerClient removeBreakpointMatcher(String id) {
+        if (isBlank(id)) {
+            throw new IllegalArgumentException("removeBreakpointMatcher requires a non-blank id");
+        }
+        try {
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("id", id);
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("breakpoint/matcher/remove"))
+                    .withBody(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8),
+                true
+            );
+        } catch (IllegalArgumentException iae) {
+            throw iae;
+        } catch (Exception exception) {
+            throw new RuntimeException("Exception removing breakpoint matcher with id \"" + id + "\"", exception);
+        }
+        // Remove client-side handlers for this breakpoint
+        BreakpointWebSocketClient wsClient = breakpointWebSocketClient;
+        if (wsClient != null) {
+            wsClient.removeHandlers(id);
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Clear all registered breakpoint matchers.
+     *
+     * @return this MockServerClient
+     */
+    public MockServerClient clearBreakpointMatchers() {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withPath(calculatePath("breakpoint/matcher/clear")),
+            true
+        );
+        // Clear all client-side handlers
+        BreakpointWebSocketClient wsClient = breakpointWebSocketClient;
+        if (wsClient != null) {
+            wsClient.clearHandlers();
         }
         return clientClass.cast(this);
     }

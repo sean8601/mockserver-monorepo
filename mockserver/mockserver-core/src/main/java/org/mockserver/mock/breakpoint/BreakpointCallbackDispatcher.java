@@ -12,6 +12,7 @@ import org.mockserver.uuid.UUIDService;
 import java.util.Map;
 import java.util.concurrent.*;
 
+import static org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.BREAKPOINT_ID_HEADER_NAME;
 import static org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WEB_SOCKET_CORRELATION_ID_HEADER_NAME;
 import static org.slf4j.event.Level.INFO;
 import static org.slf4j.event.Level.WARN;
@@ -94,6 +95,31 @@ public class BreakpointCallbackDispatcher {
         Configuration configuration,
         MockServerLogger logger
     ) {
+        return dispatchRequest(clientId, null, request, webSocketClientRegistry, configuration, logger);
+    }
+
+    /**
+     * Dispatches a REQUEST-phase breakpoint over the callback WebSocket, tagging
+     * the message with the matched breakpoint id so the client can route it to
+     * the correct per-breakpoint handler.
+     *
+     * @param clientId               the owning callback client
+     * @param breakpointId           the matched breakpoint's id (may be null for backward compat)
+     * @param request                the captured request to hold
+     * @param webSocketClientRegistry the WS registry for sending messages
+     * @param configuration          for timeout and max-held
+     * @param logger                 for logging
+     * @return a future that completes with the breakpoint decision, or {@code null}
+     *         if the max-held cap is reached or the client is not connected
+     */
+    public CompletableFuture<BreakpointDecision> dispatchRequest(
+        String clientId,
+        String breakpointId,
+        HttpRequest request,
+        WebSocketClientRegistry webSocketClientRegistry,
+        Configuration configuration,
+        MockServerLogger logger
+    ) {
         // max-held cap (shared with all breakpoint registries and dispatchers)
         int maxHeld = configuration.breakpointMaxHeld();
         int totalHeld = totalHeldCount();
@@ -155,9 +181,12 @@ public class BreakpointCallbackDispatcher {
             inFlight.remove(correlationId);
         });
 
-        // Send the request to the client
-        if (!webSocketClientRegistry.sendClientMessage(clientId,
-            request.clone().withHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME, correlationId), null)) {
+        // Send the request to the client, including the breakpoint id header
+        HttpRequest dispatchClone = request.clone().withHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME, correlationId);
+        if (breakpointId != null) {
+            dispatchClone.withHeader(BREAKPOINT_ID_HEADER_NAME, breakpointId);
+        }
+        if (!webSocketClientRegistry.sendClientMessage(clientId, dispatchClone, null)) {
             // Client not connected — complete (triggers whenComplete cleanup) and return null
             future.complete(BreakpointDecision.continueOriginal());
             if (logger != null && logger.isEnabledForInstance(WARN)) {
@@ -186,6 +215,32 @@ public class BreakpointCallbackDispatcher {
      */
     public CompletableFuture<BreakpointDecision> dispatchResponse(
         String clientId,
+        HttpRequest request,
+        HttpResponse response,
+        WebSocketClientRegistry webSocketClientRegistry,
+        Configuration configuration,
+        MockServerLogger logger
+    ) {
+        return dispatchResponse(clientId, null, request, response, webSocketClientRegistry, configuration, logger);
+    }
+
+    /**
+     * Dispatches a RESPONSE-phase breakpoint over the callback WebSocket, tagging
+     * the message with the matched breakpoint id.
+     *
+     * @param clientId               the owning callback client
+     * @param breakpointId           the matched breakpoint's id (may be null)
+     * @param request                the original request (for context)
+     * @param response               the upstream response to hold
+     * @param webSocketClientRegistry the WS registry
+     * @param configuration          for timeout and max-held
+     * @param logger                 for logging
+     * @return a future that completes with the breakpoint decision, or {@code null}
+     *         if the max-held cap is reached or the client is not connected
+     */
+    public CompletableFuture<BreakpointDecision> dispatchResponse(
+        String clientId,
+        String breakpointId,
         HttpRequest request,
         HttpResponse response,
         WebSocketClientRegistry webSocketClientRegistry,
@@ -235,9 +290,12 @@ public class BreakpointCallbackDispatcher {
             inFlight.remove(correlationId);
         });
 
-        // Send request+response to the client
-        if (!webSocketClientRegistry.sendClientMessage(clientId,
-            request.clone().withHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME, correlationId), response)) {
+        // Send request+response to the client, including the breakpoint id header
+        HttpRequest responseDispatchClone = request.clone().withHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME, correlationId);
+        if (breakpointId != null) {
+            responseDispatchClone.withHeader(BREAKPOINT_ID_HEADER_NAME, breakpointId);
+        }
+        if (!webSocketClientRegistry.sendClientMessage(clientId, responseDispatchClone, response)) {
             // Client not connected — complete (triggers whenComplete cleanup) and return null
             future.complete(BreakpointDecision.continueOriginal());
             if (logger != null && logger.isEnabledForInstance(WARN)) {
