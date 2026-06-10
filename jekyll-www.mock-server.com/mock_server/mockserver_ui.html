@@ -155,6 +155,42 @@ sitemap:
     <li><strong>Reset server (all)</strong> — clears everything: logs, expectations, received requests, and proxied requests</li>
 </ul>
 
+<h3>Title Bar Tools</h3>
+
+<p>The title bar exposes several server tools as icon buttons. Each opens a dialog or control in the dashboard; the linked pages explain the underlying feature in full:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Tool</th><th>Description</th><th>Documentation</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Server clock</td><td>Freeze or advance the server's clock to test time-sensitive behaviour</td><td><a href="/mock_server/clock_control.html">Clock Control</a></td></tr>
+        <tr><td>Explain unmatched requests</td><td>Show why a request did not match any expectation (closest-match diff)</td><td><a href="/mock_server/troubleshooting_matching.html">Troubleshooting Matching</a></td></tr>
+        <tr><td>Server configuration</td><td>View and edit configuration properties at runtime</td><td><a href="/mock_server/configuration_properties.html">Configuration Properties</a></td></tr>
+        <tr><td>Operating mode (SIMULATE / SPY / CAPTURE)</td><td>Controls how unmatched requests are handled — return 404, or forward to the real upstream and record</td><td><a href="/mock_server/isolating_single_service.html#mock_mode">Operating Mode</a></td></tr>
+    </tbody>
+</table>
+
+<h3>Tools Menu</h3>
+
+<p>The tools (wrench) icon in the title bar opens a menu of import, mocking, and inspection tools:</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Tool</th><th>Description</th><th>Documentation</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Import OpenAPI</td><td>Generate expectations from an OpenAPI / Swagger specification</td><td><a href="/mock_server/using_openapi.html">Using OpenAPI</a></td></tr>
+        <tr><td>Import WSDL</td><td>Generate expectations from a WSDL (SOAP) document</td><td><a href="/mock_server/using_openapi.html#generate_expectations_from_wsdl">Generate Expectations From WSDL</a></td></tr>
+        <tr><td>Pact contract (export / verify)</td><td>Export expectations as a Pact contract, or verify against one</td><td><a href="/mock_server/pact_export.html">Pact Export</a></td></tr>
+        <tr><td>Mock OIDC provider</td><td>Mock an OpenID Connect / OAuth2 provider</td><td><a href="/mock_server/mocking_oauth2.html">Mocking OAuth2 / OIDC</a></td></tr>
+        <tr><td>AsyncAPI broker mock</td><td>Mock a Kafka / MQTT / AMQP message broker from an AsyncAPI spec</td><td><a href="/mock_server/asyncapi_messaging.html">AsyncAPI Messaging</a></td></tr>
+        <tr><td>Register CRUD resource</td><td>Create a CRUD data store backed by mock expectations</td><td><a href="/mock_server/crud_data_store.html">CRUD Data Store</a></td></tr>
+        <tr><td>Mock file store</td><td>Serve files from a mock file store</td><td><a href="/mock_server/file_storage.html">File Storage</a></td></tr>
+        <tr><td>Diff two requests</td><td>Compare two recorded requests side by side (dashboard-only tool)</td><td>&mdash;</td></tr>
+    </tbody>
+</table>
+
 <a id="ui_request_filter_section" class="anchor" href="#ui_request_filter_section">&nbsp;</a>
 
 <h2>Request Filter</h2>

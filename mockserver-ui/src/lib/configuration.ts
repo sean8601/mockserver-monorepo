@@ -68,7 +68,7 @@ export const EDITABLE_PROPERTIES: readonly EditablePropertyDescriptor[] = [
     key: 'devMode',
     label: 'Developer mode',
     type: 'boolean',
-    help: 'Enable additional debug output and relaxed validation.',
+    help: 'Reduce memory use on laptops and test suites: caps log entries and expectations to 1,000 each (only for values you have not set explicitly).',
     group: 'Developer / data',
   },
   {
