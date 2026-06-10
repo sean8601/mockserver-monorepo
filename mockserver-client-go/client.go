@@ -7,13 +7,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 )
 
 // Client is a MockServer control-plane client.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL      string
+	httpClient   *http.Client
+	bpMu         sync.Mutex // guards breakpointWS lazy-init and close
+	breakpointWS *breakpointWSClient
 }
 
 // Option configures a Client.

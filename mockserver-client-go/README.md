@@ -163,6 +163,46 @@ if client.IsRunning() { ... }
 ports, _ := client.Bind(1081, 1082)
 ```
 
+### Interactive Breakpoints
+
+Register breakpoint matchers to pause forwarded/proxied traffic at REQUEST, RESPONSE, RESPONSE_STREAM, or INBOUND_STREAM phases. A callback WebSocket connection is opened automatically to receive paused items.
+
+```go
+// REQUEST-only breakpoint
+id, _ := client.AddRequestBreakpoint(
+    mockserver.Request().Path("/api/.*"),
+    func(req map[string]interface{}) interface{} {
+        // Inspect/modify the request, or return a response to abort
+        return req // continue with original
+    },
+)
+
+// REQUEST + RESPONSE breakpoint
+id, _ := client.AddRequestResponseBreakpoint(
+    mockserver.Request().Path("/api/.*"),
+    func(req map[string]interface{}) interface{} { return req },
+    func(req, resp map[string]interface{}) map[string]interface{} { return resp },
+)
+
+// Streaming breakpoint (RESPONSE_STREAM / INBOUND_STREAM)
+id, _ := client.AddStreamBreakpoint(
+    mockserver.Request().Path("/stream/.*"),
+    []mockserver.BreakpointPhase{mockserver.PhaseResponseStream},
+    func(frame *mockserver.PausedStreamFrame) *mockserver.StreamFrameDecision {
+        d := mockserver.ContinueFrame(frame.CorrelationID)
+        return &d
+    },
+)
+
+// List, remove, clear matchers
+list, _ := client.ListBreakpointMatchers()
+client.RemoveBreakpointMatcher(id)
+client.ClearBreakpointMatchers()
+client.CloseBreakpointWebSocket()
+```
+
+**Stream frame decisions:** `ContinueFrame`, `ModifyFrame`, `DropFrame`, `InjectFrame`, `CloseFrame`.
+
 ## Build & Test
 
 ```bash
@@ -179,4 +219,4 @@ MOCKSERVER_URL=http://localhost:1080 go test ./... -v
 ## Requirements
 
 - Go 1.21 or later
-- No third-party dependencies
+- `github.com/gorilla/websocket` (for breakpoint callback WebSocket)

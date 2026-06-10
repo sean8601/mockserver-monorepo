@@ -29,8 +29,17 @@
 mod model;
 mod client;
 mod error;
+pub mod breakpoint;
 pub mod launcher;
 
 pub use client::{ClientBuilder, MockServerClient, ForwardChainExpectation};
 pub use error::{Error, Result};
 pub use model::*;
+pub use breakpoint::{
+    phase, BreakpointMatcherRegistration, BreakpointMatcherResponse,
+    BreakpointMatcherEntry, BreakpointMatcherList, PausedStreamFrame,
+    StreamFrameDecision, WsEnvelope, BreakpointRequestHandler,
+    BreakpointResponseHandler, BreakpointStreamFrameHandler,
+    extract_header, set_header,
+    route_request, route_response, route_stream_frame,
+};

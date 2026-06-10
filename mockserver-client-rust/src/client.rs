@@ -3,6 +3,11 @@
 use reqwest::blocking::Client;
 use serde_json::Value;
 
+use crate::breakpoint::{
+    BreakpointMatcherList, BreakpointMatcherRegistration, BreakpointMatcherResponse,
+    BreakpointRequestHandler, BreakpointResponseHandler, BreakpointStreamFrameHandler,
+    BreakpointWebSocketClient,
+};
 use crate::error::{Error, Result};
 use crate::model::*;
 
@@ -79,6 +84,7 @@ impl ClientBuilder {
         Ok(MockServerClient {
             base_url,
             http: http_client,
+            breakpoint_ws: std::sync::Mutex::new(None),
         })
     }
 }
@@ -91,8 +97,9 @@ impl ClientBuilder {
 ///
 /// Created via [`ClientBuilder`]. All methods are synchronous.
 pub struct MockServerClient {
-    base_url: String,
+    pub(crate) base_url: String,
     http: Client,
+    breakpoint_ws: std::sync::Mutex<Option<BreakpointWebSocketClient>>,
 }
 
 impl MockServerClient {
@@ -443,6 +450,212 @@ impl MockServerClient {
             }
         }
         false
+    }
+
+    // ------------------------------------------------------------------
+    // Breakpoints
+    // ------------------------------------------------------------------
+
+    /// Ensure the breakpoint WebSocket client is connected and return the clientId.
+    /// If the existing connection's read loop has exited, it is replaced transparently.
+    fn ensure_breakpoint_ws(&self) -> Result<String> {
+        let mut guard = self.breakpoint_ws.lock().unwrap();
+        let needs_connect = match guard.as_ref() {
+            None => true,
+            Some(ws) => ws.is_dead(),
+        };
+        if needs_connect {
+            // Close the old dead connection if present
+            if let Some(old) = guard.take() {
+                old.close();
+            }
+            let ws = BreakpointWebSocketClient::connect(&self.base_url)?;
+            *guard = Some(ws);
+        }
+        Ok(guard.as_ref().unwrap().client_id.clone())
+    }
+
+    /// Register a breakpoint matcher with the given phases and handlers.
+    /// Returns the server-assigned breakpoint id.
+    pub fn add_breakpoint(
+        &self,
+        matcher: HttpRequest,
+        phases: &[&str],
+        request_handler: Option<BreakpointRequestHandler>,
+        response_handler: Option<BreakpointResponseHandler>,
+        stream_frame_handler: Option<BreakpointStreamFrameHandler>,
+    ) -> Result<String> {
+        if phases.is_empty() {
+            return Err(Error::InvalidRequest(
+                "At least one phase is required".into(),
+            ));
+        }
+
+        let client_id = self.ensure_breakpoint_ws()?;
+
+        let reg = BreakpointMatcherRegistration {
+            http_request: matcher,
+            phases: phases.iter().map(|s| s.to_string()).collect(),
+            client_id: Some(client_id),
+        };
+
+        let resp = self
+            .http
+            .put(self.url("/mockserver/breakpoint/matcher"))
+            .json(&reg)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        let text = resp.text()?;
+        if status >= 400 {
+            return Err(Error::UnexpectedStatus {
+                status,
+                body: text,
+            });
+        }
+
+        let result: BreakpointMatcherResponse = serde_json::from_str(&text)?;
+        let id = result.id.clone();
+
+        // Register handlers
+        let guard = self.breakpoint_ws.lock().unwrap();
+        if let Some(ws) = guard.as_ref() {
+            if let Some(h) = request_handler {
+                ws.set_request_handler(&id, h);
+            }
+            if let Some(h) = response_handler {
+                ws.set_response_handler(&id, h);
+            }
+            if let Some(h) = stream_frame_handler {
+                ws.set_stream_frame_handler(&id, h);
+            }
+        }
+
+        Ok(id)
+    }
+
+    /// Convenience: register a REQUEST-only breakpoint.
+    pub fn add_request_breakpoint(
+        &self,
+        matcher: HttpRequest,
+        handler: BreakpointRequestHandler,
+    ) -> Result<String> {
+        self.add_breakpoint(
+            matcher,
+            &[crate::breakpoint::phase::REQUEST],
+            Some(handler),
+            None,
+            None,
+        )
+    }
+
+    /// Convenience: register a REQUEST + RESPONSE breakpoint.
+    pub fn add_request_response_breakpoint(
+        &self,
+        matcher: HttpRequest,
+        request_handler: BreakpointRequestHandler,
+        response_handler: BreakpointResponseHandler,
+    ) -> Result<String> {
+        self.add_breakpoint(
+            matcher,
+            &[
+                crate::breakpoint::phase::REQUEST,
+                crate::breakpoint::phase::RESPONSE,
+            ],
+            Some(request_handler),
+            Some(response_handler),
+            None,
+        )
+    }
+
+    /// Convenience: register a streaming-phase breakpoint.
+    pub fn add_stream_breakpoint(
+        &self,
+        matcher: HttpRequest,
+        phases: &[&str],
+        handler: BreakpointStreamFrameHandler,
+    ) -> Result<String> {
+        self.add_breakpoint(matcher, phases, None, None, Some(handler))
+    }
+
+    /// List all registered breakpoint matchers.
+    pub fn list_breakpoint_matchers(&self) -> Result<BreakpointMatcherList> {
+        let resp = self
+            .http
+            .get(self.url("/mockserver/breakpoint/matchers"))
+            .send()?;
+
+        let status = resp.status().as_u16();
+        let text = resp.text()?;
+        if status >= 400 {
+            return Err(Error::UnexpectedStatus {
+                status,
+                body: text,
+            });
+        }
+
+        Ok(serde_json::from_str(&text)?)
+    }
+
+    /// Remove a breakpoint matcher by id.
+    pub fn remove_breakpoint_matcher(&self, id: impl Into<String>) -> Result<()> {
+        let id = id.into();
+        let body = serde_json::json!({ "id": &id });
+        let resp = self
+            .http
+            .put(self.url("/mockserver/breakpoint/matcher/remove"))
+            .json(&body)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                let guard = self.breakpoint_ws.lock().unwrap();
+                if let Some(ws) = guard.as_ref() {
+                    ws.remove_handlers(&id);
+                }
+                Ok(())
+            }
+            404 => Err(Error::InvalidRequest(format!(
+                "Breakpoint matcher not found: {id}"
+            ))),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Remove all registered breakpoint matchers.
+    pub fn clear_breakpoint_matchers(&self) -> Result<()> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/breakpoint/matcher/clear"))
+            .header("Content-Type", "application/json")
+            .body("")
+            .send()?;
+
+        let status = resp.status().as_u16();
+        if status >= 400 {
+            return Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            });
+        }
+
+        let guard = self.breakpoint_ws.lock().unwrap();
+        if let Some(ws) = guard.as_ref() {
+            ws.clear_handlers();
+        }
+        Ok(())
+    }
+
+    /// Close the breakpoint callback WebSocket connection.
+    pub fn close_breakpoint_websocket(&self) {
+        let mut guard = self.breakpoint_ws.lock().unwrap();
+        if let Some(ws) = guard.take() {
+            ws.close();
+        }
     }
 
     // ------------------------------------------------------------------

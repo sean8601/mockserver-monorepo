@@ -411,6 +411,162 @@ public sealed class MockServerClient : IDisposable
     }
 
     // -------------------------------------------------------------------
+    // Breakpoints
+    // -------------------------------------------------------------------
+
+    private BreakpointWebSocketClient? _breakpointWs;
+    private readonly SemaphoreSlim _breakpointWsLock = new(1, 1);
+
+    /// <summary>
+    /// Register a breakpoint matcher with the given phases and handlers.
+    /// Returns the server-assigned breakpoint id.
+    /// </summary>
+    public string AddBreakpoint(
+        HttpRequest matcher,
+        IEnumerable<string> phases,
+        BreakpointRequestHandler? requestHandler = null,
+        BreakpointResponseHandler? responseHandler = null,
+        BreakpointStreamFrameHandler? streamFrameHandler = null)
+        => AddBreakpointAsync(matcher, phases, requestHandler, responseHandler, streamFrameHandler)
+            .GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Register a breakpoint matcher (async).
+    /// </summary>
+    public async Task<string> AddBreakpointAsync(
+        HttpRequest matcher,
+        IEnumerable<string> phases,
+        BreakpointRequestHandler? requestHandler = null,
+        BreakpointResponseHandler? responseHandler = null,
+        BreakpointStreamFrameHandler? streamFrameHandler = null)
+    {
+        if (matcher == null) throw new ArgumentNullException(nameof(matcher));
+        var phaseList = phases?.ToList() ?? throw new ArgumentNullException(nameof(phases));
+        if (phaseList.Count == 0) throw new ArgumentException("At least one phase is required", nameof(phases));
+
+        await EnsureBreakpointWsAsync().ConfigureAwait(false);
+
+        var reg = new BreakpointMatcherRegistration
+        {
+            HttpRequest = matcher,
+            Phases = phaseList,
+            ClientId = _breakpointWs!.ClientId
+        };
+
+        var json = JsonSerializer.Serialize(reg, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/breakpoint/matcher", json).ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new Exceptions.MockServerClientException($"Failed to register breakpoint (HTTP {statusCode}): {body}");
+
+        var result = JsonSerializer.Deserialize<BreakpointMatcherResponse>(body, JsonOptions);
+        var id = result?.Id ?? throw new Exceptions.MockServerClientException("No breakpoint id in response");
+
+        if (requestHandler != null) _breakpointWs.SetRequestHandler(id, requestHandler);
+        if (responseHandler != null) _breakpointWs.SetResponseHandler(id, responseHandler);
+        if (streamFrameHandler != null) _breakpointWs.SetStreamFrameHandler(id, streamFrameHandler);
+
+        return id;
+    }
+
+    /// <summary>
+    /// Convenience: register a REQUEST-only breakpoint.
+    /// </summary>
+    public string AddRequestBreakpoint(HttpRequest matcher, BreakpointRequestHandler handler)
+        => AddBreakpoint(matcher, new[] { BreakpointPhase.Request }, requestHandler: handler);
+
+    /// <summary>
+    /// Convenience: register a REQUEST + RESPONSE breakpoint.
+    /// </summary>
+    public string AddRequestResponseBreakpoint(
+        HttpRequest matcher,
+        BreakpointRequestHandler requestHandler,
+        BreakpointResponseHandler responseHandler)
+        => AddBreakpoint(matcher, new[] { BreakpointPhase.Request, BreakpointPhase.Response },
+            requestHandler: requestHandler, responseHandler: responseHandler);
+
+    /// <summary>
+    /// Convenience: register a streaming-phase breakpoint.
+    /// </summary>
+    public string AddStreamBreakpoint(HttpRequest matcher, IEnumerable<string> phases, BreakpointStreamFrameHandler handler)
+        => AddBreakpoint(matcher, phases, streamFrameHandler: handler);
+
+    /// <summary>
+    /// List all registered breakpoint matchers.
+    /// </summary>
+    public BreakpointMatcherList ListBreakpointMatchers()
+        => ListBreakpointMatchersAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// List all registered breakpoint matchers (async).
+    /// </summary>
+    public async Task<BreakpointMatcherList> ListBreakpointMatchersAsync()
+    {
+        var (statusCode, body) = await GetAsync("/mockserver/breakpoint/matchers").ConfigureAwait(false);
+        if (statusCode >= 400)
+            throw new Exceptions.MockServerClientException($"Failed to list breakpoint matchers (HTTP {statusCode}): {body}");
+
+        return JsonSerializer.Deserialize<BreakpointMatcherList>(body, JsonOptions) ?? new BreakpointMatcherList();
+    }
+
+    /// <summary>
+    /// Remove a breakpoint matcher by id.
+    /// </summary>
+    public void RemoveBreakpointMatcher(string id) => RemoveBreakpointMatcherAsync(id).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Remove a breakpoint matcher by id (async).
+    /// </summary>
+    public async Task RemoveBreakpointMatcherAsync(string id)
+    {
+        var json = JsonSerializer.Serialize(new { id }, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/breakpoint/matcher/remove", json).ConfigureAwait(false);
+
+        if (statusCode == 404)
+            throw new Exceptions.MockServerClientException($"Breakpoint matcher not found: {id}");
+        if (statusCode >= 400)
+            throw new Exceptions.MockServerClientException($"Failed to remove breakpoint matcher (HTTP {statusCode}): {body}");
+
+        _breakpointWs?.RemoveHandlers(id);
+    }
+
+    /// <summary>
+    /// Remove all registered breakpoint matchers.
+    /// </summary>
+    public void ClearBreakpointMatchers() => ClearBreakpointMatchersAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Remove all registered breakpoint matchers (async).
+    /// </summary>
+    public async Task ClearBreakpointMatchersAsync()
+    {
+        var (statusCode, body) = await PutAsync("/mockserver/breakpoint/matcher/clear", "").ConfigureAwait(false);
+        if (statusCode >= 400)
+            throw new Exceptions.MockServerClientException($"Failed to clear breakpoint matchers (HTTP {statusCode}): {body}");
+
+        _breakpointWs?.ClearHandlers();
+    }
+
+    private async Task EnsureBreakpointWsAsync()
+    {
+        if (_breakpointWs != null && !_breakpointWs.IsDead) return;
+        await _breakpointWsLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_breakpointWs != null && !_breakpointWs.IsDead) return;
+            // Dispose old dead connection if present
+            _breakpointWs?.Dispose();
+            var ws = new BreakpointWebSocketClient();
+            await ws.ConnectAsync(_baseUrl).ConfigureAwait(false);
+            _breakpointWs = ws;
+        }
+        finally
+        {
+            _breakpointWsLock.Release();
+        }
+    }
+
+    // -------------------------------------------------------------------
     // Internal: called by ForwardChainExpectation
     // -------------------------------------------------------------------
 
@@ -433,8 +589,18 @@ public sealed class MockServerClient : IDisposable
         return ((int)response.StatusCode, responseBody);
     }
 
+    private async Task<(int StatusCode, string Body)> GetAsync(string path)
+    {
+        var url = _baseUrl + path;
+        using var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return ((int)response.StatusCode, responseBody);
+    }
+
     public void Dispose()
     {
+        _breakpointWs?.Dispose();
+        _breakpointWsLock.Dispose();
         if (_ownsHttpClient)
             _httpClient.Dispose();
     }

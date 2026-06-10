@@ -92,6 +92,42 @@ await client.VerifyAsync(
 );
 ```
 
+### Interactive Breakpoints
+
+Register breakpoint matchers to pause forwarded/proxied traffic at REQUEST, RESPONSE, RESPONSE_STREAM, or INBOUND_STREAM phases. A callback WebSocket connection is opened automatically.
+
+```csharp
+using MockServer.Client.Models;
+using System.Text.Json.Nodes;
+
+// REQUEST-only breakpoint
+var id = client.AddRequestBreakpoint(
+    HttpRequest.Request().WithPath("/api/.*").Build(),
+    request => request // continue with original
+);
+
+// REQUEST + RESPONSE breakpoint
+var id2 = client.AddRequestResponseBreakpoint(
+    HttpRequest.Request().WithPath("/api/.*").Build(),
+    request => request,
+    (request, response) => response
+);
+
+// Streaming breakpoint
+var id3 = client.AddStreamBreakpoint(
+    HttpRequest.Request().WithPath("/stream/.*").Build(),
+    new[] { BreakpointPhase.ResponseStream },
+    frame => StreamFrameDecision.Continue(frame.CorrelationId!)
+);
+
+// Manage matchers
+var list = client.ListBreakpointMatchers();
+client.RemoveBreakpointMatcher(id);
+client.ClearBreakpointMatchers();
+```
+
+**Stream frame decisions:** `StreamFrameDecision.Continue`, `.Modify`, `.Drop`, `.Inject`, `.Close`.
+
 ## Building
 
 ```bash
@@ -103,6 +139,7 @@ dotnet test
 ## Requirements
 
 - .NET SDK 8.0+ (for building)
+- `System.Net.WebSockets.ClientWebSocket` (built-in, for breakpoint callback WebSocket)
 - No external runtime dependencies beyond `System.Text.Json` (included via .NET or NuGet for netstandard2.0)
 
 ## License

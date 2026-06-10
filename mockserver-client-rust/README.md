@@ -100,6 +100,46 @@ println!("Listening on: {:?}", ports.ports);
 client.reset()?;
 ```
 
+### Interactive Breakpoints
+
+Register breakpoint matchers to pause forwarded/proxied traffic at REQUEST, RESPONSE, RESPONSE_STREAM, or INBOUND_STREAM phases. A callback WebSocket connection is opened automatically.
+
+```rust
+use mockserver_client::*;
+
+let client = ClientBuilder::new("localhost", 1080).build()?;
+
+// REQUEST-only breakpoint
+let id = client.add_request_breakpoint(
+    HttpRequest::new().path("/api/.*"),
+    Box::new(|req| Some(req)),  // continue with original
+)?;
+
+// REQUEST + RESPONSE breakpoint
+let id2 = client.add_request_response_breakpoint(
+    HttpRequest::new().path("/api/.*"),
+    Box::new(|req| Some(req)),
+    Box::new(|_req, resp| Some(resp)),
+)?;
+
+// Streaming breakpoint
+let id3 = client.add_stream_breakpoint(
+    HttpRequest::new().path("/stream/.*"),
+    &[phase::RESPONSE_STREAM],
+    Box::new(|frame| {
+        Some(StreamFrameDecision::continue_frame(&frame.correlation_id))
+    }),
+)?;
+
+// Manage matchers
+let list = client.list_breakpoint_matchers()?;
+client.remove_breakpoint_matcher(&id)?;
+client.clear_breakpoint_matchers()?;
+client.close_breakpoint_websocket();
+```
+
+**Stream frame decisions:** `StreamFrameDecision::continue_frame`, `::modify`, `::drop_frame`, `::inject`, `::close`.
+
 ## Building
 
 ```sh
