@@ -122,6 +122,8 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
 
   const connectionParams = useConnectionParams();
   const [mode, setModeState] = useState<MockServerMode | null>(null);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [modeTooltipOpen, setModeTooltipOpen] = useState(false);
   const [toolsAnchorEl, setToolsAnchorEl] = useState<null | HTMLElement>(null);
   const [clockOpen, setClockOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
@@ -335,10 +337,18 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           </IconButton>
         </Tooltip>
         {mode !== null && (
-          <Tooltip title={MODE_DESCRIPTIONS[mode]}>
+          <Tooltip
+            title={MODE_DESCRIPTIONS[mode]}
+            open={modeTooltipOpen && !modeMenuOpen}
+            onOpen={() => setModeTooltipOpen(true)}
+            onClose={() => setModeTooltipOpen(false)}
+          >
             <Select
               value={mode}
               onChange={handleModeChange}
+              open={modeMenuOpen}
+              onOpen={() => setModeMenuOpen(true)}
+              onClose={() => setModeMenuOpen(false)}
               size="small"
               aria-label="Operating mode"
               sx={{

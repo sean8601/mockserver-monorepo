@@ -1790,10 +1790,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     <TextField size="small" label="Duration ms" placeholder="10000" value={stage.durationMs} onChange={setExpStageField(idx, 'durationMs')} sx={{ width: 120 }} />
                     <TextField size="small" label="Host" placeholder="upstream.svc" value={stage.host} onChange={setExpStageField(idx, 'host')} sx={{ minWidth: 160 }} />
-                    <TextField size="small" label="Error status" placeholder="503" value={stage.errorStatus} onChange={setExpStageField(idx, 'errorStatus')} sx={{ width: 110 }} />
-                    <TextField size="small" label="Error prob (0-1)" placeholder="1.0" value={stage.errorProbability} onChange={setExpStageField(idx, 'errorProbability')} sx={{ width: 110 }} />
-                    <TextField size="small" label="Latency ms" placeholder="500" value={stage.latencyMs} onChange={setExpStageField(idx, 'latencyMs')} sx={{ width: 100 }} />
-                    <TextField size="small" label="Drop prob (0-1)" placeholder="0.2" value={stage.dropProbability} onChange={setExpStageField(idx, 'dropProbability')} sx={{ width: 110 }} />
+                    <TextField size="small" label="Error status" placeholder="503" value={stage.errorStatus} onChange={setExpStageField(idx, 'errorStatus')} sx={{ width: 120 }} />
+                    <TextField size="small" label="Error prob (0-1)" placeholder="1.0" value={stage.errorProbability} onChange={setExpStageField(idx, 'errorProbability')} sx={{ width: 140 }} />
+                    <TextField size="small" label="Latency ms" placeholder="500" value={stage.latencyMs} onChange={setExpStageField(idx, 'latencyMs')} sx={{ width: 120 }} />
+                    <TextField size="small" label="Drop prob (0-1)" placeholder="0.2" value={stage.dropProbability} onChange={setExpStageField(idx, 'dropProbability')} sx={{ width: 140 }} />
                   </Box>
                 </Paper>
               ))}

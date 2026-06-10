@@ -2838,7 +2838,7 @@ function ExistingMocksList({
       </Box>
 
       {selectedKey && (
-        <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', py: 0, px: 1, mb: 0.5, '& .MuiAlert-message': { py: 0.3 } }}>
+        <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', py: 0, px: 1, mb: 0.5, alignItems: 'center', '& .MuiAlert-message': { py: 0.3 }, '& .MuiAlert-icon': { py: 0, alignItems: 'center' } }}>
           Editing {selectedKey.slice(0, 12)}... — changes update this expectation.
         </Alert>
       )}
@@ -3273,7 +3273,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               </Box>
 
               {llmScenarioName && (
-                <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', py: 0, px: 1, mb: 0.5, '& .MuiAlert-message': { py: 0.3 } }}>
+                <Alert severity="info" variant="outlined" sx={{ fontSize: '0.72rem', py: 0, px: 1, mb: 0.5, alignItems: 'center', '& .MuiAlert-message': { py: 0.3 }, '& .MuiAlert-icon': { py: 0, alignItems: 'center' } }}>
                   Editing {llmScenarioName.replace(/^__llm_conv_/, '').replace(/__iso=.*$/, '')} — changes update this scenario.
                 </Alert>
               )}

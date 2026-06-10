@@ -88,7 +88,7 @@ const SELF_HOST = TARGET.hostname;
 const SELF_PORT = Number(TARGET.port || (TARGET.protocol === 'https:' ? 443 : 80));
 const SELF_SCHEME = TARGET.protocol === 'https:' ? 'HTTPS' : 'HTTP';
 
-const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, grpcChaos: 0, drift: 0, wasmModules: 0, scenarios: 0, grpcServices: 0, sideEffects: 0, cassettes: 0, asyncChannels: 0, mcpCalls: 0 };
+const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, grpcChaos: 0, experiments: 0, drift: 0, wasmModules: 0, scenarios: 0, grpcServices: 0, sideEffects: 0, cassettes: 0, asyncChannels: 0, mcpCalls: 0 };
 function log(msg) { if (!quiet) console.log(msg); }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +597,52 @@ async function grpcChaosExamples() {
     counts.grpcChaos++;
     log(`   ~ grpc chaos     ${entry.service}${entry.ttlMillis ? `  (ttl ${entry.ttlMillis}ms)` : ''}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 3b-ii. Multi-stage chaos experiment (Chaos tab -> Experiments section)
+// ---------------------------------------------------------------------------
+
+// A multi-stage chaos experiment registered against the orchestrator endpoint
+// (PUT /mockserver/chaosExperiment). Unlike the single service-chaos
+// registrations above, an experiment progresses automatically through ordered
+// stages on a timer. The stages are long and the experiment loops so the
+// Experiments section's live status (current stage, elapsed/remaining, loop
+// iteration) stays visible while exploring the dashboard. The host profiles
+// target fictitious upstreams, so this does not affect the demo's own traffic.
+const CHAOS_EXPERIMENT = {
+  name: 'Black Friday checkout degradation',
+  loop: true,
+  stages: [
+    {
+      durationMillis: 120000,
+      profiles: {
+        'checkout.svc': { latency: { timeUnit: 'MILLISECONDS', value: 300 }, seed: 42 },
+      },
+    },
+    {
+      durationMillis: 120000,
+      profiles: {
+        'checkout.svc': { errorStatus: 503, errorProbability: 0.25, latency: { timeUnit: 'MILLISECONDS', value: 800 }, seed: 42 },
+        'payments.svc': { errorStatus: 429, retryAfter: '30', errorProbability: 0.5 },
+      },
+    },
+    {
+      durationMillis: 120000,
+      profiles: {
+        'checkout.svc': { dropConnectionProbability: 0.4 },
+        'payments.svc': { errorStatus: 503, errorProbability: 0.8 },
+      },
+    },
+  ],
+};
+
+async function chaosExperimentExample() {
+  log('\n→ Multi-stage chaos experiment (Chaos tab · Experiments)');
+  const res = await api('PUT', '/mockserver/chaosExperiment', CHAOS_EXPERIMENT);
+  if (!res.ok) throw new Error(`Failed to start chaos experiment "${CHAOS_EXPERIMENT.name}": HTTP ${res.status}`);
+  counts.experiments++;
+  log(`   ~ experiment     ${CHAOS_EXPERIMENT.name}  (${CHAOS_EXPERIMENT.stages.length} stages, looping)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1391,6 +1437,7 @@ async function main() {
   await tcpChaosExamples();
   await grpcHealthExamples();
   await grpcChaosExamples();
+  await chaosExperimentExample();
   await grpcMockExpectations();
   await dnsMockExpectations();
   await wasmModuleExample();
@@ -1415,6 +1462,7 @@ async function main() {
   log(` TCP chaos hosts      : ${counts.tcpChaos} (2 with an auto-revert TTL countdown)`);
   log(` gRPC health statuses : ${counts.grpcHealth} (NOT_SERVING / SERVICE_UNKNOWN / SERVING)`);
   log(` gRPC chaos services  : ${counts.grpcChaos} (incl. streaming/trailer faults + auto-revert TTL)`);
+  log(` Chaos experiments    : ${counts.experiments} (3-stage looping experiment; live status in Chaos · Experiments)`);
   log(` WASM modules         : ${counts.wasmModules} (example Rust match module + a WASM-matched expectation)`);
   log(` Side-effect exps     : ${counts.sideEffects} (before-actions [blocking/non-blocking] + after-actions [webhook])`);
   log(` Scenarios            : ${counts.scenarios} (incl. one timed auto-transition; listed in the Scenarios panel)`);
@@ -1440,7 +1488,7 @@ async function main() {
   log('   Mocks              — HTTP, gRPC (stream/unary), DNS (A/AAAA/CNAME/NXDOMAIN) mocks listed per kind');
   log('   Traffic            — recorded + proxied (forwarded) requests, incl. a lane per LLM provider + token/cost');
   log('   Sessions           — agent-001 / agent-002 loops + call graphs; Scenarios panel lists the seeded scenario state machines');
-  log('   Chaos              — HTTP service chaos (incl. GraphQL-semantic) + gRPC chaos (health + fault injection with streaming/trailer faults) + TCP-layer chaos');
+  log('   Chaos              — HTTP service chaos (incl. GraphQL-semantic) + gRPC chaos (health + fault injection with streaming/trailer faults) + TCP-layer chaos + a looping multi-stage Experiment');
   log('   Drift              — schema / status / header drift records from proxied-vs-stub comparison');
   log('   AsyncAPI           — Tools · AsyncAPI Broker Mock: loaded spec + Channels table (5 channels, varied schema/example counts)');
   log('   Metrics            — request activity, throughput, MCP tool calls (6 tools), chaos faults' + (process.env.DEMO_MQTT_BROKER_URL ? ', async messages' : ''));
