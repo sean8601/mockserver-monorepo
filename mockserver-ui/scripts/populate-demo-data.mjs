@@ -308,6 +308,63 @@ async function proxyTraffic() {
 }
 
 // ---------------------------------------------------------------------------
+// 1c. Interactive-breakpoint loopback (Breakpoints panel · Live Exchanges / Live Streams)
+// ---------------------------------------------------------------------------
+
+// Breakpoints pause FORWARDED traffic and are resolved interactively over the
+// callback WebSocket by a connected callback client — the dashboard Breakpoints
+// panel is one. To give the panel something to pause, we set up a self-forwarded
+// (loopback) target with NO external upstream:
+//   GET /breakpoint/exchange  -> forwards to a buffered JSON mock on THIS server
+//                                 (RESPONSE-phase breakpoint -> Live Exchanges)
+//   GET /breakpoint/stream    -> forwards to a chunked streaming mock on THIS
+//                                 server (RESPONSE_STREAM breakpoint -> Live Streams)
+// The matched forward (httpOverrideForwardedRequest + socketAddress -> SELF) is
+// what makes the request a forwarded exchange the breakpoint engine can hold.
+async function breakpointLoopbackExpectations() {
+  log('\n→ Interactive-breakpoint loopback (Breakpoints · Live Exchanges / Live Streams)');
+
+  // Upstream mock served directly (the forward target) — buffered JSON.
+  await expectation('breakpoint upstream (JSON, buffered)', {
+    httpRequest: { method: 'GET', path: '/breakpoint-upstream/exchange' },
+    httpResponse: {
+      statusCode: 200,
+      headers: { 'content-type': ['application/json'] },
+      body: JSON.stringify({ id: 'demo-42', name: 'Ada Lovelace', role: 'forwarded-upstream', note: 'pause me at the response breakpoint, then Continue / Modify / Abort' }),
+    },
+  });
+
+  // Upstream mock served directly — chunked streaming (SSE-style), so the
+  // forwarded response is delivered frame-by-frame and each frame can be held.
+  await expectation('breakpoint upstream (chunked stream)', {
+    httpRequest: { method: 'GET', path: '/breakpoint-upstream/stream' },
+    httpResponse: {
+      statusCode: 200,
+      headers: { 'content-type': ['text/event-stream'] },
+      body: 'data: frame-1 hello\n\ndata: frame-2 from\n\ndata: frame-3 the\n\ndata: frame-4 loopback\n\ndata: frame-5 stream\n\ndata: frame-6 continue/modify/drop/inject/close me\n\n',
+      // chunkSize < body length => Transfer-Encoding: chunked, multiple frames;
+      // chunkDelay paces them so the per-frame holds are easy to watch.
+      connectionOptions: { chunkSize: 20, chunkDelay: { timeUnit: 'MILLISECONDS', value: 600 } },
+    },
+  });
+
+  // Loopback forwards: a matched forward back to THIS server (path-rewrite +
+  // socketAddress -> SELF), identical pattern to the /proxy/* forwards above.
+  await expectation('breakpoint forward  /breakpoint/exchange -> upstream', {
+    httpRequest: { method: 'GET', path: '/breakpoint/exchange' },
+    httpOverrideForwardedRequest: {
+      httpRequest: { path: '/breakpoint-upstream/exchange', socketAddress: { host: SELF_HOST, port: SELF_PORT, scheme: SELF_SCHEME } },
+    },
+  });
+  await expectation('breakpoint forward  /breakpoint/stream   -> upstream', {
+    httpRequest: { method: 'GET', path: '/breakpoint/stream' },
+    httpOverrideForwardedRequest: {
+      httpRequest: { path: '/breakpoint-upstream/stream', socketAddress: { host: SELF_HOST, port: SELF_PORT, scheme: SELF_SCHEME } },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 2. LLM response expectations (one per provider + tool / streaming / chaos)
 // ---------------------------------------------------------------------------
 
@@ -1431,6 +1488,7 @@ async function main() {
 
   await plainHttpExpectations();
   await proxyExpectations();
+  await breakpointLoopbackExpectations();
   await llmExpectations();
   await conversationExpectations();
   await serviceChaosExamples();
@@ -1492,6 +1550,40 @@ async function main() {
   log('   Drift              — schema / status / header drift records from proxied-vs-stub comparison');
   log('   AsyncAPI           — Tools · AsyncAPI Broker Mock: loaded spec + Channels table (5 channels, varied schema/example counts)');
   log('   Metrics            — request activity, throughput, MCP tool calls (6 tools), chaos faults' + (process.env.DEMO_MQTT_BROKER_URL ? ', async messages' : ''));
+  log('   Breakpoints        — register a matcher (Matchers tab), then trigger the loopback below to pause Live Exchanges / Live Streams');
+  log('');
+
+  // --- Interactive breakpoints: loopback endpoints + how to drive them ---
+  log('========================================');
+  log(' Interactive breakpoints — Live Exchanges & Live Streams');
+  log('========================================');
+  log(' Breakpoints pause FORWARDED traffic and are resolved live in the dashboard');
+  log(' Breakpoints panel (which connects to the callback WebSocket as a client).');
+  log(' This demo seeded two self-forwarded (loopback) endpoints to pause:');
+  log(`   GET ${BASE}/breakpoint/exchange   (buffered JSON  -> Live Exchanges, RESPONSE phase)`);
+  log(`   GET ${BASE}/breakpoint/stream     (chunked stream -> Live Streams,   RESPONSE_STREAM phase)`);
+  log('');
+  log(' 0) Sanity-check the loopback works (no breakpoint registered yet):');
+  log(`      curl -s ${BASE}/breakpoint/exchange`);
+  log(`      curl -N -s ${BASE}/breakpoint/stream`);
+  log('');
+  log(' 1) Live Exchanges:');
+  log('      • Dashboard → Breakpoints → Matchers tab → Add matcher:');
+  log('          method GET, path /breakpoint/exchange, phase = Response');
+  log('      • Then run:');
+  log(`          curl -s ${BASE}/breakpoint/exchange`);
+  log('      • The forwarded response pauses in the Live Exchanges tab — Continue / Modify / Abort.');
+  log('');
+  log(' 2) Live Streams:');
+  log('      • Matchers tab → Add matcher:');
+  log('          method GET, path /breakpoint/stream, phase = Response stream frames');
+  log('      • Then run (note -N to disable curl buffering so frames arrive one at a time):');
+  log(`          curl -N -s ${BASE}/breakpoint/stream`);
+  log('      • Each chunk pauses in the Live Streams tab — Continue / Modify / Drop / Inject / Close.');
+  log('');
+  log(' (Matcher registration uses the dashboard\'s own callback clientId automatically.');
+  log('  The equivalent REST call is PUT /mockserver/breakpoint/matcher with');
+  log('  {httpRequest, phases, clientId} — clientId must be a CONNECTED callback client.)');
   log('');
 }
 
