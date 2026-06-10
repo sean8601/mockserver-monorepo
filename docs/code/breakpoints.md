@@ -2,8 +2,10 @@
 
 **TL;DR:** A breakpoint is a request matcher + set of phases + owning `clientId`.
 Register one via `PUT /mockserver/breakpoint/matcher` (with a required `clientId`).
-When a forwarded/proxied request matches, the exchange is paused at each specified
-phase. Resolution is interactive: the paused item is dispatched to the owning client
+When a request matches, the exchange is paused at each specified phase — this
+covers forwarded/proxied exchanges, matched mock responses, and unmatched-404
+responses (REQUEST and RESPONSE phases); streaming-frame phases remain
+forward/mock-stream only. Resolution is interactive: the paused item is dispatched to the owning client
 over the callback WebSocket (`/_mockserver_callback_websocket`). The client (any
 language client or the dashboard, all speaking the same protocol) inspects/modifies
 it and sends a decision; the server applies the decision and resumes. The four global
@@ -40,16 +42,38 @@ completed when the client replies or the timeout fires. No thread is blocked.
 
 ### Request phase
 
-- Hold point: `HttpActionHandler.handleUnmatchedProxyForward`, after pre-flight
-  validation but before the upstream HTTP call.
-- Decision actions: CONTINUE (forward original), MODIFY (forward replacement
-  request), ABORT (write error response to client without forwarding).
+- Hold points:
+  - `HttpActionHandler.handleUnmatchedProxyForward`, after pre-flight validation
+    but before the upstream HTTP call (unmatched / anonymous proxy forwards).
+  - `HttpActionHandler.dispatchForwardWithBreakpoint`, before the upstream call for
+    **matched** forward expectations (`FORWARD`, `FORWARD_TEMPLATE`,
+    `FORWARD_CLASS_CALLBACK`, `FORWARD_REPLACE`, `FORWARD_VALIDATE`,
+    `FORWARD_WITH_FALLBACK`). `FORWARD_OBJECT_CALLBACK` is not covered (it uses its
+    own write path).
+  - `HttpActionHandler.dispatchMockResponseWithBreakpoint`, before generating a
+    **matched mock response** (`RESPONSE`, `RESPONSE_TEMPLATE`,
+    `RESPONSE_CLASS_CALLBACK`). MODIFY feeds the modified request into template /
+    class-callback generation.
+  - The unmatched-**404** dispatch (no expectation matched and not proxying), before
+    `returnNotFound` writes the not-found response.
+- Decision actions: CONTINUE (proceed with the original request), MODIFY (proceed
+  with the replacement request — forwarded upstream for forwards, or fed into
+  response generation for mock/404), ABORT (write error response to the client
+  without forwarding or generating the response).
 
 ### Response phase
 
-- Hold point: `HttpActionHandler.writeForwardActionResponse` (expectation-matched
-  forwards) and `executeUnmatchedForward` (unmatched proxy forwards), after the
-  upstream response is received but before it is written to the client.
+- Hold points:
+  - `HttpActionHandler.writeForwardActionResponse` (expectation-matched forwards)
+    and `executeUnmatchedForward` (unmatched proxy forwards), after the upstream
+    response is received but before it is written to the client.
+  - `HttpActionHandler.writeResponseActionResponse`, after chaos is applied but
+    before writing a **matched mock response**. Scoped by action type to
+    `RESPONSE` / `RESPONSE_TEMPLATE` / `RESPONSE_CLASS_CALLBACK` so the
+    protocol-specific paths that share this writer (LLM, gRPC, WebSocket, SSE) are
+    not intercepted. Chaos is not re-applied after manual resolution.
+  - `HttpActionHandler.returnNotFound`, before writing an unmatched-**404**
+    response.
 - Non-streaming (buffered) responses only — streaming responses are written
   immediately (breakpoint is skipped).
 - Decision actions: CONTINUE (write original response), MODIFY (write replacement

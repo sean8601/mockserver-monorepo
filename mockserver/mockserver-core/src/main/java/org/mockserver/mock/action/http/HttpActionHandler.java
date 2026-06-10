@@ -274,7 +274,13 @@ public class HttpActionHandler {
 
         } else {
 
-            returnNotFound(responseWriter, request, null);
+            // breakpoint: REQUEST-phase pause on the unmatched-404 path — lets a registered matcher
+            // pause / modify / abort even though nothing matched and the server is not proxying.
+            if (attemptRequestBreakpoint(request, synchronous, responseWriter, null,
+                req -> returnNotFound(responseWriter, req, null, synchronous))) {
+                return;
+            }
+            returnNotFound(responseWriter, request, null, synchronous);
 
         }
     }
@@ -317,21 +323,18 @@ public class HttpActionHandler {
             ? ServiceChaosRegistry.getInstance().get(request.getFirstHeader("host"))
             : effectiveChaos;
         switch (action.getType()) {
-            case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
-                // chaos: inject HTTP chaos faults on mocked responses
-                writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-            }, expectationPostProcessor), synchronous);
-            case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                final HttpResponse response = getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, request);
-                // chaos: inject HTTP chaos faults on mocked responses
-                writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-            }, expectationPostProcessor), synchronous, action.getDelay());
-            case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                final HttpResponse response = getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, request);
-                // chaos: inject HTTP chaos faults on mocked responses
-                writeResponseActionResponse(response, responseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
-            }, expectationPostProcessor), synchronous, action.getDelay());
+            // breakpoint: REQUEST-phase pause gates each mock-response dispatch; chaos faults and the
+            // RESPONSE-phase breakpoint are applied inside writeResponseActionResponse. MODIFY feeds the
+            // modified request into template/class-callback generation; logging keys off the original request.
+            case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
+                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
+                    req -> getHttpResponseActionHandler().handle((HttpResponse) action)), expectationPostProcessor), synchronous);
+            case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
+                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
+                    req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, action.getDelay());
+            case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
+                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
+                    req -> getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, req)), expectationPostProcessor), synchronous, action.getDelay());
             case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
                     getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
                 synchronous, action.getDelay());
@@ -342,24 +345,25 @@ public class HttpActionHandler {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                final HttpForwardActionResult responseFuture = getHttpForwardActionHandler().handle((HttpForward) action, request);
-                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+                // breakpoint: REQUEST-phase pause gates the forward; MODIFY feeds the modified request into the forward handler
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                    req -> getHttpForwardActionHandler().handle((HttpForward) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                final HttpForwardActionResult responseFuture = getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, request);
-                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                    req -> getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                final HttpForwardActionResult responseFuture = getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, request);
-                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                    req -> getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
-            // deferred: FORWARD_OBJECT_CALLBACK chaos injection — uses its own write path
+            // deferred: FORWARD_OBJECT_CALLBACK chaos injection and REQUEST breakpoint — uses its own write path
             case FORWARD_OBJECT_CALLBACK -> scheduler.schedule(() ->
                     getHttpForwardObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
                 synchronous, combineWithGlobalDelay(action.getDelay()));
@@ -367,22 +371,22 @@ public class HttpActionHandler {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                final HttpForwardActionResult responseFuture = getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, request);
-                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                    req -> getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                final HttpForwardActionResult responseFuture = getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, request);
-                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                    req -> getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case FORWARD_WITH_FALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                final HttpForwardActionResult responseFuture = getHttpForwardWithFallbackActionHandler().handle((HttpForwardWithFallback) action, request);
-                writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                    req -> getHttpForwardWithFallbackActionHandler().handle((HttpForwardWithFallback) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             case SSE_RESPONSE -> {
                 if (ctx == null) {
@@ -698,7 +702,7 @@ public class HttpActionHandler {
                         .setArguments(request)
                 );
             }
-            returnNotFound(responseWriter, request, null);
+            returnNotFound(responseWriter, request, null, synchronous);
 
         } else {
 
@@ -1961,6 +1965,38 @@ public class HttpActionHandler {
 
         Delay[] delays = combineWithChaosAndGlobalDelay(effectiveResponse.getDelay(), chaosLatency);
         scheduler.schedule(() -> {
+            // breakpoint: RESPONSE-phase pause for matched mock responses (RESPONSE / RESPONSE_TEMPLATE /
+            // RESPONSE_CLASS_CALLBACK only — scoped by action type so the protocol-specific write paths that
+            // share this writer, e.g. LLM / gRPC / WebSocket / SSE fall-backs, are NOT intercepted). Holds the
+            // post-chaos response before writing; chaos is not re-applied after manual resolution.
+            if (!synchronous && isMockResponseBreakpointEligible(action)) {
+                final org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint =
+                    org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                        .findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
+                if (responseBreakpoint != null) {
+                    final java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
+                        ? scheduler.getExecutorService() : Runnable::run;
+                    if (attemptResponseBreakpoint(responseBreakpoint, request, effectiveResponse, action.getExpectationId(), responseWriter, continuationExecutor, responseToWrite -> {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setType(EXPECTATION_RESPONSE)
+                                .setLogLevel(Level.INFO)
+                                .setCorrelationId(request.getLogCorrelationId())
+                                .setHttpRequest(request)
+                                .setHttpResponse(responseToWrite)
+                                .setExpectationId(action.getExpectationId())
+                                .setMessageFormat("returning response:{}for request:{}for action:{}from expectation:{}")
+                                .setArguments(responseToWrite, request, action, action.getExpectationId())
+                        );
+                        validateOpenAPIResponse(responseToWrite, request, action, requestDefinition);
+                        responseWriter.writeResponse(request, responseToWrite, false);
+                        emitRequestSpan(request, responseToWrite, action, ctx, 0);
+                    }, postProcessor)) {
+                        return; // async — postProcessor runs in the breakpoint continuation
+                    }
+                    // cap reached — fall through to normal write
+                }
+            }
             try {
                 mockServerLogger.logEvent(
                     new LogEntry()
@@ -1982,6 +2018,25 @@ public class HttpActionHandler {
                 }
             }
         }, synchronous, delays);
+    }
+
+    /**
+     * Whether a matched mock-response action is eligible for the RESPONSE-phase breakpoint. Scoped to the
+     * buffered mock-response action types so the protocol-specific paths (LLM, gRPC, WebSocket, SSE) that
+     * share {@link #writeResponseActionResponse} are not intercepted.
+     */
+    private static boolean isMockResponseBreakpointEligible(final Action action) {
+        if (action == null || action.getType() == null) {
+            return false;
+        }
+        switch (action.getType()) {
+            case RESPONSE:
+            case RESPONSE_TEMPLATE:
+            case RESPONSE_CLASS_CALLBACK:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private Delay[] combineWithGlobalDelay(Delay actionDelay) {
@@ -2416,6 +2471,133 @@ public class HttpActionHandler {
         return false; // cap reached, fall through
     }
 
+    /**
+     * REQUEST-phase breakpoint gate shared by matched forwards, matched mock responses, and the
+     * unmatched-404 path. Mirrors the unmatched-proxy REQUEST breakpoint in {@link #handleUnmatchedProxyForward}:
+     * if a REQUEST breakpoint matches and dispatch to a connected callback client succeeds, the request is
+     * paused and, on resolution, {@code onProceed} is invoked with the original request (CONTINUE) or the
+     * modified request (MODIFY), or an abort response is written (ABORT); this returns {@code true} and the
+     * caller MUST NOT proceed synchronously. Returns {@code false} when synchronous, when no breakpoint
+     * matches, or when the cap was reached / client disconnected — the caller then proceeds normally.
+     * Non-blocking: the continuation runs asynchronously on the scheduler executor.
+     */
+    private boolean attemptRequestBreakpoint(
+        final HttpRequest request,
+        final boolean synchronous,
+        final ResponseWriter responseWriter,
+        final Runnable postProcessor,
+        final java.util.function.Consumer<HttpRequest> onProceed
+    ) {
+        if (synchronous) {
+            return false;
+        }
+        final org.mockserver.mock.breakpoint.BreakpointMatcher requestBreakpoint =
+            org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                .findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.REQUEST);
+        if (requestBreakpoint == null) {
+            return false;
+        }
+        final java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.BreakpointDecision> decisionFuture =
+            org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchRequest(
+                requestBreakpoint.getClientId(), requestBreakpoint.getId(), request,
+                httpStateHandler.getWebSocketClientRegistry(), configuration, mockServerLogger
+            );
+        if (decisionFuture == null) {
+            // cap reached or client disconnected — fall through to normal handling
+            return false;
+        }
+        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.INFO)
+                    .setCorrelationId(request.getLogCorrelationId())
+                    .setHttpRequest(request)
+                    .setMessageFormat("request paused at breakpoint, awaiting resolution for:{}")
+                    .setArguments(request)
+            );
+        }
+        final java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
+            ? scheduler.getExecutorService()
+            : Runnable::run;
+        decisionFuture.thenAcceptAsync(decision -> {
+            try {
+                switch (decision.getAction()) {
+                    case ABORT:
+                        HttpResponse abortResponse = decision.getAbortResponse();
+                        if (abortResponse == null) {
+                            abortResponse = response().withStatusCode(503).withReasonPhrase("Breakpoint Aborted");
+                        }
+                        responseWriter.writeResponse(request, abortResponse, false);
+                        if (postProcessor != null) {
+                            postProcessor.run();
+                        }
+                        return;
+                    case MODIFY:
+                        onProceed.accept(decision.getModifiedRequest() != null ? decision.getModifiedRequest() : request);
+                        return;
+                    case CONTINUE:
+                    default:
+                        onProceed.accept(request);
+                }
+            } catch (Throwable throwable) {
+                returnBadGateway(responseWriter, request, "breakpoint continuation failed: " + throwable.getMessage());
+                if (postProcessor != null) {
+                    postProcessor.run();
+                }
+            }
+        }, continuationExecutor);
+        return true;
+    }
+
+    /**
+     * Dispatches a matched forward expectation through the REQUEST-phase breakpoint gate. {@code forwarder}
+     * computes the {@link HttpForwardActionResult} from the (possibly modified) request; the RESPONSE-phase
+     * breakpoint and logging continue to key off the original {@code request} (mirroring the unmatched-proxy
+     * MODIFY semantics). When no REQUEST breakpoint applies, the forward proceeds normally.
+     */
+    private void dispatchForwardWithBreakpoint(
+        final HttpRequest request,
+        final Action action,
+        final boolean synchronous,
+        final ResponseWriter responseWriter,
+        final Runnable expectationPostProcessor,
+        final HttpChaosProfile forwardChaos,
+        final int capturedMatchCount,
+        final ChannelHandlerContext ctx,
+        final java.util.function.Function<HttpRequest, HttpForwardActionResult> forwarder
+    ) {
+        if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor,
+            req -> writeForwardActionResponse(forwarder.apply(req), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx))) {
+            return;
+        }
+        writeForwardActionResponse(forwarder.apply(request), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+    }
+
+    /**
+     * Dispatches a matched mock-response expectation through the REQUEST-phase breakpoint gate. {@code responder}
+     * generates the {@link HttpResponse} from the (possibly modified) request (so templates/class-callbacks see
+     * the modified request); the response is then written via {@link #writeResponseActionResponse}, where the
+     * RESPONSE-phase breakpoint is applied. Logging/response-phase matching key off the original {@code request}.
+     */
+    private void dispatchMockResponseWithBreakpoint(
+        final HttpRequest request,
+        final Action action,
+        final boolean synchronous,
+        final ResponseWriter responseWriter,
+        final RequestDefinition requestDefinition,
+        final Runnable expectationPostProcessor,
+        final HttpChaosProfile effectiveChaos,
+        final int capturedMatchCount,
+        final ChannelHandlerContext ctx,
+        final java.util.function.Function<HttpRequest, HttpResponse> responder
+    ) {
+        if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor,
+            req -> writeResponseActionResponse(responder.apply(req), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx))) {
+            return;
+        }
+        writeResponseActionResponse(responder.apply(request), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+    }
+
     private void returnBadGateway(ResponseWriter responseWriter, HttpRequest request, String error) {
         HttpResponse response = badGatewayResponse();
         if (isNotBlank(error)) {
@@ -2448,7 +2630,7 @@ public class HttpActionHandler {
         responseWriter.writeResponse(request, response, false);
     }
 
-    private void returnNotFound(ResponseWriter responseWriter, HttpRequest request, String error) {
+    private void returnNotFound(ResponseWriter responseWriter, HttpRequest request, String error, boolean synchronous) {
         HttpResponse response = notFoundResponse();
         if (request.getHeaders() != null && request.getHeaders().containsEntry(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
             response.withHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue());
@@ -2518,6 +2700,23 @@ public class HttpActionHandler {
         }
         if (configuration.attachMismatchDiagnosticToResponse()) {
             attachMismatchDiagnostic(request, response);
+        }
+        // breakpoint: RESPONSE-phase pause on the unmatched-404 before writing — lets a registered
+        // matcher inspect / modify / abort the not-found response.
+        if (!synchronous) {
+            final org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint =
+                org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                    .findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
+            if (responseBreakpoint != null) {
+                final java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
+                    ? scheduler.getExecutorService() : Runnable::run;
+                final HttpResponse notFound = response;
+                if (attemptResponseBreakpoint(responseBreakpoint, request, notFound, null, responseWriter, continuationExecutor,
+                    responseToWrite -> responseWriter.writeResponse(request, responseToWrite, false), null)) {
+                    return; // async — continuation writes the resolved response
+                }
+                // cap reached — fall through to normal write
+            }
         }
         responseWriter.writeResponse(request, response, false);
     }
