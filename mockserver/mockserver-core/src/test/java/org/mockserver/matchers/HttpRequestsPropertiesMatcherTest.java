@@ -36,7 +36,12 @@ import static org.junit.Assert.fail;
  */
 public class HttpRequestsPropertiesMatcherTest {
 
-    private final Configuration configuration = configuration();
+    // Pin matchersFailFast/detailedMatchFailures on this instance (both default true) so the
+    // field-difference assertions below do not read the mutable global ConfigurationProperties
+    // defaults. Otherwise a concurrently-running test that flips the global matchersFailFast to
+    // false makes every field (not just the first mismatch) record a difference, intermittently
+    // breaking the "only PATH differs" assertions (parallel-state contamination, see commit log).
+    private final Configuration configuration = configuration().matchersFailFast(true).detailedMatchFailures(true);
     private final MockServerLogger mockServerLogger = new MockServerLogger(HttpRequestsPropertiesMatcherTest.class);
 
     /**
