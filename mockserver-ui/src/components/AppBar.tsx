@@ -274,21 +274,25 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Breakpoints
           </ToggleButton>
-          <ToggleButton value="sessions" aria-label="Session inspector view">
-            <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Sessions
-          </ToggleButton>
           <ToggleButton value="composer" aria-label="Mocks view">
             <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Mocks
           </ToggleButton>
-          <ToggleButton value="library" aria-label="Library of captured content">
-            <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Library
-          </ToggleButton>
           <ToggleButton value="chaos" aria-label="Service chaos view">
             <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Chaos
+          </ToggleButton>
+          <ToggleButton value="async" aria-label="AsyncAPI broker mock view">
+            <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Async
+          </ToggleButton>
+          <ToggleButton value="sessions" aria-label="Session inspector view">
+            <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Sessions
+          </ToggleButton>
+          <ToggleButton value="library" aria-label="Library of captured content">
+            <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+            Library
           </ToggleButton>
           <ToggleButton value="drift" aria-label="Drift detection view">
             <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
@@ -297,10 +301,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           <ToggleButton value="verification" aria-label="Verification view">
             <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
             Verify
-          </ToggleButton>
-          <ToggleButton value="async" aria-label="AsyncAPI broker mock view">
-            <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Async
           </ToggleButton>
           <ToggleButton value="metrics" aria-label="Metrics view">
             <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
