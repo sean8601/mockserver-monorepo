@@ -65,15 +65,9 @@ describe('OnboardingPanel', () => {
     expect(screen.queryByText(/No expectations or traffic recorded/i)).not.toBeInTheDocument();
   });
 
-  it('gives every tile a Docs link', () => {
+  it('has no per-tile Docs links', () => {
     renderPanel();
-    const docsLinks = screen.getAllByRole('link', { name: 'Docs' });
-    expect(docsLinks).toHaveLength(5);
-    // the Breakpoints tile links to the interactive-breakpoints docs page
-    expect(docsLinks.map((l) => l.getAttribute('href'))).toContain(
-      'https://www.mock-server.com/mock_server/interactive_breakpoints.html',
-    );
-    docsLinks.forEach((l) => expect(l).toHaveAttribute('target', '_blank'));
+    expect(screen.queryByRole('link', { name: 'Docs' })).not.toBeInTheDocument();
   });
 
   it('renders the Import OpenAPI button', () => {
@@ -104,7 +98,7 @@ describe('OnboardingPanel', () => {
     expect(useDashboardStore.getState().view).toBe('metrics');
   });
 
-  it('links to the UI docs at the bottom', () => {
+  it('links to the UI docs inline in the more-tabs line', () => {
     renderPanel();
     const uiDocs = screen.getByRole('link', { name: 'UI docs' });
     expect(uiDocs).toHaveAttribute('href', 'https://www.mock-server.com/mock_server/mockserver_ui.html');

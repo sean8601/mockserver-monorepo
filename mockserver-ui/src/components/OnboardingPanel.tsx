@@ -25,10 +25,9 @@ interface ActionCardProps {
   description: string;
   actionLabel: string;
   onAction: () => void;
-  docsHref: string;
 }
 
-function ActionCard({ icon, title, description, actionLabel, onAction, docsHref }: ActionCardProps) {
+function ActionCard({ icon, title, description, actionLabel, onAction }: ActionCardProps) {
   return (
     <Card
       variant="outlined"
@@ -50,12 +49,9 @@ function ActionCard({ icon, title, description, actionLabel, onAction, docsHref 
           {description}
         </Typography>
       </CardContent>
-      <CardActions sx={{ px: 2, pb: 2, gap: 1, flexWrap: 'wrap' }}>
+      <CardActions sx={{ px: 2, pb: 2 }}>
         <Button size="small" variant="contained" onClick={onAction}>
           {actionLabel}
-        </Button>
-        <Button size="small" variant="text" href={docsHref} target="_blank" rel="noopener">
-          Docs
         </Button>
       </CardActions>
     </Card>
@@ -119,7 +115,6 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           description="Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them."
           actionLabel="Open Breakpoints"
           onAction={go('breakpoints')}
-          docsHref="https://www.mock-server.com/mock_server/interactive_breakpoints.html"
         />
 
         <ActionCard
@@ -128,7 +123,6 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           description="Sit MockServer between your app and a real API to record, inspect, and replay live traffic — and validate or rewrite it on the way through."
           actionLabel="View Traffic"
           onAction={go('traffic')}
-          docsHref="https://www.mock-server.com/proxy/debugging_proxied_traffic.html"
         />
 
         <ActionCard
@@ -137,7 +131,6 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           description="Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session."
           actionLabel="Open Sessions"
           onAction={go('sessions')}
-          docsHref="https://www.mock-server.com/mock_server/ai_debugging.html"
         />
 
         <ActionCard
@@ -146,7 +139,6 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           description="Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically."
           actionLabel="Import OpenAPI"
           onAction={() => setOpenApiOpen(true)}
-          docsHref="https://www.mock-server.com/mock_server/creating_expectations.html"
         />
 
         <ActionCard
@@ -155,13 +147,20 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           description="Inject latency, errors, and dropped connections to test how your system copes when the APIs it depends on misbehave."
           actionLabel="Open Chaos"
           onAction={go('chaos')}
-          docsHref="https://www.mock-server.com/mock_server/chaos_testing.html"
         />
       </Box>
 
       <Box sx={{ mt: 4, maxWidth: 760, width: '100%' }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          More in the tabs above:
+          More in the tabs above (or see{' '}
+          <Link
+            href="https://www.mock-server.com/mock_server/mockserver_ui.html"
+            target="_blank"
+            rel="noopener"
+          >
+            UI docs
+          </Link>
+          ):
         </Typography>
         <Box component="ul" sx={{ m: 0, pl: 3 }}>
           {OTHER_TABS.map((tab) => (
@@ -176,17 +175,6 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           ))}
         </Box>
       </Box>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-        See{' '}
-        <Link
-          href="https://www.mock-server.com/mock_server/mockserver_ui.html"
-          target="_blank"
-          rel="noopener"
-        >
-          UI docs
-        </Link>
-      </Typography>
 
       <OpenApiImportDialog
         open={openApiOpen}
