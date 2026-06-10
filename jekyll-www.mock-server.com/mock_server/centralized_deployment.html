@@ -1,6 +1,6 @@
 ---
-title: Centralized Deployment
-shortTitle: Centralized Deployment
+title: Centralised Deployment
+shortTitle: Centralised Deployment
 description: Deploy MockServer as a shared instance across multiple teams or CI pipelines, with options for single-node, persistence-only durability, and clustered HA using the Infinispan state backend.
 layout: page
 pageOrder: 4
@@ -9,8 +9,8 @@ subsection: true
 sitemap:
   priority: 0.8
   changefreq: 'monthly'
-  lastmod: 2026-06-05T00:00:00+00:00
-keywords: shared mockserver, centralized mock server, clustered mockserver, infinispan clustering, shared test environment, mockserver ha, mockserver kubernetes cluster, stateBackend, clusterEnabled, cloud blob storage, s3 gcs azure blob store
+  lastmod: 2026-06-11T00:00:00+00:00
+keywords: shared mockserver, centralised mock server, centralized mock server, clustered mockserver, infinispan clustering, shared test environment, mockserver ha, mockserver kubernetes cluster, stateBackend, clusterEnabled, cloud blob storage, s3 gcs azure blob store
 ---
 
 <p>
@@ -461,7 +461,7 @@ app:
     on the local filesystem (<code class="inline code">blobStoreType=filesystem</code>). When several nodes &mdash;
     or several short-lived CI runners &mdash; need to share that durable data <strong>without</strong> a shared
     POSIX volume (NFS / EFS / Azure Files), MockServer can store it in a cloud object store instead.
-    This is useful for centralized fixture libraries, record-and-replay cassettes captured by one job and
+    This is useful for centralised fixture libraries, record-and-replay cassettes captured by one job and
     replayed by another, and snapshots that must outlive any individual pod.
 </p>
 

@@ -851,7 +851,7 @@ verified against its published SHA-256 checksum, and cached per-user so subseque
 		<tr><td><a target="_blank" href="https://pypi.org/project/mockserver-client/" rel="noopener noreferrer">mockserver-client</a></td><td>Python</td><td><code>start(port=1080)</code> / <code>ensure_binary()</code></td></tr>
 		<tr><td><a target="_blank" href="https://rubygems.org/gems/mockserver-client" rel="noopener noreferrer">mockserver-client</a></td><td>Ruby</td><td><code>MockServer::BinaryLauncher.start(port: 1080)</code> / <code>.ensure_launcher</code></td></tr>
 		<tr><td><a target="_blank" href="https://pkg.go.dev/github.com/mock-server/mockserver-monorepo/mockserver-client-go" rel="noopener noreferrer">mockserver-client-go</a></td><td>Go</td><td><code>mockserver.StartServer(1080, "", nil)</code> / <code>mockserver.EnsureBinary(version, nil)</code></td></tr>
-		<tr><td><a target="_blank" href="https://www.nuget.org/packages/MockServer.Client" rel="noopener noreferrer">MockServer.Client</a></td><td>.NET</td><td><code>MockServerBinaryLauncher.Start(port: 1080)</code> / <code>.EnsureBinary()</code></td></tr>
+		<tr><td><a target="_blank" href="https://www.nuget.org/packages/MockServerClient" rel="noopener noreferrer">MockServerClient</a></td><td>.NET</td><td><code>MockServerBinaryLauncher.Start(port: 1080)</code> / <code>.EnsureBinary()</code></td></tr>
 		<tr><td><a target="_blank" href="https://crates.io/crates/mockserver-client" rel="noopener noreferrer">mockserver-client</a></td><td>Rust</td><td><code>launcher::start(1080)</code> / <code>launcher::ensure_launcher()</code></td></tr>
 		<tr><td>PHP</td><td>PHP</td><td><em>Not supported</em> &mdash; start MockServer via Docker, the executable JAR, or another client&rsquo;s launcher.</td></tr>
 	</tbody>
@@ -893,9 +893,106 @@ verified against its published SHA-256 checksum, and cached per-user so subseque
 
 {% include_subpage ../mock_server/_includes/running_docker_container.html %}
 
+<a id="docker_compose_recipes" class="anchor" href="#docker_compose_recipes">&nbsp;</a>
+
+<h3>One-command docker-compose recipes</h3>
+
+<p>The repository ships task-oriented <span class="inline_code">docker-compose.yml</span> recipes &mdash; each is a self-contained directory you can <span class="inline_code">docker compose up</span> with no extra configuration. Clone the repo (or copy a recipe), <span class="inline_code">cd</span> into it, and run:</p>
+
+<pre class="prettyprint code"><code class="code">cd examples/docker-compose/mock-from-openapi
+docker compose up</code></pre>
+
+<table class="comparison_table">
+	<thead>
+		<tr>
+			<th>Recipe</th>
+			<th>What it does</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td><a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose/mock-from-openapi" rel="noopener noreferrer"><span class="inline_code">mock-from-openapi</span></a></td>
+			<td>Serve mocks generated automatically from a mounted OpenAPI / Swagger spec.</td>
+		</tr>
+		<tr>
+			<td><a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose/record-replay-proxy" rel="noopener noreferrer"><span class="inline_code">record-replay-proxy</span></a></td>
+			<td>Proxy to an upstream and record traffic to a replayable expectations file.</td>
+		</tr>
+		<tr>
+			<td><a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose/validation-proxy" rel="noopener noreferrer"><span class="inline_code">validation-proxy</span></a></td>
+			<td>Proxy to an upstream and validate requests / responses against an OpenAPI spec.</td>
+		</tr>
+		<tr>
+			<td><a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose/chaos-proxy" rel="noopener noreferrer"><span class="inline_code">chaos-proxy</span></a></td>
+			<td>Proxy to an upstream while injecting latency and intermittent errors.</td>
+		</tr>
+	</tbody>
+</table>
+
+<p>More configuration permutations (custom ports, mounted properties files, mTLS, persisted expectations) live in the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/docker-compose" rel="noopener noreferrer">docker-compose examples folder</a>.</p>
+
 <a id="helm_chart" class="anchor" href="#helm_chart">&nbsp;</a>
 
 {% include_subpage ../mock_server/_includes/helm_chart.html %}
+
+<a id="running_via_testcontainers" class="anchor" href="#running_via_testcontainers">&nbsp;</a>
+
+<h2>Testcontainers</h2>
+
+<p>To have a MockServer container started and torn down automatically by your test run, use <a href="/mock_server/mockserver_testcontainers.html">MockServer with Testcontainers</a> rather than running a long-lived instance yourself.</p>
+
+<a id="initialize_and_persist" class="anchor" href="#initialize_and_persist">&nbsp;</a>
+
+<h2>Initialize &amp; Persist Mocks</h2>
+
+<p>However you run MockServer, you can preload expectations at startup and persist them across restarts. These work as CLI flags, configuration properties, or environment variables:</p>
+
+<table class="comparison_table">
+	<thead>
+		<tr>
+			<th>What you want</th>
+			<th>CLI flag</th>
+			<th>Environment variable</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>Preload expectations from a JSON file or glob</td>
+			<td><span class="inline_code">--init &lt;fileOrGlob&gt;</span></td>
+			<td><span class="inline_code">MOCKSERVER_INITIALIZATION_JSON_PATH</span></td>
+		</tr>
+		<tr>
+			<td>Preload expectations from an OpenAPI spec</td>
+			<td><span class="inline_code">--openapi &lt;specUrlOrPath&gt;</span></td>
+			<td><span class="inline_code">MOCKSERVER_INITIALIZATION_OPENAPI_PATH</span></td>
+		</tr>
+		<tr>
+			<td>Persist expectations to a file across restarts</td>
+			<td><span class="inline_code">--persist &lt;file&gt;</span></td>
+			<td><span class="inline_code">MOCKSERVER_PERSIST_EXPECTATIONS=true</span> + <span class="inline_code">MOCKSERVER_PERSISTED_EXPECTATIONS_PATH</span></td>
+		</tr>
+	</tbody>
+</table>
+
+<p>For example, with Docker, mount a spec and serve it as a mock:</p>
+
+<pre class="prettyprint code"><code class="code">docker run -p <span class="numeric_literal">1080</span>:<span class="numeric_literal">1080</span> \
+    -v $(pwd)/openapi.yaml:/config/openapi.yaml \
+    -e MOCKSERVER_INITIALIZATION_OPENAPI_PATH=/config/openapi.yaml \
+    mockserver/mockserver</code></pre>
+
+<p>See <a href="/mock_server/initializing_expectations.html">Initializing Expectations</a>, <a href="/mock_server/persisting_expectations.html">Persisting Expectations</a>, and the <a href="/mock_server/configuration_properties.html">configuration properties</a> page (each property lists its environment-variable form) for full details.</p>
+
+<a id="bootstrap_from_har" class="anchor" href="#bootstrap_from_har">&nbsp;</a>
+
+<h2>Bootstrap from a Browser HAR</h2>
+
+<p>To get a working mock from real traffic in seconds: open your browser DevTools, record the requests on the Network tab, and <strong>Export HAR</strong>. Then import that file into a running MockServer &mdash; it creates one expectation per recorded entry:</p>
+
+<pre class="prettyprint code"><code class="code">curl -X PUT "http://localhost:<span class="numeric_literal">1080</span>/mockserver/import?format=har" \
+    --data-binary @recording.har</code></pre>
+
+<p>The same endpoint also imports Postman collections. See <a href="/mock_server/importing_expectations.html">Importing Expectations from HAR &amp; Postman</a> for format detection, options, and examples.</p>
 
 <a id="build-and-run-from-source" class="anchor" href="#build-and-run-from-source">&nbsp;</a>
 
