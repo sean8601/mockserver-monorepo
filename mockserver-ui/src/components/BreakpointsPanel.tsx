@@ -112,7 +112,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   const clientRef = useRef(getBreakpointCallbackClient());
 
   // -- Live paused items (from WS) --
-  const [pausedItems, setPausedItems] = useState<(PausedItem & { key: number })[]>([]);
+  const [pausedItems, setPausedItems] = useState<(PausedItem & { key: number; receivedAt: number })[]>([]);
 
   // -- Action state --
   const [busy, setBusy] = useState(false);
@@ -145,7 +145,10 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     });
 
     client.onPausedItem((item) => {
-      const keyed = { ...item, key: nextItemKey++ };
+      // receivedAt is captured once, at arrival, and never changes — it gives the
+      // lists a stable, monotonic sort key so items keep a fixed position by the
+      // time their request/response/frame was received, instead of reshuffling.
+      const keyed = { ...item, key: nextItemKey++, receivedAt: Date.now() };
       setPausedItems((prev) => [...prev, keyed]);
     });
 
@@ -423,8 +426,19 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   // Derived
   // -------------------------------------------------------------------------
 
-  const exchangeItems = pausedItems.filter((i) => i.phase === 'REQUEST' || i.phase === 'RESPONSE');
-  const frameItems = pausedItems.filter((i) => i.phase === 'RESPONSE_STREAM' || i.phase === 'INBOUND_STREAM') as (PausedItem & { key: number; phase: 'RESPONSE_STREAM' | 'INBOUND_STREAM'; frame: PausedStreamFrame })[];
+  // Stable order: sort by the arrival timestamp (then the monotonic key as a
+  // tiebreaker) so the lists never reshuffle — a newly-paused exchange/stream
+  // appears in a fixed chronological position rather than jumping around.
+  const byReceived = (
+    a: { key: number; receivedAt: number },
+    b: { key: number; receivedAt: number },
+  ): number => a.receivedAt - b.receivedAt || a.key - b.key;
+  const exchangeItems = pausedItems
+    .filter((i) => i.phase === 'REQUEST' || i.phase === 'RESPONSE')
+    .sort(byReceived);
+  const frameItems = (
+    pausedItems.filter((i) => i.phase === 'RESPONSE_STREAM' || i.phase === 'INBOUND_STREAM') as (PausedItem & { key: number; receivedAt: number; phase: 'RESPONSE_STREAM' | 'INBOUND_STREAM'; frame: PausedStreamFrame })[]
+  ).sort(byReceived);
 
   const wsIndicatorColor = wsState === 'connected' ? 'success' : wsState === 'connecting' ? 'warning' : 'error';
 
