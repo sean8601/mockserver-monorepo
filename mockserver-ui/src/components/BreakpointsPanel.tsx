@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -21,9 +21,10 @@ import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
-import Accordion from '@mui/material/Accordion';
-import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import FormGroup from '@mui/material/FormGroup';
+import MenuItem from '@mui/material/MenuItem';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import EditIcon from '@mui/icons-material/Edit';
@@ -31,169 +32,276 @@ import BlockIcon from '@mui/icons-material/Block';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import StopIcon from '@mui/icons-material/Stop';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ClearAllIcon from '@mui/icons-material/ClearAll';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import CallReceivedIcon from '@mui/icons-material/CallReceived';
 import CallMadeIcon from '@mui/icons-material/CallMade';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
-  fetchBreakpoints,
-  continueBreakpoint,
-  modifyBreakpoint,
-  modifyBreakpointResponse,
-  abortBreakpoint,
-  fetchStreamFrames,
-  continueStreamFrame,
-  modifyStreamFrame,
-  dropStreamFrame,
-  injectStreamFrame,
-  closeStreamFrame,
-  type PausedExchange,
-  type BreakpointListResponse,
-  type StreamFrameListResponse,
-  type StreamFrame,
+  listBreakpointMatchers,
+  registerBreakpointMatcher,
+  removeBreakpointMatcher,
+  clearBreakpointMatchers,
+  type BreakpointMatcherEntry,
+  type MatcherPhase,
 } from '../lib/breakpoints';
+import {
+  getBreakpointCallbackClient,
+  type PausedItem,
+  type CallbackClientState,
+  type PausedStreamFrame,
+  type StreamFrameDecision,
+} from '../lib/breakpointCallbackClient';
 
 interface BreakpointsPanelProps {
   connectionParams: ConnectionParams;
 }
 
-const POLL_INTERVAL_MS = 2000;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-function formatAge(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const secs = Math.round(ms / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  const remainSecs = secs % 60;
-  return `${mins}m ${remainSecs}s`;
+const HTTP_METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
+
+const ALL_PHASES: { value: MatcherPhase; label: string }[] = [
+  { value: 'REQUEST', label: 'Request' },
+  { value: 'RESPONSE', label: 'Response' },
+  { value: 'RESPONSE_STREAM', label: 'Response stream frames' },
+  { value: 'INBOUND_STREAM', label: 'Inbound stream frames' },
+];
+
+function phaseChipColor(phase: string): 'default' | 'primary' | 'secondary' | 'info' | 'warning' {
+  switch (phase) {
+    case 'REQUEST': return 'default';
+    case 'RESPONSE': return 'secondary';
+    case 'RESPONSE_STREAM': return 'info';
+    case 'INBOUND_STREAM': return 'warning';
+    default: return 'default';
+  }
 }
+
+let nextItemKey = 0;
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelProps) {
   const [tab, setTab] = useState(0);
-  const [data, setData] = useState<BreakpointListResponse>({ pausedExchanges: [], count: 0 });
-  const [streamData, setStreamData] = useState<StreamFrameListResponse>({ streams: [], totalHeldFrames: 0 });
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [streamLoadError, setStreamLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [busy, setBusy] = useState(false);
 
-  // Modify dialog state (request/response breakpoints)
-  const [modifyTarget, setModifyTarget] = useState<PausedExchange | null>(null);
+  // -- Matchers state --
+  const [matchers, setMatchers] = useState<BreakpointMatcherEntry[]>([]);
+  const [matchersError, setMatchersError] = useState<string | null>(null);
+  const [matchersRefreshTick, setMatchersRefreshTick] = useState(0);
+
+  // Registration form
+  const [formMethod, setFormMethod] = useState('');
+  const [formPath, setFormPath] = useState('');
+  const [formPhases, setFormPhases] = useState<Set<MatcherPhase>>(new Set(['REQUEST', 'RESPONSE']));
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // -- Callback WS state --
+  const [wsState, setWsState] = useState<CallbackClientState>('disconnected');
+  const [clientId, setClientId] = useState<string | null>(null);
+  const clientRef = useRef(getBreakpointCallbackClient());
+
+  // -- Live paused items (from WS) --
+  const [pausedItems, setPausedItems] = useState<(PausedItem & { key: number })[]>([]);
+
+  // -- Action state --
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // -- Modify dialogs --
+  const [modifyTarget, setModifyTarget] = useState<(PausedItem & { key: number }) | null>(null);
   const [modifyJson, setModifyJson] = useState('');
   const [modifyError, setModifyError] = useState<string | null>(null);
 
-  // Stream frame dialogs
-  const [streamModifyTarget, setStreamModifyTarget] = useState<StreamFrame | null>(null);
-  const [streamModifyBody, setStreamModifyBody] = useState('');
-  const [streamModifyError, setStreamModifyError] = useState<string | null>(null);
+  // Frame modify/inject
+  const [frameModifyTarget, setFrameModifyTarget] = useState<(PausedItem & { key: number }) | null>(null);
+  const [frameModifyBody, setFrameModifyBody] = useState('');
+  const [frameModifyError, setFrameModifyError] = useState<string | null>(null);
 
-  const [streamInjectTarget, setStreamInjectTarget] = useState<StreamFrame | null>(null);
-  const [streamInjectBody, setStreamInjectBody] = useState('');
-  const [streamInjectError, setStreamInjectError] = useState<string | null>(null);
+  const [frameInjectTarget, setFrameInjectTarget] = useState<(PausedItem & { key: number }) | null>(null);
+  const [frameInjectBody, setFrameInjectBody] = useState('');
+  const [frameInjectError, setFrameInjectError] = useState<string | null>(null);
 
-  const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
+  // -------------------------------------------------------------------------
+  // Callback WS lifecycle
+  // -------------------------------------------------------------------------
 
-  // Poll breakpoints list (exchanges).
+  useEffect(() => {
+    const client = clientRef.current;
+
+    client.onStateChange((state) => {
+      setWsState(state);
+      setClientId(client.clientId);
+    });
+
+    client.onPausedItem((item) => {
+      const keyed = { ...item, key: nextItemKey++ };
+      setPausedItems((prev) => [...prev, keyed]);
+    });
+
+    client.connect(connectionParams);
+
+    return () => {
+      client.disconnect();
+    };
+  }, [connectionParams]);
+
+  // -------------------------------------------------------------------------
+  // Matchers polling
+  // -------------------------------------------------------------------------
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    async function poll(): Promise<void> {
+    async function load(): Promise<void> {
       try {
-        const response = await fetchBreakpoints(connectionParams, controller.signal);
+        const resp = await listBreakpointMatchers(connectionParams, controller.signal);
         if (cancelled) return;
-        setData(response);
-        setLoadError(null);
+        setMatchers(resp.matchers ?? []);
+        setMatchersError(null);
       } catch (e) {
         if (cancelled || controller.signal.aborted) return;
-        setLoadError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!cancelled) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+        setMatchersError(e instanceof Error ? e.message : String(e));
       }
     }
 
-    void poll();
+    void load();
     return () => {
       cancelled = true;
       controller.abort();
-      if (timer) clearTimeout(timer);
     };
-  }, [connectionParams, refreshTick]);
+  }, [connectionParams, matchersRefreshTick]);
 
-  // Poll stream frames.
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+  const refreshMatchers = useCallback(() => setMatchersRefreshTick((t) => t + 1), []);
 
-    async function poll(): Promise<void> {
-      try {
-        const response = await fetchStreamFrames(connectionParams, controller.signal);
-        if (cancelled) return;
-        setStreamData(response);
-        setStreamLoadError(null);
-      } catch (e) {
-        if (cancelled || controller.signal.aborted) return;
-        setStreamLoadError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!cancelled) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
-      }
+  // -------------------------------------------------------------------------
+  // Matcher registration
+  // -------------------------------------------------------------------------
+
+  const handleRegister = useCallback(async () => {
+    if (!clientId) {
+      setFormError('Callback WebSocket not connected. Wait for the connection to establish.');
+      return;
+    }
+    if (formPhases.size === 0) {
+      setFormError('At least one phase must be selected.');
+      return;
+    }
+    const httpRequest: Record<string, unknown> = {};
+    if (formMethod) httpRequest.method = formMethod;
+    if (formPath) httpRequest.path = formPath;
+    // If no fields specified, it matches everything
+    if (Object.keys(httpRequest).length === 0) {
+      httpRequest.path = '.*';
     }
 
-    void poll();
-    return () => {
-      cancelled = true;
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [connectionParams, refreshTick]);
+    setFormBusy(true);
+    setFormError(null);
+    try {
+      await registerBreakpointMatcher(
+        connectionParams,
+        httpRequest,
+        [...formPhases],
+        clientId,
+      );
+      refreshMatchers();
+      // Reset form
+      setFormMethod('');
+      setFormPath('');
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFormBusy(false);
+    }
+  }, [connectionParams, clientId, formMethod, formPath, formPhases, refreshMatchers]);
 
-  // --- Exchange actions ---
+  const handleRemoveMatcher = useCallback(async (id: string) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await removeBreakpointMatcher(connectionParams, id);
+      refreshMatchers();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [connectionParams, refreshMatchers]);
 
-  const handleContinue = useCallback(
-    async (id: string) => {
-      setBusy(true);
-      setActionError(null);
-      try {
-        await continueBreakpoint(connectionParams, id);
-        refresh();
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
+  const handleClearMatchers = useCallback(async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await clearBreakpointMatchers(connectionParams);
+      refreshMatchers();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [connectionParams, refreshMatchers]);
+
+  const togglePhase = useCallback((phase: MatcherPhase) => {
+    setFormPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(phase)) {
+        next.delete(phase);
+      } else {
+        next.add(phase);
       }
-    },
-    [connectionParams, refresh],
-  );
+      return next;
+    });
+  }, []);
 
-  const handleAbort = useCallback(
-    async (id: string) => {
-      setBusy(true);
-      setActionError(null);
-      try {
-        await abortBreakpoint(connectionParams, id);
-        refresh();
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [connectionParams, refresh],
-  );
+  // -------------------------------------------------------------------------
+  // WS-based resolution (exchanges)
+  // -------------------------------------------------------------------------
 
-  const openModifyDialog = useCallback((exchange: PausedExchange) => {
-    setModifyTarget(exchange);
-    const prefill = exchange.phase === 'RESPONSE'
-      ? (exchange.response ?? {})
-      : (exchange.request ?? {});
-    setModifyJson(JSON.stringify(prefill, null, 2));
+  const removeItem = useCallback((key: number) => {
+    setPausedItems((prev) => prev.filter((item) => item.key !== key));
+  }, []);
+
+  const handleContinueExchange = useCallback((item: PausedItem & { key: number }) => {
+    const client = clientRef.current;
+    if (item.phase === 'REQUEST') {
+      client.resolveRequest(item.correlationId, item.request);
+    } else if (item.phase === 'RESPONSE') {
+      client.resolveResponse(item.correlationId, item.response ?? {});
+    }
+    removeItem(item.key);
+  }, [removeItem]);
+
+  const handleAbortExchange = useCallback((item: PausedItem & { key: number }) => {
+    const client = clientRef.current;
+    if (item.phase === 'REQUEST') {
+      // Abort = send an HttpResponse (server writes it to client, no forward)
+      client.resolveRequest(item.correlationId, { statusCode: 503, body: 'Aborted by breakpoint' });
+    }
+    // For RESPONSE phase, abort is not applicable (response already received)
+    // Just continue with original
+    if (item.phase === 'RESPONSE') {
+      client.resolveResponse(item.correlationId, item.response ?? {});
+    }
+    removeItem(item.key);
+  }, [removeItem]);
+
+  const openModifyExchangeDialog = useCallback((item: PausedItem & { key: number }) => {
+    setModifyTarget(item);
+    if (item.phase === 'RESPONSE') {
+      setModifyJson(JSON.stringify(item.response ?? {}, null, 2));
+    } else if (item.phase === 'REQUEST') {
+      setModifyJson(JSON.stringify(item.request ?? {}, null, 2));
+    }
     setModifyError(null);
   }, []);
 
-  const handleModifySubmit = useCallback(async () => {
+  const handleModifySubmit = useCallback(() => {
     if (!modifyTarget) return;
     let parsed: Record<string, unknown>;
     try {
@@ -202,152 +310,131 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       setModifyError('Invalid JSON');
       return;
     }
-    setBusy(true);
-    setModifyError(null);
-    try {
-      if (modifyTarget.phase === 'RESPONSE') {
-        await modifyBreakpointResponse(connectionParams, modifyTarget.id, parsed);
-      } else {
-        await modifyBreakpoint(connectionParams, modifyTarget.id, parsed);
-      }
-      setModifyTarget(null);
-      refresh();
-    } catch (e) {
-      setModifyError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+    const client = clientRef.current;
+    if (modifyTarget.phase === 'REQUEST') {
+      client.resolveRequest(modifyTarget.correlationId, parsed);
+    } else if (modifyTarget.phase === 'RESPONSE') {
+      client.resolveResponse(modifyTarget.correlationId, parsed);
     }
-  }, [connectionParams, modifyTarget, modifyJson, refresh]);
+    removeItem(modifyTarget.key);
+    setModifyTarget(null);
+  }, [modifyTarget, modifyJson, removeItem]);
 
-  // --- Stream frame actions ---
+  // -------------------------------------------------------------------------
+  // WS-based resolution (frames)
+  // -------------------------------------------------------------------------
 
-  const handleStreamContinue = useCallback(
-    async (frameId: string) => {
-      setBusy(true);
-      setActionError(null);
+  const resolveFrame = useCallback((item: PausedItem & { key: number }, decision: StreamFrameDecision) => {
+    clientRef.current.resolveFrame(decision);
+    removeItem(item.key);
+  }, [removeItem]);
+
+  const handleFrameContinue = useCallback((item: PausedItem & { key: number }) => {
+    if (item.phase !== 'RESPONSE_STREAM' && item.phase !== 'INBOUND_STREAM') return;
+    resolveFrame(item, { correlationId: item.frame.correlationId, action: 'CONTINUE' });
+  }, [resolveFrame]);
+
+  const handleFrameDrop = useCallback((item: PausedItem & { key: number }) => {
+    if (item.phase !== 'RESPONSE_STREAM' && item.phase !== 'INBOUND_STREAM') return;
+    resolveFrame(item, { correlationId: item.frame.correlationId, action: 'DROP' });
+  }, [resolveFrame]);
+
+  const handleFrameClose = useCallback((item: PausedItem & { key: number }) => {
+    if (item.phase !== 'RESPONSE_STREAM' && item.phase !== 'INBOUND_STREAM') return;
+    resolveFrame(item, { correlationId: item.frame.correlationId, action: 'CLOSE' });
+  }, [resolveFrame]);
+
+  const openFrameModifyDialog = useCallback((item: PausedItem & { key: number }) => {
+    setFrameModifyTarget(item);
+    if (item.phase === 'RESPONSE_STREAM' || item.phase === 'INBOUND_STREAM') {
+      // Decode base64 body for display
       try {
-        await continueStreamFrame(connectionParams, frameId);
-        refresh();
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
+        setFrameModifyBody(atob(item.frame.body));
+      } catch {
+        setFrameModifyBody(item.frame.body);
       }
-    },
-    [connectionParams, refresh],
-  );
-
-  const handleStreamDrop = useCallback(
-    async (frameId: string) => {
-      setBusy(true);
-      setActionError(null);
-      try {
-        await dropStreamFrame(connectionParams, frameId);
-        refresh();
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [connectionParams, refresh],
-  );
-
-  const handleStreamClose = useCallback(
-    async (frameId: string) => {
-      setBusy(true);
-      setActionError(null);
-      try {
-        await closeStreamFrame(connectionParams, frameId);
-        refresh();
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [connectionParams, refresh],
-  );
-
-  const openStreamModifyDialog = useCallback((frame: StreamFrame) => {
-    setStreamModifyTarget(frame);
-    setStreamModifyBody(frame.bodyPreview ?? '');
-    setStreamModifyError(null);
+    }
+    setFrameModifyError(null);
   }, []);
 
-  const handleStreamModifySubmit = useCallback(async () => {
-    if (!streamModifyTarget) return;
-    if (!streamModifyBody) {
-      setStreamModifyError('Body is required');
+  const handleFrameModifySubmit = useCallback(() => {
+    if (!frameModifyTarget) return;
+    if (!frameModifyBody) {
+      setFrameModifyError('Body is required');
       return;
     }
-    setBusy(true);
-    setStreamModifyError(null);
-    try {
-      await modifyStreamFrame(connectionParams, streamModifyTarget.frameId, streamModifyBody);
-      setStreamModifyTarget(null);
-      refresh();
-    } catch (e) {
-      setStreamModifyError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [connectionParams, streamModifyTarget, streamModifyBody, refresh]);
+    if (frameModifyTarget.phase !== 'RESPONSE_STREAM' && frameModifyTarget.phase !== 'INBOUND_STREAM') return;
+    resolveFrame(frameModifyTarget, {
+      correlationId: frameModifyTarget.frame.correlationId,
+      action: 'MODIFY',
+      body: btoa(frameModifyBody),
+    });
+    setFrameModifyTarget(null);
+  }, [frameModifyTarget, frameModifyBody, resolveFrame]);
 
-  const openStreamInjectDialog = useCallback((frame: StreamFrame) => {
-    setStreamInjectTarget(frame);
-    setStreamInjectBody('');
-    setStreamInjectError(null);
+  const openFrameInjectDialog = useCallback((item: PausedItem & { key: number }) => {
+    setFrameInjectTarget(item);
+    setFrameInjectBody('');
+    setFrameInjectError(null);
   }, []);
 
-  const handleStreamInjectSubmit = useCallback(async () => {
-    if (!streamInjectTarget) return;
-    if (!streamInjectBody) {
-      setStreamInjectError('Body is required');
+  const handleFrameInjectSubmit = useCallback(() => {
+    if (!frameInjectTarget) return;
+    if (!frameInjectBody) {
+      setFrameInjectError('Body is required');
       return;
     }
-    setBusy(true);
-    setStreamInjectError(null);
-    try {
-      await injectStreamFrame(connectionParams, streamInjectTarget.frameId, streamInjectBody);
-      setStreamInjectTarget(null);
-      refresh();
-    } catch (e) {
-      setStreamInjectError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [connectionParams, streamInjectTarget, streamInjectBody, refresh]);
+    if (frameInjectTarget.phase !== 'RESPONSE_STREAM' && frameInjectTarget.phase !== 'INBOUND_STREAM') return;
+    resolveFrame(frameInjectTarget, {
+      correlationId: frameInjectTarget.frame.correlationId,
+      action: 'INJECT',
+      body: btoa(frameInjectBody),
+    });
+    setFrameInjectTarget(null);
+  }, [frameInjectTarget, frameInjectBody, resolveFrame]);
 
-  const totalCount = data.count + streamData.totalHeldFrames;
+  // -------------------------------------------------------------------------
+  // Derived
+  // -------------------------------------------------------------------------
+
+  const exchangeItems = pausedItems.filter((i) => i.phase === 'REQUEST' || i.phase === 'RESPONSE');
+  const frameItems = pausedItems.filter((i) => i.phase === 'RESPONSE_STREAM' || i.phase === 'INBOUND_STREAM') as (PausedItem & { key: number; phase: 'RESPONSE_STREAM' | 'INBOUND_STREAM'; frame: PausedStreamFrame })[];
+
+  const wsIndicatorColor = wsState === 'connected' ? 'success' : wsState === 'connecting' ? 'warning' : 'error';
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
+      {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
           Breakpoints
         </Typography>
-        <Chip
-          size="small"
-          label={`${totalCount} paused`}
-          color={totalCount > 0 ? 'warning' : 'default'}
-          variant="outlined"
-        />
-        <Box sx={{ flex: 1 }} />
-        <Tooltip title="Refresh now">
-          <IconButton size="small" onClick={refresh} aria-label="Refresh breakpoints">
-            <RefreshIcon fontSize="small" />
-          </IconButton>
+        <Tooltip title={`Callback WS: ${wsState}${clientId ? ` (${clientId.substring(0, 8)}...)` : ''}`}>
+          <FiberManualRecordIcon
+            fontSize="small"
+            color={wsIndicatorColor as 'success' | 'warning' | 'error'}
+            data-testid="ws-indicator"
+          />
         </Tooltip>
+        {pausedItems.length > 0 && (
+          <Chip
+            size="small"
+            label={`${pausedItems.length} paused`}
+            color="warning"
+            variant="outlined"
+          />
+        )}
+        <Box sx={{ flex: 1 }} />
       </Box>
 
       <Tabs value={tab} onChange={(_, v: number) => setTab(v)} sx={{ mb: 1.5 }}>
+        <Tab label="Matchers" />
         <Tab
           label={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              Exchanges
-              {data.count > 0 && (
-                <Chip size="small" label={data.count} color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
+              Live Exchanges
+              {exchangeItems.length > 0 && (
+                <Chip size="small" label={exchangeItems.length} color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
               )}
             </Box>
           }
@@ -355,9 +442,9 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         <Tab
           label={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              Streams
-              {streamData.totalHeldFrames > 0 && (
-                <Chip size="small" label={streamData.totalHeldFrames} color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
+              Live Streams
+              {frameItems.length > 0 && (
+                <Chip size="small" label={frameItems.length} color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
               )}
             </Box>
           }
@@ -370,38 +457,203 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         </Alert>
       )}
 
-      {/* ============ TAB 0: Exchanges ============ */}
+      {/* ============ TAB 0: Matchers ============ */}
       {tab === 0 && (
         <>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Exchanges paused by breakpoint expectations. Continue, modify, or abort each exchange.
+            Register breakpoint matchers to pause proxied/forwarded exchanges that match. The dashboard resolves them interactively over the callback WebSocket.
           </Typography>
 
-          {loadError && (
+          {/* Registration form */}
+          <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+              Register a new breakpoint matcher
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+              <TextField
+                select
+                label="Method"
+                value={formMethod}
+                onChange={(e) => setFormMethod(e.target.value)}
+                size="small"
+                sx={{ minWidth: 120 }}
+                slotProps={{ select: { displayEmpty: true } }}
+              >
+                {HTTP_METHODS.map((m) => (
+                  <MenuItem key={m || '__any'} value={m}>
+                    {m || '(any)'}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                label="Path (regex)"
+                value={formPath}
+                onChange={(e) => setFormPath(e.target.value)}
+                size="small"
+                placeholder="/api/.*"
+                sx={{ flex: 1, minWidth: 200 }}
+              />
+            </Box>
+            <FormGroup row sx={{ mb: 1 }}>
+              {ALL_PHASES.map((p) => (
+                <FormControlLabel
+                  key={p.value}
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={formPhases.has(p.value)}
+                      onChange={() => togglePhase(p.value)}
+                    />
+                  }
+                  label={<Typography variant="body2">{p.label}</Typography>}
+                />
+              ))}
+            </FormGroup>
+            {formError && (
+              <Alert severity="error" sx={{ mb: 1 }}>
+                {formError}
+              </Alert>
+            )}
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AddIcon />}
+              disabled={formBusy || wsState !== 'connected'}
+              onClick={() => void handleRegister()}
+            >
+              Register Matcher
+            </Button>
+          </Paper>
+
+          {/* Matcher list */}
+          {matchersError && (
             <Alert
-              severity={loadError.includes('404') || loadError.includes('Not Found') ? 'info' : 'error'}
+              severity={matchersError.includes('404') || matchersError.includes('Not Found') ? 'info' : 'error'}
               sx={{ mb: 1.5 }}
-              action={
-                <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry">
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              }
             >
               <AlertTitle>
-                {loadError.includes('404') || loadError.includes('Not Found')
-                  ? 'Breakpoints not available'
-                  : 'Could not load paused exchanges'}
+                {matchersError.includes('404') || matchersError.includes('Not Found')
+                  ? 'Breakpoint matchers not available'
+                  : 'Could not load matchers'}
               </AlertTitle>
-              {loadError.includes('404') || loadError.includes('Not Found')
-                ? 'The connected server does not support breakpoints. This feature requires a newer version of MockServer.'
-                : loadError}
+              {matchersError.includes('404') || matchersError.includes('Not Found')
+                ? 'The connected server does not support breakpoint matchers. This feature requires a newer version of MockServer.'
+                : matchersError}
+            </Alert>
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              Registered matchers ({matchers.length})
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Tooltip title="Refresh matchers">
+              <IconButton size="small" onClick={refreshMatchers} aria-label="Refresh matchers">
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {matchers.length > 0 && (
+              <Tooltip title="Clear all matchers">
+                <span>
+                  <IconButton size="small" onClick={() => void handleClearMatchers()} disabled={busy} aria-label="Clear all matchers">
+                    <ClearAllIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+          </Box>
+
+          <Paper variant="outlined" sx={{ p: 1.25 }}>
+            {matchers.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
+                No matchers registered. Register a matcher above to start pausing matching exchanges.
+              </Typography>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>ID</TableCell>
+                      <TableCell>Matcher</TableCell>
+                      <TableCell>Phases</TableCell>
+                      <TableCell>Owner</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {matchers.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                            {m.id}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                            {m.httpRequest ? `${(m.httpRequest.method as string) ?? '*'} ${(m.httpRequest.path as string) ?? '/'}` : '*'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                            {(m.phases ?? []).map((p) => (
+                              <Chip
+                                key={p}
+                                size="small"
+                                label={p}
+                                color={phaseChipColor(p)}
+                                variant="outlined"
+                                sx={{ height: 20, fontSize: '0.6rem' }}
+                              />
+                            ))}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                            {m.clientId ? `${m.clientId.substring(0, 8)}...` : '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Remove matcher">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                disabled={busy}
+                                onClick={() => void handleRemoveMatcher(m.id)}
+                                aria-label={`Remove ${m.id}`}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+        </>
+      )}
+
+      {/* ============ TAB 1: Live Exchanges ============ */}
+      {tab === 1 && (
+        <>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Paused request/response exchanges dispatched over the callback WebSocket. Resolve each interactively.
+          </Typography>
+
+          {wsState !== 'connected' && (
+            <Alert severity="info" sx={{ mb: 1.5 }}>
+              Callback WebSocket is {wsState}. Paused exchanges will appear here once connected and matchers are registered.
             </Alert>
           )}
 
           <Paper variant="outlined" sx={{ p: 1.25 }}>
-            {data.pausedExchanges.length === 0 ? (
+            {exchangeItems.length === 0 ? (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                No paused exchanges. Breakpoint expectations pause matching requests or responses so you can inspect and modify them.
+                No paused exchanges. Register a breakpoint matcher (Matchers tab) to pause matching forwarded requests or responses.
               </Typography>
             ) : (
               <TableContainer>
@@ -411,21 +663,19 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                       <TableCell>Phase</TableCell>
                       <TableCell>Method / Status</TableCell>
                       <TableCell>Path / Reason</TableCell>
-                      <TableCell>Age</TableCell>
-                      <TableCell>ID</TableCell>
-                      <TableCell>Expectation</TableCell>
+                      <TableCell>Breakpoint</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {data.pausedExchanges.map((exchange) => {
-                      const isResponse = exchange.phase === 'RESPONSE';
+                    {exchangeItems.map((item) => {
+                      const isResponse = item.phase === 'RESPONSE';
                       return (
-                        <TableRow key={exchange.id}>
+                        <TableRow key={item.key}>
                           <TableCell>
                             <Chip
                               size="small"
-                              label={exchange.phase ?? 'REQUEST'}
+                              label={item.phase}
                               color={isResponse ? 'secondary' : 'default'}
                               variant="outlined"
                               sx={{ height: 20, fontSize: '0.65rem' }}
@@ -434,9 +684,9 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           <TableCell>
                             <Chip
                               size="small"
-                              label={isResponse
-                                ? String(exchange.response?.statusCode ?? '?')
-                                : (exchange.request?.method ?? '?')}
+                              label={isResponse && item.response
+                                ? String(item.response.statusCode ?? '?')
+                                : ((item.phase === 'REQUEST' ? item.request?.method : '?') ?? '?')}
                               color={isResponse ? 'secondary' : 'primary'}
                               variant="outlined"
                               sx={{ height: 20, fontSize: '0.65rem' }}
@@ -444,24 +694,14 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           </TableCell>
                           <TableCell>
                             <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                              {isResponse
-                                ? (exchange.response?.reasonPhrase ?? '-')
-                                : (exchange.request?.path ?? '/')}
+                              {isResponse && item.response
+                                ? (item.response.reasonPhrase ?? '-')
+                                : ((item.phase === 'REQUEST' ? item.request?.path : '-') ?? '/')}
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Typography variant="caption">
-                              {formatAge(exchange.ageMillis)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                              {exchange.id}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                              {exchange.expectationId ?? '-'}
+                            <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                              {item.breakpointId ? `${item.breakpointId.substring(0, 8)}...` : '-'}
                             </Typography>
                           </TableCell>
                           <TableCell align="right">
@@ -472,34 +712,34 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                                     size="small"
                                     color="success"
                                     disabled={busy}
-                                    onClick={() => void handleContinue(exchange.id)}
-                                    aria-label={`Continue ${exchange.id}`}
+                                    onClick={() => handleContinueExchange(item)}
+                                    aria-label={`Continue ${item.key}`}
                                   >
                                     <PlayArrowIcon fontSize="small" />
                                   </IconButton>
                                 </span>
                               </Tooltip>
-                              <Tooltip title={isResponse ? 'Modify response before returning' : 'Modify request before forwarding'}>
+                              <Tooltip title={isResponse ? 'Modify response' : 'Modify request'}>
                                 <span>
                                   <IconButton
                                     size="small"
                                     color="info"
                                     disabled={busy}
-                                    onClick={() => openModifyDialog(exchange)}
-                                    aria-label={`Modify ${exchange.id}`}
+                                    onClick={() => openModifyExchangeDialog(item)}
+                                    aria-label={`Modify ${item.key}`}
                                   >
                                     <EditIcon fontSize="small" />
                                   </IconButton>
                                 </span>
                               </Tooltip>
-                              <Tooltip title="Abort (do not forward)">
+                              <Tooltip title={isResponse ? 'Continue (cannot abort response)' : 'Abort (do not forward)'}>
                                 <span>
                                   <IconButton
                                     size="small"
                                     color="error"
                                     disabled={busy}
-                                    onClick={() => void handleAbort(exchange.id)}
-                                    aria-label={`Abort ${exchange.id}`}
+                                    onClick={() => handleAbortExchange(item)}
+                                    aria-label={`Abort ${item.key}`}
                                   >
                                     <BlockIcon fontSize="small" />
                                   </IconButton>
@@ -518,216 +758,137 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         </>
       )}
 
-      {/* ============ TAB 1: Streams ============ */}
-      {tab === 1 && (
+      {/* ============ TAB 2: Live Streams ============ */}
+      {tab === 2 && (
         <>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Forwarded streaming response frames held at breakpoints. Continue, modify, drop, inject, or close each frame.
+            Paused stream frames dispatched over the callback WebSocket. Continue, modify, drop, inject, or close each frame.
           </Typography>
 
-          {streamLoadError && (
-            <Alert
-              severity={streamLoadError.includes('404') || streamLoadError.includes('Not Found') ? 'info' : 'error'}
-              sx={{ mb: 1.5 }}
-              action={
-                <IconButton color="inherit" size="small" onClick={refresh} aria-label="Retry streams">
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              }
-            >
-              <AlertTitle>
-                {streamLoadError.includes('404') || streamLoadError.includes('Not Found')
-                  ? 'Stream breakpoints not available'
-                  : 'Could not load stream frames'}
-              </AlertTitle>
-              {streamLoadError.includes('404') || streamLoadError.includes('Not Found')
-                ? 'The connected server does not support stream breakpoints. This feature requires a newer version of MockServer.'
-                : streamLoadError}
+          {wsState !== 'connected' && (
+            <Alert severity="info" sx={{ mb: 1.5 }}>
+              Callback WebSocket is {wsState}. Paused stream frames will appear here once connected.
             </Alert>
           )}
 
           <Paper variant="outlined" sx={{ p: 1.25 }}>
-            {streamData.streams.length === 0 ? (
+            {frameItems.length === 0 ? (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                No held stream frames. Stream breakpoints pause individual frames from forwarded streaming responses (SSE, chunked transfer) so you can inspect and manipulate them.
+                No paused stream frames. Register a breakpoint matcher with stream phases (Matchers tab) to pause matching streaming frames.
               </Typography>
             ) : (
-              streamData.streams.map((stream) => (
-                <Accordion key={stream.streamId} defaultExpanded disableGutters>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        Stream
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label={stream.streamId}
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: '0.65rem', fontFamily: 'monospace' }}
-                      />
-                      <Chip
-                        size="small"
-                        label={`${stream.frames.length} frame${stream.frames.length !== 1 ? 's' : ''}`}
-                        color="warning"
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: '0.65rem' }}
-                      />
-                    </Box>
-                  </AccordionSummary>
-                  <AccordionDetails sx={{ p: 0 }}>
-                    <TableContainer>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Seq</TableCell>
-                            <TableCell>Direction</TableCell>
-                            <TableCell>Method</TableCell>
-                            <TableCell>Path</TableCell>
-                            <TableCell>Body Preview</TableCell>
-                            <TableCell>Size</TableCell>
-                            <TableCell>Age</TableCell>
-                            <TableCell align="right">Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {stream.frames.map((frame) => (
-                            <TableRow key={frame.frameId}>
-                              <TableCell>
-                                <Chip
-                                  size="small"
-                                  label={`#${frame.sequenceNumber}`}
-                                  variant="outlined"
-                                  sx={{ height: 20, fontSize: '0.65rem' }}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Chip
-                                  size="small"
-                                  icon={frame.direction === 'INBOUND' ? <CallReceivedIcon /> : <CallMadeIcon />}
-                                  label={frame.direction === 'INBOUND' ? 'Inbound' : 'Outbound'}
-                                  color={frame.direction === 'INBOUND' ? 'info' : 'default'}
-                                  variant="outlined"
-                                  sx={{ height: 20, fontSize: '0.65rem' }}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                                  {frame.requestMethod ?? '-'}
-                                </Typography>
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                                  {frame.requestPath ?? '-'}
-                                </Typography>
-                              </TableCell>
-                              <TableCell>
-                                <Typography
-                                  variant="caption"
-                                  sx={{
-                                    fontFamily: 'monospace',
-                                    maxWidth: 200,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    display: 'block',
-                                  }}
-                                >
-                                  {frame.bodyPreview ?? '-'}
-                                </Typography>
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="caption">
-                                  {frame.bodyLength}B
-                                </Typography>
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="caption">
-                                  {formatAge(frame.ageMillis)}
-                                </Typography>
-                              </TableCell>
-                              <TableCell align="right">
-                                <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
-                                  <Tooltip title="Continue (write frame unchanged)">
-                                    <span>
-                                      <IconButton
-                                        size="small"
-                                        color="success"
-                                        disabled={busy}
-                                        onClick={() => void handleStreamContinue(frame.frameId)}
-                                        aria-label={`Continue ${frame.frameId}`}
-                                      >
-                                        <PlayArrowIcon fontSize="small" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                  <Tooltip title="Modify frame body">
-                                    <span>
-                                      <IconButton
-                                        size="small"
-                                        color="info"
-                                        disabled={busy}
-                                        onClick={() => openStreamModifyDialog(frame)}
-                                        aria-label={`Modify ${frame.frameId}`}
-                                      >
-                                        <EditIcon fontSize="small" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                  <Tooltip title="Drop (discard frame)">
-                                    <span>
-                                      <IconButton
-                                        size="small"
-                                        color="error"
-                                        disabled={busy}
-                                        onClick={() => void handleStreamDrop(frame.frameId)}
-                                        aria-label={`Drop ${frame.frameId}`}
-                                      >
-                                        <DeleteIcon fontSize="small" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                  <Tooltip title="Inject extra frame after this one">
-                                    <span>
-                                      <IconButton
-                                        size="small"
-                                        color="primary"
-                                        disabled={busy}
-                                        onClick={() => openStreamInjectDialog(frame)}
-                                        aria-label={`Inject ${frame.frameId}`}
-                                      >
-                                        <AddIcon fontSize="small" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                  <Tooltip title="Close stream">
-                                    <span>
-                                      <IconButton
-                                        size="small"
-                                        color="warning"
-                                        disabled={busy}
-                                        onClick={() => void handleStreamClose(frame.frameId)}
-                                        aria-label={`Close ${frame.frameId}`}
-                                      >
-                                        <StopIcon fontSize="small" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                </Box>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  </AccordionDetails>
-                </Accordion>
-              ))
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Phase</TableCell>
+                      <TableCell>Direction</TableCell>
+                      <TableCell>Stream</TableCell>
+                      <TableCell>Seq</TableCell>
+                      <TableCell>Method</TableCell>
+                      <TableCell>Path</TableCell>
+                      <TableCell>Body (Base64)</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {frameItems.map((item) => (
+                      <TableRow key={item.key}>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={item.phase}
+                            color={phaseChipColor(item.phase)}
+                            variant="outlined"
+                            sx={{ height: 20, fontSize: '0.6rem' }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            icon={item.frame.direction === 'INBOUND' ? <CallReceivedIcon /> : <CallMadeIcon />}
+                            label={item.frame.direction === 'INBOUND' ? 'Inbound' : 'Outbound'}
+                            color={item.frame.direction === 'INBOUND' ? 'info' : 'default'}
+                            variant="outlined"
+                            sx={{ height: 20, fontSize: '0.6rem' }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                            {item.frame.streamId}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip size="small" label={`#${item.frame.sequenceNumber}`} variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                            {item.frame.requestMethod ?? '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                            {item.frame.requestPath ?? '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography
+                            variant="caption"
+                            sx={{ fontFamily: 'monospace', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}
+                          >
+                            {item.frame.body ? item.frame.body.substring(0, 40) : '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                            <Tooltip title="Continue (write frame unchanged)">
+                              <span>
+                                <IconButton size="small" color="success" disabled={busy} onClick={() => handleFrameContinue(item)} aria-label={`Continue ${item.key}`}>
+                                  <PlayArrowIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Modify frame body">
+                              <span>
+                                <IconButton size="small" color="info" disabled={busy} onClick={() => openFrameModifyDialog(item)} aria-label={`Modify ${item.key}`}>
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Drop (discard frame)">
+                              <span>
+                                <IconButton size="small" color="error" disabled={busy} onClick={() => handleFrameDrop(item)} aria-label={`Drop ${item.key}`}>
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Inject extra frame">
+                              <span>
+                                <IconButton size="small" color="primary" disabled={busy} onClick={() => openFrameInjectDialog(item)} aria-label={`Inject ${item.key}`}>
+                                  <AddIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Close stream">
+                              <span>
+                                <IconButton size="small" color="warning" disabled={busy} onClick={() => handleFrameClose(item)} aria-label={`Close ${item.key}`}>
+                                  <StopIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             )}
           </Paper>
         </>
       )}
 
-      {/* Modify dialog (request/response breakpoints) */}
+      {/* Modify dialog (request/response exchanges) */}
       <Dialog open={modifyTarget !== null} onClose={() => setModifyTarget(null)} maxWidth="sm" fullWidth>
         <DialogTitle>
           {modifyTarget?.phase === 'RESPONSE' ? 'Modify Response' : 'Modify Request'}
@@ -759,22 +920,22 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setModifyTarget(null)}>Cancel</Button>
-          <Button variant="contained" disabled={busy} onClick={() => void handleModifySubmit()}>
+          <Button variant="contained" disabled={busy} onClick={handleModifySubmit}>
             Send Modified
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Stream frame modify dialog */}
-      <Dialog open={streamModifyTarget !== null} onClose={() => setStreamModifyTarget(null)} maxWidth="sm" fullWidth>
+      {/* Frame modify dialog */}
+      <Dialog open={frameModifyTarget !== null} onClose={() => setFrameModifyTarget(null)} maxWidth="sm" fullWidth>
         <DialogTitle>Modify Stream Frame</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Edit the frame body, then send the modified frame.
           </Typography>
-          {streamModifyError && (
+          {frameModifyError && (
             <Alert severity="error" sx={{ mb: 1 }}>
-              {streamModifyError}
+              {frameModifyError}
             </Alert>
           )}
           <TextField
@@ -782,8 +943,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
             minRows={4}
             maxRows={16}
             fullWidth
-            value={streamModifyBody}
-            onChange={(e) => setStreamModifyBody(e.target.value)}
+            value={frameModifyBody}
+            onChange={(e) => setFrameModifyBody(e.target.value)}
             slotProps={{
               input: {
                 sx: { fontFamily: 'monospace', fontSize: '0.8rem' },
@@ -792,23 +953,23 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setStreamModifyTarget(null)}>Cancel</Button>
-          <Button variant="contained" disabled={busy} onClick={() => void handleStreamModifySubmit()}>
+          <Button onClick={() => setFrameModifyTarget(null)}>Cancel</Button>
+          <Button variant="contained" disabled={busy} onClick={handleFrameModifySubmit}>
             Send Modified Frame
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Stream frame inject dialog */}
-      <Dialog open={streamInjectTarget !== null} onClose={() => setStreamInjectTarget(null)} maxWidth="sm" fullWidth>
+      {/* Frame inject dialog */}
+      <Dialog open={frameInjectTarget !== null} onClose={() => setFrameInjectTarget(null)} maxWidth="sm" fullWidth>
         <DialogTitle>Inject Extra Frame</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Enter the body for the extra frame to inject after the held frame.
           </Typography>
-          {streamInjectError && (
+          {frameInjectError && (
             <Alert severity="error" sx={{ mb: 1 }}>
-              {streamInjectError}
+              {frameInjectError}
             </Alert>
           )}
           <TextField
@@ -816,8 +977,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
             minRows={4}
             maxRows={16}
             fullWidth
-            value={streamInjectBody}
-            onChange={(e) => setStreamInjectBody(e.target.value)}
+            value={frameInjectBody}
+            onChange={(e) => setFrameInjectBody(e.target.value)}
             slotProps={{
               input: {
                 sx: { fontFamily: 'monospace', fontSize: '0.8rem' },
@@ -826,8 +987,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setStreamInjectTarget(null)}>Cancel</Button>
-          <Button variant="contained" disabled={busy} onClick={() => void handleStreamInjectSubmit()}>
+          <Button onClick={() => setFrameInjectTarget(null)}>Cancel</Button>
+          <Button variant="contained" disabled={busy} onClick={handleFrameInjectSubmit}>
             Inject Frame
           </Button>
         </DialogActions>

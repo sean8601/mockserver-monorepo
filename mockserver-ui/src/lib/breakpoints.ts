@@ -223,3 +223,76 @@ export async function closeStreamFrame(
   });
   await ensureOk(res);
 }
+
+// ---------------------------------------------------------------------------
+// Breakpoint matcher management (registration, list, remove, clear)
+// ---------------------------------------------------------------------------
+
+export type MatcherPhase = 'REQUEST' | 'RESPONSE' | 'RESPONSE_STREAM' | 'INBOUND_STREAM';
+
+export interface BreakpointMatcherEntry {
+  id: string;
+  httpRequest?: Record<string, unknown>;
+  phases: MatcherPhase[];
+  clientId?: string;
+}
+
+export interface BreakpointMatcherListResponse {
+  matchers: BreakpointMatcherEntry[];
+}
+
+function matcherEndpoint(params: ConnectionParams): string {
+  return `${buildBaseUrl(params)}/mockserver/breakpoint/matcher`;
+}
+
+/** Register a breakpoint matcher. Returns the server-assigned entry. */
+export async function registerBreakpointMatcher(
+  params: ConnectionParams,
+  httpRequest: Record<string, unknown>,
+  phases: MatcherPhase[],
+  clientId?: string,
+): Promise<{ id: string; phases: MatcherPhase[] }> {
+  const body: Record<string, unknown> = { httpRequest, phases };
+  if (clientId) body.clientId = clientId;
+  const res = await fetch(matcherEndpoint(params), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  await ensureOk(res);
+  return res.json() as Promise<{ id: string; phases: MatcherPhase[] }>;
+}
+
+/** List all registered breakpoint matchers. */
+export async function listBreakpointMatchers(
+  params: ConnectionParams,
+  signal?: AbortSignal,
+): Promise<BreakpointMatcherListResponse> {
+  const res = await fetch(`${matcherEndpoint(params)}s`, { signal });
+  await ensureOk(res);
+  return res.json() as Promise<BreakpointMatcherListResponse>;
+}
+
+/** Remove a breakpoint matcher by id. */
+export async function removeBreakpointMatcher(
+  params: ConnectionParams,
+  id: string,
+): Promise<void> {
+  const res = await fetch(`${matcherEndpoint(params)}/remove`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  await ensureOk(res);
+}
+
+/** Clear all breakpoint matchers. */
+export async function clearBreakpointMatchers(
+  params: ConnectionParams,
+): Promise<void> {
+  const res = await fetch(`${matcherEndpoint(params)}/clear`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  await ensureOk(res);
+}

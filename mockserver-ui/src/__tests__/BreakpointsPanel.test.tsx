@@ -1,12 +1,61 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
 import BreakpointsPanel from '../components/BreakpointsPanel';
-import type { BreakpointListResponse, StreamFrameListResponse } from '../lib/breakpoints';
+import { _resetBreakpointCallbackClient } from '../lib/breakpointCallbackClient';
+import type { BreakpointMatcherListResponse } from '../lib/breakpoints';
 
 const params = { host: '127.0.0.1', port: '1080', secure: false };
+
+// ---------------------------------------------------------------------------
+// MockWebSocket — needed because BreakpointsPanel creates a callback WS
+// ---------------------------------------------------------------------------
+
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+
+  url: string;
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  sentMessages: string[] = [];
+
+  CONNECTING = 0;
+  OPEN = 1;
+  CLOSING = 2;
+  CLOSED = 3;
+
+  constructor(url: string) {
+    this.url = url;
+    MockWebSocket.instances.push(this);
+  }
+
+  send(data: string) {
+    this.sentMessages.push(data);
+  }
+
+  close() {
+    this.readyState = 3;
+    // Don't call onclose here to avoid triggering reconnect in tests
+  }
+
+  simulateOpen() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+
+  simulateMessage(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) });
+  }
+}
 
 function renderPanel() {
   return render(
@@ -16,25 +65,33 @@ function renderPanel() {
   );
 }
 
-/** Stub fetch to respond to both breakpoints and stream frame endpoints. */
-function stubBothEndpoints(
-  exchanges: BreakpointListResponse,
-  streams: StreamFrameListResponse,
-) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url: string) => {
-      if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-        return { ok: true, status: 200, json: async () => streams };
-      }
-      // default: the breakpoints endpoint
-      return { ok: true, status: 200, json: async () => exchanges };
-    }),
-  );
+/** Get the callback WS instance (the one pointed at /_mockserver_callback_websocket). */
+function getCallbackWs(): MockWebSocket {
+  const ws = MockWebSocket.instances.find((w) => w.url.includes('_mockserver_callback_websocket'));
+  if (!ws) throw new Error('No callback WS instance found');
+  return ws;
 }
 
-const emptyExchanges: BreakpointListResponse = { pausedExchanges: [], count: 0 };
-const emptyStreams: StreamFrameListResponse = { streams: [], totalHeldFrames: 0 };
+/** Simulate the callback WS connecting and receiving a clientId. */
+function connectCallbackWs(clientId = 'test-client-id'): MockWebSocket {
+  const ws = getCallbackWs();
+  ws.simulateOpen();
+  ws.simulateMessage({
+    type: 'org.mockserver.serialization.model.WebSocketClientIdDTO',
+    value: JSON.stringify({ clientId }),
+  });
+  return ws;
+}
+
+const emptyMatchers: BreakpointMatcherListResponse = { matchers: [] };
+
+beforeEach(() => {
+  MockWebSocket.instances = [];
+  vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+
+  // Reset the singleton callback client
+  _resetBreakpointCallbackClient();
+});
 
 afterEach(() => {
   cleanup();
@@ -42,346 +99,414 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('BreakpointsPanel — Exchanges tab', () => {
-  it('renders title and description', () => {
-    stubBothEndpoints(emptyExchanges, emptyStreams);
+// ---------------------------------------------------------------------------
+// Matchers tab
+// ---------------------------------------------------------------------------
+
+describe('BreakpointsPanel — Matchers tab', () => {
+  it('renders the panel title and WS indicator', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
     renderPanel();
     expect(screen.getByText('Breakpoints')).toBeInTheDocument();
-    expect(screen.getByText(/Exchanges paused by breakpoint expectations/)).toBeInTheDocument();
+    expect(screen.getByTestId('ws-indicator')).toBeInTheDocument();
   });
 
-  it('shows the empty state when no paused exchanges exist', async () => {
-    stubBothEndpoints(emptyExchanges, emptyStreams);
+  it('shows matcher registration form', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+    expect(screen.getByText('Register a new breakpoint matcher')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Path/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Register Matcher/ })).toBeInTheDocument();
+  });
+
+  it('shows empty matchers state', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText('0 paused')).toBeInTheDocument();
+      expect(screen.getByText(/No matchers registered/)).toBeInTheDocument();
     });
+  });
+
+  it('lists registered matchers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({
+        matchers: [{
+          id: 'matcher-123',
+          httpRequest: { method: 'GET', path: '/api/.*' },
+          phases: ['REQUEST', 'RESPONSE'],
+          clientId: 'client-abc-defgh',
+        }],
+      }),
+    })));
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('matcher-123')).toBeInTheDocument();
+    });
+    expect(screen.getByText('GET /api/.*')).toBeInTheDocument();
+    expect(screen.getByText('REQUEST')).toBeInTheDocument();
+    expect(screen.getByText('RESPONSE')).toBeInTheDocument();
+  });
+
+  it('calls remove endpoint when Remove button is clicked', async () => {
+    const user = userEvent.setup();
+    let removeCalled = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/matcher/remove') && init?.method === 'PUT') {
+        removeCalled = true;
+        return { ok: true, status: 200, json: async () => ({ status: 'removed', id: 'matcher-1' }) };
+      }
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          matchers: [{ id: 'matcher-1', httpRequest: { path: '/test' }, phases: ['REQUEST'] }],
+        }),
+      };
+    }));
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('matcher-1')).toBeInTheDocument();
+    });
+
+    const removeBtn = screen.getByRole('button', { name: /Remove matcher-1/ });
+    await user.click(removeBtn);
+
+    await waitFor(() => {
+      expect(removeCalled).toBe(true);
+    });
+  });
+
+  it('registers a matcher via the form', async () => {
+    const user = userEvent.setup();
+    let registerCalled = false;
+    let registerBody: Record<string, unknown> | null = null;
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.endsWith('/mockserver/breakpoint/matcher') && init?.method === 'PUT') {
+        registerCalled = true;
+        registerBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return { ok: true, status: 200, json: async () => ({ id: 'new-1', phases: ['REQUEST', 'RESPONSE'] }) };
+      }
+      return { ok: true, status: 200, json: async () => emptyMatchers };
+    }));
+
+    renderPanel();
+
+    // Connect the callback WS so the clientId is available
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    connectCallbackWs('client-for-register');
+
+    // Fill in the path
+    const pathInput = screen.getByLabelText(/Path/);
+    await user.clear(pathInput);
+    await user.type(pathInput, '/api/test');
+
+    // Click register
+    const registerBtn = screen.getByRole('button', { name: /Register Matcher/ });
+    await user.click(registerBtn);
+
+    await waitFor(() => {
+      expect(registerCalled).toBe(true);
+    });
+
+    expect(registerBody).not.toBeNull();
+    expect(registerBody!.clientId).toBe('client-for-register');
+    expect((registerBody!.httpRequest as Record<string, unknown>).path).toBe('/api/test');
+    expect(registerBody!.phases).toEqual(expect.arrayContaining(['REQUEST', 'RESPONSE']));
+  });
+
+  it('shows error when registering without WS connection', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+
+    // Don't connect the WS - button should be disabled
+    const registerBtn = screen.getByRole('button', { name: /Register Matcher/ });
+    expect(registerBtn).toBeDisabled();
+  });
+
+  it('shows matchers error for server-side errors', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('Connection refused');
+    }));
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not load matchers/)).toBeInTheDocument();
+    });
+    expect(screen.getByText('Connection refused')).toBeInTheDocument();
+  });
+
+  it('shows unavailable message for 404', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      json: async () => ({}),
+    })));
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Breakpoint matchers not available/)).toBeInTheDocument();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live Exchanges tab
+// ---------------------------------------------------------------------------
+
+describe('BreakpointsPanel — Live Exchanges tab', () => {
+  async function switchToExchangesTab() {
+    const user = userEvent.setup();
+    const tab = screen.getByRole('tab', { name: /Live Exchanges/ });
+    await user.click(tab);
+  }
+
+  it('shows empty state', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+    await switchToExchangesTab();
+
     expect(screen.getByText(/No paused exchanges/)).toBeInTheDocument();
   });
 
-  it('renders paused exchanges in a table when populated', async () => {
-    stubBothEndpoints(
-      {
-        count: 1,
-        pausedExchanges: [{
-          id: 'abc-123',
-          ageMillis: 5000,
-          expectationId: 'exp-1',
-          request: { method: 'GET', path: '/api/users' },
-        }],
-      },
-      emptyStreams,
-    );
+  it('shows paused request from WS push', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+
+    // Connect WS and push a paused request
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    const ws = connectCallbackWs();
+
+    // Push a paused request
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'GET',
+        path: '/api/users',
+        headers: {
+          'WebSocketCorrelationId': ['corr-1'],
+          'X-MockServer-BreakpointId': ['bp-1'],
+        },
+      }),
+    });
+
+    await switchToExchangesTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('GET')).toBeInTheDocument();
+    });
+    expect(screen.getByText('/api/users')).toBeInTheDocument();
+  });
+
+  it('resolves a request with Continue by sending HttpRequest over WS', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText('1 paused')).toBeInTheDocument();
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    const ws = connectCallbackWs();
+
+    // Push a paused request
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'POST',
+        path: '/test',
+        headers: {
+          'WebSocketCorrelationId': ['corr-2'],
+          'X-MockServer-BreakpointId': ['bp-2'],
+        },
+      }),
     });
 
-    expect(screen.getByText('GET')).toBeInTheDocument();
-    expect(screen.getByText('/api/users')).toBeInTheDocument();
-    expect(screen.getByText('5s')).toBeInTheDocument();
-    expect(screen.getByText('abc-123')).toBeInTheDocument();
-    expect(screen.getByText('exp-1')).toBeInTheDocument();
+    await switchToExchangesTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('POST')).toBeInTheDocument();
+    });
+
+    // Click Continue
+    const continueBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Continue'));
+    expect(continueBtn).toBeDefined();
+    await user.click(continueBtn!);
+
+    // Verify WS message was sent
+    expect(ws.sentMessages.length).toBeGreaterThan(0);
+    const envelope = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]!);
+    expect(envelope.type).toBe('org.mockserver.model.HttpRequest');
+    const inner = JSON.parse(envelope.value);
+    expect(inner.headers['WebSocketCorrelationId']).toEqual(['corr-2']);
+
+    // Item should be removed
+    await waitFor(() => {
+      expect(screen.getByText(/No paused exchanges/)).toBeInTheDocument();
+    });
   });
 
-  it('calls continue endpoint when Continue button is clicked', async () => {
+  it('resolves a request with Abort by sending HttpResponse over WS', async () => {
     const user = userEvent.setup();
-    let callIndex = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        if (init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'continued', id: 'abc-123' }) };
-        }
-        callIndex++;
-        if (callIndex === 1) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({ count: 1, pausedExchanges: [{ id: 'abc-123', ageMillis: 2000, request: { method: 'POST', path: '/test' } }] }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
 
     renderPanel();
-    await waitFor(() => { expect(screen.getByText('1 paused')).toBeInTheDocument(); });
 
-    const continueBtn = screen.getByRole('button', { name: /Continue abc-123/ });
-    await user.click(continueBtn);
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    const ws = connectCallbackWs();
 
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/continue') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({ id: 'abc-123' });
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'DELETE',
+        path: '/remove',
+        headers: {
+          'WebSocketCorrelationId': ['corr-3'],
+          'X-MockServer-BreakpointId': ['bp-3'],
+        },
+      }),
+    });
 
-    await waitFor(() => { expect(screen.getByText('0 paused')).toBeInTheDocument(); });
+    await switchToExchangesTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('DELETE')).toBeInTheDocument();
+    });
+
+    // Click Abort
+    const abortBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Abort'));
+    expect(abortBtn).toBeDefined();
+    await user.click(abortBtn!);
+
+    // Verify HttpResponse was sent (abort = statusCode present)
+    const envelope = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]!);
+    expect(envelope.type).toBe('org.mockserver.model.HttpResponse');
+    const inner = JSON.parse(envelope.value);
+    expect(inner.statusCode).toBe(503);
   });
 
-  it('calls abort endpoint when Abort button is clicked', async () => {
+  it('opens modify dialog and sends modified request over WS', async () => {
     const user = userEvent.setup();
-    let callIndex = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        if (init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'aborted', id: 'abc-123' }) };
-        }
-        callIndex++;
-        if (callIndex === 1) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({ count: 1, pausedExchanges: [{ id: 'abc-123', ageMillis: 3000, request: { method: 'DELETE', path: '/remove' } }] }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
 
     renderPanel();
-    await waitFor(() => { expect(screen.getByText('1 paused')).toBeInTheDocument(); });
 
-    const abortBtn = screen.getByRole('button', { name: /Abort abc-123/ });
-    await user.click(abortBtn);
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    const ws = connectCallbackWs();
 
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/abort') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({ id: 'abc-123' });
-  });
-
-  it('opens modify dialog and sends modified request on submit', async () => {
-    const user = userEvent.setup();
-    let callIndex = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        if (init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'modified', id: 'abc-123' }) };
-        }
-        callIndex++;
-        if (callIndex === 1) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({ count: 1, pausedExchanges: [{ id: 'abc-123', ageMillis: 1000, request: { method: 'GET', path: '/original' } }] }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'GET',
+        path: '/original',
+        headers: {
+          'WebSocketCorrelationId': ['corr-4'],
+          'X-MockServer-BreakpointId': ['bp-4'],
+        },
       }),
-    );
+    });
 
-    renderPanel();
-    await waitFor(() => { expect(screen.getByText('1 paused')).toBeInTheDocument(); });
+    await switchToExchangesTab();
 
-    const modifyBtn = screen.getByRole('button', { name: /Modify abc-123/ });
-    await user.click(modifyBtn);
+    await waitFor(() => {
+      expect(screen.getByText('GET')).toBeInTheDocument();
+    });
 
-    await waitFor(() => { expect(screen.getByText('Modify Request')).toBeInTheDocument(); });
+    // Click Modify
+    const modifyBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Modify'));
+    expect(modifyBtn).toBeDefined();
+    await user.click(modifyBtn!);
 
+    await waitFor(() => {
+      expect(screen.getByText('Modify Request')).toBeInTheDocument();
+    });
+
+    // Edit the JSON
     const textarea = screen.getByRole('textbox');
-    expect(textarea).toHaveValue(JSON.stringify({ method: 'GET', path: '/original' }, null, 2));
-
     fireEvent.change(textarea, { target: { value: '{"method":"POST","path":"/modified"}' } });
 
     const sendBtn = screen.getByRole('button', { name: /Send Modified/ });
     await user.click(sendBtn);
 
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/modify') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    const putBody = JSON.parse((putCall![1] as RequestInit).body as string);
-    expect(putBody.id).toBe('abc-123');
-    expect(putBody.httpRequest).toEqual({ method: 'POST', path: '/modified' });
+    // Verify WS message
+    const envelope = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]!);
+    expect(envelope.type).toBe('org.mockserver.model.HttpRequest');
+    const inner = JSON.parse(envelope.value);
+    expect(inner.method).toBe('POST');
+    expect(inner.path).toBe('/modified');
   });
 
-  it('shows an error alert when the fetch fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        throw new Error('Connection refused');
-      }),
-    );
+  it('shows Invalid JSON error in modify dialog', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
 
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText(/Could not load paused exchanges/)).toBeInTheDocument();
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
     });
-    expect(screen.getByText('Connection refused')).toBeInTheDocument();
-  });
+    const ws = connectCallbackWs();
 
-  it('shows an error alert when the server returns a non-OK status', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        return {
-          ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-          json: async () => ({ error: 'breakpoint registry unavailable' }),
-        };
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'GET',
+        path: '/test',
+        headers: {
+          'WebSocketCorrelationId': ['corr-5'],
+          'X-MockServer-BreakpointId': ['bp-5'],
+        },
       }),
-    );
-
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load paused exchanges/)).toBeInTheDocument();
     });
-    expect(screen.getByText('breakpoint registry unavailable')).toBeInTheDocument();
-  });
 
-  it('has a Refresh button that triggers a new poll', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => emptyExchanges,
-    }));
-    vi.stubGlobal('fetch', fetchMock);
+    await switchToExchangesTab();
+    await waitFor(() => { expect(screen.getByText('GET')).toBeInTheDocument(); });
 
-    const user = userEvent.setup();
-    renderPanel();
-
-    await waitFor(() => { expect(fetchMock).toHaveBeenCalled(); });
-    const callsBefore = fetchMock.mock.calls.length;
-
-    const refreshBtn = screen.getByRole('button', { name: 'Refresh breakpoints' });
-    await user.click(refreshBtn);
-
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
-    });
-  });
-
-  it('renders response-phase exchange with status code and phase chip', async () => {
-    stubBothEndpoints(
-      {
-        count: 1,
-        pausedExchanges: [{
-          id: 'resp-456',
-          phase: 'RESPONSE',
-          ageMillis: 3000,
-          expectationId: 'exp-2',
-          request: { method: 'GET', path: '/api/data' },
-          response: { statusCode: 200, reasonPhrase: 'OK' },
-        }],
-      },
-      emptyStreams,
-    );
-    renderPanel();
-
-    await waitFor(() => { expect(screen.getByText('1 paused')).toBeInTheDocument(); });
-
-    expect(screen.getByText('RESPONSE')).toBeInTheDocument();
-    expect(screen.getByText('200')).toBeInTheDocument();
-    expect(screen.getByText('OK')).toBeInTheDocument();
-    expect(screen.getByText('resp-456')).toBeInTheDocument();
-  });
-
-  it('opens modify dialog with response JSON for response-phase exchange', async () => {
-    const user = userEvent.setup();
-    let callIndex = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        if (init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'modified', id: 'resp-456' }) };
-        }
-        callIndex++;
-        if (callIndex === 1) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              count: 1,
-              pausedExchanges: [{
-                id: 'resp-456',
-                phase: 'RESPONSE',
-                ageMillis: 1000,
-                request: { method: 'GET', path: '/api/data' },
-                response: { statusCode: 200, reasonPhrase: 'OK' },
-              }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
-    await waitFor(() => { expect(screen.getByText('1 paused')).toBeInTheDocument(); });
-
-    const modifyBtn = screen.getByRole('button', { name: /Modify resp-456/ });
-    await user.click(modifyBtn);
-
-    await waitFor(() => { expect(screen.getByText('Modify Response')).toBeInTheDocument(); });
-
-    const textarea = screen.getByRole('textbox');
-    expect(textarea).toHaveValue(JSON.stringify({ statusCode: 200, reasonPhrase: 'OK' }, null, 2));
-
-    fireEvent.change(textarea, { target: { value: '{"statusCode":503,"body":"Service Unavailable"}' } });
-    const sendBtn = screen.getByRole('button', { name: /Send Modified/ });
-    await user.click(sendBtn);
-
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/modify') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    const putBody = JSON.parse((putCall![1] as RequestInit).body as string);
-    expect(putBody.id).toBe('resp-456');
-    expect(putBody.httpResponse).toEqual({ statusCode: 503, body: 'Service Unavailable' });
-    expect(putBody).not.toHaveProperty('httpRequest');
-  });
-
-  it('shows modify dialog validation error for invalid JSON', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        return {
-          ok: true, status: 200,
-          json: async () => ({
-            count: 1,
-            pausedExchanges: [{ id: 'abc-123', ageMillis: 1000, request: { method: 'GET', path: '/test' } }],
-          }),
-        };
-      }),
-    );
-
-    renderPanel();
-    await waitFor(() => { expect(screen.getByText('1 paused')).toBeInTheDocument(); });
-
-    const modifyBtn = screen.getByRole('button', { name: /Modify abc-123/ });
-    await user.click(modifyBtn);
+    const modifyBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Modify'));
+    await user.click(modifyBtn!);
 
     await waitFor(() => { expect(screen.getByText('Modify Request')).toBeInTheDocument(); });
 
@@ -398,492 +523,203 @@ describe('BreakpointsPanel — Exchanges tab', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Streams tab
+// Live Streams tab
 // ---------------------------------------------------------------------------
 
-describe('BreakpointsPanel — Streams tab', () => {
+describe('BreakpointsPanel — Live Streams tab', () => {
   async function switchToStreamsTab() {
     const user = userEvent.setup();
-    // Click on the "Streams" tab
-    const streamsTab = screen.getByRole('tab', { name: /Streams/ });
-    await user.click(streamsTab);
+    const tab = screen.getByRole('tab', { name: /Live Streams/ });
+    await user.click(tab);
   }
 
-  it('shows empty state when no held stream frames', async () => {
-    stubBothEndpoints(emptyExchanges, emptyStreams);
+  it('shows empty state', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
     renderPanel();
     await switchToStreamsTab();
 
-    await waitFor(() => {
-      expect(screen.getByText(/No held stream frames/)).toBeInTheDocument();
-    });
+    expect(screen.getByText(/No paused stream frames/)).toBeInTheDocument();
   });
 
-  it('renders held stream frames grouped by stream', async () => {
-    stubBothEndpoints(emptyExchanges, {
-      totalHeldFrames: 2,
-      streams: [{
-        streamId: 'stream-abc',
-        frames: [
-          { frameId: 'stream-abc-frame-0', sequenceNumber: 0, ageMillis: 3000, bodyLength: 42, requestMethod: 'GET', requestPath: '/events', bodyPreview: 'data: hello' },
-          { frameId: 'stream-abc-frame-1', sequenceNumber: 1, ageMillis: 1000, bodyLength: 20, requestMethod: 'GET', requestPath: '/events', bodyPreview: 'data: world' },
-        ],
-      }],
-    });
+  it('shows paused frame from WS push', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
     renderPanel();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    const ws = connectCallbackWs();
+
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.PausedStreamFrameDTO',
+      value: JSON.stringify({
+        correlationId: 'frame-1',
+        streamId: 'stream-abc',
+        sequenceNumber: 0,
+        direction: 'OUTBOUND',
+        phase: 'RESPONSE_STREAM',
+        body: btoa('data: hello'),
+        requestMethod: 'GET',
+        requestPath: '/events',
+        breakpointId: 'bp-stream',
+      }),
+    });
+
     await switchToStreamsTab();
 
-    // Stream grouping
     await waitFor(() => {
       expect(screen.getByText('stream-abc')).toBeInTheDocument();
     });
-    expect(screen.getByText('2 frames')).toBeInTheDocument();
-
-    // Frame details
     expect(screen.getByText('#0')).toBeInTheDocument();
-    expect(screen.getByText('#1')).toBeInTheDocument();
-    expect(screen.getByText('data: hello')).toBeInTheDocument();
-    expect(screen.getByText('data: world')).toBeInTheDocument();
-    expect(screen.getByText('42B')).toBeInTheDocument();
-    expect(screen.getByText('20B')).toBeInTheDocument();
-    expect(screen.getByText('3s')).toBeInTheDocument();
-    expect(screen.getByText('1s')).toBeInTheDocument();
+    expect(screen.getByText('GET')).toBeInTheDocument();
+    expect(screen.getByText('/events')).toBeInTheDocument();
+    expect(screen.getByText('Outbound')).toBeInTheDocument();
   });
 
-  it('shows singular "frame" text for single-frame stream', async () => {
-    stubBothEndpoints(emptyExchanges, {
-      totalHeldFrames: 1,
-      streams: [{
-        streamId: 'stream-single',
-        frames: [
-          { frameId: 'stream-single-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'POST', requestPath: '/api' },
-        ],
-      }],
-    });
+  it('resolves a frame with Continue', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
     renderPanel();
-    await switchToStreamsTab();
 
     await waitFor(() => {
-      expect(screen.getByText('1 frame')).toBeInTheDocument();
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
     });
-  });
+    const ws = connectCallbackWs();
 
-  it('calls continue endpoint for stream frame', async () => {
-    const user = userEvent.setup();
-    let streamCallIndex = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/breakpoint/stream/continue') && init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'continued', id: 'stream-1-frame-0' }) };
-        }
-        if (urlStr.endsWith('/mockserver/breakpoint/streams')) {
-          streamCallIndex++;
-          if (streamCallIndex === 1) {
-            return {
-              ok: true, status: 200,
-              json: async () => ({
-                totalHeldFrames: 1,
-                streams: [{ streamId: 'stream-1', frames: [{ frameId: 'stream-1-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, bodyPreview: 'data: hi' }] }],
-              }),
-            };
-          }
-          return { ok: true, status: 200, json: async () => emptyStreams };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.PausedStreamFrameDTO',
+      value: JSON.stringify({
+        correlationId: 'frame-cont-1',
+        streamId: 's1',
+        sequenceNumber: 0,
+        direction: 'OUTBOUND',
+        phase: 'RESPONSE_STREAM',
+        body: btoa('test'),
+        breakpointId: 'bp-1',
       }),
-    );
-
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => { expect(screen.getByText('stream-1')).toBeInTheDocument(); });
-
-    const continueBtn = screen.getByRole('button', { name: /Continue stream-1-frame-0/ });
-    await user.click(continueBtn);
-
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/stream/continue') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({ id: 'stream-1-frame-0' });
-  });
-
-  it('calls drop endpoint for stream frame', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/breakpoint/stream/drop') && init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'dropped', id: 'frame-0' }) };
-        }
-        if (urlStr.endsWith('/mockserver/breakpoint/streams')) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              totalHeldFrames: 1,
-              streams: [{ streamId: 's1', frames: [{ frameId: 'frame-0', sequenceNumber: 0, ageMillis: 100, bodyLength: 5, bodyPreview: 'x' }] }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => { expect(screen.getByText('s1')).toBeInTheDocument(); });
-
-    const dropBtn = screen.getByRole('button', { name: /Drop frame-0/ });
-    await user.click(dropBtn);
-
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/stream/drop') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({ id: 'frame-0' });
-  });
-
-  it('calls close endpoint for stream frame', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/breakpoint/stream/close') && init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'closed', id: 'frame-0' }) };
-        }
-        if (urlStr.endsWith('/mockserver/breakpoint/streams')) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              totalHeldFrames: 1,
-              streams: [{ streamId: 's1', frames: [{ frameId: 'frame-0', sequenceNumber: 0, ageMillis: 100, bodyLength: 5, bodyPreview: 'x' }] }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => { expect(screen.getByText('s1')).toBeInTheDocument(); });
-
-    const closeBtn = screen.getByRole('button', { name: /Close frame-0/ });
-    await user.click(closeBtn);
-
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/stream/close') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({ id: 'frame-0' });
-  });
-
-  it('opens modify dialog and sends modified frame body', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/breakpoint/stream/modify') && init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'modified', id: 'frame-0' }) };
-        }
-        if (urlStr.endsWith('/mockserver/breakpoint/streams')) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              totalHeldFrames: 1,
-              streams: [{ streamId: 's1', frames: [{ frameId: 'frame-0', sequenceNumber: 0, ageMillis: 100, bodyLength: 11, bodyPreview: 'data: hello' }] }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => { expect(screen.getByText('s1')).toBeInTheDocument(); });
-
-    const modifyBtn = screen.getByRole('button', { name: /Modify frame-0/ });
-    await user.click(modifyBtn);
-
-    await waitFor(() => { expect(screen.getByText('Modify Stream Frame')).toBeInTheDocument(); });
-
-    // Pre-filled with bodyPreview
-    const textarea = screen.getByRole('textbox');
-    expect(textarea).toHaveValue('data: hello');
-
-    fireEvent.change(textarea, { target: { value: 'data: modified' } });
-
-    const sendBtn = screen.getByRole('button', { name: /Send Modified Frame/ });
-    await user.click(sendBtn);
-
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/stream/modify') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({
-      id: 'frame-0',
-      body: 'data: modified',
     });
-  });
 
-  it('opens inject dialog and sends injected frame body', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/breakpoint/stream/inject') && init?.method === 'PUT') {
-          return { ok: true, status: 200, json: async () => ({ status: 'injected', id: 'frame-0' }) };
-        }
-        if (urlStr.endsWith('/mockserver/breakpoint/streams')) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              totalHeldFrames: 1,
-              streams: [{ streamId: 's1', frames: [{ frameId: 'frame-0', sequenceNumber: 0, ageMillis: 100, bodyLength: 5, bodyPreview: 'data: x' }] }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
     await switchToStreamsTab();
-
     await waitFor(() => { expect(screen.getByText('s1')).toBeInTheDocument(); });
 
-    const injectBtn = screen.getByRole('button', { name: /Inject frame-0/ });
-    await user.click(injectBtn);
+    const continueBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Continue'));
+    await user.click(continueBtn!);
 
-    await waitFor(() => { expect(screen.getByText('Inject Extra Frame')).toBeInTheDocument(); });
+    // Verify decision sent
+    const envelope = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]!);
+    expect(envelope.type).toBe('org.mockserver.serialization.model.StreamFrameDecisionDTO');
+    const inner = JSON.parse(envelope.value);
+    expect(inner.correlationId).toBe('frame-cont-1');
+    expect(inner.action).toBe('CONTINUE');
 
-    // Inject dialog body starts empty
-    const textarea = screen.getByRole('textbox');
-    expect(textarea).toHaveValue('');
-
-    fireEvent.change(textarea, { target: { value: 'data: injected\n\n' } });
-
-    const sendBtn = screen.getByRole('button', { name: /Inject Frame/ });
-    await user.click(sendBtn);
-
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const putCall = fetchMock.mock.calls.find(
-      ([u, i]) => String(u).includes('/breakpoint/stream/inject') && (i as RequestInit)?.method === 'PUT',
-    );
-    expect(putCall).toBeDefined();
-    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({
-      id: 'frame-0',
-      body: 'data: injected\n\n',
-    });
-  });
-
-  it('shows stream load error', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          throw new Error('Stream fetch failed');
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
-    const user = userEvent.setup();
-    const streamsTab = screen.getByRole('tab', { name: /Streams/ });
-    await user.click(streamsTab);
-
+    // Frame should be removed from list
     await waitFor(() => {
-      expect(screen.getByText(/Could not load stream frames/)).toBeInTheDocument();
+      expect(screen.getByText(/No paused stream frames/)).toBeInTheDocument();
     });
-    expect(screen.getByText('Stream fetch failed')).toBeInTheDocument();
   });
 
-  it('shows modify dialog validation error when body is empty', async () => {
+  it('resolves a frame with Drop', async () => {
     const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              totalHeldFrames: 1,
-              streams: [{ streamId: 's1', frames: [{ frameId: 'frame-0', sequenceNumber: 0, ageMillis: 100, bodyLength: 0 }] }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+    await waitFor(() => { expect(MockWebSocket.instances.length).toBeGreaterThan(0); });
+    const ws = connectCallbackWs();
+
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.PausedStreamFrameDTO',
+      value: JSON.stringify({
+        correlationId: 'frame-drop-1',
+        streamId: 's2',
+        sequenceNumber: 0,
+        direction: 'INBOUND',
+        phase: 'INBOUND_STREAM',
+        body: btoa('test'),
+        breakpointId: 'bp-2',
       }),
-    );
-
-    renderPanel();
-    const streamsTab = screen.getByRole('tab', { name: /Streams/ });
-    await user.click(streamsTab);
-
-    await waitFor(() => { expect(screen.getByText('s1')).toBeInTheDocument(); });
-
-    const modifyBtn = screen.getByRole('button', { name: /Modify frame-0/ });
-    await user.click(modifyBtn);
-
-    await waitFor(() => { expect(screen.getByText('Modify Stream Frame')).toBeInTheDocument(); });
-
-    // Body is empty (no bodyPreview on the frame), submit should show error
-    const sendBtn = screen.getByRole('button', { name: /Send Modified Frame/ });
-    await user.click(sendBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText('Body is required')).toBeInTheDocument();
     });
-  });
 
-  it('shows inject dialog validation error when body is empty', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (String(url).endsWith('/mockserver/breakpoint/streams')) {
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              totalHeldFrames: 1,
-              streams: [{ streamId: 's1', frames: [{ frameId: 'frame-0', sequenceNumber: 0, ageMillis: 100, bodyLength: 5, bodyPreview: 'hi' }] }],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => emptyExchanges };
-      }),
-    );
-
-    renderPanel();
-    const streamsTab = screen.getByRole('tab', { name: /Streams/ });
-    await user.click(streamsTab);
-
-    await waitFor(() => { expect(screen.getByText('s1')).toBeInTheDocument(); });
-
-    const injectBtn = screen.getByRole('button', { name: /Inject frame-0/ });
-    await user.click(injectBtn);
-
-    await waitFor(() => { expect(screen.getByText('Inject Extra Frame')).toBeInTheDocument(); });
-
-    // Submit with empty body
-    const sendBtn = screen.getByRole('button', { name: /Inject Frame/ });
-    await user.click(sendBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText('Body is required')).toBeInTheDocument();
-    });
-  });
-
-  it('renders Inbound direction chip for INBOUND frames', async () => {
-    stubBothEndpoints(emptyExchanges, {
-      totalHeldFrames: 1,
-      streams: [{
-        streamId: 'stream-dir',
-        frames: [
-          { frameId: 'stream-dir-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/ws', direction: 'INBOUND' },
-        ],
-      }],
-    });
-    renderPanel();
     await switchToStreamsTab();
+    await waitFor(() => { expect(screen.getByText('s2')).toBeInTheDocument(); });
 
-    await waitFor(() => {
-      expect(screen.getByText('stream-dir')).toBeInTheDocument();
+    const dropBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Drop'));
+    await user.click(dropBtn!);
+
+    const envelope = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]!);
+    const inner = JSON.parse(envelope.value);
+    expect(inner.action).toBe('DROP');
+    expect(inner.correlationId).toBe('frame-drop-1');
+  });
+
+  it('resolves a frame with Close', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+    await waitFor(() => { expect(MockWebSocket.instances.length).toBeGreaterThan(0); });
+    const ws = connectCallbackWs();
+
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.PausedStreamFrameDTO',
+      value: JSON.stringify({
+        correlationId: 'frame-close-1',
+        streamId: 's3',
+        sequenceNumber: 0,
+        direction: 'OUTBOUND',
+        phase: 'RESPONSE_STREAM',
+        body: btoa('test'),
+        breakpointId: 'bp-3',
+      }),
     });
+
+    await switchToStreamsTab();
+    await waitFor(() => { expect(screen.getByText('s3')).toBeInTheDocument(); });
+
+    const closeBtn = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.startsWith('Close'));
+    await user.click(closeBtn!);
+
+    const envelope = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]!);
+    const inner = JSON.parse(envelope.value);
+    expect(inner.action).toBe('CLOSE');
+  });
+
+  it('shows Inbound direction chip for INBOUND frames', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+    await waitFor(() => { expect(MockWebSocket.instances.length).toBeGreaterThan(0); });
+    const ws = connectCallbackWs();
+
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.PausedStreamFrameDTO',
+      value: JSON.stringify({
+        correlationId: 'frame-dir-1',
+        streamId: 'ws-in',
+        sequenceNumber: 0,
+        direction: 'INBOUND',
+        phase: 'INBOUND_STREAM',
+        body: btoa('msg'),
+        breakpointId: 'bp-dir',
+      }),
+    });
+
+    await switchToStreamsTab();
+    await waitFor(() => { expect(screen.getByText('ws-in')).toBeInTheDocument(); });
     expect(screen.getByText('Inbound')).toBeInTheDocument();
-  });
-
-  it('renders Outbound direction chip for OUTBOUND frames', async () => {
-    stubBothEndpoints(emptyExchanges, {
-      totalHeldFrames: 1,
-      streams: [{
-        streamId: 'stream-out',
-        frames: [
-          { frameId: 'stream-out-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/sse', direction: 'OUTBOUND' },
-        ],
-      }],
-    });
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => {
-      expect(screen.getByText('stream-out')).toBeInTheDocument();
-    });
-    expect(screen.getByText('Outbound')).toBeInTheDocument();
-  });
-
-  it('defaults to Outbound when direction is absent', async () => {
-    stubBothEndpoints(emptyExchanges, {
-      totalHeldFrames: 1,
-      streams: [{
-        streamId: 'stream-nodir',
-        frames: [
-          { frameId: 'stream-nodir-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/events' },
-        ],
-      }],
-    });
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => {
-      expect(screen.getByText('stream-nodir')).toBeInTheDocument();
-    });
-    // Should fall back to Outbound
-    expect(screen.getByText('Outbound')).toBeInTheDocument();
-  });
-
-  it('renders both direction chips when stream has mixed directions', async () => {
-    stubBothEndpoints(emptyExchanges, {
-      totalHeldFrames: 2,
-      streams: [{
-        streamId: 'stream-mixed',
-        frames: [
-          { frameId: 'stream-mixed-frame-0', sequenceNumber: 0, ageMillis: 500, bodyLength: 10, requestMethod: 'GET', requestPath: '/ws', direction: 'OUTBOUND' },
-          { frameId: 'stream-mixed-frame-1', sequenceNumber: 1, ageMillis: 300, bodyLength: 8, requestMethod: 'GET', requestPath: '/ws', direction: 'INBOUND' },
-        ],
-      }],
-    });
-    renderPanel();
-    await switchToStreamsTab();
-
-    await waitFor(() => {
-      expect(screen.getByText('stream-mixed')).toBeInTheDocument();
-    });
-    expect(screen.getByText('Outbound')).toBeInTheDocument();
-    expect(screen.getByText('Inbound')).toBeInTheDocument();
-  });
-
-  it('shows total count combining exchanges and streams in the header badge', async () => {
-    stubBothEndpoints(
-      { count: 2, pausedExchanges: [
-        { id: 'e1', ageMillis: 100, request: { method: 'GET', path: '/a' } },
-        { id: 'e2', ageMillis: 200, request: { method: 'POST', path: '/b' } },
-      ] },
-      { totalHeldFrames: 3, streams: [{ streamId: 's1', frames: [
-        { frameId: 'f0', sequenceNumber: 0, ageMillis: 100, bodyLength: 5, bodyPreview: 'x' },
-        { frameId: 'f1', sequenceNumber: 1, ageMillis: 50, bodyLength: 3, bodyPreview: 'y' },
-        { frameId: 'f2', sequenceNumber: 2, ageMillis: 20, bodyLength: 2, bodyPreview: 'z' },
-      ] }] },
-    );
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText('5 paused')).toBeInTheDocument();
-    });
   });
 });
