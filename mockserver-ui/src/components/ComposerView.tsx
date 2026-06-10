@@ -1222,19 +1222,21 @@ function ConnectionOptionsFields({
           <MenuItem value="true">Keep alive</MenuItem>
           <MenuItem value="false">Close</MenuItem>
         </TextField>
-        <TextField select size="small" label="Close socket" sx={{ width: 130 }} value={triValue(co.closeSocket)}
+        <TextField select size="small" label="Close socket" sx={{ width: 150 }} value={triValue(co.closeSocket)}
           onChange={(e) => update({ closeSocket: triParse(e.target.value) })}>
           <MenuItem value="">Default</MenuItem>
           <MenuItem value="true">Yes</MenuItem>
           <MenuItem value="false">No</MenuItem>
         </TextField>
-        <TextField size="small" type="number" label="Content-Length override" sx={{ width: 180 }}
+        <TextField size="small" type="number" label="Content-Length override" sx={{ width: 210 }}
           value={co.contentLengthHeaderOverride ?? ''}
           onChange={(e) => update({ contentLengthHeaderOverride: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} />
-        <FormControlLabel control={<Switch size="small" checked={co.suppressContentLengthHeader === true}
+        {/* ml: 1 cancels MUI FormControlLabel's default -11px left margin (which made the
+            switch crowd the Content-Length field) and leaves a clear gap before each switch. */}
+        <FormControlLabel sx={{ ml: 1 }} control={<Switch size="small" checked={co.suppressContentLengthHeader === true}
           onChange={(e) => update({ suppressContentLengthHeader: e.target.checked || undefined })} />}
           label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Suppress Content-Length</Typography>} />
-        <FormControlLabel control={<Switch size="small" checked={co.suppressConnectionHeader === true}
+        <FormControlLabel sx={{ ml: 1 }} control={<Switch size="small" checked={co.suppressConnectionHeader === true}
           onChange={(e) => update({ suppressConnectionHeader: e.target.checked || undefined })} />}
           label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Suppress Connection</Typography>} />
       </Box>
