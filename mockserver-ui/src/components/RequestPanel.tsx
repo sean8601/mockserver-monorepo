@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
@@ -109,6 +109,25 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
 
 // ---------------------------------------------------------------------------
 
+// One row of the request list. Memoized so unchanged rows skip re-rendering on
+// the once-per-second WebSocket push (the store preserves `item` references for
+// unchanged entries). traceparent extraction is done here via useMemo keyed on
+// the stable `item`, rather than in the parent's `.map()` where it re-ran for
+// every item on every parent render.
+const RequestRow = memo(function RequestRow({ item, index }: { item: JsonListItem; index: number }) {
+  const tp = useMemo(() => extractTraceparentFromItem(item), [item]);
+  return (
+    <Box>
+      <JsonListItemComponent item={item} index={index} />
+      {tp && (
+        <Box sx={{ pl: 6, pb: 0.5 }}>
+          <TraceparentPill info={tp} />
+        </Box>
+      )}
+    </Box>
+  );
+});
+
 export default function RequestPanel({
   title,
   items,
@@ -133,19 +152,9 @@ export default function RequestPanel({
           {items.length === 0 ? 'No requests yet — recorded requests appear here as traffic reaches the server.' : 'No matching requests'}
         </Typography>
       ) : (
-        filtered.map((item, index) => {
-          const tp = extractTraceparentFromItem(item);
-          return (
-            <Box key={item.key}>
-              <JsonListItemComponent item={item} index={filtered.length - index} />
-              {tp && (
-                <Box sx={{ pl: 6, pb: 0.5 }}>
-                  <TraceparentPill info={tp} />
-                </Box>
-              )}
-            </Box>
-          );
-        })
+        filtered.map((item, index) => (
+          <RequestRow key={item.key} item={item} index={filtered.length - index} />
+        ))
       )}
     </Panel>
   );

@@ -17,6 +17,27 @@ const VIEW_MIGRATION: Record<string, ViewMode> = {
   'mcp-tools': 'composer',
 };
 
+/**
+ * Reconcile a freshly-parsed array against the previous one, preserving object
+ * identity for entries whose content is unchanged.
+ *
+ * Every WebSocket push delivers brand-new parsed objects, so without this each
+ * row would be a new reference on every tick — and `React.memo` on the row
+ * components could never skip a re-render. Entries are matched by their stable
+ * `key`; equality is a structural (JSON) compare. Unchanged entries keep their
+ * previous reference, which keeps memoized rows and their `useMemo([item.value])`
+ * hooks valid across pushes. The reused reference is the whole entry, so nested
+ * children (e.g. a log group's entries) are preserved for free.
+ */
+function reconcileByKey<T extends { key: string }>(prev: T[], next: T[]): T[] {
+  if (prev.length === 0 || next.length === 0) return next;
+  const prevByKey = new Map(prev.map((p) => [p.key, p] as const));
+  return next.map((n) => {
+    const p = prevByKey.get(n.key);
+    return p && p !== n && JSON.stringify(p) === JSON.stringify(n) ? p : n;
+  });
+}
+
 interface DashboardState {
   logMessages: LogMessage[];
   activeExpectations: JsonListItem[];
@@ -170,10 +191,10 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       const autoSwitch =
         s.view === 'get-started' && previouslyEmpty && hasData;
       return {
-        logMessages: message.logMessages ?? [],
-        activeExpectations: expectations,
-        recordedRequests: recorded,
-        proxiedRequests: proxied,
+        logMessages: reconcileByKey(s.logMessages, message.logMessages ?? []),
+        activeExpectations: reconcileByKey(s.activeExpectations, expectations),
+        recordedRequests: reconcileByKey(s.recordedRequests, recorded),
+        proxiedRequests: reconcileByKey(s.proxiedRequests, proxied),
         error: message.error ?? null,
         ...(autoSwitch ? { view: 'dashboard' as ViewMode } : {}),
       };

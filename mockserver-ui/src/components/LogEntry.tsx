@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, memo, Fragment } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -262,7 +262,7 @@ function extractRequestFromEntry(entry: LogEntryValue): Record<string, unknown> 
   return null;
 }
 
-export default function LogEntry({ entry, indent = false, divider = false, collapsible = false }: LogEntryProps) {
+function LogEntry({ entry, indent = false, divider = false, collapsible = false }: LogEntryProps) {
   const style = entry.style ?? {};
   const hasBody = entry.messageParts && entry.messageParts.length > 0;
   const canCollapse = collapsible && hasBody;
@@ -388,3 +388,9 @@ export default function LogEntry({ entry, indent = false, divider = false, colla
     </Box>
   );
 }
+
+// Memoized: the log panel re-renders on every WebSocket push. With the store
+// now preserving the `entry` reference for unchanged entries (reconcileByKey,
+// which reuses whole objects so a log group's nested entries are stable too),
+// default shallow prop comparison lets unchanged log rows skip re-rendering.
+export default memo(LogEntry);

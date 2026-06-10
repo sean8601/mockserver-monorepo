@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo } from 'react';
+import { Fragment, memo, useState, useMemo } from 'react';
 import type React from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -159,7 +159,7 @@ function extractChaosSummary(value: Record<string, unknown>): string | null {
   return parts.length > 0 ? parts.join(', ') : 'enabled';
 }
 
-export default function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
+function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
   const [expanded, setExpanded] = useState(false);
   const llmBadge = useMemo(() => extractLlmBadge(item.value), [item.value]);
   const requestParts = useMemo(() => extractRequestParts(item.value), [item.value]);
@@ -413,3 +413,9 @@ export default function JsonListItem({ item, index, turnPosition }: JsonListItem
     </Box>
   );
 }
+
+// Memoized: rows are re-rendered once per second by the WebSocket push. The
+// store now preserves the `item` reference for unchanged entries (see
+// reconcileByKey), so default shallow prop comparison lets unchanged rows skip
+// the whole render — including the expensive expanded JsonViewer subtree.
+export default memo(JsonListItem);
