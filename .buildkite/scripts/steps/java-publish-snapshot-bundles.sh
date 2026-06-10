@@ -5,8 +5,10 @@
 #
 # Guard: skips when the pom version is NOT *-SNAPSHOT (mirrors java-deploy-snapshot.sh).
 #
-# Agent requirements: JDK 21 providing jlink, curl, tar, unzip, gh, jq, and
-# ~2 GB scratch for the cached target JDKs. Runs on the default queue.
+# Agent requirements: curl, tar, unzip, gh, jq, and ~2 GB scratch. A host JDK 21
+# (for jlink only) is bootstrapped on demand if not already present, so the Maven
+# build keeps running on JDK 17 (this step never touches the Maven JDK). Runs on
+# the default queue.
 #
 # GH auth: reads a GitHub PAT from AWS Secrets Manager at
 # "mockserver-build/github-token" (key: "token"). This is a BUILD-queue secret,
@@ -54,20 +56,48 @@ fi
 echo "Using JAR: $SHADED_JAR"
 
 # ---------------------------------------------------------------------------
-# Verify jlink is available (JDK 21 required for cross-build)
+# Ensure a host JDK 21 jlink (the bundle cross-build needs jlink major 21).
+# IMPORTANT: this is used ONLY by this step. The Maven build keeps running on
+# JDK 17 inside the maven Docker image — we never change its JDK. We bootstrap
+# Temurin 21 on demand (no agent AMI change required) so adding 21 here cannot
+# pull the 17 build onto a newer JDK.
 # ---------------------------------------------------------------------------
-echo "--- :java: Verifying jlink availability"
-if ! command -v jlink >/dev/null 2>&1; then
-  echo "Error: jlink not found. Binary bundle cross-build requires JDK 21 with jlink on the PATH."
-  echo "The CI image must include a JDK 21 installation."
-  exit 1
+echo "--- :java: Ensuring host JDK 21 for jlink (Maven build stays on 17)"
+jlink_major() { "$1" --version 2>&1 | grep -oE '^[0-9]+' | head -1 || true; }
+
+JDK21_HOME=""
+if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/jlink" && "$(jlink_major "$JAVA_HOME/bin/jlink")" == "21" ]]; then
+  JDK21_HOME="$JAVA_HOME"
+elif command -v jlink >/dev/null 2>&1 && [[ "$(jlink_major "$(command -v jlink)")" == "21" ]]; then
+  JDK21_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v jlink)")")")"
+else
+  case "$(uname -s)/$(uname -m)" in
+    Linux/x86_64)  AOS=linux; AARCH=x64 ;;
+    Linux/aarch64) AOS=linux; AARCH=aarch64 ;;
+    Darwin/x86_64) AOS=mac;   AARCH=x64 ;;
+    Darwin/arm64)  AOS=mac;   AARCH=aarch64 ;;
+    *) echo "Error: unsupported host platform $(uname -s)/$(uname -m) for JDK 21 bootstrap"; exit 1 ;;
+  esac
+  HOST_JDK_DIR="$REPO_ROOT/.tmp/jdks/host-jdk-21"
+  if [[ ! -x "$HOST_JDK_DIR/bin/jlink" && ! -x "$HOST_JDK_DIR/Contents/Home/bin/jlink" ]]; then
+    echo "No host JDK 21 found — bootstrapping Temurin 21 ($AOS/$AARCH) for jlink only..."
+    mkdir -p "$HOST_JDK_DIR"
+    _arch="$REPO_ROOT/.tmp/jdks/host-jdk-21.tar.gz"
+    curl -fsSL -o "$_arch" \
+      "https://api.adoptium.net/v3/binary/latest/21/ga/${AOS}/${AARCH}/jdk/hotspot/normal/eclipse?project=jdk" \
+      || { echo "Error: failed to download Temurin 21 for the host"; exit 1; }
+    tar -xzf "$_arch" -C "$HOST_JDK_DIR" --strip-components=1
+    rm -f "$_arch"
+  fi
+  if [[ -x "$HOST_JDK_DIR/bin/jlink" ]]; then
+    JDK21_HOME="$HOST_JDK_DIR"
+  else
+    JDK21_HOME="$HOST_JDK_DIR/Contents/Home"   # macOS layout
+  fi
 fi
-JLINK_MAJOR="$(jlink --version 2>&1 | grep -oE '^[0-9]+' | head -1 || true)"
-if [[ "$JLINK_MAJOR" != "21" ]]; then
-  echo "Error: binary bundles require JDK 21 jlink (found: '${JLINK_MAJOR:-none}')."
-  echo "Install Temurin 21 on the CI agent or update the Docker image."
-  exit 1
-fi
+
+[[ -x "$JDK21_HOME/bin/jlink" ]] || { echo "Error: could not provision a JDK 21 jlink"; exit 1; }
+echo "Using JDK 21 for jlink (Maven unaffected): $JDK21_HOME"
 
 # ---------------------------------------------------------------------------
 # Build all platform bundles
@@ -77,9 +107,12 @@ BUNDLE_OUT="$REPO_ROOT/.tmp/bundles"
 rm -rf "$BUNDLE_OUT"
 mkdir -p "$BUNDLE_OUT"
 
-"$REPO_ROOT/scripts/build-all-bundles.sh" \
+# JAVA_HOME points build-all-bundles.sh at the bootstrapped JDK 21 jlink for THIS
+# invocation only (a subshell env), so the Maven 17 build is never affected.
+JAVA_HOME="$JDK21_HOME" "$REPO_ROOT/scripts/build-all-bundles.sh" \
   --jar "$SHADED_JAR" \
   --version "$POM_VERSION" \
+  --jdk-version 21 \
   --cache "$REPO_ROOT/.tmp/jdks" \
   --output "$BUNDLE_OUT"
 
