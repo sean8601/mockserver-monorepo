@@ -1625,11 +1625,12 @@ function sideEffectToJava(se: StandardSideEffectAction): string {
   const factoryMethod = isBefore ? 'beforeAction' : 'afterAction';
   const lines: string[] = [];
   lines.push(`${factoryMethod}()`);
-  lines.push(`        .withHttpRequest(request()`);
-  if (se.method.trim()) lines.push(`            .withMethod("${escapeJava(se.method.trim())}")`);
-  lines.push(`            .withPath("${escapeJava(se.path)}")`);
-  if (se.host.trim()) lines.push(`            .withHeader("Host", "${escapeJava(se.host.trim())}")`);
-  if (se.body.trim()) lines.push(`            .withBody("${escapeJava(se.body.trim())}")`);
+  lines.push(`        .withHttpRequest(`);
+  lines.push(`            request()`);
+  if (se.method.trim()) lines.push(`                .withMethod("${escapeJava(se.method.trim())}")`);
+  lines.push(`                .withPath("${escapeJava(se.path)}")`);
+  if (se.host.trim()) lines.push(`                .withHeader("Host", "${escapeJava(se.host.trim())}")`);
+  if (se.body.trim()) lines.push(`                .withBody("${escapeJava(se.body.trim())}")`);
   lines.push('        )');
   if (se.delayValue > 0) {
     lines.push(`        .withDelay(new Delay(TimeUnit.${se.delayUnit}, ${se.delayValue}))`);
@@ -1715,8 +1716,7 @@ export function standardToJava(matcher: StandardMatcher, action: StandardActionP
     lines.push('    ' + sideEffectToJava(se).split('\n').join('\n    '));
     lines.push('  )');
   }
-  lines.push('  ' + actionToJava(action).split('\n').join('\n  '));
-  lines.push(';');
+  lines.push('  ' + actionToJava(action).split('\n').join('\n  ') + ';');
   return lines.join('\n');
 }
 
