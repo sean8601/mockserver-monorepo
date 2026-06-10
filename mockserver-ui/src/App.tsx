@@ -52,13 +52,16 @@ export default function App() {
   const { connect, sendFilter, clearServer } = useWebSocket(params);
   const { debugMismatch } = useDebugMismatch(params);
   const { generateStub } = useGenerateStub(params);
-  const initialConnectDone = useRef(false);
 
+  // Open the WebSocket on mount. `connect` is stable (its deps — params and the
+  // Zustand actions — are all stable), so this runs once per mount rather than
+  // on every render, and useWebSocket tears the socket down on unmount. Crucially
+  // there is NO once-only ref guard here: under React StrictMode the initial
+  // mount is immediately unmounted and remounted, and the unmount disconnects the
+  // socket — a guard would skip the remount's reconnect and leave the connection
+  // dead (status stuck until a later action lazily reconnects).
   useEffect(() => {
-    if (!initialConnectDone.current) {
-      initialConnectDone.current = true;
-      connect({});
-    }
+    connect({});
   }, [connect]);
 
   const handleFilterChange = useCallback(
