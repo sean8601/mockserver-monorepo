@@ -2324,6 +2324,14 @@ function emptySideEffect(): StandardSideEffectAction {
   };
 }
 
+// Force every input/select in the panel to the same 40px height as the small
+// Select, with the text vertically centred regardless of font size (the mono
+// fields use a smaller font, which would otherwise shrink their height).
+const SIDE_EFFECT_FIELD_SX = {
+  '& .MuiOutlinedInput-root': { height: 40 },
+  '& .MuiInputBase-input': { py: 0 },
+};
+
 function SideEffectsPanel({
   sideEffects,
   setSideEffects,
@@ -2361,7 +2369,7 @@ function SideEffectsPanel({
               select
               value={se.position}
               onChange={(e) => updateRow(idx, { position: e.target.value as SideEffectPosition })}
-              sx={{ width: 120 }}
+              sx={{ width: 120, ...SIDE_EFFECT_FIELD_SX }}
             >
               <MenuItem value="before">Before</MenuItem>
               <MenuItem value="after">After</MenuItem>
@@ -2372,12 +2380,12 @@ function SideEffectsPanel({
               value={se.method}
               onChange={(e) => updateRow(idx, { method: e.target.value })}
               placeholder="GET"
-              sx={{ width: 100 }}
+              sx={{ width: 100, ...SIDE_EFFECT_FIELD_SX }}
             />
             <TextField
               label="Path"
               size="small"
-              sx={{ flex: 1 }}
+              sx={{ flex: 1, ...SIDE_EFFECT_FIELD_SX }}
               value={se.path}
               onChange={(e) => updateRow(idx, { path: e.target.value })}
               placeholder="/webhook/notify"
@@ -2399,13 +2407,13 @@ function SideEffectsPanel({
               value={se.host}
               onChange={(e) => updateRow(idx, { host: e.target.value })}
               placeholder="auth.svc:8080"
-              sx={{ width: 200 }}
+              sx={{ width: 200, ...SIDE_EFFECT_FIELD_SX }}
               slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
             />
             <TextField
               label="Body (optional)"
               size="small"
-              sx={{ flex: 1 }}
+              sx={{ flex: 1, ...SIDE_EFFECT_FIELD_SX }}
               value={se.body}
               onChange={(e) => updateRow(idx, { body: e.target.value })}
               placeholder='{"event":"matched"}'
@@ -2419,7 +2427,7 @@ function SideEffectsPanel({
               type="number"
               value={se.delayValue}
               onChange={(e) => updateRow(idx, { delayValue: Number(e.target.value) || 0 })}
-              sx={{ width: 120 }}
+              sx={{ width: 120, ...SIDE_EFFECT_FIELD_SX }}
               helperText="0 = no delay"
             />
             <TextField
@@ -2428,7 +2436,7 @@ function SideEffectsPanel({
               select
               value={se.delayUnit}
               onChange={(e) => updateRow(idx, { delayUnit: e.target.value as SideEffectDelayUnit })}
-              sx={{ width: 150 }}
+              sx={{ width: 150, ...SIDE_EFFECT_FIELD_SX }}
             >
               <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
               <MenuItem value="SECONDS">seconds</MenuItem>
@@ -2453,13 +2461,12 @@ function SideEffectsPanel({
                 }
               />
               <TextField
-                label="Timeout"
+                label="Timeout (0 = none)"
                 size="small"
                 type="number"
                 value={se.timeoutValue}
                 onChange={(e) => updateRow(idx, { timeoutValue: Number(e.target.value) || 0 })}
-                sx={{ width: 110 }}
-                helperText="0 = none"
+                sx={{ width: 160, ...SIDE_EFFECT_FIELD_SX }}
               />
               <TextField
                 label="Timeout unit"
@@ -2467,7 +2474,7 @@ function SideEffectsPanel({
                 select
                 value={se.timeoutUnit}
                 onChange={(e) => updateRow(idx, { timeoutUnit: e.target.value as SideEffectDelayUnit })}
-                sx={{ width: 150 }}
+                sx={{ width: 150, ...SIDE_EFFECT_FIELD_SX }}
               >
                 <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
                 <MenuItem value="SECONDS">seconds</MenuItem>
@@ -2479,7 +2486,7 @@ function SideEffectsPanel({
                 select
                 value={se.failurePolicy}
                 onChange={(e) => updateRow(idx, { failurePolicy: e.target.value as SideEffectFailurePolicy })}
-                sx={{ width: 170 }}
+                sx={{ width: 170, ...SIDE_EFFECT_FIELD_SX }}
               >
                 <MenuItem value="BEST_EFFORT">BEST_EFFORT</MenuItem>
                 <MenuItem value="FAIL_FAST">FAIL_FAST</MenuItem>
