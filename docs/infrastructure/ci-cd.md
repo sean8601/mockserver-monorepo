@@ -207,6 +207,8 @@ flowchart TD
     master only"]
     CTESTS --> PUSH["7. Build and push :snapshot
     master only"]
+    PUSH --> BUNDLES["8. Publish snapshot binary bundles
+    master only, soft_fail"]
 ```
 
 #### Step 1: Validate Config
@@ -231,13 +233,14 @@ Runs `.buildkite/scripts/steps/java-build.sh`, which executes the full Maven bui
 
 Uses the `junit-annotate` plugin to parse `**/target/*-reports/TEST-*.xml` and add test result annotations to the Buildkite build page. Runs with `continue_on_failure: true` so annotations appear even on test failures.
 
-#### Steps 5–7: Master-Only Steps
+#### Steps 5–8: Master-Only Steps
 
-On `master` only, three additional steps run sequentially:
+On `master` only, four additional steps run sequentially:
 
 - **Deploy snapshot:** `.buildkite/scripts/steps/java-deploy-snapshot.sh` — publishes SNAPSHOT artifacts to Sonatype
 - **Container integration tests:** `.buildkite/scripts/steps/container-tests-run.sh` — runs Docker Compose and Helm integration tests
 - **Build and push :snapshot:** `.buildkite/scripts/steps/java-docker-push-snapshot.sh` — builds and pushes the `:snapshot` and `:mockserver-snapshot` Docker images (`:latest` is only pushed during releases)
+- **Publish snapshot binary bundles** (`soft_fail`): `.buildkite/scripts/steps/java-publish-snapshot-bundles.sh` — builds JVM-less binary bundles for all platforms (linux/x86_64, linux/aarch64, darwin/x86_64, darwin/aarch64, windows/x86_64) using `scripts/build-all-bundles.sh` and uploads them to a rolling GitHub pre-release tagged `mockserver-snapshot`. Each build replaces the previous assets via `--clobber`. This provides working download URLs for the Go/.NET/Rust/Ruby/Python binary client launchers between releases. Requires JDK 21 (for jlink cross-build) and a GitHub PAT in `mockserver-build/github-token`. Marked `soft_fail: true` so bundle-build failures never redden master.
 
 ### Python and Ruby Client Integration Tests
 

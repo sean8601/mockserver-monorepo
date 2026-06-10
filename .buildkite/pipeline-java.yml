@@ -74,3 +74,9 @@ steps:
     if: "build.branch == 'master'"
     command: ".buildkite/scripts/steps/java-docker-push-snapshot.sh"
     timeout_in_minutes: 30
+
+  - label: ":package: publish snapshot binary bundles"
+    if: "build.branch == 'master'"
+    command: ".buildkite/scripts/steps/java-publish-snapshot-bundles.sh"
+    timeout_in_minutes: 45
+    soft_fail: true
