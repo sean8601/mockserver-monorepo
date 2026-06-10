@@ -39,6 +39,7 @@ export default function AgentRunGraph({ connectionParams, provider, path }: Agen
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showMermaid, setShowMermaid] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,17 +69,30 @@ export default function AgentRunGraph({ connectionParams, provider, path }: Agen
     }
   }, [connectionParams, provider, path]);
 
+  // Toggle: first click opens (and loads on demand), second click closes. The
+  // graph is read-only/deterministic, so a re-open shows the cached result.
+  const toggle = useCallback(() => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (steps.length === 0 && !loading) {
+      void load();
+    }
+  }, [open, steps.length, loading, load]);
+
   return (
     <Box sx={{ mt: 1 }}>
-      <Button size="small" variant="outlined" onClick={load} disabled={loading} sx={{ textTransform: 'none' }}>
-        {loading ? 'Loading…' : 'Call graph'}
+      <Button size="small" variant="outlined" onClick={toggle} disabled={loading} sx={{ textTransform: 'none' }}>
+        {loading ? 'Loading…' : open ? 'Hide call graph' : 'Call graph'}
       </Button>
-      {error && (
+      {open && error && (
         <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
           {error}
         </Typography>
       )}
-      {steps.length > 0 && (
+      {open && steps.length > 0 && (
         <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
           {steps.map((step, i) => (
             <Box key={step.node.id} sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
