@@ -8,7 +8,7 @@ over the callback WebSocket (`/_mockserver_callback_websocket`). The client (any
 language client or the dashboard, all speaking the same protocol) inspects/modifies
 it and sends a decision; the server applies the decision and resumes. The four global
 flags are removed -- matchers are the only activation mechanism. The callback WebSocket
-is the only resolution transport (REST-park/poll endpoints are removed).
+is the only resolution transport.
 
 ```mermaid
 flowchart LR
@@ -158,8 +158,8 @@ completed when the client replies or the timeout fires. No thread is blocked.
 - **Stream ID format:** WebSocket inbound streams use `{correlationId}-ws-inbound`;
   gRPC-bidi inbound streams use `grpc-bidi-inbound-{path}-{uuid}`.
 - **Direction field:** `PausedStreamFrame.direction` is `INBOUND` for client-to-server
-  frames and `OUTBOUND` (default) for server-to-client frames. The REST API
-  `/mockserver/breakpoint/streams` list endpoint includes a `direction` field.
+  frames and `OUTBOUND` (default) for server-to-client frames. The `direction` field
+  is included in the `PausedStreamFrameDTO` dispatched over the callback WebSocket.
 - **Channel close eviction:** `channelInactive` in all handlers (WebSocket,
   GraphQL, and gRPC-bidi) evicts all held inbound frames for the stream,
   preventing leaks and hanging futures.
@@ -243,7 +243,8 @@ in each entry.
   `breakpointTimeoutMillis`, the exchange auto-continues with the original
   request/response.
 - **Max-held cap:** WS-callback dispatches share the `breakpointMaxHeld` cap
-  with the REST-park registry. When the cap is reached, new breakpoints are
+  across the WS-callback dispatchers (`BreakpointCallbackDispatcher` and
+  `StreamFrameCallbackDispatcher`). When the cap is reached, new breakpoints are
   skipped.
 - **Disconnect cleanup:** when a callback client disconnects, all its registered
   breakpoint matchers are removed and any in-flight dispatches are auto-completed
@@ -361,6 +362,24 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
 |----------|---------|-------------|
 | `mockserver.breakpointTimeoutMillis` | `30000` | Auto-continue timeout in milliseconds (shared across all phases) |
 | `mockserver.breakpointMaxHeld` | `50` | Max concurrent paused exchanges/frames (shared across all registries) |
+
+## Client support
+
+Seven language clients implement the breakpoint callback WebSocket protocol:
+
+| Client | Notes |
+|--------|-------|
+| Java | `MockServerClient.addBreakpoint(...)` with `BreakpointRequestHandler`, `BreakpointResponseHandler`, `BreakpointStreamFrameHandler` |
+| Node | `mockserver-client` npm package — `addBreakpoint`/`addRequestBreakpoint`/`addRequestAndResponseBreakpoint` |
+| Python | `mockserver-client` PyPI package — `add_breakpoint`/`add_request_breakpoint`/`add_request_and_response_breakpoint` |
+| Ruby | `mockserver` gem — `add_breakpoint`/`add_request_breakpoint`/`add_request_and_response_breakpoint` |
+| Go | `mockserver-client-go` — `AddRequestBreakpoint`/`AddRequestResponseBreakpoint`/`AddStreamBreakpoint` |
+| .NET | `MockServer.Client` NuGet — `AddRequestBreakpoint`/`AddRequestResponseBreakpoint`/`AddStreamBreakpoint` |
+| Rust | `mockserver-client` crate — `add_request_breakpoint`/`add_request_response_breakpoint`/`add_stream_breakpoint` |
+
+**PHP is intentionally not supported.** Breakpoints require a persistent callback WebSocket connection for resolution. PHP runtimes lack WebSocket client support, so there is no way for PHP to participate in interactive resolution.
+
+The dashboard is also a full callback WebSocket client: it connects to `/_mockserver_callback_websocket`, receives a server-assigned `clientId`, and resolves paused items in the Breakpoints panel (Live Exchanges and Live Streams tabs).
 
 ## Key classes
 

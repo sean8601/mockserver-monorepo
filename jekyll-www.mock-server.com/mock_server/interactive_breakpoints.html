@@ -30,7 +30,6 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
     <li><a href="#phases">Breakpoint phases</a></li>
     <li><a href="#register">Registering a matcher</a></li>
     <li><a href="#callback_ws">Resolving via the callback WebSocket</a></li>
-    <li><a href="#rest_resolution">Resolving via the REST API</a></li>
     <li><a href="#dashboard">Dashboard UI</a></li>
     <li><a href="#client_examples">Client examples</a></li>
     <li><a href="#rest_api">REST API reference</a></li>
@@ -355,8 +354,9 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
 </p>
 
 <p>
-    <strong>PHP is not supported</strong> for breakpoints — PHP runtimes do not have practical WebSocket
-    support. Use the REST API (<a href="#rest_resolution">above</a>) for polling-based resolution from PHP.
+    <strong>PHP is not supported</strong> for breakpoints — breakpoints require a persistent callback
+    WebSocket connection for resolution, and PHP runtimes lack WebSocket client support. There is no
+    alternative resolution path; PHP cannot use interactive breakpoints.
 </p>
 
 <h3>Java</h3>
@@ -630,36 +630,6 @@ client.close_breakpoint_websocket();
         <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint/matchers</span></td><td>List all matchers: <span class="inline_code">{"matchers":[{id, httpRequest, phases, clientId?}]}</span></td></tr>
         <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/remove</span></td><td>Remove by id: <span class="inline_code">{"id":"..."}</span></td></tr>
         <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/clear</span></td><td>Remove all matchers</td></tr>
-    </tbody>
-</table>
-
-<h3>Request / response exchanges (REST-park resolution)</h3>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint</span></td><td>List all paused exchanges. Includes <span class="inline_code">phase</span>, request summary, and (for RESPONSE phase) response summary.</td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/continue</span></td><td>Continue: <span class="inline_code">{"id":"..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/modify</span></td><td>Modify: <span class="inline_code">{"id":"...", "httpRequest":{...}}</span> for request phase; <span class="inline_code">{"id":"...", "httpResponse":{...}}</span> for response phase</td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/abort</span></td><td>Abort: <span class="inline_code">{"id":"..."}</span></td></tr>
-    </tbody>
-</table>
-
-<h3>Stream frames (REST-park resolution)</h3>
-
-<table class="table table-bordered table-striped">
-    <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-        <tr><td>GET</td><td><span class="inline_code">/mockserver/breakpoint/streams</span></td><td>List all held frames grouped by stream. Includes <span class="inline_code">direction</span> (INBOUND/OUTBOUND).</td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/continue</span></td><td>Continue: <span class="inline_code">{"id":"..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/modify</span></td><td>Modify: <span class="inline_code">{"id":"...", "body":"..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/drop</span></td><td>Drop: <span class="inline_code">{"id":"..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/inject</span></td><td>Inject after frame: <span class="inline_code">{"id":"...", "body":"..."}</span></td></tr>
-        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/stream/close</span></td><td>Close stream: <span class="inline_code">{"id":"..."}</span></td></tr>
     </tbody>
 </table>
 
