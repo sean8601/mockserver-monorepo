@@ -985,6 +985,18 @@ async function plainHttpTraffic() {
   await traffic('unmatched', 'POST', '/api/unknown', { body: { foo: 'bar' } });
 }
 
+// A final burst of cleanly-matched requests, run LAST so these matched entries are
+// the freshest in the dashboard's reverse-chronological event log — making the
+// "request matched expectation → response returned" lane unmistakable at a glance
+// (rather than scrolling past the intentionally-unmatched diagnostics traffic).
+async function matchedShowcaseTraffic() {
+  log('\n→ Matched-expectation showcase (freshest entries in the dashboard log)');
+  await traffic('matched · list users', 'GET', '/api/users');
+  await traffic('matched · get user (path+query)', 'GET', '/api/users/42?expand=profile&expand=orders');
+  await traffic('matched · priority override', 'GET', '/api/priority');
+  await traffic('matched · create order (before/after side-effects)', 'POST', '/api/orders', { body: { sku: 'A-1', qty: 2 } });
+}
+
 async function llmTraffic() {
   log('\n→ LLM traffic (one classified lane per provider, with token usage)');
   for (const [provider, p] of Object.entries(PROVIDERS)) {
@@ -1510,6 +1522,7 @@ async function main() {
   await llmTraffic();
   await agentLoops();
   await mcpToolCallExamples();
+  await matchedShowcaseTraffic();
 
   log('\n========================================');
   log(' Demo data loaded');

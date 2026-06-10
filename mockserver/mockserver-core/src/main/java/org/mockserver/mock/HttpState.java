@@ -603,7 +603,7 @@ public class HttpState {
                 }
 
                 HttpRequest clonedRequest = debugRequest.clone();
-                MatchDifference matchDifference = new MatchDifference(true, clonedRequest);
+                MatchDifference matchDifference = new MatchDifference(true, clonedRequest).suppressMatchResultLogging();
                 boolean matches = matcher.matches(matchDifference, clonedRequest);
                 matchResult.put("matches", matches);
 
@@ -754,7 +754,7 @@ public class HttpState {
                             }
 
                             HttpRequest clonedRequest = unmatchedRequest.clone();
-                            MatchDifference matchDifference = new MatchDifference(true, clonedRequest);
+                            MatchDifference matchDifference = new MatchDifference(true, clonedRequest).suppressMatchResultLogging();
                             boolean matches = matcher.matches(matchDifference, clonedRequest);
                             totalEvaluations++;
 

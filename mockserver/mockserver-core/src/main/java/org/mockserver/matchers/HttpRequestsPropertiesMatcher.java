@@ -531,6 +531,12 @@ public class HttpRequestsPropertiesMatcher extends AbstractHttpRequestMatcher {
                     result = httpRequestPropertiesMatcher.matches(context, requestDefinition);
                 } else {
                     MatchDifference singleMatchDifference = new MatchDifference(configuration.detailedMatchFailures(), context.getHttpRequest());
+                    // Carry the diagnostic log-suppression flag through to the delegate matcher so an
+                    // OpenAPI-backed expectation does not emit match-result events during explainUnmatched
+                    // / debugMismatch (the inner matcher would otherwise log against the fresh context).
+                    if (context.isSuppressMatchResultLogging()) {
+                        singleMatchDifference.suppressMatchResultLogging();
+                    }
                     result = httpRequestPropertiesMatcher.matches(singleMatchDifference, requestDefinition);
                     context.addDifferences(singleMatchDifference.getAllDifferences());
                 }

@@ -48,10 +48,32 @@ public class MatchDifference {
     private final RequestDefinition httpRequest;
     private final Map<Field, List<String>> differences = new ConcurrentHashMap<>();
     private Field fieldName;
+    // When true, a matcher computing differences against this context must NOT emit
+    // EXPECTATION_MATCHED / EXPECTATION_NOT_MATCHED events to the event log. Read-only
+    // diagnostics (explainUnmatched, debugMismatch) re-run real matchers purely to
+    // collect field differences and must not pollute the very log they inspect — those
+    // entries also lack a request correlationId, so they cannot be grouped in the dashboard
+    // and would saturate its bounded log window. This flag is request-scoped (a fresh
+    // MatchDifference per evaluation), so it is thread-safe unlike toggling the matcher.
+    private boolean suppressMatchResultLogging;
 
     public MatchDifference(boolean detailedMatchFailures, RequestDefinition httpRequest) {
         this.detailedMatchFailures = detailedMatchFailures;
         this.httpRequest = httpRequest;
+    }
+
+    /**
+     * Mark this difference context as diagnostic-only: matchers must compute differences without
+     * logging EXPECTATION_MATCHED / EXPECTATION_NOT_MATCHED events. Used by read-only endpoints
+     * (explainUnmatched, debugMismatch) so they do not write side-effect entries into the event log.
+     */
+    public MatchDifference suppressMatchResultLogging() {
+        this.suppressMatchResultLogging = true;
+        return this;
+    }
+
+    public boolean isSuppressMatchResultLogging() {
+        return suppressMatchResultLogging;
     }
 
     @SuppressWarnings("UnusedReturnValue")

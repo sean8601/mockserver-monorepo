@@ -238,10 +238,10 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             // The "because" message is only consumed by the INFO log below, so only
             // allocate the builder when it will be used (a no-op otherwise — see
             // the matching gate in failFast). Null when not logging at INFO.
-            boolean logBecause = !controlPlaneMatcher && mockServerLogger.isEnabledForInstance(Level.INFO);
+            boolean logBecause = !controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging()) && mockServerLogger.isEnabledForInstance(Level.INFO);
             StringBuilder becauseBuilder = logBecause ? new StringBuilder() : null;
             boolean overallMatch = matches(context, request, becauseBuilder);
-            if (!controlPlaneMatcher) {
+            if (!controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging())) {
                 if (overallMatch) {
                     if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                         mockServerLogger.logEvent(
