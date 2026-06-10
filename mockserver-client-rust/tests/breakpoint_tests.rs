@@ -400,7 +400,7 @@ fn test_route_request_correlation_id_echoed() {
 
     handlers.lock().unwrap().insert(
         "bp-echo".to_string(),
-        Box::new(|req| Some(req)),
+        Box::new(Some),
     );
 
     let json = make_request_json("bp-echo", "corr-echo-test");
@@ -628,7 +628,7 @@ fn test_route_request_vs_response_reply_distinction() {
 
     req_handlers.lock().unwrap().insert(
         "bp-dist".to_string(),
-        Box::new(|req| Some(req)),
+        Box::new(Some),
     );
 
     let json = make_request_json("bp-dist", "corr-dist");
