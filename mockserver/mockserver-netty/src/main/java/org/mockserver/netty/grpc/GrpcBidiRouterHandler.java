@@ -171,9 +171,17 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
                     }
                 };
 
-                // Generate an inbound stream ID for breakpoint interception.
-                // The ID includes the path and a UUID for uniqueness across concurrent streams.
-                String inboundStreamId = "grpc-bidi-inbound-" + path + "-" + UUIDService.getUUID();
+                // Generate an inbound stream ID for breakpoint interception, but only
+                // if the matcher registry has an INBOUND_STREAM breakpoint matching this request.
+                // When no matcher matches, inboundStreamId is null and no frames are parked.
+                final String inboundStreamId;
+                HttpRequest syntheticRequest = HttpRequest.request().withMethod("POST").withPath(path);
+                if (org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                    .findMatch(syntheticRequest, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM) != null) {
+                    inboundStreamId = "grpc-bidi-inbound-" + path + "-" + UUIDService.getUUID();
+                } else {
+                    inboundStreamId = null;
+                }
 
                 GrpcBidiStreamHandler bidiHandler = new GrpcBidiStreamHandler(
                     methodDescriptor, converter, matchResult.bidiResponse, completionCallback,

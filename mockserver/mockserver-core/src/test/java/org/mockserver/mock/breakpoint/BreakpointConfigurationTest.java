@@ -9,28 +9,19 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 /**
- * Tests the 4-form configuration for breakpoint properties:
- * ConfigurationProperties (static/system property) and Configuration (instance).
+ * Tests the configuration for breakpoint properties:
+ * breakpointTimeoutMillis and breakpointMaxHeld (the global enable/disable
+ * flags were removed in favour of the matcher-based registry).
  */
 public class BreakpointConfigurationTest {
 
     @After
     public void resetProperties() {
-        // reset to defaults
-        ConfigurationProperties.breakpointEnabled(false);
-        ConfigurationProperties.breakpointResponseEnabled(false);
-        ConfigurationProperties.breakpointStreamEnabled(false);
-        ConfigurationProperties.breakpointInboundEnabled(false);
         ConfigurationProperties.breakpointTimeoutMillis(30_000);
         ConfigurationProperties.breakpointMaxHeld(50);
     }
 
     // --- ConfigurationProperties (static) defaults ---
-
-    @Test
-    public void shouldDefaultBreakpointEnabledToFalse() {
-        assertThat(ConfigurationProperties.breakpointEnabled(), is(false));
-    }
 
     @Test
     public void shouldDefaultBreakpointTimeoutMillisTo30000() {
@@ -43,12 +34,6 @@ public class BreakpointConfigurationTest {
     }
 
     // --- ConfigurationProperties (static) set/get ---
-
-    @Test
-    public void shouldSetAndGetBreakpointEnabled() {
-        ConfigurationProperties.breakpointEnabled(true);
-        assertThat(ConfigurationProperties.breakpointEnabled(), is(true));
-    }
 
     @Test
     public void shouldSetAndGetBreakpointTimeoutMillis() {
@@ -67,7 +52,6 @@ public class BreakpointConfigurationTest {
     @Test
     public void shouldDelegateToStaticWhenInstanceFieldsNull() {
         Configuration config = Configuration.configuration();
-        assertThat(config.breakpointEnabled(), is(false));
         assertThat(config.breakpointTimeoutMillis(), is(30_000L));
         assertThat(config.breakpointMaxHeld(), is(50));
     }
@@ -77,103 +61,10 @@ public class BreakpointConfigurationTest {
     @Test
     public void shouldUseInstanceOverrideWhenSet() {
         Configuration config = Configuration.configuration()
-            .breakpointEnabled(true)
             .breakpointTimeoutMillis(5000L)
             .breakpointMaxHeld(10);
 
-        assertThat(config.breakpointEnabled(), is(true));
         assertThat(config.breakpointTimeoutMillis(), is(5000L));
         assertThat(config.breakpointMaxHeld(), is(10));
-    }
-
-    // --- breakpointResponseEnabled ---
-
-    @Test
-    public void shouldDefaultBreakpointResponseEnabledToFalse() {
-        assertThat(ConfigurationProperties.breakpointResponseEnabled(), is(false));
-    }
-
-    @Test
-    public void shouldSetAndGetBreakpointResponseEnabled() {
-        ConfigurationProperties.breakpointResponseEnabled(true);
-        assertThat(ConfigurationProperties.breakpointResponseEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldDelegateResponseEnabledToStaticWhenNull() {
-        Configuration config = Configuration.configuration();
-        assertThat(config.breakpointResponseEnabled(), is(false));
-    }
-
-    @Test
-    public void shouldUseInstanceOverrideForResponseEnabled() {
-        Configuration config = Configuration.configuration()
-            .breakpointResponseEnabled(true);
-        assertThat(config.breakpointResponseEnabled(), is(true));
-    }
-
-    // --- breakpointStreamEnabled ---
-
-    @Test
-    public void shouldDefaultBreakpointStreamEnabledToFalse() {
-        assertThat(ConfigurationProperties.breakpointStreamEnabled(), is(false));
-    }
-
-    @Test
-    public void shouldSetAndGetBreakpointStreamEnabled() {
-        ConfigurationProperties.breakpointStreamEnabled(true);
-        assertThat(ConfigurationProperties.breakpointStreamEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldDelegateStreamEnabledToStaticWhenNull() {
-        Configuration config = Configuration.configuration();
-        assertThat(config.breakpointStreamEnabled(), is(false));
-    }
-
-    @Test
-    public void shouldUseInstanceOverrideForStreamEnabled() {
-        Configuration config = Configuration.configuration()
-            .breakpointStreamEnabled(true);
-        assertThat(config.breakpointStreamEnabled(), is(true));
-    }
-
-    // --- breakpointInboundEnabled ---
-
-    @Test
-    public void shouldDefaultBreakpointInboundEnabledToFalse() {
-        assertThat(ConfigurationProperties.breakpointInboundEnabled(), is(false));
-    }
-
-    @Test
-    public void shouldSetAndGetBreakpointInboundEnabled() {
-        ConfigurationProperties.breakpointInboundEnabled(true);
-        assertThat(ConfigurationProperties.breakpointInboundEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldDelegateInboundEnabledToStaticWhenNull() {
-        Configuration config = Configuration.configuration();
-        assertThat(config.breakpointInboundEnabled(), is(false));
-    }
-
-    @Test
-    public void shouldUseInstanceOverrideForInboundEnabled() {
-        Configuration config = Configuration.configuration()
-            .breakpointInboundEnabled(true);
-        assertThat(config.breakpointInboundEnabled(), is(true));
-    }
-
-    // --- default-off path ---
-
-    @Test
-    public void defaultOffShouldNotPauseAnything() {
-        // when breakpoints are disabled (the default), the registry should
-        // never be consulted, so the forward path is unaffected
-        Configuration config = Configuration.configuration();
-        assertThat("default is off", config.breakpointEnabled(), is(false));
-        assertThat("response default is off", config.breakpointResponseEnabled(), is(false));
-        assertThat("stream default is off", config.breakpointStreamEnabled(), is(false));
-        assertThat("inbound default is off", config.breakpointInboundEnabled(), is(false));
     }
 }

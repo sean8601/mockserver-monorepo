@@ -50,16 +50,23 @@ public class MockStreamBreakpointIntegrationTest {
         channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
         ctx = channel.pipeline().firstContext();
         configuration = Configuration.configuration()
-            .breakpointStreamEnabled(true)
             .breakpointTimeoutMillis(30000L)
             .breakpointMaxHeld(50);
         mockServerLogger = new MockServerLogger();
         scheduler = new Scheduler(configuration, mockServerLogger);
+        // Register a catch-all breakpoint matcher for RESPONSE_STREAM so the
+        // stream-frame breakpoint engine is active for tests that expect it.
+        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().register(
+            HttpRequest.request(), // matches all requests
+            java.util.EnumSet.of(org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM),
+            configuration, mockServerLogger
+        );
     }
 
     @After
     public void cleanup() {
         StreamFrameBreakpointRegistry.getInstance().reset();
+        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().clear();
         if (channel.isOpen()) {
             channel.close();
         }
@@ -218,8 +225,9 @@ public class MockStreamBreakpointIntegrationTest {
 
     @Test
     public void shouldNotPauseWhenBreakpointDisabled() throws Exception {
-        Configuration disabledConfig = Configuration.configuration()
-            .breakpointStreamEnabled(false);
+        // Clear the matcher registry so no breakpoints are active
+        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().clear();
+        Configuration disabledConfig = Configuration.configuration();
 
         StreamingBody streamingBody = new StreamingBody(1024);
         HttpResponse response = HttpResponse.response()

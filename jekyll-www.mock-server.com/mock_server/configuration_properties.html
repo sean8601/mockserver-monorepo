@@ -1142,46 +1142,10 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
 
 <button id="button_configuration_breakpoints" class="accordion title"><strong>Interactive Breakpoints</strong></button>
 <div class="panel title">
-    <p>Interactive breakpoints let you pause proxied or forwarded exchanges at three independent phases:</p>
-    <ul>
-        <li><strong>Request breakpoints</strong> &mdash; hold the outbound request before it reaches the upstream server</li>
-        <li><strong>Response breakpoints</strong> &mdash; hold the upstream response before it is written back to the client (non-streaming responses only)</li>
-        <li><strong>Stream frame breakpoints</strong> &mdash; hold each individual frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, or GraphQL subscription) before it is written to the client, allowing per-frame inspection, modification, dropping, injection, or stream termination</li>
-    </ul>
-    <p>At either phase you can inspect, modify, continue, or abort the exchange via the control-plane REST API. This is useful for debugging, manual testing, and step-through inspection of live traffic.</p>
+    <p>Interactive breakpoints let you pause proxied or forwarded exchanges at four phases: request (before forwarding), response (after receiving from upstream), stream frame (each frame of a streaming response), and inbound frame (each client-to-server frame on a bidirectional connection). You can inspect, modify, continue, or abort the exchange via the control-plane REST API. This is useful for debugging, manual testing, and step-through inspection of live traffic.</p>
+    <p>Breakpoints are activated by registering a request matcher via <code>PUT /mockserver/breakpoint/matcher</code> &mdash; there are no global on/off flags. An exchange pauses only when its request matches a registered breakpoint matcher for that phase. When no matchers are registered, breakpoints have zero overhead.</p>
     <p>When a breakpoint-paused exchange is not resolved within the timeout, it is automatically continued. The <code>breakpointMaxHeld</code> cap prevents resource exhaustion &mdash; when the cap is reached, new exchanges bypass the breakpoint and proceed normally. The implementation is fully non-blocking: paused exchanges do not consume scheduler threads or event-loop threads while waiting for resolution.</p>
-    <p><strong>Enable request breakpoints</strong> &mdash; holds outbound requests before forwarding. Default is <code>false</code> (off, zero overhead).</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
-    <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointEnabled(boolean enable)</code></pre>
-    <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointEnabled=...</code></pre>
-    <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_ENABLED=...</code></pre>
-    <p><strong>Enable response breakpoints</strong> &mdash; holds upstream responses before writing to the client. Independent of request breakpoints. Default is <code>false</code> (off, zero overhead).</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
-    <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointResponseEnabled(boolean enable)</code></pre>
-    <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointResponseEnabled=...</code></pre>
-    <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED=...</code></pre>
-    <p><strong>Enable stream frame breakpoints</strong> &mdash; holds each frame of a streaming response (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, and GraphQL subscription) before it is written to the client. Each frame can be continued, modified, dropped, injected after, or used to close the stream via the control-plane REST API. Independent of request and response breakpoints. Default is <code>false</code> (off, zero overhead).</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
-    <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointStreamEnabled(boolean enable)</code></pre>
-    <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointStreamEnabled=...</code></pre>
-    <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_STREAM_ENABLED=...</code></pre>
-    <p><strong>Enable inbound frame breakpoints</strong> &mdash; intercepts client-to-server frames on bidirectional/streaming connections (WebSocket, GraphQL subscriptions, and gRPC bidirectional streams) before MockServer processes them. Each inbound frame can be continued, modified, dropped, injected after, or used to close the connection via the control-plane REST API. Independent of request, response, and outbound stream breakpoints. Default is <code>false</code> (off, zero overhead; experimental).</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
-    <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.breakpointInboundEnabled(boolean enable)</code></pre>
-    <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointInboundEnabled=...</code></pre>
-    <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_INBOUND_ENABLED=...</code></pre>
+    <p>See <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> for the full matcher registration API and usage guide.</p>
     <p><strong>Timeout</strong> &mdash; maximum time in milliseconds an exchange or frame may be held at a breakpoint before it is automatically continued. Shared by request, response, stream frame, and inbound frame breakpoints. Default is <code>30000</code> (30 seconds).</p>
     <p>Type: <span class="keyword">long</span> Default: <span class="this_value">30000</span></p>
     <p>Java Code:</p>
@@ -1198,8 +1162,8 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointMaxHeld=...</code></pre>
     <p>Environment Variable:</p>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_BREAKPOINT_MAX_HELD=...</code></pre>
-    <p>Example (enable all three phases with 10-second timeout and max 20 held):</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointEnabled="true" -Dmockserver.breakpointResponseEnabled="true" -Dmockserver.breakpointStreamEnabled="true" -Dmockserver.breakpointTimeoutMillis="10000" -Dmockserver.breakpointMaxHeld="20"</code></pre>
+    <p>Example (10-second timeout, max 20 held simultaneously):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.breakpointTimeoutMillis="10000" -Dmockserver.breakpointMaxHeld="20"</code></pre>
 </div>
 
 <button id="button_configuration_chaos_auto_halt" class="accordion title"><strong>Chaos Auto-Halt Circuit-Breaker</strong></button>

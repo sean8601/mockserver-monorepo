@@ -57,8 +57,8 @@ public class HttpWebSocketResponseActionHandler {
         }
 
         // Determine if stream-frame breakpoints are active
-        final boolean streamBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointStreamEnabled());
-        final boolean inboundBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointInboundEnabled());
+        final boolean streamBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM) != null;
+        final boolean inboundBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM) != null;
         final String streamId;
         final String reqMethod;
         final String reqPath;

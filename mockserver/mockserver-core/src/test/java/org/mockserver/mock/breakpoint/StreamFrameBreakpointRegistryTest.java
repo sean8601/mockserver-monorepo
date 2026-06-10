@@ -27,7 +27,6 @@ public class StreamFrameBreakpointRegistryTest {
 
     private Configuration configWith(long timeout, int maxHeld) {
         return Configuration.configuration()
-            .breakpointStreamEnabled(true)
             .breakpointTimeoutMillis(timeout)
             .breakpointMaxHeld(maxHeld);
     }

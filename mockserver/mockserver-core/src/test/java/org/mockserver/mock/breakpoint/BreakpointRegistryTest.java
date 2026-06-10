@@ -23,16 +23,15 @@ public class BreakpointRegistryTest {
         BreakpointRegistry.getInstance().reset();
     }
 
-    private Configuration configWith(boolean enabled, long timeout, int maxHeld) {
+    private Configuration configWith(long timeout, int maxHeld) {
         return Configuration.configuration()
-            .breakpointEnabled(enabled)
             .breakpointTimeoutMillis(timeout)
             .breakpointMaxHeld(maxHeld);
     }
 
     @Test
     public void shouldPauseAndResolveContinue() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
 
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-1", req, null, config);
@@ -50,7 +49,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldPauseAndResolveModify() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
 
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-2", req, "exp-1", config);
@@ -68,7 +67,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldPauseAndResolveAbort() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
 
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-3", req, null, config);
@@ -91,7 +90,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldEnforceMaxHeldCap() {
-        Configuration config = configWith(true, 30000, 2);
+        Configuration config = configWith(30000, 2);
 
         PausedExchange ex1 = BreakpointRegistry.getInstance().pause("corr-a", request(), null, config);
         PausedExchange ex2 = BreakpointRegistry.getInstance().pause("corr-b", request(), null, config);
@@ -106,7 +105,7 @@ public class BreakpointRegistryTest {
     @Test
     public void shouldAutoContinueOnTimeout() throws Exception {
         // use a very short timeout
-        Configuration config = configWith(true, 200, 50);
+        Configuration config = configWith(200, 50);
 
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-timeout", request(), null, config);
         assertThat(exchange, is(notNullValue()));
@@ -118,7 +117,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldResetAndAutoContinueAllHeld() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
 
         PausedExchange ex1 = BreakpointRegistry.getInstance().pause("corr-r1", request(), null, config);
         PausedExchange ex2 = BreakpointRegistry.getInstance().pause("corr-r2", request(), null, config);
@@ -137,7 +136,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldRemoveFromRegistryAfterResolution() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
 
         BreakpointRegistry.getInstance().pause("corr-cleanup", request(), null, config);
         assertThat(BreakpointRegistry.getInstance().size(), is(1));
@@ -151,7 +150,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldReportAgeInPausedExchange() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-age", request(), null, config);
         Thread.sleep(50);
         assertThat("ageMillis should be positive", exchange.ageMillis(), greaterThanOrEqualTo(40L));
@@ -162,7 +161,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldStoreCapturedRequest() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("POST").withPath("/data").withBody("payload");
 
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-capture", req, null, config);
@@ -196,7 +195,7 @@ public class BreakpointRegistryTest {
             new ThreadPoolExecutor.CallerRunsPolicy()
         );
 
-        Configuration config = configWith(true, 30000, pausedCount + 10);
+        Configuration config = configWith(30000, pausedCount + 10);
         BreakpointRegistry registry = BreakpointRegistry.getInstance();
 
         // Pause N exchanges — none block any thread
@@ -262,7 +261,7 @@ public class BreakpointRegistryTest {
      */
     @Test
     public void shouldResetCleanlyWithConcurrentAdds() throws Exception {
-        Configuration config = configWith(true, 30000, 100);
+        Configuration config = configWith(30000, 100);
         BreakpointRegistry registry = BreakpointRegistry.getInstance();
 
         // Pause some exchanges
@@ -287,7 +286,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldPauseResponseAndResolveContinue() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
         HttpResponse resp = response().withStatusCode(200).withBody("upstream body");
 
@@ -310,7 +309,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldPauseResponseAndResolveModifyResponse() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
         HttpResponse resp = response().withStatusCode(200).withBody("original");
 
@@ -334,7 +333,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldPauseResponseAndResolveAbort() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
         HttpResponse resp = response().withStatusCode(200);
 
@@ -355,7 +354,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldAutoContinueResponseOnTimeout() throws Exception {
-        Configuration config = configWith(true, 200, 50);
+        Configuration config = configWith(200, 50);
         HttpRequest req = request().withMethod("GET").withPath("/api/test");
         HttpResponse resp = response().withStatusCode(200);
 
@@ -370,7 +369,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldEnforceMaxHeldCapForResponseBreakpoints() {
-        Configuration config = configWith(true, 30000, 2);
+        Configuration config = configWith(30000, 2);
 
         // Fill cap with request-phase exchanges
         PausedExchange ex1 = BreakpointRegistry.getInstance().pause("cap-req-1", request(), null, config);
@@ -387,7 +386,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldResetResponsePhaseExchanges() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
 
         PausedExchange reqExchange = BreakpointRegistry.getInstance().pause("reset-req", request(), null, config);
         PausedExchange respExchange = BreakpointRegistry.getInstance().pauseResponse(
@@ -406,7 +405,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldStorePhaseInPausedExchange() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
 
         PausedExchange reqExchange = BreakpointRegistry.getInstance().pause("phase-req", request(), null, config);
         PausedExchange respExchange = BreakpointRegistry.getInstance().pauseResponse(
@@ -439,7 +438,7 @@ public class BreakpointRegistryTest {
             new ThreadPoolExecutor.CallerRunsPolicy()
         );
 
-        Configuration config = configWith(true, 30000, pausedCount + 10);
+        Configuration config = configWith(30000, pausedCount + 10);
         BreakpointRegistry registry = BreakpointRegistry.getInstance();
 
         // Pause N response exchanges — none block any thread
@@ -503,7 +502,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldRejectResolveModifyRequestAgainstResponsePhaseExchange() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         PausedExchange respExchange = BreakpointRegistry.getInstance().pauseResponse(
             "phase-guard-1", request().withPath("/test"), response().withStatusCode(200), null, config
         );
@@ -526,7 +525,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldRejectResolveModifyResponseAgainstRequestPhaseExchange() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         PausedExchange reqExchange = BreakpointRegistry.getInstance().pause(
             "phase-guard-2", request().withPath("/test"), null, config
         );
@@ -549,7 +548,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldAllowCorrectPhaseModifyCalls() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
 
         // Request-phase: resolveModify should work
         PausedExchange reqExchange = BreakpointRegistry.getInstance().pause(
@@ -578,7 +577,7 @@ public class BreakpointRegistryTest {
 
     @Test
     public void shouldHandleMixedRequestAndResponseExchanges() throws Exception {
-        Configuration config = configWith(true, 30000, 50);
+        Configuration config = configWith(30000, 50);
         BreakpointRegistry registry = BreakpointRegistry.getInstance();
 
         PausedExchange reqEx = registry.pause("mixed-1", request().withPath("/req"), null, config);

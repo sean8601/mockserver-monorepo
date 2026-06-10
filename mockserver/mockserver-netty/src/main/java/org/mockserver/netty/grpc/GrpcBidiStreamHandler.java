@@ -292,8 +292,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
             // we simply do not call ctx.read() until the breakpoint decision resolves.
             // Because autoRead is already false (set in handlerAdded), Netty will not
             // deliver the next DATA frame until we explicitly request it.
-            if (inboundStreamId != null && configuration != null
-                && Boolean.TRUE.equals(configuration.breakpointInboundEnabled())) {
+            if (inboundStreamId != null) {
 
                 PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
                     .pauseFrame(inboundStreamId, bytes, "GRPC-INBOUND",

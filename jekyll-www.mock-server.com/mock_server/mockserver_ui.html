@@ -598,7 +598,7 @@ sitemap:
 
 <h2>Breakpoints</h2>
 
-<p>The Breakpoints view is the dashboard control panel for <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> — the ability to pause live HTTP exchanges and streaming frames mid-flight, inspect them, and decide how to continue. Enable breakpoints via the <code>breakpointEnabled</code>, <code>breakpointStreamEnabled</code>, or <code>breakpointInboundEnabled</code> configuration properties; the view shows <em>breakpoints disabled</em> when none are active.</p>
+<p>The Breakpoints view is the dashboard control panel for <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> — the ability to pause live HTTP exchanges and streaming frames mid-flight, inspect them, and decide how to continue. Breakpoints are activated by registering a request matcher via <code>PUT /mockserver/breakpoint/matcher</code>; the view shows <em>no active matchers</em> when none are registered.</p>
 
 <p>The view lists all currently paused exchanges and stream frames, grouped by stream. For each frame you can see the frame id, age, body preview, and direction (INBOUND/OUTBOUND). Actions available on each paused item: <strong>Continue</strong> (release unchanged), <strong>Modify</strong> (replace the body), <strong>Drop</strong> (discard), <strong>Inject</strong> (continue and add a new frame after it), or <strong>Close</strong> (terminate the stream). Request and response breakpoints show the full request or response for inspection and allow modification or abort before the exchange is forwarded.</p>
 

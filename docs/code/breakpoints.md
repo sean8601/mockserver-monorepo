@@ -28,14 +28,14 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
 
 ## Phases
 
-### Request phase (`breakpointEnabled`)
+### Request phase
 
 - Hold point: `HttpActionHandler.handleUnmatchedProxyForward`, after pre-flight
   validation but before the upstream HTTP call.
 - Decision actions: CONTINUE (forward original), MODIFY (forward replacement
   request), ABORT (write error response to client without forwarding).
 
-### Response phase (`breakpointResponseEnabled`)
+### Response phase
 
 - Hold point: `HttpActionHandler.writeForwardActionResponse` (expectation-matched
   forwards) and `executeUnmatchedForward` (unmatched proxy forwards), after the
@@ -47,7 +47,7 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
 - The upstream `HttpResponse` is a deserialized model object (no pooled ByteBuf),
   so parking does not risk use-after-free.
 
-### Stream frame phase (`breakpointStreamEnabled`)
+### Stream frame phase
 
 - **Hold points:**
   - `NettyResponseWriter.writeStreamingResponse` — SSE/chunked forwarded and mock
@@ -108,7 +108,7 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
   streams use `{correlationId}-grpc-stream`, WebSocket/GraphQL streams use
   `{correlationId}-ws-stream`.
 
-### Inbound frame phase (`breakpointInboundEnabled`)
+### Inbound frame phase
 
 - **Hold points:**
   - `BidirectionalWebSocketFrameHandler.channelRead0` — WebSocket bidirectional
@@ -161,9 +161,37 @@ otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS
 - **Max-held cap:** when `breakpointMaxHeld` (default 50) exchanges/frames are
   held (request/response breakpoints and stream frames use separate registries
   but both check the same cap), new intercepts are skipped.
-- **Default off:** `breakpointEnabled`, `breakpointResponseEnabled`,
-  `breakpointStreamEnabled`, and `breakpointInboundEnabled` all default to
-  `false` — zero overhead.
+- **Default off:** breakpoints are inactive until a matcher is registered via
+  `PUT /mockserver/breakpoint/matcher` — zero overhead until then.
+
+## Breakpoint matcher registry
+
+A breakpoint is active when at least one matcher is registered. Register a matcher by sending the request definition (identical in shape to an expectation request matcher) and the set of phases to intercept:
+
+```
+PUT /mockserver/breakpoint/matcher
+{
+  "httpRequest": { "method": "GET", "path": "/api/.*" },
+  "phases": ["REQUEST", "RESPONSE"]
+}
+```
+
+Any forwarded/proxied request that matches `httpRequest` will be paused at the specified phases. Registrations persist until explicitly removed or until `/mockserver/reset` is called (which clears all matchers).
+
+### Matcher-registry endpoints
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases}` | Register a matcher; returns `{id, phases}` |
+| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases}]}` |
+| PUT | `/mockserver/breakpoint/matcher/remove` | `{id}` | Remove a matcher by id; returns `{status:"removed",id}` or 404 |
+| PUT | `/mockserver/breakpoint/matcher/clear` | — | Remove all matchers; returns `{status:"cleared",count}` |
+
+**Validation:** `httpRequest` and `phases` are required; `phases` must be non-empty and contain only `REQUEST`, `RESPONSE`, `RESPONSE_STREAM`, or `INBOUND_STREAM` — unknown values return 400. The registry is cleared on `/mockserver/reset`.
+
+**Matching semantics:** the `httpRequest` body uses the same matcher fields as an expectation request matcher (`method`, `path`, `headers`, `queryStringParameters`, `body`, etc.). An exchange pauses at a phase if any registered matcher matches the request for that phase.
+
+> **Forward-looking note:** interactive resolution over the callback WebSocket (instead of the REST poll/continue/modify/abort endpoints) is being introduced in a later unit.
 
 ## Control-plane endpoints
 
@@ -194,14 +222,12 @@ The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumb
 
 ## Configuration properties
 
+Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher registry" below), not by global flags. The two remaining properties are safety rails only:
+
 | Property | Default | Description |
 |----------|---------|-------------|
-| `mockserver.breakpointEnabled` | `false` | Enable request-phase breakpoints |
-| `mockserver.breakpointResponseEnabled` | `false` | Enable response-phase breakpoints |
-| `mockserver.breakpointStreamEnabled` | `false` | Enable stream-frame breakpoints (SSE/chunked, gRPC, WebSocket, GraphQL) |
-| `mockserver.breakpointInboundEnabled` | `false` | Enable inbound frame breakpoints (WebSocket bidi, GraphQL subscription) |
-| `mockserver.breakpointTimeoutMillis` | `30000` | Auto-continue timeout (shared) |
-| `mockserver.breakpointMaxHeld` | `50` | Max concurrent paused exchanges/frames (shared) |
+| `mockserver.breakpointTimeoutMillis` | `30000` | Auto-continue timeout in milliseconds (shared across all phases) |
+| `mockserver.breakpointMaxHeld` | `50` | Max concurrent paused exchanges/frames (shared across all registries) |
 
 ## Key classes
 

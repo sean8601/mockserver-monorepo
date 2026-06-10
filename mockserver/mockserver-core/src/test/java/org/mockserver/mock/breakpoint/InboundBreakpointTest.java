@@ -33,7 +33,7 @@ import static org.mockserver.model.WebSocketMessageMatcher.webSocketMessageMatch
 /**
  * Tests inbound breakpoint interception for WebSocket and GraphQL-subscription handlers.
  * These tests verify:
- * - Inbound frames are parked when breakpointInboundEnabled=true
+ * - Inbound frames are parked when an INBOUND_STREAM breakpoint matcher is registered
  * - Continue/modify/drop/inject/close actions work correctly
  * - Backpressure (autoRead toggling) is applied
  * - ByteBuf refcounts are balanced (no leak, no use-after-free)
@@ -57,14 +57,12 @@ public class InboundBreakpointTest {
 
     private Configuration inboundOnConfig() {
         return Configuration.configuration()
-            .breakpointInboundEnabled(true)
             .breakpointTimeoutMillis(30_000L)
             .breakpointMaxHeld(50);
     }
 
     private Configuration inboundOffConfig() {
-        return Configuration.configuration()
-            .breakpointInboundEnabled(false);
+        return Configuration.configuration();
     }
 
     // ===== WebSocket BidirectionalWebSocketFrameHandler inbound breakpoints =====
@@ -322,7 +320,6 @@ public class InboundBreakpointTest {
     @Test
     public void shouldEnforceCapForInboundFrames() {
         Configuration config = Configuration.configuration()
-            .breakpointInboundEnabled(true)
             .breakpointTimeoutMillis(30_000L)
             .breakpointMaxHeld(2);
 
@@ -343,10 +340,8 @@ public class InboundBreakpointTest {
 
     @Test
     public void defaultOffShouldNotAffectRegistrySize() {
-        // With breakpointInboundEnabled=false, the handler should not park frames.
-        // This test just verifies the config defaults to off.
-        Configuration config = inboundOffConfig();
-        assertThat(config.breakpointInboundEnabled(), is(false));
+        // With no breakpoint matchers registered, the handler should not park frames.
+        // The registry is empty by default.
         assertThat(registry.size(), is(0));
     }
 
@@ -355,7 +350,6 @@ public class InboundBreakpointTest {
     @Test
     public void shouldAutoContinueInboundOnTimeout() throws Exception {
         Configuration config = Configuration.configuration()
-            .breakpointInboundEnabled(true)
             .breakpointTimeoutMillis(200L)
             .breakpointMaxHeld(50);
 

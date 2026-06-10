@@ -757,7 +757,7 @@ public class HttpActionHandler {
                         // asynchronously on the scheduler executor when the control-plane resolves it (or
                         // when the timeout auto-completes it). This avoids exhausting the scheduler pool
                         // and, via CallerRunsPolicy, the Netty event loop.
-                        if (!synchronous && Boolean.TRUE.equals(configuration.breakpointEnabled())) {
+                        if (!synchronous && org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.REQUEST) != null) {
                             org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
                             org.mockserver.mock.breakpoint.PausedExchange pausedExchange = breakpointRegistry.pause(
                                 request.getLogCorrelationId(), request, null, configuration
@@ -875,7 +875,7 @@ public class HttpActionHandler {
                             emitRequestSpan(request, response, null, ctx, responseTimeMs);
                             emitForwardGenAiSpan(clonedRequest, response);
                             // Response breakpoint: hold non-streaming unmatched proxy responses before writing
-                            if (!synchronous && Boolean.TRUE.equals(configuration.breakpointResponseEnabled())) {
+                            if (!synchronous && org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) != null) {
                                 org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
                                 org.mockserver.mock.breakpoint.PausedExchange responsePaused = breakpointRegistry.pauseResponse(
                                     request.getLogCorrelationId(), request, response, null, configuration
@@ -1060,7 +1060,7 @@ public class HttpActionHandler {
                 emitRequestSpan(originalRequest, response, null, null, responseTimeMs);
                 emitForwardGenAiSpan(requestToForward, response);
                 // Response breakpoint: hold non-streaming unmatched proxy responses before writing
-                if (Boolean.TRUE.equals(configuration.breakpointResponseEnabled())) {
+                if (org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(originalRequest, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) != null) {
                     org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
                     org.mockserver.mock.breakpoint.PausedExchange responsePaused = breakpointRegistry.pauseResponse(
                         originalRequest.getLogCorrelationId(), originalRequest, response, null, configuration
@@ -2139,7 +2139,7 @@ public class HttpActionHandler {
                 // Response breakpoint: hold non-streaming responses before writing to client.
                 // IMPORTANT: does NOT block any thread — chains the client write onto the
                 // decision future via thenAcceptAsync (same pattern as request breakpoints).
-                if (!synchronous && !isStreaming && Boolean.TRUE.equals(configuration.breakpointResponseEnabled())) {
+                if (!synchronous && !isStreaming && org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) != null) {
                     org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
                     org.mockserver.mock.breakpoint.PausedExchange responsePaused = breakpointRegistry.pauseResponse(
                         request.getLogCorrelationId(), request, effectiveResponse,

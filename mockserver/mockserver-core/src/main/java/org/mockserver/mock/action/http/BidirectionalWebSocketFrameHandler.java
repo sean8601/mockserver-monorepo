@@ -22,7 +22,7 @@ import java.util.regex.PatternSyntaxException;
  * Installed after a WebSocket handshake when the HttpWebSocketResponse has matchers.
  * Evaluates incoming frames against the matcher list in order; first match sends its responses.
  *
- * <p><b>Inbound breakpoints (A1e):</b> when {@code breakpointInboundEnabled} is true and an
+ * <p><b>Inbound breakpoints (A1e):</b> when an INBOUND_STREAM breakpoint matcher is registered and
  * inbound stream ID is configured, incoming WebSocket frames are parked in the
  * {@link StreamFrameBreakpointRegistry} before matcher evaluation. The frame bytes are copied
  * to {@code byte[]} at park time and the original {@link WebSocketFrame} is released immediately
@@ -78,8 +78,7 @@ public class BidirectionalWebSocketFrameHandler extends SimpleChannelInboundHand
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, WebSocketFrame frame) {
         // --- Inbound breakpoint interception ---
-        if (inboundStreamId != null && configuration != null
-            && Boolean.TRUE.equals(configuration.breakpointInboundEnabled())) {
+        if (inboundStreamId != null) {
 
             // Copy frame bytes BEFORE parking — the frame's ByteBuf is pooled and must be
             // released after this method returns (we use super(false), so WE own the release).

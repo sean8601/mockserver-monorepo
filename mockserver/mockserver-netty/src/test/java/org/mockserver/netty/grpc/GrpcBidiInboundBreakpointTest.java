@@ -45,14 +45,14 @@ import static org.hamcrest.Matchers.*;
  * <p>
  * Validates:
  * <ul>
- *   <li>Inbound DATA frames are parked in the registry when breakpointInboundEnabled=true</li>
+ *   <li>Inbound DATA frames are parked in the registry when an INBOUND_STREAM breakpoint matcher is registered</li>
  *   <li>Continue/modify/drop/inject/close decision actions work correctly</li>
  *   <li>HTTP/2 flow control is safe: the Http2DataFrame is released IMMEDIATELY (refunding
  *       the flow-control window), and backpressure uses the existing pull-based model
  *       (withholding ctx.read())</li>
  *   <li>ByteBuf refcounts are balanced (no leak, no use-after-free)</li>
  *   <li>Stream-close evicts held inbound frames</li>
- *   <li>Default-off (breakpointInboundEnabled=false or null config) processes frames normally</li>
+ *   <li>Default-off (no inbound breakpoint matcher or null inboundStreamId) processes frames normally</li>
  *   <li>Ordering is preserved across multiple parked frames</li>
  * </ul>
  */
@@ -79,7 +79,6 @@ public class GrpcBidiInboundBreakpointTest {
 
     private static Configuration inboundOnConfig() {
         return Configuration.configuration()
-            .breakpointInboundEnabled(true)
             .breakpointTimeoutMillis(30_000L)
             .breakpointMaxHeld(50);
     }
@@ -487,16 +486,17 @@ public class GrpcBidiInboundBreakpointTest {
         channel.finishAndReleaseAll();
     }
 
-    // ===== Test: breakpointInboundEnabled=false also processes normally =====
+    // ===== Test: no inbound breakpoint matcher means frames process normally =====
 
     @Test
-    public void shouldProcessNormallyWhenBreakpointInboundEnabledIsFalse() {
+    public void shouldProcessNormallyWhenNoInboundBreakpointMatcher() {
         GrpcProtoDescriptorStore store = loadDescriptorStore();
         GrpcJsonMessageConverter converter = store.getConverter();
         Descriptors.MethodDescriptor chatMethod = store.getMethod("com.example.grpc.GreetingService", "Chat");
 
-        Configuration config = Configuration.configuration().breakpointInboundEnabled(false);
-        String streamId = "grpc-bidi-inbound-test-disabled";
+        Configuration config = Configuration.configuration();
+        // null inboundStreamId simulates no matching breakpoint at construction time
+        String streamId = null;
 
         Function<String, List<String>> echoResponder = json ->
             Collections.singletonList(json.replace("\"name\"", "\"greeting\""));
@@ -726,7 +726,6 @@ public class GrpcBidiInboundBreakpointTest {
 
         // Cap of 1 frame
         Configuration config = Configuration.configuration()
-            .breakpointInboundEnabled(true)
             .breakpointTimeoutMillis(30_000L)
             .breakpointMaxHeld(1);
         String streamId = "grpc-bidi-inbound-test-cap";
@@ -782,7 +781,6 @@ public class GrpcBidiInboundBreakpointTest {
 
         // Short timeout
         Configuration config = Configuration.configuration()
-            .breakpointInboundEnabled(true)
             .breakpointTimeoutMillis(200L)
             .breakpointMaxHeld(50);
         String streamId = "grpc-bidi-inbound-test-timeout";

@@ -24,10 +24,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
     private Boolean mcpEnabled;
-    private Boolean breakpointEnabled;
-    private Boolean breakpointResponseEnabled;
-    private Boolean breakpointStreamEnabled;
-    private Boolean breakpointInboundEnabled;
     private Long breakpointTimeoutMillis;
     private Integer breakpointMaxHeld;
     private Map<String, String> logLevelOverrides;
@@ -156,10 +152,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.chaosAutoHaltErrorThreshold = configuration.chaosAutoHaltErrorThreshold();
             this.chaosAutoHaltWindowMillis = configuration.chaosAutoHaltWindowMillis();
             this.mcpEnabled = configuration.mcpEnabled();
-            this.breakpointEnabled = configuration.breakpointEnabled();
-            this.breakpointResponseEnabled = configuration.breakpointResponseEnabled();
-            this.breakpointStreamEnabled = configuration.breakpointStreamEnabled();
-            this.breakpointInboundEnabled = configuration.breakpointInboundEnabled();
             this.breakpointTimeoutMillis = configuration.breakpointTimeoutMillis();
             this.breakpointMaxHeld = configuration.breakpointMaxHeld();
             Map<String, String> overrides = configuration.logLevelOverrides();
@@ -338,10 +330,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.chaosAutoHaltErrorThreshold(chaosAutoHaltErrorThreshold);
         configuration.chaosAutoHaltWindowMillis(chaosAutoHaltWindowMillis);
         configuration.mcpEnabled(mcpEnabled);
-        configuration.breakpointEnabled(breakpointEnabled);
-        configuration.breakpointResponseEnabled(breakpointResponseEnabled);
-        configuration.breakpointStreamEnabled(breakpointStreamEnabled);
-        configuration.breakpointInboundEnabled(breakpointInboundEnabled);
         configuration.breakpointTimeoutMillis(breakpointTimeoutMillis);
         configuration.breakpointMaxHeld(breakpointMaxHeld);
         configuration.logLevelOverrides(logLevelOverrides);
@@ -500,18 +488,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (mcpEnabled != null) {
             target.mcpEnabled(mcpEnabled);
-        }
-        if (breakpointEnabled != null) {
-            target.breakpointEnabled(breakpointEnabled);
-        }
-        if (breakpointResponseEnabled != null) {
-            target.breakpointResponseEnabled(breakpointResponseEnabled);
-        }
-        if (breakpointStreamEnabled != null) {
-            target.breakpointStreamEnabled(breakpointStreamEnabled);
-        }
-        if (breakpointInboundEnabled != null) {
-            target.breakpointInboundEnabled(breakpointInboundEnabled);
         }
         if (breakpointTimeoutMillis != null) {
             target.breakpointTimeoutMillis(breakpointTimeoutMillis);
@@ -892,42 +868,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setMcpEnabled(Boolean mcpEnabled) {
         this.mcpEnabled = mcpEnabled;
-        return this;
-    }
-
-    public Boolean getBreakpointEnabled() {
-        return breakpointEnabled;
-    }
-
-    public ConfigurationDTO setBreakpointEnabled(Boolean breakpointEnabled) {
-        this.breakpointEnabled = breakpointEnabled;
-        return this;
-    }
-
-    public Boolean getBreakpointResponseEnabled() {
-        return breakpointResponseEnabled;
-    }
-
-    public ConfigurationDTO setBreakpointResponseEnabled(Boolean breakpointResponseEnabled) {
-        this.breakpointResponseEnabled = breakpointResponseEnabled;
-        return this;
-    }
-
-    public Boolean getBreakpointStreamEnabled() {
-        return breakpointStreamEnabled;
-    }
-
-    public ConfigurationDTO setBreakpointStreamEnabled(Boolean breakpointStreamEnabled) {
-        this.breakpointStreamEnabled = breakpointStreamEnabled;
-        return this;
-    }
-
-    public Boolean getBreakpointInboundEnabled() {
-        return breakpointInboundEnabled;
-    }
-
-    public ConfigurationDTO setBreakpointInboundEnabled(Boolean breakpointInboundEnabled) {
-        this.breakpointInboundEnabled = breakpointInboundEnabled;
         return this;
     }
 

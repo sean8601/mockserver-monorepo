@@ -200,7 +200,7 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
      * scheduling pattern, reusing {@link GrpcStreamMessageEncoder} for byte-identical framing.
      * Delays are scheduled on the QUIC stream's own event-loop executor so writes stay ordered.
      * <p>
-     * When {@code breakpointStreamEnabled} is on, each outbound DATA frame is parked in the
+     * When a RESPONSE_STREAM breakpoint matcher matches, each outbound DATA frame is parked in the
      * {@link StreamFrameBreakpointRegistry} (with stream-id suffix {@code -h3-grpc-stream})
      * before writing. Frame bytes are already {@code byte[]} from
      * {@link GrpcStreamMessageEncoder#encode} -- no ByteBuf is retained across the hold period.
@@ -214,7 +214,7 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
         Descriptors.MethodDescriptor methodDescriptor = resolveMethodDescriptor();
 
         // Determine if stream-frame breakpoints are active
-        final boolean streamBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointStreamEnabled());
+        final boolean streamBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM) != null;
         final String streamId;
         final String reqMethod;
         final String reqPath;

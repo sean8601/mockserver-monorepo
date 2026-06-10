@@ -19,11 +19,11 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
     handling with modified responses, and inspecting streaming traffic (SSE, chunked, gRPC, WebSocket, GraphQL subscription) frame by frame.
 </p>
 
-<p>Breakpoints are <strong>off by default</strong> and have zero overhead when disabled.</p>
+<p>Breakpoints are <strong>off by default</strong> and have zero overhead when no matchers are registered.</p>
 
 <ul>
     <li><a href="#phases">Breakpoint phases</a></li>
-    <li><a href="#enable">Enabling breakpoints</a></li>
+    <li><a href="#register">Registering a breakpoint matcher</a></li>
     <li><a href="#workflow">Workflow: pause, inspect, decide</a></li>
     <li><a href="#request_phase">Request-phase breakpoints</a></li>
     <li><a href="#response_phase">Response-phase breakpoints</a></li>
@@ -67,40 +67,76 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
     </tbody>
 </table>
 
-<a id="enable" class="anchor" href="#enable">&nbsp;</a>
-<h2>Enabling Breakpoints</h2>
+<a id="register" class="anchor" href="#register">&nbsp;</a>
+<h2>Registering a Breakpoint Matcher</h2>
 
-<p>Each phase has its own configuration property. Enable only the phases you need:</p>
+<p>
+    Breakpoints are activated by registering a <strong>request matcher</strong> — there are no global on/off flags.
+    A matcher describes which requests to intercept and at which phases. Only forwarded/proxied exchanges are matched;
+    mock-only responses are not paused.
+</p>
+
+<p>Register a matcher with <span class="inline_code">PUT /mockserver/breakpoint/matcher</span>:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code"># Pause all GET /api/users requests at the request and response phases
+curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest": {
+      "method": "GET",
+      "path": "/api/users"
+    },
+    "phases": ["REQUEST", "RESPONSE"]
+  }'</code></pre>
+
+<p>The <span class="inline_code">httpRequest</span> body uses the same matcher fields as an expectation request matcher
+(<span class="inline_code">method</span>, <span class="inline_code">path</span>, <span class="inline_code">headers</span>,
+<span class="inline_code">queryStringParameters</span>, <span class="inline_code">body</span>, etc.).
+The <span class="inline_code">phases</span> array may contain any combination of
+<span class="inline_code">REQUEST</span>, <span class="inline_code">RESPONSE</span>,
+<span class="inline_code">RESPONSE_STREAM</span>, and <span class="inline_code">INBOUND_STREAM</span>.</p>
+
+<p>The response includes an <span class="inline_code">id</span> you can use to remove the matcher later.</p>
+
+<h3>Matcher management endpoints</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>PUT</td>
+            <td><span class="inline_code">/mockserver/breakpoint/matcher</span></td>
+            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...]}</span>. Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td>
+        </tr>
+        <tr>
+            <td>GET / PUT</td>
+            <td><span class="inline_code">/mockserver/breakpoint/matchers</span></td>
+            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases}]}</span>.</td>
+        </tr>
+        <tr>
+            <td>PUT</td>
+            <td><span class="inline_code">/mockserver/breakpoint/matcher/remove</span></td>
+            <td>Remove a matcher by id. Body: <span class="inline_code">{"id": "..."}</span>. Returns <span class="inline_code">{"status": "removed", "id": "..."}</span> or 404.</td>
+        </tr>
+        <tr>
+            <td>PUT</td>
+            <td><span class="inline_code">/mockserver/breakpoint/matcher/clear</span></td>
+            <td>Remove all matchers. Returns <span class="inline_code">{"status": "cleared", "count": N}</span>.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>All matchers are cleared when <span class="inline_code">PUT /mockserver/reset</span> is called.</p>
+
+<h3>Safety-rail configuration properties</h3>
 
 <table class="table table-bordered table-striped">
     <thead>
         <tr><th>Property</th><th>Env var</th><th>Default</th><th>Description</th></tr>
     </thead>
     <tbody>
-        <tr>
-            <td><span class="inline_code">mockserver.breakpointEnabled</span></td>
-            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_ENABLED</span></td>
-            <td><span class="inline_code">false</span></td>
-            <td>Enable request-phase breakpoints</td>
-        </tr>
-        <tr>
-            <td><span class="inline_code">mockserver.breakpointResponseEnabled</span></td>
-            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED</span></td>
-            <td><span class="inline_code">false</span></td>
-            <td>Enable response-phase breakpoints</td>
-        </tr>
-        <tr>
-            <td><span class="inline_code">mockserver.breakpointStreamEnabled</span></td>
-            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_STREAM_ENABLED</span></td>
-            <td><span class="inline_code">false</span></td>
-            <td>Enable stream-frame breakpoints (SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket, GraphQL subscription)</td>
-        </tr>
-        <tr>
-            <td><span class="inline_code">mockserver.breakpointInboundEnabled</span></td>
-            <td><span class="inline_code">MOCKSERVER_BREAKPOINT_INBOUND_ENABLED</span></td>
-            <td><span class="inline_code">false</span></td>
-            <td>Enable inbound frame breakpoints &mdash; intercept client-to-server frames on WebSocket and GraphQL subscription connections (experimental)</td>
-        </tr>
         <tr>
             <td><span class="inline_code">mockserver.breakpointTimeoutMillis</span></td>
             <td><span class="inline_code">MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS</span></td>
@@ -122,7 +158,7 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
 <p>The typical workflow is:</p>
 
 <ol>
-    <li><strong>Enable</strong> the breakpoint phase(s) you want via configuration properties or the REST API</li>
+    <li><strong>Register</strong> a breakpoint matcher via <span class="inline_code">PUT /mockserver/breakpoint/matcher</span>, specifying the request to match and the phase(s) to intercept</li>
     <li><strong>Send a request</strong> through MockServer (proxy or forward mode)</li>
     <li><strong>List paused exchanges</strong> &mdash; <span class="inline_code">GET /mockserver/breakpoint</span> returns all currently held exchanges with their IDs, phase, and captured request/response data</li>
     <li><strong>Inspect</strong> the paused request or response</li>
@@ -135,8 +171,9 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
 <h2>Request-Phase Breakpoints</h2>
 
 <p>
-    When <span class="inline_code">breakpointEnabled</span> is <span class="inline_code">true</span>, every proxied
-    or forwarded request pauses before being sent to the upstream server. You can inspect the request and then:
+    When a matcher with the <span class="inline_code">REQUEST</span> phase is registered, every proxied or forwarded
+    request whose path and method match that matcher pauses before being sent to the upstream server. You can inspect
+    the request and then:
 </p>
 
 <ul>
@@ -165,9 +202,9 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
 <h2>Response-Phase Breakpoints</h2>
 
 <p>
-    When <span class="inline_code">breakpointResponseEnabled</span> is <span class="inline_code">true</span>, the upstream
-    response is held before being written to the client. This applies to non-streaming (buffered) responses only &mdash;
-    streaming responses use stream-frame breakpoints instead.
+    When a matcher with the <span class="inline_code">RESPONSE</span> phase is registered, the upstream response is held
+    before being written to the client for any matching request. This applies to non-streaming (buffered) responses only
+    &mdash; streaming responses use stream-frame breakpoints instead.
 </p>
 
 <p>
@@ -188,8 +225,8 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
 <h2>Stream-Frame Breakpoints</h2>
 
 <p>
-    When <span class="inline_code">breakpointStreamEnabled</span> is <span class="inline_code">true</span>, each frame
-    of a streaming response is held individually before being written to the client.
+    When a matcher with the <span class="inline_code">RESPONSE_STREAM</span> phase is registered, each frame
+    of a matching streaming response is held individually before being written to the client.
     This covers SSE, HTTP/1.1 chunked, gRPC server-streaming, WebSocket (eager/scripted and bidirectional),
     and GraphQL subscription pushes. It lets you inspect and manipulate streaming traffic frame by frame.
 </p>
@@ -222,8 +259,8 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
 <h2>Inbound Frame Breakpoints</h2>
 
 <p>
-    When <span class="inline_code">breakpointInboundEnabled</span> is <span class="inline_code">true</span>, each
-    client-to-server frame on a bidirectional WebSocket or GraphQL subscription connection is held before
+    When a matcher with the <span class="inline_code">INBOUND_STREAM</span> phase is registered, each
+    client-to-server frame on a matching bidirectional WebSocket or GraphQL subscription connection is held before
     MockServer processes it. This lets you inspect, modify, drop, or inject inbound frames &mdash;
     useful for testing how an upstream server handles manipulated client messages.
 </p>
@@ -245,6 +282,20 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
 
 <a id="rest_api" class="anchor" href="#rest_api">&nbsp;</a>
 <h2>REST API Reference</h2>
+
+<h3>Breakpoint matcher registration</h3>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher</span></td><td>Register a matcher: <span class="inline_code">{"httpRequest": {...}, "phases": [...]}</span>. Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td></tr>
+        <tr><td>GET/PUT</td><td><span class="inline_code">/mockserver/breakpoint/matchers</span></td><td>List all registered matchers: <span class="inline_code">{"matchers": [{id, httpRequest, phases}]}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/remove</span></td><td>Remove a matcher: <span class="inline_code">{"id": "..."}</span></td></tr>
+        <tr><td>PUT</td><td><span class="inline_code">/mockserver/breakpoint/matcher/clear</span></td><td>Remove all matchers</td></tr>
+    </tbody>
+</table>
 
 <h3>Request / response breakpoints</h3>
 

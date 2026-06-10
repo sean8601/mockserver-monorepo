@@ -262,85 +262,17 @@ public class ConfigurationDTOTest {
     }
 
     @Test
-    public void shouldRoundTripBreakpointResponseEnabled() {
+    public void shouldRoundTripBreakpointTimeoutAndMaxHeld() {
         Configuration original = configuration()
-            .breakpointEnabled(true)
-            .breakpointResponseEnabled(true)
             .breakpointTimeoutMillis(5000L)
             .breakpointMaxHeld(10);
 
         ConfigurationDTO dto = new ConfigurationDTO(original);
-        assertThat(dto.getBreakpointEnabled(), is(true));
-        assertThat(dto.getBreakpointResponseEnabled(), is(true));
         assertThat(dto.getBreakpointTimeoutMillis(), is(5000L));
         assertThat(dto.getBreakpointMaxHeld(), is(10));
 
         Configuration rebuilt = dto.buildObject();
-        assertThat(rebuilt.breakpointEnabled(), is(true));
-        assertThat(rebuilt.breakpointResponseEnabled(), is(true));
         assertThat(rebuilt.breakpointTimeoutMillis(), is(5000L));
         assertThat(rebuilt.breakpointMaxHeld(), is(10));
-    }
-
-    @Test
-    public void shouldApplyBreakpointResponseEnabledPartially() {
-        Configuration target = configuration()
-            .breakpointEnabled(false)
-            .breakpointResponseEnabled(false);
-
-        ConfigurationDTO dto = new ConfigurationDTO();
-        dto.setBreakpointResponseEnabled(true);
-        dto.applyTo(target);
-
-        assertThat("breakpointEnabled should be unchanged", target.breakpointEnabled(), is(false));
-        assertThat("breakpointResponseEnabled should be updated", target.breakpointResponseEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldRoundTripBreakpointStreamEnabled() {
-        Configuration original = configuration()
-            .breakpointStreamEnabled(true);
-
-        ConfigurationDTO dto = new ConfigurationDTO(original);
-        assertThat(dto.getBreakpointStreamEnabled(), is(true));
-
-        Configuration rebuilt = dto.buildObject();
-        assertThat(rebuilt.breakpointStreamEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldApplyBreakpointStreamEnabledPartially() {
-        Configuration target = configuration()
-            .breakpointStreamEnabled(false);
-
-        ConfigurationDTO dto = new ConfigurationDTO();
-        dto.setBreakpointStreamEnabled(true);
-        dto.applyTo(target);
-
-        assertThat("breakpointStreamEnabled should be updated", target.breakpointStreamEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldRoundTripBreakpointInboundEnabled() {
-        Configuration original = configuration()
-            .breakpointInboundEnabled(true);
-
-        ConfigurationDTO dto = new ConfigurationDTO(original);
-        assertThat(dto.getBreakpointInboundEnabled(), is(true));
-
-        Configuration rebuilt = dto.buildObject();
-        assertThat(rebuilt.breakpointInboundEnabled(), is(true));
-    }
-
-    @Test
-    public void shouldApplyBreakpointInboundEnabledPartially() {
-        Configuration target = configuration()
-            .breakpointInboundEnabled(false);
-
-        ConfigurationDTO dto = new ConfigurationDTO();
-        dto.setBreakpointInboundEnabled(true);
-        dto.applyTo(target);
-
-        assertThat("breakpointInboundEnabled should be updated", target.breakpointInboundEnabled(), is(true));
     }
 }

@@ -29,7 +29,6 @@ public class MockStreamBreakpointTest {
     public void setup() {
         StreamFrameBreakpointRegistry.getInstance().reset();
         configuration = Configuration.configuration()
-            .breakpointStreamEnabled(true)
             .breakpointTimeoutMillis(30000L)
             .breakpointMaxHeld(50);
     }
@@ -441,7 +440,6 @@ public class MockStreamBreakpointTest {
     @Test
     public void shouldEnforceCapAcrossAllStreamTypes() {
         Configuration smallCap = Configuration.configuration()
-            .breakpointStreamEnabled(true)
             .breakpointTimeoutMillis(30000L)
             .breakpointMaxHeld(4);
 

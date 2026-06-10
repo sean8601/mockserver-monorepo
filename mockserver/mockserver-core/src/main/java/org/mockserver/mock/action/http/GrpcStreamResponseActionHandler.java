@@ -65,7 +65,7 @@ public class GrpcStreamResponseActionHandler {
         ctx.writeAndFlush(initialResponse);
 
         // Determine if stream-frame breakpoints are active
-        final boolean streamBreakpointsActive = Boolean.TRUE.equals(configuration.breakpointStreamEnabled());
+        final boolean streamBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM) != null;
         final String streamId;
         final String reqMethod;
         final String reqPath;

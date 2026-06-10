@@ -48,10 +48,6 @@ public class Configuration {
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
     private Boolean mcpEnabled;
-    private Boolean breakpointEnabled;
-    private Boolean breakpointResponseEnabled;
-    private Boolean breakpointStreamEnabled;
-    private Boolean breakpointInboundEnabled;
     private Long breakpointTimeoutMillis;
     private Integer breakpointMaxHeld;
     private Boolean wasmEnabled;
@@ -572,78 +568,6 @@ public class Configuration {
 
     public Configuration mcpEnabled(Boolean mcpEnabled) {
         this.mcpEnabled = mcpEnabled;
-        return this;
-    }
-
-    public Boolean breakpointEnabled() {
-        if (breakpointEnabled == null) {
-            return ConfigurationProperties.breakpointEnabled();
-        }
-        return breakpointEnabled;
-    }
-
-    /**
-     * Enable interactive request breakpoints for proxied/forwarded requests.
-     * Default is false (off).
-     */
-    public Configuration breakpointEnabled(Boolean breakpointEnabled) {
-        this.breakpointEnabled = breakpointEnabled;
-        return this;
-    }
-
-    public Boolean breakpointResponseEnabled() {
-        if (breakpointResponseEnabled == null) {
-            return ConfigurationProperties.breakpointResponseEnabled();
-        }
-        return breakpointResponseEnabled;
-    }
-
-    /**
-     * Enable interactive response breakpoints for proxied/forwarded requests.
-     * Holds the upstream response before writing it to the client. Independent
-     * of {@link #breakpointEnabled()} (request breakpoints). Default is false (off).
-     */
-    public Configuration breakpointResponseEnabled(Boolean breakpointResponseEnabled) {
-        this.breakpointResponseEnabled = breakpointResponseEnabled;
-        return this;
-    }
-
-    public Boolean breakpointStreamEnabled() {
-        if (breakpointStreamEnabled == null) {
-            return ConfigurationProperties.breakpointStreamEnabled();
-        }
-        return breakpointStreamEnabled;
-    }
-
-    /**
-     * Enable per-frame interactive breakpoints for streaming responses — both
-     * forwarded upstream streams (SSE, HTTP/1.1 chunked) and mock-generated
-     * streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted
-     * messages, WebSocket bidirectional responses, and GraphQL subscription pushes).
-     * Each frame is paused and can be inspected, modified, dropped, or injected
-     * via the control-plane REST API. Default is false (off).
-     */
-    public Configuration breakpointStreamEnabled(Boolean breakpointStreamEnabled) {
-        this.breakpointStreamEnabled = breakpointStreamEnabled;
-        return this;
-    }
-
-    public Boolean breakpointInboundEnabled() {
-        if (breakpointInboundEnabled == null) {
-            return ConfigurationProperties.breakpointInboundEnabled();
-        }
-        return breakpointInboundEnabled;
-    }
-
-    /**
-     * Enable inbound frame breakpoints for bidirectional/streaming connections (WebSocket,
-     * GraphQL-subscription). When enabled, client-to-server frames are paused before MockServer
-     * processes them and can be inspected, modified, dropped, injected, or used to close the
-     * connection via the control-plane REST API. Independent of {@link #breakpointStreamEnabled()}
-     * (outbound stream breakpoints). Default is false (off).
-     */
-    public Configuration breakpointInboundEnabled(Boolean breakpointInboundEnabled) {
-        this.breakpointInboundEnabled = breakpointInboundEnabled;
         return this;
     }
 

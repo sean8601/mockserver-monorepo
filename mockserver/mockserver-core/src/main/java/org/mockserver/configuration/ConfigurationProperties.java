@@ -61,10 +61,6 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD = "mockserver.chaosAutoHaltErrorThreshold";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS = "mockserver.chaosAutoHaltWindowMillis";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
-    private static final String MOCKSERVER_BREAKPOINT_ENABLED = "mockserver.breakpointEnabled";
-    private static final String MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED = "mockserver.breakpointResponseEnabled";
-    private static final String MOCKSERVER_BREAKPOINT_STREAM_ENABLED = "mockserver.breakpointStreamEnabled";
-    private static final String MOCKSERVER_BREAKPOINT_INBOUND_ENABLED = "mockserver.breakpointInboundEnabled";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
     private static final String MOCKSERVER_BREAKPOINT_MAX_HELD = "mockserver.breakpointMaxHeld";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
@@ -612,72 +608,6 @@ public class ConfigurationProperties {
      */
     public static void mcpEnabled(boolean enable) {
         setProperty(MOCKSERVER_MCP_ENABLED, "" + enable);
-    }
-
-    public static boolean breakpointEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_ENABLED, "MOCKSERVER_BREAKPOINT_ENABLED", "" + false));
-    }
-
-    /**
-     * Enable interactive request breakpoints for proxied/forwarded requests. When enabled,
-     * forwarded requests are paused (held) and can be inspected, modified, or aborted via
-     * the control-plane REST API before being sent to the upstream. Default is false (off).
-     *
-     * @param enable enable breakpoints
-     */
-    public static void breakpointEnabled(boolean enable) {
-        setProperty(MOCKSERVER_BREAKPOINT_ENABLED, "" + enable);
-    }
-
-    public static boolean breakpointResponseEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED, "MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED", "" + false));
-    }
-
-    /**
-     * Enable interactive response breakpoints for proxied/forwarded requests. When enabled,
-     * the upstream response is held before being written to the client, and can be inspected,
-     * modified, or replaced via the control-plane REST API. Independent of
-     * {@link #breakpointEnabled()} (request breakpoints). Default is false (off).
-     *
-     * @param enable enable response breakpoints
-     */
-    public static void breakpointResponseEnabled(boolean enable) {
-        setProperty(MOCKSERVER_BREAKPOINT_RESPONSE_ENABLED, "" + enable);
-    }
-
-    public static boolean breakpointStreamEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_STREAM_ENABLED, "MOCKSERVER_BREAKPOINT_STREAM_ENABLED", "" + false));
-    }
-
-    /**
-     * Enable per-frame interactive breakpoints for streaming responses — both
-     * forwarded upstream streams (SSE, HTTP/1.1 chunked) and mock-generated
-     * streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted
-     * messages, WebSocket bidirectional responses, and GraphQL subscription pushes).
-     * Each frame is paused and can be inspected, modified, dropped, or injected
-     * via the control-plane REST API. Default is false (off).
-     *
-     * @param enable enable stream frame breakpoints
-     */
-    public static void breakpointStreamEnabled(boolean enable) {
-        setProperty(MOCKSERVER_BREAKPOINT_STREAM_ENABLED, "" + enable);
-    }
-
-    public static boolean breakpointInboundEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_BREAKPOINT_INBOUND_ENABLED, "MOCKSERVER_BREAKPOINT_INBOUND_ENABLED", "" + false));
-    }
-
-    /**
-     * Enable inbound frame breakpoints for bidirectional/streaming connections (WebSocket,
-     * GraphQL-subscription). When enabled, client-to-server frames are paused
-     * before MockServer processes them and can be inspected, modified, dropped, injected, or
-     * used to close the connection via the control-plane REST API. Independent of
-     * {@link #breakpointStreamEnabled()} (outbound stream breakpoints). Default is false (off).
-     *
-     * @param enable enable inbound frame breakpoints
-     */
-    public static void breakpointInboundEnabled(boolean enable) {
-        setProperty(MOCKSERVER_BREAKPOINT_INBOUND_ENABLED, "" + enable);
     }
 
     public static long breakpointTimeoutMillis() {

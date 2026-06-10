@@ -91,7 +91,7 @@ public class NettyResponseWriter extends ResponseWriter {
         ctx.writeAndFlush(nettyResponse);
 
         // Determine if stream-frame breakpoints are active for this response
-        final boolean streamBreakpointsActive = configuration.breakpointStreamEnabled();
+        final boolean streamBreakpointsActive = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM) != null;
         // Stream identifier and request metadata are only needed when breakpoints
         // are active — keep them out of the default-off hot path (zero allocation).
         final String streamId;

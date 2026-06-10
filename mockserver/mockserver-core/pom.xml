@@ -521,8 +521,10 @@
                         <exclude>**/LlmProviderSnifferTest.java</exclude>
                         <exclude>**/ForwardPathGenAiSpansTest.java</exclude>
                         <exclude>**/BreakpointConfigurationTest.java</exclude>
-                        <!-- Mutate shared static singleton registries (BreakpointRegistry, StreamFrameBreakpointRegistry) -->
+                        <!-- Mutate shared static singleton registries (BreakpointRegistry, StreamFrameBreakpointRegistry, BreakpointMatcherRegistry) -->
                         <exclude>**/BreakpointRegistryTest.java</exclude>
+                        <exclude>**/BreakpointMatcherRegistryTest.java</exclude>
+                        <exclude>**/BreakpointMatcherEndpointTest.java</exclude>
                         <exclude>**/StreamFrameBreakpointRegistryTest.java</exclude>
                         <exclude>**/InboundBreakpointTest.java</exclude>
                         <exclude>**/MockStreamBreakpointTest.java</exclude>
@@ -595,6 +597,8 @@
                                 <include>**/ForwardPathGenAiSpansTest.java</include>
                                 <include>**/BreakpointConfigurationTest.java</include>
                                 <include>**/BreakpointRegistryTest.java</include>
+                                <include>**/BreakpointMatcherRegistryTest.java</include>
+                                <include>**/BreakpointMatcherEndpointTest.java</include>
                                 <include>**/StreamFrameBreakpointRegistryTest.java</include>
                                 <include>**/InboundBreakpointTest.java</include>
                                 <include>**/MockStreamBreakpointTest.java</include>

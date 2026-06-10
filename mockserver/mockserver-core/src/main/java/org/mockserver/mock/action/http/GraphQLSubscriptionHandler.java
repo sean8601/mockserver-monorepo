@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@code complete} (client) - cancels that subscription's pending messages</li>
  * </ul>
  *
- * <p><b>Inbound breakpoints (A1e):</b> when {@code breakpointInboundEnabled} is true and an
+ * <p><b>Inbound breakpoints (A1e):</b> when an INBOUND_STREAM breakpoint matcher is registered and
  * inbound stream ID is configured, incoming WebSocket frames are parked in the
  * {@link StreamFrameBreakpointRegistry} before protocol dispatch. The frame text is copied
  * to {@code byte[]} (UTF-8) at park time and the original {@link TextWebSocketFrame} is
@@ -167,8 +167,7 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
         frame.release();
 
         // --- Inbound breakpoint interception ---
-        if (inboundStreamId != null && configuration != null
-            && Boolean.TRUE.equals(configuration.breakpointInboundEnabled())) {
+        if (inboundStreamId != null) {
 
             byte[] frameBytes = text.getBytes(StandardCharsets.UTF_8);
 

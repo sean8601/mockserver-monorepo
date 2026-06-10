@@ -412,6 +412,7 @@ public class HttpState {
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
         org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance().reset();
         org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry.getInstance().reset();
+        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().clear();
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -1730,6 +1731,34 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/matcher/remove", "/breakpoint/matcher/remove")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointMatcherRemove(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/matcher/clear", "/breakpoint/matcher/clear")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointMatcherClear()), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/matchers", "/breakpoint/matchers")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointMatcherList()), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/matcher", "/breakpoint/matcher")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointMatcherRegister(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/breakpoint/continue", "/breakpoint/continue")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2141,6 +2170,12 @@ public class HttpState {
             if (request.matches("GET", PATH_PREFIX + "/cassettes", "/cassettes")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesGet()), true);
+                }
+                return true;
+            }
+            if (request.matches("GET", PATH_PREFIX + "/breakpoint/matchers", "/breakpoint/matchers")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleBreakpointMatcherList()), true);
                 }
                 return true;
             }
@@ -4066,6 +4101,153 @@ public class HttpState {
             String message = String.valueOf(e.getMessage());
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to verify async messages: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    // --- breakpoint matcher control endpoints ---
+
+    private HttpResponse handleBreakpointMatcherRegister(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with 'httpRequest' and 'phases' fields\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+
+            // validate httpRequest
+            com.fasterxml.jackson.databind.JsonNode httpRequestNode = node.get("httpRequest");
+            if (httpRequestNode == null || httpRequestNode.isNull() || httpRequestNode.isMissingNode()
+                || (httpRequestNode.isObject() && httpRequestNode.isEmpty())) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'httpRequest' field is required and must not be empty\"}", MediaType.JSON_UTF_8);
+            }
+
+            // validate phases
+            com.fasterxml.jackson.databind.JsonNode phasesNode = node.get("phases");
+            if (phasesNode == null || phasesNode.isNull() || phasesNode.isMissingNode() || !phasesNode.isArray() || phasesNode.isEmpty()) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'phases' field is required and must be a non-empty array\"}", MediaType.JSON_UTF_8);
+            }
+
+            java.util.Set<org.mockserver.mock.breakpoint.BreakpointPhase> phases = java.util.EnumSet.noneOf(org.mockserver.mock.breakpoint.BreakpointPhase.class);
+            for (com.fasterxml.jackson.databind.JsonNode phaseElement : phasesNode) {
+                String phaseName = phaseElement.asText(null);
+                if (isBlank(phaseName)) {
+                    return response().withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":\"each element in 'phases' must be a non-empty string\"}", MediaType.JSON_UTF_8);
+                }
+                try {
+                    phases.add(org.mockserver.mock.breakpoint.BreakpointPhase.valueOf(phaseName));
+                } catch (IllegalArgumentException e) {
+                    return response().withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":\"unknown phase '" + phaseName.replace("\"", "'") + "'; valid phases are: "
+                            + java.util.Arrays.toString(org.mockserver.mock.breakpoint.BreakpointPhase.values()) + "\"}", MediaType.JSON_UTF_8);
+                }
+            }
+
+            // deserialize the request matcher
+            RequestDefinition requestMatcher = getRequestDefinitionSerializer().deserialize(objectMapper.writeValueAsString(httpRequestNode));
+
+            // register
+            String id = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
+                .register(requestMatcher, phases, configuration, mockServerLogger);
+
+            // build response
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("id", id);
+            com.fasterxml.jackson.databind.node.ArrayNode phasesArray = objectMapper.createArrayNode();
+            for (org.mockserver.mock.breakpoint.BreakpointPhase phase : phases) {
+                phasesArray.add(phase.name());
+            }
+            result.set("phases", phasesArray);
+
+            return response().withStatusCode(CREATED.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleBreakpointMatcherList() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.breakpoint.BreakpointMatcherRegistry registry = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance();
+            com.fasterxml.jackson.databind.node.ArrayNode matchersArray = objectMapper.createArrayNode();
+            for (org.mockserver.mock.breakpoint.BreakpointMatcher matcher : registry.entries()) {
+                com.fasterxml.jackson.databind.node.ObjectNode matcherNode = objectMapper.createObjectNode();
+                matcherNode.put("id", matcher.getId());
+
+                // serialize the request matcher
+                String requestJson = getRequestDefinitionSerializer().serialize(true, matcher.getRequestMatcher());
+                matcherNode.set("httpRequest", objectMapper.readTree(requestJson));
+
+                com.fasterxml.jackson.databind.node.ArrayNode phasesArray = objectMapper.createArrayNode();
+                for (org.mockserver.mock.breakpoint.BreakpointPhase phase : matcher.getPhases()) {
+                    phasesArray.add(phase.name());
+                }
+                matcherNode.set("phases", phasesArray);
+                matchersArray.add(matcherNode);
+            }
+
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.set("matchers", matchersArray);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleBreakpointMatcherRemove(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required with an 'id' field\"}", MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String id = node.path("id").asText(null);
+            if (isBlank(id)) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'id' field is required\"}", MediaType.JSON_UTF_8);
+            }
+
+            boolean removed = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().remove(id);
+            if (!removed) {
+                com.fasterxml.jackson.databind.node.ObjectNode errNode = objectMapper.createObjectNode();
+                errNode.put("error", "breakpoint matcher not found");
+                errNode.put("id", id);
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errNode), MediaType.JSON_UTF_8);
+            }
+
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "removed");
+            result.put("id", id);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
+        }
+    }
+
+    private HttpResponse handleBreakpointMatcherClear() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.breakpoint.BreakpointMatcherRegistry registry = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance();
+            int count = registry.size();
+            registry.clear();
+
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "cleared");
+            result.put("count", count);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return breakpointErrorResponse(objectMapper, e);
         }
     }
 
