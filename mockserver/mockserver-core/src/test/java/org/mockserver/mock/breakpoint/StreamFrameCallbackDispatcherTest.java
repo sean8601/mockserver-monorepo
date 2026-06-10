@@ -50,7 +50,19 @@ public class StreamFrameCallbackDispatcherTest {
 
     @Before
     public void setUp() {
-        configuration = Configuration.configuration();
+        // Clean all breakpoint singletons FIRST, before creating any test infrastructure
+        BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
+        // Reset static config properties in case a prior test class changed them
+        org.mockserver.configuration.ConfigurationProperties.breakpointTimeoutMillis(30_000);
+        org.mockserver.configuration.ConfigurationProperties.breakpointMaxHeld(50);
+
+        configuration = Configuration.configuration()
+            .breakpointTimeoutMillis(30_000L)
+            .breakpointMaxHeld(50);
         logger = new MockServerLogger();
         webSocketClientRegistry = new WebSocketClientRegistry(configuration, logger);
         serializer = new WebSocketMessageSerializer(logger);
@@ -64,12 +76,6 @@ public class StreamFrameCallbackDispatcherTest {
 
         // Drain the registration confirmation message
         clientChannel.readOutbound();
-
-        // Clean registries
-        BreakpointMatcherRegistry.getInstance().clear();
-        BreakpointRegistry.getInstance().reset();
-        StreamFrameBreakpointRegistry.getInstance().reset();
-        dispatcher.reset();
     }
 
     @After
@@ -77,6 +83,7 @@ public class StreamFrameCallbackDispatcherTest {
         BreakpointMatcherRegistry.getInstance().clear();
         BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
         dispatcher.reset();
         if (clientChannel.isOpen()) {
             clientChannel.close();

@@ -16,10 +16,9 @@ import java.util.Set;
  * (via {@link org.mockserver.matchers.MatcherBuilder#transformsToMatcher(RequestDefinition)})
  * and reused for every {@code findMatch} call — no allocation on the hot path.
  *
- * <p>When {@link #clientId} is non-null, matched exchanges are dispatched to
- * the owning client over the callback WebSocket instead of being parked in the
- * REST-based {@code BreakpointRegistry}. When null, the existing REST-park
- * behaviour is preserved.
+ * <p>The {@link #clientId} identifies the owning callback WebSocket client.
+ * It is required -- matched exchanges are always dispatched over the callback
+ * WebSocket to the owning client for interactive resolution.
  *
  * <p>Value-equality is on {@link #id} only (UUID assigned at registration).
  */
@@ -63,8 +62,7 @@ public class BreakpointMatcher {
     }
 
     /**
-     * The callback WebSocket client id that owns this breakpoint, or {@code null}
-     * if the breakpoint should be resolved via the REST-park path.
+     * The callback WebSocket client id that owns this breakpoint (required).
      */
     public String getClientId() {
         return clientId;

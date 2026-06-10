@@ -1,6 +1,7 @@
 package org.mockserver.mock.breakpoint;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.model.HttpRequest;
@@ -18,9 +19,22 @@ import static org.mockserver.model.HttpResponse.response;
 
 public class BreakpointRegistryTest {
 
+    @Before
+    public void setup() {
+        resetAllBreakpointSingletons();
+    }
+
     @After
     public void cleanup() {
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
+        BreakpointMatcherRegistry.getInstance().clear();
         BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
     }
 
     private Configuration configWith(long timeout, int maxHeld) {
@@ -152,7 +166,7 @@ public class BreakpointRegistryTest {
     public void shouldReportAgeInPausedExchange() throws Exception {
         Configuration config = configWith(30000, 50);
         PausedExchange exchange = BreakpointRegistry.getInstance().pause("corr-age", request(), null, config);
-        Thread.sleep(50);
+        Thread.sleep(200);
         assertThat("ageMillis should be positive", exchange.ageMillis(), greaterThanOrEqualTo(40L));
 
         // cleanup

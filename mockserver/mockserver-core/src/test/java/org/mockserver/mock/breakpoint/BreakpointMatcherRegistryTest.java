@@ -1,6 +1,7 @@
 package org.mockserver.mock.breakpoint;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
@@ -23,9 +24,22 @@ public class BreakpointMatcherRegistryTest {
     private final Configuration configuration = Configuration.configuration();
     private final MockServerLogger logger = new MockServerLogger();
 
+    @Before
+    public void setup() {
+        resetAllBreakpointSingletons();
+    }
+
     @After
     public void cleanup() {
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
         BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
     }
 
     // --- registration and findMatch ---

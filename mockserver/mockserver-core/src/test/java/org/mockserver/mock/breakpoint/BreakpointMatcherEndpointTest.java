@@ -1,7 +1,9 @@
 package org.mockserver.mock.breakpoint;
 
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
@@ -23,20 +25,56 @@ import static org.mockserver.model.HttpRequest.request;
  */
 public class BreakpointMatcherEndpointTest {
 
+    private static Configuration staticConfiguration;
+    private static HttpState staticHttpState;
+
+    @BeforeClass
+    public static void setupClass() {
+        staticConfiguration = configuration();
+        Scheduler scheduler = mock(Scheduler.class);
+        staticHttpState = new HttpState(staticConfiguration, new MockServerLogger(staticConfiguration, MockServerLogger.class), scheduler);
+    }
+
+    @AfterClass
+    public static void tearDownClass() throws Exception {
+        if (staticHttpState != null) {
+            staticHttpState.reset();
+            staticHttpState.stop();
+            staticHttpState = null;
+        }
+        // Final cleanup of all breakpoint singletons after the class.
+        // Allow async resources (Disruptor, scheduled timeouts) to settle
+        // before the next test class creates fresh singletons state.
+        Thread.sleep(100);
+        BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
+    }
+
+    // Instance references for convenience
     private Configuration configuration;
     private HttpState httpState;
 
     @Before
     public void setup() {
-        configuration = configuration();
-        Scheduler scheduler = mock(Scheduler.class);
-        httpState = new HttpState(configuration, new MockServerLogger(configuration, MockServerLogger.class), scheduler);
-        BreakpointMatcherRegistry.getInstance().clear();
+        resetAllBreakpointSingletons();
+        configuration = staticConfiguration;
+        httpState = staticHttpState;
     }
 
     @After
     public void cleanup() {
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
         BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
     }
 
     private static class FakeResponseWriter extends ResponseWriter {
@@ -59,7 +97,7 @@ public class BreakpointMatcherEndpointTest {
         FakeResponseWriter responseWriter = new FakeResponseWriter();
         HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
             .withMethod("PUT")
-            .withBody("{\"httpRequest\":{\"path\":\"/api/test\"},\"phases\":[\"REQUEST\"]}");
+            .withBody("{\"httpRequest\":{\"path\":\"/api/test\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
         httpState.handle(registerRequest, responseWriter, false);
 
         assertThat(responseWriter.response, is(notNullValue()));
@@ -75,7 +113,7 @@ public class BreakpointMatcherEndpointTest {
         FakeResponseWriter responseWriter = new FakeResponseWriter();
         HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
             .withMethod("PUT")
-            .withBody("{\"httpRequest\":{\"method\":\"POST\"},\"phases\":[\"REQUEST\",\"RESPONSE\"]}");
+            .withBody("{\"httpRequest\":{\"method\":\"POST\"},\"phases\":[\"REQUEST\",\"RESPONSE\"],\"clientId\":\"test-client\"}");
         httpState.handle(registerRequest, responseWriter, false);
 
         assertThat(responseWriter.response.getStatusCode(), is(201));
@@ -92,7 +130,7 @@ public class BreakpointMatcherEndpointTest {
         FakeResponseWriter responseWriter = new FakeResponseWriter();
         HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
             .withMethod("PUT")
-            .withBody("{\"phases\":[\"REQUEST\"]}");
+            .withBody("{\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
         httpState.handle(registerRequest, responseWriter, false);
 
         assertThat(responseWriter.response.getStatusCode(), is(400));
@@ -104,7 +142,7 @@ public class BreakpointMatcherEndpointTest {
         FakeResponseWriter responseWriter = new FakeResponseWriter();
         HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
             .withMethod("PUT")
-            .withBody("{\"httpRequest\":{},\"phases\":[\"REQUEST\"]}");
+            .withBody("{\"httpRequest\":{},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
         httpState.handle(registerRequest, responseWriter, false);
 
         assertThat(responseWriter.response.getStatusCode(), is(400));
@@ -157,13 +195,37 @@ public class BreakpointMatcherEndpointTest {
         assertThat(responseWriter.response.getStatusCode(), is(400));
     }
 
+    @Test
+    public void shouldReturn400WhenMissingClientId() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/test\"},\"phases\":[\"REQUEST\"]}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("clientId"));
+    }
+
+    @Test
+    public void shouldReturn400WhenBlankClientId() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/test\"},\"phases\":[\"REQUEST\"],\"clientId\":\"\"}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("clientId"));
+    }
+
     // --- list (PUT and GET) ---
 
     @Test
     public void shouldListRegisteredMatchers() {
         // register two matchers
-        registerMatcher("{\"httpRequest\":{\"path\":\"/a\"},\"phases\":[\"REQUEST\"]}");
-        registerMatcher("{\"httpRequest\":{\"path\":\"/b\"},\"phases\":[\"RESPONSE\",\"RESPONSE_STREAM\"]}");
+        registerMatcher("{\"httpRequest\":{\"path\":\"/a\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
+        registerMatcher("{\"httpRequest\":{\"path\":\"/b\"},\"phases\":[\"RESPONSE\",\"RESPONSE_STREAM\"],\"clientId\":\"test-client\"}");
 
         // list via PUT
         FakeResponseWriter responseWriter = new FakeResponseWriter();
@@ -182,7 +244,7 @@ public class BreakpointMatcherEndpointTest {
 
     @Test
     public void shouldListViaGet() {
-        registerMatcher("{\"httpRequest\":{\"path\":\"/get-test\"},\"phases\":[\"INBOUND_STREAM\"]}");
+        registerMatcher("{\"httpRequest\":{\"path\":\"/get-test\"},\"phases\":[\"INBOUND_STREAM\"],\"clientId\":\"test-client\"}");
 
         FakeResponseWriter responseWriter = new FakeResponseWriter();
         HttpRequest getRequest = request("/mockserver/breakpoint/matchers").withMethod("GET");
@@ -197,7 +259,7 @@ public class BreakpointMatcherEndpointTest {
 
     @Test
     public void shouldRemoveMatcher() {
-        String id = registerMatcherAndGetId("{\"httpRequest\":{\"path\":\"/removable\"},\"phases\":[\"REQUEST\"]}");
+        String id = registerMatcherAndGetId("{\"httpRequest\":{\"path\":\"/removable\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
         assertThat(BreakpointMatcherRegistry.getInstance().size(), is(1));
 
         FakeResponseWriter responseWriter = new FakeResponseWriter();
@@ -226,7 +288,7 @@ public class BreakpointMatcherEndpointTest {
 
     @Test
     public void shouldReturn404OnReRemove() {
-        String id = registerMatcherAndGetId("{\"httpRequest\":{\"path\":\"/remove-twice\"},\"phases\":[\"REQUEST\"]}");
+        String id = registerMatcherAndGetId("{\"httpRequest\":{\"path\":\"/remove-twice\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
 
         // first remove succeeds
         FakeResponseWriter rw1 = new FakeResponseWriter();
@@ -245,8 +307,8 @@ public class BreakpointMatcherEndpointTest {
 
     @Test
     public void shouldClearAllMatchers() {
-        registerMatcher("{\"httpRequest\":{\"path\":\"/x\"},\"phases\":[\"REQUEST\"]}");
-        registerMatcher("{\"httpRequest\":{\"path\":\"/y\"},\"phases\":[\"RESPONSE\"]}");
+        registerMatcher("{\"httpRequest\":{\"path\":\"/x\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
+        registerMatcher("{\"httpRequest\":{\"path\":\"/y\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\"}");
         assertThat(BreakpointMatcherRegistry.getInstance().size(), is(2));
 
         FakeResponseWriter responseWriter = new FakeResponseWriter();
@@ -263,7 +325,7 @@ public class BreakpointMatcherEndpointTest {
 
     @Test
     public void resetShouldClearMatcherRegistry() {
-        registerMatcher("{\"httpRequest\":{\"path\":\"/reset-test\"},\"phases\":[\"REQUEST\"]}");
+        registerMatcher("{\"httpRequest\":{\"path\":\"/reset-test\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
         assertThat(BreakpointMatcherRegistry.getInstance().size(), is(1));
 
         // trigger reset
@@ -279,7 +341,7 @@ public class BreakpointMatcherEndpointTest {
     @Test
     public void shouldSupportFullLifecycle() {
         // register
-        String id = registerMatcherAndGetId("{\"httpRequest\":{\"path\":\"/lifecycle\"},\"phases\":[\"REQUEST\",\"RESPONSE\"]}");
+        String id = registerMatcherAndGetId("{\"httpRequest\":{\"path\":\"/lifecycle\"},\"phases\":[\"REQUEST\",\"RESPONSE\"],\"clientId\":\"test-client\"}");
         assertThat(BreakpointMatcherRegistry.getInstance().size(), is(1));
 
         // list shows it

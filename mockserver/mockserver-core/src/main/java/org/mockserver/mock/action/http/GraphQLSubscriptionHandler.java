@@ -195,30 +195,19 @@ public class GraphQLSubscriptionHandler extends SimpleChannelInboundHandler<WebS
 
             byte[] frameBytes = text.getBytes(StandardCharsets.UTF_8);
 
-            // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+            // WS-callback dispatch (clientId is always present — required since 7b)
             final java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> decisionFuture;
-            if (inboundUseWsDispatch) {
-                int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
-                java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> wsFuture =
-                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                        inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
-                        org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
-                        frameBytes, "GQL-INBOUND", "/", webSocketClientRegistry, configuration, null);
-                if (wsFuture != null) {
-                    decisionFuture = wsFuture;
-                } else {
-                    processText(ctx, text);
-                    return;
-                }
+            int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
+            java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.StreamFrameDecision> wsFuture =
+                org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                    inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                    org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
+                    frameBytes, "GQL-INBOUND", "/", webSocketClientRegistry, configuration, null);
+            if (wsFuture != null) {
+                decisionFuture = wsFuture;
             } else {
-                PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
-                    .pauseFrame(inboundStreamId, frameBytes, "GQL-INBOUND", "/",
-                        configuration, PausedStreamFrame.Direction.INBOUND);
-                if (paused == null) {
-                    processText(ctx, text);
-                    return;
-                }
-                decisionFuture = paused.getDecisionFuture();
+                processText(ctx, text);
+                return;
             }
 
             // Apply backpressure

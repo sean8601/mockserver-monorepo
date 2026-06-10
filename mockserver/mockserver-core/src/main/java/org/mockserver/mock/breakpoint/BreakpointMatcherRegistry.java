@@ -40,7 +40,9 @@ public class BreakpointMatcherRegistry {
     }
 
     /**
-     * Registers a new breakpoint matcher (REST-park resolution, no owner client).
+     * Registers a new breakpoint matcher without an owner client (for tests only).
+     * In production, the REST endpoint requires a clientId; this overload exists
+     * for unit tests that exercise the registry directly.
      *
      * @param matcher       the request definition to match against
      * @param phases        the set of phases at which matching exchanges should break
@@ -54,15 +56,15 @@ public class BreakpointMatcherRegistry {
     }
 
     /**
-     * Registers a new breakpoint matcher with an optional owner clientId.
+     * Registers a new breakpoint matcher with a required owner clientId.
      *
-     * <p>When {@code clientId} is non-null, matched exchanges are dispatched over
-     * the callback WebSocket to that client for interactive resolution. When null,
-     * the existing REST-park behaviour is used.
+     * <p>The {@code clientId} identifies the callback WebSocket client that owns
+     * this breakpoint. Matched exchanges are dispatched over the callback WebSocket
+     * to that client for interactive resolution.
      *
      * @param matcher       the request definition to match against
      * @param phases        the set of phases at which matching exchanges should break
-     * @param clientId      the callback WS client that owns this breakpoint, or null
+     * @param clientId      the callback WS client that owns this breakpoint (required in production)
      * @param configuration the active server configuration (passed to MatcherBuilder)
      * @param logger        the server logger (passed to MatcherBuilder)
      * @return the assigned UUID id for the registered breakpoint

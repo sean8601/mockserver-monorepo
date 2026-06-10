@@ -147,44 +147,26 @@ public class NettyResponseWriter extends ResponseWriter {
                 byte[] chunkBytes = new byte[chunk.readableBytes()];
                 chunk.getBytes(chunk.readerIndex(), chunkBytes);
 
-                // Obtain the decision future — either from WS-callback dispatch or REST-park registry
+                // WS-callback dispatch (clientId is always present — required since 7b)
                 final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
-
-                if (useWsDispatch) {
-                    // WS-callback path: dispatch the frame to the owning client
-                    // Sequence numbers: use a simple counter per stream (the dispatcher does
-                    // not enforce ordering — that is the caller's responsibility via backpressure)
-                    int seq = StreamFrameBreakpointRegistry.getInstance()
-                        .nextSequenceNumber(streamId);
-                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
-                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                            breakpointClientId, streamId, seq,
-                            PausedStreamFrame.Direction.OUTBOUND,
-                            org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
-                            chunkBytes, reqMethod, reqPath,
-                            wsRegistry,
-                            configuration, mockServerLogger
-                        );
-                    if (wsFuture == null) {
-                        // Cap reached or client not connected — write immediately
-                        DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
-                        ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
-                        return;
-                    }
-                    decisionFuture = wsFuture;
-                } else {
-                    // REST-park path (existing)
-                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                        .pauseFrame(streamId, chunkBytes, reqMethod, reqPath, configuration);
-
-                    if (pausedFrame == null) {
-                        // Cap reached — write the frame immediately (no breakpoint)
-                        DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
-                        ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
-                        return;
-                    }
-                    decisionFuture = pausedFrame.getDecisionFuture();
+                int seq = StreamFrameBreakpointRegistry.getInstance()
+                    .nextSequenceNumber(streamId);
+                java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                        breakpointClientId, streamId, seq,
+                        PausedStreamFrame.Direction.OUTBOUND,
+                        org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                        chunkBytes, reqMethod, reqPath,
+                        wsRegistry,
+                        configuration, mockServerLogger
+                    );
+                if (wsFuture == null) {
+                    // Cap reached or client not connected — write immediately
+                    DefaultHttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(chunk));
+                    ctx.writeAndFlush(content).addListener(future -> streamingBody.requestMore());
+                    return;
                 }
+                decisionFuture = wsFuture;
 
                 // Frame is parked (either in registry or dispatched via WS). The original
                 // chunk ByteBuf is NOT retained — we copied the bytes above. The chunk will

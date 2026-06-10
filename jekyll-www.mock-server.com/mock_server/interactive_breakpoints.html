@@ -117,6 +117,7 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
 <p>Register with <span class="inline_code">PUT /mockserver/breakpoint/matcher</span>:</p>
 
 <pre class="prettyprint lang-bash code"><code class="code"># Pause all forwarded GET /api/users requests — hold at both request and response phases
+# clientId must be the id of a connected callback-WebSocket client
 curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
   -H "Content-Type: application/json" \
   -d '{
@@ -124,10 +125,11 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
       "method": "GET",
       "path": "/api/users"
     },
-    "phases": ["REQUEST", "RESPONSE"]
+    "phases": ["REQUEST", "RESPONSE"],
+    "clientId": "my-ws-client-id"
   }'
 
-# Response: { "id": "a1b2c3d4-...", "phases": ["REQUEST", "RESPONSE"] }
+# Response: { "id": "a1b2c3d4-...", "phases": ["REQUEST", "RESPONSE"], "clientId": "my-ws-client-id" }
 </code></pre>
 
 <p>
@@ -144,11 +146,12 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
     is called.
 </p>
 
-<h3>Registering with a clientId for callback-WebSocket resolution</h3>
+<h3>The required clientId field</h3>
 
 <p>
-    Add a <span class="inline_code">clientId</span> field to route paused items directly to a connected
-    callback-WebSocket client (a language client or the dashboard) instead of the REST-park queue:
+    Every breakpoint matcher registration requires a <span class="inline_code">clientId</span> field
+    that identifies the callback-WebSocket client (a language client or the dashboard) to
+    dispatch paused items to for interactive resolution:
 </p>
 
 <pre class="prettyprint lang-bash code"><code class="code">curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
@@ -161,9 +164,8 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
 </code></pre>
 
 <p>
-    When <span class="inline_code">clientId</span> is present, the server dispatches the paused item over the
-    callback WebSocket to that client for interactive resolution. When absent, the item is parked in the
-    REST-based queue (<span class="inline_code">GET /mockserver/breakpoint</span>).
+    The server dispatches the paused item over the callback WebSocket to that client
+    for interactive resolution. Omitting <span class="inline_code">clientId</span> returns a 400 error.
 </p>
 
 <h3>Matcher management endpoints</h3>
@@ -176,13 +178,13 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
         <tr>
             <td>PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matcher</span></td>
-            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "..."}</span>.
+            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "..."}</span> (clientId is required).
                 Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td>
         </tr>
         <tr>
             <td>GET / PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matchers</span></td>
-            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases, clientId?}]}</span>.</td>
+            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases, clientId}]}</span>.</td>
         </tr>
         <tr>
             <td>PUT</td>
@@ -296,71 +298,6 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
     valid gRPC length-prefixed frame (1-byte compressed flag + 4-byte big-endian message length + message bytes).
     The breakpoint engine passes bytes through opaquely and does not re-frame the content.
 </p>
-
-<a id="rest_resolution" class="anchor" href="#rest_resolution">&nbsp;</a>
-<h2>Resolving via the REST API</h2>
-
-<p>
-    When no <span class="inline_code">clientId</span> is set on a matcher, paused exchanges are parked in
-    the REST-based queue. This is useful for scripted tooling or when you want to poll and resolve breakpoints
-    without maintaining a persistent WebSocket connection.
-</p>
-
-<h3>Request/response exchanges</h3>
-
-<pre class="prettyprint lang-bash code"><code class="code"># List all currently paused exchanges
-curl -s http://localhost:1080/mockserver/breakpoint
-
-# Continue unchanged
-curl -X PUT http://localhost:1080/mockserver/breakpoint/continue \
-  -d '{"id": "pause-id-from-list"}'
-
-# Modify — add an Authorization header to the outbound request
-curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
-  -d '{
-    "id": "pause-id-from-list",
-    "httpRequest": {
-      "headers": { "Authorization": ["Bearer test-token"] }
-    }
-  }'
-
-# Modify a response
-curl -X PUT http://localhost:1080/mockserver/breakpoint/modify \
-  -d '{
-    "id": "pause-id-from-list",
-    "httpResponse": { "statusCode": 200, "body": "{\"ok\": true}" }
-  }'
-
-# Abort — return an error to the client without forwarding
-curl -X PUT http://localhost:1080/mockserver/breakpoint/abort \
-  -d '{"id": "pause-id-from-list"}'
-</code></pre>
-
-<h3>Stream frames</h3>
-
-<pre class="prettyprint lang-bash code"><code class="code"># List all held stream frames
-curl -s http://localhost:1080/mockserver/breakpoint/streams
-
-# Continue a frame unchanged
-curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/continue \
-  -d '{"id": "frame-id"}'
-
-# Modify a frame (replacement body as plain text; server Base64-encodes if needed)
-curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/modify \
-  -d '{"id": "frame-id", "body": "data: modified event\n\n"}'
-
-# Drop a frame
-curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/drop \
-  -d '{"id": "frame-id"}'
-
-# Inject an extra frame after the current one
-curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/inject \
-  -d '{"id": "frame-id", "body": "data: injected event\n\n"}'
-
-# Close the stream at this frame
-curl -X PUT http://localhost:1080/mockserver/breakpoint/stream/close \
-  -d '{"id": "frame-id"}'
-</code></pre>
 
 <a id="dashboard" class="anchor" href="#dashboard">&nbsp;</a>
 <h2>Dashboard UI</h2>

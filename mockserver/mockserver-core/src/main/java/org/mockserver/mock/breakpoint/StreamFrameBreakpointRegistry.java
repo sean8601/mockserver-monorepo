@@ -109,14 +109,17 @@ public class StreamFrameBreakpointRegistry {
         int seq = seqCounter.getAndIncrement();
         String frameId = streamId + "-frame-" + seq;
 
-        // Ensure the resumable counter exists for this stream
-        nextResumable.computeIfAbsent(streamId, k -> new AtomicInteger(0));
+        // Ensure the resumable counter exists for this stream; capture the reference
+        // so the whenComplete callback only advances THIS counter instance (not a
+        // replacement created by a subsequent reset() + re-creation of the same streamId).
+        AtomicInteger resumableRef = nextResumable.computeIfAbsent(streamId, k -> new AtomicInteger(0));
 
         PausedStreamFrame frame = new PausedStreamFrame(frameId, streamId, seq, chunkBytes, requestMethod, requestPath, direction);
         heldFrames.put(frameId, frame);
 
-        // Track in per-stream list
-        streamFrameIds.computeIfAbsent(streamId, k -> new CopyOnWriteArrayList<>()).add(frameId);
+        // Track in per-stream list; capture reference for the same identity-check reason.
+        CopyOnWriteArrayList<String> frameIdsRef = streamFrameIds.computeIfAbsent(streamId, k -> new CopyOnWriteArrayList<>());
+        frameIdsRef.add(frameId);
 
         // Schedule timeout auto-continue
         long timeoutMillis = configuration.breakpointTimeoutMillis();
@@ -126,22 +129,21 @@ public class StreamFrameBreakpointRegistry {
             }
         }, timeoutMillis, TimeUnit.MILLISECONDS);
 
-        // When the decision is resolved (by API call or timeout), clean up
+        // When the decision is resolved (by API call or timeout), clean up.
+        // All captured references (frame, frameIdsRef, resumableRef) are identity-pinned
+        // to the exact objects created during THIS pauseFrame() call. If reset() clears
+        // the maps and a new pauseFrame() re-creates entries for the same streamId,
+        // these callbacks operate on the OLD objects (which are no longer in the maps)
+        // and have no effect on the new entries.
         frame.getDecisionFuture().whenComplete((decision, throwable) -> {
             timeoutHandle.cancel(false);
-            heldFrames.remove(frameId);
-            CopyOnWriteArrayList<String> ids = streamFrameIds.get(streamId);
-            if (ids != null) {
-                ids.remove(frameId);
-                if (ids.isEmpty()) {
-                    streamFrameIds.remove(streamId, ids);
-                }
+            heldFrames.remove(frameId, frame);
+            frameIdsRef.remove(frameId);
+            if (frameIdsRef.isEmpty()) {
+                streamFrameIds.remove(streamId, frameIdsRef);
             }
-            // Advance the resumable counter
-            AtomicInteger resumable = nextResumable.get(streamId);
-            if (resumable != null) {
-                resumable.compareAndSet(seq, seq + 1);
-            }
+            // Advance the resumable counter only if this is still the active instance
+            resumableRef.compareAndSet(seq, seq + 1);
         });
 
         return frame;
@@ -321,13 +323,17 @@ public class StreamFrameBreakpointRegistry {
      * Called on server reset.
      */
     public void reset() {
-        while (!heldFrames.isEmpty()) {
-            for (PausedStreamFrame frame : heldFrames.values()) {
-                frame.getDecisionFuture().complete(StreamFrameDecision.continueFrame());
-            }
-        }
+        // Snapshot and clear all maps BEFORE completing futures, so that
+        // whenComplete callbacks see empty maps and are no-ops. The callbacks
+        // use identity-pinned captured references and cannot corrupt new entries.
+        List<PausedStreamFrame> snapshot = new ArrayList<>(heldFrames.values());
+        heldFrames.clear();
         streamSequences.clear();
         nextResumable.clear();
+        streamFrameIds.clear();
+        for (PausedStreamFrame frame : snapshot) {
+            frame.getDecisionFuture().complete(StreamFrameDecision.continueFrame());
+        }
     }
 
     /**

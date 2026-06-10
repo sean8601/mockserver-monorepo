@@ -47,12 +47,20 @@ public class InboundBreakpointTest {
     @Before
     public void setup() {
         registry = StreamFrameBreakpointRegistry.getInstance();
-        registry.reset();
+        resetAllBreakpointSingletons();
     }
 
     @After
     public void cleanup() {
-        registry.reset();
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
+        BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
     }
 
     private Configuration inboundOnConfig() {
@@ -258,7 +266,7 @@ public class InboundBreakpointTest {
         // Resolve f0 first
         assertThat(registry.resolveContinue(f0.getFrameId()), is(true));
         f0.getDecisionFuture().get(1, TimeUnit.SECONDS);
-        Thread.sleep(50);
+        Thread.sleep(200);
 
         // Now f1 is resolvable
         assertThat(registry.resolveContinue(f1.getFrameId()), is(true));

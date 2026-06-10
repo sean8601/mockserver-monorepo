@@ -765,28 +765,14 @@ public class HttpActionHandler {
                                     ? scheduler.getExecutorService()
                                     : Runnable::run;
 
-                                // Branch: WS-callback dispatch (clientId present) vs REST-park (clientId absent)
-                                java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.BreakpointDecision> decisionFuture = null;
-                                if (requestBreakpoint.getClientId() != null) {
-                                    decisionFuture = org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchRequest(
+                                // WS-callback dispatch (clientId is always present — required since 7b)
+                                java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.BreakpointDecision> decisionFuture =
+                                    org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchRequest(
                                         requestBreakpoint.getClientId(), requestBreakpoint.getId(), request,
                                         httpStateHandler.getWebSocketClientRegistry(),
                                         configuration, mockServerLogger
                                     );
-                                    // null means cap reached or client disconnected — fall through to normal forward
-                                }
-
-                                if (decisionFuture == null && requestBreakpoint.getClientId() == null) {
-                                    // REST-park path (existing behaviour)
-                                    org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
-                                    org.mockserver.mock.breakpoint.PausedExchange pausedExchange = breakpointRegistry.pause(
-                                        request.getLogCorrelationId(), request, null, configuration
-                                    );
-                                    if (pausedExchange != null) {
-                                        decisionFuture = pausedExchange.getDecisionFuture();
-                                    }
-                                    // null means cap reached — fall through to normal forward
-                                }
+                                // null means cap reached or client disconnected — fall through to normal forward
 
                                 if (decisionFuture != null) {
                                     if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -2347,10 +2333,9 @@ public class HttpActionHandler {
 
     /**
      * Attempts to hold a non-streaming response at a breakpoint (RESPONSE phase).
-     * Branches between WS-callback dispatch and REST-park depending on whether the
-     * matched breakpoint has a clientId.
+     * Dispatches over the callback WebSocket to the owning client.
      *
-     * @param breakpoint          the matched breakpoint (non-null)
+     * @param breakpoint          the matched breakpoint (non-null; clientId always present)
      * @param request             the original request
      * @param response            the upstream response to hold
      * @param expectationId       matched expectation id, or null
@@ -2370,27 +2355,14 @@ public class HttpActionHandler {
         java.util.function.Consumer<HttpResponse> onResolved,
         Runnable postProcessor
     ) {
-        java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.BreakpointDecision> decisionFuture = null;
-
-        if (breakpoint.getClientId() != null) {
-            // WS-callback dispatch path
-            decisionFuture = org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchResponse(
+        // WS-callback dispatch (clientId is always present — required since 7b)
+        java.util.concurrent.CompletableFuture<org.mockserver.mock.breakpoint.BreakpointDecision> decisionFuture =
+            org.mockserver.mock.breakpoint.BreakpointCallbackDispatcher.getInstance().dispatchResponse(
                 breakpoint.getClientId(), breakpoint.getId(), request, response,
                 httpStateHandler.getWebSocketClientRegistry(),
                 configuration, mockServerLogger
             );
-            // null means cap reached or client disconnected — fall through
-        } else {
-            // REST-park path (existing behaviour)
-            org.mockserver.mock.breakpoint.BreakpointRegistry breakpointRegistry = org.mockserver.mock.breakpoint.BreakpointRegistry.getInstance();
-            org.mockserver.mock.breakpoint.PausedExchange responsePaused = breakpointRegistry.pauseResponse(
-                request.getLogCorrelationId(), request, response, expectationId, configuration
-            );
-            if (responsePaused != null) {
-                decisionFuture = responsePaused.getDecisionFuture();
-            }
-            // null means cap reached — fall through
-        }
+        // null means cap reached or client disconnected — fall through
 
         if (decisionFuture != null) {
             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -2405,9 +2377,6 @@ public class HttpActionHandler {
                 );
             }
             // Chain the CONTINUE/MODIFY/ABORT decision onto the continuation executor.
-            // decisionFuture is either the WS-callback dispatch future or the REST-park
-            // PausedExchange future — both are plain CompletableFuture<BreakpointDecision>,
-            // so the handling is identical regardless of transport.
             final HttpResponse capturedResponse = response;
             decisionFuture.thenAcceptAsync(decision -> {
                 try {

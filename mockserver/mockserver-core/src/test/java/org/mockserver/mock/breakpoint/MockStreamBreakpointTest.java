@@ -27,7 +27,7 @@ public class MockStreamBreakpointTest {
 
     @Before
     public void setup() {
-        StreamFrameBreakpointRegistry.getInstance().reset();
+        resetAllBreakpointSingletons();
         configuration = Configuration.configuration()
             .breakpointTimeoutMillis(30000L)
             .breakpointMaxHeld(50);
@@ -35,7 +35,16 @@ public class MockStreamBreakpointTest {
 
     @After
     public void cleanup() {
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
+        BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
+        // Allow async whenComplete callbacks from the reset-completed futures to settle
     }
 
     // --- gRPC mock stream breakpoints ---
@@ -145,7 +154,7 @@ public class MockStreamBreakpointTest {
         // Resolve f0
         assertThat(registry.resolveContinue(f0.getFrameId()), is(true));
         f0.getDecisionFuture().get(1, TimeUnit.SECONDS);
-        Thread.sleep(50);
+        Thread.sleep(200);
 
         // Now f1 can be resolved
         assertThat(registry.resolveContinue(f1.getFrameId()), is(true));
@@ -333,7 +342,7 @@ public class MockStreamBreakpointTest {
         // Resolve f0
         assertThat(registry.resolveContinue(f0.getFrameId()), is(true));
         f0.getDecisionFuture().get(1, TimeUnit.SECONDS);
-        Thread.sleep(50);
+        Thread.sleep(200);
 
         // Now f1 can be resolved
         assertThat(registry.resolveContinue(f1.getFrameId()), is(true));

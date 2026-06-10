@@ -1586,9 +1586,8 @@ paths:
         Registers a request matcher that activates breakpoints for forwarded/proxied exchanges.
         When a proxied request matches the httpRequest definition, the exchange is paused at each
         specified phase. Returns the assigned matcher id and the registered phases.
-        When clientId is provided, paused items are dispatched over the callback WebSocket
+        The clientId field is required — paused items are dispatched over the callback WebSocket
         (/_mockserver_callback_websocket) to the owning client for interactive resolution.
-        When clientId is absent, items are parked in the REST-poll queue.
       requestBody:
         required: true
         content:
@@ -1598,6 +1597,7 @@ paths:
               required:
                 - httpRequest
                 - phases
+                - clientId
               properties:
                 httpRequest:
                   $ref: "#/components/schemas/HttpRequest"
@@ -1612,9 +1612,8 @@ paths:
                 clientId:
                   type: string
                   description: >-
-                    Optional. When set, paused items are dispatched over the callback WebSocket
-                    (/_mockserver_callback_websocket) to this client id for interactive resolution.
-                    When absent, items are parked in the REST-poll queue.
+                    Required. The callback WebSocket client id to dispatch paused items to
+                    for interactive resolution. Must be a connected callback client.
       responses:
         '200':
           description: matcher registered successfully
@@ -1632,9 +1631,9 @@ paths:
                       type: string
                   clientId:
                     type: string
-                    description: echoed back when provided in the request
+                    description: echoed back from the request
         '400':
-          description: validation error (missing httpRequest, empty phases, or unknown phase value)
+          description: validation error (missing httpRequest, empty phases, unknown phase value, or missing/blank clientId)
           content:
             application/json:
               schema:
@@ -1649,7 +1648,7 @@ paths:
       summary: list all registered breakpoint matchers
       description: >-
         Returns all currently registered breakpoint matchers. Each entry includes the matcher id,
-        the httpRequest definition, the set of phases, and the clientId when present.
+        the httpRequest definition, the set of phases, and the clientId.
       responses:
         '200':
           description: list of registered matchers
@@ -1673,7 +1672,7 @@ paths:
                             type: string
                         clientId:
                           type: string
-                          description: callback WebSocket client id that owns this matcher, present only when set at registration
+                          description: callback WebSocket client id that owns this matcher (always present)
     put:
       tags:
         - control
@@ -1757,495 +1756,9 @@ paths:
                   count:
                     type: integer
                     description: number of matchers that were removed
-  /mockserver/breakpoint:
-    get:
-      tags:
-        - control
-      summary: list all currently paused (breakpointed) exchanges
-      description: >-
-        Returns a JSON object listing all exchanges currently held at a breakpoint, with each entry's
-        correlation id, phase (REQUEST or RESPONSE), age, matched expectation id (if any), a request
-        summary (method + path), and for response-phase exchanges a response summary (statusCode + reasonPhrase).
-        Requires at least one breakpoint matcher registered for the REQUEST or RESPONSE phase to have any entries.
-      responses:
-        '200':
-          description: list of paused exchanges
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pausedExchanges:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        phase:
-                          type: string
-                          enum: [REQUEST, RESPONSE]
-                        ageMillis:
-                          type: integer
-                        expectationId:
-                          type: string
-                        request:
-                          type: object
-                          properties:
-                            method:
-                              type: string
-                            path:
-                              type: string
-                        response:
-                          type: object
-                          description: present only for RESPONSE-phase exchanges
-                          properties:
-                            statusCode:
-                              type: integer
-                            reasonPhrase:
-                              type: string
-                  count:
-                    type: integer
-    put:
-      tags:
-        - control
-      summary: list all currently paused (breakpointed) exchanges (PUT variant)
-      description: >-
-        Same as GET /mockserver/breakpoint. The PUT variant exists for consistency with other
-        control-plane endpoints that use PUT for idempotent queries.
-      responses:
-        '200':
-          description: list of paused exchanges
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pausedExchanges:
-                    type: array
-                    items:
-                      type: object
-                  count:
-                    type: integer
-  /mockserver/breakpoint/continue:
-    put:
-      tags:
-        - control
-      summary: continue a paused exchange unchanged
-      description: >-
-        Resolves a breakpointed exchange as CONTINUE. For request-phase exchanges, the original
-        captured request is forwarded to its upstream target unchanged. For response-phase exchanges,
-        the original upstream response is written to the client unchanged.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-              properties:
-                id:
-                  type: string
-                  description: the correlation id of the paused exchange to continue
-      responses:
-        '200':
-          description: exchange continued successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [continued]
-                  id:
-                    type: string
-        '400':
-          description: missing or unparseable body, or missing 'id' field
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '404':
-          description: no paused exchange found with the given id
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-  /mockserver/breakpoint/modify:
-    put:
-      tags:
-        - control
-      summary: modify and continue a paused exchange
-      description: >-
-        Resolves a breakpointed exchange as MODIFY. For request-phase exchanges, provide
-        {id, httpRequest} — the replacement request is forwarded to the upstream target. For
-        response-phase exchanges, provide {id, httpResponse} — the replacement response is
-        written to the client. Exactly one of httpRequest or httpResponse must be provided.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-              properties:
-                id:
-                  type: string
-                  description: the correlation id of the paused exchange to modify
-                httpRequest:
-                  description: replacement request (request-phase exchanges only)
-                  $ref: "#/components/schemas/HttpRequest"
-                httpResponse:
-                  description: replacement response (response-phase exchanges only)
-                  $ref: "#/components/schemas/HttpResponse"
-      responses:
-        '200':
-          description: exchange modified successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [modified]
-                  id:
-                    type: string
-        '400':
-          description: missing body, missing 'id', or neither 'httpRequest' nor 'httpResponse' provided
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '404':
-          description: no paused exchange found with the given id
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-  /mockserver/breakpoint/abort:
-    put:
-      tags:
-        - control
-      summary: abort a paused exchange (return an error response to the client)
-      description: >-
-        Resolves a breakpointed exchange as ABORT. For request-phase exchanges, the request is NOT
-        forwarded to the upstream target. For response-phase exchanges, the original upstream response
-        is discarded. In both cases, the optional httpResponse is returned to the client (or a 503 if omitted).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-              properties:
-                id:
-                  type: string
-                  description: the correlation id of the paused exchange to abort
-                httpResponse:
-                  $ref: "#/components/schemas/HttpResponse"
-      responses:
-        '200':
-          description: exchange aborted successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [aborted]
-                  id:
-                    type: string
-        '400':
-          description: missing or unparseable body, or missing 'id' field
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '404':
-          description: no paused exchange found with the given id
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-  /mockserver/breakpoint/streams:
-    get:
-      tags:
-        - control
-      summary: list all currently paused stream frames
-      description: >-
-        Returns a JSON object listing all stream frames currently held at a breakpoint,
-        grouped by stream. Each stream entry includes the stream id and an array of its
-        paused frames. Each frame includes the frame id, sequence number, age, body length,
-        request method and path, direction (INBOUND/OUTBOUND), and a body preview (first
-        200 bytes as UTF-8 text). Requires at least one breakpoint matcher registered for the RESPONSE_STREAM or INBOUND_STREAM phase to have any entries.
-      responses:
-        '200':
-          description: paused stream frames grouped by stream
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  streams:
-                    type: array
-                    description: one entry per active stream that has held frames
-                    items:
-                      type: object
-                      properties:
-                        streamId:
-                          type: string
-                          description: unique identifier for the stream
-                        frames:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              frameId:
-                                type: string
-                                description: unique identifier for this frame (used in action endpoints as the 'id' field)
-                              sequenceNumber:
-                                type: integer
-                                description: monotonically increasing position within the stream
-                              ageMillis:
-                                type: integer
-                                description: milliseconds since the frame was paused
-                              bodyLength:
-                                type: integer
-                                description: byte length of the captured frame payload
-                              requestMethod:
-                                type: string
-                                description: HTTP method of the originating request (if available)
-                              requestPath:
-                                type: string
-                                description: path of the originating request (if available)
-                              direction:
-                                type: string
-                                enum: [OUTBOUND, INBOUND]
-                                description: OUTBOUND for server-to-client frames, INBOUND for client-to-server frames
-                              bodyPreview:
-                                type: string
-                                description: first 200 bytes of the frame payload decoded as UTF-8 text
-                  totalHeldFrames:
-                    type: integer
-                    description: total number of frames currently held across all streams
-  /mockserver/breakpoint/stream/continue:
-    put:
-      tags:
-        - control
-      summary: continue a paused stream frame unchanged
-      description: >-
-        Resolves a breakpointed stream frame as CONTINUE — the original captured bytes
-        are written to the client. Frames within a stream must be resolved in sequence-number order.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-              properties:
-                id:
-                  type: string
-                  description: the frame id of the paused stream frame to continue (frameId from the list response)
-      responses:
-        '200':
-          description: frame continued successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [continued]
-                  id:
-                    type: string
-        '400':
-          description: missing or unparseable body, or missing 'id' field
-        '404':
-          description: no paused frame found with the given id, or frame is not next in sequence order
-  /mockserver/breakpoint/stream/modify:
-    put:
-      tags:
-        - control
-      summary: modify and continue a paused stream frame
-      description: >-
-        Resolves a breakpointed stream frame as MODIFY — the replacement body text
-        is written to the client instead of the original captured bytes.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-                - body
-              properties:
-                id:
-                  type: string
-                  description: the frame id of the paused stream frame to modify (frameId from the list response)
-                body:
-                  type: string
-                  description: replacement frame text (plain UTF-8 string); replaces the original frame payload
-      responses:
-        '200':
-          description: frame modified successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [modified]
-                  id:
-                    type: string
-        '400':
-          description: missing body, missing 'id', or missing 'body' field
-        '404':
-          description: no paused frame found with the given id, or frame is not next in sequence order
-  /mockserver/breakpoint/stream/drop:
-    put:
-      tags:
-        - control
-      summary: drop a paused stream frame (discard without writing to client)
-      description: >-
-        Resolves a breakpointed stream frame as DROP — the frame is discarded and nothing
-        is written to the client for this frame.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-              properties:
-                id:
-                  type: string
-                  description: the frame id of the paused stream frame to drop (frameId from the list response)
-      responses:
-        '200':
-          description: frame dropped successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [dropped]
-                  id:
-                    type: string
-        '400':
-          description: missing or unparseable body, or missing 'id' field
-        '404':
-          description: no paused frame found with the given id, or frame is not next in sequence order
-  /mockserver/breakpoint/stream/inject:
-    put:
-      tags:
-        - control
-      summary: continue a paused stream frame and inject an additional frame after it
-      description: >-
-        Resolves a breakpointed stream frame as INJECT — the original captured bytes are
-        written to the client, followed by the injected frame text.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-                - body
-              properties:
-                id:
-                  type: string
-                  description: the frame id of the paused stream frame (frameId from the list response)
-                body:
-                  type: string
-                  description: additional frame text to inject after the original frame (plain UTF-8 string)
-      responses:
-        '200':
-          description: frame continued and additional frame injected
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [injected]
-                  id:
-                    type: string
-        '400':
-          description: missing body, missing 'id', or missing 'body' field
-        '404':
-          description: no paused frame found with the given id, or frame is not next in sequence order
-  /mockserver/breakpoint/stream/close:
-    put:
-      tags:
-        - control
-      summary: close a stream at the current frame
-      description: >-
-        Resolves a breakpointed stream frame as CLOSE — sends LastHttpContent and closes
-        the channel. Any subsequent paused frames for the same stream are evicted (dropped).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-              properties:
-                id:
-                  type: string
-                  description: the frame id of the paused stream frame at which to close (frameId from the list response)
-      responses:
-        '200':
-          description: stream closed at the specified frame
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [closed]
-                  id:
-                    type: string
-        '400':
-          description: missing or unparseable body, or missing 'id' field
-        '404':
-          description: no paused frame found with the given id, or frame is not next in sequence order
+  # REST resolution endpoints (/breakpoint, /breakpoint/continue|modify|abort,
+  # /breakpoint/streams, /breakpoint/stream/{continue,modify,drop,inject,close})
+  # have been removed — all breakpoint resolution is done over the callback WebSocket.
   /mockserver/chaosExperiment:
     put:
       tags:

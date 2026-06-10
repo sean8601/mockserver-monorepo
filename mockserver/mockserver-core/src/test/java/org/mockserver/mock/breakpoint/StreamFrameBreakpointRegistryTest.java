@@ -17,12 +17,20 @@ public class StreamFrameBreakpointRegistryTest {
 
     @Before
     public void setup() {
-        StreamFrameBreakpointRegistry.getInstance().reset();
+        resetAllBreakpointSingletons();
     }
 
     @After
     public void cleanup() {
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
+        BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
         StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
     }
 
     private Configuration configWith(long timeout, int maxHeld) {
@@ -134,13 +142,13 @@ public class StreamFrameBreakpointRegistryTest {
         assertThat("frame0 should be resolvable", registry.resolveContinue(frame0.getFrameId()), is(true));
         // Wait for the whenComplete callback to advance the resumable counter
         frame0.getDecisionFuture().get(1, TimeUnit.SECONDS);
-        Thread.sleep(50);
+        Thread.sleep(200);
 
         // Now frame1 is the next resumable
         assertThat("frame2 should not be resolvable before frame1", registry.resolveContinue(frame2.getFrameId()), is(false));
         assertThat("frame1 should now be resolvable", registry.resolveContinue(frame1.getFrameId()), is(true));
         frame1.getDecisionFuture().get(1, TimeUnit.SECONDS);
-        Thread.sleep(50);
+        Thread.sleep(200);
 
         // Now frame2 is the next resumable
         assertThat("frame2 should now be resolvable", registry.resolveContinue(frame2.getFrameId()), is(true));
@@ -292,7 +300,7 @@ public class StreamFrameBreakpointRegistryTest {
         Configuration config = configWith(30000, 50);
         PausedStreamFrame frame = StreamFrameBreakpointRegistry.getInstance()
             .pauseFrame("stream-age", "data".getBytes(StandardCharsets.UTF_8), "GET", "/test", config);
-        Thread.sleep(50);
+        Thread.sleep(200);
         assertThat("ageMillis should be positive", frame.ageMillis(), greaterThanOrEqualTo(40L));
     }
 

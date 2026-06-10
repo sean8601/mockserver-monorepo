@@ -79,10 +79,12 @@ public class BreakpointRegistry {
             }
         }, timeoutMillis, TimeUnit.MILLISECONDS);
 
-        // when the decision is resolved (by API call or timeout), clean up
+        // when the decision is resolved (by API call or timeout), clean up.
+        // Use conditional remove so a stale callback from a reset()-completed
+        // exchange cannot remove a NEW exchange with the same correlationId.
         exchange.getDecisionFuture().whenComplete((decision, throwable) -> {
             timeoutHandle.cancel(false);
-            held.remove(correlationId);
+            held.remove(correlationId, exchange);
         });
 
         return exchange;
@@ -127,7 +129,7 @@ public class BreakpointRegistry {
 
         exchange.getDecisionFuture().whenComplete((decision, throwable) -> {
             timeoutHandle.cancel(false);
-            held.remove(responseCorrelationId);
+            held.remove(responseCorrelationId, exchange);
         });
 
         return exchange;
@@ -221,19 +223,16 @@ public class BreakpointRegistry {
      * Auto-continues all held exchanges so their async continuations fire.
      * Called on server reset.
      *
-     * <p>Uses a drain loop (poll until empty) instead of iterating + clear(),
-     * because each {@code complete()} triggers a {@code whenComplete} callback
-     * that removes the entry from {@code held}. An explicit {@code held.clear()}
-     * after the loop would race with entries added mid-reset — the callback
-     * removal handles cleanup correctly.
+     * <p>Takes a snapshot and clears the map BEFORE completing futures, so that
+     * asynchronous {@code whenComplete} callbacks (which call {@code held.remove()})
+     * cannot race with a subsequent {@code pause()} call that re-populates the same
+     * correlation id — the callbacks find the map already empty and skip harmlessly.
      */
     public void reset() {
-        // Drain: complete each, let the whenComplete callback remove it.
-        // Loop until snapshot is empty to catch entries added during the reset.
-        while (!held.isEmpty()) {
-            for (PausedExchange exchange : held.values()) {
-                exchange.getDecisionFuture().complete(BreakpointDecision.continueOriginal());
-            }
+        java.util.List<PausedExchange> snapshot = new java.util.ArrayList<>(held.values());
+        held.clear();
+        for (PausedExchange exchange : snapshot) {
+            exchange.getDecisionFuture().complete(BreakpointDecision.continueOriginal());
         }
     }
 }

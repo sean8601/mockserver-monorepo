@@ -33,8 +33,7 @@ import static org.slf4j.event.Level.WARN;
  * <h3>Safety rails</h3>
  * <ul>
  *     <li>Timeout: auto-continues after {@link Configuration#breakpointTimeoutMillis()}.</li>
- *     <li>Max-held cap: shared with {@link BreakpointRegistry},
- *         {@link BreakpointCallbackDispatcher}, and {@link StreamFrameBreakpointRegistry}.</li>
+ *     <li>Max-held cap: shared with {@link BreakpointCallbackDispatcher}.</li>
  *     <li>Disconnect: all in-flight dispatches for a disconnected client are
  *         auto-completed to CONTINUE via {@link #autoCompleteForClient(String)}.</li>
  * </ul>
@@ -174,11 +173,12 @@ public class StreamFrameCallbackDispatcher {
             }
         }, timeoutMillis, TimeUnit.MILLISECONDS);
 
-        // Single cleanup point for all completion routes
+        // Single cleanup point for all completion routes.
+        // Use conditional remove so a stale callback cannot remove a newer dispatch.
         future.whenComplete((decision, throwable) -> {
             timeoutHandle.cancel(false);
             webSocketClientRegistry.unregisterStreamFrameCallbackHandler(correlationId);
-            inFlight.remove(correlationId);
+            inFlight.remove(correlationId, dispatch);
         });
 
         // Build the paused-frame DTO
@@ -239,12 +239,17 @@ public class StreamFrameCallbackDispatcher {
 
     /**
      * Resets all in-flight dispatches (auto-continue) — called on server reset.
+     *
+     * <p>Takes a snapshot and clears the map BEFORE completing futures, so that
+     * asynchronous {@code whenComplete} callbacks cannot race with subsequent
+     * dispatches that re-populate the map.
      */
     public void reset() {
-        for (InFlightStreamDispatch dispatch : inFlight.values()) {
+        java.util.List<InFlightStreamDispatch> snapshot = new java.util.ArrayList<>(inFlight.values());
+        inFlight.clear();
+        for (InFlightStreamDispatch dispatch : snapshot) {
             dispatch.future.complete(StreamFrameDecision.continueFrame());
         }
-        inFlight.clear();
     }
 
     /**
@@ -268,9 +273,8 @@ public class StreamFrameCallbackDispatcher {
      * @param logger            for logging
      * @param webSocketClientRegistry the WS registry for sending messages (may be null)
      * @return a future that completes with the decision if WS dispatch was used;
-     *         {@code null} if WS dispatch is not applicable (caller should REST-park)
-     *         or if the dispatch was rejected (cap/client-not-connected — caller should
-     *         write immediately)
+     *         {@code null} if WS dispatch is not applicable or the dispatch was rejected
+     *         (cap/client-not-connected — caller should write immediately)
      */
     public CompletableFuture<StreamFrameDecision> tryWsDispatch(
         BreakpointMatcher matchedBreakpoint,

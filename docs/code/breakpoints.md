@@ -1,23 +1,22 @@
 # Interactive Breakpoints
 
-**TL;DR:** A breakpoint is a request matcher + set of phases. Register one via
-`PUT /mockserver/breakpoint/matcher`. When a forwarded/proxied request matches, the
-exchange is paused at each specified phase. Resolution is interactive: the paused item
-is dispatched to the owning client over the callback WebSocket (`/_mockserver_callback_websocket`)
-or parked in the REST queue. The client (any language client, the dashboard, or the REST API)
-inspects/modifies it and sends a decision; the server applies the decision and resumes. The
-four global flags are removed — matchers are the only activation mechanism.
+**TL;DR:** A breakpoint is a request matcher + set of phases + owning `clientId`.
+Register one via `PUT /mockserver/breakpoint/matcher` (with a required `clientId`).
+When a forwarded/proxied request matches, the exchange is paused at each specified
+phase. Resolution is interactive: the paused item is dispatched to the owning client
+over the callback WebSocket (`/_mockserver_callback_websocket`). The client (any
+language client or the dashboard, all speaking the same protocol) inspects/modifies
+it and sends a decision; the server applies the decision and resumes. The four global
+flags are removed -- matchers are the only activation mechanism. The callback WebSocket
+is the only resolution transport (REST-park/poll endpoints are removed).
 
 ```mermaid
 flowchart LR
   A["forwarded request"] --> B{"findMatch(request, phase)?"}
   B -- no --> F["forward / write normally"]
-  B -- yes, clientId set --> C["dispatch over callback WS\nto owning client"]
-  B -- yes, no clientId --> G["park in REST queue\n(BreakpointRegistry)"]
+  B -- yes --> C["dispatch over callback WS\nto owning client"]
   C --> D["client / dashboard:\nreply with decision"]
-  G --> H["REST API:\ncontinue / modify / abort"]
   D --> E["apply decision, resume"]
-  H --> E
 ```
 
 Interactive breakpoints let you pause proxied/forwarded exchanges at four phases:
@@ -27,30 +26,15 @@ Interactive breakpoints let you pause proxied/forwarded exchanges at four phases
 3. **Stream frame breakpoints** (A1c + A1d) — hold each individual frame of a streaming response before it is written to the client. Covers both forwarded upstream streams (SSE / HTTP/1.1 chunked) and mock-generated streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted messages, WebSocket bidirectional responses, and GraphQL subscription pushes)
 4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription, gRPC-bidi) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
 
-Request and response breakpoints support inspect, modify, continue, and abort — either interactively over the callback WebSocket or via the REST API.
-Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame — either over the callback WebSocket or via the REST API.
+Request and response breakpoints support inspect, modify, continue, and abort -- interactively over the callback WebSocket.
+Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame -- over the callback WebSocket.
 
 ## Non-blocking architecture
 
-The breakpoint mechanism is fully asynchronous on both resolution paths.
-
-**WS-callback path (when `clientId` is set):** the `BreakpointCallbackDispatcher` or
+The breakpoint mechanism is fully asynchronous. The `BreakpointCallbackDispatcher` or
 `StreamFrameCallbackDispatcher` serialises the paused item into a WS message and sends
 it to the owning client. The continuation is chained onto a `CompletableFuture` that is
 completed when the client replies or the timeout fires. No thread is blocked.
-
-**REST-park path (no `clientId`):**
-1. A `PausedExchange` is registered in the `BreakpointRegistry` (a process-wide
-   singleton backed by a `ConcurrentHashMap`).
-2. The scheduler worker thread returns immediately. The continuation (forward the
-   request / write the response, or write an abort response) is chained onto the
-   `CompletableFuture<BreakpointDecision>` via `thenAcceptAsync(..., schedulerExecutor)`.
-3. The control-plane endpoint (or the timeout scheduler) completes the future,
-   which triggers the continuation on a scheduler pool thread.
-
-No thread is blocked while waiting for the decision. This avoids exhausting the
-`ScheduledThreadPoolExecutor` pool, which uses `CallerRunsPolicy` and would
-otherwise run tasks on the Netty event-loop thread (causing a self-inflicted DoS).
 
 ## Phases
 
@@ -208,8 +192,8 @@ Any forwarded/proxied request that matches `httpRequest` will be paused at the s
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases, clientId?}` | Register a matcher; returns `{id, phases, clientId?}` |
-| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases,clientId?}]}` |
+| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases, clientId}` | Register a matcher; returns `{id, phases, clientId}` |
+| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases,clientId}]}` |
 | PUT | `/mockserver/breakpoint/matcher/remove` | `{id}` | Remove a matcher by id; returns `{status:"removed",id}` or 404 |
 | PUT | `/mockserver/breakpoint/matcher/clear` | — | Remove all matchers; returns `{status:"cleared",count}` |
 
@@ -217,21 +201,16 @@ Any forwarded/proxied request that matches `httpRequest` will be paused at the s
 
 **Matching semantics:** the `httpRequest` body uses the same matcher fields as an expectation request matcher (`method`, `path`, `headers`, `queryStringParameters`, `body`, etc.). An exchange pauses at a phase if any registered matcher matches the request for that phase.
 
-## WebSocket callback resolution (optional `clientId`)
+## WebSocket callback resolution (`clientId` required)
 
-Breakpoint matchers support an optional `clientId` field that, when present,
-dispatches matched exchanges over the existing callback WebSocket
-(`/_mockserver_callback_websocket`) to the owning client for interactive
-resolution — reusing the same `WebSocketClientRegistry` dispatch primitives
-that the object-callback (`forwardObject` / `responseObject`) feature uses.
+Breakpoint matchers require a `clientId` field that identifies the callback
+WebSocket client (`/_mockserver_callback_websocket`) to dispatch matched
+exchanges to for interactive resolution -- reusing the same
+`WebSocketClientRegistry` dispatch primitives that the object-callback
+(`forwardObject` / `responseObject`) feature uses. Registration without a
+`clientId` returns 400.
 
-When `clientId` is absent (null), the breakpoint is resolved via the existing
-REST-park path (`BreakpointRegistry` + `/mockserver/breakpoint/continue|modify|abort`).
-Both paths coexist: the dashboard and REST-only flows keep working unchanged
-while connected WS clients (any language client or future dashboard WS client)
-can resolve breakpoints interactively.
-
-### Registration with `clientId`
+### Registration
 
 ```
 PUT /mockserver/breakpoint/matcher
@@ -243,7 +222,7 @@ PUT /mockserver/breakpoint/matcher
 ```
 
 The list endpoint (`GET /mockserver/breakpoint/matchers`) includes `clientId`
-in each entry when present.
+in each entry.
 
 ### Resolution protocol
 
@@ -298,9 +277,7 @@ stateless with respect to server identity: the per-server
 `AttributeKey<WebSocketClientRegistry>` at netty sites), so multiple
 `HttpState`/server instances in the same JVM dispatch to their own clients.
 
-When `clientId` is absent (null), the frame is parked in
-`StreamFrameBreakpointRegistry` for REST-poll resolution (the existing path).
-Both paths coexist.
+The `clientId` is always present (required since Unit 7b).
 
 #### Server-to-client: `PausedStreamFrameDTO`
 
@@ -369,30 +346,12 @@ The client's reply carrying the resolution decision.
 
 ## Control-plane endpoints
 
-### Request/response breakpoints
+All breakpoint resolution is done over the callback WebSocket. The REST
+control-plane endpoints below are for matcher management only.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET/PUT | `/mockserver/breakpoint` | List all currently paused exchanges (includes `phase` field) |
-| PUT | `/mockserver/breakpoint/continue` | Continue a paused exchange |
-| PUT | `/mockserver/breakpoint/modify` | Modify: `{id, httpRequest}` for request phase, `{id, httpResponse}` for response phase |
-| PUT | `/mockserver/breakpoint/abort` | Abort: write error response to client |
-
-The list endpoint includes a `phase` field (`REQUEST` or `RESPONSE`) and, for
-response-phase exchanges, a `response` summary with `statusCode` and `reasonPhrase`.
-
-### Stream frame breakpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/mockserver/breakpoint/streams` | List all held frames grouped by stream |
-| PUT | `/mockserver/breakpoint/stream/continue` | Continue a held frame: `{id}` |
-| PUT | `/mockserver/breakpoint/stream/modify` | Modify a frame: `{id, body}` — writes replacement body |
-| PUT | `/mockserver/breakpoint/stream/drop` | Drop a frame: `{id}` — discards without writing |
-| PUT | `/mockserver/breakpoint/stream/inject` | Inject after a frame: `{id, body}` — writes original + extra |
-| PUT | `/mockserver/breakpoint/stream/close` | Close stream at frame: `{id}` — sends LastHttpContent, evicts remaining |
-
-The list endpoint returns `{streams: [{streamId, frames: [{frameId, sequenceNumber, ageMillis, bodyLength, bodyPreview, requestMethod, requestPath}]}], totalHeldFrames}`.
+See the "Breakpoint matcher registry" section above for the matcher endpoints
+(`/breakpoint/matcher`, `/breakpoint/matchers`, `/breakpoint/matcher/remove`,
+`/breakpoint/matcher/clear`).
 
 ## Configuration properties
 
@@ -406,23 +365,18 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
 ## Key classes
 
 ### Breakpoint matcher registry
-- `BreakpointMatcher` — a registered breakpoint: request matcher, phases, optional `clientId`
+- `BreakpointMatcher` — a registered breakpoint: request matcher, phases, required `clientId`
 - `BreakpointMatcherRegistry` — process-wide singleton registry of breakpoint matchers with `findMatch`, `removeByClientId`
 - `BreakpointPhase` — enum: REQUEST, RESPONSE, RESPONSE_STREAM, INBOUND_STREAM
 
-### Request/response breakpoints (REST-park path)
-- `BreakpointRegistry` — process-wide singleton managing paused exchanges (REST resolution)
-- `PausedExchange` — holds phase, captured request/response, `CompletableFuture<BreakpointDecision>`
+### Request/response breakpoints
+- `BreakpointCallbackDispatcher` — process-wide singleton for WS-callback breakpoint dispatch; dispatches to owning client via `WebSocketClientRegistry`, manages in-flight tracking, timeouts, and disconnect cleanup
 - `BreakpointDecision` — CONTINUE / MODIFY (request or response) / ABORT resolution
+- `WebSocketClientRegistry.unregisterClient` — on disconnect, calls `BreakpointMatcherRegistry.removeByClientId`, `BreakpointCallbackDispatcher.autoCompleteForClient`, and `StreamFrameCallbackDispatcher.autoCompleteForClient` to clean up the client's breakpoints and in-flight dispatches
 - `HttpActionHandler.handleUnmatchedProxyForward` — request-phase breakpoint intercept
 - `HttpActionHandler.writeForwardActionResponse` — response-phase breakpoint intercept (matched)
 - `HttpActionHandler.executeUnmatchedForward` — response-phase breakpoint intercept (unmatched)
-- `HttpState.handleBreakpointContinue/Modify/Abort` — control-plane handlers
-
-### Request/response breakpoints (WS-callback path)
-- `BreakpointCallbackDispatcher` — process-wide singleton for WS-callback breakpoint dispatch; dispatches to owning client via `WebSocketClientRegistry`, manages in-flight tracking, timeouts, and disconnect cleanup
-- `WebSocketClientRegistry.unregisterClient` — on disconnect, calls `BreakpointMatcherRegistry.removeByClientId`, `BreakpointCallbackDispatcher.autoCompleteForClient`, and `StreamFrameCallbackDispatcher.autoCompleteForClient` to clean up the client's breakpoints and in-flight dispatches
-- `HttpActionHandler.attemptResponseBreakpoint` — helper that branches between WS-callback and REST-park for RESPONSE phase
+- `HttpActionHandler.attemptResponseBreakpoint` — helper for RESPONSE phase WS dispatch
 
 ### Stream frame breakpoints (WS-callback path)
 - `StreamFrameCallbackDispatcher` — process-wide singleton for per-frame WS-callback dispatch; dispatches `PausedStreamFrameDTO` to owning client, receives `StreamFrameDecisionDTO` replies, manages in-flight tracking, timeouts, and disconnect cleanup
@@ -432,15 +386,14 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
 - `WebSocketClientRegistry.registerStreamFrameCallbackHandler` — registers a callback for `StreamFrameDecisionDTO` replies by correlationId
 
 ### Stream frame breakpoints
-- `StreamFrameBreakpointRegistry` — process-wide singleton managing paused stream frames
-- `PausedStreamFrame` — holds streamId, sequence number, captured bytes, `CompletableFuture<StreamFrameDecision>`
+- `StreamFrameCallbackDispatcher` — process-wide singleton for per-frame WS-callback dispatch
 - `StreamFrameDecision` — CONTINUE / MODIFY / DROP / INJECT / CLOSE resolution
+- `StreamFrameBreakpointRegistry` — process-wide singleton managing per-stream sequence counters and stream eviction
 - `NettyResponseWriter.writeStreamingResponse` — hold point for SSE/chunked streams (forwarded + mock)
 - `GrpcStreamResponseActionHandler.scheduleMessages` — hold point for gRPC server-streaming mock responses
 - `HttpWebSocketResponseActionHandler.scheduleMessages` — hold point for WebSocket eager/scripted messages
 - `HttpWebSocketResponseActionHandler.installBidirectionalHandler` — hold point for WebSocket bidi responses
 - `HttpWebSocketResponseActionHandler.installGraphQLSubscriptionHandler` — hold point for GraphQL subscription pushes
-- `HttpState.handleStreamFrame*` — control-plane handlers for stream frame actions
 
 ### Inbound frame breakpoints
 - `BidirectionalWebSocketFrameHandler.channelRead0` — hold point for WebSocket bidi inbound frames
@@ -456,15 +409,11 @@ Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher
   response chaos-latency for the matched expectation is bypassed. The manual
   resolution supersedes automatic chaos injection because the user has already
   inspected and approved (or replaced) the response.
-- **`httpResponse` takes precedence in the modify endpoint.** If a client sends
-  both `httpRequest` and `httpResponse` fields in a modify payload, the
-  `httpResponse` field is used (response-phase modify). The `httpRequest` field
-  is silently ignored for response-phase exchanges.
-- **Phase guards prevent type-confusion.** `resolveModify(id, httpRequest)` is
-  rejected (returns false) if the exchange is in RESPONSE phase, and
-  `resolveModifyResponse(id, httpResponse)` is rejected if the exchange is in
-  REQUEST phase. This prevents completing a decision future with the wrong type,
-  which would cause a downstream NPE.
+- **REQUEST phase reply semantics.** A WS client replying with an `HttpRequest`
+  means MODIFY/CONTINUE (forward the replacement or original). Replying with an
+  `HttpResponse` means ABORT (write that response directly, do not forward).
+- **RESPONSE phase reply semantics.** A WS client replying with an `HttpResponse`
+  means write that response to the downstream client (MODIFY/CONTINUE).
 
 ## Dashboard UI
 
@@ -533,13 +482,6 @@ channel. The dashboard reads its assigned `clientId` from that first message.
   other callback client).
 
 ## Java client
-
-### REST resolution methods
-
-`MockServerClient` provides typed methods for REST-park resolution:
-
-- `modifyBreakpoint(String id, HttpRequest modifiedRequest)` — request-phase modify
-- `modifyBreakpointResponse(String id, HttpResponse modifiedResponse)` — response-phase modify
 
 ### Matcher-driven WS-callback breakpoints
 

@@ -47,7 +47,7 @@ import static org.slf4j.event.Level.WARN;
  * <ul>
  *     <li>Timeout: auto-completes to CONTINUE after
  *         {@link Configuration#breakpointTimeoutMillis()}.</li>
- *     <li>Max-held cap: shared with {@link BreakpointRegistry} — if the cap
+ *     <li>Max-held cap: shared across all breakpoint dispatchers — if the cap
  *         is already reached, returns {@code null} (caller skips the breakpoint).</li>
  *     <li>Disconnect: all in-flight dispatches for a disconnected client are
  *         auto-completed to CONTINUE via
@@ -174,11 +174,13 @@ public class BreakpointCallbackDispatcher {
             }
         }, timeoutMillis, TimeUnit.MILLISECONDS);
 
-        // Single cleanup point for all completion routes
+        // Single cleanup point for all completion routes.
+        // Use conditional remove so a stale callback from a reset()-completed
+        // dispatch cannot remove a NEW dispatch with the same correlationId.
         future.whenComplete((decision, throwable) -> {
             timeoutHandle.cancel(false);
             cleanup(correlationId, webSocketClientRegistry);
-            inFlight.remove(correlationId);
+            inFlight.remove(correlationId, dispatch);
         });
 
         // Send the request to the client, including the breakpoint id header
@@ -283,11 +285,12 @@ public class BreakpointCallbackDispatcher {
             }
         }, timeoutMillis, TimeUnit.MILLISECONDS);
 
-        // Single cleanup point for all completion routes
+        // Single cleanup point for all completion routes.
+        // Use conditional remove so a stale callback cannot remove a newer dispatch.
         future.whenComplete((decision, throwable) -> {
             timeoutHandle.cancel(false);
             cleanup(correlationId, webSocketClientRegistry);
-            inFlight.remove(correlationId);
+            inFlight.remove(correlationId, dispatch);
         });
 
         // Send request+response to the client, including the breakpoint id header
@@ -311,16 +314,12 @@ public class BreakpointCallbackDispatcher {
     }
 
     /**
-     * Returns the total held count across all 4 breakpoint sources:
-     * BreakpointRegistry (REST-park requests/responses),
-     * this dispatcher's in-flight WS dispatches,
-     * StreamFrameBreakpointRegistry (REST-park stream frames), and
+     * Returns the total held count across all breakpoint dispatchers:
+     * this dispatcher's in-flight WS dispatches (REQUEST/RESPONSE phases) and
      * StreamFrameCallbackDispatcher's in-flight WS stream frame dispatches.
      */
     static int totalHeldCount() {
-        return BreakpointRegistry.getInstance().size()
-            + BreakpointCallbackDispatcher.getInstance().inFlightCount()
-            + StreamFrameBreakpointRegistry.getInstance().size()
+        return BreakpointCallbackDispatcher.getInstance().inFlightCount()
             + StreamFrameCallbackDispatcher.getInstance().inFlightCount();
     }
 
@@ -355,13 +354,17 @@ public class BreakpointCallbackDispatcher {
 
     /**
      * Resets all in-flight dispatches (auto-continue) — called on server reset.
+     *
+     * <p>Takes a snapshot and clears the map BEFORE completing futures, so that
+     * asynchronous {@code whenComplete} callbacks cannot race with subsequent
+     * dispatches that re-populate the map.
      */
     public void reset() {
-        for (InFlightDispatch dispatch : inFlight.values()) {
+        java.util.List<InFlightDispatch> snapshot = new java.util.ArrayList<>(inFlight.values());
+        inFlight.clear();
+        for (InFlightDispatch dispatch : snapshot) {
             dispatch.future.complete(BreakpointDecision.continueOriginal());
         }
-        // whenComplete callbacks remove entries, but clear for safety
-        inFlight.clear();
     }
 
     private void cleanup(String correlationId, WebSocketClientRegistry registry) {

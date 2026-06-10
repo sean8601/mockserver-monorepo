@@ -313,32 +313,20 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                     return;
                 }
 
-                // --- Stream-frame breakpoint path ---
-                // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                // WS-callback dispatch (clientId is always present — required since 7b)
                 final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
-                if (useWsDispatch) {
-                    int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
-                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
-                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                            breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
-                            org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
-                            frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
-                    if (wsFuture != null) {
-                        decisionFuture = wsFuture;
-                    } else {
-                        writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
-                            streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
-                        return;
-                    }
+                int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                        breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                        org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                        frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                if (wsFuture != null) {
+                    decisionFuture = wsFuture;
                 } else {
-                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                        .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-                    if (pausedFrame == null) {
-                        writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
-                            streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
-                        return;
-                    }
-                    decisionFuture = pausedFrame.getDecisionFuture();
+                    writeH3GrpcFrame(frameBytes, messages, index, action, methodDescriptor, request,
+                        streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                    return;
                 }
 
                 // Frame is parked. Chain the decision callback onto the QUIC stream's event loop.

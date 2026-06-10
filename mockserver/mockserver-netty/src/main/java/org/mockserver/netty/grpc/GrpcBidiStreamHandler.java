@@ -341,30 +341,19 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
             // deliver the next DATA frame until we explicitly request it.
             if (inboundStreamId != null) {
 
-                // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                // WS-callback dispatch (clientId is always present — required since 7b)
                 final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
-                if (inboundUseWsDispatch) {
-                    int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
-                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
-                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                            inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
-                            org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
-                            bytes, "GRPC-INBOUND", methodDescriptor.getFullName(), webSocketClientRegistry, configuration, null);
-                    if (wsFuture != null) {
-                        decisionFuture = wsFuture;
-                    } else {
-                        processDataBytes(ctx, bytes, endStream);
-                        return;
-                    }
+                int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(inboundStreamId);
+                java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                        inboundBreakpointClientId, inboundStreamId, seq, PausedStreamFrame.Direction.INBOUND,
+                        org.mockserver.mock.breakpoint.BreakpointPhase.INBOUND_STREAM,
+                        bytes, "GRPC-INBOUND", methodDescriptor.getFullName(), webSocketClientRegistry, configuration, null);
+                if (wsFuture != null) {
+                    decisionFuture = wsFuture;
                 } else {
-                    PausedStreamFrame paused = StreamFrameBreakpointRegistry.getInstance()
-                        .pauseFrame(inboundStreamId, bytes, "GRPC-INBOUND",
-                            methodDescriptor.getFullName(), configuration, PausedStreamFrame.Direction.INBOUND);
-                    if (paused == null) {
-                        processDataBytes(ctx, bytes, endStream);
-                        return;
-                    }
-                    decisionFuture = paused.getDecisionFuture();
+                    processDataBytes(ctx, bytes, endStream);
+                    return;
                 }
 
                 // Park: chain the decision onto the channel's event loop (NEVER block)

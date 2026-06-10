@@ -203,32 +203,21 @@ public class HttpWebSocketResponseActionHandler {
 
                 // --- Stream-frame breakpoint path ---
                 // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                // WS-callback dispatch (clientId is always present — required since 7b)
                 final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
-                if (useWsDispatch) {
-                    int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
-                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
-                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                            breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
-                            org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
-                            frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
-                    if (wsFuture != null) {
-                        decisionFuture = wsFuture;
-                    } else {
-                        // WS dispatch rejected (cap/not connected) -- write immediately
-                        writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
-                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
-                        return;
-                    }
+                int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                    org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                        breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                        org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                        frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                if (wsFuture != null) {
+                    decisionFuture = wsFuture;
                 } else {
-                    PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                        .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-                    if (pausedFrame == null) {
-                        // Cap reached -- write immediately
-                        writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
-                            handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
-                        return;
-                    }
-                    decisionFuture = pausedFrame.getDecisionFuture();
+                    // WS dispatch rejected (cap/not connected) -- write immediately
+                    writeWebSocketFrame(frameBytes, isBinary, ctx, request, messages, index, httpWebSocketResponse,
+                        handshaker, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId);
+                    return;
                 }
 
                 // Frame is parked. Chain the decision callback onto the channel's event loop.
@@ -388,29 +377,19 @@ public class HttpWebSocketResponseActionHandler {
                 writeAction = () -> {
                     byte[] frameBytes = text.getBytes(StandardCharsets.UTF_8);
 
-                    // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                    // WS-callback dispatch (clientId is always present — required since 7b)
                     final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
-                    if (useWsDispatch) {
-                        int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
-                        java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
-                            org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                                breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
-                                org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
-                                frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
-                        if (wsFuture != null) {
-                            decisionFuture = wsFuture;
-                        } else {
-                            senderCtx.writeAndFlush(new TextWebSocketFrame(text));
-                            return;
-                        }
+                    int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                    java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                        org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                            breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                            org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                            frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                    if (wsFuture != null) {
+                        decisionFuture = wsFuture;
                     } else {
-                        PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                            .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-                        if (pausedFrame == null) {
-                            senderCtx.writeAndFlush(new TextWebSocketFrame(text));
-                            return;
-                        }
-                        decisionFuture = pausedFrame.getDecisionFuture();
+                        senderCtx.writeAndFlush(new TextWebSocketFrame(text));
+                        return;
                     }
 
                     final byte[] capturedBytes = frameBytes;
@@ -504,35 +483,22 @@ public class HttpWebSocketResponseActionHandler {
                 Runnable writeAction;
                 if (streamBreakpointsActive) {
                     writeAction = () -> {
-                        // Use pre-computed WS dispatch decision (CPX-01: per-stream, not per-frame)
+                        // WS-callback dispatch (clientId is always present — required since 7b)
                         final java.util.concurrent.CompletableFuture<StreamFrameDecision> decisionFuture;
-                        if (useWsDispatch) {
-                            int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
-                            java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
-                                org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
-                                    breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
-                                    org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
-                                    frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
-                            if (wsFuture != null) {
-                                decisionFuture = wsFuture;
-                            } else {
-                                WebSocketFrame frame = isBinary
-                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
-                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
-                                senderCtx.writeAndFlush(frame);
-                                return;
-                            }
+                        int seq = StreamFrameBreakpointRegistry.getInstance().nextSequenceNumber(streamId);
+                        java.util.concurrent.CompletableFuture<StreamFrameDecision> wsFuture =
+                            org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().dispatchFrame(
+                                breakpointClientId, streamId, seq, PausedStreamFrame.Direction.OUTBOUND,
+                                org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE_STREAM,
+                                frameBytes, reqMethod, reqPath, webSocketClientRegistry, configuration, mockServerLogger);
+                        if (wsFuture != null) {
+                            decisionFuture = wsFuture;
                         } else {
-                            PausedStreamFrame pausedFrame = StreamFrameBreakpointRegistry.getInstance()
-                                .pauseFrame(streamId, frameBytes, reqMethod, reqPath, configuration);
-                            if (pausedFrame == null) {
-                                WebSocketFrame frame = isBinary
-                                    ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
-                                    : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
-                                senderCtx.writeAndFlush(frame);
-                                return;
-                            }
-                            decisionFuture = pausedFrame.getDecisionFuture();
+                            WebSocketFrame frame = isBinary
+                                ? new BinaryWebSocketFrame(Unpooled.wrappedBuffer(frameBytes))
+                                : new TextWebSocketFrame(Unpooled.wrappedBuffer(frameBytes));
+                            senderCtx.writeAndFlush(frame);
+                            return;
                         }
 
                         final boolean finalIsBinary = isBinary;

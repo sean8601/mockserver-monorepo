@@ -1,6 +1,7 @@
 package org.mockserver.mock.breakpoint;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
@@ -15,10 +16,26 @@ import static org.hamcrest.Matchers.is;
  */
 public class BreakpointConfigurationTest {
 
+    @Before
+    public void setup() {
+        resetAllBreakpointSingletons();
+        ConfigurationProperties.breakpointTimeoutMillis(30_000);
+        ConfigurationProperties.breakpointMaxHeld(50);
+    }
+
     @After
     public void resetProperties() {
         ConfigurationProperties.breakpointTimeoutMillis(30_000);
         ConfigurationProperties.breakpointMaxHeld(50);
+        resetAllBreakpointSingletons();
+    }
+
+    private void resetAllBreakpointSingletons() {
+        BreakpointMatcherRegistry.getInstance().clear();
+        BreakpointRegistry.getInstance().reset();
+        StreamFrameBreakpointRegistry.getInstance().reset();
+        BreakpointCallbackDispatcher.getInstance().reset();
+        StreamFrameCallbackDispatcher.getInstance().reset();
     }
 
     // --- ConfigurationProperties (static) defaults ---
