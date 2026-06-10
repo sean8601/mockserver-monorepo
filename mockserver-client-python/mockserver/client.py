@@ -237,6 +237,58 @@ class MockServerClient:
             self._async_client.mock_with_callback(request, callback, times, time_to_live)
         )
 
+    # -------------------------------------------------------------------
+    # Breakpoint matcher management
+    # -------------------------------------------------------------------
+
+    def add_breakpoint(
+        self,
+        matcher,
+        phases: list[str],
+        request_handler=None,
+        response_handler=None,
+        stream_frame_handler=None,
+    ) -> str:
+        """Register a breakpoint matcher with callback handlers.
+
+        Returns the server-assigned breakpoint matcher id (UUID string).
+        """
+        return self._run(
+            self._async_client.add_breakpoint(
+                matcher, phases, request_handler, response_handler, stream_frame_handler
+            )
+        )
+
+    def add_request_breakpoint(self, matcher, request_handler) -> str:
+        """Convenience: register a REQUEST-only breakpoint."""
+        return self._run(
+            self._async_client.add_request_breakpoint(matcher, request_handler)
+        )
+
+    def add_request_and_response_breakpoint(
+        self, matcher, request_handler, response_handler
+    ) -> str:
+        """Convenience: register a REQUEST+RESPONSE breakpoint."""
+        return self._run(
+            self._async_client.add_request_and_response_breakpoint(
+                matcher, request_handler, response_handler
+            )
+        )
+
+    def list_breakpoint_matchers(self) -> dict:
+        """List all registered breakpoint matchers."""
+        return self._run(self._async_client.list_breakpoint_matchers())
+
+    def remove_breakpoint_matcher(self, breakpoint_id: str) -> dict:
+        """Remove a breakpoint matcher by id."""
+        return self._run(
+            self._async_client.remove_breakpoint_matcher(breakpoint_id)
+        )
+
+    def clear_breakpoint_matchers(self) -> dict:
+        """Clear all registered breakpoint matchers."""
+        return self._run(self._async_client.clear_breakpoint_matchers())
+
     def mock_with_forward_callback(
         self,
         request: HttpRequest,

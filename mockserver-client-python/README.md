@@ -243,6 +243,56 @@ response = (
 )
 ```
 
+## Interactive Breakpoints
+
+The client supports matcher-driven interactive breakpoints over the callback WebSocket. Register a breakpoint matcher to pause forwarded/proxied exchanges at specific phases and inspect/modify/continue them via callback handlers.
+
+### Register a breakpoint (sync client)
+
+```python
+from mockserver import MockServerClient, HttpRequest, HttpResponse
+
+client = MockServerClient("localhost", 1080)
+
+# REQUEST phase only
+bp_id = client.add_request_breakpoint(
+    HttpRequest(path="/api/.*"),
+    lambda request: request,  # continue unchanged (or return HttpResponse to abort)
+)
+
+# REQUEST + RESPONSE
+bp_id = client.add_request_and_response_breakpoint(
+    HttpRequest(path="/api/.*"),
+    lambda request: request,                      # REQUEST handler
+    lambda request, response: response,           # RESPONSE handler
+)
+
+# All phases with stream frame handler
+bp_id = client.add_breakpoint(
+    HttpRequest(path="/stream/.*"),
+    ["REQUEST", "RESPONSE", "RESPONSE_STREAM", "INBOUND_STREAM"],
+    request_handler=lambda request: request,
+    response_handler=lambda request, response: response,
+    stream_frame_handler=lambda frame: {"action": "CONTINUE"},
+    # Other actions: MODIFY (with body), DROP, INJECT (with body), CLOSE
+)
+```
+
+### Manage breakpoints
+
+```python
+# List all matchers
+matchers = client.list_breakpoint_matchers()  # {"matchers": [...]}
+
+# Remove a specific matcher
+client.remove_breakpoint_matcher(bp_id)
+
+# Clear all matchers
+client.clear_breakpoint_matchers()
+```
+
+The async client (`AsyncMockServerClient`) exposes the same methods as coroutines.
+
 ## Requirements
 
 - Python 3.9+

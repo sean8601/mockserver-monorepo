@@ -477,6 +477,120 @@ module MockServer
     end
 
     # -------------------------------------------------------------------
+    # Breakpoint matcher management
+    # -------------------------------------------------------------------
+
+    # Register a breakpoint matcher with callback handlers.
+    # The callback WebSocket is opened lazily and reused.
+    #
+    # @param matcher [HttpRequest] the request definition to match
+    # @param phases [Array<String>] e.g. ["REQUEST", "RESPONSE"]
+    # @param request_handler [Proc, nil] handler for REQUEST phase
+    # @param response_handler [Proc, nil] handler for RESPONSE phase
+    # @param stream_frame_handler [Proc, nil] handler for streaming phases
+    # @return [String] the server-assigned breakpoint matcher id
+    def add_breakpoint(matcher, phases,
+                       request_handler: nil, response_handler: nil,
+                       stream_frame_handler: nil)
+      raise ArgumentError, 'add_breakpoint requires a non-nil matcher' if matcher.nil?
+      raise ArgumentError, 'add_breakpoint requires a non-empty phases array' if phases.nil? || phases.empty?
+
+      ws_client = ensure_breakpoint_websocket
+      client_id = ws_client.client_id
+
+      body = JSON.generate({
+        'httpRequest' => matcher.to_h,
+        'phases' => phases,
+        'clientId' => client_id
+      })
+      status, response_body = request('PUT', '/mockserver/breakpoint/matcher', body)
+      if status >= 400
+        raise Error, "Failed to register breakpoint matcher (status=#{status}): #{response_body}"
+      end
+
+      parsed = response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+      breakpoint_id = parsed['id']
+      raise Error, 'Server did not return a breakpoint id' unless breakpoint_id
+
+      # Install per-breakpoint-id handlers
+      ws_client.set_breakpoint_request_handler(breakpoint_id, request_handler) if request_handler
+      ws_client.set_breakpoint_response_handler(breakpoint_id, response_handler) if response_handler
+      ws_client.set_breakpoint_stream_frame_handler(breakpoint_id, stream_frame_handler) if stream_frame_handler
+
+      breakpoint_id
+    end
+
+    # Convenience: register a REQUEST-only breakpoint.
+    # @param matcher [HttpRequest]
+    # @param request_handler [Proc]
+    # @return [String]
+    def add_request_breakpoint(matcher, request_handler)
+      add_breakpoint(matcher, ['REQUEST'], request_handler: request_handler)
+    end
+
+    # Convenience: register a REQUEST+RESPONSE breakpoint.
+    # @param matcher [HttpRequest]
+    # @param request_handler [Proc]
+    # @param response_handler [Proc]
+    # @return [String]
+    def add_request_and_response_breakpoint(matcher, request_handler, response_handler)
+      add_breakpoint(matcher, %w[REQUEST RESPONSE],
+                     request_handler: request_handler,
+                     response_handler: response_handler)
+    end
+
+    # List all registered breakpoint matchers.
+    # @return [Hash] e.g. {"matchers" => [{...}, ...]}
+    def list_breakpoint_matchers
+      status, response_body = request('GET', '/mockserver/breakpoint/matchers')
+      if status >= 400
+        raise Error, "Failed to list breakpoint matchers (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Remove a breakpoint matcher by id.
+    # @param breakpoint_id [String]
+    # @return [Hash]
+    def remove_breakpoint_matcher(breakpoint_id)
+      raise ArgumentError, 'remove_breakpoint_matcher requires a non-empty id' if breakpoint_id.nil? || breakpoint_id.empty?
+
+      body = JSON.generate({ 'id' => breakpoint_id })
+      status, response_body = request('PUT', '/mockserver/breakpoint/matcher/remove', body)
+      if status >= 400
+        raise Error, "Failed to remove breakpoint matcher (status=#{status}): #{response_body}"
+      end
+
+      # Remove client-side handlers
+      @websocket_mutex.synchronize do
+        @websocket_clients.each do |ws|
+          ws.remove_breakpoint_handlers(breakpoint_id) if ws.respond_to?(:remove_breakpoint_handlers)
+        end
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Clear all registered breakpoint matchers.
+    # @return [Hash]
+    def clear_breakpoint_matchers
+      status, response_body = request('PUT', '/mockserver/breakpoint/matcher/clear')
+      if status >= 400
+        raise Error, "Failed to clear breakpoint matchers (status=#{status}): #{response_body}"
+      end
+
+      # Clear client-side handlers
+      @websocket_mutex.synchronize do
+        @websocket_clients.each do |ws|
+          ws.clear_breakpoint_handlers if ws.respond_to?(:clear_breakpoint_handlers)
+        end
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # -------------------------------------------------------------------
     # Callback methods
     # -------------------------------------------------------------------
 
@@ -529,6 +643,32 @@ module MockServer
     end
 
     private
+
+    # @api private
+    # Ensure a callback WS is connected for breakpoint use, returning it.
+    def ensure_breakpoint_websocket
+      # Hold the mutex for the whole check-create-append so two concurrent
+      # add_breakpoint calls cannot both create a breakpoint WS (TOCTOU).
+      # Breakpoint WS creation is rare, so blocking on connect under the lock
+      # is acceptable.
+      @websocket_mutex.synchronize do
+        existing = @websocket_clients.find { |ws| ws.instance_variable_get(:@is_breakpoint_ws) }
+        return existing if existing
+
+        ws_client = WebSocketClient.new
+        ws_client.connect(
+          @host, @port,
+          context_path: @context_path,
+          secure: @secure,
+          ca_cert_path: @ca_cert_path,
+          tls_verify: @tls_verify
+        )
+        ws_client.instance_variable_set(:@is_breakpoint_ws, true)
+        ws_client.listen
+        @websocket_clients << ws_client
+        ws_client
+      end
+    end
 
     # @api private
     def register_websocket_callback(callback_type, callback_fn, forward_response_fn = nil)

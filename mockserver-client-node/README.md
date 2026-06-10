@@ -147,6 +147,65 @@ mockServerClient("localhost", 1080)
 
 For the full documentation see [MockServer - Verifying Requests](https://mock-server.com/mock_server/verification.html).
 
+## Interactive Breakpoints
+
+The client supports matcher-driven interactive breakpoints over the callback WebSocket. Register a breakpoint matcher to pause forwarded/proxied exchanges at specific phases and inspect/modify/continue them via callback handlers.
+
+### Register a breakpoint
+
+```js
+// REQUEST phase only
+client.addRequestBreakpoint(
+    { path: '/api/.*' },
+    function (request) {
+        // inspect or modify the request; return a request to continue or a response to abort
+        request.path = '/api/modified';
+        return request;
+    }
+).then(function (breakpointId) {
+    console.log('Breakpoint registered:', breakpointId);
+});
+
+// REQUEST + RESPONSE phases
+client.addRequestAndResponseBreakpoint(
+    { path: '/api/.*' },
+    function (request) { return request; },           // REQUEST handler
+    function (request, response) { return response; } // RESPONSE handler
+).then(function (breakpointId) {
+    console.log('Breakpoint registered:', breakpointId);
+});
+
+// All phases with stream frame handler
+client.addBreakpoint(
+    { path: '/stream/.*' },
+    ['REQUEST', 'RESPONSE', 'RESPONSE_STREAM', 'INBOUND_STREAM'],
+    function (request) { return request; },
+    function (request, response) { return response; },
+    function (pausedFrame) {
+        // pausedFrame has: correlationId, streamId, sequenceNumber, direction, phase, body (base64)
+        return { action: 'CONTINUE' };
+        // Other actions: MODIFY (with body), DROP, INJECT (with body), CLOSE
+    }
+).then(function (breakpointId) {
+    console.log('Breakpoint registered:', breakpointId);
+});
+```
+
+### Manage breakpoints
+
+```js
+// List all matchers
+client.listBreakpointMatchers().then(function (result) {
+    console.log(result.matchers);
+});
+
+// Remove a specific matcher
+client.removeBreakpointMatcher(breakpointId);
+
+// Clear all matchers
+client.clearBreakpointMatchers();
+```
+
 ## Contributing
 In lieu of a formal styleguide, take care to maintain the existing coding style. Add unit tests for any new or changed functionality. Lint and test your code using [Grunt](http://gruntjs.com/).
 

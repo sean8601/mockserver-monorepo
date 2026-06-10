@@ -99,6 +99,52 @@ All 25 domain model classes are available under the `MockServer` module:
 - `Ports`
 - `RequestDefinition` (alias for `HttpRequest`)
 
+## Interactive Breakpoints
+
+The client supports matcher-driven interactive breakpoints over the callback WebSocket. Register a breakpoint matcher to pause forwarded/proxied exchanges at specific phases and inspect/modify/continue them via callback handlers.
+
+### Register a breakpoint
+
+```ruby
+client = MockServer::Client.new('localhost', 1080)
+
+# REQUEST phase only
+bp_id = client.add_request_breakpoint(
+  MockServer::HttpRequest.new(path: '/api/.*'),
+  ->(request) { request }  # continue unchanged (or return HttpResponse to abort)
+)
+
+# REQUEST + RESPONSE
+bp_id = client.add_request_and_response_breakpoint(
+  MockServer::HttpRequest.new(path: '/api/.*'),
+  ->(request) { request },                      # REQUEST handler
+  ->(request, response) { response }            # RESPONSE handler
+)
+
+# All phases with stream frame handler
+bp_id = client.add_breakpoint(
+  MockServer::HttpRequest.new(path: '/stream/.*'),
+  %w[REQUEST RESPONSE RESPONSE_STREAM INBOUND_STREAM],
+  request_handler: ->(request) { request },
+  response_handler: ->(request, response) { response },
+  stream_frame_handler: ->(frame) { { 'action' => 'CONTINUE' } }
+  # Other actions: MODIFY (with body), DROP, INJECT (with body), CLOSE
+)
+```
+
+### Manage breakpoints
+
+```ruby
+# List all matchers
+matchers = client.list_breakpoint_matchers  # {"matchers" => [...]}
+
+# Remove a specific matcher
+client.remove_breakpoint_matcher(bp_id)
+
+# Clear all matchers
+client.clear_breakpoint_matchers
+```
+
 ## License
 
 Apache-2.0

@@ -93,6 +93,57 @@ export interface MockServerClient {
     retrieveRecordedExpectations(pathOrRequestDefinition: PathOrRequestDefinition): Promise<Expectation[]>;
 
     retrieveLogMessages(pathOrRequestDefinition: PathOrRequestDefinition): Promise<string[]>;
+
+    /**
+     * Register a breakpoint matcher with per-phase handlers.
+     * The callback WebSocket is opened lazily on the first call and reused.
+     *
+     * @param requestMatcher  the request definition to match (same shape as an expectation matcher)
+     * @param phases          array of phases: "REQUEST", "RESPONSE", "RESPONSE_STREAM", "INBOUND_STREAM"
+     * @param requestHandler  handler for REQUEST phase: (request) => request (continue/modify) or response (abort)
+     * @param responseHandler handler for RESPONSE phase: (request, response) => response
+     * @param streamFrameHandler handler for streaming phases: (pausedFrame) => {correlationId, action, body?}
+     * @return promise resolving to the server-assigned breakpoint matcher id (string)
+     */
+    addBreakpoint(
+        requestMatcher: RequestDefinition,
+        phases: string[],
+        requestHandler?: ((request: HttpRequest) => HttpRequest | HttpResponse) | null,
+        responseHandler?: ((request: HttpRequest, response: HttpResponse) => HttpResponse) | null,
+        streamFrameHandler?: ((pausedFrame: any) => any) | null,
+    ): Promise<string>;
+
+    /**
+     * Register a request-only breakpoint (convenience).
+     */
+    addRequestBreakpoint(
+        requestMatcher: RequestDefinition,
+        requestHandler: (request: HttpRequest) => HttpRequest | HttpResponse,
+    ): Promise<string>;
+
+    /**
+     * Register a request+response breakpoint (convenience).
+     */
+    addRequestAndResponseBreakpoint(
+        requestMatcher: RequestDefinition,
+        requestHandler: (request: HttpRequest) => HttpRequest | HttpResponse,
+        responseHandler: (request: HttpRequest, response: HttpResponse) => HttpResponse,
+    ): Promise<string>;
+
+    /**
+     * List all registered breakpoint matchers.
+     */
+    listBreakpointMatchers(): Promise<{ matchers: any[] }>;
+
+    /**
+     * Remove a breakpoint matcher by id.
+     */
+    removeBreakpointMatcher(breakpointId: string): Promise<RequestResponse>;
+
+    /**
+     * Clear all registered breakpoint matchers.
+     */
+    clearBreakpointMatchers(): Promise<RequestResponse>;
 }
 
 /**
