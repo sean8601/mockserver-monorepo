@@ -272,9 +272,177 @@ var mockServerClient;
             };
         };
 
-        // Import the shared routing function — available in both Node and
-        // browser-bundler contexts because webSocketClient.js exports it.
-        var _routeBreakpointMessage = (runningInNode() ? require('./webSocketClient').routeBreakpointMessage : null);
+        // ------------------------------------------------------------------
+        // Inline breakpoint/callback message routing (browser-safe, no deps)
+        // ------------------------------------------------------------------
+        // These are pure functions duplicated from webSocketClient.js so they
+        // are available in the browser path where require() does not exist.
+        // The Node path (webSocketClient.js) keeps its own copy.
+
+        /**
+         * Extract the breakpoint id and correlation id from a headers map.
+         * Headers may use canonical or lowercase names and values may be
+         * arrays or plain strings.
+         */
+        var _extractBreakpointHeaders = function (headers) {
+            var breakpointId = null;
+            var correlationId = null;
+            if (headers) {
+                for (var hk in headers) {
+                    if (headers.hasOwnProperty(hk)) {
+                        if (hk === "X-MockServer-BreakpointId" || hk === "x-mockserver-breakpointid") {
+                            breakpointId = Array.isArray(headers[hk]) ? headers[hk][0] : headers[hk];
+                        }
+                        if (hk === "WebSocketCorrelationId" || hk === "websocketcorrelationid") {
+                            correlationId = Array.isArray(headers[hk]) ? headers[hk][0] : headers[hk];
+                        }
+                    }
+                }
+            }
+            return { breakpointId: breakpointId, correlationId: correlationId };
+        };
+
+        /**
+         * Pure function that routes a WebSocket breakpoint/callback message to
+         * the appropriate handler and produces the reply envelope.
+         *
+         * @param {Object} payload  { type: string, value: string (JSON) }
+         * @param {Object} handlers map of handler collections
+         * @return {Object|null}  reply envelope or null
+         */
+        var _routeBreakpointMessage = function (payload, handlers) {
+            handlers = handlers || {};
+            var breakpointRequestHandlers = handlers.breakpointRequestHandlers || {};
+            var breakpointResponseHandlers = handlers.breakpointResponseHandlers || {};
+            var breakpointStreamFrameHandlers = handlers.breakpointStreamFrameHandlers || {};
+            var requestHandler = handlers.requestHandler || null;
+            var requestAndResponseHandler = handlers.requestAndResponseHandler || null;
+
+            if (payload.type === "org.mockserver.model.HttpRequest") {
+                var request = JSON.parse(payload.value);
+                var reqHeaders = _extractBreakpointHeaders(request.headers);
+                var breakpointId = reqHeaders.breakpointId;
+                var correlationId = reqHeaders.correlationId;
+
+                var bpReqHandler = breakpointId ? breakpointRequestHandlers[breakpointId] : null;
+                if (bpReqHandler) {
+                    try {
+                        var bpResult = bpReqHandler(request);
+                        if (bpResult === null || bpResult === undefined) {
+                            bpResult = request; // auto-continue
+                        }
+                        if (correlationId) {
+                            if (!bpResult.headers) { bpResult.headers = {}; }
+                            bpResult.headers["WebSocketCorrelationId"] = Array.isArray(correlationId) ? correlationId : [correlationId];
+                        }
+                        var bpResultType = bpResult.statusCode !== undefined
+                            ? "org.mockserver.model.HttpResponse"
+                            : "org.mockserver.model.HttpRequest";
+                        return {
+                            type: bpResultType,
+                            value: JSON.stringify(bpResult)
+                        };
+                    } catch (e) {
+                        // auto-continue on error
+                        if (!request.headers) { request.headers = {}; }
+                        if (correlationId) {
+                            request.headers["WebSocketCorrelationId"] = Array.isArray(correlationId) ? correlationId : [correlationId];
+                        }
+                        return {
+                            type: "org.mockserver.model.HttpRequest",
+                            value: JSON.stringify(request)
+                        };
+                    }
+                } else if (requestHandler) {
+                    return requestHandler(request);
+                }
+                // breakpoint message with no matching handler — auto-continue
+                if (correlationId) {
+                    if (!request.headers) { request.headers = {}; }
+                    request.headers["WebSocketCorrelationId"] = Array.isArray(correlationId) ? correlationId : [correlationId];
+                    return {
+                        type: "org.mockserver.model.HttpRequest",
+                        value: JSON.stringify(request)
+                    };
+                }
+                return null;
+            } else if (payload.type === "org.mockserver.model.HttpRequestAndHttpResponse") {
+                var requestAndResponse = JSON.parse(payload.value);
+                var respHeaders = _extractBreakpointHeaders(
+                    requestAndResponse.httpRequest ? requestAndResponse.httpRequest.headers : null
+                );
+                var bpId2 = respHeaders.breakpointId;
+                var corrId2 = respHeaders.correlationId;
+
+                var bpRespHandler = bpId2 ? breakpointResponseHandlers[bpId2] : null;
+                if (bpRespHandler) {
+                    try {
+                        var bpResp = bpRespHandler(requestAndResponse.httpRequest, requestAndResponse.httpResponse);
+                        if (bpResp === null || bpResp === undefined) {
+                            bpResp = requestAndResponse.httpResponse; // auto-continue
+                        }
+                        if (corrId2) {
+                            if (!bpResp.headers) { bpResp.headers = {}; }
+                            bpResp.headers["WebSocketCorrelationId"] = Array.isArray(corrId2) ? corrId2 : [corrId2];
+                        }
+                        return {
+                            type: "org.mockserver.model.HttpResponse",
+                            value: JSON.stringify(bpResp)
+                        };
+                    } catch (e) {
+                        // auto-continue on error
+                        var origResp = requestAndResponse.httpResponse || {};
+                        if (corrId2) {
+                            if (!origResp.headers) { origResp.headers = {}; }
+                            origResp.headers["WebSocketCorrelationId"] = Array.isArray(corrId2) ? corrId2 : [corrId2];
+                        }
+                        return {
+                            type: "org.mockserver.model.HttpResponse",
+                            value: JSON.stringify(origResp)
+                        };
+                    }
+                } else if (requestAndResponseHandler) {
+                    return requestAndResponseHandler(requestAndResponse);
+                }
+                // auto-continue with original response
+                if (corrId2) {
+                    var origResp2 = requestAndResponse.httpResponse || {};
+                    if (!origResp2.headers) { origResp2.headers = {}; }
+                    origResp2.headers["WebSocketCorrelationId"] = Array.isArray(corrId2) ? corrId2 : [corrId2];
+                    return {
+                        type: "org.mockserver.model.HttpResponse",
+                        value: JSON.stringify(origResp2)
+                    };
+                }
+                return null;
+            } else if (payload.type === "org.mockserver.serialization.model.PausedStreamFrameDTO") {
+                var pausedFrame = JSON.parse(payload.value);
+                var sfBpId = pausedFrame.breakpointId;
+                var sfHandler = sfBpId ? breakpointStreamFrameHandlers[sfBpId] : null;
+                var decision;
+                if (sfHandler) {
+                    try {
+                        decision = sfHandler(pausedFrame);
+                        if (decision === null || decision === undefined) {
+                            decision = { correlationId: pausedFrame.correlationId, action: "CONTINUE" };
+                        } else {
+                            decision.correlationId = pausedFrame.correlationId; // ensure echoed
+                        }
+                    } catch (e) {
+                        decision = { correlationId: pausedFrame.correlationId, action: "CONTINUE" };
+                    }
+                } else {
+                    // auto-continue for unknown breakpoint id
+                    decision = { correlationId: pausedFrame.correlationId, action: "CONTINUE" };
+                }
+                return {
+                    type: "org.mockserver.serialization.model.StreamFrameDecisionDTO",
+                    value: JSON.stringify(decision)
+                };
+            }
+            // WebSocketClientIdDTO or unknown types — not routed
+            return null;
+        };
 
         var WebSocketClient = (runningInNode() ? require('./webSocketClient').webSocketClient(tls, caCertPemFilePath) : function (host, port, contextPath) {
             var clientId;
