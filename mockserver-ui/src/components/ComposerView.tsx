@@ -1838,6 +1838,12 @@ function ChaosPanel({
   chaos: StandardChaosDraft;
   setChaos: (c: StandardChaosDraft) => void;
 }) {
+  // Fixed per-column widths so the three rows line up: column 1 (Error status /
+  // Latency value / Succeed first), column 2 (Error prob / Latency unit / Fail
+  // request count — wide enough for the longest label), column 3 (Retry-After / Seed).
+  const COL1 = 160;
+  const COL2 = 175;
+  const COL3 = 140;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       <Typography variant="body2" color="text.secondary">
@@ -1852,7 +1858,7 @@ function ChaosPanel({
           value={chaos.errorStatus ?? ''}
           error={!!standardChaosErrorStatusError(chaos.errorStatus)}
           onChange={(e) => { const n = parseInt(e.target.value, 10); setChaos({ ...chaos, errorStatus: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-          sx={{ width: 120 }}
+          sx={{ width: COL1 }}
           helperText={standardChaosErrorStatusError(chaos.errorStatus) ?? 'e.g. 500, 503, 429'}
         />
         <TextField
@@ -1862,7 +1868,7 @@ function ChaosPanel({
           value={chaos.errorProbability ?? ''}
           error={!!standardChaosErrorProbabilityError(chaos.errorProbability)}
           onChange={(e) => { const n = parseFloat(e.target.value); setChaos({ ...chaos, errorProbability: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-          sx={{ width: 130 }}
+          sx={{ width: COL2 }}
           helperText={standardChaosErrorProbabilityError(chaos.errorProbability) ?? '1.0 = always'}
         />
         <TextField
@@ -1870,7 +1876,7 @@ function ChaosPanel({
           size="small"
           value={chaos.retryAfter ?? ''}
           onChange={(e) => setChaos({ ...chaos, retryAfter: e.target.value || undefined })}
-          sx={{ width: 120 }}
+          sx={{ width: COL3 }}
           helperText='e.g. "30"'
         />
       </Box>
@@ -1881,7 +1887,7 @@ function ChaosPanel({
           type="number"
           value={chaos.latencyValue ?? ''}
           onChange={(e) => setChaos({ ...chaos, latencyValue: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: 140 }}
+          sx={{ width: COL1 }}
           helperText="0 = no latency"
         />
         <TextField
@@ -1890,7 +1896,7 @@ function ChaosPanel({
           select
           value={chaos.latencyUnit ?? 'MILLISECONDS'}
           onChange={(e) => setChaos({ ...chaos, latencyUnit: e.target.value as ChaosDelayUnit })}
-          sx={{ width: 160 }}
+          sx={{ width: COL2 }}
         >
           <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
           <MenuItem value="SECONDS">seconds</MenuItem>
@@ -1902,7 +1908,7 @@ function ChaosPanel({
           type="number"
           value={chaos.seed ?? ''}
           onChange={(e) => setChaos({ ...chaos, seed: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: 110 }}
+          sx={{ width: COL3 }}
           helperText="reproducible prob"
         />
       </Box>
@@ -1913,7 +1919,7 @@ function ChaosPanel({
           type="number"
           value={chaos.succeedFirst ?? ''}
           onChange={(e) => setChaos({ ...chaos, succeedFirst: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: 150 }}
+          sx={{ width: COL1 }}
           helperText="first N requests OK"
         />
         <TextField
@@ -1922,7 +1928,7 @@ function ChaosPanel({
           type="number"
           value={chaos.failRequestCount ?? ''}
           onChange={(e) => setChaos({ ...chaos, failRequestCount: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: 160 }}
+          sx={{ width: COL2 }}
           helperText="then next M fail"
         />
       </Box>
