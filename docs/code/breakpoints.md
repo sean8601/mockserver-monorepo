@@ -251,15 +251,18 @@ in each entry.
 ### Resolution protocol
 
 - **REQUEST phase:** the paused request is sent to the client over the callback
-  WS (with a `WebSocketCorrelationId` header). The client replies with either:
+  WS (with `WebSocketCorrelationId`, `X-MockServer-BreakpointId`, and
+  `X-MockServer-RequestTimestamp` headers). The client replies with either:
   - An `HttpRequest` — forward that request (MODIFY if different, CONTINUE if
     identical to the original).
   - An `HttpResponse` — ABORT (write that response to the downstream client,
     do not forward upstream).
 
-- **RESPONSE phase:** the paused request+response are sent to the client. The
-  client replies with an `HttpResponse` — the server writes it to the
-  downstream client (MODIFY/CONTINUE).
+- **RESPONSE phase:** the paused request+response are sent to the client (the
+  request carries the same `WebSocketCorrelationId`, `X-MockServer-BreakpointId`,
+  and `X-MockServer-RequestTimestamp` headers). The client replies with an
+  `HttpResponse` — the server writes it to the downstream client
+  (MODIFY/CONTINUE).
 
 ### Safety rails
 
@@ -320,6 +323,7 @@ client inspects the frame and replies with a `StreamFrameDecisionDTO`.
 | `requestMethod` | String (nullable) | HTTP method of the original request |
 | `requestPath` | String (nullable) | Path of the original request |
 | `breakpointId` | String (nullable) | The id of the breakpoint matcher that matched this frame, enabling per-breakpoint handler routing on the client |
+| `requestTimestamp` | Long (nullable) | Epoch-millis when MockServer first received the originating request. Enables sorting frames by original request time |
 
 **Encoding:** the `body` is standard Base64 with no line breaks. Frames are
 arbitrary bytes (gRPC length-prefixed, WebSocket text/binary, SSE/chunked).
@@ -331,6 +335,22 @@ the matched breakpoint id is the `breakpointId` field in the
 `PausedStreamFrameDTO`. Clients use this id to route each pushed item to the
 handler of the specific breakpoint that matched, supporting multiple concurrent
 breakpoints without handler overwriting.
+
+**Request timestamp:** all dispatched items carry the epoch-millis timestamp of
+when MockServer first received the originating request:
+
+- For REQUEST/RESPONSE phases, the `X-MockServer-RequestTimestamp` header is set
+  on the dispatched `HttpRequest` (alongside `WebSocketCorrelationId` and
+  `X-MockServer-BreakpointId`). The value is the string representation of the
+  `Long` timestamp.
+- For RESPONSE_STREAM/INBOUND_STREAM phases, the `requestTimestamp` field in the
+  `PausedStreamFrameDTO` carries the same value as a `Long`.
+
+All phases of the same exchange share the same timestamp value, enabling the
+dashboard (and other clients) to sort every phase of one exchange by original
+request time rather than by arrival time. The dashboard sorts by
+`requestTimestamp` first, falling back to the client-side `receivedAt` for
+servers that do not yet send the header.
 
 #### Client-to-server: `StreamFrameDecisionDTO`
 

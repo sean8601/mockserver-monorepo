@@ -1237,7 +1237,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     }
 
     public HttpRequest shallowClone() {
-        return not(request(), not)
+        HttpRequest clone = not(request(), not)
             .withMethod(method)
             .withPath(path)
             .withPathParameters(pathParameters)
@@ -1255,11 +1255,13 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             .withSocketAddress(socketAddress)
             .withLocalAddress(localAddress)
             .withRemoteAddress(remoteAddress);
+        clone.withReceivedTimestamp(getReceivedTimestamp());
+        return clone;
     }
 
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     public HttpRequest clone() {
-        return not(request(), not)
+        HttpRequest clone = not(request(), not)
             .withMethod(method)
             .withPath(path)
             .withPathParameters(pathParameters != null ? pathParameters.clone() : null)
@@ -1277,6 +1279,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             .withSocketAddress(socketAddress)
             .withLocalAddress(localAddress)
             .withRemoteAddress(remoteAddress);
+        clone.withReceivedTimestamp(getReceivedTimestamp());
+        return clone;
     }
 
     public HttpRequest update(HttpRequest requestOverride, HttpRequestModifier requestModifier) {

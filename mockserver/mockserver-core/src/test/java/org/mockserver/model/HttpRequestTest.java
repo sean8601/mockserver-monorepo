@@ -489,4 +489,54 @@ public class HttpRequestTest {
         assertThat(request.getMethod(), is(string("OPTIONS")));
         assertThat(request.getPath(), is(string("/path")));
     }
+
+    // ---- receivedTimestamp ----
+
+    @Test
+    public void receivedTimestampExcludedFromEquals() {
+        HttpRequest a = request().withMethod("GET").withPath("/test");
+        HttpRequest b = request().withMethod("GET").withPath("/test");
+
+        a.withReceivedTimestamp(1000L);
+        b.withReceivedTimestamp(2000L);
+
+        assertThat("receivedTimestamp must NOT affect equals",
+            a, is(b));
+        assertThat("receivedTimestamp must NOT affect hashCode",
+            a.hashCode(), is(b.hashCode()));
+    }
+
+    @Test
+    public void receivedTimestampPreservedByClone() {
+        HttpRequest original = request().withMethod("POST").withPath("/clone-test");
+        original.withReceivedTimestamp(12345L);
+
+        HttpRequest cloned = original.clone();
+        assertThat("clone must preserve receivedTimestamp",
+            cloned.getReceivedTimestamp(), is(12345L));
+    }
+
+    @Test
+    public void receivedTimestampPreservedByShallowClone() {
+        HttpRequest original = request().withMethod("DELETE").withPath("/shallow");
+        original.withReceivedTimestamp(67890L);
+
+        HttpRequest cloned = original.shallowClone();
+        assertThat("shallowClone must preserve receivedTimestamp",
+            cloned.getReceivedTimestamp(), is(67890L));
+    }
+
+    @Test
+    public void receivedTimestampExcludedFromJsonSerialization() {
+        HttpRequest request = request().withMethod("GET").withPath("/json-test");
+        request.withReceivedTimestamp(99999L);
+
+        // The field is annotated @JsonIgnore, so it should not appear in JSON.
+        // We verify by checking that the getter returns the value but the field
+        // name 'receivedTimestamp' is not in the serialized form.
+        String json = request.toString();
+        // toString uses Jackson serialization — receivedTimestamp should be absent
+        assertThat("receivedTimestamp should not appear in JSON output",
+            json.contains("receivedTimestamp"), is(false));
+    }
 }

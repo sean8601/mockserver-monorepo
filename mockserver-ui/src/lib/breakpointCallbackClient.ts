@@ -72,6 +72,8 @@ export interface PausedStreamFrame {
   requestMethod?: string | null;
   requestPath?: string | null;
   breakpointId?: string | null;
+  /** Epoch-millis when MockServer first received the originating request. */
+  requestTimestamp?: number | null;
 }
 
 /** Resolution for a stream frame. */
@@ -88,8 +90,8 @@ export type BreakpointPhase = 'REQUEST' | 'RESPONSE' | 'RESPONSE_STREAM' | 'INBO
  * The `phase` field lets consumers determine what kind of item they're resolving.
  */
 export type PausedItem =
-  | { phase: 'REQUEST'; breakpointId: string | null; correlationId: string; request: PausedRequest }
-  | { phase: 'RESPONSE'; breakpointId: string | null; correlationId: string; request: PausedRequest; response: PausedRequestAndResponse['httpResponse'] }
+  | { phase: 'REQUEST'; breakpointId: string | null; correlationId: string; requestTimestamp: number | null; request: PausedRequest }
+  | { phase: 'RESPONSE'; breakpointId: string | null; correlationId: string; requestTimestamp: number | null; request: PausedRequest; response: PausedRequestAndResponse['httpResponse'] }
   | { phase: 'RESPONSE_STREAM' | 'INBOUND_STREAM'; breakpointId: string | null; frame: PausedStreamFrame };
 
 /** Listener for paused items pushed over the callback WS. */
@@ -114,6 +116,7 @@ const TYPE_FRAME_DECISION = 'org.mockserver.serialization.model.StreamFrameDecis
 
 const BREAKPOINT_ID_HEADER = 'X-MockServer-BreakpointId';
 const CORRELATION_ID_HEADER = 'WebSocketCorrelationId';
+const REQUEST_TIMESTAMP_HEADER = 'X-MockServer-RequestTimestamp';
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -302,11 +305,14 @@ export class BreakpointCallbackClient {
       const request = JSON.parse(value) as PausedRequest;
       const breakpointId = extractHeader(request.headers, BREAKPOINT_ID_HEADER);
       const correlationId = extractHeader(request.headers, CORRELATION_ID_HEADER);
+      const tsRaw = extractHeader(request.headers, REQUEST_TIMESTAMP_HEADER);
+      const requestTimestamp = tsRaw != null ? Number(tsRaw) : null;
       if (correlationId) {
         this.pausedItemListener?.({
           phase: 'REQUEST',
           breakpointId,
           correlationId,
+          requestTimestamp: requestTimestamp != null && !isNaN(requestTimestamp) ? requestTimestamp : null,
           request,
         });
       }
@@ -317,11 +323,14 @@ export class BreakpointCallbackClient {
       const pair = JSON.parse(value) as PausedRequestAndResponse;
       const breakpointId = extractHeader(pair.httpRequest?.headers, BREAKPOINT_ID_HEADER);
       const correlationId = extractHeader(pair.httpRequest?.headers, CORRELATION_ID_HEADER);
+      const tsRaw = extractHeader(pair.httpRequest?.headers, REQUEST_TIMESTAMP_HEADER);
+      const requestTimestamp = tsRaw != null ? Number(tsRaw) : null;
       if (correlationId) {
         this.pausedItemListener?.({
           phase: 'RESPONSE',
           breakpointId,
           correlationId,
+          requestTimestamp: requestTimestamp != null && !isNaN(requestTimestamp) ? requestTimestamp : null,
           request: pair.httpRequest ?? {},
           response: pair.httpResponse,
         });

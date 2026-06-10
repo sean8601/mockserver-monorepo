@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 import static org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.BREAKPOINT_ID_HEADER_NAME;
+import static org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.REQUEST_TIMESTAMP_HEADER_NAME;
 import static org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WEB_SOCKET_CORRELATION_ID_HEADER_NAME;
 import static org.slf4j.event.Level.INFO;
 import static org.slf4j.event.Level.WARN;
@@ -146,7 +147,12 @@ public class BreakpointCallbackDispatcher {
         webSocketClientRegistry.registerForwardCallbackHandler(correlationId, new WebSocketRequestCallback() {
             @Override
             public void handle(HttpRequest callbackRequest) {
-                HttpRequest cleaned = callbackRequest.removeHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME);
+                // Strip the internal dispatch headers so they are not forwarded to
+                // the upstream when the (echoed) request is continued/modified.
+                HttpRequest cleaned = callbackRequest
+                    .removeHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME)
+                    .removeHeader(BREAKPOINT_ID_HEADER_NAME)
+                    .removeHeader(REQUEST_TIMESTAMP_HEADER_NAME);
                 future.complete(BreakpointDecision.modify(cleaned));
             }
 
@@ -183,10 +189,14 @@ public class BreakpointCallbackDispatcher {
             inFlight.remove(correlationId, dispatch);
         });
 
-        // Send the request to the client, including the breakpoint id header
+        // Send the request to the client, including the breakpoint id and timestamp headers
+        Long requestTimestamp = request.getReceivedTimestamp();
         HttpRequest dispatchClone = request.clone().withHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME, correlationId);
         if (breakpointId != null) {
             dispatchClone.withHeader(BREAKPOINT_ID_HEADER_NAME, breakpointId);
+        }
+        if (requestTimestamp != null) {
+            dispatchClone.withHeader(REQUEST_TIMESTAMP_HEADER_NAME, String.valueOf(requestTimestamp));
         }
         if (!webSocketClientRegistry.sendClientMessage(clientId, dispatchClone, null)) {
             // Client not connected — complete (triggers whenComplete cleanup) and return null
@@ -293,10 +303,14 @@ public class BreakpointCallbackDispatcher {
             inFlight.remove(correlationId, dispatch);
         });
 
-        // Send request+response to the client, including the breakpoint id header
+        // Send request+response to the client, including the breakpoint id and timestamp headers
+        Long requestTimestamp = request.getReceivedTimestamp();
         HttpRequest responseDispatchClone = request.clone().withHeader(WEB_SOCKET_CORRELATION_ID_HEADER_NAME, correlationId);
         if (breakpointId != null) {
             responseDispatchClone.withHeader(BREAKPOINT_ID_HEADER_NAME, breakpointId);
+        }
+        if (requestTimestamp != null) {
+            responseDispatchClone.withHeader(REQUEST_TIMESTAMP_HEADER_NAME, String.valueOf(requestTimestamp));
         }
         if (!webSocketClientRegistry.sendClientMessage(clientId, responseDispatchClone, response)) {
             // Client not connected — complete (triggers whenComplete cleanup) and return null

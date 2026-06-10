@@ -41,6 +41,13 @@ public class WebSocketClientRegistry {
      */
     public static final String BREAKPOINT_ID_HEADER_NAME = "X-MockServer-BreakpointId";
     /**
+     * Header name carrying the epoch-millis timestamp of when MockServer first
+     * received the request. All phases (REQUEST, RESPONSE) of the same exchange
+     * share the same value, enabling the dashboard to sort exchanges by original
+     * request time rather than by WS arrival time.
+     */
+    public static final String REQUEST_TIMESTAMP_HEADER_NAME = "X-MockServer-RequestTimestamp";
+    /**
      * Channel attribute key for the per-server {@link WebSocketClientRegistry}. Set once
      * on the parent/server channel at pipeline construction; read at hold points in Netty
      * handlers that need the registry but do not have {@code HttpState} in direct scope.

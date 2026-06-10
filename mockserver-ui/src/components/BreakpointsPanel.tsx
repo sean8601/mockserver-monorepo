@@ -426,19 +426,27 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   // Derived
   // -------------------------------------------------------------------------
 
-  // Stable order: sort by the arrival timestamp (then the monotonic key as a
-  // tiebreaker) so the lists never reshuffle — a newly-paused exchange/stream
-  // appears in a fixed chronological position rather than jumping around.
-  const byReceived = (
-    a: { key: number; receivedAt: number },
-    b: { key: number; receivedAt: number },
-  ): number => a.receivedAt - b.receivedAt || a.key - b.key;
+  // Sort by the server-side request timestamp (when MockServer first received the
+  // request) so all phases of the same exchange stay grouped together.  Fall back
+  // to the client-captured `receivedAt` for servers that do not yet send the header.
+  // The monotonic `key` is the final tiebreaker.
+  const sortKey = (item: PausedItem & { key: number; receivedAt: number }): number => {
+    if (item.phase === 'REQUEST' || item.phase === 'RESPONSE') {
+      return item.requestTimestamp ?? item.receivedAt;
+    }
+    // RESPONSE_STREAM / INBOUND_STREAM
+    return (item as unknown as { frame: PausedStreamFrame }).frame.requestTimestamp ?? item.receivedAt;
+  };
+  const byRequestTime = (
+    a: PausedItem & { key: number; receivedAt: number },
+    b: PausedItem & { key: number; receivedAt: number },
+  ): number => sortKey(a) - sortKey(b) || a.key - b.key;
   const exchangeItems = pausedItems
     .filter((i) => i.phase === 'REQUEST' || i.phase === 'RESPONSE')
-    .sort(byReceived);
+    .sort(byRequestTime);
   const frameItems = (
     pausedItems.filter((i) => i.phase === 'RESPONSE_STREAM' || i.phase === 'INBOUND_STREAM') as (PausedItem & { key: number; receivedAt: number; phase: 'RESPONSE_STREAM' | 'INBOUND_STREAM'; frame: PausedStreamFrame })[]
-  ).sort(byReceived);
+  ).sort(byRequestTime);
 
   const wsIndicatorColor = wsState === 'connected' ? 'success' : wsState === 'connecting' ? 'warning' : 'error';
 

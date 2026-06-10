@@ -38,13 +38,14 @@ public class PausedStreamFrame {
     private final String requestPath;
     private final String requestMethod;
     private final Direction direction;
+    private final Long requestTimestamp;
 
     /**
      * Creates a paused frame with the default OUTBOUND direction (backward compatible).
      */
     public PausedStreamFrame(String frameId, String streamId, int sequenceNumber, byte[] capturedBytes,
                              String requestMethod, String requestPath) {
-        this(frameId, streamId, sequenceNumber, capturedBytes, requestMethod, requestPath, Direction.OUTBOUND);
+        this(frameId, streamId, sequenceNumber, capturedBytes, requestMethod, requestPath, Direction.OUTBOUND, null);
     }
 
     /**
@@ -52,6 +53,14 @@ public class PausedStreamFrame {
      */
     public PausedStreamFrame(String frameId, String streamId, int sequenceNumber, byte[] capturedBytes,
                              String requestMethod, String requestPath, Direction direction) {
+        this(frameId, streamId, sequenceNumber, capturedBytes, requestMethod, requestPath, direction, null);
+    }
+
+    /**
+     * Creates a paused frame with an explicit direction and request timestamp.
+     */
+    public PausedStreamFrame(String frameId, String streamId, int sequenceNumber, byte[] capturedBytes,
+                             String requestMethod, String requestPath, Direction direction, Long requestTimestamp) {
         this.frameId = frameId;
         this.streamId = streamId;
         this.sequenceNumber = sequenceNumber;
@@ -61,6 +70,7 @@ public class PausedStreamFrame {
         this.requestMethod = requestMethod;
         this.requestPath = requestPath;
         this.direction = direction;
+        this.requestTimestamp = requestTimestamp;
     }
 
     /**
@@ -129,5 +139,13 @@ public class PausedStreamFrame {
      */
     public Direction getDirection() {
         return direction;
+    }
+
+    /**
+     * The epoch-millis timestamp at which MockServer first received the
+     * originating request. May be {@code null} for backward compatibility.
+     */
+    public Long getRequestTimestamp() {
+        return requestTimestamp;
     }
 }

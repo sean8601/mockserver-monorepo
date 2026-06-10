@@ -86,9 +86,7 @@ public class StreamFrameCallbackDispatcher {
      *         if the max-held cap is reached or the client is not connected
      */
     /**
-     * @deprecated use {@link #dispatchFrame(String, String, String, int, PausedStreamFrame.Direction,
-     *     BreakpointPhase, byte[], String, String, WebSocketClientRegistry, Configuration, MockServerLogger)}
-     *     which includes the breakpointId parameter
+     * @deprecated use the overload that includes breakpointId and requestTimestamp
      */
     public CompletableFuture<StreamFrameDecision> dispatchFrame(
         String clientId,
@@ -104,12 +102,33 @@ public class StreamFrameCallbackDispatcher {
         MockServerLogger logger
     ) {
         return dispatchFrame(clientId, null, streamId, sequenceNumber, direction, phase,
-            capturedBytes, requestMethod, requestPath, webSocketClientRegistry, configuration, logger);
+            capturedBytes, requestMethod, requestPath, null, webSocketClientRegistry, configuration, logger);
+    }
+
+    /**
+     * @deprecated use the overload that includes requestTimestamp
+     */
+    public CompletableFuture<StreamFrameDecision> dispatchFrame(
+        String clientId,
+        String breakpointId,
+        String streamId,
+        int sequenceNumber,
+        PausedStreamFrame.Direction direction,
+        BreakpointPhase phase,
+        byte[] capturedBytes,
+        String requestMethod,
+        String requestPath,
+        WebSocketClientRegistry webSocketClientRegistry,
+        Configuration configuration,
+        MockServerLogger logger
+    ) {
+        return dispatchFrame(clientId, breakpointId, streamId, sequenceNumber, direction, phase,
+            capturedBytes, requestMethod, requestPath, null, webSocketClientRegistry, configuration, logger);
     }
 
     /**
      * Dispatches a stream frame to a callback WebSocket client for interactive resolution,
-     * tagging the message with the matched breakpoint id.
+     * tagging the message with the matched breakpoint id and request timestamp.
      *
      * @param clientId               the owning callback client
      * @param breakpointId           the matched breakpoint's id (may be null)
@@ -120,6 +139,7 @@ public class StreamFrameCallbackDispatcher {
      * @param capturedBytes          the frame payload bytes (already copied from ByteBuf)
      * @param requestMethod          HTTP method of the original request (nullable)
      * @param requestPath            path of the original request (nullable)
+     * @param requestTimestamp       epoch-millis when MockServer first received the request (nullable)
      * @param webSocketClientRegistry the WS registry for sending messages
      * @param configuration          for timeout and max-held
      * @param logger                 for logging
@@ -136,6 +156,7 @@ public class StreamFrameCallbackDispatcher {
         byte[] capturedBytes,
         String requestMethod,
         String requestPath,
+        Long requestTimestamp,
         WebSocketClientRegistry webSocketClientRegistry,
         Configuration configuration,
         MockServerLogger logger
@@ -191,7 +212,8 @@ public class StreamFrameCallbackDispatcher {
             .setBody(Base64.getEncoder().encodeToString(capturedBytes))
             .setRequestMethod(requestMethod)
             .setRequestPath(requestPath)
-            .setBreakpointId(breakpointId);
+            .setBreakpointId(breakpointId)
+            .setRequestTimestamp(requestTimestamp);
 
         // Send to the client
         if (!webSocketClientRegistry.sendStreamFrameMessage(clientId, dto)) {
@@ -289,12 +311,33 @@ public class StreamFrameCallbackDispatcher {
         MockServerLogger logger,
         WebSocketClientRegistry webSocketClientRegistry
     ) {
+        return tryWsDispatch(matchedBreakpoint, streamId, sequenceNumber, direction, phase,
+            capturedBytes, requestMethod, requestPath, null, configuration, logger, webSocketClientRegistry);
+    }
+
+    /**
+     * Overload of {@link #tryWsDispatch} that includes the request timestamp.
+     */
+    public CompletableFuture<StreamFrameDecision> tryWsDispatch(
+        BreakpointMatcher matchedBreakpoint,
+        String streamId,
+        int sequenceNumber,
+        PausedStreamFrame.Direction direction,
+        BreakpointPhase phase,
+        byte[] capturedBytes,
+        String requestMethod,
+        String requestPath,
+        Long requestTimestamp,
+        Configuration configuration,
+        MockServerLogger logger,
+        WebSocketClientRegistry webSocketClientRegistry
+    ) {
         String clientId = matchedBreakpoint.getClientId();
         if (clientId == null || webSocketClientRegistry == null) {
             return null; // not applicable — caller uses REST-park
         }
         return dispatchFrame(clientId, matchedBreakpoint.getId(), streamId, sequenceNumber, direction, phase,
-            capturedBytes, requestMethod, requestPath, webSocketClientRegistry, configuration, logger);
+            capturedBytes, requestMethod, requestPath, requestTimestamp, webSocketClientRegistry, configuration, logger);
     }
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(StreamFrameCallbackDispatcher.class);

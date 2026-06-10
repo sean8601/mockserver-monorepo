@@ -390,6 +390,77 @@ public class BreakpointCallbackDispatcherTest {
         assertThat(decision.getAction(), is(BreakpointDecision.Action.CONTINUE));
     }
 
+    // ---- Request timestamp header ----
+
+    @Test
+    public void requestPhase_shouldIncludeRequestTimestampHeader() throws Exception {
+        long timestamp = 1717000000000L;
+        HttpRequest originalRequest = request().withMethod("GET").withPath("/api/timestamp");
+        originalRequest.withReceivedTimestamp(timestamp);
+
+        CompletableFuture<BreakpointDecision> future = dispatcher.dispatchRequest(
+            CLIENT_ID, "bp-ts-1", originalRequest, webSocketClientRegistry, configuration, logger
+        );
+        assertThat(future, is(notNullValue()));
+
+        // Read the dispatched frame and verify the timestamp header
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        HttpRequest sentRequest = (HttpRequest) serializer.deserialize(sentFrame.text());
+        String tsHeader = sentRequest.getFirstHeader("X-MockServer-RequestTimestamp");
+        assertThat("X-MockServer-RequestTimestamp must be present", tsHeader, is(notNullValue()));
+        assertThat("X-MockServer-RequestTimestamp must match the request's receivedTimestamp",
+            tsHeader, is(String.valueOf(timestamp)));
+
+        // Clean up
+        future.complete(BreakpointDecision.continueOriginal());
+    }
+
+    @Test
+    public void responsePhase_shouldIncludeRequestTimestampHeader() throws Exception {
+        long timestamp = 1717000000123L;
+        HttpRequest originalRequest = request().withMethod("POST").withPath("/api/resp-ts");
+        originalRequest.withReceivedTimestamp(timestamp);
+        HttpResponse originalResponse = response().withStatusCode(200).withBody("ok");
+
+        CompletableFuture<BreakpointDecision> future = dispatcher.dispatchResponse(
+            CLIENT_ID, "bp-ts-2", originalRequest, originalResponse, webSocketClientRegistry, configuration, logger
+        );
+        assertThat(future, is(notNullValue()));
+
+        // Read the dispatched frame and verify the timestamp header
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        Object sentMessage = serializer.deserialize(sentFrame.text());
+        assertThat(sentMessage, instanceOf(org.mockserver.model.HttpRequestAndHttpResponse.class));
+        org.mockserver.model.HttpRequestAndHttpResponse sentPair = (org.mockserver.model.HttpRequestAndHttpResponse) sentMessage;
+        String tsHeader = sentPair.getHttpRequest().getFirstHeader("X-MockServer-RequestTimestamp");
+        assertThat("X-MockServer-RequestTimestamp must be present on RESPONSE dispatch", tsHeader, is(notNullValue()));
+        assertThat("X-MockServer-RequestTimestamp must match the request's receivedTimestamp",
+            tsHeader, is(String.valueOf(timestamp)));
+
+        // Clean up
+        future.complete(BreakpointDecision.continueOriginal());
+    }
+
+    @Test
+    public void requestPhase_shouldNotIncludeTimestampHeaderWhenNull() throws Exception {
+        HttpRequest originalRequest = request().withMethod("GET").withPath("/api/no-ts");
+        // receivedTimestamp is null by default
+
+        CompletableFuture<BreakpointDecision> future = dispatcher.dispatchRequest(
+            CLIENT_ID, originalRequest, webSocketClientRegistry, configuration, logger
+        );
+        assertThat(future, is(notNullValue()));
+
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        HttpRequest sentRequest = (HttpRequest) serializer.deserialize(sentFrame.text());
+        String tsHeader = sentRequest.getFirstHeader("X-MockServer-RequestTimestamp");
+        assertThat("X-MockServer-RequestTimestamp should be absent when receivedTimestamp is null",
+            tsHeader, is(""));
+
+        // Clean up
+        future.complete(BreakpointDecision.continueOriginal());
+    }
+
     // ---- Max-held cap ----
 
     @Test

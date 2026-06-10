@@ -628,6 +628,51 @@ public class StreamFrameCallbackDispatcherTest {
         }
     }
 
+    // ---- requestTimestamp wiring ----
+
+    @Test
+    public void shouldSetRequestTimestampOnDispatchedDTO() throws Exception {
+        byte[] frameBody = "timestamp-test".getBytes();
+        Long requestTimestamp = 1717000000456L;
+
+        dispatcher.dispatchFrame(
+            CLIENT_ID, "bp-ts", "stream-ts", 0,
+            PausedStreamFrame.Direction.OUTBOUND, BreakpointPhase.RESPONSE_STREAM,
+            frameBody, "GET", "/api/ts-test",
+            requestTimestamp,
+            webSocketClientRegistry, configuration, logger
+        );
+
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        PausedStreamFrameDTO sentDto = (PausedStreamFrameDTO) serializer.deserialize(sentFrame.text());
+
+        assertThat("requestTimestamp must be present on the dispatched DTO",
+            sentDto.getRequestTimestamp(), is(requestTimestamp));
+
+        // cleanup — the dispatch future is still in-flight, auto-continue it
+        StreamFrameCallbackDispatcher.getInstance().reset();
+    }
+
+    @Test
+    public void shouldSetNullRequestTimestampWhenNotProvided() throws Exception {
+        byte[] frameBody = "no-ts".getBytes();
+
+        dispatcher.dispatchFrame(
+            CLIENT_ID, "stream-no-ts", 0,
+            PausedStreamFrame.Direction.OUTBOUND, BreakpointPhase.RESPONSE_STREAM,
+            frameBody, "GET", "/api/no-ts",
+            webSocketClientRegistry, configuration, logger
+        );
+
+        TextWebSocketFrame sentFrame = clientChannel.readOutbound();
+        PausedStreamFrameDTO sentDto = (PausedStreamFrameDTO) serializer.deserialize(sentFrame.text());
+
+        assertThat("requestTimestamp should be null when not provided",
+            sentDto.getRequestTimestamp(), is(nullValue()));
+
+        StreamFrameCallbackDispatcher.getInstance().reset();
+    }
+
     // ---- tryWsDispatch sets breakpointId ----
 
     @Test

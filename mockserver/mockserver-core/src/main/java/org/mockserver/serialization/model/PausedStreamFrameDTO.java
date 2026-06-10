@@ -43,6 +43,7 @@ public class PausedStreamFrameDTO extends ObjectWithReflectiveEqualsHashCodeToSt
     private String requestMethod;
     private String requestPath;
     private String breakpointId;
+    private Long requestTimestamp;
 
     public String getCorrelationId() {
         return correlationId;
@@ -122,6 +123,15 @@ public class PausedStreamFrameDTO extends ObjectWithReflectiveEqualsHashCodeToSt
 
     public PausedStreamFrameDTO setBreakpointId(String breakpointId) {
         this.breakpointId = breakpointId;
+        return this;
+    }
+
+    public Long getRequestTimestamp() {
+        return requestTimestamp;
+    }
+
+    public PausedStreamFrameDTO setRequestTimestamp(Long requestTimestamp) {
+        this.requestTimestamp = requestTimestamp;
         return this;
     }
 }

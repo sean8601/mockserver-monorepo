@@ -723,3 +723,85 @@ describe('BreakpointsPanel — Live Streams tab', () => {
     expect(screen.getByText('Inbound')).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sort-by-request-timestamp (unit test of the sort logic)
+// ---------------------------------------------------------------------------
+
+describe('BreakpointsPanel — sort by requestTimestamp', () => {
+  async function switchToExchangesTab() {
+    const user = userEvent.setup();
+    const tab = screen.getByRole('tab', { name: /Live Exchanges/ });
+    await user.click(tab);
+  }
+
+  it('sorts exchanges by server requestTimestamp, not client receivedAt', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+
+    // Connect WS
+    await waitFor(() => { expect(MockWebSocket.instances.length).toBeGreaterThan(0); });
+    const ws = connectCallbackWs();
+
+    // Push two REQUEST-phase items with reversed arrival order vs timestamp.
+    // Item 1 arrives first but has requestTimestamp=2000 (later request).
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'GET',
+        path: '/api/later-request',
+        headers: {
+          'WebSocketCorrelationId': ['corr-sort-2'],
+          'X-MockServer-BreakpointId': ['bp-s2'],
+          'X-MockServer-RequestTimestamp': ['2000'],
+        },
+      }),
+    });
+
+    // Item 2 arrives second but has requestTimestamp=1000 (earlier request).
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'POST',
+        path: '/api/earlier-request',
+        headers: {
+          'WebSocketCorrelationId': ['corr-sort-1'],
+          'X-MockServer-BreakpointId': ['bp-s1'],
+          'X-MockServer-RequestTimestamp': ['1000'],
+        },
+      }),
+    });
+
+    // Switch to Live Exchanges tab
+    await switchToExchangesTab();
+
+    // Wait for items to appear (path column shows the request path for REQUEST items)
+    await waitFor(() => {
+      expect(screen.getByText('/api/earlier-request')).toBeInTheDocument();
+      expect(screen.getByText('/api/later-request')).toBeInTheDocument();
+    });
+
+    // Verify order: find all table rows and collect paths
+    const allRows = document.querySelectorAll('tbody tr');
+    const rowPaths: string[] = [];
+    allRows.forEach(row => {
+      const cells = row.querySelectorAll('td');
+      cells.forEach(cell => {
+        const text = cell.textContent || '';
+        if (text.includes('/api/earlier-request') || text.includes('/api/later-request')) {
+          rowPaths.push(text);
+        }
+      });
+    });
+
+    // The item with earlier requestTimestamp should come first in the table
+    const earlierIdx = rowPaths.findIndex(p => p.includes('/api/earlier-request'));
+    const laterIdx = rowPaths.findIndex(p => p.includes('/api/later-request'));
+    expect(earlierIdx).toBeGreaterThanOrEqual(0);
+    expect(laterIdx).toBeGreaterThanOrEqual(0);
+    expect(earlierIdx).toBeLessThan(laterIdx);
+  });
+});

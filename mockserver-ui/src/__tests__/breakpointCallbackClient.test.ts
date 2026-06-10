@@ -443,4 +443,144 @@ describe('BreakpointCallbackClient', () => {
     }
     client.disconnect();
   });
+
+  // ---- requestTimestamp extraction ----
+
+  it('extracts requestTimestamp from REQUEST phase header', () => {
+    const client = new BreakpointCallbackClient();
+    const items: PausedItem[] = [];
+    client.onPausedItem((item) => items.push(item));
+    client.connect(params);
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.WebSocketClientIdDTO',
+      value: JSON.stringify({ clientId: 'c1' }),
+    });
+
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'GET',
+        path: '/api/ts-test',
+        headers: {
+          'WebSocketCorrelationId': ['corr-ts-1'],
+          'X-MockServer-BreakpointId': ['bp-1'],
+          'X-MockServer-RequestTimestamp': ['1717000000000'],
+        },
+      }),
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]!.phase).toBe('REQUEST');
+    if (items[0]!.phase === 'REQUEST') {
+      expect(items[0]!.requestTimestamp).toBe(1717000000000);
+    }
+    client.disconnect();
+  });
+
+  it('extracts requestTimestamp from RESPONSE phase header', () => {
+    const client = new BreakpointCallbackClient();
+    const items: PausedItem[] = [];
+    client.onPausedItem((item) => items.push(item));
+    client.connect(params);
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.WebSocketClientIdDTO',
+      value: JSON.stringify({ clientId: 'c1' }),
+    });
+
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequestAndHttpResponse',
+      value: JSON.stringify({
+        httpRequest: {
+          method: 'POST',
+          path: '/api/resp-ts',
+          headers: {
+            'WebSocketCorrelationId': ['corr-ts-2'],
+            'X-MockServer-BreakpointId': ['bp-2'],
+            'X-MockServer-RequestTimestamp': ['1717000000123'],
+          },
+        },
+        httpResponse: { statusCode: 200 },
+      }),
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]!.phase).toBe('RESPONSE');
+    if (items[0]!.phase === 'RESPONSE') {
+      expect(items[0]!.requestTimestamp).toBe(1717000000123);
+    }
+    client.disconnect();
+  });
+
+  it('sets requestTimestamp to null when header is missing', () => {
+    const client = new BreakpointCallbackClient();
+    const items: PausedItem[] = [];
+    client.onPausedItem((item) => items.push(item));
+    client.connect(params);
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.WebSocketClientIdDTO',
+      value: JSON.stringify({ clientId: 'c1' }),
+    });
+
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequest',
+      value: JSON.stringify({
+        method: 'GET',
+        path: '/api/no-ts',
+        headers: {
+          'WebSocketCorrelationId': ['corr-no-ts'],
+        },
+      }),
+    });
+
+    expect(items).toHaveLength(1);
+    if (items[0]!.phase === 'REQUEST') {
+      expect(items[0]!.requestTimestamp).toBeNull();
+    }
+    client.disconnect();
+  });
+
+  it('parses requestTimestamp on PausedStreamFrame from server', () => {
+    const client = new BreakpointCallbackClient();
+    const items: PausedItem[] = [];
+    client.onPausedItem((item) => items.push(item));
+    client.connect(params);
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.WebSocketClientIdDTO',
+      value: JSON.stringify({ clientId: 'c1' }),
+    });
+
+    ws.simulateMessage({
+      type: 'org.mockserver.serialization.model.PausedStreamFrameDTO',
+      value: JSON.stringify({
+        correlationId: 'frame-ts-1',
+        streamId: 'stream-ts-1',
+        sequenceNumber: 0,
+        direction: 'OUTBOUND',
+        phase: 'RESPONSE_STREAM',
+        body: btoa('hello'),
+        requestMethod: 'GET',
+        requestPath: '/events',
+        breakpointId: 'bp-frame-ts',
+        requestTimestamp: 1717000000789,
+      }),
+    });
+
+    expect(items).toHaveLength(1);
+    if (items[0]!.phase === 'RESPONSE_STREAM') {
+      expect(items[0]!.frame.requestTimestamp).toBe(1717000000789);
+    }
+    client.disconnect();
+  });
 });

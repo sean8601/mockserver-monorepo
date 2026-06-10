@@ -1392,6 +1392,9 @@ public class HttpState {
     public boolean handle(HttpRequest request, ResponseWriter responseWriter, boolean warDeployment) {
 
         request.withLogCorrelationId(UUIDService.getUUID());
+        if (request.getReceivedTimestamp() == null) {
+            request.withReceivedTimestamp(org.mockserver.time.EpochService.currentTimeMillis());
+        }
         setPort(request);
 
         if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
