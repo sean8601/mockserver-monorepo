@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, Fragment } from 'react';
+import { useState, useMemo, memo, useDeferredValue, Fragment } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -267,6 +267,10 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false 
   const hasBody = entry.messageParts && entry.messageParts.length > 0;
   const canCollapse = collapsible && hasBody;
   const [expanded, setExpanded] = useState(false);
+  // Defer the expanded body (which may contain a heavy JsonViewer for JSON
+  // message parts) so the click toggling `expanded` repaints the chevron
+  // immediately and the body builds in a non-blocking follow-up render.
+  const showBody = useDeferredValue(expanded);
   const debugMismatch = useDebugMismatchContext();
   const generateStub = useGenerateStubContext();
   const isUnmatched = isNotMatchedEntry(entry);
@@ -358,7 +362,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false 
               </Box>
             )}
           </Box>
-          {expanded && (
+          {showBody && (
             <Box sx={{ pl: 2.5, pt: 0.5 }}>
               {entry.messageParts?.map(renderMessagePart)}
             </Box>

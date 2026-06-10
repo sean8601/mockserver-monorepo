@@ -1,4 +1,4 @@
-import { Fragment, memo, useState, useMemo } from 'react';
+import { Fragment, memo, useDeferredValue, useState, useMemo } from 'react';
 import type React from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -161,6 +161,11 @@ function extractChaosSummary(value: Record<string, unknown>): string | null {
 
 function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
   const [expanded, setExpanded] = useState(false);
+  // The chevron + row layout react to `expanded` urgently (instant click
+  // feedback), but the expensive expanded JSON tree is gated on the deferred
+  // value so building it (the @uiw/react-json-view subtree) happens in a
+  // non-blocking follow-up render instead of stalling the click.
+  const showBody = useDeferredValue(expanded);
   const llmBadge = useMemo(() => extractLlmBadge(item.value), [item.value]);
   const requestParts = useMemo(() => extractRequestParts(item.value), [item.value]);
   const chaosSummary = useMemo(() => extractChaosSummary(item.value), [item.value]);
@@ -397,7 +402,7 @@ function JsonListItem({ item, index, turnPosition }: JsonListItemProps) {
           </Box>
         )}
       </Box>
-      {expanded && (
+      {showBody && (
         // pl: 6 matches the second-row chip indent so the expanded JSON
         // body lines up with the expectation id (Active Expectations) or
         // the method (Received / Proxied requests, where no id is shown).
