@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
-# Build per-platform, JVM-less MockServer binary bundles and upload them as assets
-# on a rolling GitHub pre-release tagged "mockserver-snapshot". Each master build
-# replaces the previous assets (--clobber).
+# Build per-platform, JVM-less MockServer binary bundles and upload them to S3.
+# Bundles are published to s3://aws-binaries-mockserver/mockserver-<POM_VERSION>/
+# and served via https://downloads.mock-server.com/mockserver-<POM_VERSION>/...
 #
 # Guard: skips when the pom version is NOT *-SNAPSHOT (mirrors java-deploy-snapshot.sh).
 #
-# Agent requirements: curl, tar, unzip, gh, jq, and ~2 GB scratch. A host JDK 21
+# Agent requirements: curl, tar, unzip, aws, and ~2 GB scratch. A host JDK 21
 # (for jlink only) is bootstrapped on demand if not already present, so the Maven
 # build keeps running on JDK 17 (this step never touches the Maven JDK). Runs on
 # the default queue.
 #
-# GH auth: reads a GitHub PAT from AWS Secrets Manager at
-# "mockserver-build/github-token" (key: "token"). This is a BUILD-queue secret,
-# separate from the release-queue's "mockserver-release/github-token". The default
-# queue must have IAM access to this secret. If absent, the step fails with an
-# actionable message.
+# Auth: uses the agent's IAM instance role — no tokens or secrets required. The
+# default-queue role needs PutObject on s3://aws-binaries-mockserver/* (provisioned
+# via Terraform in terraform/buildkite-agents/).
 
 set -euo pipefail
 
@@ -133,94 +131,66 @@ echo "Built ${#ASSETS[@]} assets:"
 printf '    %s\n' "${ASSETS[@]##*/}"
 
 # ---------------------------------------------------------------------------
-# Publish to the rolling "mockserver-snapshot" GitHub pre-release
+# Upload bundles to S3
 # ---------------------------------------------------------------------------
-echo "--- :github: Publishing bundles to rolling snapshot release"
+echo "--- :s3: Uploading bundles to s3://aws-binaries-mockserver/mockserver-${POM_VERSION}/"
 
-# Fetch GitHub token from Secrets Manager.
-# This is the BUILD-queue token, not the release-queue token.
-{ set +x; } 2>/dev/null  # suppress xtrace before secret fetch
-GITHUB_TOKEN=$(aws secretsmanager get-secret-value \
-  --secret-id "mockserver-build/github-token" \
-  --region eu-west-2 \
-  --query SecretString \
-  --output text 2>/dev/null | jq -r '.token' 2>/dev/null) || true
+S3_BUCKET="aws-binaries-mockserver"
+S3_PREFIX="mockserver-${POM_VERSION}"
+PUBLIC_BASE_URL="https://downloads.mock-server.com/${S3_PREFIX}"
 
-if [[ -z "$GITHUB_TOKEN" || "$GITHUB_TOKEN" == "null" ]]; then
+# Content-type helper: .tar.gz → application/gzip, .zip → application/zip, .sha256 → text/plain
+content_type_for() {
+  case "$1" in
+    *.tar.gz) echo "application/gzip" ;;
+    *.zip)    echo "application/zip" ;;
+    *.sha256) echo "text/plain" ;;
+    *)        echo "application/octet-stream" ;;
+  esac
+}
+
+# Snapshots are mutable (each master build overwrites), so use no-cache to
+# prevent CloudFront / browser from serving stale bundles.
+CACHE_CONTROL="no-cache, no-store, must-revalidate"
+
+UPLOAD_FAILED=0
+for asset in "${ASSETS[@]}"; do
+  filename="$(basename "$asset")"
+  ct="$(content_type_for "$filename")"
+  echo "  Uploading $filename (${ct})..."
+  if ! aws s3 cp "$asset" "s3://${S3_BUCKET}/${S3_PREFIX}/${filename}" \
+       --content-type "$ct" \
+       --cache-control "$CACHE_CONTROL" \
+       --region eu-west-2; then
+    UPLOAD_FAILED=1
+  fi
+done
+
+if [[ "$UPLOAD_FAILED" -ne 0 ]]; then
   echo ""
   echo "=========================================================================="
-  echo "ERROR: GitHub token not found in AWS Secrets Manager."
+  echo "ERROR: Failed to upload one or more bundles to s3://${S3_BUCKET}/"
   echo ""
-  echo "  Secret:  mockserver-build/github-token"
-  echo "  Key:     token"
-  echo "  Region:  eu-west-2"
+  echo "The default-queue agent's IAM instance role must have s3:PutObject"
+  echo "permission on arn:aws:s3:::${S3_BUCKET}/*."
   echo ""
-  echo "This secret must be provisioned with a GitHub PAT that has:"
-  echo "  - Scope: contents (write) on mock-server/mockserver-monorepo"
-  echo "  - Purpose: publish snapshot bundle assets to the rolling GitHub Release"
+  echo "This grant is provisioned by Terraform in terraform/buildkite-agents/."
+  echo "Run 'terraform apply' in that directory to apply the IAM policy."
   echo ""
-  echo "The default-queue agents need IAM access to this secret via the"
-  echo "read_build_secrets_default policy in terraform/buildkite-agents/build-secrets.tf."
-  echo ""
-  echo "Steps to provision:"
-  echo "  1. Create a fine-grained GitHub PAT with 'Contents: Read and write'"
-  echo "     scoped to mock-server/mockserver-monorepo"
-  echo "  2. Store it in Secrets Manager:"
-  echo '     aws secretsmanager create-secret --name "mockserver-build/github-token" --region eu-west-2 --secret-string '"'"'{"token":"ghp_..."}'"'"
-  echo "  3. Add its ARN to the read_build_secrets_default IAM policy in"
-  echo "     terraform/buildkite-agents/build-secrets.tf"
-  echo "  4. Run terraform apply in terraform/buildkite-agents/"
+  echo "This step is soft_fail so master will not be reddened."
   echo "=========================================================================="
   echo ""
   exit 1
 fi
 
-export GH_TOKEN="$GITHUB_TOKEN"
-GH_REPO="mock-server/mockserver-monorepo"
-SNAPSHOT_TAG="mockserver-snapshot"
-COMMIT_SHA="${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}"
-
-# Ensure the rolling pre-release exists (create if absent, update if present).
-if gh release view "$SNAPSHOT_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-  echo "Updating existing rolling snapshot release"
-  gh release edit "$SNAPSHOT_TAG" \
-    --repo "$GH_REPO" \
-    --prerelease \
-    --title "MockServer SNAPSHOT" \
-    --notes "Rolling snapshot binary bundles from master.
-
-Version: \`$POM_VERSION\`
-Commit: \`$COMMIT_SHA\`
-
-These bundles are rebuilt on every successful master build. Download the bundle for your platform and extract it — the archive contains a self-contained JVM runtime and launcher script.
-
-**This is a development snapshot, not a stable release.**" \
-    --target "$COMMIT_SHA" || true
-else
-  echo "Creating rolling snapshot release"
-  gh release create "$SNAPSHOT_TAG" \
-    --repo "$GH_REPO" \
-    --prerelease \
-    --title "MockServer SNAPSHOT" \
-    --notes "Rolling snapshot binary bundles from master.
-
-Version: \`$POM_VERSION\`
-Commit: \`$COMMIT_SHA\`
-
-These bundles are rebuilt on every successful master build. Download the bundle for your platform and extract it — the archive contains a self-contained JVM runtime and launcher script.
-
-**This is a development snapshot, not a stable release.**" \
-    --target "$COMMIT_SHA"
-fi
-
-# Upload assets, replacing any existing ones from the previous build.
-echo "Uploading ${#ASSETS[@]} assets (--clobber)..."
-gh release upload "$SNAPSHOT_TAG" \
-  --repo "$GH_REPO" \
-  --clobber \
-  "${ASSETS[@]}"
-
-echo "--- :white_check_mark: Snapshot bundles published to https://github.com/$GH_REPO/releases/tag/$SNAPSHOT_TAG"
+echo ""
+echo "--- :white_check_mark: Snapshot bundles published to S3"
+echo ""
+echo "Public download URLs:"
+for asset in "${ASSETS[@]}"; do
+  filename="$(basename "$asset")"
+  echo "  ${PUBLIC_BASE_URL}/${filename}"
+done
 
 # ---------------------------------------------------------------------------
 # Cleanup
