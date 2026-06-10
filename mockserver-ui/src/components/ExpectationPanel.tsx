@@ -3,7 +3,7 @@ import Typography from '@mui/material/Typography';
 import { useDashboardStore } from '../store';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
-import VirtualList from './VirtualList';
+import ProgressiveList from './ProgressiveList';
 import { useExpansion } from '../hooks/useExpansion';
 import { applyClientFilters } from '../lib/clientFilters';
 import { matchesItemSearch } from '../lib/searchMatcher';
@@ -48,10 +48,9 @@ export default function ExpectationPanel() {
             : 'No matching expectations'}
         </Typography>
       ) : (
-        <VirtualList
+        <ProgressiveList
           count={filtered.length}
           getKey={(i) => filtered[i]!.key}
-          estimateSize={56}
           renderRow={(i) => {
             const item = filtered[i]!;
             return (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRef, useEffect, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -7,7 +7,6 @@ import Chip from '@mui/material/Chip';
 import InputAdornment from '@mui/material/InputAdornment';
 import SearchIcon from '@mui/icons-material/Search';
 import { useDashboardStore } from '../store';
-import { PanelScrollContext } from './PanelScrollContext';
 
 interface PanelProps {
   title: string;
@@ -30,17 +29,7 @@ export default function Panel({
   children,
 }: PanelProps) {
   const autoScroll = useDashboardStore((s) => s.autoScroll);
-  // The scroll element is held two ways: a ref for the imperative scroll-to-top
-  // (a DOM mutation), and state so it can be published through
-  // PanelScrollContext to a virtualized child once it has mounted. The ref
-  // callback is stable (useCallback) so it isn't detached/reattached — and the
-  // context value flipped to null — on every render.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  const scrollRefCallback = useCallback((el: HTMLDivElement | null) => {
-    scrollRef.current = el;
-    setScrollEl(el);
-  }, []);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -105,7 +94,7 @@ export default function Panel({
         />
       </Box>
       <Box
-        ref={scrollRefCallback}
+        ref={scrollRef}
         sx={{
           flex: 1,
           overflowY: 'auto',
@@ -113,9 +102,7 @@ export default function Panel({
           p: 0.5,
         }}
       >
-        <PanelScrollContext.Provider value={scrollEl}>
-          {children}
-        </PanelScrollContext.Provider>
+        {children}
       </Box>
     </Paper>
   );

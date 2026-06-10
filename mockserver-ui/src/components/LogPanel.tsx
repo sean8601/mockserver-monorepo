@@ -5,7 +5,7 @@ import { isLogGroup } from '../types';
 import Panel from './Panel';
 import LogEntry from './LogEntry';
 import LogGroup from './LogGroup';
-import VirtualList from './VirtualList';
+import ProgressiveList from './ProgressiveList';
 import { useExpansion } from '../hooks/useExpansion';
 import { matchesLogSearch } from '../lib/searchMatcher';
 
@@ -36,10 +36,9 @@ export default function LogPanel() {
           {logMessages.length === 0 ? 'No log messages yet — server activity appears here as requests are handled.' : 'No matching log messages'}
         </Typography>
       ) : (
-        <VirtualList
+        <ProgressiveList
           count={filtered.length}
           getKey={(i) => filtered[i]!.key}
-          estimateSize={40}
           renderRow={(i) => {
             const message = filtered[i]!;
             return isLogGroup(message) ? (

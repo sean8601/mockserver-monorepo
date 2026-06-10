@@ -6,7 +6,7 @@ import Typography from '@mui/material/Typography';
 import type { JsonListItem } from '../types';
 import Panel from './Panel';
 import JsonListItemComponent from './JsonListItem';
-import VirtualList from './VirtualList';
+import ProgressiveList from './ProgressiveList';
 import { useExpansion } from '../hooks/useExpansion';
 import { matchesItemSearch } from '../lib/searchMatcher';
 
@@ -166,10 +166,9 @@ export default function RequestPanel({
           {items.length === 0 ? 'No requests yet — recorded requests appear here as traffic reaches the server.' : 'No matching requests'}
         </Typography>
       ) : (
-        <VirtualList
+        <ProgressiveList
           count={filtered.length}
           getKey={(i) => filtered[i]!.key}
-          estimateSize={48}
           renderRow={(i) => (
             <RequestRow
               item={filtered[i]!}
