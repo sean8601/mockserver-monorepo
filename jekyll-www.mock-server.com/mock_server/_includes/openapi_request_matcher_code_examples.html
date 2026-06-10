@@ -681,7 +681,7 @@ func main() {
     </div>
     <button class="accordion inner">.NET</button>
     <div class="panel">
-        <pre class="prettyprint lang-csharp code"><code class="code">using System.IO;
+        {% raw %}<pre class="prettyprint lang-csharp code"><code class="code">using System.IO;
 using System.Net.Http;
 using System.Text;
 
@@ -699,11 +699,11 @@ var json = $@"{{
 await httpClient.PutAsync(
     "http://localhost:1080/mockserver/expectation",
     new StringContent(json, Encoding.UTF8, "application/json")
-);</code></pre>
+);</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">Rust</button>
     <div class="panel">
-        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+        {% raw %}<pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
 use std::fs;
 
 let client = Client::new();
@@ -721,7 +721,7 @@ client.put("http://localhost:1080/mockserver/expectation")
     .header("Content-Type", "application/json")
     .body(body)
     .send()
-    .unwrap();</code></pre>
+    .unwrap();</code></pre>{% endraw %}
     </div>
     <button class="accordion inner">REST API using cat</button>
     <div class="panel">
