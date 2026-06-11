@@ -47,7 +47,8 @@ public class OpenAPIRequestValidator {
 
     @SuppressWarnings("unchecked")
     private static Optional<Operation> findMatchingOperation(OpenAPI openAPI, String requestPath, String requestMethod) {
-        return openAPI
+        // Search paths first
+        Optional<Operation> result = openAPI
             .getPaths()
             .entrySet()
             .stream()
@@ -56,6 +57,18 @@ public class OpenAPIRequestValidator {
             .filter(pair -> pair.getLeft().equalsIgnoreCase(requestMethod))
             .map(Pair::getRight)
             .findFirst();
+        // Then search webhooks (OAS 3.1) — use webhook name as pseudo-path
+        if (result.isEmpty() && openAPI.getWebhooks() != null) {
+            result = openAPI.getWebhooks()
+                .entrySet()
+                .stream()
+                .filter(entry -> pathMatches("/webhook:" + entry.getKey(), requestPath))
+                .flatMap(entry -> mapOperations(entry.getValue()).stream())
+                .filter(pair -> pair.getLeft().equalsIgnoreCase(requestMethod))
+                .map(Pair::getRight)
+                .findFirst();
+        }
+        return result;
     }
 
     private static boolean pathMatches(String templatePath, String actualPath) {

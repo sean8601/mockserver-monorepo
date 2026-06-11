@@ -29,11 +29,20 @@ public class OpenAPIResponseValidator {
         List<String> errors = new ArrayList<>();
         try {
             OpenAPI openAPI = buildOpenAPI(specUrlOrPayload, logger);
-            Optional<Pair<String, Operation>> operationPair = openAPI
+            // Search paths first, then webhooks (OAS 3.1)
+            java.util.stream.Stream<Pair<String, Operation>> pathOps = openAPI
                 .getPaths()
                 .values()
                 .stream()
-                .flatMap(pathItem -> mapOperations(pathItem).stream())
+                .flatMap(pathItem -> mapOperations(pathItem).stream());
+            java.util.stream.Stream<Pair<String, Operation>> webhookOps = java.util.stream.Stream.empty();
+            if (openAPI.getWebhooks() != null) {
+                webhookOps = openAPI.getWebhooks()
+                    .values()
+                    .stream()
+                    .flatMap(pathItem -> mapOperations(pathItem).stream());
+            }
+            Optional<Pair<String, Operation>> operationPair = java.util.stream.Stream.concat(pathOps, webhookOps)
                 .filter(pair -> pair.getRight().getOperationId().equals(operationId))
                 .findFirst();
 
@@ -137,12 +146,22 @@ public class OpenAPIResponseValidator {
             try {
                 String schemaJson = OBJECT_MAPPER.writeValueAsString(headerSchema);
                 JsonSchemaValidator validator = new JsonSchemaValidator(logger, schemaJson);
+                // Resolve type from getType() (OAS 3.0) or getTypes() (OAS 3.1)
+                String schemaType = headerSchema.getType();
+                if (schemaType == null && headerSchema.getTypes() != null) {
+                    @SuppressWarnings("unchecked")
+                    Set<String> types = headerSchema.getTypes();
+                    schemaType = types.stream()
+                        .filter(t -> !"null".equals(t))
+                        .findFirst()
+                        .orElse(null);
+                }
                 String jsonValue = headerValue;
-                if ("string".equals(headerSchema.getType())) {
+                if ("string".equals(schemaType)) {
                     jsonValue = OBJECT_MAPPER.writeValueAsString(headerValue);
-                } else if ("integer".equals(headerSchema.getType()) || "number".equals(headerSchema.getType())) {
+                } else if ("integer".equals(schemaType) || "number".equals(schemaType)) {
                     // leave as-is, numbers are valid JSON
-                } else if ("boolean".equals(headerSchema.getType())) {
+                } else if ("boolean".equals(schemaType)) {
                     // leave as-is, booleans are valid JSON
                 } else {
                     jsonValue = OBJECT_MAPPER.writeValueAsString(headerValue);

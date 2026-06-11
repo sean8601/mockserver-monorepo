@@ -15,11 +15,9 @@ keywords: OpenAPI, Swagger, OpenAPI v3, WSDL, SOAP, generate mock expectations, 
 
 <p>MockServer can generate mock expectations automatically from two types of API specification:</p>
 <ul>
-  <li><strong><a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer">OpenAPI v3.0</a></strong> — REST/HTTP APIs described in JSON or YAML. Use OpenAPI specs both to <a href="#generate_expectation_from_openapi">generate expectations</a> and as <a href="/mock_server/getting_started.html#request_openapi_matchers">request matchers</a> for verification and log filtering.</li>
+  <li><strong><a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer">OpenAPI v3.0 &amp; v3.1</a></strong> — REST/HTTP APIs described in JSON or YAML, including 3.1-specific constructs (<span class="inline_code">$ref</span> siblings, <span class="inline_code">type</span> as an array such as <span class="inline_code">type: [string, "null"]</span>, and the <span class="inline_code">webhooks</span> top-level key). Use OpenAPI specs both to <a href="#generate_expectation_from_openapi">generate expectations</a> and as <a href="/mock_server/getting_started.html#request_openapi_matchers">request matchers</a> for verification and log filtering.</li>
   <li><strong><a target="_blank" href="https://www.w3.org/TR/wsdl11/" rel="noopener noreferrer">WSDL 1.1</a></strong> — SOAP services. Use WSDL specs to <a href="#generate_expectations_from_wsdl">generate SOAP mock expectations</a>; one expectation is created per operation.</li>
 </ul>
-
-<p><strong>Note:</strong> MockServer uses the <a target="_blank" href="https://github.com/swagger-api/swagger-parser" rel="noopener noreferrer">swagger-parser</a> library, which targets <strong>OpenAPI 3.0.x</strong> and has partial support for <strong>OpenAPI 3.1</strong>. Most 3.1 specifications load, but some 3.1-only constructs (such as <span class="inline_code">$ref</span> siblings, <span class="inline_code">type</span> as an array, and the <span class="inline_code">webhooks</span> top-level key) may not be fully handled. If you hit validation or parsing issues, try converting your specification to OpenAPI 3.0.x.</p>
 
 <p>OpenAPI specifications can be used in <a href="/mock_server/getting_started.html#request_openapi_matchers"><strong>request matchers</strong></a> for:</p>
 <ul>

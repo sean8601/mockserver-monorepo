@@ -751,7 +751,17 @@ Schema → example values"]
     EB --> RESP[Example HttpResponse]
 ```
 
-`OpenAPIConverter` creates one `Expectation` per operation, with an `OpenAPIDefinition` matcher and an example `HttpResponse` built from the spec's response schemas, headers, and examples.
+`OpenAPIConverter` creates one `Expectation` per operation, with an `OpenAPIDefinition` matcher and an example `HttpResponse` built from the spec's response schemas, headers, and examples. Both path operations and webhook operations (OAS 3.1 `webhooks` top-level key) are included.
+
+### OpenAPI 3.1 Support
+
+MockServer fully supports OpenAPI 3.1 specifications. The swagger-parser library (2.1.x with swagger-models 2.2.x) handles both 3.0.x and 3.1 specs transparently. Three 3.1-specific constructs are explicitly handled:
+
+| Construct | How it works |
+|-----------|-------------|
+| `type` as array (`type: [string, "null"]`) | `ExampleBuilder` detects `Schema.getTypes()` (the OAS 3.1 type set) when no typed subclass matches, extracts the primary non-null type, and generates the correct example value. `alreadyProcessedRefExample` also resolves types from the set. |
+| `$ref` siblings | Handled by the swagger-parser with `resolveFully(true)` -- sibling properties (e.g. `description` alongside `$ref`) are preserved in the resolved model. |
+| `webhooks` top-level key | `OpenAPIParser.addMissingOperationIds()`, `OpenAPIConverter.buildExpectations()`, `OpenAPISerialiser.retrieveOperation(s)()`, and both validators iterate `openAPI.getWebhooks()` alongside `openAPI.getPaths()`. |
 
 ### Realistic Example Values (`generateRealisticExampleValues`)
 

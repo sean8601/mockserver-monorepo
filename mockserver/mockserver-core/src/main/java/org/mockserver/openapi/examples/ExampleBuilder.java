@@ -408,6 +408,12 @@ public class ExampleBuilder {
                     }
                 }
             }
+        } else if (output == null && property.getTypes() != null && !property.getTypes().isEmpty()) {
+            // OpenAPI 3.1 type arrays (e.g. type: [string, "null"]) — pick the first non-null type
+            String primaryType = resolveOas31PrimaryType(property.getTypes());
+            if (primaryType != null) {
+                output = generateExampleForType(primaryType, property, example, definitions, processedModels, modelsStartedProcessing, location, generator);
+            }
         } else if (property.getProperties() != null) {
             if (example != null) {
                 try {
@@ -490,19 +496,23 @@ public class ExampleBuilder {
         }
         Example output = null;
 
-        // look at type
-        if (model.getType() != null) {
-            if ("object".equals(model.getType())) {
+        // look at type — check both getType() (OAS 3.0) and getTypes() (OAS 3.1)
+        String resolvedType = model.getType();
+        if (resolvedType == null) {
+            resolvedType = resolveOas31PrimaryType(model.getTypes());
+        }
+        if (resolvedType != null) {
+            if ("object".equals(resolvedType)) {
                 return new ObjectExample();
-            } else if ("string".equals(model.getType())) {
+            } else if ("string".equals(resolvedType)) {
                 return new StringExample("");
-            } else if ("integer".equals(model.getType())) {
+            } else if ("integer".equals(resolvedType)) {
                 return new IntegerExample(0);
-            } else if ("long".equals(model.getType())) {
+            } else if ("long".equals(resolvedType)) {
                 return new LongExample(0);
-            } else if ("float".equals(model.getType())) {
+            } else if ("float".equals(resolvedType)) {
                 return new FloatExample(0);
-            } else if ("double".equals(model.getType())) {
+            } else if ("double".equals(resolvedType)) {
                 return new DoubleExample(0);
             }
         }
@@ -520,5 +530,164 @@ public class ExampleBuilder {
                 }
             }
         }
+    }
+
+    /**
+     * Resolves the primary (non-null) type from an OpenAPI 3.1 type array.
+     * For example, {@code type: [string, "null"]} returns {@code "string"}.
+     * If all types are "null", returns null.
+     */
+    static String resolveOas31PrimaryType(Set<String> types) {
+        if (types == null || types.isEmpty()) {
+            return null;
+        }
+        for (String type : types) {
+            if (!"null".equals(type)) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Generates an example value for a schema based on its type string.
+     * Used when the schema does not match any typed subclass (e.g. OpenAPI 3.1
+     * schemas with {@code type} as an array).
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Example generateExampleForType(
+        String type,
+        Schema<?> property,
+        Object example,
+        Map<String, Schema> definitions,
+        Map<String, Example> processedModels,
+        Set<String> modelsStartedProcessing,
+        StringBuilder location,
+        SampleDataGenerator generator
+    ) {
+        return switch (type) {
+            case "string" -> {
+                if (example != null) {
+                    yield new StringExample(example.toString());
+                }
+                String format = property.getFormat();
+                if ("date".equals(format)) {
+                    yield new StringExample(generator != null ? generator.dateString() : SAMPLE_DATE_PROPERTY_VALUE);
+                } else if ("date-time".equals(format)) {
+                    yield new StringExample(generator != null ? generator.dateTimeString() : SAMPLE_DATETIME_PROPERTY_VALUE);
+                } else if ("email".equals(format)) {
+                    yield new StringExample(generator != null ? generator.email() : SAMPLE_EMAIL_PROPERTY_VALUE);
+                } else if ("uuid".equals(format)) {
+                    yield new StringExample(generator != null ? generator.uuid() : SAMPLE_UUID_PROPERTY_VALUE);
+                } else if ("byte".equals(format)) {
+                    yield new StringExample(generator != null ? generator.byteString() : SAMPLE_BYTE_PROPERTY_VALUE);
+                } else if ("uri".equals(format) || "url".equals(format)) {
+                    yield new StringExample(generator != null ? generator.uri() : SAMPLE_STRING_PROPERTY_VALUE);
+                } else if ("password".equals(format)) {
+                    yield new StringExample(generator != null ? generator.password() : SAMPLE_STRING_PROPERTY_VALUE);
+                } else {
+                    Object defaultValue = property.getDefault();
+                    if (defaultValue != null) {
+                        yield new StringExample(defaultValue.toString());
+                    }
+                    List<?> enums = property.getEnum();
+                    if (enums != null && !enums.isEmpty()) {
+                        yield new StringExample(enums.get(0).toString());
+                    }
+                    yield new StringExample(generator != null ? generator.stringWithConstraints(property.getMinLength(), property.getMaxLength()) : SAMPLE_STRING_PROPERTY_VALUE);
+                }
+            }
+            case "integer" -> {
+                if (example != null) {
+                    try {
+                        if ("int64".equals(property.getFormat())) {
+                            yield new LongExample(Long.parseLong(example.toString()));
+                        }
+                        yield new IntegerExample(Integer.parseInt(example.toString()));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                if ("int64".equals(property.getFormat())) {
+                    yield new LongExample(generator != null ? generator.longValue(property.getMinimum(), property.getMaximum()) : SAMPLE_LONG_PROPERTY_VALUE);
+                }
+                yield new IntegerExample(generator != null ? generator.integer(property.getMinimum(), property.getMaximum()) : SAMPLE_INT_PROPERTY_VALUE);
+            }
+            case "number" -> {
+                if (example != null) {
+                    try {
+                        if ("float".equals(property.getFormat())) {
+                            yield new FloatExample(Float.parseFloat(example.toString()));
+                        } else if ("double".equals(property.getFormat())) {
+                            yield new DoubleExample(Double.parseDouble(example.toString()));
+                        }
+                        yield new DecimalExample(new BigDecimal(example.toString()));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                if ("float".equals(property.getFormat())) {
+                    yield new FloatExample(generator != null ? generator.floatValue(property.getMinimum(), property.getMaximum()) : SAMPLE_FLOAT_PROPERTY_VALUE);
+                } else if ("double".equals(property.getFormat())) {
+                    yield new DoubleExample(generator != null ? generator.doubleValue(property.getMinimum(), property.getMaximum()) : SAMPLE_DOUBLE_PROPERTY_VALUE);
+                }
+                yield new DecimalExample(generator != null ? generator.decimal(property.getMinimum(), property.getMaximum()) : new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE));
+            }
+            case "boolean" -> {
+                if (example != null) {
+                    yield new BooleanExample(Boolean.parseBoolean(example.toString()));
+                }
+                Object defaultValue = property.getDefault();
+                yield new BooleanExample(defaultValue instanceof Boolean b ? b : (generator != null ? generator.booleanValue() : SAMPLE_BOOLEAN_PROPERTY_VALUE));
+            }
+            case "object" -> {
+                if (example != null) {
+                    try {
+                        yield Json.mapper().readValue(example.toString(), ObjectExample.class);
+                    } catch (IOException e) {
+                        MOCK_SERVER_LOGGER.logEvent(
+                            new LogEntry()
+                                .setMessageFormat("unable to convert{}to JsonNode")
+                                .setArguments(example)
+                        );
+                        yield new ObjectExample();
+                    }
+                }
+                ObjectExample objectEx = new ObjectExample();
+                objectEx.setName(property.getName());
+                if (property.getProperties() != null) {
+                    for (Map.Entry<String, Schema> entry : ((Map<String, Schema>) property.getProperties()).entrySet()) {
+                        Example innerExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator);
+                        objectEx.put(entry.getKey(), innerExample);
+                    }
+                }
+                yield objectEx;
+            }
+            case "array" -> {
+                if (example != null) {
+                    try {
+                        yield Json.mapper().readValue(example.toString(), ArrayExample.class);
+                    } catch (IOException e) {
+                        MOCK_SERVER_LOGGER.logEvent(
+                            new LogEntry()
+                                .setMessageFormat("unable to create example for{}because unable to convert{}to JsonNode")
+                                .setArguments(StringUtils.substringBeforeLast(location.toString(), "."))
+                                .setArguments(example)
+                        );
+                        yield new ArrayExample();
+                    }
+                }
+                Schema<?> items = property.getItems();
+                if (items != null) {
+                    Example innerExample = fromProperty(type, items, definitions, processedModels, modelsStartedProcessing, location, generator);
+                    if (innerExample != null) {
+                        ArrayExample arrayEx = new ArrayExample();
+                        arrayEx.add(innerExample);
+                        arrayEx.setName(property.getName());
+                        yield arrayEx;
+                    }
+                }
+                yield new ArrayExample();
+            }
+            default -> null;
+        };
     }
 }

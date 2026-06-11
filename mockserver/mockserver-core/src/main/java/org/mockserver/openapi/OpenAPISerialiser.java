@@ -81,11 +81,21 @@ public class OpenAPISerialiser {
     }
 
     public Optional<Pair<String, Operation>> retrieveOperation(String specUrlOrPayload, String operationId) {
-        return buildOpenAPI(specUrlOrPayload, mockServerLogger)
+        OpenAPI openAPI = buildOpenAPI(specUrlOrPayload, mockServerLogger);
+        // Search paths first, then webhooks (OAS 3.1)
+        java.util.stream.Stream<Pair<String, Operation>> pathOps = openAPI
             .getPaths()
             .values()
             .stream()
-            .flatMap(pathItem -> mapOperations(pathItem).stream())
+            .flatMap(pathItem -> mapOperations(pathItem).stream());
+        java.util.stream.Stream<Pair<String, Operation>> webhookOps = java.util.stream.Stream.empty();
+        if (openAPI.getWebhooks() != null) {
+            webhookOps = openAPI.getWebhooks()
+                .values()
+                .stream()
+                .flatMap(pathItem -> mapOperations(pathItem).stream());
+        }
+        return java.util.stream.Stream.concat(pathOps, webhookOps)
             .filter(operation -> isBlank(operationId) || operation.getRight().getOperationId().equals(operationId))
             .findFirst();
     }
@@ -116,6 +126,22 @@ public class OpenAPISerialiser {
                         }
                     }
                 });
+            // OpenAPI 3.1 webhooks — use the webhook name as the path key
+            if (openAPI.getWebhooks() != null) {
+                openAPI.getWebhooks().forEach((webhookName, pathObject) -> {
+                    if (webhookName != null && pathObject != null) {
+                        List<Pair<String, Operation>> filteredOperations = mapOperations(pathObject)
+                            .stream()
+                            .filter(operation -> isBlank(operationId) || operationId.equals(operation.getRight().getOperationId()))
+                            .sorted(Comparator.comparing(Pair::getLeft))
+                            .collect(Collectors.toList());
+                        if (!filteredOperations.isEmpty()) {
+                            String webhookPath = normalizedPrefix + "/webhook:" + webhookName;
+                            operations.computeIfAbsent(webhookPath, k -> new ArrayList<>()).addAll(filteredOperations);
+                        }
+                    }
+                });
+            }
         }
         return operations;
     }

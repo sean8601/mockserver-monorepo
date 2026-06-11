@@ -108,6 +108,20 @@ public class OpenAPIParser {
                 );
             }
         );
+        // OpenAPI 3.1 webhooks
+        if (openAPI.getWebhooks() != null) {
+            openAPI.getWebhooks().forEach(
+                (webhookName, pathItem) -> {
+                    mapOperations(pathItem).forEach(
+                        stringOperationPair -> {
+                            if (isBlank(stringOperationPair.getRight().getOperationId())) {
+                                stringOperationPair.getRight().setOperationId(stringOperationPair.getLeft() + " webhook:" + webhookName);
+                            }
+                        }
+                    );
+                }
+            );
+        }
     }
 
     public static List<Pair<String, Operation>> mapOperations(PathItem pathItem) {

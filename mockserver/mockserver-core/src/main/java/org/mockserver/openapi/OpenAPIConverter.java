@@ -56,15 +56,20 @@ public class OpenAPIConverter {
         // Track how many times each operationId appears so we can disambiguate
         // when the same operationId maps to multiple expectations (e.g. multiple response codes)
         Map<String, Integer> operationIdCounts = new HashMap<>();
-        return openAPI
+        // Collect all operations from both paths and webhooks (OAS 3.1)
+        java.util.stream.Stream<io.swagger.v3.oas.models.Operation> pathOperations = openAPI
             .getPaths()
             .values()
             .stream()
-            .flatMap(pathItem ->
-                pathItem
-                    .readOperations()
-                    .stream()
-            )
+            .flatMap(pathItem -> pathItem.readOperations().stream());
+        java.util.stream.Stream<io.swagger.v3.oas.models.Operation> webhookOperations = java.util.stream.Stream.empty();
+        if (openAPI.getWebhooks() != null) {
+            webhookOperations = openAPI.getWebhooks()
+                .values()
+                .stream()
+                .flatMap(pathItem -> pathItem.readOperations().stream());
+        }
+        return java.util.stream.Stream.concat(pathOperations, webhookOperations)
             .filter(operation -> operationsAndResponses == null || operationsAndResponses.containsKey(operation.getOperationId()))
             .map(operation -> {
                 String apiResponseKey = null;
