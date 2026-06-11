@@ -4,7 +4,13 @@ MockServer &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [![Build
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/mockserver)](https://artifacthub.io/packages/search?repo=mockserver)
 =====
 
-MockServer is an HTTP(S) **mock server** and **proxy** for testing, with support for HTTP/2, HTTP/3, gRPC, WebSockets, raw TCP, message brokers like Kafka and MQTT, and AI/LLM APIs such as OpenAI, Anthropic, and Gemini. Mock the APIs your application depends on to develop and test against systems that are unavailable, incomplete, or hard to reproduce; proxy real traffic to record, inspect, and modify requests in flight; and simulate dependencies both working normally and failing — injecting latency, dropped connections, and errors — to test how your application copes either way.
+MockServer is an HTTP(S) **mock server** and **proxy** for testing. It does three things:
+
+- **Mock** the APIs your application depends on, so you can develop and test against systems that are unavailable, incomplete, or hard to reproduce.
+- **Proxy** real traffic to record, inspect, and modify requests and responses in flight — and pause them at interactive **proxy breakpoints** to step through, edit, or abort each exchange like a debugger for network traffic.
+- **Chaos engineering** — make dependencies misbehave on demand, injecting latency, dropped connections, and errors to test how your application copes when the systems it relies on degrade or fail.
+
+**Speaks every protocol your stack uses.** HTTP/1.1 & HTTPS, HTTP/2, gRPC & gRPC-Web, WebSockets and raw TCP are auto-detected from the first bytes of each connection, so one MockServer port handles them all with no per-protocol configuration. Beyond that core: HTTP/3 (QUIC — experimental, on its own UDP port), JSON-RPC for MCP/A2A mocking, AsyncAPI-driven message-broker testing against external Kafka and MQTT brokers, and mocked AI/LLM chat-completion APIs (OpenAI, Anthropic, Gemini, Bedrock, Azure OpenAI, Ollama).
 
 ### Main Features
 
