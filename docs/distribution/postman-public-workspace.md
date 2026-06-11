@@ -6,6 +6,13 @@ The collection is already committed at `examples/postman/MockServer.postman_coll
 Publishing it to the Postman Public API Network takes about 10 minutes and needs a Postman account.
 Once live, link the workspace URL from the website and README.
 
+**Cost: free.** Publishing a public workspace / public collection to the Postman API Network is
+available on every tier, including the **Free** plan — no paid subscription is required. The
+March 2026 pricing change restricts *multi-user team collaboration* (the Free plan is now
+single-user), **not** public publishing; a single-user Free account can publish this collection.
+The only practical blocker has been network access — `postman.com` is blocked on the company
+laptop, so publish from another machine.
+
 ---
 
 ## Pre-flight

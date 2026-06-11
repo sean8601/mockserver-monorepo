@@ -114,7 +114,16 @@ If a bump ever does not happen within a day or two of release, check:
 
 If a manual bump is genuinely required (e.g. the bot is broken), `brew bump-formula-pr --strict --version=<release-version> mockserver` from a workstation with `brew` and an authenticated `gh` CLI will open the PR by hand.
 
-### 10. Announce (optional)
+### 10. Keep the Postman & Bruno collections in step (manual — only if the control-plane API changed)
+
+The Postman and Bruno collections are **not** part of the automated pipeline. If this release changed the REST control-plane API (new/renamed endpoint, changed request body, etc.), update both so they stay in lockstep:
+
+- `examples/postman/MockServer.postman_collection.json` — source of truth for Postman (keep the `_postman_id` stable). If the public workspace is live, re-import (**Import → Replace**) per [`docs/distribution/postman-public-workspace.md`](../distribution/postman-public-workspace.md).
+- `examples/bruno/` — the `.bru` files are git-native; editing and committing them *is* the publish step (keep folder/request `seq` values stable). See [`docs/distribution/bruno-public-collection.md`](../distribution/bruno-public-collection.md).
+
+Both must expose the **same requests** (currently 10 across Expectations, Verify, Traffic, Manage). If the control-plane API did not change, there is nothing to do here.
+
+### 11. Announce (optional)
 
 If this is a notable release, post to:
 

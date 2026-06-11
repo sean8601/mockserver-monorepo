@@ -1,0 +1,57 @@
+---
+title: Bruno
+description: Open the MockServer Bruno collection to drive the REST control plane from Bruno — create expectations, verify requests, and inspect recorded traffic. Git-native, no account required.
+layout: page
+pageOrder: 11
+section: 'Where'
+subsection: true
+sitemap:
+  priority: 0.6
+  changefreq: 'monthly'
+  lastmod: 2026-06-11T08:00:00+01:00
+---
+
+<h2>Bruno</h2>
+
+<p>MockServer provides an official <a target="_blank" href="https://www.usebruno.com/" rel="noopener noreferrer">Bruno</a> collection for its REST control plane. Use it to create expectations, verify requests, inspect recorded traffic, and manage server state — all from the Bruno client. Bruno is open-source and <strong>git-native</strong>: the collection lives in the repository as plain <span class="keyword">.bru</span> files, so it versions alongside the code and needs no account to use.</p>
+
+<h2>Open the Collection</h2>
+
+<p>The collection lives in the MockServer repository at <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/bruno" rel="noopener noreferrer"><code>examples/bruno</code></a>:</p>
+
+<ul>
+    <li>Clone the repository, then in Bruno click <strong>Open Collection</strong> and select the <span class="keyword">examples/bruno</span> folder.</li>
+    <li>Select the <strong>Local</strong> environment (top-right). Its <span class="keyword">baseUrl</span> variable defaults to <span class="keyword">http://localhost:1080</span> — change it to point at any MockServer instance.</li>
+</ul>
+
+<h2>Quick Start</h2>
+
+<p>Start MockServer with Docker:</p>
+
+<pre class="prettyprint code"><code class="code">docker run -d --rm -p 1080:1080 mockserver/mockserver</code></pre>
+
+<p>Then run the collection requests top to bottom:</p>
+
+<ol>
+    <li><strong>Expectations → Create expectation</strong> — registers <span class="keyword">GET /hello → 200 Hello World</span>.</li>
+    <li><strong>Expectations → Call the mocked endpoint</strong> — confirms the mock responds.</li>
+    <li><strong>Verify → Verify request received</strong> — asserts MockServer saw the request.</li>
+    <li><strong>Traffic → Retrieve recorded requests</strong> — inspects what was received.</li>
+    <li><strong>Manage → Reset</strong> — clears all expectations and recorded traffic.</li>
+</ol>
+
+<h2>What the Collection Covers</h2>
+
+<table>
+    <thead>
+        <tr><th>Folder</th><th>Requests</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Expectations</td><td>Create expectation, call the mocked endpoint, retrieve active expectations</td></tr>
+        <tr><td>Verify</td><td>Verify a request was received, verify a sequence</td></tr>
+        <tr><td>Traffic</td><td>Retrieve recorded requests, retrieve logs</td></tr>
+        <tr><td>Manage</td><td>Status, clear (by matcher), reset (everything)</td></tr>
+    </tbody>
+</table>
+
+<p>This is the Bruno counterpart of the <a href="postman.html">Postman collection</a> — the same requests, the same <span class="keyword">baseUrl</span> variable. The full control-plane API is documented as an <a target="_blank" href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi" rel="noopener noreferrer">OpenAPI spec on SwaggerHub</a>.</p>

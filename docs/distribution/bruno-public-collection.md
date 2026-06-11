@@ -6,7 +6,12 @@ The collection is committed at `examples/bruno/` as plain `.bru` files. Because
 [Bruno](https://www.usebruno.com/) is **git-native**, it is already "published" —
 users clone the repo and **Open Collection**. Go-live is therefore mostly about
 **discoverability**: link it from the website and README, and (optionally) list it
-on the Bruno hub. ~10 minutes, no account strictly required.
+on the Bruno hub. ~10 minutes, **no account and no cost** (unlike Postman, there is
+no external workspace to create — the repo *is* the published location).
+
+**Parity verified 2026-06-11:** the Bruno collection mirrors the Postman one
+exactly — 10 requests across the same 4 folders (Expectations, Verify, Traffic,
+Manage). Keep them in step on every release.
 
 ---
 
