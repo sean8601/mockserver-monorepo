@@ -43,6 +43,69 @@ schema_faq:
 
 <p>Because chaos profiles work on <strong>both mocked and forwarded responses</strong>, MockServer can act as a chaos proxy — sit it in front of a real service (upstream, third-party API, or internal dependency) and inject faults into the responses it relays. This makes it a powerful tool for SRE resilience testing, not just unit/integration test mocking.</p>
 
+<a id="on_this_page" class="anchor" href="#on_this_page">&nbsp;</a>
+
+<h2>On this page</h2>
+
+<p>Jump straight to a chaos feature &mdash; pick a <strong>fault type</strong>, control <strong>where and how much</strong> it applies, target a <strong>protocol</strong>, or <strong>orchestrate and observe</strong> it:</p>
+
+<table class="comparison_table">
+	<thead>
+		<tr>
+			<th>Fault types</th>
+			<th>Targeting &amp; control</th>
+			<th>Protocol-specific</th>
+			<th>Orchestrate &amp; observe</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#connection_drop_injection">Connection drop</a></li>
+					<li><a href="#error_injection">Error injection (e.g. 503/429)</a></li>
+					<li><a href="#latency_injection">Latency</a></li>
+					<li><a href="#slow_response">Slow (dribbled) response</a></li>
+					<li><a href="#body_corruption">Body corruption</a></li>
+					<li><a href="#graphql_error_injection">GraphQL errors</a></li>
+					<li><a href="#request_quota">Rate-limit quota</a></li>
+					<li><a href="#stateful_count_based_faults">Count-based faults</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#chaos_profile_fields">Chaos profile fields</a></li>
+					<li><a href="#where_chaos_applies">Where chaos applies</a></li>
+					<li><a href="#outage_windows">Outage windows (time-based)</a></li>
+					<li><a href="#reproducibility">Reproducibility (seed)</a></li>
+					<li><a href="#gradual_degradation">Gradual degradation</a></li>
+					<li><a href="#service_scoped_chaos">Service-scoped chaos</a></li>
+					<li><a href="#live_chaos_tuning">Live tuning (PATCH)</a></li>
+					<li><a href="#chaos_proxy">Chaos proxy (real services)</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#grpc_fault_injection">gRPC fault injection</a></li>
+					<li><a href="#tcp_layer_chaos">TCP-layer chaos</a></li>
+					<li><a href="#llm_chaos">LLM chaos</a></li>
+					<li><a href="#fleet_chaos">Fleet-wide (clustered)</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#chaos_experiments">Scheduled experiments</a></li>
+					<li><a href="#chaos_auto_halt">Auto-halt circuit-breaker</a></li>
+					<li><a href="#chaos_observability">Observability</a></li>
+					<li><a href="#dashboard_ui">Dashboard UI</a></li>
+					<li><a href="#interaction_notes">Interaction with other features</a></li>
+					<li><a href="#chaos_examples">Examples</a> &middot; <a href="#faq">FAQ</a></li>
+				</ul>
+			</td>
+		</tr>
+	</tbody>
+</table>
+
 <a id="chaos_profile_fields" class="anchor" href="#chaos_profile_fields">&nbsp;</a>
 
 <h2>Chaos Profile Fields</h2>
