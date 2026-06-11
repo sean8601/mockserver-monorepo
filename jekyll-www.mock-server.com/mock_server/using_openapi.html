@@ -1,7 +1,7 @@
 ---
-title: Using OpenAPI Specifications
-description: Generate expectations from an OpenAPI v3 spec, use OpenAPI request matchers for verification and clearing, and filter by operation and status code.
-shortTitle: Using OpenAPI
+title: OpenAPI &amp; WSDL
+description: Generate mock expectations from OpenAPI v3 or WSDL (SOAP) specifications; use OpenAPI request matchers for verification, clearing, and log retrieval.
+shortTitle: OpenAPI &amp; WSDL
 layout: page
 pageOrder: 4
 section: 'Creating Mocks'
@@ -9,14 +9,19 @@ subsection: true
 sitemap:
   priority: 0.8
   changefreq: 'monthly'
-  lastmod: 2026-06-10T00:00:00+00:00
+  lastmod: 2026-06-11T00:00:00+00:00
+keywords: OpenAPI, Swagger, OpenAPI v3, WSDL, SOAP, generate mock expectations, spec-driven mocking, OpenAPI request matcher, WSDL mock, SOAP mock
 ---
 
-<p>MockServer supports <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer"><strong>OpenAPI v3.0</strong></a> specifications in either JSON or YAML format.</p>
+<p>MockServer can generate mock expectations automatically from two types of API specification:</p>
+<ul>
+  <li><strong><a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer">OpenAPI v3.0</a></strong> — REST/HTTP APIs described in JSON or YAML. Use OpenAPI specs both to <a href="#generate_expectation_from_openapi">generate expectations</a> and as <a href="/mock_server/getting_started.html#request_openapi_matchers">request matchers</a> for verification and log filtering.</li>
+  <li><strong><a target="_blank" href="https://www.w3.org/TR/wsdl11/" rel="noopener noreferrer">WSDL 1.1</a></strong> — SOAP services. Use WSDL specs to <a href="#generate_expectations_from_wsdl">generate SOAP mock expectations</a>; one expectation is created per operation.</li>
+</ul>
 
 <p><strong>Note:</strong> MockServer uses the <a target="_blank" href="https://github.com/swagger-api/swagger-parser" rel="noopener noreferrer">swagger-parser</a> library, which targets <strong>OpenAPI 3.0.x</strong> and has partial support for <strong>OpenAPI 3.1</strong>. Most 3.1 specifications load, but some 3.1-only constructs (such as <span class="inline_code">$ref</span> siblings, <span class="inline_code">type</span> as an array, and the <span class="inline_code">webhooks</span> top-level key) may not be fully handled. If you hit validation or parsing issues, try converting your specification to OpenAPI 3.0.x.</p>
 
-<p>OpenAPI specifications can be used in <a href="/mock_server/getting_started.html#request_openapi_matchers"><strong>request matchers</strong></a> for</p>
+<p>OpenAPI specifications can be used in <a href="/mock_server/getting_started.html#request_openapi_matchers"><strong>request matchers</strong></a> for:</p>
 <ul>
   <li>expectation <a href="/mock_server/getting_started.html#request_openapi_matchers"><strong>request matchers</strong></a></li>
   <li><a href="/mock_server/verification.html"><strong>verifying requests</strong></a> and <a href="/mock_server/verification.html"><strong>verifying request sequences</strong></a></li>
@@ -24,13 +29,13 @@ sitemap:
   <li>retrieving <a href="/mock_server/debugging_issues.html#retrieving_recorded_logs"><strong>logs</strong></a>, <a href="/mock_server/debugging_issues.html#retrieving_recorded_requests"><strong>recorded requests</strong></a> and <a href="/mock_server/debugging_issues.html#retrieving_active_expectations"><strong>expectations</strong></a></li>
 </ul>
 
-<p>OpenAPI specifications can also be used to <a href="#generate_expectation_from_openapi"><strong>generate expectations</strong></a> with example responses.</p>
+<p>OpenAPI specifications can also be used to <a href="#generate_expectation_from_openapi"><strong>generate expectations</strong></a> with example responses. For SOAP services, see <a href="#generate_expectations_from_wsdl"><strong>Generate Expectations From WSDL (SOAP)</strong></a>.</p>
 
 <a id="generate_expectation_from_openapi" class="anchor" href="#generate_expectation_from_openapi">&nbsp;</a>
 
 <h2>Generate Expectations From OpenAPI</h2>
 
-<p>MockServer supports <strong>open api expectations</strong> containing the follow fields:</p>
+<p>MockServer supports <strong>open api expectations</strong> containing the following fields:</p>
 <ul>
     <li><strong>specUrlOrPayload</strong> - mandatory value containing an <a target="_blank" href="https://swagger.io/docs/specification/basic-structure/" rel="noopener noreferrer"><strong>OpenAPI v3</strong></a> specifications in either JSON or YAML format as an:
         <ul>
@@ -65,11 +70,6 @@ sitemap:
         </ul>
     </li>
 </ul>
-
-<p></p>
-
-
-<p></p>
 
 <a id="generate_expectation_from_openapi_example" class="anchor" href="#generate_expectation_from_openapi_example">&nbsp;</a>
 
@@ -1214,33 +1214,207 @@ mockServerClient("localhost", 1080).openAPIExpectation({
 
 <h2>Generate Expectations From WSDL (SOAP)</h2>
 
-<p>MockServer supports <strong>WSDL 1.1</strong> documents as an alternative to OpenAPI for generating mock expectations. Submitting a WSDL causes MockServer to create one expectation per SOAP operation found across all service/port bindings in the document.</p>
+<p>MockServer supports <strong>WSDL 1.1</strong> documents for generating SOAP mock expectations. Submitting a WSDL to the <span class="inline_code">PUT /mockserver/wsdl</span> endpoint causes MockServer to create one expectation per SOAP operation found across all service/port bindings in the document.</p>
 
 <p>Both <strong>SOAP 1.1</strong> and <strong>SOAP 1.2</strong> bindings are supported. Each generated expectation:</p>
 <ul>
-    <li><strong>Matches</strong> <span class="inline_code">POST</span> requests to the path taken from the <span class="inline_code">soap:address</span> (or <span class="inline_code">soap12:address</span>) <span class="inline_code">location</span> attribute, plus one of:
+    <li><strong>Matches</strong> <span class="inline_code">POST</span> requests to the path derived from the <span class="inline_code">soap:address</span> (or <span class="inline_code">soap12:address</span>) <span class="inline_code">location</span> attribute in the WSDL, plus one of:
         <ul>
             <li>the <span class="inline_code">SOAPAction</span> header (SOAP 1.1), when a <span class="inline_code">soapAction</span> is declared on the binding operation;</li>
-            <li>the <span class="inline_code">action</span> parameter of the <span class="inline_code">content-type</span> header (SOAP 1.2), when a <span class="inline_code">soapAction</span> is declared;</li>
+            <li>the <span class="inline_code">action</span> parameter in the <span class="inline_code">content-type</span> header (SOAP 1.2), when a <span class="inline_code">soapAction</span> is declared;</li>
             <li>or an XPath body check on the operation element local-name (fallback when no SOAP action is declared in the WSDL).</li>
         </ul>
     </li>
     <li><strong>Responds</strong> with HTTP 200 and a skeleton SOAP envelope containing a <span class="inline_code">&lt;{Operation}Response/&gt;</span> element in the WSDL target namespace.</li>
 </ul>
 
-<p>The WSDL document is parsed with XXE protections (DOCTYPE and external entity resolution disabled) so that importing an untrusted WSDL cannot trigger an XML External Entity attack.</p>
+<p>The WSDL document is parsed with XXE protections (DOCTYPE and external entity resolution disabled), so importing an untrusted WSDL cannot trigger an XML External Entity (XXE) attack.</p>
 
-<p>MockServer returns HTTP 201 with the created expectations as JSON.</p>
+<p>Unlike OpenAPI, WSDL import has no dedicated typed client method — all language clients submit the raw WSDL XML directly to the REST endpoint <span class="inline_code">PUT /mockserver/wsdl</span>. MockServer returns HTTP 201 with the created expectations as JSON.</p>
 
 <a id="generate_expectations_from_wsdl_example" class="anchor" href="#generate_expectations_from_wsdl_example">&nbsp;</a>
 
-<button id="button_wsdl_rest" class="accordion">generate expectations from a WSDL document</button>
+<p>For example, given this minimal WSDL for a <span class="inline_code">WeatherService</span>:</p>
+
+<pre class="prettyprint lang-xml code"><code class="code">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="http://example.com/weather"
+             targetNamespace="http://example.com/weather"
+             name="WeatherService"&gt;
+  &lt;message name="GetWeatherRequest"/&gt;
+  &lt;message name="GetWeatherResponse"/&gt;
+  &lt;portType name="WeatherPortType"&gt;
+    &lt;operation name="GetWeather"&gt;
+      &lt;input message="tns:GetWeatherRequest"/&gt;
+      &lt;output message="tns:GetWeatherResponse"/&gt;
+    &lt;/operation&gt;
+  &lt;/portType&gt;
+  &lt;binding name="WeatherBinding" type="tns:WeatherPortType"&gt;
+    &lt;soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/&gt;
+    &lt;operation name="GetWeather"&gt;
+      &lt;soap:operation soapAction="http://example.com/GetWeather"/&gt;
+      &lt;input&gt;&lt;soap:body use="literal"/&gt;&lt;/input&gt;
+      &lt;output&gt;&lt;soap:body use="literal"/&gt;&lt;/output&gt;
+    &lt;/operation&gt;
+  &lt;/binding&gt;
+  &lt;service name="WeatherService"&gt;
+    &lt;port name="WeatherPort" binding="tns:WeatherBinding"&gt;
+      &lt;soap:address location="http://localhost/ws/weather"/&gt;
+    &lt;/port&gt;
+  &lt;/service&gt;
+&lt;/definitions&gt;</code></pre>
+
+<p>MockServer generates an expectation that matches <span class="inline_code">POST /ws/weather</span> with <span class="inline_code">SOAPAction: "http://example.com/GetWeather"</span> and returns a skeleton SOAP response:</p>
+
+<pre class="prettyprint lang-xml code"><code class="code">&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:tns="http://example.com/weather"&gt;
+  &lt;soapenv:Body&gt;
+    &lt;tns:GetWeatherResponse/&gt;
+  &lt;/soapenv:Body&gt;
+&lt;/soapenv:Envelope&gt;</code></pre>
+
+<button id="button_wsdl_file" class="accordion">generate expectations from a WSDL file</button>
+<div class="panel">
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">// The Java client has no dedicated WSDL method; use an HTTP client to call the REST endpoint directly
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+byte[] wsdlBytes = Files.readAllBytes(Paths.get("/path/to/my-service.wsdl"));
+HttpClient httpClient = HttpClient.newHttpClient();
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("http://localhost:1080/mockserver/wsdl"))
+    .header("Content-Type", "text/xml")
+    .PUT(HttpRequest.BodyPublishers.ofByteArray(wsdlBytes))
+    .build();
+HttpResponse&lt;String&gt; response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+// response.statusCode() == 201; response.body() contains the generated expectations as JSON</code></pre>
+    </div>
+    <button class="accordion inner">JavaScript</button>
+    <div class="panel">
+        <pre class="prettyprint lang-javascript code"><code class="code">const fs = require('fs');
+const fetch = require('node-fetch'); // or use the built-in fetch in Node 18+
+
+const wsdl = fs.readFileSync('/path/to/my-service.wsdl', 'utf8');
+const response = await fetch('http://localhost:1080/mockserver/wsdl', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/xml' },
+    body: wsdl,
+});
+// response.status === 201; response.json() returns the generated expectations</code></pre>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">import requests
+
+with open('/path/to/my-service.wsdl', 'rb') as f:
+    wsdl = f.read()
+
+response = requests.put(
+    'http://localhost:1080/mockserver/wsdl',
+    data=wsdl,
+    headers={'Content-Type': 'text/xml'},
+)
+# response.status_code == 201; response.json() returns the generated expectations</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'net/http'
+
+wsdl = File.read('/path/to/my-service.wsdl')
+uri  = URI('http://localhost:1080/mockserver/wsdl')
+http = Net::HTTP.new(uri.host, uri.port)
+request = Net::HTTP::Put.new(uri.path, 'Content-Type' =&gt; 'text/xml')
+request.body = wsdl
+response = http.request(request)
+# response.code == '201'; JSON.parse(response.body) returns the generated expectations</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import (
+    "bytes"
+    "net/http"
+    "os"
+)
+
+wsdl, err := os.ReadFile("/path/to/my-service.wsdl")
+if err != nil {
+    log.Fatal(err)
+}
+req, _ := http.NewRequest("PUT", "http://localhost:1080/mockserver/wsdl", bytes.NewReader(wsdl))
+req.Header.Set("Content-Type", "text/xml")
+resp, err := http.DefaultClient.Do(req)
+// resp.StatusCode == 201; decode resp.Body as JSON to read the generated expectations</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
+
+var wsdl = File.ReadAllBytes("/path/to/my-service.wsdl");
+using var httpClient = new HttpClient();
+var content = new ByteArrayContent(wsdl);
+content.Headers.ContentType = new MediaTypeHeaderValue("text/xml");
+var response = await httpClient.PutAsync("http://localhost:1080/mockserver/wsdl", content);
+// response.StatusCode == HttpStatusCode.Created (201)
+// await response.Content.ReadAsStringAsync() returns the generated expectations as JSON</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">let wsdl = std::fs::read("/path/to/my-service.wsdl").unwrap();
+let client = reqwest::blocking::Client::new();
+let response = client.put("http://localhost:1080/mockserver/wsdl")
+    .header("Content-Type", "text/xml")
+    .body(wsdl)
+    .send()
+    .unwrap();
+// response.status() == 201; response.text() contains the generated expectations as JSON</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$wsdl = file_get_contents('/path/to/my-service.wsdl');
+
+$ch = curl_init('http://localhost:1080/mockserver/wsdl');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
+    CURLOPT_HTTPHEADER    =&gt; ['Content-Type: text/xml'],
+    CURLOPT_POSTFIELDS    =&gt; $wsdl,
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$result = curl_exec($ch);
+$info   = curl_getinfo($ch);
+curl_close($ch);
+// $info['http_code'] == 201; $result contains the generated expectations as JSON</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/wsdl" \
+  -H "Content-Type: text/xml" \
+  --data-binary @my-service.wsdl</code></pre>
+        <p>The request body must be a raw WSDL 1.1 XML document. MockServer returns <span class="inline_code">201 Created</span> with the generated expectations as JSON.</p>
+    </div>
+</div>
+<button id="button_wsdl_inline" class="accordion">generate expectations from an inline WSDL string</button>
 <div class="panel">
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/wsdl" \
-  -H "content-type: text/xml" \
-  --data-binary @my-service.wsdl</code></pre>
-        <p>The request body must be a raw WSDL 1.1 XML document. MockServer returns <span class="inline_code">201 Created</span> with the generated expectations as JSON.</p>
+  -H "Content-Type: text/xml" \
+  -d '&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="http://example.com/weather"
+             targetNamespace="http://example.com/weather"
+             name="WeatherService"&gt;
+  ...
+&lt;/definitions&gt;'</code></pre>
+        <p>Pass the full WSDL XML as the request body with <span class="inline_code">Content-Type: text/xml</span>.</p>
     </div>
 </div>
