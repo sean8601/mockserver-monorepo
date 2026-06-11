@@ -27,6 +27,58 @@ sitemap:
 
 <p>For example code see the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples" rel="noopener noreferrer">code examples folder</a> in the git repository.</p>
 
+<a id="on_this_page" class="anchor" href="#on_this_page">&nbsp;</a>
+
+<h2>On this page</h2>
+
+<p>Most of MockServer's power is in step&nbsp;1, <a href="#setup_expectations">Setup Expectations</a>. Rather than scrolling, jump straight to the capability you need &mdash; <strong>match</strong> the request, choose an <strong>action</strong>, and (optionally) drive <strong>stateful scenarios</strong>:</p>
+
+<table class="comparison_table">
+	<thead>
+		<tr>
+			<th>Match requests</th>
+			<th>Respond with actions</th>
+			<th>Sequencing &amp; scenarios</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#request_matchers">Request Matchers</a> &mdash; method, path, query, headers, cookies</li>
+					<li><a href="#request_body_matchers">Body matching</a> &mdash; string, JSON, XML, schema</li>
+					<li><a href="#graphql_body_matching">GraphQL</a> &amp; <a href="#graphql_subscriptions">subscriptions</a></li>
+					<li><a href="#path_matching_curly_braces">Path templates</a></li>
+					<li><a href="#request_openapi_matchers">OpenAPI matchers</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#response_action">Response</a></li>
+					<li><a href="#forward_action">Forward</a> / <a href="#forward_with_fallback_action">Forward with Fallback</a></li>
+					<li><a href="#error_action">Error / drop connection</a></li>
+					<li><a href="#llm_response_action">LLM Response</a></li>
+					<li><a href="#websocket_response_action">WebSocket Response</a></li>
+					<li><a href="#crud_simulation">CRUD Simulation</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#matching_order">Matching Order</a></li>
+					<li><a href="#probabilistic_matching">Probabilistic Matching</a></li>
+					<li><a href="#stateful_scenarios">Stateful Scenarios</a></li>
+					<li><a href="#timed_scenario_flows">Timed &amp; Triggered Flows</a></li>
+					<li><a href="#cross_protocol_scenario_correlation">Cross-Protocol Correlation</a></li>
+					<li><a href="#sequential_responses">Sequential / Cycling Responses</a></li>
+					<li><a href="#updating_expectations">Updating Expectations</a></li>
+				</ul>
+			</td>
+		</tr>
+	</tbody>
+</table>
+
+<p><strong>Workflow:</strong> <a href="#start_mockserver">0. Start MockServer</a> &middot; <a href="#setup_expectations">1. Setup Expectations</a> &middot; <a href="#verify_requests">3. Verify Requests</a>&emsp;|&emsp;<strong>Reference:</strong> <a href="#next_steps">Next Steps</a> &middot; <a href="#spring_boot_compatibility">Spring Boot</a> &middot; <a href="#upgrading">Upgrading</a> &middot; <a href="#http2_proxy_limitations">HTTP/2 Proxy Limitations</a> &middot; <a href="#single_port_architecture">Single Port Architecture</a></p>
+
 <a id="start_mockserver" class="anchor" href="#start_mockserver">&nbsp;</a>
 
 <h2>0. Start MockServer</h2>
