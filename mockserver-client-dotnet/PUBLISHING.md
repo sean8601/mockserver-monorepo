@@ -6,9 +6,13 @@
   `MockServer.Client`; only the NuGet id differs, because the dotted
   `MockServer.Client` id is owned by an unrelated third party)
 - **Registry:** [nuget.org](https://www.nuget.org/packages/MockServerClient)
+- **Status:** the `MockServerClient` id is **claimed** (first published as
+  `7.0.0-alpha.1` on 2026-06-11 to reserve the name); the release pipeline publishes
+  the stable release version on top.
 - **Secret:** `mockserver-release/nuget` (AWS Secrets Manager, JSON key `api_key` — the
   release scripts read it via `load_secret … api_key`; the `NUGET_API_KEY` below is just the
-  shell env-var name the manual snippet assigns it to)
+  shell env-var name the manual snippet assigns it to). Created out of band; referenced in
+  Terraform via a data source.
 
 ## Non-interactive publish command
 
@@ -30,7 +34,7 @@ dotnet nuget push ./artifacts/MockServerClient.*.nupkg \
 NUGET_API_KEY=$(aws secretsmanager get-secret-value \
   --secret-id mockserver-release/nuget \
   --query SecretString --output text \
-  --profile mockserver-build)
+  --profile mockserver-build --region eu-west-2 | jq -r '.api_key')
 ```
 
 ## Version management
