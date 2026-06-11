@@ -29,7 +29,7 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     <li><a href="#session_isolation">Session isolation</a></li>
     <li><a href="#cost_budget">Cost budget</a></li>
     <li><a href="#chaos">Chaos / fault injection</a></li>
-    <li><a href="#java_client">Java client API</a></li>
+    <li><a href="#java_client">Streaming &mdash; client examples (all languages)</a></li>
 </ul>
 
 <a id="basic_completion" class="anchor" href="#basic_completion">&nbsp;</a>
@@ -41,9 +41,223 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     the <span class="inline_code">completion</span> describes what to return.
 </p>
 
-<p>Send a <span class="inline_code">PUT</span> to <span class="inline_code">/mockserver/expectation</span>:</p>
+<p>
+    The Java client has a typed fluent API (<span class="inline_code">LlmMockBuilder</span> + <span class="inline_code">HttpLlmResponse</span>).
+    All other clients send the expectation as raw JSON using their generic expectation method
+    (<span class="inline_code">mockAnyResponse</span> in JavaScript; a direct PUT to <span class="inline_code">/mockserver/expectation</span> in other languages).
+</p>
 
-<pre class="prettyprint lang-json code"><code class="code">{
+<button class="accordion"><strong>Java Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.client.LlmMockBuilder.llmMock;
+import static org.mockserver.model.Completion.completion;
+import static org.mockserver.model.Provider.OPENAI;
+import static org.mockserver.model.Usage.usage;
+
+// OpenAI — POST /v1/chat/completions
+llmMock("/v1/chat/completions")
+    .withProvider(OPENAI)
+    .withModel("gpt-4o")
+    .respondingWith(
+        completion()
+            .withText("MockServer is an open-source HTTP mock server.")
+            .withStopReason("stop")
+            .withUsage(usage().withInputTokens(12).withOutputTokens(8))
+    )
+    .applyTo(mockServerClient);</code></pre>
+</div>
+
+<button class="accordion"><strong>JavaScript Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-javascript code"><code class="code">var mockServerClient = require('mockserver-client').mockServerClient;
+
+// OpenAI — POST /v1/chat/completions
+mockServerClient("localhost", 1080).mockAnyResponse({
+    "httpRequest": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+    },
+    "httpLlmResponse": {
+        "provider": "OPENAI",
+        "model": "gpt-4o",
+        "completion": {
+            "text": "MockServer is an open-source HTTP mock server.",
+            "stopReason": "stop",
+            "usage": { "inputTokens": 12, "outputTokens": 8 }
+        }
+    }
+}).then(
+    function () { console.log("expectation created"); },
+    function (error) { console.log(error); }
+);</code></pre>
+</div>
+
+<button class="accordion"><strong>Python Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-python code"><code class="code">import requests
+
+# OpenAI — POST /v1/chat/completions
+requests.put(
+    "http://localhost:1080/mockserver/expectation",
+    json={
+        "httpRequest": {
+            "method": "POST",
+            "path": "/v1/chat/completions"
+        },
+        "httpLlmResponse": {
+            "provider": "OPENAI",
+            "model": "gpt-4o",
+            "completion": {
+                "text": "MockServer is an open-source HTTP mock server.",
+                "stopReason": "stop",
+                "usage": {"inputTokens": 12, "outputTokens": 8}
+            }
+        }
+    }
+)</code></pre>
+</div>
+
+<button class="accordion"><strong>Ruby Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-ruby code"><code class="code">require 'net/http'
+require 'json'
+
+# OpenAI — POST /v1/chat/completions
+uri = URI('http://localhost:1080/mockserver/expectation')
+http = Net::HTTP.new(uri.host, uri.port)
+req = Net::HTTP::Put.new(uri.path, 'Content-Type' => 'application/json')
+req.body = JSON.generate({
+  'httpRequest' => { 'method' => 'POST', 'path' => '/v1/chat/completions' },
+  'httpLlmResponse' => {
+    'provider' => 'OPENAI',
+    'model' => 'gpt-4o',
+    'completion' => {
+      'text' => 'MockServer is an open-source HTTP mock server.',
+      'stopReason' => 'stop',
+      'usage' => { 'inputTokens' => 12, 'outputTokens' => 8 }
+    }
+  }
+})
+http.request(req)</code></pre>
+</div>
+
+<button class="accordion"><strong>Go Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+// OpenAI — POST /v1/chat/completions
+func createLlmExpectation() {
+    body, _ := json.Marshal(map[string]interface{}{
+        "httpRequest": map[string]interface{}{
+            "method": "POST",
+            "path":   "/v1/chat/completions",
+        },
+        "httpLlmResponse": map[string]interface{}{
+            "provider": "OPENAI",
+            "model":    "gpt-4o",
+            "completion": map[string]interface{}{
+                "text":       "MockServer is an open-source HTTP mock server.",
+                "stopReason": "stop",
+                "usage":      map[string]int{"inputTokens": 12, "outputTokens": 8},
+            },
+        },
+    })
+    req, _ := http.NewRequest(http.MethodPut,
+        "http://localhost:1080/mockserver/expectation", bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+</div>
+
+<button class="accordion"><strong>.NET Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+
+// OpenAI — POST /v1/chat/completions
+var expectation = new
+{
+    httpRequest = new { method = "POST", path = "/v1/chat/completions" },
+    httpLlmResponse = new
+    {
+        provider = "OPENAI",
+        model = "gpt-4o",
+        completion = new
+        {
+            text = "MockServer is an open-source HTTP mock server.",
+            stopReason = "stop",
+            usage = new { inputTokens = 12, outputTokens = 8 }
+        }
+    }
+};
+using var client = new HttpClient();
+var json = JsonSerializer.Serialize(expectation);
+await client.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json"));</code></pre>
+</div>
+
+<button class="accordion"><strong>Rust Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-rust code"><code class="code">use serde_json::json;
+
+// OpenAI — POST /v1/chat/completions
+let client = reqwest::blocking::Client::new();
+client.put("http://localhost:1080/mockserver/expectation")
+    .json(&json!({
+        "httpRequest": {
+            "method": "POST",
+            "path": "/v1/chat/completions"
+        },
+        "httpLlmResponse": {
+            "provider": "OPENAI",
+            "model": "gpt-4o",
+            "completion": {
+                "text": "MockServer is an open-source HTTP mock server.",
+                "stopReason": "stop",
+                "usage": { "inputTokens": 12, "outputTokens": 8 }
+            }
+        }
+    }))
+    .send()
+    .unwrap();</code></pre>
+</div>
+
+<button class="accordion"><strong>PHP Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-php code"><code class="code">&lt;?php
+// OpenAI — POST /v1/chat/completions
+$expectation = [
+    'httpRequest' => ['method' => 'POST', 'path' => '/v1/chat/completions'],
+    'httpLlmResponse' => [
+        'provider' => 'OPENAI',
+        'model' => 'gpt-4o',
+        'completion' => [
+            'text' => 'MockServer is an open-source HTTP mock server.',
+            'stopReason' => 'stop',
+            'usage' => ['inputTokens' => 12, 'outputTokens' => 8],
+        ],
+    ],
+];
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($expectation));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+</div>
+
+<button class="accordion"><strong>REST API / curl</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-bash code"><code class="code"># OpenAI — POST /v1/chat/completions
+curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
   "httpRequest": {
     "method": "POST",
     "path": "/v1/chat/completions"
@@ -54,24 +268,13 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     "completion": {
       "text": "MockServer is an open-source HTTP mock server.",
       "stopReason": "stop",
-      "usage": {
-        "inputTokens": 12,
-        "outputTokens": 8
-      }
+      "usage": { "inputTokens": 12, "outputTokens": 8 }
     }
   }
-}</code></pre>
+}'
 
-<p>
-    When a request matches <span class="inline_code">POST /v1/chat/completions</span>, MockServer returns an OpenAI-formatted
-    JSON response with the specified text, model, stop reason, and token usage &mdash; including the correct
-    <span class="inline_code">id</span>, <span class="inline_code">created</span>, and <span class="inline_code">object</span> fields
-    that the OpenAI SDK expects.
-</p>
-
-<p>The same completion for Anthropic:</p>
-
-<pre class="prettyprint lang-json code"><code class="code">{
+# Anthropic — POST /v1/messages
+curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
   "httpRequest": {
     "method": "POST",
     "path": "/v1/messages"
@@ -82,13 +285,18 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
     "completion": {
       "text": "MockServer is an open-source HTTP mock server.",
       "stopReason": "end_turn",
-      "usage": {
-        "inputTokens": 12,
-        "outputTokens": 8
-      }
+      "usage": { "inputTokens": 12, "outputTokens": 8 }
     }
   }
-}</code></pre>
+}'</code></pre>
+</div>
+
+<p>
+    When a request matches <span class="inline_code">POST /v1/chat/completions</span>, MockServer returns an OpenAI-formatted
+    JSON response with the specified text, model, stop reason, and token usage &mdash; including the correct
+    <span class="inline_code">id</span>, <span class="inline_code">created</span>, and <span class="inline_code">object</span> fields
+    that the OpenAI SDK expects.
+</p>
 
 <a id="supported_providers" class="anchor" href="#supported_providers">&nbsp;</a>
 <h2>Supported Providers</h2>
@@ -445,10 +653,285 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
 <p>See <a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> for more about chaos profiles.</p>
 
 <a id="java_client" class="anchor" href="#java_client">&nbsp;</a>
-<h2>Java Client API</h2>
+<h2>Streaming &mdash; Client Examples</h2>
 
 <p>
-    The Java client provides a fluent API for creating LLM expectations:
+    These examples show how to create a streaming LLM expectation with realistic timing physics.
+    The Java client uses the typed fluent API; all other clients send the expectation as raw JSON.
+</p>
+
+<button class="accordion"><strong>Java Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-java code"><code class="code">import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.mockserver.client.Llm.jitter;
+import static org.mockserver.client.Llm.timeToFirstToken;
+import static org.mockserver.client.Llm.tokensPerSecond;
+import static org.mockserver.client.LlmMockBuilder.llmMock;
+import static org.mockserver.model.Completion.completion;
+import static org.mockserver.model.Provider.OPENAI;
+
+llmMock("/v1/chat/completions")
+    .withProvider(OPENAI)
+    .withModel("gpt-4o")
+    .respondingWith(
+        completion()
+            .withText("This response is streamed token by token.")
+            .streaming()
+            .withStreamingPhysics(
+                timeToFirstToken(200, MILLISECONDS),
+                tokensPerSecond(50),
+                jitter(0.1))
+    )
+    .applyTo(mockServerClient);</code></pre>
+</div>
+
+<button class="accordion"><strong>JavaScript Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-javascript code"><code class="code">var mockServerClient = require('mockserver-client').mockServerClient;
+
+mockServerClient("localhost", 1080).mockAnyResponse({
+    "httpRequest": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+    },
+    "httpLlmResponse": {
+        "provider": "OPENAI",
+        "model": "gpt-4o",
+        "completion": {
+            "text": "This response is streamed token by token.",
+            "streaming": true,
+            "streamingPhysics": {
+                "timeToFirstToken": { "timeUnit": "MILLISECONDS", "value": 200 },
+                "tokensPerSecond": 50,
+                "jitter": 0.1,
+                "seed": 42
+            }
+        }
+    }
+}).then(
+    function () { console.log("expectation created"); },
+    function (error) { console.log(error); }
+);</code></pre>
+</div>
+
+<button class="accordion"><strong>Python Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-python code"><code class="code">import requests
+
+requests.put(
+    "http://localhost:1080/mockserver/expectation",
+    json={
+        "httpRequest": {
+            "method": "POST",
+            "path": "/v1/chat/completions"
+        },
+        "httpLlmResponse": {
+            "provider": "OPENAI",
+            "model": "gpt-4o",
+            "completion": {
+                "text": "This response is streamed token by token.",
+                "streaming": True,
+                "streamingPhysics": {
+                    "timeToFirstToken": {"timeUnit": "MILLISECONDS", "value": 200},
+                    "tokensPerSecond": 50,
+                    "jitter": 0.1,
+                    "seed": 42
+                }
+            }
+        }
+    }
+)</code></pre>
+</div>
+
+<button class="accordion"><strong>Ruby Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-ruby code"><code class="code">require 'net/http'
+require 'json'
+
+uri = URI('http://localhost:1080/mockserver/expectation')
+http = Net::HTTP.new(uri.host, uri.port)
+req = Net::HTTP::Put.new(uri.path, 'Content-Type' => 'application/json')
+req.body = JSON.generate({
+  'httpRequest' => { 'method' => 'POST', 'path' => '/v1/chat/completions' },
+  'httpLlmResponse' => {
+    'provider' => 'OPENAI',
+    'model' => 'gpt-4o',
+    'completion' => {
+      'text' => 'This response is streamed token by token.',
+      'streaming' => true,
+      'streamingPhysics' => {
+        'timeToFirstToken' => { 'timeUnit' => 'MILLISECONDS', 'value' => 200 },
+        'tokensPerSecond' => 50,
+        'jitter' => 0.1,
+        'seed' => 42
+      }
+    }
+  }
+})
+http.request(req)</code></pre>
+</div>
+
+<button class="accordion"><strong>Go Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+func createStreamingLlmExpectation() {
+    body, _ := json.Marshal(map[string]interface{}{
+        "httpRequest": map[string]interface{}{
+            "method": "POST",
+            "path":   "/v1/chat/completions",
+        },
+        "httpLlmResponse": map[string]interface{}{
+            "provider": "OPENAI",
+            "model":    "gpt-4o",
+            "completion": map[string]interface{}{
+                "text":      "This response is streamed token by token.",
+                "streaming": true,
+                "streamingPhysics": map[string]interface{}{
+                    "timeToFirstToken": map[string]interface{}{
+                        "timeUnit": "MILLISECONDS", "value": 200,
+                    },
+                    "tokensPerSecond": 50,
+                    "jitter":          0.1,
+                    "seed":            42,
+                },
+            },
+        },
+    })
+    req, _ := http.NewRequest(http.MethodPut,
+        "http://localhost:1080/mockserver/expectation", bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+</div>
+
+<button class="accordion"><strong>.NET Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+
+var expectation = new
+{
+    httpRequest = new { method = "POST", path = "/v1/chat/completions" },
+    httpLlmResponse = new
+    {
+        provider = "OPENAI",
+        model = "gpt-4o",
+        completion = new
+        {
+            text = "This response is streamed token by token.",
+            streaming = true,
+            streamingPhysics = new
+            {
+                timeToFirstToken = new { timeUnit = "MILLISECONDS", value = 200 },
+                tokensPerSecond = 50,
+                jitter = 0.1,
+                seed = 42
+            }
+        }
+    }
+};
+using var client = new HttpClient();
+var json = JsonSerializer.Serialize(expectation);
+await client.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json"));</code></pre>
+</div>
+
+<button class="accordion"><strong>Rust Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-rust code"><code class="code">use serde_json::json;
+
+let client = reqwest::blocking::Client::new();
+client.put("http://localhost:1080/mockserver/expectation")
+    .json(&json!({
+        "httpRequest": {
+            "method": "POST",
+            "path": "/v1/chat/completions"
+        },
+        "httpLlmResponse": {
+            "provider": "OPENAI",
+            "model": "gpt-4o",
+            "completion": {
+                "text": "This response is streamed token by token.",
+                "streaming": true,
+                "streamingPhysics": {
+                    "timeToFirstToken": { "timeUnit": "MILLISECONDS", "value": 200 },
+                    "tokensPerSecond": 50,
+                    "jitter": 0.1,
+                    "seed": 42
+                }
+            }
+        }
+    }))
+    .send()
+    .unwrap();</code></pre>
+</div>
+
+<button class="accordion"><strong>PHP Code Example</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-php code"><code class="code">&lt;?php
+$expectation = [
+    'httpRequest' => ['method' => 'POST', 'path' => '/v1/chat/completions'],
+    'httpLlmResponse' => [
+        'provider' => 'OPENAI',
+        'model' => 'gpt-4o',
+        'completion' => [
+            'text' => 'This response is streamed token by token.',
+            'streaming' => true,
+            'streamingPhysics' => [
+                'timeToFirstToken' => ['timeUnit' => 'MILLISECONDS', 'value' => 200],
+                'tokensPerSecond' => 50,
+                'jitter' => 0.1,
+                'seed' => 42,
+            ],
+        ],
+    ],
+];
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($expectation));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+</div>
+
+<button class="accordion"><strong>REST API / curl</strong></button>
+<div class="panel">
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+  "httpRequest": {
+    "method": "POST",
+    "path": "/v1/chat/completions"
+  },
+  "httpLlmResponse": {
+    "provider": "OPENAI",
+    "model": "gpt-4o",
+    "completion": {
+      "text": "This response is streamed token by token.",
+      "streaming": true,
+      "streamingPhysics": {
+        "timeToFirstToken": { "timeUnit": "MILLISECONDS", "value": 200 },
+        "tokensPerSecond": 50,
+        "jitter": 0.1,
+        "seed": 42
+      }
+    }
+  }
+}'</code></pre>
+</div>
+
+<a id="java_client_simple" class="anchor" href="#java_client_simple">&nbsp;</a>
+<h2>Java Client API (Simple Completion)</h2>
+
+<p>
+    The Java client provides a typed fluent API for creating LLM expectations without hand-assembling JSON:
 </p>
 
 <pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.HttpRequest.request;
