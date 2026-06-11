@@ -1,0 +1,20 @@
+meta {
+  name: Retrieve active expectations
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/mockserver/retrieve
+  body: none
+  auth: none
+}
+
+params:query {
+  type: active_expectations
+  format: json
+}
+
+docs {
+  Returns the currently-registered expectations as JSON.
+}
