@@ -359,7 +359,9 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
     alternative resolution path; PHP cannot use interactive breakpoints.
 </p>
 
-<h3>Java</h3>
+<button class="accordion"><strong>Java Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-java code"><code class="code">import org.mockserver.client.MockServerClient;
 import org.mockserver.mock.breakpoint.BreakpointPhase;
@@ -395,7 +397,11 @@ client.removeBreakpointMatcher(id);
 client.clearBreakpointMatchers();
 </code></pre>
 
-<h3>Node.js</h3>
+</div>
+
+<button class="accordion"><strong>Node.js Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-js code"><code class="code">const mockserver = require('mockserver-client').mockServerClient;
 const client = mockserver('localhost', 1080);
@@ -436,7 +442,11 @@ client.removeBreakpointMatcher(id);
 client.clearBreakpointMatchers();
 </code></pre>
 
-<h3>Python</h3>
+</div>
+
+<button class="accordion"><strong>Python Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-python code"><code class="code">from mockserver import MockServerClient, HttpRequest, HttpResponse
 
@@ -471,7 +481,11 @@ client.clear_breakpoint_matchers()
 # Async client: AsyncMockServerClient exposes the same methods as coroutines
 </code></pre>
 
-<h3>Ruby</h3>
+</div>
+
+<button class="accordion"><strong>Ruby Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver'
 
@@ -504,7 +518,11 @@ client.remove_breakpoint_matcher(bp_id)
 client.clear_breakpoint_matchers
 </code></pre>
 
-<h3>Go</h3>
+</div>
+
+<button class="accordion"><strong>Go Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-go code"><code class="code">import (
     mockserver "github.com/mock-server/mockserver-client-go"
@@ -545,7 +563,11 @@ client.ClearBreakpointMatchers()
 client.CloseBreakpointWebSocket()
 </code></pre>
 
-<h3>.NET</h3>
+</div>
+
+<button class="accordion"><strong>.NET Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
 using MockServer.Client.Models;
@@ -580,7 +602,11 @@ client.RemoveBreakpointMatcher(id);
 client.ClearBreakpointMatchers();
 </code></pre>
 
-<h3>Rust</h3>
+</div>
+
+<button class="accordion"><strong>Rust Code Example</strong></button>
+
+<div class="panel">
 
 <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::*;
 
@@ -617,6 +643,8 @@ client.close_breakpoint_websocket();
 </code></pre>
 
 <a id="rest_api" class="anchor" href="#rest_api">&nbsp;</a>
+</div>
+
 <h2>REST API Reference</h2>
 
 <h3>Matcher registration</h3>
