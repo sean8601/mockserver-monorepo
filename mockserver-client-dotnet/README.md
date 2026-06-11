@@ -1,17 +1,19 @@
-# MockServer.Client for .NET
+# MockServerClient for .NET
 
 A hand-written, idiomatic .NET client for [MockServer](https://www.mock-server.com)'s control-plane REST API.
 
 ## Installation
 
+The NuGet package is `MockServerClient` (the assembly and namespace remain `MockServer.Client`):
+
 ```bash
-dotnet add package MockServer.Client
+dotnet add package MockServerClient
 ```
 
 Or via PackageReference in your `.csproj`:
 
 ```xml
-<PackageReference Include="MockServer.Client" Version="7.0.0" />
+<PackageReference Include="MockServerClient" Version="7.0.1" />
 ```
 
 ## Supported Targets

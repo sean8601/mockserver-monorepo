@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish MockServer.Client to NuGet.
+# Publish the .NET client (NuGet package id "MockServerClient") to NuGet.
 #
 # Dry-run: build + pack, skip push to NuGet.
 # SOFT: if the secret is absent or the publish fails, log a warning and exit 0.
@@ -58,18 +58,18 @@ if ! aws secretsmanager describe-secret --region "$REGION" \
   exit 0
 fi
 
-# Idempotent: check if already published
+# Idempotent: check if already published (NuGet package id is "MockServerClient")
 http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-  "https://api.nuget.org/v3-flatcontainer/mockserver.client/${RELEASE_VERSION}/mockserver.client.${RELEASE_VERSION}.nupkg" 2>/dev/null || echo "000")
+  "https://api.nuget.org/v3-flatcontainer/mockserverclient/${RELEASE_VERSION}/mockserverclient.${RELEASE_VERSION}.nupkg" 2>/dev/null || echo "000")
 if [[ "$http_code" == "200" ]]; then
-  log_info "MockServer.Client $RELEASE_VERSION already on NuGet — skipping"
+  log_info "MockServerClient $RELEASE_VERSION already on NuGet — skipping"
   exit 0
 fi
 
 NUGET_API_KEY=$(load_secret "mockserver-release/nuget" "api_key")
 
 log_info "Pushing to NuGet.org"
-dotnet nuget push "$COMPONENT_DIR/artifacts/MockServer.Client.${RELEASE_VERSION}.nupkg" \
+dotnet nuget push "$COMPONENT_DIR/artifacts/MockServerClient.${RELEASE_VERSION}.nupkg" \
   --api-key "$NUGET_API_KEY" \
   --source https://api.nuget.org/v3/index.json \
   --skip-duplicate || {
@@ -78,7 +78,7 @@ dotnet nuget push "$COMPONENT_DIR/artifacts/MockServer.Client.${RELEASE_VERSION}
 }
 
 # Commit version bump
-git_commit_and_push "release: publish MockServer.Client $RELEASE_VERSION to NuGet" \
+git_commit_and_push "release: publish MockServerClient $RELEASE_VERSION to NuGet" \
   "$COMPONENT_DIR/src/MockServer.Client/MockServer.Client.csproj" || \
   log_info "WARNING: could not commit version bump (non-fatal)"
 

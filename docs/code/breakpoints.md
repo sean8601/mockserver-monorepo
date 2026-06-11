@@ -418,7 +418,7 @@ Seven language clients implement the breakpoint callback WebSocket protocol:
 | Python | `mockserver-client` PyPI package — `add_breakpoint`/`add_request_breakpoint`/`add_request_and_response_breakpoint` |
 | Ruby | `mockserver` gem — `add_breakpoint`/`add_request_breakpoint`/`add_request_and_response_breakpoint` |
 | Go | `mockserver-client-go` — `AddRequestBreakpoint`/`AddRequestResponseBreakpoint`/`AddStreamBreakpoint` |
-| .NET | `MockServer.Client` NuGet — `AddRequestBreakpoint`/`AddRequestResponseBreakpoint`/`AddStreamBreakpoint` |
+| .NET | `MockServerClient` NuGet — `AddRequestBreakpoint`/`AddRequestResponseBreakpoint`/`AddStreamBreakpoint` |
 | Rust | `mockserver-client` crate — `add_request_breakpoint`/`add_request_response_breakpoint`/`add_stream_breakpoint` |
 
 **PHP is intentionally not supported.** Breakpoints require a persistent callback WebSocket connection for resolution. PHP runtimes lack WebSocket client support, so there is no way for PHP to participate in interactive resolution.

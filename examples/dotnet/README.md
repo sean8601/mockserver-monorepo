@@ -10,7 +10,7 @@ Runnable examples demonstrating the [MockServer .NET client](../../mockserver-cl
   no NuGet install is needed. Or use the published package:
 
   ```bash
-  dotnet add package MockServer.Client
+  dotnet add package MockServerClient
   ```
 
 ## Examples

@@ -80,3 +80,14 @@ steps:
     command: ".buildkite/scripts/steps/java-publish-snapshot-bundles.sh"
     timeout_in_minutes: 45
     soft_fail: true
+
+  # DRAFT (2026-06-11): opt-in pre-release publish of the language clients so a release can
+  # be smoke-tested from real registries before the release pipeline runs. Triggered by the
+  # PUBLISH_CLIENT_SNAPSHOTS=true build env var (not every master build — pre-releases on
+  # npm/PyPI/crates.io/NuGet are effectively permanent). Each client is gated on its registry
+  # secret + CLI being present, so it soft-skips before the one-time manual provisioning is done.
+  - label: ":package: publish client snapshots (opt-in)"
+    if: "build.branch == 'master' && build.env('PUBLISH_CLIENT_SNAPSHOTS') == 'true'"
+    command: ".buildkite/scripts/steps/clients-publish-snapshot.sh"
+    timeout_in_minutes: 30
+    soft_fail: true

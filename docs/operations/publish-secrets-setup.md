@@ -31,9 +31,10 @@ the release-queue IAM policy access.
 3. Click **Create** and configure:
    - **Key name:** `mockserver-release`
    - **Expiration:** 365 days (the maximum; set a calendar reminder to rotate)
-   - **Package owner:** select the account/org that owns `MockServer.Client`
-   - **Glob pattern:** `MockServer.*` (covers both `MockServer.Client` and
-     `Testcontainers.MockServer`)
+   - **Package owner:** select the account/org that owns `MockServerClient`
+   - **Glob pattern:** `*` (or scope to the two specific package IDs
+     `MockServerClient` and `Testcontainers.MockServer` — note the client id has
+     no dot, so a `MockServer.*` glob would NOT match it)
    - **Scopes:** Push (push new packages and package versions)
 4. Click **Create** and copy the API key immediately (it is shown only once).
 
@@ -43,7 +44,7 @@ the release-queue IAM policy access.
 aws secretsmanager create-secret \
   --region eu-west-2 \
   --name mockserver-release/nuget \
-  --description "NuGet.org API key for publishing MockServer.Client and Testcontainers.MockServer" \
+  --description "NuGet.org API key for publishing MockServerClient and Testcontainers.MockServer" \
   --secret-string '{"api_key":"<PASTE_NUGET_API_KEY>"}'
 ```
 
@@ -53,7 +54,7 @@ aws secretsmanager create-secret \
 
 ```
 .NET Client (soft):
-  https://api.nuget.org/v3-flatcontainer/mockserver.client/<VERSION>/mockserver.client.<VERSION>.nupkg
+  https://api.nuget.org/v3-flatcontainer/mockserverclient/<VERSION>/mockserverclient.<VERSION>.nupkg
 
 Testcontainers.MockServer (NuGet, soft):
   https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/<VERSION>/testcontainers.mockserver.<VERSION>.nupkg

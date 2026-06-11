@@ -286,8 +286,8 @@ check_http_soft "Go client module on pkg.go.dev" \
 
 log_info ""
 log_info "== .NET Client (soft — NuGet indexing may lag) =="
-check_http_soft "MockServer.Client $V on NuGet" \
-  "https://api.nuget.org/v3-flatcontainer/mockserver.client/${V}/mockserver.client.${V}.nupkg"
+check_http_soft "MockServerClient $V on NuGet" \
+  "https://api.nuget.org/v3-flatcontainer/mockserverclient/${V}/mockserverclient.${V}.nupkg"
 
 log_info ""
 log_info "== Rust Client (soft — crates.io indexing may lag) =="
