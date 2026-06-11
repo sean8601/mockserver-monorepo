@@ -70,6 +70,15 @@ The same can be done from any client library or the dashboard at <http://localho
 
 For every way to run MockServer yourself — Docker, docker-compose recipes, the `mockserver` CLI, the JVM-less binary bundle, Helm/Kubernetes, the JAR, and Testcontainers — see the [Self-Hosting MockServer guide](https://www.mock-server.com/mock_server/self_hosting_mockserver.html).
 
+#### Drive it from Postman or Bruno
+
+Explore MockServer's REST control plane from an API client — create expectations, verify requests, and inspect recorded traffic:
+
+[![Run in Postman](https://run.pstmn.io/button.svg)](https://god.gw.postman.com/run-collection/3256712-63a2d67a-46d6-41fd-a544-0535e7393e7d?action=collection%2Ffork&source=rip_markdown&collection-url=entityId%3D3256712-63a2d67a-46d6-41fd-a544-0535e7393e7d%26entityType%3Dcollection%26workspaceId%3D1739eeee-5da1-4112-86a7-b6c094f2b527)
+
+- **Postman** — click the button above, or import [`examples/postman`](examples/postman) ([guide](https://www.mock-server.com/where/postman.html)).
+- **Bruno** (open-source, git-native) — open [`examples/bruno`](examples/bruno) in [Bruno](https://www.usebruno.com/) via **Open Collection** ([guide](https://www.mock-server.com/where/bruno.html)).
+
 ### Documentation
 
 For usage guide please see: [www.mock-server.com](https://www.mock-server.com/)
