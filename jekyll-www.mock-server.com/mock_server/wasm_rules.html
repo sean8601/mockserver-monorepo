@@ -35,6 +35,8 @@ mockserver.wasmEnabled=true
 
 <p>Your WASM module must export a function called <span class="inline_code">match</span> with the following signature:</p>
 
+<p><strong>Full runnable examples:</strong> the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/wasm" rel="noopener noreferrer">WASM custom-rule examples</a> in the repository implement the <em>same</em> body matcher in both <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/wasm/rust" rel="noopener noreferrer">Rust</a> and <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/wasm/go" rel="noopener noreferrer">Go</a> &mdash; including a prebuilt <span class="inline_code">.wasm</span>, the MockServer WASM ABI contract, and build instructions.</p>
+
 <pre class="prettyprint code">
 ;; WAT (WebAssembly Text Format)
 (module
