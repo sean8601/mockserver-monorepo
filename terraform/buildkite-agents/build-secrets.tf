@@ -78,11 +78,6 @@ resource "aws_secretsmanager_secret" "website_role" {
   description = "IAM role ARN for cross-account website access"
 }
 
-resource "aws_secretsmanager_secret" "crates" {
-  name        = "mockserver-release/crates"
-  description = "crates.io API token for publishing the mockserver-client Rust crate (key: token)"
-}
-
 # --- Per-secret IAM policies ------------------------------------------------
 
 # Buildkite API token: consumed by trigger-pipeline.sh (trigger queue),
@@ -248,9 +243,15 @@ data "aws_secretsmanager_secret" "mcp_dns_key" {
 # band — it holds a publish credential we don't want in Terraform state — and is
 # read by scripts/release/components/client-dotnet.sh to push the MockServerClient
 # package. Referenced as a data source purely for its ARN in the IAM grant below.
-# (crates.io stays a managed resource above until its token is provisioned.)
 data "aws_secretsmanager_secret" "nuget" {
   name = "mockserver-release/nuget"
+}
+
+# crates.io publish token (mockserver-release/crates, key: token) is likewise
+# created out of band and read by scripts/release/components/client-rust.sh to
+# publish the mockserver-client crate. Data source for its ARN only.
+data "aws_secretsmanager_secret" "crates" {
+  name = "mockserver-release/crates"
 }
 
 # Release-only secrets.
@@ -272,7 +273,7 @@ resource "aws_iam_policy" "read_release_secrets" {
           aws_secretsmanager_secret.swaggerhub.arn,
           aws_secretsmanager_secret.website_role.arn,
           data.aws_secretsmanager_secret.nuget.arn,
-          aws_secretsmanager_secret.crates.arn,
+          data.aws_secretsmanager_secret.crates.arn,
           data.aws_secretsmanager_secret.cosign.arn,
           data.aws_secretsmanager_secret.ghcr_token.arn,
           data.aws_secretsmanager_secret.mcp_dns_key.arn,
@@ -300,7 +301,7 @@ resource "aws_iam_policy" "read_release_secrets" {
           data.aws_secretsmanager_secret.ghcr_token.arn,
           data.aws_secretsmanager_secret.mcp_dns_key.arn,
           data.aws_secretsmanager_secret.nuget.arn,
-          aws_secretsmanager_secret.crates.arn,
+          data.aws_secretsmanager_secret.crates.arn,
         ]
       },
       {
