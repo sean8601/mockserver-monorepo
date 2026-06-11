@@ -77,6 +77,21 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/Expectations"
+            example:
+              httpRequest:
+                method: GET
+                path: /api/users
+                queryStringParameters:
+                  page:
+                    - '1'
+                  limit:
+                    - '10'
+              httpResponse:
+                statusCode: 200
+                headers:
+                  Content-Type:
+                    - application/json
+                body: '{"users":[{"id":1,"name":"John Doe"}],"total":1}'
         description: expectation(s) to create
         required: true
   /mockserver/openapi:
@@ -104,6 +119,11 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/OpenAPIExpectations"
+            example:
+              specUrlOrPayload: https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json
+              operationsAndResponses:
+                listPets: '200'
+                showPetById: '200'
         description: expectation(s) to create
         required: true
   /mockserver/clear:
@@ -132,6 +152,8 @@ paths:
               oneOf:
                 - $ref: "#/components/schemas/RequestDefinition"
                 - $ref: "#/components/schemas/ExpectationId"
+            example:
+              path: /api/users
         description: request used to match expectations and record requests to clear
   /mockserver/reset:
     put:
@@ -195,6 +217,8 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RequestDefinition"
+            example:
+              path: /api/users
         description: >-
           request used to match which recorded requests, expectations or log messages to return, an empty body matches all requests, expectations or log messages
   /mockserver/verify:
@@ -219,6 +243,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/Verification"
+            example:
+              httpRequest:
+                method: GET
+                path: /api/users
+              times:
+                atLeast: 1
         description: request matcher and the number of times to match
         required: true
   /mockserver/verifySequence:
@@ -243,6 +273,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/VerificationSequence"
+            example:
+              httpRequests:
+                - method: POST
+                  path: /api/login
+                - method: GET
+                  path: /api/dashboard
         description: the sequence of requests matchers
         required: true
   /mockserver/status:
@@ -283,6 +319,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/Ports"
+            example:
+              ports:
+                - 1090
         description: >-
           list of ports to bind to, where 0 indicates dynamically bind to any
           available port
@@ -336,6 +375,8 @@ paths:
             schema:
               type: object
               description: JSON object containing the configuration properties to update
+            example:
+              logLevel: INFO
         description: configuration properties to update, only non-null fields are applied
         required: true
   /mockserver/clock:
@@ -368,6 +409,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ClockRequest"
+            example:
+              action: freeze
+              instant: '2026-01-15T10:00:00Z'
         description: clock action to perform
         required: true
     get:
@@ -419,6 +463,20 @@ paths:
             schema:
               type: object
               description: a HAR export or Postman collection JSON document
+            example:
+              log:
+                version: '1.2'
+                entries:
+                  - request:
+                      method: GET
+                      url: http://example.com/api/users
+                      headers: []
+                      queryString: []
+                    response:
+                      status: 200
+                      headers: []
+                      content:
+                        text: '{"users":[{"id":1,"name":"Alice"}]}'
         description: HAR or Postman collection JSON document to import
         required: true
   /mockserver/crud:
@@ -449,6 +507,17 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CrudExpectationsDefinition"
+            example:
+              basePath: /api/users
+              idField: id
+              idStrategy: AUTO_INCREMENT
+              initialData:
+                - id: 1
+                  name: Alice
+                  email: alice@example.com
+                - id: 2
+                  name: Bob
+                  email: bob@example.com
         description: CRUD resource definition including the base path and id strategy
         required: true
   /mockserver/files/store:
@@ -477,6 +546,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/FileStoreRequest"
+            example:
+              name: template.json
+              content: '{"status":"ok"}'
         description: file name and content to store
         required: true
   /mockserver/files/retrieve:
@@ -508,6 +580,8 @@ paths:
                   type: string
               required:
                 - name
+            example:
+              name: template.json
         description: name of the file to retrieve
         required: true
   /mockserver/files/list:
@@ -551,6 +625,8 @@ paths:
                   type: string
               required:
                 - name
+            example:
+              name: template.json
         description: name of the file to delete
         required: true
   /mockserver/serviceChaos:
@@ -583,6 +659,15 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ServiceChaosRequest"
+            example:
+              host: payments.internal:8443
+              chaos:
+                errorStatus: 503
+                errorProbability: 0.3
+                latency:
+                  timeUnit: MILLISECONDS
+                  value: 200
+              ttlMillis: 60000
         description: service chaos registration, removal or clear instruction
         required: true
     get:
@@ -625,6 +710,10 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ServiceChaosRequest"
+            example:
+              host: payments.internal:8443
+              chaos:
+                errorProbability: 0.5
         description: JSON Merge Patch with 'host' and the chaos fields to update
         required: true
   /mockserver/tcpChaos:
@@ -660,6 +749,12 @@ paths:
               description: >-
                 TCP chaos registration, removal or clear instruction with 'host', optional 'chaos', 'remove',
                 'clear' and 'ttlMillis' fields
+            example:
+              host: slow-api.example.com
+              chaos:
+                bandwidthBytesPerSec: 1024
+                latencyMs: 50
+              ttlMillis: 30000
         description: TCP chaos registration, removal or clear instruction
         required: true
     get:
@@ -703,6 +798,10 @@ paths:
             schema:
               type: object
               description: JSON Merge Patch with 'host' and the TCP chaos fields to update
+            example:
+              host: slow-api.example.com
+              chaos:
+                slicerChunkSize: 256
         description: JSON Merge Patch with 'host' and the TCP chaos fields to update
         required: true
   /mockserver/grpcChaos:
@@ -738,6 +837,13 @@ paths:
               description: >-
                 gRPC chaos registration, removal or clear instruction with 'service', optional 'chaos', 'remove',
                 'clear' and 'ttlMillis' fields
+            example:
+              service: com.example.OrderService
+              chaos:
+                errorStatusCode: UNAVAILABLE
+                errorMessage: service maintenance
+                errorProbability: 0.5
+                latencyMs: 100
         description: gRPC chaos registration, removal or clear instruction
         required: true
     get:
@@ -781,6 +887,10 @@ paths:
             schema:
               type: object
               description: JSON Merge Patch with 'service' and the gRPC chaos fields to update
+            example:
+              service: com.example.OrderService
+              chaos:
+                errorProbability: 0.8
         description: JSON Merge Patch with 'service' and the gRPC chaos fields to update
         required: true
   /mockserver/drift:
@@ -953,6 +1063,10 @@ paths:
                   state: Deploying
                   transitionAfterMs: 5000
                   nextState: Deployed
+            example:
+              state: Pending
+              transitionAfterMs: 5000
+              nextState: Completed
       responses:
         '200':
           description: scenario state set
@@ -1053,6 +1167,16 @@ paths:
             schema:
               type: object
               description: OIDC provider configuration (issuer, client, claims, etc.); an empty body uses defaults
+            example:
+              issuer: http://localhost:1080
+              clientId: my-app
+              subject: test-user
+              audience: api://my-api
+              scopes:
+                - openid
+                - profile
+                - email
+              tokenExpirySeconds: 7200
         description: OIDC provider configuration
         required: false
   /mockserver/asyncapi:
@@ -1087,6 +1211,21 @@ paths:
             schema:
               type: object
               description: an AsyncAPI specification (JSON/YAML) or a { spec, brokerConfig } document
+            example:
+              spec: |-
+                asyncapi: 2.6.0
+                info:
+                  title: Test Service
+                  version: 1.0.0
+                channels:
+                  user/signedup:
+                    publish:
+                      message:
+                        payload:
+                          type: object
+                          properties:
+                            userId:
+                              type: string
         description: AsyncAPI specification or spec plus broker configuration
         required: true
     get:
@@ -1138,6 +1277,10 @@ paths:
             schema:
               type: object
               description: AsyncAPI message verification request
+            example:
+              channel: user/signedup
+              count:
+                atLeast: 0
         description: AsyncAPI message verification request
         required: true
   /mockserver/wasm/modules:
@@ -1175,7 +1318,7 @@ paths:
               type: string
               format: binary
               description: raw compiled WebAssembly (.wasm) module bytes
-        description: raw compiled WebAssembly module bytes
+        description: Binary upload of a compiled WebAssembly module. Disabled by default — enable with `MOCKSERVER_WASM_ENABLED=true` (or `-Dmockserver.wasmEnabled=true`). Requires the `?name=<moduleName>` query parameter. Send the raw .wasm bytes with Content-Type application/octet-stream.
         required: true
     get:
       tags:
@@ -1219,7 +1362,7 @@ paths:
               type: string
               format: binary
               description: compiled protobuf FileDescriptorSet bytes
-        description: compiled protobuf FileDescriptorSet bytes
+        description: Binary upload of a compiled protobuf FileDescriptorSet (the .desc file produced by `protoc --descriptor_set_out`). Send the raw bytes with Content-Type application/octet-stream.
         required: true
   /mockserver/grpc/health:
     put:
@@ -1269,6 +1412,9 @@ paths:
                 remove:
                   type: boolean
                   description: when true, removes the service override
+            example:
+              service: helloworld.Greeter
+              status: SERVING
         description: gRPC service name and serving status
         required: true
     get:
@@ -1393,6 +1539,11 @@ paths:
                   type: integer
                 origin:
                   type: string
+            example:
+              path: /api/users
+              filename: users-cassette.json
+              expectationCount: 3
+              origin: test
         description: cassette registration details
         required: true
     get:
@@ -1455,6 +1606,8 @@ paths:
               properties:
                 path:
                   type: string
+            example:
+              path: /api/users
         description: path of the cassette to remove (alternative to the query parameter)
         required: false
   /mockserver/diff:
@@ -1505,6 +1658,19 @@ paths:
                   $ref: "#/components/schemas/HttpRequest"
                 actual:
                   $ref: "#/components/schemas/HttpRequest"
+            example:
+              expected:
+                method: GET
+                path: /api/pets
+                headers:
+                  Accept:
+                    - application/json
+              actual:
+                method: GET
+                path: /api/pets
+                headers:
+                  Accept:
+                    - text/xml
         description: the two HTTP requests to compare
         required: true
   /mockserver/replay:
@@ -1575,6 +1741,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/HttpRequest"
+            example:
+              method: PUT
+              path: /mockserver/status
+              headers:
+                Host:
+                  - localhost:1080
         description: the HTTP request to replay to its original upstream target
         required: true
   /mockserver/breakpoint/matcher:
@@ -1614,6 +1786,13 @@ paths:
                   description: >-
                     Required. The callback WebSocket client id to dispatch paused items to
                     for interactive resolution. Must be a connected callback client.
+            example:
+              httpRequest:
+                method: GET
+                path: /api/test
+              phases:
+                - REQUEST
+              clientId: test-client-123
       responses:
         '200':
           description: matcher registered successfully
@@ -1712,6 +1891,8 @@ paths:
                 id:
                   type: string
                   description: the matcher id to remove
+            example:
+              id: 78fa44ff-5989-467a-ba44-ff5989667a71
       responses:
         '200':
           description: matcher removed successfully
@@ -1803,6 +1984,19 @@ paths:
                           map of host -> chaos profile to apply during this stage
                         additionalProperties:
                           $ref: "#/components/schemas/HttpChaosProfile"
+            example:
+              name: gradual-degradation
+              stages:
+                - durationMillis: 10000
+                  profiles:
+                    api.example.com:
+                      errorStatus: 500
+                      errorProbability: 0.1
+                - durationMillis: 10000
+                  profiles:
+                    api.example.com:
+                      errorStatus: 500
+                      errorProbability: 0.5
       responses:
         '200':
           description: experiment started
@@ -1938,6 +2132,12 @@ paths:
                   minimum: 1
                   maximum: 5
                   description: maximum number of suggestions to generate (1-5)
+            example:
+              request:
+                method: POST
+                path: /api/orders
+              preview: true
+              limit: 1
         description: the unmatched request to generate expectation(s) for
         required: true
   /mockserver/explainUnmatched:
@@ -1967,6 +2167,8 @@ paths:
                   type: integer
                   default: 10
                   description: maximum number of recent unmatched requests to analyse
+            example:
+              limit: 5
         description: optional limit on the number of unmatched requests to analyse
         required: false
   /mockserver/debugMismatch:
@@ -1999,6 +2201,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RequestDefinition"
+            example:
+              method: GET
+              path: /api/unknown-endpoint
         description: the request to evaluate against all active expectations
         required: true
   /mockserver/pact:
@@ -2074,6 +2279,22 @@ paths:
             schema:
               type: object
               description: Pact contract document to verify against
+            example:
+              consumer:
+                name: web-app
+              provider:
+                name: api-service
+              interactions:
+                - description: a health check request
+                  request:
+                    method: GET
+                    path: /api/health
+                  response:
+                    status: 200
+                    headers:
+                      content-type: application/json
+                    body:
+                      status: ok
         description: the Pact contract to verify
         required: true
   /mockserver/wsdl:
@@ -2105,6 +2326,7 @@ paths:
             schema:
               type: string
               description: raw WSDL document
+            example: <?xml version="1.0" encoding="UTF-8"?><definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://example.com/greeting" xmlns:xsd="http://www.w3.org/2001/XMLSchema" name="GreetingService" targetNamespace="http://example.com/greeting"><types><xsd:schema targetNamespace="http://example.com/greeting"><xsd:element name="GreetRequest"><xsd:complexType><xsd:sequence><xsd:element name="name" type="xsd:string"/></xsd:sequence></xsd:complexType></xsd:element><xsd:element name="GreetResponse"><xsd:complexType><xsd:sequence><xsd:element name="greeting" type="xsd:string"/></xsd:sequence></xsd:complexType></xsd:element></xsd:schema></types><message name="GreetRequestMessage"><part name="parameters" element="tns:GreetRequest"/></message><message name="GreetResponseMessage"><part name="parameters" element="tns:GreetResponse"/></message><portType name="GreetingPortType"><operation name="Greet"><input message="tns:GreetRequestMessage"/><output message="tns:GreetResponseMessage"/></operation></portType><binding name="GreetingBinding" type="tns:GreetingPortType"><soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/><operation name="Greet"><soap:operation soapAction="http://example.com/greeting/Greet"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation></binding><service name="GreetingService"><port name="GreetingPort" binding="tns:GreetingBinding"><soap:address location="http://localhost:1080/ws/greeting"/></port></service></definitions>
         description: WSDL document to generate expectations from
         required: true
   /mockserver/grpc/services:

@@ -108,6 +108,7 @@ NON_MAVEN_VERSION_PATHS=(
   mockserver-client-go/VERSION
   mockserver-client-dotnet/src/MockServer.Client/MockServerBinaryLauncher.cs
   mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml
+  jekyll-www.mock-server.com/mockserver-openapi.yaml
 )
 log_info "Updating non-Maven version manifests to $RELEASE_VERSION"
 if is_dry_run; then
@@ -168,6 +169,15 @@ sub_once("mockserver-client-dotnet/src/MockServer.Client/MockServerBinaryLaunche
 # label. Pattern is anchored to the indented `  version:` form to avoid
 # false-matching other YAML keys.
 sub_once("mockserver/mockserver-core/src/main/resources/org/mockserver/openapi/mock-server-openapi-embedded-model.yaml",
+         r'(?m)^(\s+)version:\s*[0-9][^\s]*', f'\\g<1>version: {new_v}',
+         "  version: X.Y.Z under info:")
+
+# Full public OpenAPI spec on the website — the single source of truth the Postman /
+# Bruno collections are generated from (scripts/collections/generate_collections.py).
+# postman-collection.sh guards that this info.version == RELEASE_VERSION before it
+# publishes. sub_once replaces only the FIRST indented `version:` (info.version);
+# later `version:` lines inside example bodies are left untouched.
+sub_once("jekyll-www.mock-server.com/mockserver-openapi.yaml",
          r'(?m)^(\s+)version:\s*[0-9][^\s]*', f'\\g<1>version: {new_v}',
          "  version: X.Y.Z under info:")
 PYEOF

@@ -1,41 +1,39 @@
 # MockServer Bruno Collection
 
-This directory is a [Bruno](https://www.usebruno.com/) collection for MockServer's
-REST **control plane** — create expectations, verify requests, inspect recorded
-traffic, and manage server state. Bruno is open-source and **git-native**: the
-collection lives here as plain `.bru` files, so it versions alongside the code.
+This directory is a [Bruno](https://www.usebruno.com/) collection for MockServer's REST
+**control plane**, covering **every endpoint** — create expectations, verify requests, inspect
+recorded traffic, inject chaos, drive scenarios, set breakpoints, and manage server state. Bruno is
+open-source and **git-native**: the collection lives here as plain `.bru` files, so it versions
+alongside the code.
+
+> **Generated — do not edit by hand.** This collection is generated from MockServer's OpenAPI
+> spec ([`jekyll-www.mock-server.com/mockserver-openapi.yaml`](../../jekyll-www.mock-server.com/mockserver-openapi.yaml)),
+> the single source of truth. To change a request or its example body, edit the spec, then run:
+>
+> ```bash
+> python3 scripts/collections/generate_collections.py
+> ```
+>
+> This regenerates both this collection and the [Postman collection](../postman) so they never
+> diverge.
 
 ## Use it
 
 1. Start MockServer: `docker run -d --rm -p 1080:1080 mockserver/mockserver`
 2. In Bruno: **Open Collection** → select this `examples/bruno` folder.
-3. Pick the **Local** environment (top-right); its `baseUrl` defaults to
-   `http://localhost:1080`. Change it to point at any MockServer instance.
-4. Run the requests top to bottom: create the `/hello` expectation, call it,
-   verify it, inspect recorded traffic, then clear/reset.
+3. Pick the **Local** environment (top-right); its `baseUrl` defaults to `http://localhost:1080`.
+   Change it to point at any MockServer instance.
+4. Each request carries a worked example body and documentation; run them top to bottom or pick the
+   area you need.
 
-## What's included
+## Validate the examples
 
-| Folder | Requests |
-|--------|----------|
-| Expectations | Create expectation, call the mocked endpoint, retrieve active expectations |
-| Verify | Verify a request was received, verify a sequence |
-| Traffic | Retrieve recorded requests, retrieve logs |
-| Manage | Status, clear (by matcher), reset (everything) |
+Every example body is tested against a live MockServer:
 
-The full control-plane API is documented at <https://www.mock-server.com> and as
-an OpenAPI spec on
+```bash
+python3 scripts/collections/test_collections.py
+```
+
+Because Bruno is git-native, committing the regenerated `.bru` files **is** the publish step — anyone
+who pulls the repo gets the update. The full API is also documented as an OpenAPI spec on
 [SwaggerHub](https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi).
-
-This is the Bruno counterpart of the
-[Postman collection](../postman/README.md) — same requests, same `baseUrl`
-variable.
-
-## Publishing (maintainer, one-time)
-
-Because Bruno is git-native, this collection is effectively published the moment
-it is in the repo — users clone and **Open Collection**. To make it more
-discoverable, see the go-live runbook:
-[`docs/distribution/bruno-public-collection.md`](../../docs/distribution/bruno-public-collection.md).
-The source of truth is the `.bru` files in this directory; update them here first,
-then they flow to anyone who pulls the repo.

@@ -21,6 +21,7 @@ the release-queue IAM policy access.
 | `mockserver-release/vsce` | `token` | `vscode.sh` | VS Code Marketplace |
 | `mockserver-release/ovsx` | `token` | `vscode.sh` | Open VSX Registry |
 | `mockserver-release/jetbrains` | `token` | `jetbrains.sh` | JetBrains Marketplace |
+| `mockserver-build/postman-api-key` | `api_key` | `postman-collection.sh` | Postman API Network |
 
 ## 1. NuGet (mockserver-release/nuget)
 
@@ -232,9 +233,40 @@ release.
 
 ---
 
+## 6. Postman (mockserver-build/postman-api-key)
+
+Drives `scripts/release/components/postman-collection.sh`, which republishes the
+generated control-plane collection to the public Postman workspace each release.
+Note the **`mockserver-build/` prefix** (not `mockserver-release/`) — the key is a
+build/publishing credential reused across releases.
+
+### Obtain the token
+
+Log in to [postman.com](https://www.postman.com) with the maintainer account →
+**Settings → API keys → Generate API Key**. A default full-access key is sufficient
+(it needs to create/update collections in the `MockServer` public workspace).
+
+### Store the secret
+
+```bash
+aws secretsmanager create-secret \
+  --region eu-west-2 \
+  --name mockserver-build/postman-api-key \
+  --description "Postman API key for publishing the MockServer public collection" \
+  --secret-string '{"api_key":"PMAK-..."}'
+```
+
+### Post-release verification
+
+`verify.sh` runs a soft reachability check against the public "Run in Postman"
+endpoint for the collection. The collection should report all control-plane
+endpoints; confirm the request count in the workspace matches the spec.
+
+---
+
 ## Rotation
 
-All five tokens should be rotated annually. When rotating:
+All six tokens should be rotated annually. When rotating:
 
 1. Generate a new token from the registry.
 2. Update the secret value:

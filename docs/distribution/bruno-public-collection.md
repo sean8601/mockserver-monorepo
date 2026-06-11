@@ -9,9 +9,11 @@ users clone the repo and **Open Collection**. Go-live is therefore mostly about
 on the Bruno hub. ~10 minutes, **no account and no cost** (unlike Postman, there is
 no external workspace to create — the repo *is* the published location).
 
-**Parity verified 2026-06-11:** the Bruno collection mirrors the Postman one
-exactly — 10 requests across the same 4 folders (Expectations, Verify, Traffic,
-Manage). Keep them in step on every release.
+**Spec-driven + in parity by construction.** The Bruno collection is **generated from the
+OpenAPI spec** (`jekyll-www.mock-server.com/mockserver-openapi.yaml`) by the same generator as
+Postman (`scripts/collections/generate_collections.py`), so both cover all **68 control-plane
+endpoints** and can never diverge. To change anything, edit the spec and regenerate — never edit
+the `.bru` files by hand. Validate with `python3 scripts/collections/test_collections.py`.
 
 ---
 
@@ -70,19 +72,19 @@ use the collection from the repo.
 
 ## Keeping it in sync
 
-The `.bru` files in `examples/bruno/` are the source of truth. When the
-control-plane API changes in a release:
+The **OpenAPI spec** (`jekyll-www.mock-server.com/mockserver-openapi.yaml`) is the
+source of truth — the `.bru` files are **generated**, not hand-edited. When the
+control-plane API changes:
 
-1. Update the relevant `.bru` files (keep folder/request `seq` values stable so
-   ordering is preserved).
-2. Commit — that is the publish step (git-native). Anyone who pulls gets the
-   update; no re-import, no external workspace to refresh.
+1. Edit the spec, then regenerate:
+   `python3 scripts/collections/generate_collections.py` (rewrites both the Bruno
+   and Postman collections from the same source, so they can never diverge).
+2. Commit the regenerated `.bru` files — that is the publish step (git-native).
+   Anyone who pulls gets the update; no re-import, no external workspace to refresh.
 
-Keep this collection in step with the Postman collection
-(`examples/postman/`) so both expose the same requests.
-
-There is no Buildkite automation for this; it is a manual follow-up after each
-release, exactly like Postman.
+The release pipeline's `postman-collection` component regenerates both collections
+and **fails its drift guard** if the committed files are out of sync with the spec,
+so they stay in lockstep automatically.
 
 ---
 

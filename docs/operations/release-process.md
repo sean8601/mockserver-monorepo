@@ -114,14 +114,22 @@ If a bump ever does not happen within a day or two of release, check:
 
 If a manual bump is genuinely required (e.g. the bot is broken), `brew bump-formula-pr --strict --version=<release-version> mockserver` from a workstation with `brew` and an authenticated `gh` CLI will open the PR by hand.
 
-### 10. Keep the Postman & Bruno collections in step (manual — only if the control-plane API changed)
+### 10. Postman & Bruno collections — automated, no action required
 
-The Postman and Bruno collections are **not** part of the automated pipeline. If this release changed the REST control-plane API (new/renamed endpoint, changed request body, etc.), update both so they stay in lockstep:
+The Postman and Bruno collections are now **part of the pipeline**. The `postman-collection`
+component (`scripts/release/components/postman-collection.sh`, a `soft_fail` step in the parallel
+publish group) regenerates both collections from the OpenAPI spec
+(`jekyll-www.mock-server.com/mockserver-openapi.yaml` — the single source of truth, version-stamped
+by `prepare.sh`), validates the examples, and republishes the Postman collection to the public
+workspace via the Postman API (key in Secrets Manager at `mockserver-build/postman-api-key`). Bruno
+is git-native — the committed `.bru` files *are* the published collection.
 
-- `examples/postman/MockServer.postman_collection.json` — source of truth for Postman (keep the `_postman_id` stable). If the public workspace is live, re-import (**Import → Replace**) per [`docs/distribution/postman-public-workspace.md`](../distribution/postman-public-workspace.md).
-- `examples/bruno/` — the `.bru` files are git-native; editing and committing them *is* the publish step (keep folder/request `seq` values stable). See [`docs/distribution/bruno-public-collection.md`](../distribution/bruno-public-collection.md).
-
-Both must expose the **same requests** (currently 10 across Expectations, Verify, Traffic, Manage). If the control-plane API did not change, there is nothing to do here.
+**To change a request or add an endpoint:** edit the OpenAPI spec, then run
+`python3 scripts/collections/generate_collections.py` and commit the regenerated
+`examples/postman/**` + `examples/bruno/**`. The release component's drift guard fails if the
+committed collections are out of sync with the spec. Validate locally with
+`python3 scripts/collections/test_collections.py` (starts a MockServer in Docker and fires every
+example).
 
 ### 11. Announce (optional)
 

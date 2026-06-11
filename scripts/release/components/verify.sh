@@ -242,6 +242,13 @@ else
   HARD_FAILS+=("SwaggerHub default version")
 fi
 
+log_info ""
+log_info "== Postman collection (soft — convenience mirror, indexing may lag) =="
+# Public "Run in Postman" endpoint for the MockServer Control Plane collection — a
+# reachability proxy for the published public workspace; not a release gate.
+check_http_soft "MockServer Control Plane collection (Run in Postman)" \
+  "https://god.gw.postman.com/run-collection/3256712-63a2d67a-46d6-41fd-a544-0535e7393e7d"
+
 if [[ "$CREATE_VERSIONED_SITE" == "yes" ]]; then
   log_info ""
   log_info "== Versioned site =="

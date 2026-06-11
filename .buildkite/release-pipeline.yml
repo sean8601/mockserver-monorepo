@@ -160,6 +160,16 @@ steps:
         timeout_in_minutes: 10
         agents: { queue: "release" }
 
+      - label: ":rocket: Postman Collection"
+        command: ".buildkite/scripts/release-runner.sh postman-collection"
+        # Regenerates the Postman + Bruno collections from the OpenAPI spec and
+        # republishes the Postman collection to the public workspace. Like
+        # SwaggerHub, this is an optional distribution mirror — a failure (e.g.
+        # Postman API access) must not block the release, so it soft-fails.
+        soft_fail: true
+        timeout_in_minutes: 10
+        agents: { queue: "release" }
+
       - label: ":globe_with_meridians: Website"
         command: ".buildkite/scripts/release-runner.sh website"
         timeout_in_minutes: 15
