@@ -78,6 +78,16 @@ resource "aws_secretsmanager_secret" "website_role" {
   description = "IAM role ARN for cross-account website access"
 }
 
+resource "aws_secretsmanager_secret" "nuget" {
+  name        = "mockserver-release/nuget"
+  description = "NuGet API key for publishing the MockServerClient .NET package (key: api_key)"
+}
+
+resource "aws_secretsmanager_secret" "crates" {
+  name        = "mockserver-release/crates"
+  description = "crates.io API token for publishing the mockserver-client Rust crate (key: token)"
+}
+
 # --- Per-secret IAM policies ------------------------------------------------
 
 # Buildkite API token: consumed by trigger-pipeline.sh (trigger queue),
@@ -257,6 +267,8 @@ resource "aws_iam_policy" "read_release_secrets" {
           aws_secretsmanager_secret.npm_token.arn,
           aws_secretsmanager_secret.swaggerhub.arn,
           aws_secretsmanager_secret.website_role.arn,
+          aws_secretsmanager_secret.nuget.arn,
+          aws_secretsmanager_secret.crates.arn,
           data.aws_secretsmanager_secret.cosign.arn,
           data.aws_secretsmanager_secret.ghcr_token.arn,
           data.aws_secretsmanager_secret.mcp_dns_key.arn,
@@ -271,6 +283,11 @@ resource "aws_iam_policy" "read_release_secrets" {
         #   - cosign-key  -> docker.sh + helm.sh image/chart signing
         #   - ghcr-token  -> docker.sh GHCR image mirror (MIRROR_GHCR gate)
         #   - mcp-dns-key -> mcp.sh MCP registry publish gate
+        #   - nuget       -> client-dotnet.sh NuGet publish gate (.NET client)
+        #   - crates      -> client-rust.sh crates.io publish gate (Rust client)
+        # The editor-extension channels (vsce/ovsx/jetbrains) use the same
+        # describe-probe pattern but are not provisioned here yet — wire them in
+        # when those channels go live (docs/plans/distribution-exposure-channels.local.md).
         # Metadata-only; the values are still read via GetSecretValue above.
         Effect = "Allow"
         Action = "secretsmanager:DescribeSecret"
@@ -278,6 +295,8 @@ resource "aws_iam_policy" "read_release_secrets" {
           data.aws_secretsmanager_secret.cosign.arn,
           data.aws_secretsmanager_secret.ghcr_token.arn,
           data.aws_secretsmanager_secret.mcp_dns_key.arn,
+          aws_secretsmanager_secret.nuget.arn,
+          aws_secretsmanager_secret.crates.arn,
         ]
       },
       {
