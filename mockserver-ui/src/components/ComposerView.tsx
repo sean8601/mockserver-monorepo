@@ -46,6 +46,7 @@ import {
   type BodyMatcherType,
   type SelectionSetMatchType,
   type GraphQLMatcherOptions,
+  type JsonMatchType,
   type StandardForwardFallbackState,
   type WebSocketFrameType,
   type StandardSseState,
@@ -277,6 +278,10 @@ interface MatcherState {
   bodyBinary: boolean;   // when true, body is base64-encoded raw bytes
   bodyMatcherType: BodyMatcherType;
   graphqlOptions: GraphQLMatcherOptions;
+  /** JSON match type (only when bodyMatcherType is 'json'). */
+  jsonMatchType: JsonMatchType;
+  /** SubString toggle (only when bodyMatcherType is 'string'). */
+  bodySubString: boolean;
   secure: boolean;
   priority: number;
   times: number;         // 0 = unlimited
@@ -298,6 +303,8 @@ function emptyMatcher(): MatcherState {
     bodyBinary: false,
     bodyMatcherType: 'string',
     graphqlOptions: { selectionSetMatchType: 'NORMALISED_STRING', fields: '' },
+    jsonMatchType: 'ONLY_MATCHING_FIELDS',
+    bodySubString: false,
     secure: false,
     priority: 0,
     times: 0,
@@ -435,7 +442,8 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
             }}
             sx={{ width: 190 }}
           >
-            <MenuItem value="string">String / JSON</MenuItem>
+            <MenuItem value="string">String (exact / subString)</MenuItem>
+            <MenuItem value="json">JSON</MenuItem>
             <MenuItem value="graphql">GraphQL</MenuItem>
             <MenuItem value="binary">Binary (base64)</MenuItem>
             <MenuItem value="json-schema">JSON Schema</MenuItem>
@@ -454,23 +462,25 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
               ? 'Body matcher (base64 bytes)'
               : matcher.bodyMatcherType === 'graphql'
                 ? 'GraphQL query'
-                : matcher.bodyMatcherType === 'json-schema'
-                  ? 'JSON Schema'
-                  : matcher.bodyMatcherType === 'json-path'
-                    ? 'JSON Path expression'
-                    : matcher.bodyMatcherType === 'xml'
-                      ? 'XML body'
-                      : matcher.bodyMatcherType === 'xml-schema'
-                        ? 'XML Schema (XSD)'
-                        : matcher.bodyMatcherType === 'xpath'
-                          ? 'XPath expression'
-                          : matcher.bodyMatcherType === 'regex'
-                            ? 'Regex pattern'
-                            : matcher.bodyMatcherType === 'parameters'
-                              ? 'Parameters (key=value per line)'
-                              : matcher.bodyMatcherType === 'wasm'
-                                ? 'WASM module name'
-                                : 'Body matcher (string or JSON)'
+                : matcher.bodyMatcherType === 'json'
+                  ? 'JSON body matcher'
+                  : matcher.bodyMatcherType === 'json-schema'
+                    ? 'JSON Schema'
+                    : matcher.bodyMatcherType === 'json-path'
+                      ? 'JSON Path expression'
+                      : matcher.bodyMatcherType === 'xml'
+                        ? 'XML body'
+                        : matcher.bodyMatcherType === 'xml-schema'
+                          ? 'XML Schema (XSD)'
+                          : matcher.bodyMatcherType === 'xpath'
+                            ? 'XPath expression'
+                            : matcher.bodyMatcherType === 'regex'
+                              ? 'Regex pattern'
+                              : matcher.bodyMatcherType === 'parameters'
+                                ? 'Parameters (key=value per line)'
+                                : matcher.bodyMatcherType === 'wasm'
+                                  ? 'WASM module name'
+                                  : 'Body matcher (string)'
           }
           fullWidth
           multiline
@@ -483,23 +493,25 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
               ? 'SGVsbG8sIFdvcmxkIQ=='
               : matcher.bodyMatcherType === 'graphql'
                 ? '{ hero { name } }'
-                : matcher.bodyMatcherType === 'json-schema'
-                  ? '{"type":"object","properties":{"name":{"type":"string"}}}'
-                  : matcher.bodyMatcherType === 'json-path'
-                    ? '$.store.book[0].title'
-                    : matcher.bodyMatcherType === 'xml'
-                      ? '<root><element>value</element></root>'
-                      : matcher.bodyMatcherType === 'xml-schema'
-                        ? '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">...</xs:schema>'
-                        : matcher.bodyMatcherType === 'xpath'
-                          ? '/root/element[@attr="value"]'
-                          : matcher.bodyMatcherType === 'regex'
-                            ? '^Hello.*World$'
-                            : matcher.bodyMatcherType === 'parameters'
-                              ? 'username=admin\npassword=secret'
-                              : matcher.bodyMatcherType === 'wasm'
-                                ? 'myMatcher'
-                                : 'e.g. {"foo":"bar"}'
+                : matcher.bodyMatcherType === 'json'
+                  ? '{"foo":"bar"}'
+                  : matcher.bodyMatcherType === 'json-schema'
+                    ? '{"type":"object","properties":{"name":{"type":"string"}}}'
+                    : matcher.bodyMatcherType === 'json-path'
+                      ? '$.store.book[0].title'
+                      : matcher.bodyMatcherType === 'xml'
+                        ? '<root><element>value</element></root>'
+                        : matcher.bodyMatcherType === 'xml-schema'
+                          ? '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">...</xs:schema>'
+                          : matcher.bodyMatcherType === 'xpath'
+                            ? '/root/element[@attr="value"]'
+                            : matcher.bodyMatcherType === 'regex'
+                              ? '^Hello.*World$'
+                              : matcher.bodyMatcherType === 'parameters'
+                                ? 'username=admin\npassword=secret'
+                                : matcher.bodyMatcherType === 'wasm'
+                                  ? 'myMatcher'
+                                  : 'e.g. hello world'
           }
           slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
         />
@@ -541,6 +553,37 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                 slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
               />
             )}
+          </Box>
+        )}
+        {matcher.bodyMatcherType === 'json' && (
+          <Box sx={{ mt: 1 }}>
+            <TextField
+              label="JSON match type"
+              size="small"
+              select
+              value={matcher.jsonMatchType}
+              onChange={(e) =>
+                setMatcher({ ...matcher, jsonMatchType: e.target.value as JsonMatchType })
+              }
+              sx={{ width: 260 }}
+            >
+              <MenuItem value="ONLY_MATCHING_FIELDS">Only matching fields (default)</MenuItem>
+              <MenuItem value="STRICT">Strict (all fields must match)</MenuItem>
+            </TextField>
+          </Box>
+        )}
+        {matcher.bodyMatcherType === 'string' && (
+          <Box sx={{ mt: 0.5 }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small"
+                  checked={matcher.bodySubString}
+                  onChange={(e) => setMatcher({ ...matcher, bodySubString: e.target.checked })}
+                />
+              }
+              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>SubString match</Typography>}
+            />
           </Box>
         )}
       </Box>
@@ -719,6 +762,8 @@ export function matcherFromExpectation(item: JsonListItem): MatcherState {
   let bodyText = '';
   let bodyBinary = false;
   let bodyMatcherType: BodyMatcherType = 'string';
+  let jsonMatchType: JsonMatchType = 'ONLY_MATCHING_FIELDS';
+  let bodySubString = false;
   const graphqlOptions: GraphQLMatcherOptions = { selectionSetMatchType: 'NORMALISED_STRING', fields: '' };
   if (typeof rawBody === 'string') {
     bodyText = rawBody;
@@ -775,12 +820,28 @@ export function matcherFromExpectation(item: JsonListItem): MatcherState {
       }
       bodyText = lines.join('\n');
       bodyMatcherType = 'parameters';
+    } else if (b['type'] === 'JSON' && b['json'] != null) {
+      // JSON body matcher — dedicated type with matchType option
+      bodyText = typeof b['json'] === 'string' ? b['json'] : JSON.stringify(b['json'], null, 2);
+      bodyMatcherType = 'json';
+      if (b['matchType'] === 'STRICT') jsonMatchType = 'STRICT';
+    } else if (b['type'] === 'STRING' && typeof b['string'] === 'string') {
+      // STRING body with potential subString toggle
+      bodyText = b['string'];
+      bodyMatcherType = 'string';
+      if (b['subString'] === true) bodySubString = true;
     } else if (typeof b['string'] === 'string') {
       bodyText = b['string'];
     } else if (b['json'] != null) {
+      // Untyped wrapper carrying a `json` field — treat as a JSON body matcher.
       bodyText = typeof b['json'] === 'string' ? b['json'] : JSON.stringify(b['json'], null, 2);
+      bodyMatcherType = 'json';
     } else {
+      // A bare JSON object body (no `type` wrapper) is how the server serialises a
+      // JsonBody with the default ONLY_MATCHING_FIELDS match type. Read it back as a
+      // JSON matcher (not an exact string) so editing preserves JSON matching.
       bodyText = JSON.stringify(b, null, 2);
+      bodyMatcherType = 'json';
     }
   }
 
@@ -796,6 +857,8 @@ export function matcherFromExpectation(item: JsonListItem): MatcherState {
     bodyBinary,
     bodyMatcherType,
     graphqlOptions,
+    jsonMatchType,
+    bodySubString,
     secure: req['secure'] === true,
     priority: typeof v['priority'] === 'number' ? (v['priority'] as number) : 0,
     // 0 = unlimited. An explicitly unlimited expectation prefills 0 rather than its
@@ -906,6 +969,29 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
     const r = v['httpResponse'] as Record<string, unknown>;
     const headers = r['headers'] as Record<string, unknown> | undefined;
     const contentType = headers?.['content-type'] ?? headers?.['Content-Type'];
+    const delay = r['delay'] as Record<string, unknown> | undefined;
+    // The form supports MILLISECONDS/SECONDS/MINUTES. A stored HOURS/DAYS delay
+    // (valid TimeUnit values) is rescaled to MINUTES so the duration is preserved
+    // rather than silently coerced to milliseconds.
+    const { delayValue: normDelayValue, delayUnit: normDelayUnit } = (() => {
+      const rawValue = typeof delay?.['value'] === 'number' ? (delay['value'] as number) : 0;
+      switch (delay?.['timeUnit']) {
+        case 'SECONDS': return { delayValue: rawValue, delayUnit: 'SECONDS' as StaticDelayUnit };
+        case 'MINUTES': return { delayValue: rawValue, delayUnit: 'MINUTES' as StaticDelayUnit };
+        case 'HOURS': return { delayValue: rawValue * 60, delayUnit: 'MINUTES' as StaticDelayUnit };
+        case 'DAYS': return { delayValue: rawValue * 1440, delayUnit: 'MINUTES' as StaticDelayUnit };
+        default: return { delayValue: rawValue, delayUnit: 'MILLISECONDS' as StaticDelayUnit };
+      }
+    })();
+    // Round-trip response cookies: { name: "value", ... } → "name=value" lines
+    let cookiesText = '';
+    if (r['cookies'] && typeof r['cookies'] === 'object') {
+      const cLines: string[] = [];
+      for (const [k, cv] of Object.entries(r['cookies'] as Record<string, unknown>)) {
+        cLines.push(`${k}=${String(cv)}`);
+      }
+      cookiesText = cLines.join('\n');
+    }
     return {
       type: 'static',
       staticState: {
@@ -916,6 +1002,10 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
         // Preserve any non-content-type response headers so editing in place does not drop them.
         headers: headersToText(r['headers'], 'content-type'),
         connectionOptions: connectionOptionsFromValue(r['connectionOptions']),
+        reasonPhrase: typeof r['reasonPhrase'] === 'string' ? (r['reasonPhrase'] as string) : '',
+        cookies: cookiesText,
+        delayValue: normDelayValue,
+        delayUnit: normDelayUnit,
       },
     };
   }
@@ -1144,6 +1234,8 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
 // Static HTTP action panel
 // ---------------------------------------------------------------------------
 
+type StaticDelayUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
+
 interface StaticState {
   statusCode: number;
   body: string;
@@ -1152,6 +1244,14 @@ interface StaticState {
   headers: string;
   /** Connection-level response controls; undefined fields use the server default. */
   connectionOptions?: StandardConnectionOptions;
+  /** Custom HTTP reason phrase. */
+  reasonPhrase: string;
+  /** Response cookies as "name=value" lines. */
+  cookies: string;
+  /** Pre-response delay value. 0 = no delay. */
+  delayValue: number;
+  /** Pre-response delay time unit. */
+  delayUnit: StaticDelayUnit;
 }
 
 /** '' (default) | 'true' | 'false' tri-state mapping for an optional boolean connection option. */
@@ -1181,6 +1281,14 @@ function StaticHttpPanel({
           sx={{ width: 130 }}
         />
         <TextField
+          label="Reason phrase (optional)"
+          size="small"
+          value={state.reasonPhrase}
+          onChange={(e) => setState({ ...state, reasonPhrase: e.target.value })}
+          sx={{ width: 200 }}
+          placeholder="e.g. Not Found"
+        />
+        <TextField
           label="Content-Type"
           size="small"
           value={state.contentType}
@@ -1199,6 +1307,16 @@ function StaticHttpPanel({
         slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
       />
       <TextField
+        label="Response cookies (name=value per line)"
+        multiline
+        minRows={2}
+        maxRows={4}
+        value={state.cookies}
+        onChange={(e) => setState({ ...state, cookies: e.target.value })}
+        placeholder={'session=abc123\ntheme=dark'}
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <TextField
         label="Response body"
         multiline
         minRows={6}
@@ -1208,6 +1326,29 @@ function StaticHttpPanel({
         placeholder='{"ok":true}'
         slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
       />
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+        <TextField
+          label="Response delay"
+          size="small"
+          type="number"
+          value={state.delayValue}
+          onChange={(e) => setState({ ...state, delayValue: Number(e.target.value) || 0 })}
+          sx={{ width: 180 }}
+          helperText="0 = no delay"
+        />
+        <TextField
+          label="Unit"
+          size="small"
+          select
+          value={state.delayUnit}
+          onChange={(e) => setState({ ...state, delayUnit: e.target.value as StaticDelayUnit })}
+          sx={{ width: 160 }}
+        >
+          <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
+          <MenuItem value="SECONDS">seconds</MenuItem>
+          <MenuItem value="MINUTES">minutes</MenuItem>
+        </TextField>
+      </Box>
       <ConnectionOptionsFields
         value={state.connectionOptions}
         onChange={(co) => setState({ ...state, connectionOptions: co })}
@@ -2955,6 +3096,10 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
     body: '',
     contentType: 'application/json',
     headers: '',
+    reasonPhrase: '',
+    cookies: '',
+    delayValue: 0,
+    delayUnit: 'MILLISECONDS',
   });
   const [forwardState, setForwardState] = useState<ForwardState>({
     scheme: 'HTTPS',

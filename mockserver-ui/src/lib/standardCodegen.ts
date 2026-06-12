@@ -28,6 +28,8 @@ export type StandardActionType =
   | 'forward_class_callback'
   | 'grpc_stream';
 
+export type JsonMatchType = 'ONLY_MATCHING_FIELDS' | 'STRICT';
+
 export interface StandardMatcher {
   id: string;
   method: string;
@@ -40,6 +42,10 @@ export interface StandardMatcher {
   bodyBinary: boolean;
   bodyMatcherType: BodyMatcherType;
   graphqlOptions?: GraphQLMatcherOptions;
+  /** When bodyMatcherType is 'json', the JSON match semantics. ONLY_MATCHING_FIELDS (default) is omitted from the payload. */
+  jsonMatchType?: JsonMatchType;
+  /** When bodyMatcherType is 'string', whether to use subString matching. */
+  bodySubString?: boolean;
   secure: boolean;
   priority: number;
   times: number;
@@ -83,6 +89,14 @@ export interface StandardStaticState {
   headers?: string;
   /** Connection-level response controls (keep-alive, close socket, Content-Length override, …). */
   connectionOptions?: StandardConnectionOptions;
+  /** Custom HTTP reason phrase (e.g. "Not Found"). Omitted when empty. */
+  reasonPhrase?: string;
+  /** Response cookies as "name=value" lines (one per line). Omitted when empty. */
+  cookies?: string;
+  /** Pre-response delay value. 0 = no delay (omitted). */
+  delayValue?: number;
+  /** Pre-response delay time unit. */
+  delayUnit?: 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
 }
 
 /** Build the connectionOptions JSON object, or undefined when nothing is set. */
@@ -133,6 +147,7 @@ export type SelectionSetMatchType = 'NORMALISED_STRING' | 'AST_EXACT' | 'AST_SUB
 
 export type BodyMatcherType =
   | 'string'
+  | 'json'
   | 'graphql'
   | 'binary'
   | 'json-schema'
@@ -535,6 +550,14 @@ export function buildExpectationJson(
           if (fields.length > 0) gqlBody['fields'] = fields;
         }
         httpRequest['body'] = gqlBody;
+      } else if (matcher.bodyMatcherType === 'json') {
+        // JSON body matcher — prefer parsed JSON for the json field when valid
+        const trimmed = matcher.body.trim();
+        let jsonValue: unknown;
+        try { jsonValue = JSON.parse(trimmed); } catch { jsonValue = trimmed; }
+        const jsonBody: Record<string, unknown> = { type: 'JSON', json: jsonValue };
+        if (matcher.jsonMatchType === 'STRICT') jsonBody['matchType'] = 'STRICT';
+        httpRequest['body'] = jsonBody;
       } else if (matcher.bodyMatcherType === 'json-schema') {
         httpRequest['body'] = { type: 'JSON_SCHEMA', jsonSchema: matcher.body.trim() };
       } else if (matcher.bodyMatcherType === 'json-path') {
@@ -553,7 +576,12 @@ export function buildExpectationJson(
       } else if (matcher.bodyMatcherType === 'wasm') {
         httpRequest['body'] = { type: 'WASM', moduleName: matcher.body.trim() };
       } else {
-        httpRequest['body'] = matcher.body;
+        // Default 'string' type — optionally with subString
+        if (matcher.bodySubString) {
+          httpRequest['body'] = { type: 'STRING', string: matcher.body, subString: true };
+        } else {
+          httpRequest['body'] = matcher.body;
+        }
       }
     }
     if (matcher.secure) httpRequest['secure'] = true;
@@ -584,6 +612,26 @@ export function buildExpectationJson(
         }
         const connectionOptions = buildConnectionOptionsJson(action.static.connectionOptions);
         if (connectionOptions) payload['connectionOptions'] = connectionOptions;
+        // reasonPhrase — only emit when non-empty
+        if (action.static.reasonPhrase?.trim()) {
+          payload['reasonPhrase'] = action.static.reasonPhrase.trim();
+        }
+        // response cookies — name=value lines → { name: value, ... }
+        if (action.static.cookies?.trim()) {
+          const cookiePairs = parseKeyValueLines(action.static.cookies, '=');
+          if (cookiePairs) {
+            const flat: Record<string, string> = {};
+            for (const [k, vs] of Object.entries(cookiePairs)) flat[k] = vs[0] ?? '';
+            payload['cookies'] = flat;
+          }
+        }
+        // delay — only emit when > 0
+        if (action.static.delayValue != null && action.static.delayValue > 0 && isFinite(action.static.delayValue)) {
+          payload['delay'] = {
+            timeUnit: action.static.delayUnit ?? 'MILLISECONDS',
+            value: action.static.delayValue,
+          };
+        }
         out['httpResponse'] = payload;
       }
       break;
@@ -1175,10 +1223,21 @@ function matcherToJava(matcher: StandardMatcher): string {
           .join(', ');
         lines.push(`    .withBody(params(${paramEntries}))`);
       }
+    } else if (matcher.bodyMatcherType === 'json') {
+      if (matcher.jsonMatchType === 'STRICT') {
+        lines.push(`    .withBody(json("${escapeJava(matcher.body.trim())}", MatchType.STRICT))`);
+      } else {
+        lines.push(`    .withBody(json("${escapeJava(matcher.body.trim())}"))`);
+      }
     } else if (matcher.bodyMatcherType === 'wasm') {
       lines.push(`    .withBody(WasmBody.wasmBody("${escapeJava(matcher.body.trim())}"))`);
     } else {
-      lines.push(`    .withBody("${escapeJava(matcher.body)}")`);
+      // Default 'string' type — optionally with subString
+      if (matcher.bodySubString) {
+        lines.push(`    .withBody(subString("${escapeJava(matcher.body)}"))`);
+      } else {
+        lines.push(`    .withBody("${escapeJava(matcher.body)}")`);
+      }
     }
   }
   if (matcher.secure) lines.push('    .withSecure(true)');
@@ -1193,6 +1252,7 @@ function actionToJava(action: StandardActionPayload): string {
       const lines = ['.respond('];
       lines.push('    response()');
       lines.push(`        .withStatusCode(${s.statusCode})`);
+      if (s.reasonPhrase?.trim()) lines.push(`        .withReasonPhrase("${escapeJava(s.reasonPhrase.trim())}")`);
       if (s.contentType) lines.push(`        .withHeader("Content-Type", "${escapeJava(s.contentType)}")`);
       const staticHeaders = parseKeyValueLines(s.headers ?? '', ':');
       if (staticHeaders) {
@@ -1202,7 +1262,20 @@ function actionToJava(action: StandardActionPayload): string {
           lines.push(`        .withHeader("${escapeJava(k)}", ${values})`);
         }
       }
+      // Response cookies — one .withCookie() call per name=value
+      if (s.cookies?.trim()) {
+        const cookiePairs = parseKeyValueLines(s.cookies, '=');
+        if (cookiePairs) {
+          for (const [k, vs] of Object.entries(cookiePairs)) {
+            lines.push(`        .withCookie("${escapeJava(k)}", "${escapeJava(vs[0] ?? '')}")`);
+          }
+        }
+      }
       if (s.body) lines.push(`        .withBody("${escapeJava(s.body)}")`);
+      // Delay — withDelay(TimeUnit, long)
+      if (s.delayValue != null && s.delayValue > 0 && isFinite(s.delayValue)) {
+        lines.push(`        .withDelay(TimeUnit.${s.delayUnit ?? 'MILLISECONDS'}, ${s.delayValue})`);
+      }
       const co = s.connectionOptions;
       if (buildConnectionOptionsJson(co) && co) {
         const coParts: string[] = ['connectionOptions()'];
@@ -1493,8 +1566,15 @@ function collectJavaImports(
       } else if (matcher.bodyMatcherType === 'parameters') {
         imp.add('import static org.mockserver.model.ParameterBody.params;');
         imp.add('import static org.mockserver.model.Parameter.param;');
+      } else if (matcher.bodyMatcherType === 'json') {
+        imp.add('import static org.mockserver.model.JsonBody.json;');
+        if (matcher.jsonMatchType === 'STRICT') {
+          imp.add('import org.mockserver.matchers.MatchType;');
+        }
       } else if (matcher.bodyMatcherType === 'wasm') {
         imp.add('import org.mockserver.model.WasmBody;');
+      } else if (matcher.bodySubString) {
+        imp.add('import static org.mockserver.model.StringBody.subString;');
       }
     }
   }
@@ -1505,6 +1585,9 @@ function collectJavaImports(
       imp.add('import static org.mockserver.model.HttpResponse.response;');
       if (buildConnectionOptionsJson(action.static?.connectionOptions)) {
         imp.add('import static org.mockserver.model.ConnectionOptions.connectionOptions;');
+      }
+      if (action.static?.delayValue != null && action.static.delayValue > 0) {
+        imp.add('import java.util.concurrent.TimeUnit;');
       }
       break;
     case 'forward':
