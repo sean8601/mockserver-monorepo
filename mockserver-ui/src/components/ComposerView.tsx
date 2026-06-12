@@ -321,6 +321,16 @@ function denottable(field: unknown): string {
   return '';
 }
 
+// Validates that a string is well-formed base64. The server (and the generated
+// Java `Base64.getDecoder().decode(...)`) rejects malformed input at runtime, so
+// we gate registration on it rather than surfacing an opaque server error. Inner
+// whitespace/newlines are tolerated (they are stripped before decoding).
+function isValidBase64(raw: string): boolean {
+  const s = raw.replace(/\s+/g, '');
+  if (s.length === 0) return false;
+  return s.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(s);
+}
+
 function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatcher: (m: MatcherState) => void }) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -696,7 +706,10 @@ function mapToLines(map: unknown, separator: ':' | '='): string {
   return lines.join('\n');
 }
 
-function matcherFromExpectation(item: JsonListItem): MatcherState {
+// Exported for round-trip unit tests; it depends on many local types, so it
+// lives here rather than in a lib module.
+// eslint-disable-next-line react-refresh/only-export-components
+export function matcherFromExpectation(item: JsonListItem): MatcherState {
   const v = item.value;
   const req = (v['httpRequest'] as Record<string, unknown> | undefined) ?? {};
 
@@ -715,8 +728,11 @@ function matcherFromExpectation(item: JsonListItem): MatcherState {
       bodyText = b['base64Bytes'] as string;
       bodyBinary = true;
       bodyMatcherType = 'binary';
-    } else if (b['type'] === 'GRAPHQL' && typeof b['graphql'] === 'string') {
-      bodyText = b['graphql'] as string;
+    } else if (b['type'] === 'GRAPHQL' && typeof b['query'] === 'string') {
+      // Wire field is `query` (GraphQLBodyDTOSerializer), matching the writer in
+      // standardCodegen's buildExpectationJson — reading `graphql` here lost the
+      // query on every edit round-trip.
+      bodyText = b['query'] as string;
       bodyMatcherType = 'graphql';
       const ssmt = b['selectionSetMatchType'];
       if (ssmt === 'AST_EXACT' || ssmt === 'AST_SUBSET') {
@@ -743,6 +759,9 @@ function matcherFromExpectation(item: JsonListItem): MatcherState {
     } else if (b['type'] === 'REGEX' && typeof b['regex'] === 'string') {
       bodyText = b['regex'] as string;
       bodyMatcherType = 'regex';
+    } else if (b['type'] === 'WASM' && typeof b['moduleName'] === 'string') {
+      bodyText = b['moduleName'] as string;
+      bodyMatcherType = 'wasm';
     } else if (b['type'] === 'PARAMETERS' && b['parameters'] != null && typeof b['parameters'] === 'object') {
       // Round-trip parameters back to key=value lines
       const params = b['parameters'] as Record<string, unknown>;
@@ -3659,6 +3678,13 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   return 'Chaos profile has out-of-range values (errorStatus: 100–599, errorProbability: 0.0–1.0)';
                 }
 
+                // A binary body matcher must be valid base64 — otherwise the
+                // generated `Base64.getDecoder().decode(...)` throws and the
+                // server rejects the registration.
+                if (kind !== 'dns' && (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) && matcher.body.trim().length > 0 && !isValidBase64(matcher.body)) {
+                  return 'Binary body matcher is not valid base64';
+                }
+
                 // Steps mode validation — exactly one responder required
                 if (stepsEnabled) {
                   if (stepsState.length === 0) return 'Add at least one step';
@@ -3685,10 +3711,13 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   case 'callback': return callbackState.callbackClass.trim().length > 0 ? null : 'Enter the callback class name';
                   case 'template': return templateState.template.trim().length > 0 ? null : 'Enter a response template';
                   case 'error':
+                    if (errorState.responseBytesB64.trim().length > 0 && !isValidBase64(errorState.responseBytesB64)) return 'Response bytes are not valid base64';
                     return (errorState.dropConnection || errorState.responseBytesB64.trim().length > 0) ? null : 'Enable drop-connection or enter response bytes';
                   case 'websocket': return null;
                   case 'sse': return sseState.events.some((ev) => ev.data.trim().length > 0 || ev.event.trim().length > 0) ? null : 'Add at least one SSE event';
-                  case 'binary_response': return binaryResponseState.binaryData.trim().length > 0 ? null : 'Enter base64 binary data';
+                  case 'binary_response':
+                    if (binaryResponseState.binaryData.trim().length === 0) return 'Enter base64 binary data';
+                    return isValidBase64(binaryResponseState.binaryData) ? null : 'Binary data is not valid base64';
                   case 'dns_response': {
                     // Surface invalid answer-records JSON instead of silently dropping it (the
                     // codegen omits unparseable records, which would register an empty DNS answer).
