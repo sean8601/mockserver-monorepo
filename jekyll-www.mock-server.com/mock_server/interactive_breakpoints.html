@@ -14,15 +14,17 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
 ---
 
 <p>
-    Interactive breakpoints let you pause proxied or forwarded HTTP exchanges, inspect and optionally modify the
-    request, response, or individual stream frames, and then continue or abort. This is useful for debugging
-    integrations, testing error handling, and inspecting streaming traffic (SSE, gRPC, WebSocket, GraphQL
-    subscription) frame by frame.
+    Interactive breakpoints let you pause HTTP exchanges &mdash; forwarded/proxied, matched mock responses, and
+    unmatched-404 responses &mdash; inspect and optionally modify the request, response, or individual stream
+    frames, and then continue or abort. This is useful for debugging integrations, testing error handling, and
+    inspecting streaming traffic (SSE, gRPC, WebSocket, GraphQL subscription) frame by frame.
 </p>
 
 <p>
-    Breakpoints are <strong>off by default</strong> — there is zero overhead when no matchers are registered.
-    Only forwarded/proxied traffic is intercepted; mock-only responses are not paused.
+    Breakpoints are <strong>off by default</strong> &mdash; there is zero overhead when no matchers are registered.
+    REQUEST and RESPONSE phases cover forwarded/proxied exchanges, matched mock responses (RESPONSE,
+    RESPONSE_TEMPLATE, RESPONSE_CLASS_CALLBACK), and unmatched-404 responses. Stream-frame phases
+    (RESPONSE_STREAM, INBOUND_STREAM) remain scoped to forwarded and mock-generated streaming traffic.
 </p>
 
 <ul>
@@ -79,13 +81,17 @@ keywords: breakpoint, interactive debugging, http breakpoint, request inspection
     <tbody>
         <tr>
             <td><strong>REQUEST</strong></td>
-            <td>The outbound request, <em>before</em> it is sent to the upstream server</td>
-            <td>Continue (forward unchanged), Modify (forward a changed request), Abort (return error to client)</td>
+            <td>The request, <em>before</em> it is forwarded upstream (for proxied/forwarded exchanges), fed into
+                response generation (for matched mock responses), or answered with a 404 (for unmatched requests).
+                Covers forwarded exchanges, matched mock responses (RESPONSE, RESPONSE_TEMPLATE,
+                RESPONSE_CLASS_CALLBACK), and unmatched-404 responses.</td>
+            <td>Continue (proceed unchanged), Modify (proceed with a changed request), Abort (return error to client)</td>
         </tr>
         <tr>
             <td><strong>RESPONSE</strong></td>
-            <td>The upstream response, <em>after</em> it is received but <em>before</em> it is written to the client.
-                Non-streaming (buffered) responses only — streaming responses use RESPONSE_STREAM.</td>
+            <td>The response, <em>after</em> it is generated or received but <em>before</em> it is written to the client.
+                Covers forwarded upstream responses, matched mock responses, and unmatched-404 responses.
+                Non-streaming (buffered) responses only &mdash; streaming responses use RESPONSE_STREAM.</td>
             <td>Continue (write unchanged), Modify (write a changed response), Abort (return error to client)</td>
         </tr>
         <tr>
@@ -525,7 +531,7 @@ client.clear_breakpoint_matchers
 <div class="panel">
 
 <pre class="prettyprint lang-go code"><code class="code">import (
-    mockserver "github.com/mock-server/mockserver-client-go"
+    mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 )
 
 client := mockserver.NewClient("localhost", 1080)

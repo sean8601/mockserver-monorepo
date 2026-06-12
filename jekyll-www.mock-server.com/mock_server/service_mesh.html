@@ -166,7 +166,7 @@ cd mockserver && ./mvnw package -pl mockserver-k8s-webhook -DskipTests && cd ..
 # Copy the jar into the Docker build context and build
 cp mockserver/mockserver-k8s-webhook/target/mockserver-k8s-webhook-*-jar-with-dependencies.jar \
   docker/webhook/mockserver-webhook.jar
-docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook</code></pre>
+docker build -t mockserver/mockserver-webhook:{{ site.mockserver_snapshot_version }} docker/webhook</code></pre>
 
 <h3>Annotating pods</h3>
 

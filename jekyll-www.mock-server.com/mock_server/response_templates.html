@@ -22,7 +22,7 @@ lastmod: 2019-11-10T08:00:00+01:00
         <ul>
             <li><a href="#mustache_templates">Mustache</a> &mdash; simple syntax, conditional logic, JsonPath and XPath extraction</li>
             <li><a href="#velocity_templates">Velocity</a> &mdash; Apache Velocity engine with conditionals, loops, math, and JSON/XML body parsing</li>
-            <li><a href="#javascript_templates">JavaScript</a> &mdash; full ES2023+ JavaScript via the GraalVM Polyglot engine (bundled)</li>
+            <li><a href="#javascript_templates">JavaScript</a> &mdash; full ES2023+ JavaScript via the GraalVM Polyglot engine (requires the <code>graaljs</code> Docker image variant or adding GraalVM Polyglot dependencies to the classpath)</li>
         </ul>
     </li>
     <li><a href="#templates_in_json_files"><strong>Templates in JSON Initializer Files</strong></a> &mdash; defining templates in JSON expectation files</li>
@@ -1323,7 +1323,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 
 <h4>JavaScript Engine Support</h4>
 
-<p>MockServer uses the <strong>GraalVM Polyglot JavaScript engine</strong> for JavaScript templates. The engine is bundled with all official Docker images and the standalone JAR. It supports ES2023+ syntax, including template literals, async/await, destructuring, optional chaining, and the full modern JavaScript language.</p>
+<p>MockServer uses the <strong>GraalVM Polyglot JavaScript engine</strong> for JavaScript templates. The engine is <strong>not</strong> bundled with the standard Docker image or the standalone JAR. To use JavaScript templates, either run the <code>graaljs</code> Docker image variant (e.g. <code>mockserver/mockserver:{{ site.mockserver_version }}-graaljs</code>) or add <code>org.graalvm.polyglot:polyglot</code> and <code>org.graalvm.polyglot:js</code> to your classpath (see below). It supports ES2023+ syntax, including template literals, async/await, destructuring, optional chaining, and the full modern JavaScript language.</p>
 
 <p>If you are embedding MockServer as a library and need JavaScript templating, add <code>org.graalvm.polyglot:polyglot</code> and <code>org.graalvm.polyglot:js</code> (both at version 25.0.3 or later) to your classpath. Nashorn (<code>org.openjdk.nashorn:nashorn-core</code>) is no longer supported; the JSR-223 bridge was dropped in GraalJS 25.x and Nashorn was removed from MockServer.</p>
 

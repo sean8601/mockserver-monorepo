@@ -351,9 +351,9 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
 
 <p>
     Set <span class="inline_code">streaming</span> to <span class="inline_code">true</span> on the completion to return
-    a Server-Sent Events (SSE) stream instead of a single JSON response.
-    MockServer splits the text into token-sized chunks and sends them as SSE events
-    in the provider's streaming format.
+    a stream instead of a single JSON response.
+    MockServer splits the text into token-sized chunks and sends them as streaming
+    chunks in the provider's native streaming format (SSE for most providers; NDJSON for Ollama).
 </p>
 
 <p>

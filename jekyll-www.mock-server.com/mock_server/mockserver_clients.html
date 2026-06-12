@@ -266,7 +266,7 @@ if err != nil {
 
 <p>Requires Go &gt;= 1.21.</p>
 
-<p><em>New in MockServer 7.0.1 — the module is published (tag <span class="inline_code">mockserver-client-go/v7.0.1</span>) with that release.</em></p>
+<p><em>Available from MockServer {{ site.mockserver_version }} — the module is published (tag <span class="inline_code">mockserver-client-go/v{{ site.mockserver_version }}</span>) with that release.</em></p>
 
 <a id="dotnet-mockserver-client" class="anchor" href="#dotnet-mockserver-client">&nbsp;</a>
 
@@ -284,9 +284,9 @@ if err != nil {
 
 <p>Or via PackageReference in your <span class="inline_code">.csproj</span>:</p>
 
-<pre class="prettyprint code"><code class="code">&lt;PackageReference Include=&quot;MockServerClient&quot; Version=&quot;7.0.1&quot; /&gt;</code></pre>
+<pre class="prettyprint code"><code class="code">&lt;PackageReference Include=&quot;MockServerClient&quot; Version=&quot;{{ site.mockserver_version }}&quot; /&gt;</code></pre>
 
-<p><em>New in MockServer 7.0.1 — the <span class="inline_code">MockServerClient</span> package is published to NuGet with that release.</em></p>
+<p><em>Available from MockServer {{ site.mockserver_version }} — the <span class="inline_code">MockServerClient</span> package is published to NuGet with that release.</em></p>
 
 <p>Create an expectation using the fluent API:</p>
 
@@ -327,7 +327,7 @@ catch (MockServerClientException e)
     Console.WriteLine($"Connection failed: {e.Message}");
 }</code></pre>
 
-<p>Supports .NET Standard 2.0 (.NET Framework 4.6.1+, .NET Core 2.0+) and .NET 8.0.</p>
+<p>Supports .NET Standard 2.0 (.NET Framework 4.6.1+, .NET Core 2.0+, and Mono 5.4+) and .NET 8.0.</p>
 
 <a id="rust-mockserver-client" class="anchor" href="#rust-mockserver-client">&nbsp;</a>
 
@@ -365,7 +365,7 @@ client.verify(
 
 <p>Requires Rust 2021 edition.</p>
 
-<p><em>New in MockServer 7.0.1 — the <span class="inline_code">mockserver-client</span> crate is published to crates.io with that release.</em></p>
+<p><em>Available from MockServer {{ site.mockserver_version }} — the <span class="inline_code">mockserver-client</span> crate is published to crates.io with that release.</em></p>
 
 <a id="php-mockserver-client" class="anchor" href="#php-mockserver-client">&nbsp;</a>
 
@@ -416,7 +416,7 @@ try {
 
 <p>Requires PHP &gt;= 8.1.</p>
 
-<p><em>New in MockServer 7.0.1 — the <span class="inline_code">mock-server/mockserver-client</span> package is published to Packagist with that release.</em></p>
+<p><em>Available from MockServer {{ site.mockserver_version }} — the <span class="inline_code">mock-server/mockserver-client</span> package is published to Packagist with that release.</em></p>
 
 <a id="client-code-examples" class="anchor" href="#client-code-examples">&nbsp;</a>
 

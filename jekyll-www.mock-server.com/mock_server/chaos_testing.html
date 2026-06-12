@@ -1151,7 +1151,7 @@ new MockServerClient("localhost", 1080)
       {
         "durationMillis": 30000,
         "profiles": {
-          "payments.svc": {"connectionDrop": true, "errorProbability": 1.0}
+          "payments.svc": {"dropConnectionProbability": 1.0}
         }
       }
     ]
@@ -1177,7 +1177,7 @@ new MockServerClient("localhost", 1080)
 #     "totalStages":3,"stageElapsedMillis":15000,"stageRemainingMillis":45000,
 #     "loopIteration":0,"totalElapsedMillis":75000,"experiment":{...}}</code></pre>
 
-<p>The <code class="inline code">status</code> field is one of: <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, or <code class="inline code">halted_by_auto_halt</code>.</p>
+<p>The <code class="inline code">status</code> field is one of: <code class="inline code">starting</code>, <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, or <code class="inline code">halted_by_auto_halt</code>.</p>
 
 <h3>Stopping</h3>
 
@@ -1220,7 +1220,7 @@ new MockServerClient("localhost", 1080)
 <ol>
     <li>All active service-scoped HTTP, gRPC, and TCP chaos registrations are cleared (equivalent to sending <code class="inline code">PUT /mockserver/serviceChaos {"clear": true}</code>).</li>
     <li>Any running <a href="#chaos_experiments">multi-stage chaos experiment</a> is stopped immediately with status <code class="inline code">halted_by_auto_halt</code>.</li>
-    <li>The <code class="inline code">mock_server_chaos_auto_halt</code> counter is incremented.</li>
+    <li>The <code class="inline code">mock_server_chaos_auto_halt_total</code> counter is incremented.</li>
     <li>A warning is logged with the window size, threshold, and window duration.</li>
     <li>The sliding window is cleared so that new registrations are not immediately re-halted.</li>
 </ol>
@@ -1264,10 +1264,10 @@ new MockServerClient("localhost", 1080)
 
 <h3>Observability</h3>
 
-<p>When <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>, the <code class="inline code">mock_server_chaos_auto_halt</code> counter increments each time the circuit-breaker fires. Monitor it with:</p>
+<p>When <a href="/mock_server/configuration_properties.html#button_configuration_enabled_metrics">metrics are enabled</a>, the <code class="inline code">mock_server_chaos_auto_halt_total</code> counter increments each time the circuit-breaker fires. Monitor it with:</p>
 
 <pre class="code"><code class="code"># Alert when the auto-halt has fired at least once
-mock_server_chaos_auto_halt &gt; 0</code></pre>
+mock_server_chaos_auto_halt_total &gt; 0</code></pre>
 
 <p>The counter is also reset on server reset. The circuit-breaker state (current window size, halt count) is not exposed as a separate endpoint — use the Prometheus metric to observe it.</p>
 

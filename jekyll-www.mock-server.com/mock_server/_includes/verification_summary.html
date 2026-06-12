@@ -105,7 +105,7 @@ client.verify(
     </div>
     <button class="accordion inner">Go</button>
     <div class="panel">
-        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 
 client := mockserver.New("localhost", 1080)
 err := client.Verify(
@@ -211,7 +211,7 @@ client.verify(
     </div>
     <button class="accordion inner">Go</button>
     <div class="panel">
-        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 
 client := mockserver.New("localhost", 1080)
 err := client.Verify(
@@ -317,7 +317,7 @@ client.verify(
     </div>
     <button class="accordion inner">Go</button>
     <div class="panel">
-        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 
 client := mockserver.New("localhost", 1080)
 err := client.Verify(
@@ -747,7 +747,9 @@ mockServerClient("localhost", 1080)
 # verify by expectation ID is not supported in the Python client;
 # use the REST API directly
 requests.put("http://localhost:1080/mockserver/verify", json={
-    "id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"
+    "expectationId": {
+        "id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"
+    }
 })</code></pre>
     </div>
     <button class="accordion inner">Ruby</button>
@@ -759,7 +761,11 @@ require 'json'
 # use the REST API directly
 uri = URI("http://localhost:1080/mockserver/verify")
 req = Net::HTTP::Put.new(uri, 'Content-Type' =&gt; 'application/json')
-req.body = JSON.generate({ "id" =&gt; "31e4ca35-66c6-4645-afeb-6e66c4ca0559" })
+req.body = JSON.generate({
+    "expectationId" =&gt; {
+        "id" =&gt; "31e4ca35-66c6-4645-afeb-6e66c4ca0559"
+    }
+})
 Net::HTTP.start(uri.host, uri.port) { |http| http.request(req) }</code></pre>
     </div>
     <button class="accordion inner">Go</button>
@@ -774,7 +780,7 @@ import (
 func main() {
     // verify by expectation ID is not supported in the Go client;
     // use the REST API directly
-    body := []byte(`{"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"}`)
+    body := []byte(`{"expectationId": {"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"}}`)
     req, _ := http.NewRequest("PUT",
         "http://localhost:1080/mockserver/verify",
         bytes.NewReader(body))
@@ -790,7 +796,7 @@ using System.Text;
 // verify by expectation ID is not supported in the .NET client;
 // use the REST API directly
 using var httpClient = new HttpClient();
-var json = @"{""id"": ""31e4ca35-66c6-4645-afeb-6e66c4ca0559""}";
+var json = @"{""expectationId"": {""id"": ""31e4ca35-66c6-4645-afeb-6e66c4ca0559""}}";
 await httpClient.PutAsync(
     "http://localhost:1080/mockserver/verify",
     new StringContent(json, Encoding.UTF8, "application/json")
@@ -805,7 +811,7 @@ await httpClient.PutAsync(
 let client = Client::new();
 client.put("http://localhost:1080/mockserver/verify")
     .header("Content-Type", "application/json")
-    .body(r#"{"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"}"#.to_string())
+    .body(r#"{"expectationId": {"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"}}"#.to_string())
     .send()
     .unwrap();</code></pre>
     </div>
@@ -816,7 +822,7 @@ client.put("http://localhost:1080/mockserver/verify")
 $ch = curl_init('http://localhost:1080/mockserver/verify');
 curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
-    CURLOPT_POSTFIELDS =&gt; json_encode(['id' =&gt; '31e4ca35-66c6-4645-afeb-6e66c4ca0559']),
+    CURLOPT_POSTFIELDS =&gt; json_encode(['expectationId' =&gt; ['id' =&gt; '31e4ca35-66c6-4645-afeb-6e66c4ca0559']]),
     CURLOPT_RETURNTRANSFER =&gt; true,
     CURLOPT_HTTPHEADER =&gt; ['Content-Type: application/json; charset=utf-8'],
 ]);
@@ -826,8 +832,10 @@ curl_close($ch);</code></pre>{% endraw %}
     <button class="accordion inner">REST API</button>
     <div class="panel">
         <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verify" -d '{
-            "id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"
-        }'</code></pre>
+    "expectationId": {
+        "id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"
+    }
+}'</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/verify/put_verify" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
@@ -849,7 +857,7 @@ mockServerClient("localhost", 1080)
   .verify(
     {
       'path': '/some/path'
-    }, 0, true)
+    }, 0, 0)
   .then(
     function () {
       console.log("request found zero times");
@@ -883,7 +891,7 @@ client.verify(
     </div>
     <button class="accordion inner">Go</button>
     <div class="panel">
-        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 
 client := mockserver.New("localhost", 1080)
 err := client.Verify(
@@ -976,7 +984,7 @@ client.verify_zero_interactions</code></pre>
     </div>
     <button class="accordion inner">Go</button>
     <div class="panel">
-        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 
 client := mockserver.New("localhost", 1080)
 // verify that no requests were received
@@ -1106,7 +1114,7 @@ client.verify_sequence(
     </div>
     <button class="accordion inner">Go</button>
     <div class="panel">
-        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-client-go"
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"
 
 client := mockserver.New("localhost", 1080)
 err := client.VerifySequence(
@@ -1430,7 +1438,7 @@ mockServerClient("localhost", 1080)
 # verify sequence by expectation IDs is not supported in the Python
 # client; use the REST API directly
 requests.put("http://localhost:1080/mockserver/verifySequence", json={
-    "httpRequests": [
+    "expectationIds": [
         {"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"},
         {"id": "66c6ca35-ca35-66f5-8feb-5e6ac7ca0559"},
         {"id": "ca3531e4-23c8-ff45-88f5-4ca0c7ca0559"}
@@ -1447,7 +1455,7 @@ require 'json'
 uri = URI("http://localhost:1080/mockserver/verifySequence")
 req = Net::HTTP::Put.new(uri, 'Content-Type' =&gt; 'application/json')
 req.body = JSON.generate({
-    "httpRequests" =&gt; [
+    "expectationIds" =&gt; [
         { "id" =&gt; "31e4ca35-66c6-4645-afeb-6e66c4ca0559" },
         { "id" =&gt; "66c6ca35-ca35-66f5-8feb-5e6ac7ca0559" },
         { "id" =&gt; "ca3531e4-23c8-ff45-88f5-4ca0c7ca0559" }
@@ -1468,7 +1476,7 @@ func main() {
     // verify sequence by expectation IDs is not supported in the Go
     // client; use the REST API directly
     body := []byte(`{
-    "httpRequests": [
+    "expectationIds": [
         {"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"},
         {"id": "66c6ca35-ca35-66f5-8feb-5e6ac7ca0559"},
         {"id": "ca3531e4-23c8-ff45-88f5-4ca0c7ca0559"}
@@ -1490,7 +1498,7 @@ using System.Text;
 // client; use the REST API directly
 using var httpClient = new HttpClient();
 var json = @"{
-    ""httpRequests"": [
+    ""expectationIds"": [
         {""id"": ""31e4ca35-66c6-4645-afeb-6e66c4ca0559""},
         {""id"": ""66c6ca35-ca35-66f5-8feb-5e6ac7ca0559""},
         {""id"": ""ca3531e4-23c8-ff45-88f5-4ca0c7ca0559""}
@@ -1509,7 +1517,7 @@ await httpClient.PutAsync(
 // client; use the REST API directly
 let client = Client::new();
 let body = r#"{
-    "httpRequests": [
+    "expectationIds": [
         {"id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"},
         {"id": "66c6ca35-ca35-66f5-8feb-5e6ac7ca0559"},
         {"id": "ca3531e4-23c8-ff45-88f5-4ca0c7ca0559"}
@@ -1529,7 +1537,7 @@ $ch = curl_init('http://localhost:1080/mockserver/verifySequence');
 curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST =&gt; 'PUT',
     CURLOPT_POSTFIELDS =&gt; json_encode([
-        'httpRequests' =&gt; [
+        'expectationIds' =&gt; [
             ['id' =&gt; '31e4ca35-66c6-4645-afeb-6e66c4ca0559'],
             ['id' =&gt; '66c6ca35-ca35-66f5-8feb-5e6ac7ca0559'],
             ['id' =&gt; 'ca3531e4-23c8-ff45-88f5-4ca0c7ca0559'],
@@ -1544,7 +1552,7 @@ curl_close($ch);</code></pre>{% endraw %}
     <button class="accordion inner">REST API</button>
     <div class="panel">
             <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/verifySequence" -d '{
-    "httpRequests": [
+    "expectationIds": [
         {
             "id": "31e4ca35-66c6-4645-afeb-6e66c4ca0559"
         },

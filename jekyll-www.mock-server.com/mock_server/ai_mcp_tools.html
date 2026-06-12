@@ -1050,7 +1050,7 @@ sitemap:
         <tr><td><code>retryAfter</code></td><td>string</td><td>Value for the <code>Retry-After</code> header on an injected error (e.g. <code>"30"</code>).</td></tr>
         <tr><td><code>errorProbability</code></td><td>number</td><td>Probability 0.0&ndash;1.0 of injecting the error. <code>1.0</code> (or omitted with <code>errorStatus</code> set) always fires; <code>0.0</code> never does. Fractional values are non-deterministic unless <code>seed</code> is set.</td></tr>
         <tr><td><code>truncateMode</code></td><td>string</td><td><code>NONE</code> or <code>MID_STREAM</code>. <code>MID_STREAM</code> truncates a streaming response after a leading fraction of events.</td></tr>
-        <tr><td><code>truncateAtFraction</code></td><td>number</td><td>Fraction 0.0&ndash;1.0 of SSE events to keep before truncating (default <code>0.5</code>).</td></tr>
+        <tr><td><code>truncateAtFraction</code></td><td>number</td><td>Fraction 0.0&ndash;1.0 of streaming events to keep before truncating (default <code>0.5</code>). Only applies when <code>truncateMode</code> is <code>MID_STREAM</code>.</td></tr>
         <tr><td><code>malformedSse</code></td><td>boolean</td><td>Append a malformed (broken-JSON) SSE chunk so the client must handle a corrupt event.</td></tr>
         <tr><td><code>seed</code></td><td>integer</td><td>Makes a fractional <code>errorProbability</code> reproducible.</td></tr>
         <tr><td><code>quotaName</code></td><td>string</td><td>Enables a <strong>stateful</strong> request quota (a fixed-window rate limit). Expectations sharing a <code>quotaName</code> share one request counter, so you can model an upstream account limit across several mocks.</td></tr>
