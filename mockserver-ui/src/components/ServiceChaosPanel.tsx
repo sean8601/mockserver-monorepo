@@ -468,10 +468,16 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   // TCP chaos state
   const [tcpExpanded, setTcpExpanded] = useState(false);
   const [tcpData, setTcpData] = useState<TcpChaosResponse>({ hosts: {} });
+  // Poll timestamp for the TCP dataset specifically. The TTL countdown must be
+  // decremented against the time *this* dataset was fetched, not the HTTP
+  // `polledAt` (a different poll loop that keeps advancing while this section is
+  // collapsed and its data is frozen).
+  const [tcpPolledAt, setTcpPolledAt] = useState(0);
   const [tcpForm, setTcpForm] = useState<TcpFormState>(EMPTY_TCP_FORM);
 
   // gRPC fault injection chaos state
   const [grpcChaosData, setGrpcChaosData] = useState<GrpcChaosResponse>({ services: {} });
+  const [grpcChaosPolledAt, setGrpcChaosPolledAt] = useState(0);
   const [grpcChaosForm, setGrpcChaosForm] = useState<GrpcChaosFormState>(EMPTY_GRPC_CHAOS_FORM);
 
   // --- Auto-halt state (effects below, after `refresh` is declared) ---
@@ -597,7 +603,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     async function poll(): Promise<void> {
       try {
         const result = await fetchTcpChaos(connectionParams, controller.signal);
-        if (!cancelled) setTcpData(result);
+        if (!cancelled) {
+          setTcpData(result);
+          setTcpPolledAt(Date.now());
+        }
       } catch {
         // ignore
       } finally {
@@ -623,7 +632,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     async function poll(): Promise<void> {
       try {
         const result = await fetchGrpcChaos(connectionParams, controller.signal);
-        if (!cancelled) setGrpcChaosData(result);
+        if (!cancelled) {
+          setGrpcChaosData(result);
+          setGrpcChaosPolledAt(Date.now());
+        }
       } catch {
         // ignore
       } finally {
@@ -848,7 +860,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const tcpRemainingTtl = (host: string): number | undefined => {
     const atPoll = tcpData.ttlRemainingMillis?.[host];
     if (atPoll == null) return undefined;
-    return Math.max(0, atPoll - (now - polledAt));
+    return Math.max(0, atPoll - (now - tcpPolledAt));
   };
 
   const setTcpField = (field: keyof TcpFormState) => (e: ChangeEvent<HTMLInputElement>) =>
@@ -878,7 +890,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const grpcChaosRemainingTtl = (service: string): number | undefined => {
     const atPoll = grpcChaosData.ttlRemainingMillis?.[service];
     if (atPoll == null) return undefined;
-    return Math.max(0, atPoll - (now - polledAt));
+    return Math.max(0, atPoll - (now - grpcChaosPolledAt));
   };
 
   const setGrpcChaosField = (field: keyof GrpcChaosFormState) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>

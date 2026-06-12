@@ -323,7 +323,9 @@ function getHeaderValue(headers: unknown, headerName: string): string | null {
 
 export function parseSseStream(text: string): SseEvent[] {
   const events: SseEvent[] = [];
-  const lines = text.split('\n');
+  // SSE on the wire is CRLF-terminated; normalise CRLF/CR to LF first so the
+  // `[DONE]` sentinel comparison and reassembled text don't carry stray `\r`.
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
   let currentEvent: string | undefined;
   let currentData: string[] = [];
 

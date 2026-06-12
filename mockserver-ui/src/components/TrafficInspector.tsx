@@ -25,6 +25,7 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import { useDashboardStore } from '../store';
 import { useConnectionParams } from '../hooks/useConnectionParams';
 import JsonViewer from './JsonViewer';
+import ErrorBoundary from './ErrorBoundary';
 import CaptureAsMockDialog from './CaptureAsMockDialog';
 import DiffRequestsDialog from './DiffRequestsDialog';
 import LlmUsageDetail from './LlmUsageDetail';
@@ -1226,14 +1227,15 @@ export default function TrafficInspector() {
             minWidth: 0,
           }}
         >
-          <DetailPane
-            key={selectedEntry.item.key}
-            item={selectedEntry.item}
-            summary={selectedEntry.summary}
-            scriptedTurns={scriptedTurns}
-            onCaptureAsMock={() => setCaptureDialogOpen(true)}
-            onReplay={() => setReplayDialogOpen(true)}
-          />
+          <ErrorBoundary key={selectedEntry.item.key} label="detail pane">
+            <DetailPane
+              item={selectedEntry.item}
+              summary={selectedEntry.summary}
+              scriptedTurns={scriptedTurns}
+              onCaptureAsMock={() => setCaptureDialogOpen(true)}
+              onReplay={() => setReplayDialogOpen(true)}
+            />
+          </ErrorBoundary>
         </Paper>
       )}
 

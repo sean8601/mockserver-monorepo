@@ -499,6 +499,16 @@ describe('parseSseStream', () => {
   it('returns empty array for empty string', () => {
     expect(parseSseStream('')).toEqual([]);
   });
+
+  it('normalises CRLF line endings (real on-the-wire SSE) without stray carriage returns', () => {
+    const text = 'event: message\r\ndata: {"text":"hi"}\r\n\r\ndata: [DONE]\r\n\r\n';
+    const events = parseSseStream(text);
+    expect(events).toHaveLength(2);
+    expect(events[0]!.event).toBe('message');
+    expect(events[0]!.data).toBe('{"text":"hi"}');
+    // The DONE sentinel must compare equal — no trailing '\r'.
+    expect(events[1]!.data).toBe('[DONE]');
+  });
 });
 
 // ---------------------------------------------------------------------------

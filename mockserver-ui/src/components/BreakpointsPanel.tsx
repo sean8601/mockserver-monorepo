@@ -84,6 +84,14 @@ function phaseChipColor(phase: string): 'default' | 'primary' | 'secondary' | 'i
 
 let nextItemKey = 0;
 
+// Upper bound on locally-held paused items. A breakpoint matcher with a broad
+// pattern (e.g. path `.*`) pauses every exchange, and each held item retains a
+// full request/response in React state. Without a cap a busy server would grow
+// this array until the tab runs out of memory, so we drop the oldest items
+// beyond this bound (each dropped exchange remains paused server-side and will
+// auto-resolve via the server's breakpoint timeout).
+const MAX_PAUSED_ITEMS = 500;
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -142,6 +150,13 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     client.onStateChange((state) => {
       setWsState(state);
       setClientId(client.clientId);
+      if (state === 'disconnected') {
+        // Held items reference the previous clientId's correlationIds. On
+        // reconnect the server issues a fresh clientId, so these can never be
+        // resolved (continue/modify/abort) from the UI again — drop them rather
+        // than leak them into the list forever.
+        setPausedItems([]);
+      }
     });
 
     client.onPausedItem((item) => {
@@ -149,7 +164,10 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       // lists a stable, monotonic sort key so items keep a fixed position by the
       // time their request/response/frame was received, instead of reshuffling.
       const keyed = { ...item, key: nextItemKey++, receivedAt: Date.now() };
-      setPausedItems((prev) => [...prev, keyed]);
+      setPausedItems((prev) => {
+        const next = [...prev, keyed];
+        return next.length > MAX_PAUSED_ITEMS ? next.slice(next.length - MAX_PAUSED_ITEMS) : next;
+      });
     });
 
     // Seed from the singleton so a re-mount after a tab change immediately
