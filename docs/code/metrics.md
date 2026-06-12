@@ -142,7 +142,7 @@ Both chaos metrics are also mirrored over OTLP by `OtelMetricsExporter` (`regist
 
 ### Chaos Auto-Halt Counter
 
-`mock_server_chaos_auto_halt` is a Prometheus `Counter` that increments each time the chaos auto-halt circuit-breaker triggers. The circuit-breaker is a safety mechanism that automatically disables all active service-scoped chaos profiles when the number of **destructive** chaos faults within a sliding window exceeds a configured threshold. This prevents chaos experiments from driving cascading outages.
+`mock_server_chaos_auto_halt_total` is a Prometheus `Counter` that increments each time the chaos auto-halt circuit-breaker triggers. The circuit-breaker is a safety mechanism that automatically disables all active service-scoped chaos profiles when the number of **destructive** chaos faults within a sliding window exceeds a configured threshold. This prevents chaos experiments from driving cascading outages.
 
 Only **destructive** fault types contribute to the window: `"error"` (synthetic 5xx), `"drop"` (connection kill), and `"quota"` (429/503). Benign fault types (`"latency"`, `"slow"`, `"truncate"`, `"malformed"`, `"graphql"`) are excluded -- a latency-only experiment will never auto-halt.
 
@@ -156,7 +156,7 @@ The auto-halt feature is controlled by three configuration properties (all off/i
 
 When the circuit-breaker fires:
 1. All active service-scoped chaos profiles are removed via `ServiceChaosRegistry.reset()` (the same path used by TTL expiry)
-2. The `mock_server_chaos_auto_halt` counter is incremented
+2. The `mock_server_chaos_auto_halt_total` counter is incremented
 3. The `mock_server_active_service_chaos` gauge drops to 0 for all fault types
 4. A WARN-level log event is emitted with the error count, window, and threshold
 5. The sliding window is cleared so the breaker does not immediately re-trigger
@@ -167,7 +167,7 @@ The auto-halt is evaluated per chaos fault injection (called from `Metrics.incre
 
 Example PromQL alert rule:
 ```promql
-increase(mock_server_chaos_auto_halt[5m]) > 0
+increase(mock_server_chaos_auto_halt_total[5m]) > 0
 ```
 
 ### LLM Token & Cost Counters
