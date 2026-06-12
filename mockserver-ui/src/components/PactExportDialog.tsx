@@ -90,8 +90,8 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>Pact contract</DialogTitle>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="pact-dialog-title">
+      <DialogTitle id="pact-dialog-title">Pact contract</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Export the active response expectations as a Pact v3 consumer contract for publishing to

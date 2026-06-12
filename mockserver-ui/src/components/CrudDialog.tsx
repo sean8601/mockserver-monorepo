@@ -74,8 +74,8 @@ export default function CrudDialog({
   }, [connectionParams, basePath, idField, idStrategy, initialData]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Register CRUD resource</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="crud-dialog-title">
+      <DialogTitle id="crud-dialog-title">Register CRUD resource</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Register auto-CRUD expectations for a resource path — GET, POST, PUT, and DELETE

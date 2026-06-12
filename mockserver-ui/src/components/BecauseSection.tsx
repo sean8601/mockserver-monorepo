@@ -25,7 +25,7 @@ export default function BecauseSection({ reasons }: BecauseSectionProps) {
 
   return (
     <Box sx={{ pl: 1 }}>
-      <IconButton size="small" onClick={() => setOpen(!open)} sx={{ color: 'rgb(222, 147, 95)' }}>
+      <IconButton size="small" onClick={() => setOpen(!open)} aria-label={open ? 'Collapse' : 'Expand'} aria-expanded={open} sx={{ color: 'rgb(222, 147, 95)' }}>
         {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
       </IconButton>
       {!open && (

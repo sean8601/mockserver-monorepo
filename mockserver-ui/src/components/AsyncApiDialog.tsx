@@ -81,8 +81,8 @@ export default function AsyncApiDialog({
   }, [connectionParams, verifyBody]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>AsyncAPI broker mock</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="asyncapi-dialog-title">
+      <DialogTitle id="asyncapi-dialog-title">AsyncAPI broker mock</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Register an AsyncAPI spec to mock a message broker — paste the spec (JSON or YAML), or a

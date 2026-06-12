@@ -70,6 +70,8 @@ function LogGroup({ group, open: openProp, onToggleOpen }: LogGroupProps) {
         <IconButton
           size="small"
           onClick={handleToggleOpen}
+          aria-label={open ? 'Collapse' : 'Expand'}
+          aria-expanded={open}
           sx={{ color: 'rgb(222, 147, 95)', mt: 0.25 }}
         >
           {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}

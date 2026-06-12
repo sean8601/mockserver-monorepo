@@ -381,6 +381,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           <IconButton
             size="small"
             color="inherit"
+            aria-label="Clear logs, expectations, or reset server"
             onClick={(e) => setAnchorEl(e.currentTarget)}
           >
             <DeleteSweepIcon fontSize="small" />

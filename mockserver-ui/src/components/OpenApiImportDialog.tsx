@@ -50,8 +50,8 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>Import OpenAPI</DialogTitle>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="openapi-dialog-title">
+      <DialogTitle id="openapi-dialog-title">Import OpenAPI</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Paste an OpenAPI v3 spec (JSON or YAML) or a spec URL. MockServer generates one

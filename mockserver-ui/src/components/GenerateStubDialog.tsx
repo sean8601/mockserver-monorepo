@@ -55,8 +55,8 @@ export default function GenerateStubDialog({
   }, [onClose]);
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="generate-stub-dialog-title">
+      <DialogTitle id="generate-stub-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         Generated Expectation
         <Chip
           size="small"

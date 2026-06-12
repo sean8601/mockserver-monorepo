@@ -76,8 +76,8 @@ export default function ExplainUnmatchedDialog({
   const loading = open && result === null && error === null;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="explain-unmatched-dialog-title">
+      <DialogTitle id="explain-unmatched-dialog-title">
         Explain unmatched requests
         <Button size="small" sx={{ ml: 2 }} disabled={loading} onClick={refresh}>Refresh</Button>
       </DialogTitle>

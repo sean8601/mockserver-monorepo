@@ -68,8 +68,8 @@ export default function ClockDialog({
   }, [refresh]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Server clock</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth aria-labelledby="clock-dialog-title">
+      <DialogTitle id="clock-dialog-title">Server clock</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Freeze or advance the server clock to drive time-to-live expiry and scenario timers

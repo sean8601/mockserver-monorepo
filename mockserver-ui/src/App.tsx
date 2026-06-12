@@ -118,7 +118,7 @@ export default function App() {
             <FilterPanel onFilterChange={handleFilterChange} />
           )}
           {error && (
-            <Alert severity="error" sx={{ mx: 1, mt: 1, flexShrink: 0 }}>
+            <Alert severity="error" role="alert" sx={{ mx: 1, mt: 1, flexShrink: 0 }}>
               {error}
             </Alert>
           )}
@@ -149,6 +149,7 @@ export default function App() {
             <Alert
               severity={notification.severity}
               variant="filled"
+              role="alert"
               onClose={() => setNotification(null)}
               sx={{ width: '100%' }}
             >

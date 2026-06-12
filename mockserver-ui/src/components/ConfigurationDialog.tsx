@@ -116,8 +116,8 @@ export default function ConfigurationDialog({
   const disabled = busy || !config;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Server configuration</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="configuration-dialog-title">
+      <DialogTitle id="configuration-dialog-title">Server configuration</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Inspect the running server configuration and change common runtime settings. Changes apply

@@ -48,8 +48,8 @@ export default function WsdlImportDialog({ open, onClose, connectionParams }: Ws
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>Import WSDL</DialogTitle>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="wsdl-dialog-title">
+      <DialogTitle id="wsdl-dialog-title">Import WSDL</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Paste a WSDL 1.1 document (SOAP 1.1 or 1.2). MockServer generates one expectation per

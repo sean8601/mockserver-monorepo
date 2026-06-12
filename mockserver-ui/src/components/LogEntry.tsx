@@ -323,7 +323,17 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
             }}
             onClick={handleToggle}
           >
-            <IconButton size="small" sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}>
+            {/* The chevron IconButton is the accessible/keyboard control (a real
+                button, focusable, with aria-expanded). The surrounding row stays
+                click-to-toggle for the mouse but is not itself a button — that
+                would nest the action buttons below inside a button (invalid ARIA). */}
+            <IconButton
+              size="small"
+              aria-label={expanded ? 'Collapse' : 'Expand'}
+              aria-expanded={expanded}
+              onClick={(e) => { e.stopPropagation(); handleToggle(); }}
+              sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}
+            >
               {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
             </IconButton>
             <Box

@@ -210,7 +210,15 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
             items have synthetic keys like "<id>_request" / "<id>_proxied" and
             no value.id field). */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-          <IconButton size="small" sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}>
+          {/* The chevron IconButton is the accessible/keyboard control; the row
+              stays click-to-toggle for the mouse but is not itself a button. */}
+          <IconButton
+            size="small"
+            aria-label={expanded ? 'Collapse' : 'Expand'}
+            aria-expanded={expanded}
+            onClick={(e) => { e.stopPropagation(); handleToggle(); }}
+            sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}
+          >
             {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
           </IconButton>
           <Box
