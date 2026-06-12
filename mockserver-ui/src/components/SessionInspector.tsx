@@ -25,6 +25,7 @@ import {
   GeminiConversationView,
   OllamaConversationView,
 } from './ConversationView';
+import AgentRunGraph from './AgentRunGraph';
 import { CompareRunsBody } from './CompareRunsDialog';
 import ScenarioPanel from './ScenarioPanel';
 
@@ -237,14 +238,29 @@ function formatCost(usd: number): string {
 
 interface SessionLaneProps {
   session: Session;
+  connectionParams: { host: string; port: string; secure: boolean };
 }
 
-function SessionLane({ session }: SessionLaneProps) {
+// Map a parsed-traffic kind to the LLM Provider enum name explain_agent_run expects.
+const KIND_TO_PROVIDER: Record<string, string> = {
+  anthropic: 'ANTHROPIC',
+  openai: 'OPENAI',
+  openai_responses: 'OPENAI_RESPONSES',
+  gemini: 'GEMINI',
+  ollama: 'OLLAMA',
+};
+
+function SessionLane({ session, connectionParams }: SessionLaneProps) {
   const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
 
   const displayName = shortenScenarioName(session.scenarioName);
   const isUnscoped = session.scenarioName === '<unscoped>';
   const usage = useMemo(() => computeSessionUsage(session.requests), [session.requests]);
+
+  // Derive a provider + path for the correlated call-graph lookup.
+  const graphRequest = session.requests.find((r) => KIND_TO_PROVIDER[r.parsed.kind] != null);
+  const graphProvider = graphRequest ? KIND_TO_PROVIDER[graphRequest.parsed.kind] : null;
+  const graphPath = graphRequest ? graphRequest.path : null;
 
   const handleChipClick = useCallback(
     (index: number) => {
@@ -364,6 +380,15 @@ function SessionLane({ session }: SessionLaneProps) {
           same as the Traffic tab). Shown for any session with a detectable LLM
           provider, including unscoped proxy traffic. */}
       <SessionConversation requests={session.requests} />
+
+      {/* "Show Mermaid" link below the Conversation section — opens the
+          correlated agent-run call graph (fetched on demand via explain_agent_run)
+          as a Mermaid diagram, a compact alternative to the chat transcript. */}
+      {graphProvider && (
+        <Box sx={{ px: 1.5, pb: 0.75 }}>
+          <AgentRunGraph connectionParams={connectionParams} provider={graphProvider} path={graphPath} />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -485,6 +510,7 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
                   <SessionLane
                     key={`${session.scenarioName}::${session.isolationKey}`}
                     session={session}
+                    connectionParams={connectionParams}
                   />
                 ))
               )}
