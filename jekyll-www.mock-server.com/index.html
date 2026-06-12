@@ -49,12 +49,12 @@ layout: default
 <ul>
 	<li><strong><a href="/mock_server/verification.html">verify</a></strong> that expected requests were (or were not) made &mdash; as test assertions</li>
 	<li><strong><a href="/proxy/record_and_replay.html">record and replay</a></strong> real traffic to reproduce how a system behaves</li>
-	<li><strong><a href="/mock_server/interactive_breakpoints.html">pause requests at interactive breakpoints</a></strong> &mdash; intercept a matched or proxied request in the dashboard to inspect and modify it (or its response) live, then continue, step, or fail it</li>
-	<li><strong><a href="/mock_server/chaos_testing.html">inject chaos and faults</a></strong> &mdash; latency, errors, dropped connections, malformed responses &mdash; to test how your system copes when its dependencies misbehave (HTTP, gRPC and TCP fault injection, plus <a href="/mock_server/chaos_testing_kubernetes.html">Kubernetes</a> and <a href="/mock_server/service_mesh.html">service-mesh</a> chaos)</li>
+	<li><strong><a href="/mock_server/interactive_breakpoints.html">pause and modify requests or responses using breakpoints</a></strong> intercept a matched or proxied request in the dashboard to inspect and modify it (or its response) live, then continue, step, or fail it</li>
+	<li><strong><a href="/mock_server/chaos_testing.html">inject chaos and faults</a></strong> introduce chaos as latency, errors, dropped connections &amp; malformed responses &mdash; HTTP, gRPC and TCP fault injection, plus <a href="/mock_server/chaos_testing_kubernetes.html">Kubernetes</a> and <a href="/mock_server/service_mesh.html">service-mesh</a> chaos</li>
 	<li><strong><a href="/mock_server/response_templates.html">template dynamic responses</a></strong> with Velocity, Mustache or JavaScript so a mock can react to the incoming request</li>
-	<li><strong><a href="/mock_server/wasm_rules.html">run custom matching and response logic as WASM modules</a></strong> in any language that compiles to WebAssembly</li>
-	<li><strong><a href="/mock_server/drift_detection.html">detect mock drift</a></strong> &mdash; be warned when a mock no longer matches the real API it stands in for</li>
-	<li><strong><a href="/mock_server/llm_response_mocking.html">mock LLM and AI-provider APIs</a></strong> (OpenAI, Anthropic, Bedrock and more) with realistic token-by-token streaming</li>
+	<li><strong><a href="/mock_server/wasm_rules.html">custom matching and response logic via WASM</a></strong> in any language that compiles to WebAssembly</li>
+	<li><strong><a href="/mock_server/drift_detection.html">detect mock drift</a></strong> be warned when a mock no longer matches the real API</li>
+	<li><strong><a href="/mock_server/llm_response_mocking.html">mock LLM and AI-provider APIs</a></strong> including OpenAI, Anthropic, Bedrock &amp; more with realistic token-by-token streaming</li>
 </ul>
 
 <p>It mocks far more than REST, and can build mocks from the contracts you already have:</p>
@@ -72,14 +72,14 @@ layout: default
 	<li>a built-in <strong><a href="/mock_server/mockserver_ui.html">web dashboard</a></strong> to watch live logs, active expectations and recorded traffic, and to drive breakpoints and chaos</li>
 	<li><strong><a href="/mock_server/observability.html">Prometheus metrics and OpenTelemetry tracing</a></strong> for visibility in CI and shared environments</li>
 	<li>run via <a href="/mock_server/running_mock_server.html">Docker, an executable JAR, Helm / Kubernetes, Testcontainers, or a JVM-less binary</a> &mdash; or scale to a shared, clustered <a href="/mock_server/centralized_deployment.html">centralised deployment</a> for whole teams and CI pipelines</li>
-	<li>drive it from <a href="/mock_server/mockserver_clients.html">clients for Java, JavaScript, Python, Ruby, Go, .NET, Rust and PHP</a>, the command line, or a plain REST API</li>
+	<li>drive it from clients for <a href="/mock_server/mockserver_clients.html">Java, JavaScript, Python, Ruby, Go, .NET, Rust and PHP</a>, the command line, or a plain REST API</li>
 </ul>
 
 <p>MockServer is also <strong>AI-native</strong>: every instance ships a built-in <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a> server at <code>/mockserver/mcp</code> with no extra configuration, and the documentation is published in machine-readable form for LLMs. In practice this means:</p>
 
 <ul>
-	<li>AI assistants (Claude Code, Cursor, Windsurf, Cline, OpenCode) can <a href="/mock_server/ai_mcp_setup.html">connect over MCP</a> to create expectations, verify requests, retrieve recorded traffic, and debug mismatches — see the <a href="/mock_server/ai_mcp_tools.html">MCP tools reference</a></li>
-	<li>tools that don't yet speak MCP can fall back to MockServer's <a href="/mockserver-openapi.yaml">OpenAPI spec</a></li>
+	<li>AI assistants (Claude Code, Cursor, Windsurf, Cline, OpenCode) can <a href="/mock_server/ai_mcp_setup.html">connect over MCP</a> to create expectations, verify requests, retrieve recorded traffic, and debug mismatches — see <a href="/mock_server/ai_mcp_tools.html">MCP tools</a></li>
+	<li>Tools that don't yet speak MCP can fall back to MockServer's <a href="/mockserver-openapi.yaml">OpenAPI spec</a></li>
 	<li>LLMs can retrieve and cite the docs via <a href="/llms.txt">llms.txt</a>, <a href="/llms-full.txt">llms-full.txt</a>, and <a href="/ai.txt">ai.txt</a></li>
 </ul>
 
