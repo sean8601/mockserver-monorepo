@@ -440,7 +440,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                 bodyBinary: newType === 'binary',
               });
             }}
-            sx={{ width: 190 }}
+            sx={{ minWidth: 250 }}
           >
             <MenuItem value="string">String (exact / subString)</MenuItem>
             <MenuItem value="json">JSON</MenuItem>

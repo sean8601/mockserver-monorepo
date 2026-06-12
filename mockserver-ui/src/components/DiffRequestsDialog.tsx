@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -69,10 +69,30 @@ export default function DiffRequestsDialog({
     }
   }, [connectionParams, expected, actual]);
 
+  // When opened pre-populated from the Traffic inspector ("Compare" mode) with
+  // both requests already filled, run the diff immediately so the user sees the
+  // result without a second click. The parent remounts this component (via a
+  // changing `key`) for each new pair, so a once-on-mount effect is correct.
+  // submit() sets loading state synchronously on purpose so the spinner shows at once.
+  useEffect(() => {
+    if (initialExpected?.trim() && initialActual?.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void submit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="diff-requests-title">
       <DialogTitle id="diff-requests-title">Diff two requests</DialogTitle>
       <DialogContent>
+        {/* Diff result is shown at the top so it is the most visible thing in the
+            dialog (the editable request JSON is below for tweaking and re-running). */}
+        {(loading || result) && (
+          <Box sx={{ mb: 1.5 }}>
+            <DiffPanel result={result} loading={loading} error={null} />
+          </Box>
+        )}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Paste two requests as JSON to compare them field-by-field. Copy a request from the Traffic
           inspector, or hand-author one.
@@ -96,7 +116,6 @@ export default function DiffRequestsDialog({
           />
         </Box>
         {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
-        {(loading || result) && <DiffPanel result={result} loading={loading} error={null} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>

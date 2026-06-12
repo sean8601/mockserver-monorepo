@@ -9,13 +9,22 @@ import InputAdornment from '@mui/material/InputAdornment';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Tooltip from '@mui/material/Tooltip';
+import Button from '@mui/material/Button';
+import Collapse from '@mui/material/Collapse';
 import SearchIcon from '@mui/icons-material/Search';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useDashboardStore } from '../store';
 import { groupBySession, shortenScenarioName, type Session, type SessionRequest } from '../lib/sessionGrouping';
 import { getModelLabel, getTokenSummary, getNumericTokens } from '../lib/llmTraffic';
 import { estimateCostUsd } from '../lib/llmPricing';
-import { AnthropicConversationView, OpenAiConversationView } from './ConversationView';
-import AgentRunGraph from './AgentRunGraph';
+import {
+  AnthropicConversationView,
+  OpenAiConversationView,
+  OpenAiResponsesConversationView,
+  GeminiConversationView,
+  OllamaConversationView,
+} from './ConversationView';
 import { CompareRunsBody } from './CompareRunsDialog';
 import ScenarioPanel from './ScenarioPanel';
 
@@ -118,6 +127,65 @@ function RequestDetail({ request }: { request: SessionRequest }) {
 }
 
 // ---------------------------------------------------------------------------
+// Session conversation — full chat transcript for the whole session, rendered
+// with the same provider-specific Conversation views used in the Traffic tab.
+// ---------------------------------------------------------------------------
+
+const CONVERSATION_KINDS = new Set(['anthropic', 'openai', 'openai_responses', 'gemini', 'ollama']);
+
+/** Renders a single parsed request with the matching Traffic-tab conversation view. */
+function ConversationByKind({ parsed }: { parsed: SessionRequest['parsed'] }) {
+  switch (parsed.kind) {
+    case 'anthropic': return <AnthropicConversationView parsed={parsed} />;
+    case 'openai': return <OpenAiConversationView parsed={parsed} />;
+    case 'openai_responses': return <OpenAiResponsesConversationView parsed={parsed} />;
+    case 'gemini': return <GeminiConversationView parsed={parsed} />;
+    case 'ollama': return <OllamaConversationView parsed={parsed} />;
+    default: return null;
+  }
+}
+
+/**
+ * Session-level conversation view (replaces the old call-graph visualisation).
+ * In an agent run each successive request resends the full accumulated message
+ * history, so the *last* conversation-capable request carries the complete
+ * transcript — rendering its provider Conversation view shows the whole session
+ * as chat bubbles, matching the Traffic tab's Conversation view. Collapsed by
+ * default to keep the lanes compact.
+ */
+function SessionConversation({ requests }: { requests: SessionRequest[] }) {
+  const [open, setOpen] = useState(false);
+  const primary = useMemo(() => {
+    let found: SessionRequest | undefined;
+    for (const r of requests) {
+      if (CONVERSATION_KINDS.has(r.parsed.kind)) found = r; // keep the last match
+    }
+    return found;
+  }, [requests]);
+
+  if (!primary) return null;
+
+  return (
+    <Box sx={{ px: 1.5, pb: 0.75 }}>
+      <Button
+        size="small"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        startIcon={open ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+        sx={{ textTransform: 'none', fontSize: '0.7rem', color: 'text.secondary', px: 0.5, minWidth: 0 }}
+      >
+        Conversation
+      </Button>
+      <Collapse in={open} unmountOnExit>
+        <Box sx={{ mt: 0.5, maxHeight: 500, overflowY: 'auto' }}>
+          <ConversationByKind parsed={primary.parsed} />
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Per-session token/cost aggregation (pure, no network)
 // ---------------------------------------------------------------------------
 
@@ -169,29 +237,14 @@ function formatCost(usd: number): string {
 
 interface SessionLaneProps {
   session: Session;
-  connectionParams: { host: string; port: string; secure: boolean };
 }
 
-// Map a parsed-traffic kind to the LLM Provider enum name explain_agent_run expects.
-const KIND_TO_PROVIDER: Record<string, string> = {
-  anthropic: 'ANTHROPIC',
-  openai: 'OPENAI',
-  openai_responses: 'OPENAI_RESPONSES',
-  gemini: 'GEMINI',
-  ollama: 'OLLAMA',
-};
-
-function SessionLane({ session, connectionParams }: SessionLaneProps) {
+function SessionLane({ session }: SessionLaneProps) {
   const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
 
   const displayName = shortenScenarioName(session.scenarioName);
   const isUnscoped = session.scenarioName === '<unscoped>';
   const usage = useMemo(() => computeSessionUsage(session.requests), [session.requests]);
-
-  // Derive a provider + path for the call-graph lookup from the session's requests.
-  const graphRequest = session.requests.find((r) => KIND_TO_PROVIDER[r.parsed.kind] != null);
-  const graphProvider = graphRequest ? KIND_TO_PROVIDER[graphRequest.parsed.kind] : null;
-  const graphPath = graphRequest ? graphRequest.path : null;
 
   const handleChipClick = useCallback(
     (index: number) => {
@@ -307,14 +360,10 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
         </>
       )}
 
-      {/* Correlated call graph (fetched on demand via explain_agent_run).
-          Shown for all sessions (including unscoped proxy traffic) as long as
-          a provider can be detected from the requests. */}
-      {graphProvider && (
-        <Box sx={{ px: 1.5, pb: 0.75 }}>
-          <AgentRunGraph connectionParams={connectionParams} provider={graphProvider} path={graphPath} />
-        </Box>
-      )}
+      {/* Session-level conversation transcript (chat-bubble Conversation view,
+          same as the Traffic tab). Shown for any session with a detectable LLM
+          provider, including unscoped proxy traffic. */}
+      <SessionConversation requests={session.requests} />
     </Paper>
   );
 }
@@ -436,7 +485,6 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
                   <SessionLane
                     key={`${session.scenarioName}::${session.isolationKey}`}
                     session={session}
-                    connectionParams={connectionParams}
                   />
                 ))
               )}

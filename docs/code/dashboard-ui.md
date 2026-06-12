@@ -315,7 +315,7 @@ The component is a pure renderer — it receives a parsed object from `llmTraffi
 
 Requests that do not match any isolated scenario are grouped by upstream host (from the `Host` header) into **unscoped** sessions. This proxy-aware fallback means proxied traffic to different LLM providers (e.g. `api.anthropic.com` vs `api.openai.com`) appears in separate swim-lanes even without any conversation-isolation expectations configured.
 
-The correlated call graph (via `AgentRunGraph.tsx` and the `explain_agent_run` MCP tool) is shown for all sessions where a provider can be detected, including unscoped/proxy sessions.
+Each swim-lane also has a collapsible **Conversation** section (`SessionConversation`) that renders the whole session as a chat-transcript using the same provider-specific Conversation views as the Traffic tab. Because each request in an agent run re-sends the full accumulated message history, it renders the *last* conversation-capable request in the session, which carries the complete transcript. It is shown for any session with a detectable LLM provider, including unscoped/proxy sessions. (This replaced an earlier Mermaid call-graph visualisation built from the `explain_agent_run` MCP tool.)
 
 The grouping logic lives in `src/lib/sessionGrouping.ts`. It uses `scenarioName` and `scenarioState` from the request data to identify which requests belong to which conversation session, with a host-based fallback for unscoped traffic.
 
