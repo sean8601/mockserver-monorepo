@@ -383,24 +383,34 @@ Prior to this, any UI feature that called an MCP tool was broken with a session-
 
 ## Breakpoints Panel
 
-`BreakpointsPanel.tsx` (view = `breakpoints`) shows HTTP exchanges and streaming frames currently paused by breakpoint expectations. It **polls** two endpoints every 2 seconds:
+`BreakpointsPanel.tsx` (view = `breakpoints`) registers **breakpoint matchers** and resolves paused HTTP exchanges and streaming frames interactively. Unlike the polling views, it is a real **callback-WebSocket client**: it opens `/_mockserver_callback_websocket` (the server assigns it a `clientId`, since a browser WebSocket cannot send the registration header) and paused items are **pushed** to it live — there is no REST polling of paused state. Only the matcher list is fetched over REST. (`lib/breakpoints.ts` holds the matcher REST helpers; `lib/breakpointCallbackClient.ts` holds the WebSocket client.)
 
-- `GET /mockserver/breakpoint` — paused request/response exchanges (`PausedExchange[]`)
-- `GET /mockserver/breakpoint/streams` — held stream frames grouped by `streamId`
+The panel has **three tabs**:
 
-The panel has two tabs:
+**Matchers tab** — register a breakpoint matcher (method, path regex, headers, query parameters, cookies) together with the phases to break at (`REQUEST` / `RESPONSE` / `RESPONSE_STREAM` / `INBOUND_STREAM`), and list / remove / clear the active matchers. The matcher REST endpoints:
 
-**Exchanges tab** — one row per paused exchange. Each row shows the phase (`REQUEST` or `RESPONSE`), method or status code, path or reason phrase, age, exchange ID, and expectation ID. Three action buttons:
+| Action | Endpoint |
+|--------|----------|
+| Register matcher | `PUT /mockserver/breakpoint/matcher` (requires a `clientId`) |
+| List matchers | `GET /mockserver/breakpoint/matchers` |
+| Remove one matcher | `PUT /mockserver/breakpoint/matcher/remove` (`{id}`) |
+| Clear all matchers | `PUT /mockserver/breakpoint/matcher/clear` (routed through a confirmation dialog) |
 
-| Button | Endpoint | Effect |
-|--------|----------|--------|
-| Continue | `PUT /mockserver/breakpoint/continue` | Forward the exchange unchanged |
-| Modify | `PUT /mockserver/breakpoint/modify` (REQUEST phase) or `PUT /mockserver/breakpoint/modify` with response body (RESPONSE phase) | Opens a JSON editor prefilled with the request or response; submits the modified JSON |
-| Abort | `PUT /mockserver/breakpoint/abort` | Drop the exchange without forwarding |
+The matcher list loads on mount and via a manual Refresh button (no interval).
 
-**Streams tab** — paused frames from forwarded streaming responses (SSE, chunked transfer, gRPC server-streaming, gRPC bidi inbound), grouped by `streamId`. Each row shows a direction badge (`Inbound` / `Outbound`) alongside the sequence number, method, path, body preview, size, and age. Per-frame actions: continue, modify body, drop (discard), inject extra frame after this one, close stream. The modify and inject actions each open a text editor dialog.
+**Live Exchanges tab** — one row per paused request/response exchange that arrived over the callback WebSocket. Each row shows the phase (`REQUEST` or `RESPONSE`), method or status code, path or reason phrase, age, exchange ID, and the matched breakpoint/expectation ID. Resolution is sent back over the **same callback WebSocket** (not REST):
 
-See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture (`BreakpointRegistry`, `PausedExchange`, phases).
+| Button | Effect |
+|--------|--------|
+| Continue | Resolve the exchange unchanged (`resolveRequest` / `resolveResponse` with the original) |
+| Modify | Opens a JSON editor prefilled with the request (REQUEST phase) or response (RESPONSE phase); resolves with the edited JSON |
+| Abort | Resolve the REQUEST with a synthetic error response so it is not forwarded |
+
+**Live Streams tab** — paused frames from forwarded streaming responses (SSE, chunked transfer, gRPC server-streaming, gRPC bidi inbound), grouped by `streamId`. Each row shows a direction badge (`Inbound` / `Outbound`) alongside the sequence number, method, path, body preview, size, and age. Per-frame decisions are sent over the WebSocket as a `StreamFrameDecisionDTO` whose `action` is one of `CONTINUE` / `MODIFY` / `DROP` / `INJECT` / `CLOSE` (continue, modify body, drop/discard, inject an extra frame after this one, close stream). The modify and inject actions each open a text editor dialog.
+
+Held items are bounded client-side and cleared when the callback WebSocket disconnects (a reconnect issues a new `clientId`, so older paused items can no longer be resolved).
+
+See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture (`BreakpointRegistry`, `PausedExchange`, phases) and the callback-WebSocket resolution protocol.
 
 ## Get-Started / Onboarding View
 
