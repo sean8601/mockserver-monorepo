@@ -8,6 +8,7 @@ import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
+import Tooltip from '@mui/material/Tooltip';
 import SearchIcon from '@mui/icons-material/Search';
 import { useDashboardStore } from '../store';
 import { groupBySession, shortenScenarioName, type Session, type SessionRequest } from '../lib/sessionGrouping';
@@ -44,20 +45,23 @@ interface RequestChipProps {
 function RequestChip({ request, turnIndex, selected, onClick }: RequestChipProps) {
   const label = `[${turnIndex}] ${request.method ?? '?'} ${request.path ?? '/'} → ${request.statusCode ?? '?'}`;
   return (
-    <Chip
-      label={label}
-      size="small"
-      color={statusColor(request.statusCode)}
-      variant={selected ? 'filled' : 'outlined'}
-      onClick={onClick}
-      sx={{
-        height: 22,
-        fontSize: '0.65rem',
-        fontFamily: 'monospace',
-        cursor: 'pointer',
-        '& .MuiChip-label': { px: 0.75 },
-      }}
-    />
+    <Tooltip title={label}>
+      <Chip
+        label={label}
+        size="small"
+        color={statusColor(request.statusCode)}
+        variant={selected ? 'filled' : 'outlined'}
+        onClick={onClick}
+        sx={{
+          height: 22,
+          fontSize: '0.65rem',
+          fontFamily: 'monospace',
+          cursor: 'pointer',
+          maxWidth: 220,
+          '& .MuiChip-label': { px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+        }}
+      />
+    </Tooltip>
   );
 }
 
@@ -214,22 +218,34 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
           flexWrap: 'wrap',
         }}
       >
-        <Typography
-          variant="subtitle2"
-          sx={{
-            fontWeight: 600,
-            fontSize: '0.8rem',
-            fontFamily: isUnscoped ? undefined : 'monospace',
-            fontStyle: isUnscoped ? 'italic' : 'normal',
-          }}
-        >
-          {isUnscoped
+        <Tooltip title={isUnscoped
             ? (session.isolationKey !== '<unscoped>'
               ? `Unscoped requests (${session.isolationKey})`
               : 'Unscoped requests')
             : `${displayName} / ${session.isolationKey}`
           }
-        </Typography>
+        >
+          <Typography
+            variant="subtitle2"
+            noWrap
+            sx={{
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              fontFamily: isUnscoped ? undefined : 'monospace',
+              fontStyle: isUnscoped ? 'italic' : 'normal',
+              maxWidth: 300,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {isUnscoped
+              ? (session.isolationKey !== '<unscoped>'
+                ? `Unscoped requests (${session.isolationKey})`
+                : 'Unscoped requests')
+              : `${displayName} / ${session.isolationKey}`
+            }
+          </Typography>
+        </Tooltip>
         <Chip
           label={`${session.requests.length} request${session.requests.length !== 1 ? 's' : ''}`}
           size="small"
@@ -237,21 +253,25 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
           sx={{ height: 18, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }}
         />
         {usage && (
-          <Chip
-            label={`${usage.totalInputTokens.toLocaleString()} in / ${usage.totalOutputTokens.toLocaleString()} out`}
-            size="small"
-            variant="outlined"
-            sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', '& .MuiChip-label': { px: 0.5 } }}
-          />
+          <Tooltip title={`${usage.totalInputTokens.toLocaleString()} in / ${usage.totalOutputTokens.toLocaleString()} out`}>
+            <Chip
+              label={`${usage.totalInputTokens.toLocaleString()} in / ${usage.totalOutputTokens.toLocaleString()} out`}
+              size="small"
+              variant="outlined"
+              sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', maxWidth: 180, '& .MuiChip-label': { px: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
+            />
+          </Tooltip>
         )}
         {usage?.estimatedCostUsd != null && (
-          <Chip
-            label={formatCost(usage.estimatedCostUsd)}
-            size="small"
-            variant="outlined"
-            color="warning"
-            sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', '& .MuiChip-label': { px: 0.5 } }}
-          />
+          <Tooltip title={formatCost(usage.estimatedCostUsd)}>
+            <Chip
+              label={formatCost(usage.estimatedCostUsd)}
+              size="small"
+              variant="outlined"
+              color="warning"
+              sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', '& .MuiChip-label': { px: 0.5 } }}
+            />
+          </Tooltip>
         )}
       </Box>
 

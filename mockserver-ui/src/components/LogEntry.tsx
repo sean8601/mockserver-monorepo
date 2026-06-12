@@ -377,14 +377,19 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
                 </IconButton>
               </Tooltip>
             )}
-            {!expanded && (
-              <Box
-                component="span"
-                sx={{ fontFamily: 'monospace', color: 'text.secondary', ml: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}
-              >
-                {getSummary(entry)}
-              </Box>
-            )}
+            {!expanded && (() => {
+              const summary = getSummary(entry);
+              return (
+                <Tooltip title={summary} disableHoverListener={!summary}>
+                  <Box
+                    component="span"
+                    sx={{ fontFamily: 'monospace', color: 'text.secondary', ml: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  >
+                    {summary}
+                  </Box>
+                </Tooltip>
+              );
+            })()}
           </Box>
           {showBody && (
             <Box sx={{ pl: 2.5, pt: 0.5 }}>
@@ -396,6 +401,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
         <>
           {entry.description && (
             <Box
+              title={descriptionText(entry)}
               sx={{
                 whiteSpace: 'pre',
                 fontFamily: 'monospace',

@@ -251,14 +251,18 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                        {drift.expectedValue ?? '-'}
-                      </Typography>
+                      <Tooltip title={drift.expectedValue ?? '-'}>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
+                          {drift.expectedValue ?? '-'}
+                        </Typography>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                        {drift.actualValue ?? '-'}
-                      </Typography>
+                      <Tooltip title={drift.actualValue ?? '-'}>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
+                          {drift.actualValue ?? '-'}
+                        </Typography>
+                      </Tooltip>
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="caption">

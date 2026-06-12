@@ -1219,8 +1219,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   return (
                     <Box key={host}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
-                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+                        <Tooltip title={host}>
+                          <Typography variant="body2" noWrap sx={{ fontWeight: 600, minWidth: 160, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{host}</Typography>
+                        </Tooltip>
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                           {summarizeChaosProfile(data.services[host] ?? {}).map((part) => (
                             <Chip key={part} size="small" label={part} variant="outlined" />
                           ))}
@@ -1670,8 +1672,10 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   const ttl = tcpRemainingTtl(host);
                   return (
                     <Box key={host} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 160 }}>{host}</Typography>
-                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+                      <Tooltip title={host}>
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 600, minWidth: 160, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{host}</Typography>
+                      </Tooltip>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                         {summarizeTcpChaosProfile(tcpData.hosts[host] ?? {}).map((part) => (
                           <Chip key={part} size="small" label={part} variant="outlined" />
                         ))}

@@ -5,6 +5,7 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import BuildIcon from '@mui/icons-material/Build';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import Tooltip from '@mui/material/Tooltip';
 import JsonViewer from './JsonViewer';
 import type {
   AnthropicParsed,
@@ -333,7 +334,11 @@ function MetadataStrip({ model, inputTokens, outputTokens, stopReason, streamed,
 
   return (
     <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mb: 1.5, justifyContent: 'center' }}>
-      {model && <Chip label={model} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />}
+      {model && (
+        <Tooltip title={model}>
+          <Chip label={model} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem', maxWidth: 200, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }} />
+        </Tooltip>
+      )}
       {inputTokens != null && <Chip label={`In: ${inputTokens}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />}
       {outputTokens != null && <Chip label={`Out: ${outputTokens}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />}
       {stopReason && <Chip label={`Stop: ${stopReason}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />}
@@ -1101,14 +1106,15 @@ export function ScriptedTurnsPanel({ turns }: { turns: ScriptedTurn[] }) {
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.25 }}>
                   {predicateEntries.map(([key, value]) => (
-                    <Chip
-                      key={key}
-                      label={`${key}: ${String(value)}`}
-                      size="small"
-                      variant="outlined"
-                      color="info"
-                      sx={{ height: 18, fontSize: '0.6rem' }}
-                    />
+                    <Tooltip key={key} title={`${key}: ${String(value)}`}>
+                      <Chip
+                        label={`${key}: ${String(value)}`}
+                        size="small"
+                        variant="outlined"
+                        color="info"
+                        sx={{ height: 18, fontSize: '0.6rem', maxWidth: 200, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
+                      />
+                    </Tooltip>
                   ))}
                 </Box>
               </Box>

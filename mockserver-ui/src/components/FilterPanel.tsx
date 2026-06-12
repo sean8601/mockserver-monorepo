@@ -109,7 +109,7 @@ export function MultiValueField({ label, items, onChange, disabled }: MultiValue
             disabled={disabled}
             sx={{ width: 140 }}
           />
-          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
             {item.values.map((val, vi) => (
               <Box key={vi} sx={{ display: 'flex', alignItems: 'center' }}>
                 <TextField

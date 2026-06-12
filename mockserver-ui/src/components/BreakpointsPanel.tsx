@@ -55,6 +55,7 @@ import {
 import { MultiValueField, SingleValueField } from './FilterPanel';
 import type { KeyToMultiValue, KeyToValue } from '../types';
 import ConfirmDialog from './ConfirmDialog';
+import TruncatedText from './TruncatedText';
 
 interface BreakpointsPanelProps {
   connectionParams: ConnectionParams;
@@ -657,9 +658,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                     {matchers.map((m) => (
                       <TableRow key={m.id}>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                            {m.id}
-                          </Typography>
+                          <TruncatedText text={m.id} maxWidth={120} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
@@ -681,9 +680,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           </Box>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                            {m.clientId ? `${m.clientId.substring(0, 8)}...` : '-'}
-                          </Typography>
+                          <TruncatedText text={m.clientId ?? '-'} maxWidth={100} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell align="right">
                           <Tooltip title="Remove matcher">
@@ -773,9 +770,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                              {item.breakpointId ? `${item.breakpointId.substring(0, 8)}...` : '-'}
-                            </Typography>
+                            <TruncatedText text={item.breakpointId ?? '-'} maxWidth={100} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
                           </TableCell>
                           <TableCell align="right">
                             <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
@@ -887,9 +882,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           />
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                            {item.frame.streamId}
-                          </Typography>
+                          <TruncatedText text={item.frame.streamId} maxWidth={120} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell>
                           <Chip size="small" label={`#${item.frame.sequenceNumber}`} variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
@@ -905,12 +898,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography
-                            variant="caption"
-                            sx={{ fontFamily: 'monospace', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}
-                          >
-                            {item.frame.body ? item.frame.body.substring(0, 40) : '-'}
-                          </Typography>
+                          <TruncatedText text={item.frame.body || '-'} maxWidth={150} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell align="right">
                           <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>

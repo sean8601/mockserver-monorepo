@@ -291,19 +291,21 @@ function TrafficRow({
       >
         {summary.method ?? '?'}
       </Typography>
-      <Typography
-        variant="caption"
-        noWrap
-        sx={{
-          fontFamily: 'monospace',
-          flex: 1,
-          minWidth: 80,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {summary.host ? `${summary.host}` : ''}{summary.path ?? ''}
-      </Typography>
+      <Tooltip title={`${summary.host ?? ''}${summary.path ?? ''}`}>
+        <Typography
+          variant="caption"
+          noWrap
+          sx={{
+            fontFamily: 'monospace',
+            flex: 1,
+            minWidth: 80,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {summary.host ? `${summary.host}` : ''}{summary.path ?? ''}
+        </Typography>
+      </Tooltip>
       {summary.statusCode !== null && (
         <Chip
           label={summary.statusCode}
