@@ -315,6 +315,18 @@ declarations are needed -- they resolve automatically.
   HEADERS plus any eager messages, then for each inbound request message evaluates the
   `GrpcBidiRule`s (shared `GrpcBidiRuleMatcher`) and emits the first match's responses,
   writing the trailing HEADERS once the client half-closes and all responses have drained.
+  When a matching `INBOUND_STREAM` breakpoint is registered for the stream (resolved once at
+  HEADERS time, default-off), each inbound (client→server) gRPC DATA frame is parked in
+  `StreamFrameBreakpointRegistry` / `StreamFrameCallbackDispatcher`
+  (stream-id `grpc-bidi-inbound-<path>-h3-<uuid>`, `Direction.INBOUND`, `INBOUND_STREAM`
+  phase) before it is decoded, supporting per-frame continue/modify/drop/inject/close — the
+  HTTP/3 analogue of the inbound interception in the HTTP/2 `GrpcBidiStreamHandler`. Because
+  the driver copies each frame to a `byte[]` and releases the `Http3DataFrame` before calling
+  `onData`, no `ByteBuf` is retained and the QUIC flow-control window is never pinned by a held
+  frame; per-frame ordering is preserved by dispatching one frame at a time and buffering any
+  frames the client sends while one is held (bounded by `maxRequestBodySize`). Held frames are
+  evicted on stream close. (Outbound bidi response frames are not breakpointed, matching the
+  HTTP/2 bidi handler.)
 - **Alt-Svc auto-discovery (RFC 7838)**: when `http3Port > 0`, responses served over
   the TCP (HTTP/1.1 and HTTP/2) paths include an `Alt-Svc: h3=":<port>"; ma=<maxAge>`
   header so HTTP/3-capable clients automatically upgrade to QUIC. The max-age is

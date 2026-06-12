@@ -26,7 +26,7 @@ Interactive breakpoints let you pause proxied/forwarded exchanges at four phases
 1. **Request breakpoints** (A1a) — hold the outbound request before it reaches the upstream server
 2. **Response breakpoints** (A1b) — hold the upstream response before it is written to the client
 3. **Stream frame breakpoints** (A1c + A1d) — hold each individual frame of a streaming response before it is written to the client. Covers both forwarded upstream streams (SSE / HTTP/1.1 chunked) and mock-generated streams (mock SSE/chunked, gRPC server-streaming, WebSocket eager/scripted messages, WebSocket bidirectional responses, and GraphQL subscription pushes)
-4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription, gRPC-bidi) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
+4. **Inbound frame breakpoints** (A1e) — hold each client-to-server frame on bidirectional/streaming connections (WebSocket, GraphQL-subscription, and gRPC-bidi over both HTTP/2 and HTTP/3) before MockServer processes them. Enables inspection, modification, dropping, injection, and connection close for inbound frames
 
 Request and response breakpoints support inspect, modify, continue, and abort -- interactively over the callback WebSocket.
 Stream frame breakpoints and inbound frame breakpoints support continue, modify, drop, inject, and close per frame -- over the callback WebSocket.
@@ -162,6 +162,18 @@ completed when the client replies or the timeout fires. No thread is blocked.
   backpressure (deferred), so other streams on the same connection are NOT stalled.
   `GrpcBidiRouterHandler` generates a per-stream inbound stream ID and passes it
   along with the `Configuration` to the handler constructor.
+- **gRPC-bidi inbound over HTTP/3 (QUIC):** `Http3GrpcBidiStreamHandler.onData` — the
+  HTTP/3 analogue of the HTTP/2 gRPC-bidi inbound path. The QUIC driver
+  (`Http3MockServerHandler`) already copies each `Http3DataFrame` to a `byte[]` and
+  releases the frame BEFORE calling `onData`, so the byte copy is parked with no
+  `ByteBuf` retained and the QUIC flow-control window is never pinned by a held frame.
+  Backpressure/ordering differs from HTTP/2: rather than withholding `ctx.read()`, the
+  handler dispatches one inbound frame at a time and buffers any frames the client sends
+  while one is held in a bounded in-handler queue (bounded by `maxRequestBodySize`, which
+  the driver enforces before `onData`), draining them in sequence-number order on resume.
+  `Http3MockServerHandler` resolves the `INBOUND_STREAM` matcher once at HEADERS time
+  (default-off) and passes the stream ID + matched breakpoint clientId/id + `Configuration`
+  + WS registry to the handler constructor.
 - Decision actions: CONTINUE (process the original frame), MODIFY (process a
   replacement frame), DROP (discard — do not process), INJECT (process original
   + extra frame), CLOSE (evict stream, send CANCELLED trailer, close stream).
@@ -180,13 +192,14 @@ completed when the client replies or the timeout fires. No thread is blocked.
   gRPC frames are passed as `byte[]` to the decoder. No ByteBuf is retained
   across the breakpoint hold period.
 - **Stream ID format:** WebSocket inbound streams use `{correlationId}-ws-inbound`;
-  gRPC-bidi inbound streams use `grpc-bidi-inbound-{path}-{uuid}`.
+  gRPC-bidi inbound streams use `grpc-bidi-inbound-{path}-{uuid}` over HTTP/2 and
+  `grpc-bidi-inbound-{path}-h3-{uuid}` over HTTP/3 (QUIC).
 - **Direction field:** `PausedStreamFrame.direction` is `INBOUND` for client-to-server
   frames and `OUTBOUND` (default) for server-to-client frames. The `direction` field
   is included in the `PausedStreamFrameDTO` dispatched over the callback WebSocket.
 - **Channel close eviction:** `channelInactive` in all handlers (WebSocket,
-  GraphQL, and gRPC-bidi) evicts all held inbound frames for the stream,
-  preventing leaks and hanging futures.
+  GraphQL, and gRPC-bidi over both HTTP/2 and HTTP/3) evicts all held inbound
+  frames for the stream, preventing leaks and hanging futures.
 
 ## Safety rails
 
@@ -461,8 +474,10 @@ The dashboard is also a full callback WebSocket client: it connects to `/_mockse
 ### Inbound frame breakpoints
 - `BidirectionalWebSocketFrameHandler.channelRead0` — hold point for WebSocket bidi inbound frames
 - `GraphQLSubscriptionHandler.channelRead0` — hold point for GraphQL subscription inbound frames
-- `GrpcBidiStreamHandler.handleData` — hold point for gRPC bidi inbound DATA frames
-- `GrpcBidiRouterHandler` — routes gRPC bidi streams to `GrpcBidiStreamHandler`
+- `GrpcBidiStreamHandler.handleData` — hold point for gRPC bidi inbound DATA frames (HTTP/2)
+- `GrpcBidiRouterHandler` — routes gRPC bidi streams to `GrpcBidiStreamHandler` (HTTP/2)
+- `Http3GrpcBidiStreamHandler.onData` — hold point for gRPC bidi inbound DATA frames (HTTP/3/QUIC)
+- `Http3MockServerHandler.tryBeginGrpcBidi` — resolves the `INBOUND_STREAM` matcher and wires it into `Http3GrpcBidiStreamHandler`
 - Uses the same `StreamFrameBreakpointRegistry` with `direction=INBOUND`
 
 ## Behavioural notes
