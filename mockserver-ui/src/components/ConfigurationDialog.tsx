@@ -115,8 +115,13 @@ export default function ConfigurationDialog({
 
   const disabled = busy || !config;
 
+  const handleClose = useCallback(() => {
+    setError(null);
+    onClose();
+  }, [onClose]);
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="configuration-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth aria-labelledby="configuration-dialog-title">
       <DialogTitle id="configuration-dialog-title">Server configuration</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -187,7 +192,7 @@ export default function ConfigurationDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleClose}>Close</Button>
       </DialogActions>
     </Dialog>
   );

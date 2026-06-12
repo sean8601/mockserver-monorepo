@@ -80,8 +80,17 @@ export default function AsyncApiDialog({
     }
   }, [connectionParams, verifyBody]);
 
+  const handleClose = useCallback(() => {
+    setSpec('');
+    setVerifyBody('');
+    setResult(null);
+    setVerifyResult(null);
+    setError(null);
+    onClose();
+  }, [onClose]);
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="asyncapi-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="asyncapi-dialog-title">
       <DialogTitle id="asyncapi-dialog-title">AsyncAPI broker mock</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -143,7 +152,7 @@ export default function AsyncApiDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleClose}>Close</Button>
         <Button variant="contained" disabled={busy || unavailable} onClick={() => void submit()}>Load spec</Button>
       </DialogActions>
     </Dialog>

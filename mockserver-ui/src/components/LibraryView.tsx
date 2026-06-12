@@ -35,6 +35,7 @@ import {
 } from '../lib/wasm';
 import { buildBaseUrl } from '../lib/mcpClient';
 import { uploadDescriptorSet, listGrpcServices, clearGrpcDescriptors, type GrpcService } from '../lib/grpcDescriptors';
+import ConfirmDialog from './ConfirmDialog';
 
 // ---------------------------------------------------------------------------
 // Export sub-tab — download captured content in various formats
@@ -311,6 +312,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
   const [uploadName, setUploadName] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Poll modules list
   useEffect(() => {
@@ -466,7 +468,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
                           size="small"
                           aria-label={`Delete WASM module ${name}`}
                           disabled={busy}
-                          onClick={() => void handleDelete(name)}
+                          onClick={() => setDeleteTarget(name)}
                         >
                           <DeleteIcon fontSize="small" />
                         </IconButton>
@@ -479,6 +481,15 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
           </Table>
         </TableContainer>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Delete WASM module "${deleteTarget}"?`}
+        message="This permanently removes the module from the server. Any expectations referencing it will fail. This cannot be undone."
+        confirmLabel="Delete module"
+        onConfirm={() => { if (deleteTarget) void handleDelete(deleteTarget); }}
+        onClose={() => setDeleteTarget(null)}
+      />
     </Box>
   );
 }
@@ -494,6 +505,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -561,7 +573,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
         <Button variant="contained" size="small" disabled={busy} onClick={() => void handleUpload()} sx={{ height: 40 }}>
           Upload
         </Button>
-        <Button size="small" color="error" disabled={busy || services.length === 0} onClick={() => void handleClear()} sx={{ height: 40 }}>
+        <Button size="small" color="error" disabled={busy || services.length === 0} onClick={() => setConfirmClearOpen(true)} sx={{ height: 40 }}>
           Clear all
         </Button>
         <Tooltip title="Refresh service list">
@@ -607,6 +619,15 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
           </Box>
         ))
       )}
+
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="Clear all gRPC descriptors?"
+        message={`This removes all ${services.length} loaded gRPC service descriptor${services.length === 1 ? '' : 's'}. MockServer will no longer be able to transcode or mock those services. This cannot be undone.`}
+        confirmLabel="Clear descriptors"
+        onConfirm={() => void handleClear()}
+        onClose={() => setConfirmClearOpen(false)}
+      />
     </Box>
   );
 }

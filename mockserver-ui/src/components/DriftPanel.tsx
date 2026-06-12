@@ -17,6 +17,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ConfirmDialog from './ConfirmDialog';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   fetchDriftRecords,
@@ -90,6 +91,7 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const [filterText, setFilterText] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
@@ -164,7 +166,7 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
               color="error"
               startIcon={<DeleteSweepIcon fontSize="small" />}
               disabled={busy || data.count === 0}
-              onClick={handleClear}
+              onClick={() => setConfirmOpen(true)}
             >
               Clear
             </Button>
@@ -287,6 +289,15 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
           </TableContainer>
         )}
       </Paper>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Clear all drift records?"
+        message={`This removes all ${data.count} detected drift record${data.count === 1 ? '' : 's'}. This cannot be undone.`}
+        confirmLabel="Clear drift records"
+        onConfirm={handleClear}
+        onClose={() => setConfirmOpen(false)}
+      />
     </Box>
   );
 }

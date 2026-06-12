@@ -20,6 +20,7 @@ import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import ConfirmDialog from './ConfirmDialog';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   listFiles,
@@ -58,6 +59,9 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
   const [viewName, setViewName] = useState<string | null>(null);
   const [viewContent, setViewContent] = useState<string | null>(null);
   const [viewError, setViewError] = useState<string | null>(null);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
@@ -134,8 +138,19 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
     }
   }, [connectionParams]);
 
+  const handleClose = useCallback(() => {
+    setDeleteTarget(null);
+    setViewName(null);
+    setViewContent(null);
+    setViewError(null);
+    setStoreSuccess(null);
+    setError(null);
+    onClose();
+  }, [onClose]);
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="file-store-dialog-title">
+    <>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="file-store-dialog-title">
       <DialogTitle id="file-store-dialog-title">File Store</DialogTitle>
       <DialogContent dividers>
         {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
@@ -163,7 +178,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
                       <IconButton size="small" onClick={() => void handleView(name)} aria-label={`View ${name}`}>
                         <VisibilityIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" onClick={() => void handleDelete(name)} aria-label={`Delete ${name}`}>
+                      <IconButton size="small" onClick={() => setDeleteTarget(name)} aria-label={`Delete ${name}`}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </TableCell>
@@ -253,8 +268,17 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleClose}>Close</Button>
       </DialogActions>
     </Dialog>
+    <ConfirmDialog
+      open={deleteTarget !== null}
+      title={`Delete "${deleteTarget}"?`}
+      message="This permanently deletes the file from the server filesystem. This cannot be undone."
+      confirmLabel="Delete file"
+      onConfirm={() => { if (deleteTarget) void handleDelete(deleteTarget); }}
+      onClose={() => setDeleteTarget(null)}
+    />
+    </>
   );
 }

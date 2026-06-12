@@ -92,7 +92,7 @@ describe('DriftPanel', () => {
     expect(screen.getByText('BREAKING')).toBeInTheDocument();
   });
 
-  it('clears drift records when the Clear button is clicked', async () => {
+  it('clears drift records when the Clear button is clicked and confirmed', async () => {
     const user = userEvent.setup();
     let callIndex = 0;
     vi.stubGlobal(
@@ -136,7 +136,14 @@ describe('DriftPanel', () => {
     const clearButton = screen.getByRole('button', { name: /Clear/i });
     expect(clearButton).not.toBeDisabled();
 
+    // Click Clear — opens confirmation dialog
     await user.click(clearButton);
+
+    // Confirm the destructive action
+    await waitFor(() => {
+      expect(screen.getByText('Clear all drift records?')).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /Clear drift records/i }));
 
     await waitFor(() => {
       expect(screen.getByText('0 detected')).toBeInTheDocument();

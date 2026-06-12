@@ -81,6 +81,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import LinearProgress from '@mui/material/LinearProgress';
 import { getConfiguration, updateConfiguration, type Configuration } from '../lib/configuration';
+import ConfirmDialog from './ConfirmDialog';
 
 // Uniform width for every chaos field so the HTTP / gRPC / TCP sections line
 // up in columns and the longest labels are not truncated.
@@ -990,6 +991,9 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
 
   const isExperimentActive = experimentStatus?.status === 'running' || experimentStatus?.status === 'starting';
 
+  // Confirmation dialog for destructive clear-all actions
+  const [confirm, setConfirm] = useState<{ title: string; message: string; confirmLabel: string; onConfirm: () => void } | null>(null);
+
   // Real gRPC health overrides: a named service, or the default if it is no longer SERVING.
   // The GET always returns a "_default" SERVING entry, which is not an override on its own.
   const grpcHealthOverrides = useMemo(
@@ -1115,7 +1119,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 disabled={busy || hosts.length === 0}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void runAction(() => clearServiceChaos(connectionParams));
+                  setConfirm({
+                    title: 'Clear all HTTP chaos?',
+                    message: `This removes chaos profiles for all ${hosts.length} registered host${hosts.length === 1 ? '' : 's'}. Live traffic will no longer be faulted. This cannot be undone.`,
+                    confirmLabel: 'Clear HTTP chaos',
+                    onConfirm: () => void runAction(() => clearServiceChaos(connectionParams)),
+                  });
                 }}
               >
                 Clear HTTP
@@ -1332,13 +1341,20 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 disabled={busy || grpcCombinedActiveCount === 0}
                 onClick={(e) => {
                   e.stopPropagation();
-                  // Clear both fault injection and health overrides so the section fully empties
-                  // (parity with the HTTP/TCP panels); otherwise the "active" badge stays non-zero.
-                  void runAction(async () => {
-                    await clearGrpcChaos(connectionParams);
-                    for (const svc of grpcHealthOverrides) {
-                      await resetGrpcHealth(connectionParams, svc === '_default' ? '' : svc);
-                    }
+                  setConfirm({
+                    title: 'Clear all gRPC chaos?',
+                    message: `This removes all gRPC fault injection profiles and health-status overrides (${grpcCombinedActiveCount} active). This cannot be undone.`,
+                    confirmLabel: 'Clear gRPC chaos',
+                    onConfirm: () => {
+                      // Clear both fault injection and health overrides so the section fully empties
+                      // (parity with the HTTP/TCP panels); otherwise the "active" badge stays non-zero.
+                      void runAction(async () => {
+                        await clearGrpcChaos(connectionParams);
+                        for (const svc of grpcHealthOverrides) {
+                          await resetGrpcHealth(connectionParams, svc === '_default' ? '' : svc);
+                        }
+                      });
+                    },
                   });
                 }}
               >
@@ -1598,7 +1614,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 disabled={busy || tcpHosts.length === 0}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void runAction(() => clearTcpChaos(connectionParams));
+                  setConfirm({
+                    title: 'Clear all TCP chaos?',
+                    message: `This removes TCP chaos profiles for all ${tcpHosts.length} registered host${tcpHosts.length === 1 ? '' : 's'}. This cannot be undone.`,
+                    confirmLabel: 'Clear TCP chaos',
+                    onConfirm: () => void runAction(() => clearTcpChaos(connectionParams)),
+                  });
                 }}
               >
                 Clear TCP
@@ -1678,6 +1699,15 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
           </Box>
         </Collapse>
       </Paper>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.title ?? ''}
+        message={confirm?.message ?? ''}
+        confirmLabel={confirm?.confirmLabel ?? 'Confirm'}
+        onConfirm={() => confirm?.onConfirm()}
+        onClose={() => setConfirm(null)}
+      />
 
       {/* Chaos Experiments */}
       <Paper variant="outlined" sx={{ p: 1.25 }}>

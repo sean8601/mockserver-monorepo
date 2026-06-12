@@ -73,8 +73,18 @@ export default function CrudDialog({
     }
   }, [connectionParams, basePath, idField, idStrategy, initialData]);
 
+  const handleClose = useCallback(() => {
+    setBasePath('');
+    setIdField('');
+    setIdStrategy('AUTO_INCREMENT');
+    setInitialData('');
+    setError(null);
+    setResult(null);
+    onClose();
+  }, [onClose]);
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="crud-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth aria-labelledby="crud-dialog-title">
       <DialogTitle id="crud-dialog-title">Register CRUD resource</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -132,7 +142,7 @@ export default function CrudDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleClose}>Close</Button>
         <Button variant="contained" disabled={busy} onClick={() => void submit()}>Register</Button>
       </DialogActions>
     </Dialog>

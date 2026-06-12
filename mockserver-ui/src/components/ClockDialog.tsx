@@ -67,8 +67,13 @@ export default function ClockDialog({
     }
   }, [refresh]);
 
+  const handleClose = useCallback(() => {
+    setError(null);
+    onClose();
+  }, [onClose]);
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth aria-labelledby="clock-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth aria-labelledby="clock-dialog-title">
       <DialogTitle id="clock-dialog-title">Server clock</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -112,7 +117,7 @@ export default function ClockDialog({
         </Typography>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleClose}>Close</Button>
       </DialogActions>
     </Dialog>
   );

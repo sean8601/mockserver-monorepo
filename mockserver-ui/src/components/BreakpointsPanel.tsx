@@ -54,6 +54,7 @@ import {
 } from '../lib/breakpointCallbackClient';
 import { MultiValueField, SingleValueField } from './FilterPanel';
 import type { KeyToMultiValue, KeyToValue } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 interface BreakpointsPanelProps {
   connectionParams: ConnectionParams;
@@ -125,6 +126,9 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   // -- Action state --
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Confirmation dialog for destructive actions
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // -- Modify dialogs --
   const [modifyTarget, setModifyTarget] = useState<(PausedItem & { key: number }) | null>(null);
@@ -624,7 +628,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
             {matchers.length > 0 && (
               <Tooltip title="Clear all matchers">
                 <span>
-                  <IconButton size="small" onClick={() => void handleClearMatchers()} disabled={busy} aria-label="Clear all matchers">
+                  <IconButton size="small" onClick={() => setConfirmOpen(true)} disabled={busy} aria-label="Clear all matchers">
                     <ClearAllIcon fontSize="small" />
                   </IconButton>
                 </span>
@@ -1062,6 +1066,15 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Clear all breakpoint matchers?"
+        message="This removes every registered breakpoint matcher. Any paused exchanges will remain held server-side until the breakpoint timeout expires. This cannot be undone."
+        confirmLabel="Clear all matchers"
+        onConfirm={() => void handleClearMatchers()}
+        onClose={() => setConfirmOpen(false)}
+      />
     </Box>
   );
 }

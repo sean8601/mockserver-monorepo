@@ -164,13 +164,19 @@ describe('ServiceChaosPanel', () => {
     expect(puts[0]?.body).toEqual({ host: 'a.svc', remove: true });
   });
 
-  it('clears all registrations', async () => {
+  it('clears all registrations after confirmation', async () => {
     const user = userEvent.setup();
     const { puts } = stubServiceChaos({ services: { 'a.svc': { errorStatus: 503 } } });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
 
+    // Click Clear HTTP — opens confirmation dialog
     await user.click(screen.getByRole('button', { name: /Clear HTTP/ }));
+
+    // Confirm the destructive action
+    await waitFor(() => expect(screen.getByText('Clear all HTTP chaos?')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Clear HTTP chaos/i }));
+
     await waitFor(() => expect(puts.length).toBeGreaterThan(0));
     expect(puts[0]?.body).toEqual({ clear: true });
   });

@@ -62,8 +62,23 @@ export default function OidcDialog({
     }
   }, [connectionParams, issuer, subject, clientId, audience, scopes, tokenExpiry, issueExpiredToken, wrongIssuer, tamperedSignature]);
 
+  const handleClose = useCallback(() => {
+    setIssuer('');
+    setSubject('');
+    setClientId('');
+    setAudience('');
+    setScopes('');
+    setTokenExpiry('');
+    setIssueExpiredToken(false);
+    setWrongIssuer(false);
+    setTamperedSignature(false);
+    setError(null);
+    setCreated(null);
+    onClose();
+  }, [onClose]);
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="oidc-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth aria-labelledby="oidc-dialog-title">
       <DialogTitle id="oidc-dialog-title">Mock OIDC provider</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -97,7 +112,7 @@ export default function OidcDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleClose}>Close</Button>
         <Button variant="contained" disabled={busy} onClick={() => void submit()}>Create provider</Button>
       </DialogActions>
     </Dialog>
