@@ -44,10 +44,22 @@ export function usePolling<T>({
     if (!enabled) return;
 
     let cancelled = false;
+    let polling = false;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    const isHidden = () => typeof document !== 'undefined' && document.hidden;
+
+    function scheduleNext(): void {
+      // Pause polling while the tab is hidden — a background dashboard otherwise
+      // keeps hitting the server (and re-parsing responses) for nothing. The
+      // visibilitychange listener resumes with an immediate poll on return.
+      if (cancelled || isHidden()) return;
+      timer = setTimeout(() => void poll(), intervalMs);
+    }
+
     async function poll(): Promise<void> {
+      polling = true;
       try {
         const result = await fetcherRef.current(controller.signal);
         if (cancelled) return;
@@ -57,15 +69,36 @@ export function usePolling<T>({
         if (cancelled || controller.signal.aborted) return;
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!cancelled) timer = setTimeout(() => void poll(), intervalMs);
+        polling = false;
+        scheduleNext();
       }
     }
 
+    function onVisibilityChange(): void {
+      if (cancelled) return;
+      if (isHidden()) {
+        // Cancel the pending tick so polling pauses immediately on hide.
+        if (timer) { clearTimeout(timer); timer = undefined; }
+        return;
+      }
+      // Resuming: skip if a poll is already in flight — it reschedules itself on
+      // completion, so launching another here would fork a duplicate loop.
+      if (polling) return;
+      if (timer) clearTimeout(timer);
+      void poll();
+    }
+
     void poll();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
     return () => {
       cancelled = true;
       controller.abort();
       if (timer) clearTimeout(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
     };
   }, [intervalMs, enabled, refreshTick]);
 

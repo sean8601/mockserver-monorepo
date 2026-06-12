@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
@@ -19,7 +19,12 @@ interface LogGroupProps {
    * falls back to its own internal state.
    */
   open?: boolean;
-  onToggleOpen?: () => void;
+  /**
+   * Receives the group's key so the panel can pass a single stable callback
+   * (`expansion.toggle`) for every row instead of a fresh per-row closure —
+   * which would otherwise defeat this component's `memo`.
+   */
+  onToggleOpen?: (key: string) => void;
 }
 
 function extractCorrelationId(group: LogGroupType): string | null {
@@ -31,11 +36,11 @@ function extractCorrelationId(group: LogGroupType): string | null {
   return null;
 }
 
-export default function LogGroup({ group, open: openProp, onToggleOpen }: LogGroupProps) {
+function LogGroup({ group, open: openProp, onToggleOpen }: LogGroupProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = openProp ?? internalOpen;
   const handleToggleOpen = () => {
-    if (onToggleOpen) onToggleOpen();
+    if (onToggleOpen) onToggleOpen(group.key);
     else setInternalOpen((prev) => !prev);
   };
   const correlationId = useMemo(() => extractCorrelationId(group), [group]);
@@ -112,3 +117,9 @@ export default function LogGroup({ group, open: openProp, onToggleOpen }: LogGro
     </Box>
   );
 }
+
+// Memoized: LogPanel re-renders on every ~1/sec WebSocket snapshot, but a group
+// whose content is unchanged keeps a stable `group` reference (preserved by the
+// store's reconcileByKey) and a stable `onToggleOpen`, so it can skip the
+// (non-trivial) entryToText re-computation over all its child entries.
+export default memo(LogGroup);

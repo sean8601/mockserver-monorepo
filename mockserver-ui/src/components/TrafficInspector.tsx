@@ -178,6 +178,22 @@ function gatherScriptedTurns(expectations: JsonListItem[]): ScriptedTurn[] {
 // Search match helper
 // ---------------------------------------------------------------------------
 
+// Per-item parse cache. `summarizeTraffic` fully parses + reassembles SSE streams
+// and base64-decodes bodies; the store replaces the traffic arrays on every
+// WebSocket push but preserves each unchanged item's `value` reference
+// (reconcileByKey), so caching on that reference avoids re-parsing every captured
+// request on every push and on every search keystroke. The WeakMap lets entries
+// be collected once the item object is gone.
+const summaryCache = new WeakMap<Record<string, unknown>, TrafficSummary>();
+
+function cachedSummarize(value: Record<string, unknown>): TrafficSummary {
+  const hit = summaryCache.get(value);
+  if (hit) return hit;
+  const summary = summarizeTraffic(value);
+  summaryCache.set(value, summary);
+  return summary;
+}
+
 function matchesSearch(item: JsonListItem, summary: TrafficSummary, term: string): boolean {
   const lower = term.toLowerCase();
   const parts = [
@@ -1046,7 +1062,7 @@ export default function TrafficInspector() {
     [proxiedRequests, recordedRequests],
   );
   const summaries = useMemo(
-    () => allRequests.map((item) => ({ item, summary: summarizeTraffic(item.value) })),
+    () => allRequests.map((item) => ({ item, summary: cachedSummarize(item.value) })),
     [allRequests],
   );
 

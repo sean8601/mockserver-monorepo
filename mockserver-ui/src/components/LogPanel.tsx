@@ -45,7 +45,7 @@ export default function LogPanel() {
               <LogGroup
                 group={message}
                 open={expansion.isExpanded(message.key)}
-                onToggleOpen={() => expansion.toggle(message.key)}
+                onToggleOpen={expansion.toggle}
               />
             ) : (
               <LogEntry
