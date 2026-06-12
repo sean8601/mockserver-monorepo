@@ -1234,29 +1234,34 @@ function actionToJava(action: StandardActionPayload): string {
     case 'forward_override': {
       const o = action.forwardOverride;
       if (!o) return '.forward(forwardOverriddenRequest(request()))';
-      const overrideLines = ['request()'];
-      if (o.overrideMethod) overrideLines.push(`        .withMethod("${escapeJava(o.overrideMethod)}")`);
-      if (o.overridePath) overrideLines.push(`        .withPath("${escapeJava(o.overridePath)}")`);
-      if (o.overrideHost) overrideLines.push(`        .withHeader("Host", "${escapeJava(o.overrideHost)}")`);
-      if (o.overrideScheme) overrideLines.push(`        .withSecure(${o.overrideScheme === 'HTTPS'})`);
+      // Collect the builder calls without indentation, then indent each line
+      // uniformly when assembling. (Pre-indenting here and joining with a second
+      // indent — as an earlier version did — double-indented every line and left
+      // the leading `request()` at column 0.)
+      const overrideCalls: string[] = [];
+      if (o.overrideMethod) overrideCalls.push(`.withMethod("${escapeJava(o.overrideMethod)}")`);
+      if (o.overridePath) overrideCalls.push(`.withPath("${escapeJava(o.overridePath)}")`);
+      if (o.overrideHost) overrideCalls.push(`.withHeader("Host", "${escapeJava(o.overrideHost)}")`);
+      if (o.overrideScheme) overrideCalls.push(`.withSecure(${o.overrideScheme === 'HTTPS'})`);
       const overrideHeaders = parseKeyValueLines(o.overrideHeaders, ':');
       if (overrideHeaders) {
         for (const [k, vs] of Object.entries(overrideHeaders)) {
-          for (const v of vs) overrideLines.push(`        .withHeader("${escapeJava(k)}", "${escapeJava(v)}")`);
+          for (const v of vs) overrideCalls.push(`.withHeader("${escapeJava(k)}", "${escapeJava(v)}")`);
         }
       }
       const overrideQuery = parseKeyValueLines(o.overrideQueryString, '=');
       if (overrideQuery) {
         for (const [k, vs] of Object.entries(overrideQuery)) {
           const values = vs.map((v) => `"${escapeJava(v)}"`).join(', ');
-          overrideLines.push(`        .withQueryStringParameter("${escapeJava(k)}", ${values})`);
+          overrideCalls.push(`.withQueryStringParameter("${escapeJava(k)}", ${values})`);
         }
       }
-      if (o.overrideBody) overrideLines.push(`        .withBody("${escapeJava(o.overrideBody)}")`);
+      if (o.overrideBody) overrideCalls.push(`.withBody("${escapeJava(o.overrideBody)}")`);
       return [
         '.forward(',
         '    forwardOverriddenRequest(',
-        overrideLines.join('\n            '),
+        '      request()',
+        ...overrideCalls.map((c) => `        ${c}`),
         '    )',
         ')',
       ].join('\n');
@@ -1413,7 +1418,16 @@ function actionToJava(action: StandardActionPayload): string {
       lines.push(')');
       return lines.join('\n');
     }
+    default:
+      // Exhaustiveness guard: if a new StandardActionType is added without a
+      // case above, `action.type` is no longer `never` here and this fails to
+      // compile — preventing a silent `undefined` from leaking into the Java.
+      return assertNever(action.type);
   }
+}
+
+function assertNever(x: never): never {
+  throw new Error(`Unhandled standard action type: ${JSON.stringify(x)}`);
 }
 
 function chaosToJava(chaos: StandardChaosDraft): string {
