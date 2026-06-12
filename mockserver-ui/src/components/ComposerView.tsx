@@ -1998,19 +1998,14 @@ function ChaosPanel({
   chaos: StandardChaosDraft;
   setChaos: (c: StandardChaosDraft) => void;
 }) {
-  // Fixed per-column widths so the three rows line up: column 1 (Error status /
-  // Latency value / Succeed first), column 2 (Error prob / Latency unit / Fail
-  // request count — wide enough for the longest label), column 3 (Retry-After / Seed).
-  const COL1 = 160;
-  const COL2 = 175;
-  const COL3 = 140;
+  const CHAOS_PANEL_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 1, alignItems: 'start' } as const;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       <Typography variant="body2" color="text.secondary">
         Inject probabilistic faults (error status, latency) into responses for
         matched requests. This works on mocked, forwarded, and proxied responses.
       </Typography>
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <Box sx={CHAOS_PANEL_GRID}>
         <TextField
           label="Error status"
           size="small"
@@ -2018,7 +2013,7 @@ function ChaosPanel({
           value={chaos.errorStatus ?? ''}
           error={!!standardChaosErrorStatusError(chaos.errorStatus)}
           onChange={(e) => { const n = parseInt(e.target.value, 10); setChaos({ ...chaos, errorStatus: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-          sx={{ width: COL1 }}
+          fullWidth
           helperText={standardChaosErrorStatusError(chaos.errorStatus) ?? 'e.g. 500, 503, 429'}
         />
         <TextField
@@ -2028,7 +2023,7 @@ function ChaosPanel({
           value={chaos.errorProbability ?? ''}
           error={!!standardChaosErrorProbabilityError(chaos.errorProbability)}
           onChange={(e) => { const n = parseFloat(e.target.value); setChaos({ ...chaos, errorProbability: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-          sx={{ width: COL2 }}
+          fullWidth
           helperText={standardChaosErrorProbabilityError(chaos.errorProbability) ?? '1.0 = always'}
         />
         <TextField
@@ -2036,18 +2031,18 @@ function ChaosPanel({
           size="small"
           value={chaos.retryAfter ?? ''}
           onChange={(e) => setChaos({ ...chaos, retryAfter: e.target.value || undefined })}
-          sx={{ width: COL3 }}
+          fullWidth
           helperText='e.g. "30"'
         />
       </Box>
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <Box sx={CHAOS_PANEL_GRID}>
         <TextField
           label="Latency value"
           size="small"
           type="number"
           value={chaos.latencyValue ?? ''}
           onChange={(e) => setChaos({ ...chaos, latencyValue: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: COL1 }}
+          fullWidth
           helperText="0 = no latency"
         />
         <TextField
@@ -2056,7 +2051,7 @@ function ChaosPanel({
           select
           value={chaos.latencyUnit ?? 'MILLISECONDS'}
           onChange={(e) => setChaos({ ...chaos, latencyUnit: e.target.value as ChaosDelayUnit })}
-          sx={{ width: COL2 }}
+          fullWidth
         >
           <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
           <MenuItem value="SECONDS">seconds</MenuItem>
@@ -2068,18 +2063,18 @@ function ChaosPanel({
           type="number"
           value={chaos.seed ?? ''}
           onChange={(e) => setChaos({ ...chaos, seed: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: COL3 }}
+          fullWidth
           helperText="reproducible prob"
         />
       </Box>
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <Box sx={CHAOS_PANEL_GRID}>
         <TextField
           label="Succeed first (N)"
           size="small"
           type="number"
           value={chaos.succeedFirst ?? ''}
           onChange={(e) => setChaos({ ...chaos, succeedFirst: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: COL1 }}
+          fullWidth
           helperText="first N requests OK"
         />
         <TextField
@@ -2088,7 +2083,7 @@ function ChaosPanel({
           type="number"
           value={chaos.failRequestCount ?? ''}
           onChange={(e) => setChaos({ ...chaos, failRequestCount: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
-          sx={{ width: COL2 }}
+          fullWidth
           helperText="then next M fail"
         />
       </Box>
@@ -2528,14 +2523,15 @@ function SideEffectsPanel({
       </Box>
       {sideEffects.map((se, idx) => (
         <Paper key={idx} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }} data-testid="side-effect-row">
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr)) auto', gap: 1, alignItems: 'center' }}>
             <TextField
               label="Position"
               size="small"
               select
               value={se.position}
               onChange={(e) => updateRow(idx, { position: e.target.value as SideEffectPosition })}
-              sx={{ width: 120, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ ...SIDE_EFFECT_FIELD_SX }}
+              fullWidth
             >
               <MenuItem value="before">Before</MenuItem>
               <MenuItem value="after">After</MenuItem>
@@ -2546,16 +2542,18 @@ function SideEffectsPanel({
               value={se.method}
               onChange={(e) => updateRow(idx, { method: e.target.value })}
               placeholder="GET"
-              sx={{ width: 100, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ ...SIDE_EFFECT_FIELD_SX }}
+              fullWidth
             />
             <TextField
               label="Path"
               size="small"
-              sx={{ flex: 1, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ minWidth: 0, ...SIDE_EFFECT_FIELD_SX }}
               value={se.path}
               onChange={(e) => updateRow(idx, { path: e.target.value })}
               placeholder="/webhook/notify"
               slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              fullWidth
             />
             <IconButton
               size="small"
@@ -2566,35 +2564,38 @@ function SideEffectsPanel({
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 1, alignItems: 'start' }}>
             <TextField
               label="Host (optional)"
               size="small"
               value={se.host}
               onChange={(e) => updateRow(idx, { host: e.target.value })}
               placeholder="auth.svc:8080"
-              sx={{ width: 200, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ ...SIDE_EFFECT_FIELD_SX }}
               slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              fullWidth
             />
             <TextField
               label="Body (optional)"
               size="small"
-              sx={{ flex: 1, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ minWidth: 0, ...SIDE_EFFECT_FIELD_SX }}
               value={se.body}
               onChange={(e) => updateRow(idx, { body: e.target.value })}
               placeholder='{"event":"matched"}'
               slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              fullWidth
             />
           </Box>
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1, alignItems: 'start' }}>
             <TextField
               label="Delay"
               size="small"
               type="number"
               value={se.delayValue}
               onChange={(e) => updateRow(idx, { delayValue: Number(e.target.value) || 0 })}
-              sx={{ width: 120, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ ...SIDE_EFFECT_FIELD_SX }}
               helperText="0 = no delay"
+              fullWidth
             />
             <TextField
               label="Delay unit"
@@ -2602,7 +2603,8 @@ function SideEffectsPanel({
               select
               value={se.delayUnit}
               onChange={(e) => updateRow(idx, { delayUnit: e.target.value as SideEffectDelayUnit })}
-              sx={{ width: 150, ...SIDE_EFFECT_FIELD_SX }}
+              sx={{ ...SIDE_EFFECT_FIELD_SX }}
+              fullWidth
             >
               <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
               <MenuItem value="SECONDS">seconds</MenuItem>
@@ -2611,7 +2613,7 @@ function SideEffectsPanel({
           </Box>
           {/* Before-only fields: blocking, timeout, failurePolicy */}
           {se.position === 'before' && (
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 1, alignItems: 'center' }}>
               <FormControlLabel
                 control={
                   <Checkbox
@@ -2632,7 +2634,8 @@ function SideEffectsPanel({
                 type="number"
                 value={se.timeoutValue}
                 onChange={(e) => updateRow(idx, { timeoutValue: Number(e.target.value) || 0 })}
-                sx={{ width: 160, ...SIDE_EFFECT_FIELD_SX }}
+                sx={{ ...SIDE_EFFECT_FIELD_SX }}
+                fullWidth
               />
               <TextField
                 label="Timeout unit"
@@ -2640,7 +2643,8 @@ function SideEffectsPanel({
                 select
                 value={se.timeoutUnit}
                 onChange={(e) => updateRow(idx, { timeoutUnit: e.target.value as SideEffectDelayUnit })}
-                sx={{ width: 150, ...SIDE_EFFECT_FIELD_SX }}
+                sx={{ ...SIDE_EFFECT_FIELD_SX }}
+                fullWidth
               >
                 <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
                 <MenuItem value="SECONDS">seconds</MenuItem>
@@ -2652,7 +2656,8 @@ function SideEffectsPanel({
                 select
                 value={se.failurePolicy}
                 onChange={(e) => updateRow(idx, { failurePolicy: e.target.value as SideEffectFailurePolicy })}
-                sx={{ width: 170, ...SIDE_EFFECT_FIELD_SX }}
+                sx={{ ...SIDE_EFFECT_FIELD_SX }}
+                fullWidth
               >
                 <MenuItem value="BEST_EFFORT">BEST_EFFORT</MenuItem>
                 <MenuItem value="FAIL_FAST">FAIL_FAST</MenuItem>

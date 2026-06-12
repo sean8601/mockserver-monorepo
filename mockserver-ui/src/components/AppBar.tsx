@@ -223,6 +223,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             />
           </Tooltip>
         )}
+        <Box sx={{ overflowX: 'auto', maxWidth: '100%', flexShrink: 1 }}>
         <ToggleButtonGroup
           value={view}
           exclusive
@@ -307,6 +308,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             Metrics
           </ToggleButton>
         </ToggleButtonGroup>
+        </Box>
         <Box sx={{ flex: 1 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           ⌘K search · ⌘L clear logs · Esc filter
