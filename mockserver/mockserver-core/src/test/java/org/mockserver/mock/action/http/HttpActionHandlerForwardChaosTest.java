@@ -14,6 +14,7 @@ import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
+import org.mockserver.metrics.MetricsLock;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.crud.CrudDispatcher;
@@ -89,6 +90,9 @@ public class HttpActionHandlerForwardChaosTest {
 
     @ClassRule
     public static final FixedTime fixedTime = new FixedTime();
+
+    @ClassRule
+    public static final MetricsLock metricsLock = new MetricsLock();
 
     @AfterClass
     public static void stopScheduler() {

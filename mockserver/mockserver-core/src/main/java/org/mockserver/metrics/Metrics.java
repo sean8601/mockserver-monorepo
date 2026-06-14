@@ -27,6 +27,11 @@ import static org.mockserver.log.model.LogEntry.LogMessageType.EXCEPTION;
 public class Metrics {
 
     private static final AtomicReference<Boolean> additionalMetricsRegistered = new AtomicReference<>(false);
+    // Guards the registration block in the constructor and resetAdditionalMetricsForTesting()
+    // so they cannot interleave. Without this, concurrent test classes that reset-then-register
+    // race on PrometheusRegistry.defaultRegistry — one thread's clear() can land in the middle
+    // of another thread's registration, causing "duplicate metric name" errors.
+    private static final Object registrationLock = new Object();
     private static final Map<Name, Gauge> metrics = new ConcurrentHashMap<>();
     // Request-latency histogram. Null until metrics are enabled, so
     // observeRequestDurationSeconds() is a no-op when metrics are off (the
@@ -65,95 +70,99 @@ public class Metrics {
 
     public Metrics(Configuration configuration) {
         metricsEnabled = configuration.metricsEnabled();
-        if (metricsEnabled && additionalMetricsRegistered.compareAndSet(false, true)) {
-            PrometheusRegistry.defaultRegistry.register(new BuildInfoCollector());
-            PrometheusRegistry.defaultRegistry.register(new JvmMetricsCollector());
-            Arrays.stream(Name.values()).forEach(Metrics::getOrCreate);
-            requestDurationSeconds = Histogram.builder()
-                .name("mock_server_request_duration_seconds")
-                .help("MockServer request handling duration in seconds")
-                .classicOnly()
-                .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
-                .register();
-            slowRequestTotal = Counter.builder()
-                .name("mock_server_slow_requests")
-                .help("Total number of forwarded requests that exceeded the slow request threshold")
-                .register();
-            httpChaosInjectedTotal = Counter.builder()
-                .name("mock_server_http_chaos_injected")
-                .help("Total HTTP chaos faults injected by type")
-                .labelNames("fault_type")
-                .register();
-            chaosAutoHaltTotal = Counter.builder()
-                .name("mock_server_chaos_auto_halt")
-                .help("Total number of times the chaos auto-halt circuit-breaker triggered")
-                .register();
-            mcpToolCallsTotal = Counter.builder()
-                .name("mock_server_mcp_tool_calls")
-                .help("Total MCP tool calls by tool name")
-                .labelNames("tool")
-                .register();
-            asyncMessagesPublishedTotal = Counter.builder()
-                .name("mock_server_async_messages_published")
-                .help("Total async/broker messages published by channel")
-                .labelNames("channel")
-                .register();
-            asyncMessagesConsumedTotal = Counter.builder()
-                .name("mock_server_async_messages_consumed")
-                .help("Total async/broker messages consumed/recorded by channel")
-                .labelNames("channel")
-                .register();
-            if (Boolean.TRUE.equals(configuration.llmMetricsEnabled())) {
-                llmInputTokensTotal = Counter.builder()
-                    .name("mock_server_llm_input_tokens")
-                    .help("Total LLM input tokens by provider and model")
-                    .labelNames("provider", "model")
-                    .register();
-                llmOutputTokensTotal = Counter.builder()
-                    .name("mock_server_llm_output_tokens")
-                    .help("Total LLM output tokens by provider and model")
-                    .labelNames("provider", "model")
-                    .register();
-                llmCostUsdTotal = Counter.builder()
-                    .name("mock_server_llm_cost_usd")
-                    .help("Cumulative estimated LLM cost in USD by provider and model")
-                    .labelNames("provider", "model")
-                    .register();
-            }
-            llmCostBudgetTrippedTotal = Counter.builder()
-                .name("mock_server_llm_cost_budget_tripped")
-                .help("Total number of times the LLM cost-budget circuit-breaker tripped")
-                .register();
-            // Callback gauge, labeled by action_type: read active expectations at
-            // scrape time and group by action type, so no imperative tracking is needed.
-            GaugeWithCallback.builder()
-                .name("mock_server_expectations_by_type")
-                .help("Number of active expectations grouped by action type")
-                .labelNames("action_type")
-                .callback(callback ->
-                    getActiveExpectationCountByType().forEach((actionType, count) ->
-                        callback.call(count, actionType)))
-                .register();
-            // Callback gauge, labeled by fault_type: read the live registry at scrape
-            // time rather than tracking it imperatively, so TTL auto-revert (which
-            // removes a profile without a put/remove call) is reflected without any
-            // extra plumbing. One series per fault type so it can be charted by type.
-            GaugeWithCallback.builder()
-                .name("mock_server_active_service_chaos")
-                .help("Number of active service-scoped chaos profiles configured with each fault type")
-                .labelNames("fault_type")
-                .callback(callback ->
-                    getActiveServiceChaosCountByFaultType().forEach((faultType, count) ->
-                        callback.call(count, faultType)))
-                .register();
-            if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
-                requestDurationByMethodSeconds = Histogram.builder()
-                    .name("mock_server_request_duration_by_method_seconds")
-                    .help("MockServer request handling duration in seconds, labeled by HTTP method")
-                    .labelNames("method")
-                    .classicOnly()
-                    .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
-                    .register();
+        if (metricsEnabled) {
+            synchronized (registrationLock) {
+                if (additionalMetricsRegistered.compareAndSet(false, true)) {
+                    PrometheusRegistry.defaultRegistry.register(new BuildInfoCollector());
+                    PrometheusRegistry.defaultRegistry.register(new JvmMetricsCollector());
+                    Arrays.stream(Name.values()).forEach(Metrics::getOrCreate);
+                    requestDurationSeconds = Histogram.builder()
+                        .name("mock_server_request_duration_seconds")
+                        .help("MockServer request handling duration in seconds")
+                        .classicOnly()
+                        .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+                        .register();
+                    slowRequestTotal = Counter.builder()
+                        .name("mock_server_slow_requests")
+                        .help("Total number of forwarded requests that exceeded the slow request threshold")
+                        .register();
+                    httpChaosInjectedTotal = Counter.builder()
+                        .name("mock_server_http_chaos_injected")
+                        .help("Total HTTP chaos faults injected by type")
+                        .labelNames("fault_type")
+                        .register();
+                    chaosAutoHaltTotal = Counter.builder()
+                        .name("mock_server_chaos_auto_halt")
+                        .help("Total number of times the chaos auto-halt circuit-breaker triggered")
+                        .register();
+                    mcpToolCallsTotal = Counter.builder()
+                        .name("mock_server_mcp_tool_calls")
+                        .help("Total MCP tool calls by tool name")
+                        .labelNames("tool")
+                        .register();
+                    asyncMessagesPublishedTotal = Counter.builder()
+                        .name("mock_server_async_messages_published")
+                        .help("Total async/broker messages published by channel")
+                        .labelNames("channel")
+                        .register();
+                    asyncMessagesConsumedTotal = Counter.builder()
+                        .name("mock_server_async_messages_consumed")
+                        .help("Total async/broker messages consumed/recorded by channel")
+                        .labelNames("channel")
+                        .register();
+                    if (Boolean.TRUE.equals(configuration.llmMetricsEnabled())) {
+                        llmInputTokensTotal = Counter.builder()
+                            .name("mock_server_llm_input_tokens")
+                            .help("Total LLM input tokens by provider and model")
+                            .labelNames("provider", "model")
+                            .register();
+                        llmOutputTokensTotal = Counter.builder()
+                            .name("mock_server_llm_output_tokens")
+                            .help("Total LLM output tokens by provider and model")
+                            .labelNames("provider", "model")
+                            .register();
+                        llmCostUsdTotal = Counter.builder()
+                            .name("mock_server_llm_cost_usd")
+                            .help("Cumulative estimated LLM cost in USD by provider and model")
+                            .labelNames("provider", "model")
+                            .register();
+                    }
+                    llmCostBudgetTrippedTotal = Counter.builder()
+                        .name("mock_server_llm_cost_budget_tripped")
+                        .help("Total number of times the LLM cost-budget circuit-breaker tripped")
+                        .register();
+                    // Callback gauge, labeled by action_type: read active expectations at
+                    // scrape time and group by action type, so no imperative tracking is needed.
+                    GaugeWithCallback.builder()
+                        .name("mock_server_expectations_by_type")
+                        .help("Number of active expectations grouped by action type")
+                        .labelNames("action_type")
+                        .callback(callback ->
+                            getActiveExpectationCountByType().forEach((actionType, count) ->
+                                callback.call(count, actionType)))
+                        .register();
+                    // Callback gauge, labeled by fault_type: read the live registry at scrape
+                    // time rather than tracking it imperatively, so TTL auto-revert (which
+                    // removes a profile without a put/remove call) is reflected without any
+                    // extra plumbing. One series per fault type so it can be charted by type.
+                    GaugeWithCallback.builder()
+                        .name("mock_server_active_service_chaos")
+                        .help("Number of active service-scoped chaos profiles configured with each fault type")
+                        .labelNames("fault_type")
+                        .callback(callback ->
+                            getActiveServiceChaosCountByFaultType().forEach((faultType, count) ->
+                                callback.call(count, faultType)))
+                        .register();
+                    if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
+                        requestDurationByMethodSeconds = Histogram.builder()
+                            .name("mock_server_request_duration_by_method_seconds")
+                            .help("MockServer request handling duration in seconds, labeled by HTTP method")
+                            .labelNames("method")
+                            .classicOnly()
+                            .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+                            .register();
+                    }
+                }
             }
         }
     }
@@ -191,23 +200,25 @@ public class Metrics {
      * intended for test use only to guarantee deterministic test ordering.
      */
     public static void resetAdditionalMetricsForTesting() {
-        additionalMetricsRegistered.set(false);
-        requestDurationSeconds = null;
-        requestDurationByMethodSeconds = null;
-        slowRequestTotal = null;
-        httpChaosInjectedTotal = null;
-        chaosAutoHaltTotal = null;
-        mcpToolCallsTotal = null;
-        asyncMessagesPublishedTotal = null;
-        asyncMessagesConsumedTotal = null;
-        llmInputTokensTotal = null;
-        llmOutputTokensTotal = null;
-        llmCostUsdTotal = null;
-        llmCostBudgetTrippedTotal = null;
-        otelRequestDurationHistogram = null;
-        activeExpectationsSupplier.set(null);
-        metrics.clear();
-        PrometheusRegistry.defaultRegistry.clear();
+        synchronized (registrationLock) {
+            additionalMetricsRegistered.set(false);
+            requestDurationSeconds = null;
+            requestDurationByMethodSeconds = null;
+            slowRequestTotal = null;
+            httpChaosInjectedTotal = null;
+            chaosAutoHaltTotal = null;
+            mcpToolCallsTotal = null;
+            asyncMessagesPublishedTotal = null;
+            asyncMessagesConsumedTotal = null;
+            llmInputTokensTotal = null;
+            llmOutputTokensTotal = null;
+            llmCostUsdTotal = null;
+            llmCostBudgetTrippedTotal = null;
+            otelRequestDurationHistogram = null;
+            activeExpectationsSupplier.set(null);
+            metrics.clear();
+            PrometheusRegistry.defaultRegistry.clear();
+        }
     }
 
     public static void clear() {
