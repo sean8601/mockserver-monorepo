@@ -240,7 +240,7 @@ public class ExpectationSerializationTests
             HttpRequest = HttpRequest.Request().WithPath("/file").Build(),
             HttpResponse = HttpResponse.Response()
                 .WithStatusCode(200)
-                .WithFileBody("/data/response.vm", "application/json", TemplateType.VELOCITY)
+                .WithFileBody("/data/response.vm", "application/json", FileTemplateType.VELOCITY)
                 .Build()
         };
 
@@ -283,7 +283,7 @@ public class ExpectationSerializationTests
         {
             FilePath = "/templates/body.mustache",
             ContentType = "text/html",
-            TemplateType = TemplateType.MUSTACHE
+            TemplateType = FileTemplateType.MUSTACHE
         };
 
         var json = JsonSerializer.Serialize(original, JsonOptions);
@@ -293,6 +293,6 @@ public class ExpectationSerializationTests
         deserialized!.Type.Should().Be("FILE");
         deserialized.FilePath.Should().Be("/templates/body.mustache");
         deserialized.ContentType.Should().Be("text/html");
-        deserialized.TemplateType.Should().Be(TemplateType.MUSTACHE);
+        deserialized.TemplateType.Should().Be(FileTemplateType.MUSTACHE);
     }
 }

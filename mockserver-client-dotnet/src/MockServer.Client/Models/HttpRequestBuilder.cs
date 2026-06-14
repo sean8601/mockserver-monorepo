@@ -54,7 +54,7 @@ public sealed class HttpRequestBuilder
     /// <summary>
     /// Sets a FILE body matcher with an optional template type.
     /// </summary>
-    public HttpRequestBuilder WithFileBody(string filePath, string? contentType = null, TemplateType? templateType = null)
+    public HttpRequestBuilder WithFileBody(string filePath, string? contentType = null, FileTemplateType? templateType = null)
     {
         _request.Body = new FileBody { FilePath = filePath, ContentType = contentType, TemplateType = templateType };
         return this;

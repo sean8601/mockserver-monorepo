@@ -47,7 +47,7 @@ public sealed class HttpResponseBuilder
     /// <summary>
     /// Sets a FILE body whose contents are served from the given path.
     /// </summary>
-    public HttpResponseBuilder WithFileBody(string filePath, string? contentType = null, TemplateType? templateType = null)
+    public HttpResponseBuilder WithFileBody(string filePath, string? contentType = null, FileTemplateType? templateType = null)
     {
         _response.Body = new FileBody { FilePath = filePath, ContentType = contentType, TemplateType = templateType };
         return this;

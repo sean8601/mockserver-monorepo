@@ -23,5 +23,16 @@ public sealed class FileBody
     [JsonPropertyName("templateType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public TemplateType? TemplateType { get; set; }
+    public FileTemplateType? TemplateType { get; set; }
+}
+
+/// <summary>
+/// Template engines supported for FILE body templating. JavaScript is intentionally excluded —
+/// JavaScript templates build a full response object rather than a text fragment, so they are only
+/// supported via <see cref="HttpTemplate"/> (httpResponseTemplate), not on a FILE body.
+/// </summary>
+public enum FileTemplateType
+{
+    VELOCITY,
+    MUSTACHE
 }
