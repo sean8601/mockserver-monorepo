@@ -254,6 +254,22 @@ data "aws_secretsmanager_secret" "crates" {
   name = "mockserver-release/crates"
 }
 
+# Editor-extension publish tokens (created out of band; data sources for ARNs only).
+# vsce  -> Azure DevOps PAT, read by vscode.sh to publish to the VS Code Marketplace.
+# ovsx  -> Open VSX token, read by vscode.sh to publish to the Open VSX registry.
+# jetbrains -> JetBrains Marketplace token, read by jetbrains.sh to publish the plugin.
+data "aws_secretsmanager_secret" "vsce" {
+  name = "mockserver-release/vsce"
+}
+
+data "aws_secretsmanager_secret" "ovsx" {
+  name = "mockserver-release/ovsx"
+}
+
+data "aws_secretsmanager_secret" "jetbrains" {
+  name = "mockserver-release/jetbrains"
+}
+
 # Release-only secrets.
 resource "aws_iam_policy" "read_release_secrets" {
   name        = "buildkite-read-release-secrets"
@@ -277,6 +293,9 @@ resource "aws_iam_policy" "read_release_secrets" {
           data.aws_secretsmanager_secret.cosign.arn,
           data.aws_secretsmanager_secret.ghcr_token.arn,
           data.aws_secretsmanager_secret.mcp_dns_key.arn,
+          data.aws_secretsmanager_secret.vsce.arn,
+          data.aws_secretsmanager_secret.ovsx.arn,
+          data.aws_secretsmanager_secret.jetbrains.arn,
         ]
       },
       {
@@ -290,9 +309,8 @@ resource "aws_iam_policy" "read_release_secrets" {
         #   - mcp-dns-key -> mcp.sh MCP registry publish gate
         #   - nuget       -> client-dotnet.sh NuGet publish gate (.NET client)
         #   - crates      -> client-rust.sh crates.io publish gate (Rust client)
-        # The editor-extension channels (vsce/ovsx/jetbrains) use the same
-        # describe-probe pattern but are not provisioned here yet — wire them in
-        # when those channels go live (docs/plans/distribution-exposure-channels.local.md).
+        #   - vsce/ovsx   -> vscode.sh VS Code Marketplace + Open VSX publish gates
+        #   - jetbrains   -> jetbrains.sh JetBrains Marketplace publish gate
         # Metadata-only; the values are still read via GetSecretValue above.
         Effect = "Allow"
         Action = "secretsmanager:DescribeSecret"
@@ -302,6 +320,9 @@ resource "aws_iam_policy" "read_release_secrets" {
           data.aws_secretsmanager_secret.mcp_dns_key.arn,
           data.aws_secretsmanager_secret.nuget.arn,
           data.aws_secretsmanager_secret.crates.arn,
+          data.aws_secretsmanager_secret.vsce.arn,
+          data.aws_secretsmanager_secret.ovsx.arn,
+          data.aws_secretsmanager_secret.jetbrains.arn,
         ]
       },
       {
