@@ -9,6 +9,9 @@
     "httpRequest": {
       "$ref": "#/definitions/requestDefinition"
     },
+    "httpResponse": {
+      "$ref": "#/definitions/httpResponse"
+    },
     "times": {
       "$ref": "#/definitions/verificationTimes"
     },
@@ -26,6 +29,25 @@
       "required": [
         "httpRequest"
       ]
+    },
+    {
+      "required": [
+        "httpResponse"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "expectationId"
+            ]
+          },
+          {
+            "required": [
+              "httpRequest"
+            ]
+          }
+        ]
+      }
     }
   ],
   "definitions": {

@@ -2,6 +2,7 @@ package org.mockserver.serialization.model;
 
 import org.mockserver.model.ExpectationId;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
 import org.mockserver.model.ObjectWithJsonToString;
 import org.mockserver.model.OpenAPIDefinition;
 import org.mockserver.verify.Verification;
@@ -15,6 +16,7 @@ import static org.mockserver.verify.VerificationTimes.once;
  */
 public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verification> {
     private RequestDefinitionDTO httpRequest;
+    private HttpResponseDTO httpResponse;
     private ExpectationId expectationId;
     private VerificationTimesDTO times;
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
@@ -26,6 +28,7 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
             } else if (verification.getHttpRequest() instanceof OpenAPIDefinition) {
                 httpRequest = new OpenAPIDefinitionDTO((OpenAPIDefinition) verification.getHttpRequest());
             }
+            httpResponse = verification.getHttpResponse() != null ? new HttpResponseDTO(verification.getHttpResponse()) : null;
             expectationId = verification.getExpectationId();
             times = new VerificationTimesDTO(verification.getTimes());
             maximumNumberOfRequestToReturnInVerificationFailure = verification.getMaximumNumberOfRequestToReturnInVerificationFailure();
@@ -38,6 +41,7 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
     public Verification buildObject() {
         return verification()
             .withRequest((httpRequest != null ? httpRequest.buildObject() : null))
+            .withResponse(httpResponse != null ? httpResponse.buildObject() : null)
             .withExpectationId(expectationId)
             .withTimes((times != null ? times.buildObject() : once()))
             .withMaximumNumberOfRequestToReturnInVerificationFailure(maximumNumberOfRequestToReturnInVerificationFailure);
@@ -49,6 +53,15 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
 
     public VerificationDTO setHttpRequest(HttpRequestDTO httpRequest) {
         this.httpRequest = httpRequest;
+        return this;
+    }
+
+    public HttpResponseDTO getHttpResponse() {
+        return httpResponse;
+    }
+
+    public VerificationDTO setHttpResponse(HttpResponseDTO httpResponse) {
+        this.httpResponse = httpResponse;
         return this;
     }
 

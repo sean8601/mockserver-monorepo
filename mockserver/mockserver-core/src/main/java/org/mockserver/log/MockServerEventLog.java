@@ -8,6 +8,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.log.model.RequestAndExpectationId;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.HttpRequestMatcher;
+import org.mockserver.matchers.HttpResponseMatcher;
 import org.mockserver.matchers.MatchDifference;
 import org.mockserver.matchers.MatchDifferenceFormatter;
 import org.mockserver.matchers.MatcherBuilder;
@@ -15,9 +16,11 @@ import org.mockserver.mock.Expectation;
 import org.mockserver.mock.listeners.MockServerEventLogNotifier;
 import org.mockserver.model.ExpectationId;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
 import org.mockserver.model.LogEventRequestAndResponse;
 import org.mockserver.model.RequestDefinition;
 import org.mockserver.scheduler.Scheduler;
+import org.mockserver.serialization.HttpResponseSerializer;
 import org.mockserver.serialization.RequestDefinitionSerializer;
 import org.mockserver.uuid.UUIDService;
 import org.mockserver.verify.Verification;
@@ -562,70 +565,147 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                         .setArguments(verification)
                 );
             }
-            retrieveRequests(verification, logCorrelationId, httpRequests -> {
-                try {
-                    if (!verification.getTimes().matches(httpRequests.size())) {
-                        final int matchedCount = httpRequests.size();
-                        boolean matchByExpectationId = verification.getExpectationId() != null;
-                        retrieveAllRequests(matchByExpectationId, allRequests -> {
-                            String failureMessage;
-                            String serializedRequestToBeVerified = requestDefinitionSerializer.serialize(true, verification.getHttpRequest());
-                            Integer maximumNumberOfRequestToReturnInVerificationFailure = verification.getMaximumNumberOfRequestToReturnInVerificationFailure() != null ? verification.getMaximumNumberOfRequestToReturnInVerificationFailure() : configuration.maximumNumberOfRequestToReturnInVerificationFailure();
-                            if (allRequests.size() < maximumNumberOfRequestToReturnInVerificationFailure) {
-                                String serializedAllRequestInLog = allRequests.size() == 1 ? requestDefinitionSerializer.serialize(true, allRequests.get(0)) : requestDefinitionSerializer.serialize(true, allRequests);
-                                failureMessage = "Request not found " + verification.getTimes() + ", expected:<" + serializedRequestToBeVerified + "> but was:<" + serializedAllRequestInLog + ">";
-                            } else {
-                                failureMessage = "Request not found " + verification.getTimes() + ", expected:<" + serializedRequestToBeVerified + "> but was found " + matchedCount + " time" + (matchedCount == 1 ? "" : "s") + " among " + allRequests.size() + " total requests";
-                            }
-                            if (configuration.detailedVerificationFailures() && !allRequests.isEmpty() && verification.getHttpRequest() instanceof HttpRequest) {
-                                String diffSummary = buildClosestMatchDiff((HttpRequest) verification.getHttpRequest(), allRequests);
-                                if (isNotBlank(diffSummary)) {
-                                    failureMessage += diffSummary;
-                                }
-                            }
-                            final Object[] arguments = new Object[]{verification.getHttpRequest(), allRequests.size() == 1 ? allRequests.get(0) : allRequests};
-                            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                                mockServerLogger.logEvent(
-                                    new LogEntry()
-                                        .setType(VERIFICATION_FAILED)
-                                        .setLogLevel(Level.INFO)
-                                        .setCorrelationId(logCorrelationId)
-                                        .setHttpRequest(verification.getHttpRequest())
-                                        .setMessageFormat("request not found " + verification.getTimes() + ", expected:{}but was:{}")
-                                        .setArguments(arguments)
-                                );
-                            }
-                            resultConsumer.accept(failureMessage);
-                        });
-                    } else {
-                        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setType(VERIFICATION_PASSED)
-                                    .setLogLevel(Level.INFO)
-                                    .setCorrelationId(logCorrelationId)
-                                    .setHttpRequest(verification.getHttpRequest())
-                                    .setMessageFormat("request:{}found " + verification.getTimes())
-                                    .setArguments(verification.getHttpRequest())
-                            );
-                        }
-                        resultConsumer.accept("");
-                    }
-                } catch (Throwable throwable) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(EXCEPTION)
-                            .setCorrelationId(logCorrelationId)
-                            .setMessageFormat("exception:{} while processing verification:{}")
-                            .setArguments(throwable.getMessage(), verification)
-                            .setThrowable(throwable)
-                    );
-                    resultConsumer.accept("exception while processing verification" + (isNotBlank(throwable.getMessage()) ? " " + throwable.getMessage() : ""));
-                }
-            });
+            if (verification.getHttpResponse() != null) {
+                // response-aware verification: count recorded request-response pairs
+                verifyResponse(verification, logCorrelationId, resultConsumer);
+            } else {
+                // original request-only verification
+                verifyRequest(verification, logCorrelationId, resultConsumer);
+            }
         } else {
             resultConsumer.accept("");
         }
+    }
+
+    private void verifyRequest(Verification verification, String logCorrelationId, Consumer<String> resultConsumer) {
+        retrieveRequests(verification, logCorrelationId, httpRequests -> {
+            try {
+                if (!verification.getTimes().matches(httpRequests.size())) {
+                    final int matchedCount = httpRequests.size();
+                    boolean matchByExpectationId = verification.getExpectationId() != null;
+                    retrieveAllRequests(matchByExpectationId, allRequests -> {
+                        String failureMessage;
+                        String serializedRequestToBeVerified = requestDefinitionSerializer.serialize(true, verification.getHttpRequest());
+                        Integer maximumNumberOfRequestToReturnInVerificationFailure = verification.getMaximumNumberOfRequestToReturnInVerificationFailure() != null ? verification.getMaximumNumberOfRequestToReturnInVerificationFailure() : configuration.maximumNumberOfRequestToReturnInVerificationFailure();
+                        if (allRequests.size() < maximumNumberOfRequestToReturnInVerificationFailure) {
+                            String serializedAllRequestInLog = allRequests.size() == 1 ? requestDefinitionSerializer.serialize(true, allRequests.get(0)) : requestDefinitionSerializer.serialize(true, allRequests);
+                            failureMessage = "Request not found " + verification.getTimes() + ", expected:<" + serializedRequestToBeVerified + "> but was:<" + serializedAllRequestInLog + ">";
+                        } else {
+                            failureMessage = "Request not found " + verification.getTimes() + ", expected:<" + serializedRequestToBeVerified + "> but was found " + matchedCount + " time" + (matchedCount == 1 ? "" : "s") + " among " + allRequests.size() + " total requests";
+                        }
+                        if (configuration.detailedVerificationFailures() && !allRequests.isEmpty() && verification.getHttpRequest() instanceof HttpRequest) {
+                            String diffSummary = buildClosestMatchDiff((HttpRequest) verification.getHttpRequest(), allRequests);
+                            if (isNotBlank(diffSummary)) {
+                                failureMessage += diffSummary;
+                            }
+                        }
+                        final Object[] arguments = new Object[]{verification.getHttpRequest(), allRequests.size() == 1 ? allRequests.get(0) : allRequests};
+                        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setType(VERIFICATION_FAILED)
+                                    .setLogLevel(Level.INFO)
+                                    .setCorrelationId(logCorrelationId)
+                                    .setHttpRequest(verification.getHttpRequest())
+                                    .setMessageFormat("request not found " + verification.getTimes() + ", expected:{}but was:{}")
+                                    .setArguments(arguments)
+                            );
+                        }
+                        resultConsumer.accept(failureMessage);
+                    });
+                } else {
+                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setType(VERIFICATION_PASSED)
+                                .setLogLevel(Level.INFO)
+                                .setCorrelationId(logCorrelationId)
+                                .setHttpRequest(verification.getHttpRequest())
+                                .setMessageFormat("request:{}found " + verification.getTimes())
+                                .setArguments(verification.getHttpRequest())
+                        );
+                    }
+                    resultConsumer.accept("");
+                }
+            } catch (Throwable throwable) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(EXCEPTION)
+                        .setCorrelationId(logCorrelationId)
+                        .setMessageFormat("exception:{} while processing verification:{}")
+                        .setArguments(throwable.getMessage(), verification)
+                        .setThrowable(throwable)
+                );
+                resultConsumer.accept("exception while processing verification" + (isNotBlank(throwable.getMessage()) ? " " + throwable.getMessage() : ""));
+            }
+        });
+    }
+
+    private void verifyResponse(Verification verification, String logCorrelationId, Consumer<String> resultConsumer) {
+        RequestDefinition requestFilter = verification.getHttpRequest() != null
+            ? verification.getHttpRequest().withLogCorrelationId(logCorrelationId)
+            : null;
+        retrieveRequestResponses(requestFilter, allPairs -> {
+            try {
+                HttpResponseMatcher responseMatcher = new HttpResponseMatcher(configuration, mockServerLogger, verification.getHttpResponse());
+                List<LogEventRequestAndResponse> matchingPairs = allPairs.stream()
+                    .filter(pair -> responseMatcher.matches(pair.getHttpResponse()))
+                    .collect(Collectors.toList());
+                int matchedCount = matchingPairs.size();
+                if (!verification.getTimes().matches(matchedCount)) {
+                    HttpResponseSerializer httpResponseSerializer = new HttpResponseSerializer(mockServerLogger);
+                    String serializedResponseToBeVerified = httpResponseSerializer.serialize(verification.getHttpResponse());
+                    Integer maximumNumberOfRequestToReturnInVerificationFailure = verification.getMaximumNumberOfRequestToReturnInVerificationFailure() != null ? verification.getMaximumNumberOfRequestToReturnInVerificationFailure() : configuration.maximumNumberOfRequestToReturnInVerificationFailure();
+                    String failureMessage;
+                    if (allPairs.size() < maximumNumberOfRequestToReturnInVerificationFailure) {
+                        List<HttpResponse> allResponses = allPairs.stream()
+                            .map(LogEventRequestAndResponse::getHttpResponse)
+                            .collect(Collectors.toList());
+                        String serializedAllResponsesInLog = allResponses.size() == 1
+                            ? httpResponseSerializer.serialize(allResponses.get(0))
+                            : httpResponseSerializer.serialize(allResponses);
+                        failureMessage = "Response not found " + verification.getTimes() + ", expected:<" + serializedResponseToBeVerified + "> but was:<" + serializedAllResponsesInLog + ">";
+                    } else {
+                        failureMessage = "Response not found " + verification.getTimes() + ", expected:<" + serializedResponseToBeVerified + "> but was found " + matchedCount + " time" + (matchedCount == 1 ? "" : "s") + " among " + allPairs.size() + " recorded responses";
+                    }
+                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setType(VERIFICATION_FAILED)
+                                .setLogLevel(Level.INFO)
+                                .setCorrelationId(logCorrelationId)
+                                .setHttpRequest(verification.getHttpRequest())
+                                .setMessageFormat("response not found " + verification.getTimes() + ", expected:{}but was:{}")
+                                .setArguments(verification.getHttpResponse(), allPairs)
+                        );
+                    }
+                    resultConsumer.accept(failureMessage);
+                } else {
+                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setType(VERIFICATION_PASSED)
+                                .setLogLevel(Level.INFO)
+                                .setCorrelationId(logCorrelationId)
+                                .setHttpRequest(verification.getHttpRequest())
+                                .setMessageFormat("response:{}found " + verification.getTimes())
+                                .setArguments(verification.getHttpResponse())
+                        );
+                    }
+                    resultConsumer.accept("");
+                }
+            } catch (Throwable throwable) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(EXCEPTION)
+                        .setCorrelationId(logCorrelationId)
+                        .setMessageFormat("exception:{} while processing verification:{}")
+                        .setArguments(throwable.getMessage(), verification)
+                        .setThrowable(throwable)
+                );
+                resultConsumer.accept("exception while processing verification" + (isNotBlank(throwable.getMessage()) ? " " + throwable.getMessage() : ""));
+            }
+        });
     }
 
     public Future<String> verify(VerificationSequence verification) {
@@ -672,6 +752,46 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                         }
                         verificationSequenceSuccessMessage(verificationSequence, resultConsumer, logCorrelationId, failureMessage);
 
+                    } catch (Throwable throwable) {
+                        verificationSequenceExceptionHandler(verificationSequence, resultConsumer, logCorrelationId, throwable, "exception:{} while processing verification sequence:{}", "exception while processing verification sequence");
+                    }
+                });
+            } else if (verificationSequence.getHttpResponses() != null && !verificationSequence.getHttpResponses().isEmpty()) {
+                // response-aware sequence verification over recorded request-response pairs
+                retrieveRequestResponses(null, allPairs -> {
+                    try {
+                        String failureMessage = "";
+                        int pairLogCounter = 0;
+                        List<RequestDefinition> httpRequests = verificationSequence.getHttpRequests();
+                        List<HttpResponse> httpResponses = verificationSequence.getHttpResponses();
+                        int stepCount = Math.max(httpRequests.size(), httpResponses.size());
+                        for (int i = 0; i < stepCount; i++) {
+                            RequestDefinition verificationHttpRequest = i < httpRequests.size() ? httpRequests.get(i) : null;
+                            HttpResponse verificationHttpResponse = i < httpResponses.size() ? httpResponses.get(i) : null;
+                            HttpRequestMatcher httpRequestMatcher = verificationHttpRequest != null
+                                ? matcherBuilder.transformsToMatcher(verificationHttpRequest.withLogCorrelationId(logCorrelationId))
+                                : null;
+                            HttpResponseMatcher httpResponseMatcher = verificationHttpResponse != null
+                                ? new HttpResponseMatcher(configuration, mockServerLogger, verificationHttpResponse)
+                                : null;
+                            boolean foundMatch = false;
+                            for (; !foundMatch && pairLogCounter < allPairs.size(); pairLogCounter++) {
+                                LogEventRequestAndResponse pair = allPairs.get(pairLogCounter);
+                                boolean requestMatches = httpRequestMatcher == null || httpRequestMatcher.matches(((HttpRequest) pair.getHttpRequest()).cloneWithLogCorrelationId());
+                                boolean responseMatches = httpResponseMatcher == null || httpResponseMatcher.matches(pair.getHttpResponse());
+                                if (requestMatches && responseMatches) {
+                                    foundMatch = true;
+                                }
+                            }
+                            if (!foundMatch) {
+                                List<RequestDefinition> allRequestDefs = allPairs.stream()
+                                    .map(p -> (RequestDefinition) p.getHttpRequest())
+                                    .collect(Collectors.toList());
+                                failureMessage = verificationSequenceFailureMessage(verificationSequence, logCorrelationId, allRequestDefs);
+                                break;
+                            }
+                        }
+                        verificationSequenceSuccessMessage(verificationSequence, resultConsumer, logCorrelationId, failureMessage);
                     } catch (Throwable throwable) {
                         verificationSequenceExceptionHandler(verificationSequence, resultConsumer, logCorrelationId, throwable, "exception:{} while processing verification sequence:{}", "exception while processing verification sequence");
                     }

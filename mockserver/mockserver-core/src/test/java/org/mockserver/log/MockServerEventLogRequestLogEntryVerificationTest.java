@@ -7,6 +7,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationSequence;
@@ -16,12 +17,15 @@ import java.util.concurrent.CountDownLatch;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.fail;
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.log.model.LogEntry.LogMessageType.FORWARDED_REQUEST;
 import static org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST;
 import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.verify.Verification.verification;
 import static org.mockserver.verify.VerificationTimes.atLeast;
 import static org.mockserver.verify.VerificationTimes.exactly;
@@ -692,5 +696,250 @@ public class MockServerEventLogRequestLogEntryVerificationTest {
         );
         assertThat(result, org.hamcrest.CoreMatchers.containsString("Request not found"));
         assertThat(result, org.hamcrest.CoreMatchers.not(org.hamcrest.CoreMatchers.containsString("closest match diff:")));
+    }
+
+    // --- Response Verification Tests ---
+
+    @Test
+    public void shouldPassResponseVerificationWithMatchingStatusCode() {
+        // given
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then
+        assertThat(verify(
+            verification()
+                .withResponse(response().withStatusCode(200))
+        ), is(""));
+    }
+
+    @Test
+    public void shouldFailResponseVerificationWithNonMatchingStatusCode() {
+        // given
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(404))
+        );
+        assertThat(result, containsString("Response not found"));
+    }
+
+    @Test
+    public void shouldPassResponseVerificationWithRequestAndResponseFilter() {
+        // given
+        HttpRequest httpRequest1 = new HttpRequest().withPath("path_one");
+        HttpResponse httpResponse1 = new HttpResponse().withStatusCode(200);
+        HttpRequest httpRequest2 = new HttpRequest().withPath("path_two");
+        HttpResponse httpResponse2 = new HttpResponse().withStatusCode(404);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest1)
+                .setHttpResponse(httpResponse1)
+                .setType(FORWARDED_REQUEST)
+        );
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest2)
+                .setHttpResponse(httpResponse2)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- match request path AND response status code
+        assertThat(verify(
+            verification()
+                .withRequest(request().withPath("path_one"))
+                .withResponse(response().withStatusCode(200))
+        ), is(""));
+
+        // cross-check: wrong combination should fail
+        String result = verify(
+            verification()
+                .withRequest(request().withPath("path_one"))
+                .withResponse(response().withStatusCode(404))
+        );
+        assertThat(result, containsString("Response not found"));
+    }
+
+    @Test
+    public void shouldPassResponseVerificationWithExactlyTimes() {
+        // given
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse200 = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse200)
+                .setType(FORWARDED_REQUEST)
+        );
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse200)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then
+        assertThat(verify(
+            verification()
+                .withResponse(response().withStatusCode(200))
+                .withTimes(exactly(2))
+        ), is(""));
+    }
+
+    @Test
+    public void shouldFailResponseVerificationWithExactlyTimesWrong() {
+        // given
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse200 = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse200)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- expecting exactly 2 but only 1 recorded
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(200))
+                .withTimes(exactly(2))
+        );
+        assertThat(result, containsString("Response not found"));
+    }
+
+    @Test
+    public void shouldPassResponseVerificationWithResponseOnlyNoRequest() {
+        // given -- response verification without httpRequest should match any request
+        HttpRequest httpRequest1 = new HttpRequest().withPath("path_one");
+        HttpRequest httpRequest2 = new HttpRequest().withPath("path_two");
+        HttpResponse httpResponse = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest1)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest2)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then
+        assertThat(verify(
+            verification()
+                .withResponse(response().withStatusCode(200))
+                .withTimes(exactly(2))
+        ), is(""));
+    }
+
+    @Test
+    public void shouldNotAffectExistingRequestVerification() {
+        // given -- standard request-only verification should still work the same
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setType(RECEIVED_REQUEST)
+        );
+
+        // then -- no response set, should use existing request path
+        assertThat(verify(
+            verification()
+                .withRequest(request().withPath("some_path"))
+        ), is(""));
+    }
+
+    // --- Response-aware Sequence Verification Tests ---
+
+    @Test
+    public void shouldPassResponseSequenceVerification() {
+        // given
+        HttpRequest request1 = new HttpRequest().withPath("path_one");
+        HttpResponse response1 = new HttpResponse().withStatusCode(200);
+        HttpRequest request2 = new HttpRequest().withPath("path_two");
+        HttpResponse response2 = new HttpResponse().withStatusCode(404);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(request1)
+                .setHttpResponse(response1)
+                .setType(FORWARDED_REQUEST)
+        );
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(request2)
+                .setHttpResponse(response2)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then
+        assertThat(verify(
+            new VerificationSequence()
+                .withRequests(request().withPath("path_one"), request().withPath("path_two"))
+                .withResponses(response().withStatusCode(200), response().withStatusCode(404))
+        ), is(""));
+    }
+
+    @Test
+    public void shouldFailResponseSequenceVerificationWithWrongOrder() {
+        // given
+        HttpRequest request1 = new HttpRequest().withPath("path_one");
+        HttpResponse response1 = new HttpResponse().withStatusCode(200);
+        HttpRequest request2 = new HttpRequest().withPath("path_two");
+        HttpResponse response2 = new HttpResponse().withStatusCode(404);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(request1)
+                .setHttpResponse(response1)
+                .setType(FORWARDED_REQUEST)
+        );
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(request2)
+                .setHttpResponse(response2)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- reversed response order should fail
+        String result = verify(
+            new VerificationSequence()
+                .withRequests(request().withPath("path_one"), request().withPath("path_two"))
+                .withResponses(response().withStatusCode(404), response().withStatusCode(200))
+        );
+        assertThat(result, containsString("Request sequence not found"));
     }
 }

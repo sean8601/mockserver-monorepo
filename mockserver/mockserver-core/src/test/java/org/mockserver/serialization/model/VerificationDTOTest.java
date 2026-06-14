@@ -2,6 +2,7 @@ package org.mockserver.serialization.model;
 
 import org.junit.Test;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationTimes;
 
@@ -9,6 +10,7 @@ import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.verify.Verification.verification;
 
 public class VerificationDTOTest {
@@ -81,7 +83,68 @@ public class VerificationDTOTest {
 
         // then
         assertThat(verificationDTO.getHttpRequest(), nullValue());
+        assertThat(verificationDTO.getHttpResponse(), nullValue());
         assertThat(verificationDTO.getTimes(), is(new VerificationTimesDTO(VerificationTimes.atLeast(1))));
+    }
+
+    @Test
+    public void shouldReturnResponseSetInConstructor() {
+        // given
+        HttpResponse response = response().withStatusCode(200);
+        Verification verification = verification()
+            .withRequest(request())
+            .withResponse(response);
+
+        // when
+        VerificationDTO verificationDTO = new VerificationDTO(verification);
+
+        // then
+        assertThat(verificationDTO.getHttpResponse(), is(new HttpResponseDTO(response)));
+    }
+
+    @Test
+    public void shouldBuildObjectWithResponse() {
+        // given
+        HttpRequest request = request();
+        HttpResponse response = response().withStatusCode(200);
+        Verification verification = verification()
+            .withRequest(request)
+            .withResponse(response);
+
+        // when
+        Verification builtVerification = new VerificationDTO(verification).buildObject();
+
+        // then
+        assertThat(builtVerification.getHttpRequest(), is(request));
+        assertThat(builtVerification.getHttpResponse(), is(response));
+    }
+
+    @Test
+    public void shouldReturnResponseSetInSetter() {
+        // given
+        HttpResponseDTO response = new HttpResponseDTO(response().withStatusCode(200));
+        VerificationDTO verificationDTO = new VerificationDTO(verification());
+
+        // when
+        verificationDTO.setHttpResponse(response);
+
+        // then
+        assertThat(verificationDTO.getHttpResponse(), is(response));
+    }
+
+    @Test
+    public void shouldBuildObjectWithNullResponse() {
+        // given
+        HttpRequest request = request();
+        Verification verification = verification()
+            .withRequest(request);
+
+        // when
+        Verification builtVerification = new VerificationDTO(verification).buildObject();
+
+        // then
+        assertThat(builtVerification.getHttpRequest(), is(request));
+        assertThat(builtVerification.getHttpResponse(), nullValue());
     }
 
 }
