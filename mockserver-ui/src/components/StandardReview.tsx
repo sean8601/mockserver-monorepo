@@ -10,6 +10,8 @@ import {
   standardToPython,
   standardToGo,
   standardToCsharp,
+  standardToRuby,
+  standardToRust,
   type StandardActionPayload,
   type StandardMatcher,
 } from '../lib/standardCodegen';
@@ -22,9 +24,10 @@ export interface StandardReviewProps {
 }
 
 /**
- * Java / JSON / curl + client-library (Node, Python, Go, C#) preview for the
- * standard-expectation Composer flow. Mirrors the wizard's Step 3 review so
- * both kinds give the user copy-pasteable code before they register on the server.
+ * Client-library previews (Java, Node, Python, Go, C#, Ruby, Rust) followed by
+ * JSON and curl for the standard-expectation Composer flow. Mirrors the wizard's
+ * Step 3 review so both kinds give the user copy-pasteable code before they
+ * register on the server.
  */
 export default function StandardReview({ matcher, action, baseUrl }: StandardReviewProps) {
   const [tab, setTab] = useState(0);
@@ -36,9 +39,12 @@ export default function StandardReview({ matcher, action, baseUrl }: StandardRev
   const pythonCode = useMemo(() => standardToPython(matcher, action, baseUrl), [matcher, action, baseUrl]);
   const goCode = useMemo(() => standardToGo(matcher, action, baseUrl), [matcher, action, baseUrl]);
   const csharpCode = useMemo(() => standardToCsharp(matcher, action, baseUrl), [matcher, action, baseUrl]);
+  const rubyCode = useMemo(() => standardToRuby(matcher, action, baseUrl), [matcher, action, baseUrl]);
+  const rustCode = useMemo(() => standardToRust(matcher, action, baseUrl), [matcher, action, baseUrl]);
 
-  const tabLabels = ['Java', 'JSON', 'curl', 'Node.js', 'Python', 'Go', 'C#'];
-  const outputs = [javaCode, jsonCode, curlCode, nodeCode, pythonCode, goCode, csharpCode];
+  // Client-library tabs first, then JSON and curl last.
+  const tabLabels = ['Java', 'Node.js', 'Python', 'Go', 'C#', 'Ruby', 'Rust', 'JSON', 'curl'];
+  const outputs = [javaCode, nodeCode, pythonCode, goCode, csharpCode, rubyCode, rustCode, jsonCode, curlCode];
   const safeTab = Math.min(tab, tabLabels.length - 1);
 
   return (

@@ -12,6 +12,8 @@ import {
   standardToPython,
   standardToGo,
   standardToCsharp,
+  standardToRuby,
+  standardToRust,
   type StandardMatcher,
   type StandardActionPayload,
 } from '../lib/standardCodegen';
@@ -95,6 +97,39 @@ describe('standardToGo', () => {
     expect(code).toContain('` + "`" + `');
     // no bare backtick remains inside the path value
     expect(code).not.toContain('/a`b');
+  });
+});
+
+describe('standardToRuby', () => {
+  it('parses the JSON via a non-interpolating heredoc and Expectation.from_hash', () => {
+    const code = standardToRuby(baseMatcher(), templateFileAction, BASE_URL);
+    expect(code).toContain("require 'mockserver-client'");
+    expect(code).toContain("MockServer::Client.new('localhost', 1080)");
+    expect(code).toContain("<<~'JSON'");
+    expect(code).toContain('MockServer::Expectation.from_hash(JSON.parse(expectation))');
+    expect(code).toContain('"templateFile": "templates/foo.vm"');
+  });
+});
+
+describe('standardToRust', () => {
+  it('deserializes the JSON into an Expectation and upserts it', () => {
+    const code = standardToRust(baseMatcher(), fileBodyAction, BASE_URL);
+    expect(code).toContain('use mockserver_client::{ClientBuilder, Expectation};');
+    expect(code).toContain('ClientBuilder::new("localhost", 1080).build()?');
+    expect(code).toContain('serde_json::from_str(r#"');
+    expect(code).toContain('client.upsert(&[expectation])?');
+    expect(code).toContain('"templateType": "MUSTACHE"');
+  });
+
+  it('bumps the raw-string hash count when the JSON contains a quote-hash sequence', () => {
+    // the body value contains `"#`, which would terminate an r#"..."# raw string early,
+    // so the wrapper must escalate to r##"..."##
+    const code = standardToRust(baseMatcher(), {
+      type: 'static',
+      static: { statusCode: 200, body: 'a"#b', contentType: '', bodyFromFile: false, filePath: '', fileTemplateType: '' },
+    }, BASE_URL);
+    expect(code).toContain('serde_json::from_str(r##"');
+    expect(code).not.toContain('serde_json::from_str(r#"');
   });
 });
 

@@ -2032,3 +2032,48 @@ export function standardToCsharp(matcher: StandardMatcher, action: StandardActio
     'client.Upsert(expectation!);',
   ].join('\n');
 }
+
+export function standardToRuby(matcher: StandardMatcher, action: StandardActionPayload, baseUrl: string): string {
+  const { host, port } = clientHostPort(baseUrl);
+  const json = JSON.stringify(buildExpectationJson(matcher, action), null, 2);
+  // Pass the JSON through JSON.parse via a non-interpolating squiggly heredoc (<<~'JSON'),
+  // which sidesteps all Ruby string-literal escaping. Indent the body so <<~ dedents it.
+  const heredoc = json.split('\n').map((l) => '  ' + l).join('\n');
+  return [
+    "require 'json'",
+    "require 'mockserver-client'",
+    '',
+    `client = MockServer::Client.new('${host}', ${port})`,
+    '',
+    "expectation = <<~'JSON'",
+    heredoc,
+    'JSON',
+    '',
+    'client.upsert(MockServer::Expectation.from_hash(JSON.parse(expectation)))',
+  ].join('\n');
+}
+
+/** Wraps `s` in a Rust raw string literal, using as many `#`s as needed so the content can't
+ *  prematurely terminate it. */
+function rustRawString(s: string): string {
+  let hashes = '#';
+  while (s.includes('"' + hashes)) hashes += '#';
+  return `r${hashes}"${s}"${hashes}`;
+}
+
+export function standardToRust(matcher: StandardMatcher, action: StandardActionPayload, baseUrl: string): string {
+  const { host, port } = clientHostPort(baseUrl);
+  const json = JSON.stringify(buildExpectationJson(matcher, action), null, 2);
+  return [
+    '// Cargo.toml: mockserver-client = "7" and serde_json = "1"',
+    'use mockserver_client::{ClientBuilder, Expectation};',
+    '',
+    'fn main() -> mockserver_client::Result<()> {',
+    `    let client = ClientBuilder::new("${host}", ${port}).build()?;`,
+    '',
+    `    let expectation: Expectation = serde_json::from_str(${rustRawString(json)})?;`,
+    '    client.upsert(&[expectation])?;',
+    '    Ok(())',
+    '}',
+  ].join('\n');
+}
