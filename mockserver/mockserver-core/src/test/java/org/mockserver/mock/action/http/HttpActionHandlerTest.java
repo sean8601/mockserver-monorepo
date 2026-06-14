@@ -120,7 +120,7 @@ public class HttpActionHandlerTest {
         expectation = new Expectation(request).thenRespond(response);
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(response);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(response);
         when(mockHttpResponseTemplateActionHandler.handle(any(HttpTemplate.class), any(HttpRequest.class))).thenReturn(response);
         when(mockHttpResponseClassCallbackActionHandler.handle(any(HttpClassCallback.class), any(HttpRequest.class))).thenReturn(response);
         when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenReturn(httpForwardActionResult);
@@ -140,7 +140,7 @@ public class HttpActionHandlerTest {
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
         // then
-        verify(mockHttpResponseActionHandler).handle(response);
+        verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
         verify(mockResponseWriter).writeResponse(request, this.response, false);
         verify(mockServerLogger).logEvent(
             new LogEntry()
@@ -179,7 +179,7 @@ public class HttpActionHandlerTest {
 
         // then
         verify(mockNettyHttpClient).sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class));
-        verify(mockHttpResponseActionHandler).handle(response);
+        verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
         verify(mockResponseWriter).writeResponse(request, response, false);
     }
 
@@ -197,7 +197,7 @@ public class HttpActionHandlerTest {
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
         // then the primary action is never dispatched and a 502 is returned
-        verify(mockHttpResponseActionHandler, never()).handle(any(HttpResponse.class));
+        verify(mockHttpResponseActionHandler, never()).handle(any(HttpResponse.class), any(HttpRequest.class));
         verify(mockResponseWriter).writeResponse(eq(request), argThat(r -> r != null && r.getStatusCode() == 502), eq(false));
         // and the expectation is still post-processed so matcher state is cleaned up on abort
         verify(mockHttpStateHandler).postProcess(expectation);
@@ -217,7 +217,7 @@ public class HttpActionHandlerTest {
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
         // then the failure is swallowed and the primary response is still returned
-        verify(mockHttpResponseActionHandler).handle(response);
+        verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
         verify(mockResponseWriter).writeResponse(request, response, false);
     }
 
@@ -236,7 +236,7 @@ public class HttpActionHandlerTest {
 
         // then a non-blocking before-action does not gate the response (no blocking timeout call)
         verify(mockNettyHttpClient, never()).sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class));
-        verify(mockHttpResponseActionHandler).handle(response);
+        verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
         verify(mockResponseWriter).writeResponse(request, response, false);
     }
 

@@ -116,7 +116,7 @@ public class HttpActionHandlerChaosTest {
                 .withRetryAfter("30"));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -142,7 +142,7 @@ public class HttpActionHandlerChaosTest {
                 .withErrorProbability(0.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -165,7 +165,7 @@ public class HttpActionHandlerChaosTest {
                 .withErrorProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -186,7 +186,7 @@ public class HttpActionHandlerChaosTest {
             .thenRespond(normalResponse);
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -210,7 +210,7 @@ public class HttpActionHandlerChaosTest {
                 .withLatency(milliseconds(500)));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // capture the Delay[] arg from the inner schedule call (the one with varargs delays)
         java.util.concurrent.atomic.AtomicReference<Delay[]> capturedDelays = new java.util.concurrent.atomic.AtomicReference<>();
@@ -259,7 +259,7 @@ public class HttpActionHandlerChaosTest {
                 .withErrorProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -288,7 +288,7 @@ public class HttpActionHandlerChaosTest {
         // simulate the matching flow: consumeMatch increments matchCount
         expectation.consumeMatch();
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // reset to capture this invocation
         reset(mockResponseWriter);
@@ -401,7 +401,7 @@ public class HttpActionHandlerChaosTest {
         // match #1: outside window (succeedFirst=1), no chaos latency
         expectation.consumeMatch();
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
         assertThat("scheduler should have been invoked for match #1", capturedDelaysList.isEmpty(), is(false));
@@ -418,7 +418,7 @@ public class HttpActionHandlerChaosTest {
         capturedDelaysList.clear();
         expectation.consumeMatch();
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
         assertThat("scheduler should have been invoked for match #2", capturedDelaysList.isEmpty(), is(false));
@@ -435,7 +435,7 @@ public class HttpActionHandlerChaosTest {
         capturedDelaysList.clear();
         expectation.consumeMatch();
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
         assertThat("scheduler should have been invoked for match #3", capturedDelaysList.isEmpty(), is(false));
@@ -480,7 +480,7 @@ public class HttpActionHandlerChaosTest {
                 .withDropConnectionProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -502,7 +502,7 @@ public class HttpActionHandlerChaosTest {
                 .withDropConnectionProbability(0.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -527,7 +527,7 @@ public class HttpActionHandlerChaosTest {
                 .withErrorProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -547,7 +547,7 @@ public class HttpActionHandlerChaosTest {
                 .withDropConnectionProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -572,7 +572,7 @@ public class HttpActionHandlerChaosTest {
                 .withErrorProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -592,7 +592,7 @@ public class HttpActionHandlerChaosTest {
                 .withLatency(milliseconds(100)));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -611,7 +611,7 @@ public class HttpActionHandlerChaosTest {
             .thenRespond(normalResponse);
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -633,7 +633,7 @@ public class HttpActionHandlerChaosTest {
                 .withErrorProbability(0.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -715,7 +715,7 @@ public class HttpActionHandlerChaosTest {
             .withChaos(httpChaosProfile().withTruncateBodyAtFraction(0.5));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -734,7 +734,7 @@ public class HttpActionHandlerChaosTest {
             .withChaos(httpChaosProfile().withMalformedBody(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -755,7 +755,7 @@ public class HttpActionHandlerChaosTest {
                 .withMalformedBody(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -778,7 +778,7 @@ public class HttpActionHandlerChaosTest {
                 .withTruncateBodyAtFraction(0.5));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -800,7 +800,7 @@ public class HttpActionHandlerChaosTest {
             .withChaos(httpChaosProfile().withTruncateBodyAtFraction(0.5));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -816,7 +816,7 @@ public class HttpActionHandlerChaosTest {
             .withChaos(httpChaosProfile().withMalformedBody(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -858,7 +858,7 @@ public class HttpActionHandlerChaosTest {
                 .withSlowResponseChunkDelay(milliseconds(100)));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -884,7 +884,7 @@ public class HttpActionHandlerChaosTest {
                 .withSlowResponseChunkDelay(milliseconds(100)));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -901,7 +901,7 @@ public class HttpActionHandlerChaosTest {
             .withChaos(httpChaosProfile().withSlowResponseChunkSize(4));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
@@ -922,7 +922,7 @@ public class HttpActionHandlerChaosTest {
             .withChaos(httpChaosProfile().withSlowResponseChunkDelay(milliseconds(100)));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
 
