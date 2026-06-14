@@ -56,6 +56,8 @@ _FIELD_MAP = {
     "http_override_forwarded_request": "httpOverrideForwardedRequest",
     "http_error": "httpError",
     "template_type": "templateType",
+    "template_file": "templateFile",
+    "file_path": "filePath",
     "base64_bytes": "base64Bytes",
     "not_body": "not",
     "content_type": "contentType",
@@ -131,7 +133,7 @@ def _serialize_body(body: Body | str | dict | None) -> Any:
     return body
 
 
-_BODY_TYPES = {"STRING", "JSON", "REGEX", "XML", "BINARY", "JSON_SCHEMA", "JSON_PATH", "XPATH", "XML_SCHEMA", "JSON_RPC", "GRAPHQL"}
+_BODY_TYPES = {"STRING", "JSON", "REGEX", "XML", "BINARY", "JSON_SCHEMA", "JSON_PATH", "XPATH", "XML_SCHEMA", "JSON_RPC", "GRAPHQL", "FILE"}
 
 
 def _deserialize_body(data: Any) -> Body | JsonRpcBody | str | dict | None:
@@ -424,6 +426,8 @@ class Body:
     not_body: bool | None = None
     content_type: str | None = None
     charset: str | None = None
+    file_path: str | None = None
+    template_type: str | None = None
 
     def to_dict(self) -> dict:
         result = {}
@@ -441,6 +445,10 @@ class Body:
             result["contentType"] = self.content_type
         if self.charset is not None:
             result["charset"] = self.charset
+        if self.file_path is not None:
+            result["filePath"] = self.file_path
+        if self.template_type is not None:
+            result["templateType"] = self.template_type
         return result
 
     @classmethod
@@ -455,6 +463,8 @@ class Body:
             not_body=data.get("not"),
             content_type=data.get("contentType"),
             charset=data.get("charset"),
+            file_path=data.get("filePath"),
+            template_type=data.get("templateType"),
         )
 
 
@@ -525,6 +535,10 @@ def _body_graphql(query: str, operation_name: str | None = None, variables_schem
     return GraphQLBody(query=query, operation_name=operation_name, variables_schema=variables_schema)
 
 
+def _body_file(file_path: str, content_type: str | None = None, template_type: str | None = None) -> Body:
+    return Body(type="FILE", file_path=file_path, content_type=content_type, template_type=template_type)
+
+
 Body.string = staticmethod(_body_string)
 Body.json = staticmethod(_body_json)
 Body.regex = staticmethod(_body_regex)
@@ -532,6 +546,7 @@ Body.exact = staticmethod(_body_exact)
 Body.xml = staticmethod(_body_xml)
 Body.json_rpc = staticmethod(_body_json_rpc)
 Body.graphql = staticmethod(_body_graphql)
+Body.file = staticmethod(_body_file)
 
 
 @dataclass
@@ -814,6 +829,7 @@ class HttpForward:
 class HttpTemplate:
     template_type: str = "JAVASCRIPT"
     template: str | None = None
+    template_file: str | None = None
     delay: Delay | None = None
     primary: bool | None = None
 
@@ -821,6 +837,7 @@ class HttpTemplate:
         return _strip_none({
             "templateType": self.template_type,
             "template": self.template,
+            "templateFile": self.template_file,
             "delay": self.delay.to_dict() if self.delay else None,
             "primary": self.primary,
         })
@@ -832,13 +849,14 @@ class HttpTemplate:
         return cls(
             template_type=data.get("templateType", "JAVASCRIPT"),
             template=data.get("template"),
+            template_file=data.get("templateFile"),
             delay=Delay.from_dict(data.get("delay")),
             primary=data.get("primary"),
         )
 
 
-def _http_template_factory(template_type: str, template: str | None = None) -> HttpTemplate:
-    return HttpTemplate(template_type=template_type, template=template)
+def _http_template_factory(template_type: str, template: str | None = None, template_file: str | None = None) -> HttpTemplate:
+    return HttpTemplate(template_type=template_type, template=template, template_file=template_file)
 
 
 HttpTemplate.template = staticmethod(_http_template_factory)

@@ -27,6 +27,14 @@ public sealed class Expectation
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpForward? HttpForward { get; set; }
 
+    [JsonPropertyName("httpResponseTemplate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpTemplate? HttpResponseTemplate { get; set; }
+
+    [JsonPropertyName("httpForwardTemplate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpTemplate? HttpForwardTemplate { get; set; }
+
     [JsonPropertyName("httpError")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpError? HttpError { get; set; }

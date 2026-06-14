@@ -120,6 +120,20 @@ func (f *ForwardChainExpectation) Forward(fb *ForwardBuilder) ([]Expectation, er
 	return f.client.Upsert(f.expectation)
 }
 
+// RespondTemplate completes the expectation with a response template action.
+func (f *ForwardChainExpectation) RespondTemplate(tb *TemplateBuilder) ([]Expectation, error) {
+	tmpl := tb.Build()
+	f.expectation.HttpResponseTemplate = &tmpl
+	return f.client.Upsert(f.expectation)
+}
+
+// ForwardTemplate completes the expectation with a forward template action.
+func (f *ForwardChainExpectation) ForwardTemplate(tb *TemplateBuilder) ([]Expectation, error) {
+	tmpl := tb.Build()
+	f.expectation.HttpForwardTemplate = &tmpl
+	return f.client.Upsert(f.expectation)
+}
+
 // RespondWithError completes the expectation with an error action.
 func (f *ForwardChainExpectation) RespondWithError(eb *ErrorBuilder) ([]Expectation, error) {
 	e := eb.Build()

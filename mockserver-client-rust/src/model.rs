@@ -94,19 +94,89 @@ impl HttpRequest {
         });
         self
     }
+
+    /// Set a file body (type "FILE") with optional content type and template type.
+    ///
+    /// Use [`Body::file`] for richer construction if you need content type or
+    /// template type set.
+    pub fn file_body(mut self, file_path: impl Into<String>) -> Self {
+        self.body = Some(Body::File {
+            file_path: file_path.into(),
+            content_type: None,
+            template_type: None,
+        });
+        self
+    }
+
+    /// Set a pre-built [`Body`] value (use with [`Body::file`] for FILE bodies).
+    pub fn body_value(mut self, body: Body) -> Self {
+        self.body = Some(body);
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Body
 // ---------------------------------------------------------------------------
 
-/// Request/response body — either a plain string or a typed object.
+/// Request/response body — either a plain string, a typed object, or a file reference.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Body {
     /// A plain string body.
     Plain(String),
     /// A typed body (e.g., JSON).
     Typed { body_type: String, json: String },
+    /// A file body (`type: "FILE"`), with optional template evaluation.
+    File {
+        file_path: String,
+        content_type: Option<String>,
+        template_type: Option<String>,
+    },
+}
+
+impl Body {
+    /// Create a FILE body referencing a path on the server filesystem.
+    ///
+    /// # Example
+    /// ```
+    /// use mockserver_client::Body;
+    ///
+    /// let body = Body::file("/data/response.json")
+    ///     .with_content_type("application/json")
+    ///     .with_template_type("VELOCITY");
+    /// ```
+    pub fn file(file_path: impl Into<String>) -> Self {
+        Body::File {
+            file_path: file_path.into(),
+            content_type: None,
+            template_type: None,
+        }
+    }
+
+    /// Set the content type on a FILE body. No-op on other variants.
+    pub fn with_content_type(mut self, content_type: impl Into<String>) -> Self {
+        if let Body::File {
+            content_type: ref mut ct,
+            ..
+        } = self
+        {
+            *ct = Some(content_type.into());
+        }
+        self
+    }
+
+    /// Set the template type (e.g., "VELOCITY", "MUSTACHE") on a FILE body.
+    /// No-op on other variants.
+    pub fn with_template_type(mut self, template_type: impl Into<String>) -> Self {
+        if let Body::File {
+            template_type: ref mut tt,
+            ..
+        } = self
+        {
+            *tt = Some(template_type.into());
+        }
+        self
+    }
 }
 
 impl Serialize for Body {
@@ -121,6 +191,26 @@ impl Serialize for Body {
                 let mut map = serializer.serialize_map(Some(2))?;
                 map.serialize_entry("type", body_type)?;
                 map.serialize_entry("json", json)?;
+                map.end()
+            }
+            Body::File {
+                file_path,
+                content_type,
+                template_type,
+            } => {
+                use serde::ser::SerializeMap;
+                let count = 2
+                    + content_type.as_ref().map_or(0, |_| 1)
+                    + template_type.as_ref().map_or(0, |_| 1);
+                let mut map = serializer.serialize_map(Some(count))?;
+                map.serialize_entry("type", "FILE")?;
+                map.serialize_entry("filePath", file_path)?;
+                if let Some(ct) = content_type {
+                    map.serialize_entry("contentType", ct)?;
+                }
+                if let Some(tt) = template_type {
+                    map.serialize_entry("templateType", tt)?;
+                }
                 map.end()
             }
         }
@@ -142,12 +232,33 @@ impl<'de> Deserialize<'de> for Body {
                     .and_then(|v| v.as_str())
                     .unwrap_or("JSON")
                     .to_string();
-                let json = map
-                    .get("json")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                Ok(Body::Typed { body_type, json })
+                if body_type == "FILE" {
+                    let file_path = map
+                        .get("filePath")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let content_type = map
+                        .get("contentType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let template_type = map
+                        .get("templateType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    Ok(Body::File {
+                        file_path,
+                        content_type,
+                        template_type,
+                    })
+                } else {
+                    let json = map
+                        .get("json")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Ok(Body::Typed { body_type, json })
+                }
             }
             _ => Ok(Body::Plain(v.to_string())),
         }
@@ -216,6 +327,72 @@ impl HttpResponse {
     /// Set a response delay.
     pub fn delay(mut self, delay: Delay) -> Self {
         self.delay = Some(delay);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HttpTemplate (response or forward)
+// ---------------------------------------------------------------------------
+
+/// Template action — evaluate a response or forward template (Velocity, Mustache, etc.).
+///
+/// Used as `httpResponseTemplate` or `httpForwardTemplate` in an expectation.
+///
+/// # Example
+/// ```
+/// use mockserver_client::HttpTemplate;
+///
+/// let tmpl = HttpTemplate::new("VELOCITY", "{ \"statusCode\": 200 }")
+///     .template_file("/path/to/template.vm");
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpTemplate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_type: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_file: Option<String>,
+}
+
+impl HttpTemplate {
+    /// Create a template action with the given type and inline template body.
+    pub fn new(template_type: impl Into<String>, template: impl Into<String>) -> Self {
+        Self {
+            template_type: Some(template_type.into()),
+            template: Some(template.into()),
+            template_file: None,
+        }
+    }
+
+    /// Create a template action that loads from a file path.
+    pub fn from_file(template_type: impl Into<String>, file_path: impl Into<String>) -> Self {
+        Self {
+            template_type: Some(template_type.into()),
+            template: None,
+            template_file: Some(file_path.into()),
+        }
+    }
+
+    /// Set the template type (e.g., "VELOCITY", "MUSTACHE").
+    pub fn template_type(mut self, template_type: impl Into<String>) -> Self {
+        self.template_type = Some(template_type.into());
+        self
+    }
+
+    /// Set the inline template body.
+    pub fn template(mut self, template: impl Into<String>) -> Self {
+        self.template = Some(template.into());
+        self
+    }
+
+    /// Set the template file path (alternative to inline template).
+    pub fn template_file(mut self, file_path: impl Into<String>) -> Self {
+        self.template_file = Some(file_path.into());
         self
     }
 }
@@ -480,6 +657,12 @@ pub struct Expectation {
     pub http_forward: Option<HttpForward>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_response_template: Option<HttpTemplate>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_forward_template: Option<HttpTemplate>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub http_error: Option<HttpError>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -519,6 +702,18 @@ impl Expectation {
     /// Set a forward action.
     pub fn forward(mut self, forward: HttpForward) -> Self {
         self.http_forward = Some(forward);
+        self
+    }
+
+    /// Set a response template action.
+    pub fn respond_template(mut self, template: HttpTemplate) -> Self {
+        self.http_response_template = Some(template);
+        self
+    }
+
+    /// Set a forward template action.
+    pub fn forward_template(mut self, template: HttpTemplate) -> Self {
+        self.http_forward_template = Some(template);
         self
     }
 

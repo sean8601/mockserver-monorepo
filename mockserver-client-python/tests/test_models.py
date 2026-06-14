@@ -3118,3 +3118,216 @@ class TestExpectationWithSteps:
         assert restored.steps[0].failure_policy == "BEST_EFFORT"
         assert restored.steps[1].http_forward.host == "backend.local"
         assert restored.steps[1].responder is True
+
+
+class TestHttpTemplateTemplateFile:
+    """Tests for the templateFile field on HttpTemplate."""
+
+    def test_template_file_default_is_none(self):
+        t = HttpTemplate()
+        assert t.template_file is None
+
+    def test_template_file_construction(self):
+        t = HttpTemplate(template_type="VELOCITY", template_file="/templates/response.vm")
+        assert t.template_file == "/templates/response.vm"
+        assert t.template_type == "VELOCITY"
+
+    def test_template_file_to_dict(self):
+        t = HttpTemplate(template_type="MUSTACHE", template_file="/tpl/resp.mustache")
+        result = t.to_dict()
+        assert result["templateFile"] == "/tpl/resp.mustache"
+        assert result["templateType"] == "MUSTACHE"
+
+    def test_template_file_not_emitted_when_none(self):
+        t = HttpTemplate(template_type="VELOCITY", template="inline content")
+        result = t.to_dict()
+        assert "templateFile" not in result
+
+    def test_template_file_from_dict(self):
+        t = HttpTemplate.from_dict({
+            "templateType": "VELOCITY",
+            "templateFile": "/path/to/template.vm",
+        })
+        assert t.template_file == "/path/to/template.vm"
+        assert t.template_type == "VELOCITY"
+
+    def test_template_file_round_trip(self):
+        original = HttpTemplate(
+            template_type="MUSTACHE",
+            template_file="/templates/forward.mustache",
+            delay=Delay(time_unit="SECONDS", value=1),
+        )
+        restored = HttpTemplate.from_dict(original.to_dict())
+        assert restored.template_type == "MUSTACHE"
+        assert restored.template_file == "/templates/forward.mustache"
+        assert restored.template is None
+        assert restored.delay.value == 1
+
+    def test_template_file_factory(self):
+        t = HttpTemplate.template("VELOCITY", template_file="/tpl/fwd.vm")
+        assert t.template_type == "VELOCITY"
+        assert t.template_file == "/tpl/fwd.vm"
+        assert t.template is None
+
+    def test_template_file_factory_with_inline_template(self):
+        t = HttpTemplate.template("JAVASCRIPT", "return {};", template_file="/fallback.js")
+        assert t.template == "return {};"
+        assert t.template_file == "/fallback.js"
+
+    def test_template_file_coexists_with_template(self):
+        """Both template and templateFile can be set (server decides precedence)."""
+        t = HttpTemplate(
+            template_type="VELOCITY",
+            template="inline $var",
+            template_file="/path/to/file.vm",
+        )
+        result = t.to_dict()
+        assert result["template"] == "inline $var"
+        assert result["templateFile"] == "/path/to/file.vm"
+
+
+class TestBodyFileType:
+    """Tests for the FILE body type with filePath and templateType."""
+
+    def test_file_body_construction(self):
+        b = Body(type="FILE", file_path="/data/response.json", content_type="application/json")
+        assert b.type == "FILE"
+        assert b.file_path == "/data/response.json"
+        assert b.content_type == "application/json"
+
+    def test_file_body_with_template_type(self):
+        b = Body(
+            type="FILE",
+            file_path="/templates/body.mustache",
+            template_type="MUSTACHE",
+            content_type="text/html",
+        )
+        assert b.template_type == "MUSTACHE"
+        assert b.file_path == "/templates/body.mustache"
+
+    def test_file_body_to_dict(self):
+        b = Body(
+            type="FILE",
+            file_path="/data/response.json",
+            content_type="application/json",
+        )
+        result = b.to_dict()
+        assert result == {
+            "type": "FILE",
+            "filePath": "/data/response.json",
+            "contentType": "application/json",
+        }
+
+    def test_file_body_to_dict_with_template_type(self):
+        b = Body(
+            type="FILE",
+            file_path="/tpl/body.vm",
+            template_type="VELOCITY",
+            content_type="text/plain",
+        )
+        result = b.to_dict()
+        assert result == {
+            "type": "FILE",
+            "filePath": "/tpl/body.vm",
+            "templateType": "VELOCITY",
+            "contentType": "text/plain",
+        }
+
+    def test_file_body_template_type_not_emitted_when_none(self):
+        b = Body(type="FILE", file_path="/data/resp.json")
+        result = b.to_dict()
+        assert "templateType" not in result
+
+    def test_file_path_not_emitted_for_non_file_body(self):
+        b = Body(type="STRING", string="hello")
+        result = b.to_dict()
+        assert "filePath" not in result
+        assert "templateType" not in result
+
+    def test_file_body_from_dict(self):
+        b = Body.from_dict({
+            "type": "FILE",
+            "filePath": "/responses/body.json",
+            "contentType": "application/json",
+        })
+        assert b.type == "FILE"
+        assert b.file_path == "/responses/body.json"
+        assert b.content_type == "application/json"
+        assert b.template_type is None
+
+    def test_file_body_from_dict_with_template_type(self):
+        b = Body.from_dict({
+            "type": "FILE",
+            "filePath": "/tpl/resp.mustache",
+            "templateType": "MUSTACHE",
+            "contentType": "text/html",
+        })
+        assert b.type == "FILE"
+        assert b.file_path == "/tpl/resp.mustache"
+        assert b.template_type == "MUSTACHE"
+        assert b.content_type == "text/html"
+
+    def test_file_body_round_trip(self):
+        original = Body(
+            type="FILE",
+            file_path="/templates/response.vm",
+            template_type="VELOCITY",
+            content_type="application/json",
+        )
+        restored = Body.from_dict(original.to_dict())
+        assert restored.type == "FILE"
+        assert restored.file_path == "/templates/response.vm"
+        assert restored.template_type == "VELOCITY"
+        assert restored.content_type == "application/json"
+
+    def test_file_body_factory(self):
+        b = Body.file("/data/response.json")
+        assert b.type == "FILE"
+        assert b.file_path == "/data/response.json"
+        assert b.content_type is None
+        assert b.template_type is None
+
+    def test_file_body_factory_with_content_type(self):
+        b = Body.file("/data/resp.xml", content_type="application/xml")
+        assert b.type == "FILE"
+        assert b.file_path == "/data/resp.xml"
+        assert b.content_type == "application/xml"
+
+    def test_file_body_factory_with_template_type(self):
+        b = Body.file("/tpl/body.mustache", content_type="text/html", template_type="MUSTACHE")
+        assert b.type == "FILE"
+        assert b.file_path == "/tpl/body.mustache"
+        assert b.content_type == "text/html"
+        assert b.template_type == "MUSTACHE"
+
+    def test_file_body_factory_round_trip(self):
+        original = Body.file("/tpl/resp.vm", content_type="text/plain", template_type="VELOCITY")
+        restored = Body.from_dict(original.to_dict())
+        assert restored.type == "FILE"
+        assert restored.file_path == "/tpl/resp.vm"
+        assert restored.content_type == "text/plain"
+        assert restored.template_type == "VELOCITY"
+
+    def test_file_body_deserialized_from_body_in_request(self):
+        """FILE bodies in HTTP request/response are correctly deserialized."""
+        from mockserver.models import _deserialize_body
+        data = {
+            "type": "FILE",
+            "filePath": "/mock-data/payload.json",
+            "templateType": "MUSTACHE",
+            "contentType": "application/json",
+        }
+        body = _deserialize_body(data)
+        assert isinstance(body, Body)
+        assert body.type == "FILE"
+        assert body.file_path == "/mock-data/payload.json"
+        assert body.template_type == "MUSTACHE"
+        assert body.content_type == "application/json"
+
+    def test_field_map_entries(self):
+        """Ensure the _FIELD_MAP has entries for the new fields."""
+        from mockserver.models import _to_camel, _from_camel
+        assert _to_camel("template_file") == "templateFile"
+        assert _to_camel("file_path") == "filePath"
+        assert _from_camel("templateFile") == "template_file"
+        assert _from_camel("filePath") == "file_path"

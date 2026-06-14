@@ -27,6 +27,14 @@ type ConnectionOptions struct {
 	CloseSocketDelay            *Delay `json:"closeSocketDelay,omitempty"`
 }
 
+// FileBody represents a FILE response body with optional template processing.
+type FileBody struct {
+	Type         string `json:"type"`
+	FilePath     string `json:"filePath,omitempty"`
+	TemplateType string `json:"templateType,omitempty"`
+	ContentType  string `json:"contentType,omitempty"`
+}
+
 // ResponseBuilder provides a fluent API for building HttpResponse actions.
 type ResponseBuilder struct {
 	response HttpResponse
@@ -80,6 +88,20 @@ func (b *ResponseBuilder) JSONBody(jsonStr string) *ResponseBuilder {
 		b.response.Headers = make(map[string][]string)
 	}
 	b.response.Headers["Content-Type"] = []string{"application/json"}
+	return b
+}
+
+// BodyFromFile sets the response body to a FILE body with optional template type.
+// templateType may be empty, "VELOCITY", or "MUSTACHE".
+func (b *ResponseBuilder) BodyFromFile(filePath, templateType, contentType string) *ResponseBuilder {
+	fb := FileBody{Type: "FILE", FilePath: filePath}
+	if templateType != "" {
+		fb.TemplateType = templateType
+	}
+	if contentType != "" {
+		fb.ContentType = contentType
+	}
+	b.response.Body = fb
 	return b
 }
 

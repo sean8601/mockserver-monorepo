@@ -2,14 +2,16 @@ package mockserver
 
 // Expectation represents a MockServer expectation (request matcher + action).
 type Expectation struct {
-	ID           string       `json:"id,omitempty"`
-	Priority     int          `json:"priority,omitempty"`
-	HttpRequest  *HttpRequest `json:"httpRequest,omitempty"`
-	HttpResponse *HttpResponse `json:"httpResponse,omitempty"`
-	HttpForward  *HttpForward  `json:"httpForward,omitempty"`
-	HttpError    *HttpError    `json:"httpError,omitempty"`
-	Times        *Times        `json:"times,omitempty"`
-	TimeToLive   *TimeToLive   `json:"timeToLive,omitempty"`
+	ID                   string        `json:"id,omitempty"`
+	Priority             int           `json:"priority,omitempty"`
+	HttpRequest          *HttpRequest  `json:"httpRequest,omitempty"`
+	HttpResponse         *HttpResponse `json:"httpResponse,omitempty"`
+	HttpResponseTemplate *HttpTemplate `json:"httpResponseTemplate,omitempty"`
+	HttpForward          *HttpForward  `json:"httpForward,omitempty"`
+	HttpForwardTemplate  *HttpTemplate `json:"httpForwardTemplate,omitempty"`
+	HttpError            *HttpError    `json:"httpError,omitempty"`
+	Times                *Times        `json:"times,omitempty"`
+	TimeToLive           *TimeToLive   `json:"timeToLive,omitempty"`
 }
 
 // Times controls how many times an expectation can be matched.

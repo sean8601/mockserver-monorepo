@@ -144,6 +144,28 @@ class ExpectationTest extends TestCase
         $this->assertSame(200, $decoded['httpResponse']['statusCode']);
     }
 
+    public function testFileBodyExpectation(): void
+    {
+        $expectation = (new Expectation())
+            ->httpRequest(
+                HttpRequest::request()->method('GET')->path('/template')
+            )
+            ->httpResponse(
+                HttpResponse::response()
+                    ->statusCode(200)
+                    ->fileBody('/templates/page.html', 'text/html', 'VELOCITY')
+            );
+
+        $array = $expectation->toArray();
+
+        $this->assertSame('/template', $array['httpRequest']['path']);
+        $this->assertSame(200, $array['httpResponse']['statusCode']);
+        $this->assertSame('FILE', $array['httpResponse']['body']['type']);
+        $this->assertSame('/templates/page.html', $array['httpResponse']['body']['filePath']);
+        $this->assertSame('text/html', $array['httpResponse']['body']['contentType']);
+        $this->assertSame('VELOCITY', $array['httpResponse']['body']['templateType']);
+    }
+
     public function testGetters(): void
     {
         $request = HttpRequest::request()->path('/x');

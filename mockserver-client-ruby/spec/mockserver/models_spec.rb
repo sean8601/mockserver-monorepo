@@ -339,6 +339,96 @@ RSpec.describe 'MockServer models' do
       roundtrip = MockServer::Body.from_hash(original.to_h)
       expect(roundtrip.to_h).to eq(original.to_h)
     end
+
+    describe 'FILE body with file_path and template_type' do
+      it '.file factory creates FILE body with file_path' do
+        body = MockServer::Body.file('/data/response.json')
+        expect(body.type).to eq('FILE')
+        expect(body.file_path).to eq('/data/response.json')
+        expect(body.template_type).to be_nil
+        expect(body.content_type).to be_nil
+      end
+
+      it '.file factory accepts content_type and template_type' do
+        body = MockServer::Body.file(
+          '/templates/response.vm',
+          content_type: 'application/json',
+          template_type: 'VELOCITY'
+        )
+        expect(body.type).to eq('FILE')
+        expect(body.file_path).to eq('/templates/response.vm')
+        expect(body.content_type).to eq('application/json')
+        expect(body.template_type).to eq('VELOCITY')
+      end
+
+      it 'serializes file_path as filePath' do
+        body = MockServer::Body.new(type: 'FILE', file_path: '/data/body.json')
+        h = body.to_h
+        expect(h['type']).to eq('FILE')
+        expect(h['filePath']).to eq('/data/body.json')
+      end
+
+      it 'serializes template_type as templateType on FILE body' do
+        body = MockServer::Body.new(
+          type: 'FILE',
+          file_path: '/tpl/response.mustache',
+          template_type: 'MUSTACHE'
+        )
+        h = body.to_h
+        expect(h['templateType']).to eq('MUSTACHE')
+        expect(h['filePath']).to eq('/tpl/response.mustache')
+      end
+
+      it 'omits filePath and templateType when nil' do
+        body = MockServer::Body.new(type: 'STRING', string: 'hello')
+        h = body.to_h
+        expect(h).not_to have_key('filePath')
+        expect(h).not_to have_key('templateType')
+      end
+
+      it 'deserializes FILE body from hash' do
+        body = MockServer::Body.from_hash({
+          'type' => 'FILE',
+          'filePath' => '/data/response.json',
+          'contentType' => 'application/json'
+        })
+        expect(body.type).to eq('FILE')
+        expect(body.file_path).to eq('/data/response.json')
+        expect(body.content_type).to eq('application/json')
+        expect(body.template_type).to be_nil
+      end
+
+      it 'deserializes FILE body with templateType from hash' do
+        body = MockServer::Body.from_hash({
+          'type' => 'FILE',
+          'filePath' => '/templates/forward.vm',
+          'templateType' => 'VELOCITY'
+        })
+        expect(body.type).to eq('FILE')
+        expect(body.file_path).to eq('/templates/forward.vm')
+        expect(body.template_type).to eq('VELOCITY')
+      end
+
+      it 'round-trips FILE body with template_type' do
+        original = MockServer::Body.file(
+          '/etc/mockserver/templates/body.mustache',
+          content_type: 'text/html',
+          template_type: 'MUSTACHE'
+        )
+        roundtrip = MockServer::Body.from_hash(original.to_h)
+        expect(roundtrip.to_h).to eq(original.to_h)
+        expect(roundtrip.file_path).to eq('/etc/mockserver/templates/body.mustache')
+        expect(roundtrip.template_type).to eq('MUSTACHE')
+        expect(roundtrip.content_type).to eq('text/html')
+      end
+
+      it '#with_template_type sets template_type fluently' do
+        body = MockServer::Body.file('/data/response.vm')
+        result = body.with_template_type('VELOCITY')
+        expect(result).to be(body)
+        expect(body.template_type).to eq('VELOCITY')
+      end
+    end
   end
 
   # -------------------------------------------------------------------
@@ -368,6 +458,18 @@ RSpec.describe 'MockServer models' do
     it 'returns plain hash when type is not a known BODY_TYPE' do
       result = MockServer.deserialize_body({ 'type' => 'UNKNOWN', 'data' => 'x' })
       expect(result).to be_a(Hash)
+    end
+
+    it 'returns Body for FILE type' do
+      result = MockServer.deserialize_body({
+        'type' => 'FILE',
+        'filePath' => '/data/body.json',
+        'templateType' => 'VELOCITY'
+      })
+      expect(result).to be_a(MockServer::Body)
+      expect(result.type).to eq('FILE')
+      expect(result.file_path).to eq('/data/body.json')
+      expect(result.template_type).to eq('VELOCITY')
     end
   end
 
@@ -864,6 +966,62 @@ RSpec.describe 'MockServer models' do
       original = MockServer::HttpTemplate.new(template_type: 'JAVASCRIPT', template: 'code')
       roundtrip = MockServer::HttpTemplate.from_hash(original.to_h)
       expect(roundtrip.to_h).to eq(original.to_h)
+    end
+
+    describe 'template_file field' do
+      it 'defaults template_file to nil' do
+        tpl = MockServer::HttpTemplate.new
+        expect(tpl.template_file).to be_nil
+      end
+
+      it 'serializes template_file as templateFile' do
+        tpl = MockServer::HttpTemplate.new(
+          template_type: 'VELOCITY',
+          template_file: '/path/to/template.vm'
+        )
+        h = tpl.to_h
+        expect(h['templateFile']).to eq('/path/to/template.vm')
+        expect(h['templateType']).to eq('VELOCITY')
+      end
+
+      it 'omits templateFile when nil' do
+        tpl = MockServer::HttpTemplate.new(template_type: 'JAVASCRIPT', template: 'code')
+        expect(tpl.to_h).not_to have_key('templateFile')
+      end
+
+      it 'deserializes templateFile from hash' do
+        tpl = MockServer::HttpTemplate.from_hash({
+          'templateType' => 'MUSTACHE',
+          'templateFile' => '/templates/response.mustache'
+        })
+        expect(tpl.template_type).to eq('MUSTACHE')
+        expect(tpl.template_file).to eq('/templates/response.mustache')
+        expect(tpl.template).to be_nil
+      end
+
+      it 'round-trips with template_file' do
+        original = MockServer::HttpTemplate.new(
+          template_type: 'VELOCITY',
+          template_file: '/etc/mockserver/templates/forward.vm'
+        )
+        roundtrip = MockServer::HttpTemplate.from_hash(original.to_h)
+        expect(roundtrip.to_h).to eq(original.to_h)
+        expect(roundtrip.template_file).to eq('/etc/mockserver/templates/forward.vm')
+      end
+
+      it '.template factory accepts template_file keyword' do
+        tpl = MockServer::HttpTemplate.template('MUSTACHE', nil, template_file: '/tpl.mustache')
+        expect(tpl.template_type).to eq('MUSTACHE')
+        expect(tpl.template).to be_nil
+        expect(tpl.template_file).to eq('/tpl.mustache')
+      end
+
+      it '#with_template_file sets template_file fluently' do
+        tpl = MockServer::HttpTemplate.new(template_type: 'VELOCITY')
+        result = tpl.with_template_file('/path/to/file.vm')
+        expect(result).to be(tpl)
+        expect(tpl.template_file).to eq('/path/to/file.vm')
+      end
     end
   end
 

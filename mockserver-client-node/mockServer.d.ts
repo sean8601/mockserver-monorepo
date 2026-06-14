@@ -108,6 +108,7 @@ export interface HttpTemplate {
   primary?: boolean;
   templateType?: "VELOCITY" | "JAVASCRIPT" | "MUSTACHE";
   template?: string;
+  templateFile?: string;
 }
 
 export interface HttpForward {
@@ -223,6 +224,7 @@ export type Body =
   | { not?: boolean; type?: "XML"; xml?: string; contentType?: string }
   | { not?: boolean; type?: "XML_SCHEMA"; xmlSchema?: string }
   | { not?: boolean; type?: "XPATH"; xpath?: string }
+  | { not?: boolean; type?: "FILE"; filePath?: string; contentType?: string; templateType?: "VELOCITY" | "MUSTACHE" }
   | {
       type: 'JSON_RPC';
       method: string;

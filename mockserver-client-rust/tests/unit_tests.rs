@@ -465,6 +465,226 @@ fn test_expectation_array_serialization() {
 }
 
 // ---------------------------------------------------------------------------
+// HttpTemplate builder tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_http_template_inline() {
+    let tmpl = HttpTemplate::new("VELOCITY", "{ statusCode: 200 }");
+    let json = serde_json::to_value(&tmpl).unwrap();
+    assert_eq!(json["templateType"], "VELOCITY");
+    assert_eq!(json["template"], "{ statusCode: 200 }");
+    assert!(json.get("templateFile").is_none());
+}
+
+#[test]
+fn test_http_template_from_file() {
+    let tmpl = HttpTemplate::from_file("MUSTACHE", "/templates/response.mustache");
+    let json = serde_json::to_value(&tmpl).unwrap();
+    assert_eq!(json["templateType"], "MUSTACHE");
+    assert_eq!(json["templateFile"], "/templates/response.mustache");
+    assert!(json.get("template").is_none());
+}
+
+#[test]
+fn test_http_template_with_inline_and_file() {
+    let tmpl = HttpTemplate::new("VELOCITY", "inline body")
+        .template_file("/path/to/override.vm");
+    let json = serde_json::to_value(&tmpl).unwrap();
+    assert_eq!(json["templateType"], "VELOCITY");
+    assert_eq!(json["template"], "inline body");
+    assert_eq!(json["templateFile"], "/path/to/override.vm");
+}
+
+#[test]
+fn test_http_template_roundtrip() {
+    let json_str = r#"{"templateType":"VELOCITY","template":"body","templateFile":"/a/b.vm"}"#;
+    let tmpl: HttpTemplate = serde_json::from_str(json_str).unwrap();
+    assert_eq!(tmpl.template_type, Some("VELOCITY".to_string()));
+    assert_eq!(tmpl.template, Some("body".to_string()));
+    assert_eq!(tmpl.template_file, Some("/a/b.vm".to_string()));
+    // Re-serialize
+    let reserialized = serde_json::to_value(&tmpl).unwrap();
+    assert_eq!(reserialized["templateFile"], "/a/b.vm");
+}
+
+#[test]
+fn test_http_template_deserialization_without_template_file() {
+    let json_str = r#"{"templateType":"MUSTACHE","template":"{{name}}"}"#;
+    let tmpl: HttpTemplate = serde_json::from_str(json_str).unwrap();
+    assert_eq!(tmpl.template_type, Some("MUSTACHE".to_string()));
+    assert_eq!(tmpl.template, Some("{{name}}".to_string()));
+    assert_eq!(tmpl.template_file, None);
+}
+
+// ---------------------------------------------------------------------------
+// Body::File tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_body_file_serialization_minimal() {
+    let body = Body::file("/data/response.json");
+    let json = serde_json::to_value(&body).unwrap();
+    assert_eq!(json["type"], "FILE");
+    assert_eq!(json["filePath"], "/data/response.json");
+    assert!(json.get("contentType").is_none());
+    assert!(json.get("templateType").is_none());
+}
+
+#[test]
+fn test_body_file_serialization_with_content_type() {
+    let body = Body::file("/data/response.xml")
+        .with_content_type("application/xml");
+    let json = serde_json::to_value(&body).unwrap();
+    assert_eq!(json["type"], "FILE");
+    assert_eq!(json["filePath"], "/data/response.xml");
+    assert_eq!(json["contentType"], "application/xml");
+    assert!(json.get("templateType").is_none());
+}
+
+#[test]
+fn test_body_file_serialization_with_template_type() {
+    let body = Body::file("/data/response.vm")
+        .with_content_type("application/json")
+        .with_template_type("VELOCITY");
+    let json = serde_json::to_value(&body).unwrap();
+    assert_eq!(json["type"], "FILE");
+    assert_eq!(json["filePath"], "/data/response.vm");
+    assert_eq!(json["contentType"], "application/json");
+    assert_eq!(json["templateType"], "VELOCITY");
+}
+
+#[test]
+fn test_body_file_deserialization() {
+    let json_str = r#"{"type":"FILE","filePath":"/data/resp.json","contentType":"application/json","templateType":"MUSTACHE"}"#;
+    let req_json = format!(r#"{{"body":{}}}"#, json_str);
+    let req: HttpRequest = serde_json::from_str(&req_json).unwrap();
+    match req.body {
+        Some(Body::File { file_path, content_type, template_type }) => {
+            assert_eq!(file_path, "/data/resp.json");
+            assert_eq!(content_type, Some("application/json".to_string()));
+            assert_eq!(template_type, Some("MUSTACHE".to_string()));
+        }
+        other => panic!("Expected Body::File, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_body_file_deserialization_minimal() {
+    let json_str = r#"{"body":{"type":"FILE","filePath":"/data/x.txt"}}"#;
+    let req: HttpRequest = serde_json::from_str(json_str).unwrap();
+    match req.body {
+        Some(Body::File { file_path, content_type, template_type }) => {
+            assert_eq!(file_path, "/data/x.txt");
+            assert_eq!(content_type, None);
+            assert_eq!(template_type, None);
+        }
+        other => panic!("Expected Body::File, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_body_file_roundtrip() {
+    let body = Body::File {
+        file_path: "/templates/resp.vm".to_string(),
+        content_type: Some("text/html".to_string()),
+        template_type: Some("VELOCITY".to_string()),
+    };
+    let json = serde_json::to_value(&body).unwrap();
+    // Wrap in a request for deserialization
+    let req_json = serde_json::json!({"body": json});
+    let req: HttpRequest = serde_json::from_value(req_json).unwrap();
+    assert_eq!(req.body, Some(body));
+}
+
+// ---------------------------------------------------------------------------
+// Expectation with template actions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_expectation_with_response_template() {
+    let expectation = Expectation::new(HttpRequest::new().path("/templated"))
+        .respond_template(HttpTemplate::new("VELOCITY", "{ \"statusCode\": 200 }"));
+
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["httpResponseTemplate"]["templateType"], "VELOCITY");
+    assert_eq!(json["httpResponseTemplate"]["template"], "{ \"statusCode\": 200 }");
+    assert!(json.get("httpResponse").is_none());
+    assert!(json.get("httpForwardTemplate").is_none());
+}
+
+#[test]
+fn test_expectation_with_forward_template() {
+    let expectation = Expectation::new(HttpRequest::new().path("/proxy"))
+        .forward_template(
+            HttpTemplate::from_file("MUSTACHE", "/templates/forward.mustache")
+        );
+
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["httpForwardTemplate"]["templateType"], "MUSTACHE");
+    assert_eq!(json["httpForwardTemplate"]["templateFile"], "/templates/forward.mustache");
+    assert!(json.get("httpResponseTemplate").is_none());
+    assert!(json.get("httpForward").is_none());
+}
+
+#[test]
+fn test_expectation_with_response_template_and_template_file() {
+    let expectation = Expectation::new(HttpRequest::new().path("/t"))
+        .respond_template(
+            HttpTemplate::new("VELOCITY", "fallback")
+                .template_file("/path/to/template.vm")
+        );
+
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["httpResponseTemplate"]["templateType"], "VELOCITY");
+    assert_eq!(json["httpResponseTemplate"]["template"], "fallback");
+    assert_eq!(json["httpResponseTemplate"]["templateFile"], "/path/to/template.vm");
+}
+
+#[test]
+fn test_expectation_template_roundtrip() {
+    let json_str = r#"{
+        "httpRequest": {"path": "/api"},
+        "httpResponseTemplate": {
+            "templateType": "VELOCITY",
+            "template": "body here",
+            "templateFile": "/file.vm"
+        }
+    }"#;
+    let exp: Expectation = serde_json::from_str(json_str).unwrap();
+    assert_eq!(exp.http_request.path, Some("/api".to_string()));
+    let tmpl = exp.http_response_template.unwrap();
+    assert_eq!(tmpl.template_type, Some("VELOCITY".to_string()));
+    assert_eq!(tmpl.template, Some("body here".to_string()));
+    assert_eq!(tmpl.template_file, Some("/file.vm".to_string()));
+}
+
+// ---------------------------------------------------------------------------
+// HttpRequest file_body builder
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_request_file_body_builder() {
+    let req = HttpRequest::new().file_body("/data/request.json");
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["body"]["type"], "FILE");
+    assert_eq!(json["body"]["filePath"], "/data/request.json");
+}
+
+#[test]
+fn test_request_body_value_builder() {
+    let body = Body::file("/data/resp.vm")
+        .with_content_type("text/html")
+        .with_template_type("VELOCITY");
+    let req = HttpRequest::new().body_value(body);
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["body"]["type"], "FILE");
+    assert_eq!(json["body"]["filePath"], "/data/resp.vm");
+    assert_eq!(json["body"]["contentType"], "text/html");
+    assert_eq!(json["body"]["templateType"], "VELOCITY");
+}
+
+// ---------------------------------------------------------------------------
 // RetrieveType / ClearType / RetrieveFormat string values
 // ---------------------------------------------------------------------------
 

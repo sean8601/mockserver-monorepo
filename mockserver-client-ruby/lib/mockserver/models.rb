@@ -44,6 +44,8 @@ module MockServer
     'http_sse_response'              => 'httpSseResponse',
     'http_websocket_response'        => 'httpWebSocketResponse',
     'template_type'                  => 'templateType',
+    'template_file'                  => 'templateFile',
+    'file_path'                      => 'filePath',
     'base64_bytes'                   => 'base64Bytes',
     'not_body'                       => 'not',
     'content_type'                   => 'contentType',
@@ -89,7 +91,7 @@ module MockServer
   # Known Body type strings used to distinguish Body objects from plain hashes
   # during deserialization.
   BODY_TYPES = Set.new(%w[
-    STRING JSON REGEX XML BINARY JSON_SCHEMA JSON_PATH XPATH XML_SCHEMA JSON_RPC GRAPHQL
+    STRING JSON REGEX XML BINARY JSON_SCHEMA JSON_PATH XPATH XML_SCHEMA JSON_RPC GRAPHQL FILE
   ]).freeze
 
   # -------------------------------------------------------------------
@@ -359,9 +361,11 @@ module MockServer
   end
 
   class Body
-    attr_accessor :type, :string, :json, :base64_bytes, :not_body, :content_type, :charset
+    attr_accessor :type, :string, :json, :base64_bytes, :not_body, :content_type, :charset,
+                  :file_path, :template_type
 
-    def initialize(type: nil, string: nil, json: nil, base64_bytes: nil, not_body: nil, content_type: nil, charset: nil)
+    def initialize(type: nil, string: nil, json: nil, base64_bytes: nil, not_body: nil,
+                   content_type: nil, charset: nil, file_path: nil, template_type: nil)
       @type = type
       @string = string
       @json = json
@@ -369,17 +373,21 @@ module MockServer
       @not_body = not_body
       @content_type = content_type
       @charset = charset
+      @file_path = file_path
+      @template_type = template_type
     end
 
     def to_h
       result = {}
-      result['type']        = @type        unless @type.nil?
-      result['string']      = @string      unless @string.nil?
-      result['json']        = @json        unless @json.nil?
-      result['base64Bytes'] = @base64_bytes unless @base64_bytes.nil?
-      result['not']         = @not_body    unless @not_body.nil?
-      result['contentType'] = @content_type unless @content_type.nil?
-      result['charset']     = @charset     unless @charset.nil?
+      result['type']         = @type          unless @type.nil?
+      result['string']       = @string        unless @string.nil?
+      result['json']         = @json          unless @json.nil?
+      result['base64Bytes']  = @base64_bytes  unless @base64_bytes.nil?
+      result['not']          = @not_body      unless @not_body.nil?
+      result['contentType']  = @content_type  unless @content_type.nil?
+      result['charset']      = @charset       unless @charset.nil?
+      result['filePath']     = @file_path     unless @file_path.nil?
+      result['templateType'] = @template_type unless @template_type.nil?
       result
     end
 
@@ -387,13 +395,15 @@ module MockServer
       return nil if data.nil?
 
       new(
-        type:         data['type'],
-        string:       data['string'],
-        json:         data['json'],
-        base64_bytes: data['base64Bytes'],
-        not_body:     data['not'],
-        content_type: data['contentType'],
-        charset:      data['charset']
+        type:          data['type'],
+        string:        data['string'],
+        json:          data['json'],
+        base64_bytes:  data['base64Bytes'],
+        not_body:      data['not'],
+        content_type:  data['contentType'],
+        charset:       data['charset'],
+        file_path:     data['filePath'],
+        template_type: data['templateType']
       )
     end
 
@@ -417,12 +427,21 @@ module MockServer
       new(type: 'XML', string: value)
     end
 
+    def self.file(file_path, content_type: nil, template_type: nil)
+      new(type: 'FILE', file_path: file_path, content_type: content_type, template_type: template_type)
+    end
+
     def self.json_rpc(method_name, params_schema: nil)
       JsonRpcBody.new(method_name: method_name, params_schema: params_schema)
     end
 
     def self.graphql(query, operation_name: nil, variables_schema: nil)
       GraphQLBody.new(query: query, operation_name: operation_name, variables_schema: variables_schema)
+    end
+
+    def with_template_type(template_type)
+      @template_type = template_type
+      self
     end
   end
 
@@ -809,11 +828,12 @@ module MockServer
   end
 
   class HttpTemplate
-    attr_accessor :template_type, :template, :delay, :primary
+    attr_accessor :template_type, :template, :template_file, :delay, :primary
 
-    def initialize(template_type: 'JAVASCRIPT', template: nil, delay: nil, primary: nil)
+    def initialize(template_type: 'JAVASCRIPT', template: nil, template_file: nil, delay: nil, primary: nil)
       @template_type = template_type
       @template = template
+      @template_file = template_file
       @delay = delay
       @primary = primary
     end
@@ -822,6 +842,7 @@ module MockServer
       MockServer.strip_none({
         'templateType' => @template_type,
         'template'     => @template,
+        'templateFile' => @template_file,
         'delay'        => @delay&.to_h,
         'primary'      => @primary
       })
@@ -833,13 +854,19 @@ module MockServer
       new(
         template_type: data.fetch('templateType', 'JAVASCRIPT'),
         template:      data['template'],
+        template_file: data['templateFile'],
         delay:         Delay.from_hash(data['delay']),
         primary:       data['primary']
       )
     end
 
-    def self.template(template_type, template = nil)
-      new(template_type: template_type, template: template)
+    def self.template(template_type, template = nil, template_file: nil)
+      new(template_type: template_type, template: template, template_file: template_file)
+    end
+
+    def with_template_file(template_file)
+      @template_file = template_file
+      self
     end
   end
 

@@ -71,6 +71,42 @@ public sealed class ForwardChainExpectation
     }
 
     /// <summary>
+    /// Complete the expectation with a response template action.
+    /// </summary>
+    public List<Expectation> RespondWithTemplate(HttpTemplate template)
+    {
+        _expectation.HttpResponseTemplate = template;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a response template action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithTemplateAsync(HttpTemplate template)
+    {
+        _expectation.HttpResponseTemplate = template;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a forward template action.
+    /// </summary>
+    public List<Expectation> ForwardWithTemplate(HttpTemplate template)
+    {
+        _expectation.HttpForwardTemplate = template;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a forward template action (async).
+    /// </summary>
+    public Task<List<Expectation>> ForwardWithTemplateAsync(HttpTemplate template)
+    {
+        _expectation.HttpForwardTemplate = template;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
     /// Complete the expectation with an error action (drops/corrupts the connection).
     /// </summary>
     public List<Expectation> Error(HttpError error)
