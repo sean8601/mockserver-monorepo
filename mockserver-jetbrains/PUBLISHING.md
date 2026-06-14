@@ -17,9 +17,13 @@ JETBRAINS_TOKEN="$JETBRAINS_TOKEN" ./gradlew publishPlugin
 
 ## Secret
 
-| Secret path | Key | Purpose |
+| Secret path | JSON key | Purpose |
 |---|---|---|
-| `mockserver-release/jetbrains` | `JETBRAINS_TOKEN` | JetBrains Marketplace upload token |
+| `mockserver-release/jetbrains` | `token` | JetBrains Marketplace upload token (exported to the build as the `JETBRAINS_TOKEN` env var) |
+
+> Store the secret as `{"token":"..."}` — `jetbrains.sh` reads it with
+> `load_secret "mockserver-release/jetbrains" "token"` and exports it as `JETBRAINS_TOKEN` for
+> `./gradlew publishPlugin`.
 
 The token is stored in AWS Secrets Manager under the `mockserver-build` account. Retrieve with:
 

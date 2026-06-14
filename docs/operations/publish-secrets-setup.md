@@ -123,8 +123,8 @@ Both should return HTTP 200 (crates.io indexes within seconds).
 4. Click **Create** and copy the token.
 5. If a publisher identity does not exist yet, create one:
    ```bash
-   npx vsce create-publisher mock-server
-   npx vsce login mock-server
+   npx vsce create-publisher mockserver
+   npx vsce login mockserver
    ```
 
 ### Store the secret
@@ -143,7 +143,7 @@ aws secretsmanager create-secret \
 
 ```
 VS Code extension (soft):
-  https://marketplace.visualstudio.com/items?itemName=mock-server.mockserver
+  https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver
 ```
 
 The page should exist and return HTTP 200. The specific version is not checked
@@ -164,7 +164,7 @@ visually confirm the listed version matches the release.
 4. Copy the token.
 5. If a namespace has not been claimed yet, create one:
    ```bash
-   npx ovsx create-namespace mock-server -p <TOKEN>
+   npx ovsx create-namespace mockserver -p <TOKEN>
    ```
 
 ### Store the secret
@@ -182,7 +182,7 @@ aws secretsmanager create-secret \
 There is no separate `verify.sh` check for Open VSX. Manually confirm at:
 
 ```
-https://open-vsx.org/extension/mock-server/mockserver
+https://open-vsx.org/extension/mockserver/mockserver
 ```
 
 The extension page should show the released version.

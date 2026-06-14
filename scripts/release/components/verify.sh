@@ -346,7 +346,7 @@ check_http_soft "testcontainers-mockserver $V on crates.io" \
 log_info ""
 log_info "== VS Code extension (soft — Marketplace indexing may lag) =="
 check_http_soft "mockserver VS Code extension" \
-  "https://marketplace.visualstudio.com/items?itemName=mock-server.mockserver"
+  "https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver"
 
 log_info ""
 log_info "== JetBrains plugin (soft — Marketplace indexing may lag) =="

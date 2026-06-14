@@ -9,9 +9,9 @@ Start, stop, and manage [MockServer](https://www.mock-server.com) Docker contain
 
 ## Installation
 
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mock-server.mockserver) or search for "MockServer" in the Extensions view.
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver) or search for "MockServer" in the Extensions view.
 
-For Open VSX (Eclipse Theia, Gitpod, etc.), install from [open-vsx.org](https://open-vsx.org/extension/mock-server/mockserver).
+For Open VSX (Eclipse Theia, Gitpod, etc.), install from [open-vsx.org](https://open-vsx.org/extension/mockserver/mockserver).
 
 ## Commands
 
