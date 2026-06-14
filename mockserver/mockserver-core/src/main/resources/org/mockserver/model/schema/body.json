@@ -311,6 +311,12 @@
         "filePath": {
           "type": "string"
         },
+        "templateType": {
+          "enum": [
+            "VELOCITY",
+            "MUSTACHE"
+          ]
+        },
         "contentType": {
           "type": "string"
         }

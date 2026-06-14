@@ -497,6 +497,8 @@ components:
             - MUSTACHE
         template:
           type: string
+        templateFile:
+          type: string
         responseOverride:
           $ref: "#/components/schemas/HttpResponse"
         responseModifier:

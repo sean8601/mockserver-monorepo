@@ -135,7 +135,7 @@ public class HttpActionHandler {
                 // chaos: gate by the time-based outage window + apply degradation ramp (see effectiveChaos)
                 final HttpChaosProfile effectiveChaos = effectiveChaos(expectation);
                 scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
-                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action);
+                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action, request);
                     // chaos: inject HTTP chaos faults on early mocked responses
                     writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous);
@@ -328,7 +328,7 @@ public class HttpActionHandler {
             // modified request into template/class-callback generation; logging keys off the original request.
             case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
-                    req -> getHttpResponseActionHandler().handle((HttpResponse) action)), expectationPostProcessor), synchronous);
+                    req -> getHttpResponseActionHandler().handle((HttpResponse) action, req)), expectationPostProcessor), synchronous);
             case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
                     req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, action.getDelay());
@@ -1294,7 +1294,7 @@ public class HttpActionHandler {
         scheduler.submitAsync(() -> {
             try {
                 switch (secondaryAction.getType()) {
-                    case RESPONSE -> getHttpResponseActionHandler().handle((HttpResponse) secondaryAction);
+                    case RESPONSE -> getHttpResponseActionHandler().handle((HttpResponse) secondaryAction, request);
                     case RESPONSE_TEMPLATE -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) secondaryAction, request);
                     case RESPONSE_CLASS_CALLBACK -> getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) secondaryAction, request);
                     case RESPONSE_OBJECT_CALLBACK -> {
@@ -2815,7 +2815,7 @@ public class HttpActionHandler {
 
     private HttpResponseActionHandler getHttpResponseActionHandler() {
         if (httpResponseActionHandler == null) {
-            httpResponseActionHandler = new HttpResponseActionHandler();
+            httpResponseActionHandler = new HttpResponseActionHandler(mockServerLogger, configuration);
         }
         return httpResponseActionHandler;
     }

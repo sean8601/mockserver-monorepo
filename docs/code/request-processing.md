@@ -337,8 +337,8 @@ Each `Expectation` binds a request matcher to exactly one action. There are 19 a
 
 | Type | Handler | Description |
 |------|---------|-------------|
-| `RESPONSE` | `HttpResponseActionHandler` | Returns a static `HttpResponse` |
-| `RESPONSE_TEMPLATE` | `HttpResponseTemplateActionHandler` | Evaluates a template (Velocity/Mustache/JavaScript) to generate the response |
+| `RESPONSE` | `HttpResponseActionHandler` | Returns a static `HttpResponse`. When the response body is a `FileBody` carrying a `templateType` (`VELOCITY`/`MUSTACHE`), the file contents are rendered as a template against the request before being returned |
+| `RESPONSE_TEMPLATE` | `HttpResponseTemplateActionHandler` | Evaluates a template (Velocity/Mustache/JavaScript) to generate the response. The template text may be supplied inline (`template`) or loaded from a file (`templateFile`); inline takes precedence — see `HttpTemplate.getTemplateContent()` |
 | `RESPONSE_CLASS_CALLBACK` | `HttpResponseClassCallbackActionHandler` | Loads a Java class implementing `ExpectationResponseCallback`, invokes `handle(request)` |
 | `RESPONSE_OBJECT_CALLBACK` | `HttpResponseObjectCallbackActionHandler` | Sends request to a WebSocket-connected client, awaits response callback |
 | `SSE_RESPONSE` | `HttpSseResponseActionHandler` | Streams Server-Sent Events with per-event delays, optional `closeConnection` flag |
@@ -481,6 +481,14 @@ All engines receive built-in dynamic variables from `TemplateFunctions.BUILT_IN_
 | `MathTemplateHelper` | `calc` | Math operations: `randomInt(min,max)`, `randomDouble()`, `abs`, `min`, `max`, `round(value,scale)`, `format(value,pattern)`, `ceil`, `floor` |
 
 Helper objects are registered as template context variables, so methods are called directly (e.g., Velocity: `$strings.uppercase($!request.method)`, JavaScript: `dates.plusHours(1)`, Mustache: `{{ jwt }}`).
+
+#### Templates loaded from a file
+
+The template text for `RESPONSE_TEMPLATE` and `FORWARD_TEMPLATE` can be stored in an external file instead of being embedded inline in the expectation. Set `templateFile` (a classpath-or-filesystem path resolved by `FileReader.readFileFromClassPathOrPath`) on the `httpResponseTemplate` / `httpForwardTemplate`. `HttpTemplate.getTemplateContent()` returns the inline `template` when present, otherwise reads `templateFile`; the action handlers and `HttpOverrideForwardedRequestActionHandler` all call `getTemplateContent()`. This keeps the full template machinery (rendering an `HttpResponseDTO`/`HttpRequestDTO`) while letting large templates live outside the expectation JSON.
+
+#### Templated response body files (`FileBody` + `templateType`)
+
+A static `RESPONSE` whose body is a `FileBody` can mark the file as a template by setting `templateType` to `VELOCITY` or `MUSTACHE`. `HttpResponseActionHandler.handle(httpResponse, httpRequest)` reads the file, renders it through `TemplateEngine.renderTemplate(...)` (raw text render — no `HttpResponseDTO` deserialization), and replaces the body with the rendered string (preserving the declared content type). This differs from `RESPONSE_TEMPLATE`: the file is just the **body** payload (rendered as-is), while the surrounding status code, headers, etc. come from the static response. `JAVASCRIPT` is intentionally **not** supported for body files (JS templates return structured objects, not text) — use `RESPONSE_TEMPLATE` with a JavaScript template for that. The request is only available on the primary/secondary `RESPONSE` dispatch paths, so the no-request `handle(httpResponse)` overload returns the `FileBody` verbatim.
 
 ## WebSocket Object Callbacks
 

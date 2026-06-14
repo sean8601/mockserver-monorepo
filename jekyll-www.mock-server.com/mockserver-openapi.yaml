@@ -2569,6 +2569,8 @@ components:
             - MUSTACHE
         template:
           type: string
+        templateFile:
+          type: string
     HttpForward:
       description: "host and port to forward to"
       type: object

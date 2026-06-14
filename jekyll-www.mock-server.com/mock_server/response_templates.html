@@ -26,6 +26,8 @@ lastmod: 2019-11-10T08:00:00+01:00
         </ul>
     </li>
     <li><a href="#templates_in_json_files"><strong>Templates in JSON Initializer Files</strong></a> &mdash; defining templates in JSON expectation files</li>
+    <li><a href="#templates_from_files"><strong>Loading Templates From Files</strong></a> &mdash; reference a template stored in a separate file with <code>templateFile</code></li>
+    <li><a href="#templating_a_response_body_file"><strong>Templating A Response Body File</strong></a> &mdash; render a <code>FILE</code> response body as a template with <code>templateType</code></li>
     <li><a href="#response_template_testing"><strong>Response Template Testing</strong></a> &mdash; test templates locally using <code>ResponseTemplateTester</code></li>
     <li><a href="#request_model_variables"><strong>Request Model Variables</strong></a> &mdash; access request fields (method, path, headers, body, etc.) in templates</li>
     <li><a href="#request_multi_value_maps"><strong>Multi-Value And Single Value Maps</strong></a> &mdash; access headers, parameters, and cookies by key, entry set, values, or key set</li>
@@ -61,6 +63,51 @@ lastmod: 2019-11-10T08:00:00+01:00
 <p>Complex multi-line templates can become difficult to read and maintain in JSON format. For templates with significant logic or formatting, consider using a class-based <span class="inline_code">ExpectationInitializer</span> instead. A Java class initializer allows you to define templates as normal multi-line strings and provides full IDE support for editing and debugging.</p>
 
 <p>See <a href="/mock_server/initializing_expectations.html">initializing expectations</a> for details on both JSON and class-based initializers.</p>
+
+<a id="templates_from_files" class="anchor" href="#templates_from_files">&nbsp;</a>
+
+<h2>Loading Templates From Files</h2>
+
+<p>Instead of embedding the template inline, the template can be stored in a separate file and referenced with <span class="inline_code">templateFile</span> (a path resolved from the classpath or the filesystem). This keeps large templates out of the expectation JSON and lets you edit them with proper syntax highlighting. If both <span class="inline_code">template</span> and <span class="inline_code">templateFile</span> are provided, the inline <span class="inline_code">template</span> takes precedence.</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpRequest": {
+    "path": "/some/path"
+  },
+  "httpResponseTemplate": {
+    "templateType": "MUSTACHE",
+    "templateFile": "templates/some_response.mustache"
+  }
+}</code></pre>
+
+<p>The same <span class="inline_code">templateFile</span> option is available on <span class="inline_code">httpForwardTemplate</span> for templated request forwarding.</p>
+
+<a id="templating_a_response_body_file" class="anchor" href="#templating_a_response_body_file">&nbsp;</a>
+
+<h2>Templating A Response Body File</h2>
+
+<p>A static response can already serve its body from a file using a <span class="inline_code">FILE</span> body (see <a href="/mock_server/creating_expectations.html">creating expectations</a>). To make that file dynamic, add a <span class="inline_code">templateType</span> of <span class="inline_code">MUSTACHE</span> or <span class="inline_code">VELOCITY</span> &mdash; the file contents are then rendered as a template against the request before being returned as the response body. The status code, headers, and content type still come from the static response, while only the body file is templated:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpRequest": {
+    "path": "/some/path"
+  },
+  "httpResponse": {
+    "statusCode": 200,
+    "body": {
+      "type": "FILE",
+      "filePath": "responses/order.json",
+      "templateType": "MUSTACHE",
+      "contentType": "application/json"
+    }
+  }
+}</code></pre>
+
+<p>With the body file <span class="inline_code">responses/order.json</span> containing template placeholders, for example:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{ "method": "{{ request.method }}", "path": "{{ request.path }}" }</code></pre>
+
+<p>Body-file templating uses the text-based engines (<span class="inline_code">MUSTACHE</span> and <span class="inline_code">VELOCITY</span>) because they render text directly. JavaScript templates build a full response object rather than a text fragment, so for JavaScript use an <span class="inline_code">httpResponseTemplate</span> (optionally with <span class="inline_code">templateFile</span>) instead.</p>
 
 <a id="response_template_testing" class="anchor" href="#response_template_testing">&nbsp;</a>
 

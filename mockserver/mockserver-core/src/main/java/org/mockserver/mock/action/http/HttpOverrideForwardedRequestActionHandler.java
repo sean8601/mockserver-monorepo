@@ -51,7 +51,7 @@ public class HttpOverrideForwardedRequestActionHandler extends HttpForwardAction
                     TemplateEngine templateEngine = resolveTemplateEngine(responseTemplate);
                     if (templateEngine != null) {
                         HttpResponse templatedResponse = templateEngine.executeTemplate(
-                            responseTemplate.getTemplate(), request, result, HttpResponseDTO.class
+                            responseTemplate.getTemplateContent(), request, result, HttpResponseDTO.class
                         );
                         if (templatedResponse != null) {
                             result = templatedResponse;

@@ -157,6 +157,22 @@ public class VelocityTemplateEngine implements TemplateEngine {
         return executeTemplateInternal(template, request, response, dtoClass);
     }
 
+    @Override
+    public String renderTemplate(String template, HttpRequest request) {
+        try {
+            validateTemplate(template);
+            Writer writer = new StringWriter();
+            VelocityContext context = new VelocityContext(toolManager.createContext());
+            context.put("request", new HttpRequestTemplateObject(request));
+            TemplateFunctions.BUILT_IN_FUNCTIONS.forEach(context::put);
+            TemplateFunctions.BUILT_IN_HELPERS.forEach(context::put);
+            velocityEngine.evaluate(context, writer, "VelocityResponseTemplate", template);
+            return writer.toString();
+        } catch (Exception e) {
+            throw new RuntimeException(formatLogMessage("Exception:{}transforming template:{}for request:{}", isNotBlank(e.getMessage()) ? e.getMessage() : e.getClass().getSimpleName(), template, request), e);
+        }
+    }
+
     private <T> T executeTemplateInternal(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass) {
         T result;
         try {

@@ -16,6 +16,9 @@
     "template": {
       "type": "string"
     },
+    "templateFile": {
+      "type": "string"
+    },
     "primary": {
       "type": "boolean"
     },

@@ -90,6 +90,14 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         return executeTemplateInternal(template, request, response, dtoClass, true);
     }
 
+    @Override
+    public String renderTemplate(String template, HttpRequest request) {
+        // JavaScript templates are designed to construct and return a full response object, not a text
+        // fragment, so they are not supported for FileBody templating. Use httpResponseTemplate (or
+        // httpResponseTemplate with templateFile) with a JavaScript template instead.
+        throw new UnsupportedOperationException("JavaScript templates are not supported for file body templating; use a Velocity or Mustache templateType, or an httpResponseTemplate for JavaScript");
+    }
+
     private <T> T executeTemplateInternal(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass, boolean includeResponse) {
         String script = includeResponse ? wrapTemplateWithResponse(template) : wrapTemplate(template);
         try {

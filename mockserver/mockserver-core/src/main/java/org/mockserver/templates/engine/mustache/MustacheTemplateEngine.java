@@ -72,6 +72,25 @@ public class MustacheTemplateEngine implements TemplateEngine {
         return executeTemplateInternal(template, request, response, dtoClass);
     }
 
+    @Override
+    public String renderTemplate(String template, HttpRequest request) {
+        try {
+            validateTemplate(template);
+            Writer writer = new StringWriter();
+            Template compiledTemplate = compiler.compile(template);
+            Map<String, Object> data = new ConcurrentHashMap<>();
+            data.put("request", new HttpRequestTemplateObject(request));
+            data.putAll(TemplateFunctions.BUILT_IN_FUNCTIONS);
+            data.putAll(TemplateFunctions.BUILT_IN_HELPERS);
+            data.put("xPath", (Mustache.Lambda) (frag, out) -> evaluatedXPath(frag.execute(), request, out));
+            data.put("jsonPath", (Mustache.Lambda) (frag, out) -> evaluateJsonPath(data, frag.execute(), request, out));
+            compiledTemplate.execute(data, writer);
+            return writer.toString();
+        } catch (Exception e) {
+            throw new RuntimeException(formatLogMessage("Exception:{}transforming template:{}for request:{}", isNotBlank(e.getMessage()) ? e.getMessage() : e.getClass().getSimpleName(), template, request), e);
+        }
+    }
+
     private <T> T executeTemplateInternal(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass) {
         T result;
         try {
