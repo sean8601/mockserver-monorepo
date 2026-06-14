@@ -61,40 +61,11 @@ echo "Using JAR: $SHADED_JAR"
 # pull the 17 build onto a newer JDK.
 # ---------------------------------------------------------------------------
 echo "--- :java: Ensuring host JDK 21 for jlink (Maven build stays on 17)"
-jlink_major() { "$1" --version 2>&1 | grep -oE '^[0-9]+' | head -1 || true; }
-
-JDK21_HOME=""
-if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/jlink" && "$(jlink_major "$JAVA_HOME/bin/jlink")" == "21" ]]; then
-  JDK21_HOME="$JAVA_HOME"
-elif command -v jlink >/dev/null 2>&1 && [[ "$(jlink_major "$(command -v jlink)")" == "21" ]]; then
-  JDK21_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v jlink)")")")"
-else
-  case "$(uname -s)/$(uname -m)" in
-    Linux/x86_64)  AOS=linux; AARCH=x64 ;;
-    Linux/aarch64) AOS=linux; AARCH=aarch64 ;;
-    Darwin/x86_64) AOS=mac;   AARCH=x64 ;;
-    Darwin/arm64)  AOS=mac;   AARCH=aarch64 ;;
-    *) echo "Error: unsupported host platform $(uname -s)/$(uname -m) for JDK 21 bootstrap"; exit 1 ;;
-  esac
-  HOST_JDK_DIR="$REPO_ROOT/.tmp/jdks/host-jdk-21"
-  if [[ ! -x "$HOST_JDK_DIR/bin/jlink" && ! -x "$HOST_JDK_DIR/Contents/Home/bin/jlink" ]]; then
-    echo "No host JDK 21 found — bootstrapping Temurin 21 ($AOS/$AARCH) for jlink only..."
-    mkdir -p "$HOST_JDK_DIR"
-    _arch="$REPO_ROOT/.tmp/jdks/host-jdk-21.tar.gz"
-    curl -fsSL -o "$_arch" \
-      "https://api.adoptium.net/v3/binary/latest/21/ga/${AOS}/${AARCH}/jdk/hotspot/normal/eclipse?project=jdk" \
-      || { echo "Error: failed to download Temurin 21 for the host"; exit 1; }
-    tar -xzf "$_arch" -C "$HOST_JDK_DIR" --strip-components=1
-    rm -f "$_arch"
-  fi
-  if [[ -x "$HOST_JDK_DIR/bin/jlink" ]]; then
-    JDK21_HOME="$HOST_JDK_DIR"
-  else
-    JDK21_HOME="$HOST_JDK_DIR/Contents/Home"   # macOS layout
-  fi
-fi
-
-[[ -x "$JDK21_HOME/bin/jlink" ]] || { echo "Error: could not provision a JDK 21 jlink"; exit 1; }
+# Shared bootstrap helper — same logic the release `binary` component uses, so
+# the two paths cannot drift. See scripts/lib/ensure-host-jdk21.sh.
+source "$REPO_ROOT/scripts/lib/ensure-host-jdk21.sh"
+JDK21_HOME="$(ensure_host_jdk21 "$REPO_ROOT/.tmp/jdks")" \
+  || { echo "Error: could not provision a JDK 21 jlink"; exit 1; }
 echo "Using JDK 21 for jlink (Maven unaffected): $JDK21_HOME"
 
 # ---------------------------------------------------------------------------

@@ -163,10 +163,15 @@ check_http "mockserver/mockserver:$V tag" \
   "https://hub.docker.com/v2/repositories/mockserver/mockserver/tags/$V/"
 
 log_info ""
-log_info "== Binary bundles (GitHub Release, soft — convenience channel, not a gate) =="
-check_http_soft "mockserver $V linux-x86_64 bundle" \
+log_info "== Binary bundles (GitHub Release, HARD — every client launcher 404s at runtime without these) =="
+# HARD gate: the per-OS bundles are what the Node/Python/Ruby/Go/.NET/Rust client
+# launchers download at runtime. 7.0.0 shipped with zero assets (the binary step
+# soft-failed and this check was soft), so every launcher 404'd. Treat a missing
+# bundle as a release failure so it is caught before users hit it. Two
+# representative platforms are enough to detect a wholesale "no assets uploaded".
+check_http "mockserver $V linux-x86_64 bundle" \
   "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-$V/mockserver-$V-linux-x86_64.tar.gz"
-check_http_soft "mockserver $V windows-x86_64 bundle" \
+check_http "mockserver $V windows-x86_64 bundle" \
   "https://github.com/mock-server/mockserver-monorepo/releases/download/mockserver-$V/mockserver-$V-windows-x86_64.zip"
 
 log_info ""
