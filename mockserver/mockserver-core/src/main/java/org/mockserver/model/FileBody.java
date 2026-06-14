@@ -38,6 +38,10 @@ public class FileBody extends BodyWithContentType<String> {
         return new FileBody(filePath, contentType, templateType);
     }
 
+    public static FileBody file(String filePath, HttpTemplate.TemplateType templateType) {
+        return new FileBody(filePath, null, templateType);
+    }
+
     public String getFilePath() {
         return filePath;
     }

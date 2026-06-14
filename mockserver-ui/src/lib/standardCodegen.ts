@@ -1279,16 +1279,31 @@ function matcherToJava(matcher: StandardMatcher): string {
   return lines.join('\n');
 }
 
+/** Builds the Java `template(...)` expression, appending `.withTemplateFile(...)` when a file is set.
+ *  When only a file is set the no-template builder `template(TemplateType.X)` is used. */
+function templateJavaExpr(templateType: string, template: string, templateFile?: string): string {
+  const tf = templateFile?.trim();
+  if (tf && !template.trim()) {
+    return `template(TemplateType.${templateType})\n        .withTemplateFile("${escapeJava(tf)}")`;
+  }
+  if (tf) {
+    return `template(TemplateType.${templateType}, "${escapeJava(template)}")\n        .withTemplateFile("${escapeJava(tf)}")`;
+  }
+  return `template(TemplateType.${templateType}, "${escapeJava(template)}")`;
+}
+
 function actionToJava(action: StandardActionPayload): string {
   switch (action.type) {
     case 'static': {
       const s = action.static;
       if (!s) return '.respond(response())';
+      const fromFile = !!s.bodyFromFile && !!s.filePath?.trim();
       const lines = ['.respond('];
       lines.push('    response()');
       lines.push(`        .withStatusCode(${s.statusCode})`);
       if (s.reasonPhrase?.trim()) lines.push(`        .withReasonPhrase("${escapeJava(s.reasonPhrase.trim())}")`);
-      if (s.contentType) lines.push(`        .withHeader("Content-Type", "${escapeJava(s.contentType)}")`);
+      // For a FILE body the content type is carried on the body itself, not emitted as a header.
+      if (s.contentType && !fromFile) lines.push(`        .withHeader("Content-Type", "${escapeJava(s.contentType)}")`);
       const staticHeaders = parseKeyValueLines(s.headers ?? '', ':');
       if (staticHeaders) {
         for (const [k, vs] of Object.entries(staticHeaders)) {
@@ -1306,7 +1321,20 @@ function actionToJava(action: StandardActionPayload): string {
           }
         }
       }
-      if (s.body) lines.push(`        .withBody("${escapeJava(s.body)}")`);
+      if (fromFile) {
+        const path = `"${escapeJava(s.filePath!.trim())}"`;
+        if (s.fileTemplateType && s.contentType) {
+          lines.push(`        .withBody(file(${path}, MediaType.parse("${escapeJava(s.contentType)}"), TemplateType.${s.fileTemplateType}))`);
+        } else if (s.fileTemplateType) {
+          lines.push(`        .withBody(file(${path}, TemplateType.${s.fileTemplateType}))`);
+        } else if (s.contentType) {
+          lines.push(`        .withBody(file(${path}, MediaType.parse("${escapeJava(s.contentType)}")))`);
+        } else {
+          lines.push(`        .withBody(file(${path}))`);
+        }
+      } else if (s.body) {
+        lines.push(`        .withBody("${escapeJava(s.body)}")`);
+      }
       // Delay — withDelay(TimeUnit, long)
       if (s.delayValue != null && s.delayValue > 0 && isFinite(s.delayValue)) {
         lines.push(`        .withDelay(TimeUnit.${s.delayUnit ?? 'MILLISECONDS'}, ${s.delayValue})`);
@@ -1389,7 +1417,7 @@ function actionToJava(action: StandardActionPayload): string {
       if (!t) return '.respond(template(TemplateType.VELOCITY, ""))';
       return [
         '.respond(',
-        `    template(TemplateType.${t.templateType}, "${escapeJava(t.template)}")`,
+        '    ' + templateJavaExpr(t.templateType, t.template, t.templateFile),
         ')',
       ].join('\n');
     }
@@ -1493,7 +1521,7 @@ function actionToJava(action: StandardActionPayload): string {
       if (!ft) return '.forward(template(TemplateType.VELOCITY, ""))';
       return [
         '.forward(',
-        `    template(TemplateType.${ft.templateType}, "${escapeJava(ft.template)}")`,
+        '    ' + templateJavaExpr(ft.templateType, ft.template, ft.templateFile),
         ')',
       ].join('\n');
     }
@@ -1618,6 +1646,11 @@ function collectJavaImports(
   switch (action.type) {
     case 'static':
       imp.add('import static org.mockserver.model.HttpResponse.response;');
+      if (action.static?.bodyFromFile && action.static.filePath?.trim()) {
+        imp.add('import static org.mockserver.model.FileBody.file;');
+        if (action.static.contentType) imp.add('import org.mockserver.model.MediaType;');
+        if (action.static.fileTemplateType) imp.add('import org.mockserver.model.HttpTemplate.TemplateType;');
+      }
       if (buildConnectionOptionsJson(action.static?.connectionOptions)) {
         imp.add('import static org.mockserver.model.ConnectionOptions.connectionOptions;');
       }
@@ -1848,7 +1881,16 @@ export function standardToJava(matcher: StandardMatcher, action: StandardActionP
     lines.push('    ' + sideEffectToJava(se).split('\n').join('\n    '));
     lines.push('  )');
   }
-  lines.push('  ' + actionToJava(action).split('\n').join('\n  ') + ';');
+  // Emit the terminal action. actionToJava bundles the call (.respond(/.forward(/.error(...) with
+  // its argument indented 4 spaces; dedent the inner argument lines by 2 so that, after the 2-space
+  // wrapper that nests the call under mockServerClient, the argument aligns at the same depth (4
+  // spaces) as the matcher inside .when( ... ) — keeping request() and response()/template() flush.
+  const actionLines = actionToJava(action).split('\n');
+  const alignedAction = actionLines
+    .map((ln, i) => (i === 0 || i === actionLines.length - 1 ? ln : ln.replace(/^ {2}/, '')))
+    .map((ln) => '  ' + ln)
+    .join('\n');
+  lines.push(alignedAction + ';');
   return lines.join('\n');
 }
 

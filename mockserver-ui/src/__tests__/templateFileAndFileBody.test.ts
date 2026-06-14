@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildExpectationJson,
+  standardToJava,
   type StandardMatcher,
   type StandardActionPayload,
 } from '../lib/standardCodegen';
@@ -132,5 +133,116 @@ describe('buildExpectationJson static response with templated FILE body', () => 
     };
     const r = buildExpectationJson(baseMatcher(), action)['httpResponse'] as Record<string, unknown>;
     expect(r['body']).toBe('{"ok":true}');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Java code generation (standardToJava) — regression for the templateFile /
+// FILE-body fields that were previously dropped from the Java preview.
+// ---------------------------------------------------------------------------
+
+describe('standardToJava response template with templateFile', () => {
+  it('emits .withTemplateFile() and the no-template builder when only a file is set', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'template',
+      template: { templateType: 'VELOCITY', template: '', templateFile: 'templates/foo.vm' },
+    });
+    expect(java).toContain('template(TemplateType.VELOCITY)');
+    expect(java).toContain('.withTemplateFile("templates/foo.vm")');
+    // must NOT emit an empty inline template
+    expect(java).not.toContain('template(TemplateType.VELOCITY, "")');
+  });
+
+  it('emits both inline template and .withTemplateFile() when both are set', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'template',
+      template: { templateType: 'MUSTACHE', template: '{ "statusCode": 200 }', templateFile: 'templates/foo.mustache' },
+    });
+    expect(java).toContain('template(TemplateType.MUSTACHE, "{ \\"statusCode\\": 200 }")');
+    expect(java).toContain('.withTemplateFile("templates/foo.mustache")');
+  });
+});
+
+describe('standardToJava indentation alignment', () => {
+  it('aligns the action argument with the matcher inside .when(...)', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'forward_template',
+      forwardTemplate: { templateType: 'VELOCITY', template: '', templateFile: 'templets/foo.vl' },
+    });
+    // request() (matcher) and template() (action) must start at the same column
+    expect(java).toContain('\n    request()');
+    expect(java).toContain('\n    template(TemplateType.VELOCITY)');
+    // fluent calls one level deeper must also align
+    expect(java).toContain('\n        .withMethod(');
+    expect(java).toContain('\n        .withTemplateFile("templets/foo.vl")');
+  });
+});
+
+describe('standardToJava forward template with templateFile', () => {
+  it('emits .forward(template(...).withTemplateFile(...))', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'forward_template',
+      forwardTemplate: { templateType: 'VELOCITY', template: '', templateFile: 'templates/fwd.vm' },
+    });
+    expect(java).toContain('.forward(');
+    expect(java).toContain('template(TemplateType.VELOCITY)');
+    expect(java).toContain('.withTemplateFile("templates/fwd.vm")');
+    expect(java).not.toContain('template(TemplateType.VELOCITY, "")');
+  });
+});
+
+describe('standardToJava static response with templated FILE body', () => {
+  it('emits file(path, MediaType, TemplateType) and the right imports', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'static',
+      static: {
+        statusCode: 200,
+        body: '',
+        contentType: 'application/json',
+        bodyFromFile: true,
+        filePath: 'responses/order.json',
+        fileTemplateType: 'MUSTACHE',
+      },
+    });
+    expect(java).toContain('.withBody(file("responses/order.json", MediaType.parse("application/json"), TemplateType.MUSTACHE))');
+    expect(java).toContain('import static org.mockserver.model.FileBody.file;');
+    expect(java).toContain('import org.mockserver.model.MediaType;');
+    expect(java).toContain('import org.mockserver.model.HttpTemplate.TemplateType;');
+    // content type is on the FILE body, not a header
+    expect(java).not.toContain('.withHeader("Content-Type"');
+  });
+
+  it('emits file(path, TemplateType) with no MediaType/null when a template engine is set but no content type', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'static',
+      static: {
+        statusCode: 200,
+        body: '',
+        contentType: '',
+        bodyFromFile: true,
+        filePath: 'responses/order.json',
+        fileTemplateType: 'VELOCITY',
+      },
+    });
+    expect(java).toContain('.withBody(file("responses/order.json", TemplateType.VELOCITY))');
+    expect(java).toContain('import org.mockserver.model.HttpTemplate.TemplateType;');
+    expect(java).not.toContain('MediaType');
+    expect(java).not.toContain('null');
+  });
+
+  it('emits a plain file(path) body with no templateType and no MediaType', () => {
+    const java = standardToJava(baseMatcher(), {
+      type: 'static',
+      static: {
+        statusCode: 200,
+        body: '',
+        contentType: '',
+        bodyFromFile: true,
+        filePath: 'responses/static.json',
+        fileTemplateType: '',
+      },
+    });
+    expect(java).toContain('.withBody(file("responses/static.json"))');
+    expect(java).not.toContain('MediaType');
   });
 });

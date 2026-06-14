@@ -26,13 +26,13 @@ describe('forward_override Java code generation is correctly indented', () => {
 
     const java = standardToJava(baseMatcher(), action);
 
-    // The override block must be properly nested: forwardOverriddenRequest( then
-    // an indented request() then further-indented .withX calls — never a
-    // column-0 request() or builder calls jammed out to column ~22.
-    expect(java).toContain('  .forward(\n      forwardOverriddenRequest(\n        request()\n          .withMethod("PUT")');
-    expect(java).toContain('          .withPath("/v2/api")');
-    expect(java).toContain('          .withHeader("Host", "upstream:9090")');
-    expect(java).toContain('          .withSecure(true)');
+    // The override block must be properly nested: forwardOverriddenRequest( (aligned with the
+    // matcher's request() at 4 spaces) then an indented request() then further-indented .withX
+    // calls — never a column-0 request() or builder calls jammed out to column ~22.
+    expect(java).toContain('  .forward(\n    forwardOverriddenRequest(\n      request()\n        .withMethod("PUT")');
+    expect(java).toContain('        .withPath("/v2/api")');
+    expect(java).toContain('        .withHeader("Host", "upstream:9090")');
+    expect(java).toContain('        .withSecure(true)');
     // The old double-indent bug pushed the override builder calls out to ~column
     // 22; no line should be that deeply indented.
     expect(java.split('\n').some((l) => /^\s{20,}\.with/.test(l))).toBe(false);
