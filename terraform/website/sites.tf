@@ -153,6 +153,20 @@ resource "aws_cloudfront_distribution" "site" {
     include_cookies = false
   }
 
+  # SEO finding (GSC coverage 2026-06-14): the bucket is private (OAC), so S3
+  # returns 403 for any missing object. Without this mapping the archive
+  # subdomains answered deleted/partial URLs with a bare 403 ("Blocked due to
+  # access forbidden") or soft-404 instead of a real 404, so Google kept those
+  # URLs queued instead of dropping them. Mirror the main distribution: serve
+  # the friendly error page (present in every archive bucket) but return a real
+  # 404 status. error403.html meta-refreshes to www, so users land on current docs.
+  custom_error_response {
+    error_code            = 403
+    response_code         = 404
+    response_page_path    = "/error403.html"
+    error_caching_min_ttl = 300
+  }
+
   default_cache_behavior {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
