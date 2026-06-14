@@ -66,6 +66,8 @@ import static org.mockserver.model.PortBinding.portBinding;
 import static org.mockserver.socket.tls.PEMToFile.privateKeyFromPEMFile;
 import static org.mockserver.socket.tls.PEMToFile.x509ChainFromPEMFile;
 import static org.mockserver.verify.Verification.verification;
+import static org.mockserver.verify.VerificationSequence.verificationSequence;
+import static org.mockserver.verify.VerificationTimes.atLeast;
 import static org.mockserver.verify.VerificationTimes.exactly;
 import static org.slf4j.event.Level.*;
 
@@ -1196,6 +1198,183 @@ public class MockServerClient implements Stoppable {
                     .withContentType(APPLICATION_JSON_UTF_8)
                     .withPath(calculatePath("verify"))
                     .withBody(verificationSerializer.serialize(verification), StandardCharsets.UTF_8),
+                false
+            ).getBodyAsString();
+
+            if (result != null && !result.isEmpty()) {
+                throw new AssertionError(result);
+            }
+        } catch (AuthenticationException authenticationException) {
+            throw authenticationException;
+        } catch (Throwable throwable) {
+            throw new AssertionError(throwable.getMessage());
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Verify a request-response pair has been recorded for example:
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      request()
+     *          .withPath("/some_path"),
+     *      response()
+     *          .withStatusCode(200),
+     *      VerificationTimes.atLeast(1)
+     *  );
+     * </pre>
+     * VerificationTimes supports multiple static factory methods:
+     * <p>
+     * once()      - verify the request-response pair was matched only once
+     * exactly(n)  - verify the request-response pair was matched exactly n times
+     * atLeast(n)  - verify the request-response pair was matched at least n times
+     *
+     * @param requestDefinition the http request that must be matched for this verification to pass (may be null to match any request)
+     * @param httpResponse      the http response that must be matched for this verification to pass
+     * @param times             the number of times this request-response pair must be matched
+     * @throws AssertionError if the request-response pair has not been found
+     */
+    public MockServerClient verify(RequestDefinition requestDefinition, org.mockserver.model.HttpResponse httpResponse, VerificationTimes times) throws AssertionError {
+        if (httpResponse == null) {
+            throw new IllegalArgumentException("verify(RequestDefinition, HttpResponse, VerificationTimes) requires a non null HttpResponse object");
+        }
+        if (times == null) {
+            throw new IllegalArgumentException("verify(RequestDefinition, HttpResponse, VerificationTimes) requires a non null VerificationTimes object");
+        }
+
+        try {
+            Verification verificationObj = verification()
+                .withRequest(requestDefinition)
+                .withResponse(httpResponse)
+                .withTimes(times);
+            String result = sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("verify"))
+                    .withBody(verificationSerializer.serialize(verificationObj), StandardCharsets.UTF_8),
+                false
+            ).getBodyAsString();
+
+            if (result != null && !result.isEmpty()) {
+                throw new AssertionError(result);
+            }
+        } catch (AuthenticationException authenticationException) {
+            throw authenticationException;
+        } catch (Throwable throwable) {
+            throw new AssertionError(throwable.getMessage());
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Verify a response has been recorded (matching any request) for example:
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      response()
+     *          .withStatusCode(200),
+     *      VerificationTimes.atLeast(1)
+     *  );
+     * </pre>
+     *
+     * @param httpResponse the http response that must be matched for this verification to pass
+     * @param times        the number of times this response must be matched
+     * @throws AssertionError if the response has not been found
+     */
+    public MockServerClient verify(org.mockserver.model.HttpResponse httpResponse, VerificationTimes times) throws AssertionError {
+        return verify((RequestDefinition) null, httpResponse, times);
+    }
+
+    /**
+     * Verify a response has been recorded (matching any request), defaulting to at least once
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      response()
+     *          .withStatusCode(200)
+     *  );
+     * </pre>
+     *
+     * @param httpResponse the http response that must be matched for this verification to pass
+     * @throws AssertionError if the response has not been found
+     */
+    public MockServerClient verify(org.mockserver.model.HttpResponse httpResponse) throws AssertionError {
+        return verify((RequestDefinition) null, httpResponse, atLeast(1));
+    }
+
+    /**
+     * Verify using a pre-built Verification object for advanced use cases such as
+     * request-response pair verification:
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      verification()
+     *          .withRequest(request().withPath("/some_path"))
+     *          .withResponse(response().withStatusCode(200))
+     *          .withTimes(VerificationTimes.atLeast(1))
+     *  );
+     * </pre>
+     *
+     * @param verification the verification object containing the request, response, and/or times to verify
+     * @throws AssertionError if the verification fails
+     */
+    @SuppressWarnings("DuplicatedCode")
+    public MockServerClient verify(Verification verification) throws AssertionError {
+        if (verification == null) {
+            throw new IllegalArgumentException("verify(Verification) requires a non null Verification object");
+        }
+
+        try {
+            String result = sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("verify"))
+                    .withBody(verificationSerializer.serialize(verification), StandardCharsets.UTF_8),
+                false
+            ).getBodyAsString();
+
+            if (result != null && !result.isEmpty()) {
+                throw new AssertionError(result);
+            }
+        } catch (AuthenticationException authenticationException) {
+            throw authenticationException;
+        } catch (Throwable throwable) {
+            throw new AssertionError(throwable.getMessage());
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Verify using a pre-built VerificationSequence object for advanced use cases such as
+     * request-response sequence verification:
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      verificationSequence()
+     *          .withRequests(request().withPath("/first"), request().withPath("/second"))
+     *          .withResponses(response().withStatusCode(200), response().withStatusCode(201))
+     *  );
+     * </pre>
+     *
+     * @param verificationSequence the verification sequence object containing the requests, responses, and/or expectation ids to verify
+     * @throws AssertionError if the verification sequence fails
+     */
+    @SuppressWarnings("DuplicatedCode")
+    public MockServerClient verify(VerificationSequence verificationSequence) throws AssertionError {
+        if (verificationSequence == null) {
+            throw new IllegalArgumentException("verify(VerificationSequence) requires a non null VerificationSequence object");
+        }
+
+        try {
+            String result = sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("verifySequence"))
+                    .withBody(verificationSequenceSerializer.serialize(verificationSequence), StandardCharsets.UTF_8),
                 false
             ).getBodyAsString();
 
