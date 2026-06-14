@@ -3061,6 +3061,23 @@ components:
               type: string
             contentType:
               type: string
+        - type: object
+          description: "file response body — served from a file, optionally rendered as a template against the request"
+          additionalProperties: false
+          properties:
+            not:
+              type: boolean
+            type:
+              enum:
+                - FILE
+            filePath:
+              type: string
+            templateType:
+              enum:
+                - VELOCITY
+                - MUSTACHE
+            contentType:
+              type: string
     Delay:
       description: "response delay"
       type: object
