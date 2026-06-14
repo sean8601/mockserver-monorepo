@@ -1908,3 +1908,127 @@ export function standardToCurl(
   const safe = json.replace(/'/g, `'\\''`);
   return `curl -X PUT '${baseUrl}/mockserver/expectation' \\\n  -H 'Content-Type: application/json' \\\n  -d '${safe}'`;
 }
+
+// ---------------------------------------------------------------------------
+// Client-library codegen — Node, Python, Go, C# (native client APIs)
+//
+// Every MockServer client ultimately registers the same expectation JSON that
+// the JSON tab shows. Rather than reimplement each language's fluent builder
+// matrix, these generators hydrate the expectation from that JSON via each
+// client's native facility and register it through the native client.
+//
+// Fidelity note: the Node client is JSON-native (mockAnyResponse takes the raw
+// object), so it represents EVERY field faithfully regardless of client version.
+// Python/Go/C# hydrate into typed model objects, so a field the installed client
+// version's model does not yet declare (e.g. a newly added one) is dropped on
+// hydration — the JSON tab remains the authoritative, lossless source.
+// ---------------------------------------------------------------------------
+
+function clientHostPort(baseUrl: string): { host: string; port: number } {
+  try {
+    const u = new URL(baseUrl);
+    return {
+      host: u.hostname || 'localhost',
+      port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 1080),
+    };
+  } catch {
+    return { host: 'localhost', port: 1080 };
+  }
+}
+
+/** Re-indents every line of `block` after the first by `pad` spaces (the first line is already
+ *  positioned by the caller). */
+function indentAfterFirst(block: string, pad: number): string {
+  return block.split('\n').join('\n' + ' '.repeat(pad));
+}
+
+/** Renders a JSON-compatible value as a Python literal (true/false/null → True/False/None). */
+function toPythonLiteral(value: unknown, indent: number): string {
+  const pad = ' '.repeat(indent);
+  const pad2 = ' '.repeat(indent + 4);
+  if (value === null || value === undefined) return 'None';
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    return '[\n' + value.map((v) => pad2 + toPythonLiteral(v, indent + 4)).join(',\n') + '\n' + pad + ']';
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return '{}';
+  return '{\n' + entries.map(([k, v]) => pad2 + JSON.stringify(k) + ': ' + toPythonLiteral(v, indent + 4)).join(',\n') + '\n' + pad + '}';
+}
+
+export function standardToNode(matcher: StandardMatcher, action: StandardActionPayload, baseUrl: string): string {
+  const { host, port } = clientHostPort(baseUrl);
+  const json = JSON.stringify(buildExpectationJson(matcher, action), null, 2);
+  return [
+    "const { mockServerClient } = require('mockserver-client');",
+    '',
+    `mockServerClient("${host}", ${port})`,
+    `  .mockAnyResponse(${indentAfterFirst(json, 2)})`,
+    '  .then(',
+    '    () => console.log("expectation created"),',
+    '    (error) => console.error(error)',
+    '  );',
+  ].join('\n');
+}
+
+export function standardToPython(matcher: StandardMatcher, action: StandardActionPayload, baseUrl: string): string {
+  const { host, port } = clientHostPort(baseUrl);
+  const dict = toPythonLiteral(buildExpectationJson(matcher, action), 0);
+  return [
+    'from mockserver import MockServerClient, Expectation',
+    '',
+    `MockServerClient("${host}", ${port}).upsert(`,
+    `    Expectation.from_dict(${indentAfterFirst(dict, 4)})`,
+    ')',
+  ].join('\n');
+}
+
+export function standardToGo(matcher: StandardMatcher, action: StandardActionPayload, baseUrl: string): string {
+  const { host, port } = clientHostPort(baseUrl);
+  const json = JSON.stringify(buildExpectationJson(matcher, action), null, 2);
+  // A Go raw string literal cannot contain a backtick; if the JSON has one (e.g. a path/body
+  // value), break out of the raw string and concatenate a quoted backtick — the standard idiom.
+  const goRaw = json.replace(/`/g, '` + "`" + `');
+  return [
+    'package main',
+    '',
+    'import (',
+    '\t"encoding/json"',
+    '',
+    '\tmockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go"',
+    ')',
+    '',
+    'func main() {',
+    `\tclient := mockserver.New("${host}", ${port})`,
+    '',
+    '\texpectationJSON := `' + goRaw + '`',
+    '\tvar expectation mockserver.Expectation',
+    '\tif err := json.Unmarshal([]byte(expectationJSON), &expectation); err != nil {',
+    '\t\tpanic(err)',
+    '\t}',
+    '\tif _, err := client.Upsert(expectation); err != nil {',
+    '\t\tpanic(err)',
+    '\t}',
+    '}',
+  ].join('\n');
+}
+
+export function standardToCsharp(matcher: StandardMatcher, action: StandardActionPayload, baseUrl: string): string {
+  const { host, port } = clientHostPort(baseUrl);
+  const json = JSON.stringify(buildExpectationJson(matcher, action), null, 2);
+  // C# verbatim string: escape embedded double quotes by doubling them.
+  const verbatim = json.replace(/"/g, '""');
+  return [
+    'using System.Text.Json;',
+    'using MockServer.Client;',
+    'using MockServer.Client.Models;',
+    '',
+    `using var client = new MockServerClient("${host}", ${port});`,
+    '',
+    `var expectation = JsonSerializer.Deserialize<Expectation>(@"${verbatim}");`,
+    'client.Upsert(expectation!);',
+  ].join('\n');
+}
