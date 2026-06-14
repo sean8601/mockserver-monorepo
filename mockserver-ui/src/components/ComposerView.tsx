@@ -992,13 +992,27 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
       }
       cookiesText = cLines.join('\n');
     }
+    // A FILE response body is read back into the file-body fields rather than the inline body text.
+    const rawBody = r['body'];
+    const fileBody = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+      && (rawBody as Record<string, unknown>)['type'] === 'FILE')
+      ? (rawBody as Record<string, unknown>) : null;
+    const fileTt = fileBody?.['templateType'];
+    const fileContentType = typeof fileBody?.['contentType'] === 'string' ? (fileBody['contentType'] as string) : undefined;
     return {
       type: 'static',
       staticState: {
         statusCode: typeof r['statusCode'] === 'number' ? (r['statusCode'] as number) : 200,
-        body: unwrapBody(r['body']),
-        contentType: Array.isArray(contentType) ? String((contentType as unknown[])[0] ?? 'application/json')
-          : typeof contentType === 'string' ? contentType : 'application/json',
+        body: fileBody ? '' : unwrapBody(r['body']),
+        bodyFromFile: !!fileBody,
+        filePath: fileBody && typeof fileBody['filePath'] === 'string' ? (fileBody['filePath'] as string) : '',
+        fileTemplateType: fileTt === 'MUSTACHE' || fileTt === 'VELOCITY' ? fileTt : '',
+        // For a FILE body the content type is whatever the body declares (possibly none); don't
+        // fall back to the application/json header default, which would silently add one on re-save.
+        contentType: fileBody
+          ? (fileContentType ?? '')
+          : (Array.isArray(contentType) ? String((contentType as unknown[])[0] ?? 'application/json')
+            : typeof contentType === 'string' ? contentType : 'application/json'),
         // Preserve any non-content-type response headers so editing in place does not drop them.
         headers: headersToText(r['headers'], 'content-type'),
         connectionOptions: connectionOptionsFromValue(r['connectionOptions']),
@@ -1065,6 +1079,7 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
       templateState: {
         templateType: tt === 'JAVASCRIPT' || tt === 'MUSTACHE' ? tt : 'VELOCITY',
         template: typeof t['template'] === 'string' ? (t['template'] as string) : '',
+        templateFile: typeof t['templateFile'] === 'string' ? (t['templateFile'] as string) : '',
       },
     };
   }
@@ -1192,6 +1207,7 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
       forwardTemplateState: {
         templateType: tt === 'JAVASCRIPT' || tt === 'MUSTACHE' ? tt : 'VELOCITY',
         template: typeof ft['template'] === 'string' ? (ft['template'] as string) : '',
+        templateFile: typeof ft['templateFile'] === 'string' ? (ft['templateFile'] as string) : '',
       },
     };
   }
@@ -1240,6 +1256,12 @@ interface StaticState {
   statusCode: number;
   body: string;
   contentType: string;
+  /** When true the body is served from a file (FILE body) rather than the inline `body` text. */
+  bodyFromFile: boolean;
+  /** Path to the response body file (classpath or filesystem), used when `bodyFromFile` is true. */
+  filePath: string;
+  /** Optional template engine applied to the body file against the request ('' = serve verbatim). */
+  fileTemplateType: '' | 'MUSTACHE' | 'VELOCITY';
   /** Additional response headers as "Name: value" lines, beyond Content-Type. */
   headers: string;
   /** Connection-level response controls; undefined fields use the server default. */
@@ -1317,15 +1339,52 @@ function StaticHttpPanel({
         slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
       />
       <TextField
-        label="Response body"
-        multiline
-        minRows={6}
-        maxRows={20}
-        value={state.body}
-        onChange={(e) => setState({ ...state, body: e.target.value })}
-        placeholder='{"ok":true}'
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
-      />
+        select
+        label="Body source"
+        size="small"
+        value={state.bodyFromFile ? 'file' : 'inline'}
+        onChange={(e) => setState({ ...state, bodyFromFile: e.target.value === 'file' })}
+        sx={{ width: 220 }}
+      >
+        <MenuItem value="inline">Inline body</MenuItem>
+        <MenuItem value="file">From file</MenuItem>
+      </TextField>
+      {state.bodyFromFile ? (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <TextField
+            label="Body file path"
+            size="small"
+            value={state.filePath}
+            onChange={(e) => setState({ ...state, filePath: e.target.value })}
+            placeholder="responses/order.json"
+            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          />
+          <TextField
+            select
+            label="Template engine (optional)"
+            size="small"
+            value={state.fileTemplateType}
+            onChange={(e) => setState({ ...state, fileTemplateType: e.target.value as StaticState['fileTemplateType'] })}
+            sx={{ width: 320 }}
+            helperText="Render the file as a template against the request. JavaScript is not supported for body files — use a Response template for that."
+          >
+            <MenuItem value="">None (serve file verbatim)</MenuItem>
+            <MenuItem value="MUSTACHE">Mustache</MenuItem>
+            <MenuItem value="VELOCITY">Velocity</MenuItem>
+          </TextField>
+        </Box>
+      ) : (
+        <TextField
+          label="Response body"
+          multiline
+          minRows={6}
+          maxRows={20}
+          value={state.body}
+          onChange={(e) => setState({ ...state, body: e.target.value })}
+          placeholder='{"ok":true}'
+          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        />
+      )}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
         <TextField
           label="Response delay"
@@ -1605,6 +1664,8 @@ type TemplateType = 'VELOCITY' | 'JAVASCRIPT' | 'MUSTACHE';
 interface TemplateState {
   templateType: TemplateType;
   template: string;
+  /** Optional path to a file holding the template; used when the inline template is empty. */
+  templateFile: string;
 }
 
 const TEMPLATE_PLACEHOLDERS: Record<TemplateType, string> = {
@@ -1664,6 +1725,15 @@ function TemplatePanel({
         value={state.template}
         onChange={(e) => setState({ ...state, template: e.target.value })}
         placeholder={TEMPLATE_PLACEHOLDERS[state.templateType]}
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <TextField
+        label="Or load template from file (optional)"
+        size="small"
+        value={state.templateFile}
+        onChange={(e) => setState({ ...state, templateFile: e.target.value })}
+        placeholder="templates/some_response.mustache"
+        helperText="Classpath or filesystem path. Used when the inline template above is empty; the inline template wins when both are set."
         slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
       />
     </Box>
@@ -2356,6 +2426,15 @@ function ForwardTemplatePanel({
         value={state.template}
         onChange={(e) => setState({ ...state, template: e.target.value })}
         placeholder='return { "method": request.method, "path": "/upstream" + request.path };'
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+      />
+      <TextField
+        label="Or load template from file (optional)"
+        size="small"
+        value={state.templateFile ?? ''}
+        onChange={(e) => setState({ ...state, templateFile: e.target.value })}
+        placeholder="templates/forward_request.mustache"
+        helperText="Classpath or filesystem path. Used when the inline template above is empty; the inline template wins when both are set."
         slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
       />
     </Box>
@@ -3100,6 +3179,9 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
     statusCode: 200,
     body: '',
     contentType: 'application/json',
+    bodyFromFile: false,
+    filePath: '',
+    fileTemplateType: '',
     headers: '',
     reasonPhrase: '',
     cookies: '',
@@ -3124,6 +3206,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [templateState, setTemplateState] = useState<TemplateState>({
     templateType: 'VELOCITY',
     template: '',
+    templateFile: '',
   });
   const [errorState, setErrorState] = useState<ErrorState>({
     dropConnection: true,
@@ -3162,6 +3245,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [forwardTemplateState, setForwardTemplateState] = useState<StandardForwardTemplateState>({
     templateType: 'VELOCITY',
     template: '',
+    templateFile: '',
   });
   const [forwardClassCallbackState, setForwardClassCallbackState] = useState<StandardForwardClassCallbackState>({
     callbackClass: '',
@@ -3844,7 +3928,9 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   return null;
                 }
                 switch (actionType) {
-                  case 'static': return null;
+                  case 'static':
+                    return (staticState.bodyFromFile && staticState.filePath.trim().length === 0)
+                      ? 'Enter the response body file path' : null;
                   case 'forward': return (forwardState.host.trim().length > 0 && forwardState.port > 0) ? null : 'Enter a forward host and port';
                   case 'forward_override':
                     return (
@@ -3859,7 +3945,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   case 'forward_fallback':
                     return (forwardFallbackState.host.trim().length > 0 && forwardFallbackState.port > 0) ? null : 'Enter a fallback host and port';
                   case 'callback': return callbackState.callbackClass.trim().length > 0 ? null : 'Enter the callback class name';
-                  case 'template': return templateState.template.trim().length > 0 ? null : 'Enter a response template';
+                  case 'template': return (templateState.template.trim().length > 0 || (templateState.templateFile ?? '').trim().length > 0) ? null : 'Enter a response template or a template file path';
                   case 'error':
                     if (errorState.responseBytesB64.trim().length > 0 && !isValidBase64(errorState.responseBytesB64)) return 'Response bytes are not valid base64';
                     return (errorState.dropConnection || errorState.responseBytesB64.trim().length > 0) ? null : 'Enable drop-connection or enter response bytes';
@@ -3881,7 +3967,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                     }
                     return null;
                   }
-                  case 'forward_template': return forwardTemplateState.template.trim().length > 0 ? null : 'Enter a forward template';
+                  case 'forward_template': return (forwardTemplateState.template.trim().length > 0 || (forwardTemplateState.templateFile ?? '').trim().length > 0) ? null : 'Enter a forward template or a template file path';
                   case 'forward_class_callback': return forwardClassCallbackState.callbackClass.trim().length > 0 ? null : 'Enter the forward callback class name';
                   case 'grpc_stream': return null;
                 }

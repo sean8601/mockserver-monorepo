@@ -85,6 +85,13 @@ export interface StandardStaticState {
   statusCode: number;
   body: string;
   contentType: string;
+  /** When true the response body is served from a file (a FILE body) rather than the inline `body`. */
+  bodyFromFile?: boolean;
+  /** Path to the response body file (classpath or filesystem), used when `bodyFromFile` is true. */
+  filePath?: string;
+  /** Optional template engine applied to the body file's contents against the request.
+   *  Empty = serve the file verbatim. Only the text engines (MUSTACHE/VELOCITY) are supported. */
+  fileTemplateType?: '' | 'MUSTACHE' | 'VELOCITY';
   /** Additional response headers as "Name: value" lines, beyond Content-Type. */
   headers?: string;
   /** Connection-level response controls (keep-alive, close socket, Content-Length override, …). */
@@ -134,6 +141,9 @@ export interface StandardCallbackState {
 export interface StandardTemplateState {
   templateType: 'VELOCITY' | 'JAVASCRIPT' | 'MUSTACHE';
   template: string;
+  /** Optional path to a file holding the template (classpath or filesystem). When set and the
+   *  inline template is empty, the template is loaded from this file. Inline template wins. */
+  templateFile?: string;
 }
 
 export interface StandardErrorState {
@@ -237,6 +247,9 @@ export interface StandardDnsState {
 export interface StandardForwardTemplateState {
   templateType: 'VELOCITY' | 'JAVASCRIPT' | 'MUSTACHE';
   template: string;
+  /** Optional path to a file holding the template (classpath or filesystem). When set and the
+   *  inline template is empty, the template is loaded from this file. Inline template wins. */
+  templateFile?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -593,7 +606,17 @@ export function buildExpectationJson(
     case 'static':
       if (action.static) {
         const payload: Record<string, unknown> = { statusCode: action.static.statusCode };
-        if (action.static.body) payload['body'] = action.static.body;
+        const fromFile = action.static.bodyFromFile && !!action.static.filePath?.trim();
+        if (fromFile) {
+          // Serve the body from a file. When a template engine is selected the file is rendered
+          // as a template against the request; the content type is carried on the FILE body itself.
+          const fileBody: Record<string, unknown> = { type: 'FILE', filePath: action.static.filePath!.trim() };
+          if (action.static.fileTemplateType) fileBody['templateType'] = action.static.fileTemplateType;
+          if (action.static.contentType) fileBody['contentType'] = action.static.contentType;
+          payload['body'] = fileBody;
+        } else if (action.static.body) {
+          payload['body'] = action.static.body;
+        }
         const staticHeaders: Record<string, string[]> = {};
         const extraHeaders = parseKeyValueLines(action.static.headers ?? '', ':');
         if (extraHeaders) {
@@ -604,7 +627,8 @@ export function buildExpectationJson(
             staticHeaders[k] = vs;
           }
         }
-        if (action.static.contentType) {
+        // For a FILE body the content type lives on the body object, so it is not also emitted as a header.
+        if (action.static.contentType && !fromFile) {
           staticHeaders['content-type'] = [action.static.contentType];
         }
         if (Object.keys(staticHeaders).length > 0) {
@@ -668,10 +692,16 @@ export function buildExpectationJson(
       break;
     case 'template':
       if (action.template) {
-        out['httpResponseTemplate'] = {
-          templateType: action.template.templateType,
-          template: action.template.template,
-        };
+        const tpl: Record<string, unknown> = { templateType: action.template.templateType };
+        const tplFile = action.template.templateFile?.trim();
+        if (tplFile) {
+          tpl['templateFile'] = tplFile;
+          // inline template still wins on the server, so only include it when the user typed one
+          if (action.template.template.trim()) tpl['template'] = action.template.template;
+        } else {
+          tpl['template'] = action.template.template;
+        }
+        out['httpResponseTemplate'] = tpl;
       }
       break;
     case 'error':
@@ -778,10 +808,15 @@ export function buildExpectationJson(
       break;
     case 'forward_template':
       if (action.forwardTemplate) {
-        out['httpForwardTemplate'] = {
-          templateType: action.forwardTemplate.templateType,
-          template: action.forwardTemplate.template,
-        };
+        const ftpl: Record<string, unknown> = { templateType: action.forwardTemplate.templateType };
+        const ftplFile = action.forwardTemplate.templateFile?.trim();
+        if (ftplFile) {
+          ftpl['templateFile'] = ftplFile;
+          if (action.forwardTemplate.template.trim()) ftpl['template'] = action.forwardTemplate.template;
+        } else {
+          ftpl['template'] = action.forwardTemplate.template;
+        }
+        out['httpForwardTemplate'] = ftpl;
       }
       break;
     case 'forward_class_callback':
