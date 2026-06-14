@@ -3153,6 +3153,8 @@ components:
           $ref: "#/components/schemas/ExpectationId"
         httpRequest:
           $ref: "#/components/schemas/RequestDefinition"
+        httpResponse:
+          $ref: "#/components/schemas/HttpResponse"
         times:
           $ref: "#/components/schemas/VerificationTimes"
         maximumNumberOfRequestToReturnInVerificationFailure:
@@ -3162,6 +3164,14 @@ components:
             - expectationId
         - required:
             - httpRequest
+        - required:
+            - httpResponse
+          not:
+            anyOf:
+              - required:
+                  - expectationId
+              - required:
+                  - httpRequest
     VerificationTimes:
       description: "number of request to verify"
       type: object
@@ -3185,6 +3195,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RequestDefinition"
+        httpResponses:
+          type: array
+          items:
+            $ref: "#/components/schemas/HttpResponse"
         maximumNumberOfRequestToReturnInVerificationFailure:
           type: integer
       oneOf:
@@ -3192,6 +3206,14 @@ components:
             - expectationIds
         - required:
             - httpRequests
+        - required:
+            - httpResponses
+          not:
+            anyOf:
+              - required:
+                  - expectationIds
+              - required:
+                  - httpRequests
     ClockRequest:
       description: "clock control request"
       type: object
