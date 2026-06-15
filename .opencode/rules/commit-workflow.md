@@ -170,7 +170,7 @@ Provide PASS or BLOCK verdict with severity-ranked findings.
 
 **Security:** Before sending the diff to the reviewer, scan for obvious secrets (API keys, tokens, passwords, `.env` content). If found, warn the user and do NOT include the secret values in the review prompt — redact them or exclude those files from the review.
 
-If the review returns **BLOCK**, fix the issues, re-run any affected validations (Step 2), and re-run the review before committing.
+If the review returns **BLOCK**, fix the issues, re-run any affected validations (Step 2), and re-run the review before committing. Iterate until the review returns PASS — but you **MUST cap the loop at 8 review iterations** (per the Iteration Protocol in [[review-constitution]]). If 8 iterations complete without a PASS, **do not commit**: record the unresolved residual risk explicitly (the outstanding findings and why they remain) and escalate to the user rather than reintegrating as if converged.
 If the review returns **PASS**, proceed to commit.
 
 ## Step 5: Acquire Lock and Commit
@@ -225,7 +225,9 @@ flowchart TD
     E --> F{PASS?}
     F -->|Yes| G["Acquire commit lock
     acquire-commit-lock.sh"]
-    F -->|No| H["Fix issues"] --> D
+    F -->|"No (<8 iters)"| H["Fix issues"] --> D
+    F -->|"No (8th iter)"| CAP["Record residual risk
+    escalate — do NOT commit"]
     G --> I{Lock acquired?}
     I -->|Yes| J["Verify staged files
     Create commit

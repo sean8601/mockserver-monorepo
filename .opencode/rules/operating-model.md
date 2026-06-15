@@ -6,7 +6,8 @@ The **default way of working** for every non-trivial task is autonomous and
 parallel-first: **decompose** the work into the smallest independent units,
 **delegate** them to subagents and run them in parallel, **verify** each unit as
 fully as can be done safely, subject each to **adversarial review until no major
-findings remain**, **re-verify** after any review-driven change, then **commit
+findings remain (capped at 8 iterations — then record residual risk and
+escalate)**, **re-verify** after any review-driven change, then **commit
 each unit separately and reintegrate it onto `master`**. The gate chain — not a
 human prompt — is the authority to ship. Scale the ceremony to the task: full
 DVRR for substantial/risky work, a lightweight path for small changes, a direct
@@ -25,9 +26,12 @@ flowchart LR
     B --> C["Verify
     tests, build, lint, dry-run"]
     C --> D["Adversarial review
-    until no major findings"]
+    until no major findings
+    (≤8 iterations)"]
     D --> E{Findings?}
-    E -->|major| F["Fix"] --> C
+    E -->|"major (<8 iters)"| F["Fix"] --> C
+    E -->|"major (8th iter)"| X["Record residual risk
+    escalate — do not commit"]
     E -->|none| G["Commit unit
     separately"]
     G --> H["Reintegrate
@@ -44,7 +48,7 @@ flowchart LR
 | **Delegate** | Hand independent units to subagents and run them concurrently. Default to delegation unless the work is tightly coupled, must be sequenced, or is too ambiguous to split safely. | [[subagent-routing]], AGENTS.md routing table |
 | **Isolate** | Independent *agents* (separate sessions, long autonomous runs) get their own worktree. The primary interactive session stays in the main checkout for IntelliJ MCP visibility; its subagents share its filesystem. Isolation is **between independent agents, not within one**. | [[worktree-workflow]], [[intellij-mcp-preference]] |
 | **Verify** | Verify each unit as fully as is *safe*: unit/integration/e2e tests, build, lint, static analysis, type checks, Docker builds, and non-destructive runtime checks (`--dry-run`, `terraform plan`, `--version`, validation flags, executing scripts you wrote). **If it can be safely verified, verify it**; otherwise use the strongest safe substitute. | [[testing-policy]], [[commit-workflow]] (Step 2) |
-| **Review** | Subject each unit to adversarial review on a fresh context / different model, applying the 8-lens constitution. The reviewer tries to *disprove* the change, not bless it. Repeat until no major (CRITICAL/MAJOR) findings remain. | [[review-constitution]]; commit gate uses `review-cheap` (per [[commit-workflow]] Step 4), merge-to-master escalates to `review-final`; `code-reviewer` is the quick pre-commit check only |
+| **Review** | Subject each unit to adversarial review on a fresh context / different model, applying the 8-lens constitution. The reviewer tries to *disprove* the change, not bless it. Repeat until no major (CRITICAL/MAJOR) findings remain **or 8 review iterations are reached** — at the cap, record residual risk and escalate rather than reintegrate as if converged (see [[review-constitution]] Iteration Protocol). | [[review-constitution]]; commit gate uses `review-cheap` (per [[commit-workflow]] Step 4), merge-to-master escalates to `review-final`; `code-reviewer` is the quick pre-commit check only |
 | **Re-verify** | Any review-driven change re-triggers the relevant verification — fixes regress. No unit is complete until post-review verification passes. | [[commit-workflow]] (Step 4 — re-run on BLOCK) |
 | **Commit** | One coherent unit → one commit. Never bundle unrelated changes. Preserves traceability, reviewability, and clean rollback. | [[commit-workflow]] |
 | **Reintegrate** | Rebase the unit onto the latest `master` and push. Conflicts surface here; resolve them, then re-verify. Concurrent rebases serialise through the `flock` rebase lock. | [[worktree-workflow]] (steps 7–8), `/worktree-merge` |

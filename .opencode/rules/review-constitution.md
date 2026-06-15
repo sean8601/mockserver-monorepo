@@ -221,3 +221,25 @@ After applying all lenses and completing the checklist, return ONE of:
 - **BLOCK** — One or more CRITICAL or MAJOR findings exist; code/spec must not proceed until fixed
 
 Do NOT use "PASS with reservations" or similar hedging language. Either it passes or it blocks.
+
+## Iteration Protocol
+
+Adversarial review is **iterative** — the author fixes BLOCK findings and the
+artefact is re-reviewed on a fresh context until it converges. The loop is
+bounded. **One iteration = one review subagent invocation**: the initial review
+is iteration 1, and each re-review after a fix is the next iteration.
+
+- Each iteration **must** produce explicit findings (or an explicit PASS).
+- Each MAJOR/CRITICAL finding **must** be addressed or **consciously
+  dispositioned** (accepted with a recorded rationale) before the next iteration.
+  Dispositioning anything above MINOR **requires user approval** — an agent must
+  not self-approve findings to advance toward the cap.
+- After any material change, **re-verify** (re-run the affected validations)
+  before re-reviewing — fixes regress.
+- Terminate when **either** the review returns PASS (no new major findings)
+  **or** **8 review iterations** have completed — whichever comes first.
+- If the **8-iteration cap** is reached **without** a PASS, do **not** proceed as
+  if converged: **record the unresolved residual risk explicitly** — the
+  outstanding findings and why they remain, in `docs/plans/<task>.local.md` or
+  inline in the escalation message — and **escalate to the user**. The
+  8-iteration ceiling is a hard cap. (Spec: `docs/operations/ai-sdlc-integration-spec.md` §14.5.)
