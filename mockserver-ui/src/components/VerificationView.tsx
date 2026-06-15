@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -124,16 +124,22 @@ function ResponseFields({ form, onChange }: { form: ResponseForm; onChange: (f: 
   );
 }
 
-function ResponseMatcherSection({
+/**
+ * Equal-level collapsible section used for BOTH the request and response matchers,
+ * so the two read as symmetric, optional inputs (same header + chevron styling).
+ */
+function MatcherSection({
+  title,
+  caption,
   expanded,
   onToggle,
-  form,
-  onChange,
+  children,
 }: {
+  title: string;
+  caption?: string;
   expanded: boolean;
   onToggle: () => void;
-  form: ResponseForm;
-  onChange: (f: ResponseForm) => void;
+  children: ReactNode;
 }) {
   return (
     <Box sx={{ mt: 1.5 }}>
@@ -142,21 +148,23 @@ function ResponseMatcherSection({
         sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
         role="button"
         aria-expanded={expanded}
-        aria-label={expanded ? 'Collapse response matcher' : 'Expand response matcher'}
+        aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
       >
-        <IconButton size="small" aria-label={expanded ? 'Collapse response matcher' : 'Expand response matcher'}>
+        <IconButton size="small" aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}>
           {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
         </IconButton>
         <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-          Response matcher (optional)
+          {title}
         </Typography>
       </Box>
       <Collapse in={expanded}>
         <Box sx={{ mt: 1, pl: 1 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            Match against responses recorded from proxied/forwarded traffic.
-          </Typography>
-          <ResponseFields form={form} onChange={onChange} />
+          {caption && (
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+              {caption}
+            </Typography>
+          )}
+          {children}
         </Box>
       </Collapse>
     </Box>
@@ -191,12 +199,15 @@ export default function VerificationView({ connectionParams }: { connectionParam
   const [count, setCount] = useState(1);
   const [atMost, setAtMost] = useState(1);
 
+  const [singleRequestExpanded, setSingleRequestExpanded] = useState(true);
+
   // Single-request response matcher
   const [singleResponse, setSingleResponse] = useState<ResponseForm>(emptyResponse);
   const [singleResponseExpanded, setSingleResponseExpanded] = useState(false);
 
   // Sequence verification
   const [sequence, setSequence] = useState<RequestForm[]>([emptyRequest(), emptyRequest()]);
+  const [seqRequestExpanded, setSeqRequestExpanded] = useState<boolean[]>([true, true]);
 
   // Sequence response matchers
   const [seqResponses, setSeqResponses] = useState<ResponseForm[]>([emptyResponse(), emptyResponse()]);
@@ -241,12 +252,14 @@ export default function VerificationView({ connectionParams }: { connectionParam
 
   const addSequenceStep = () => {
     setSequence([...sequence, emptyRequest()]);
+    setSeqRequestExpanded([...seqRequestExpanded, true]);
     setSeqResponses([...seqResponses, emptyResponse()]);
     setSeqResponseExpanded([...seqResponseExpanded, false]);
   };
 
   const removeSequenceStep = (index: number) => {
     setSequence(sequence.filter((_, j) => j !== index));
+    setSeqRequestExpanded(seqRequestExpanded.filter((_, j) => j !== index));
     setSeqResponses(seqResponses.filter((_, j) => j !== index));
     setSeqResponseExpanded(seqResponseExpanded.filter((_, j) => j !== index));
   };
@@ -274,16 +287,21 @@ export default function VerificationView({ connectionParams }: { connectionParam
 
       {mode === 'single' ? (
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mb: 1 }}>
-            Request matcher (optional)
-          </Typography>
-          <RequestFields form={single} onChange={setSingle} />
-          <ResponseMatcherSection
+          <MatcherSection
+            title="Request matcher (optional)"
+            expanded={singleRequestExpanded}
+            onToggle={() => setSingleRequestExpanded(!singleRequestExpanded)}
+          >
+            <RequestFields form={single} onChange={setSingle} />
+          </MatcherSection>
+          <MatcherSection
+            title="Response matcher (optional)"
+            caption="Match against responses recorded from proxied/forwarded traffic."
             expanded={singleResponseExpanded}
             onToggle={() => setSingleResponseExpanded(!singleResponseExpanded)}
-            form={singleResponse}
-            onChange={setSingleResponse}
-          />
+          >
+            <ResponseFields form={singleResponse} onChange={setSingleResponse} />
+          </MatcherSection>
           <Box sx={{ display: 'flex', gap: 1, mt: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography variant="body2" color="text.secondary">Received</Typography>
             <Select size="small" value={timesMode} onChange={(e) => setTimesMode(e.target.value as VerificationTimesMode)} sx={{ width: 150 }}>
@@ -316,16 +334,21 @@ export default function VerificationView({ connectionParams }: { connectionParam
             <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 1.5 }}>
               <Typography variant="caption" sx={{ mt: 1, width: 20 }}>{i + 1}.</Typography>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, mb: 0.5, display: 'block' }}>
-                  Request matcher (optional)
-                </Typography>
-                <RequestFields form={row} onChange={(f) => setSequence(sequence.map((r, j) => j === i ? f : r))} />
-                <ResponseMatcherSection
+                <MatcherSection
+                  title="Request matcher (optional)"
+                  expanded={seqRequestExpanded[i] ?? true}
+                  onToggle={() => setSeqRequestExpanded(seqRequestExpanded.map((v, j) => j === i ? !v : v))}
+                >
+                  <RequestFields form={row} onChange={(f) => setSequence(sequence.map((r, j) => j === i ? f : r))} />
+                </MatcherSection>
+                <MatcherSection
+                  title="Response matcher (optional)"
+                  caption="Match against responses recorded from proxied/forwarded traffic."
                   expanded={seqResponseExpanded[i] ?? false}
                   onToggle={() => setSeqResponseExpanded(seqResponseExpanded.map((v, j) => j === i ? !v : v))}
-                  form={seqResponses[i] ?? emptyResponse()}
-                  onChange={(f) => setSeqResponses(seqResponses.map((r, j) => j === i ? f : r))}
-                />
+                >
+                  <ResponseFields form={seqResponses[i] ?? emptyResponse()} onChange={(f) => setSeqResponses(seqResponses.map((r, j) => j === i ? f : r))} />
+                </MatcherSection>
               </Box>
               <IconButton size="small" aria-label="Remove step" disabled={sequence.length <= 1}
                 onClick={() => removeSequenceStep(i)}>
