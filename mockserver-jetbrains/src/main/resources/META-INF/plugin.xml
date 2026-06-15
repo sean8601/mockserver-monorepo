@@ -4,14 +4,31 @@
     <vendor email="jamesdbloom@gmail.com" url="https://www.mock-server.com">MockServer</vendor>
 
     <description><![CDATA[
-    MockServer integration for IntelliJ-based IDEs.
+    <p><b><a href="https://www.mock-server.com">MockServer</a></b> lets you easily mock any system you integrate with via HTTP or HTTPS (services, REST or RPC APIs, and more), so you can develop and test against simulated dependencies instead of real ones. This plugin brings MockServer controls into IntelliJ IDEA and all other JetBrains IDEs, so you can run and inspect a local mock server without leaving the editor.</p>
+
+    <h3>Features</h3>
     <ul>
-      <li>Open the MockServer Dashboard in your browser</li>
-      <li>Start a MockServer Docker container from the IDE</li>
-      <li>Tool window for quick access to MockServer controls</li>
+      <li><b>Start MockServer (Docker)</b> — launches the official <code>mockserver/mockserver</code> container, listening on port <code>1080</code>, with a single click.</li>
+      <li><b>Open MockServer Dashboard</b> — opens the live dashboard (<code>http://localhost:1080/mockserver/dashboard</code>) in your browser to watch requests as they arrive, inspect why a request did or didn't match, and review active expectations.</li>
+      <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar giving one-click access to the same actions, always within reach.</li>
     </ul>
-    <p>This is an initial scaffold — more features coming soon.</p>
+
+    <h3>Usage</h3>
+    <p>Run the actions from the <b>Tools &gt; MockServer</b> menu or the <b>MockServer</b> tool window. A typical flow: <i>Start MockServer (Docker)</i>, create expectations by sending JSON to <code>http://localhost:1080/mockserver/expectation</code> (or via any MockServer client library), then <i>Open MockServer Dashboard</i> to inspect traffic.</p>
+
+    <h3>Requirements</h3>
+    <ul>
+      <li><b>Docker</b> must be installed and running to use the <i>Start MockServer (Docker)</i> action. The dashboard action only needs a running MockServer (started by this plugin or anywhere else) reachable at <code>localhost:1080</code>.</li>
+    </ul>
+
+    <p>Full documentation — creating expectations, verifying requests, the REST API, and client libraries for Java, JavaScript, Python, Ruby, Go, .NET, Rust and PHP — is at <a href="https://www.mock-server.com">www.mock-server.com</a>.</p>
     ]]></description>
+
+    <change-notes><![CDATA[
+    <ul>
+      <li><b>7.1.0</b> — Start MockServer via Docker, open the MockServer Dashboard, and a dedicated MockServer tool window, all from within the IDE.</li>
+    </ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
 
