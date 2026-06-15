@@ -36,6 +36,10 @@
   "dependencies": {
     "testcontainers": "^12.0.1"
   },
+  "overrides": {
+    "js-yaml": "^4.2.0",
+    "protobufjs": "^7.6.3"
+  },
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.14.0",
