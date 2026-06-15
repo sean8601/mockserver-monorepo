@@ -49,7 +49,7 @@ Open https://buildkite.com/mockserver/mockserver-release → "New Build" and fil
 | Create Versioned Site? | `Yes` for major/minor, `No` for patch |
 | **Dry Run?** | **`Yes — build/validate only, skip publish`** |
 
-The dry-run exercises every step inside the actual Buildkite container images. Treat it as the final gate before publishing. It still requires the TOTP and downstream-approval block steps.
+The dry-run exercises every step inside the actual Buildkite container images. Treat it as the final gate before publishing. It still requires the TOTP block step (there is no longer a downstream-approval gate — see step 7).
 
 ### 4. Trigger the real release
 
@@ -74,11 +74,11 @@ Open these URLs in tabs while step 5's job runs:
   - The pipeline polls this URL itself; you can watch the same thing in your browser
 - **Central artifact view** (what end users see): https://central.sonatype.com/artifact/org.mock-server/mockserver-netty/<release-version>
 
-### 7. Manual gate 2 — approve downstream publish
+### 7. Downstream publish (automatic — no gate)
 
-After Maven Central is live, the pipeline pauses at a second `block` step labelled "Approve downstream publish". Sanity-check Maven Central one more time (the link above), then click **Unblock**.
+There is no second manual approval. The `Maven Central` step's sync wait already polls repo1 until the main MockServer artifacts (`mockserver-netty`, `mockserver-client-java`, `mockserver-core`, `mockserver-junit-jupiter`) for this release are live — all modules publish in one Central deployment and sync together, so that poll *is* the gate. As soon as it succeeds the pipeline proceeds automatically (the timeout is a generous ~2h, so a lagging sync won't fail the release).
 
-Everything downstream now runs in parallel: Versioned Site, Maven Plugin, Docker, npm, Helm, Javadoc, SwaggerHub, Website, JSON Schema, PyPI, RubyGems, GitHub Release.
+Versioned Site and Update Version References run first (sequentially), then the remaining channels publish in parallel: Maven Plugin, Docker, npm, Helm, Javadoc, SwaggerHub, Website, JSON Schema, PyPI, RubyGems, GitHub Release.
 
 ### 8. Verify the publishes
 
