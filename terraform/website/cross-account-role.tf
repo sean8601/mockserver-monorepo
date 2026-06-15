@@ -73,6 +73,46 @@ resource "aws_iam_role_policy" "release_website" {
         Resource = ["arn:aws:s3:::aws-website-mockserver-*", "arn:aws:s3:::aws-website-mockserver-*/*"]
       },
       {
+        # The binary download host bucket (binaries.tf -> aws-binaries-mockserver,
+        # serving downloads.mock-server.com). versioned-site.sh runs
+        # `terraform plan`/`apply` over the WHOLE website state, so the release
+        # role must be able to refresh AND create this bucket and its config.
+        # Unlike the website buckets, the binaries bucket enables versioning and
+        # SSE, so it additionally needs s3:PutBucketVersioning and
+        # s3:PutEncryptionConfiguration (not granted by WebsiteBuckets above).
+        Sid    = "BinariesBucket"
+        Effect = "Allow"
+        Action = [
+          # Bucket-level reads Terraform performs on every plan/apply refresh.
+          "s3:GetBucketLocation",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketTagging",
+          "s3:GetBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketOwnershipControls",
+          "s3:GetBucketAcl",
+          "s3:GetBucketCORS",
+          "s3:GetBucketWebsite",
+          "s3:GetBucketLogging",
+          "s3:GetLifecycleConfiguration",
+          "s3:GetReplicationConfiguration",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetBucketObjectLockConfiguration",
+          "s3:GetBucketRequestPayment",
+          "s3:GetAccelerateConfiguration",
+          # Bucket-level creates/updates (initial provisioning of the bucket).
+          "s3:CreateBucket",
+          "s3:PutBucketPolicy",
+          "s3:PutPublicAccessBlock",
+          "s3:PutBucketPublicAccessBlock",
+          "s3:PutBucketOwnershipControls",
+          "s3:PutBucketTagging",
+          "s3:PutBucketVersioning",
+          "s3:PutEncryptionConfiguration",
+        ]
+        Resource = ["arn:aws:s3:::aws-binaries-mockserver", "arn:aws:s3:::aws-binaries-mockserver/*"]
+      },
+      {
         # Audit finding F-WEB-02: previously `cloudfront:*` — tightened to the
         # specific actions used by `scripts/release/components/website.sh`,
         # `versioned-site.sh`, `javadoc.sh`, and `schema.sh`. Removes account-
