@@ -6,7 +6,6 @@
 2. Rules in `.opencode/rules/`
 3. This file (`AGENTS.md`)
 4. Skills in `.opencode/skills/`
-5. Reference docs in `.opencode/reference/`
 
 ## Project Overview
 
@@ -68,6 +67,7 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/operations/security.md](docs/operations/security.md) | Before adding, removing, or upgrading dependencies (Java 17 floor, version ceilings, CodeQL, Dependabot, Snyk) |
 | [docs/operations/release-process.md](docs/operations/release-process.md) | When performing or automating releases |
 | [docs/operations/release-principles.md](docs/operations/release-principles.md) | Before changing anything under `scripts/release/` or `.buildkite/release-*` |
+| [docs/operations/ai-sdlc-integration-spec.md](docs/operations/ai-sdlc-integration-spec.md) | **Authoritative spec** for how AI is used in this repo's SDLC — autonomy, parallelism caps, model/temperature, verification, control integrity, operator halt; the `.opencode/rules/` implement it |
 | [docs/operations/ai-native-sdlc-principles.md](docs/operations/ai-native-sdlc-principles.md) | For the principles behind working with AI across the SDLC |
 | [docs/operations/ai-assisted-development.md](docs/operations/ai-assisted-development.md) | For understanding the AI development approach, adversarial review, and testing backstop |
 | [docs/operations/opencode-configuration.md](docs/operations/opencode-configuration.md) | Before modifying opencode config, agents, rules, skills, or commands |
@@ -192,7 +192,7 @@ how each phase maps to an owning rule, is in `.opencode/rules/operating-model.md
 ## Git Policy
 
 - This repository uses **trunk-based development**: commit directly to the default branch (`master`). Do NOT create feature/topic branches — there is no "branch first" step.
-- Commit and push **autonomously once the full pre-commit gate chain passes** — the gates replace human pre-approval (Agent Operating Model above). A user instruction always overrides this default.
+- Commit and push **autonomously once the full pre-commit gate chain passes** — the gates replace human pre-approval (Agent Operating Model above). A user instruction always overrides this default. **Exception — higher-scrutiny control changes** (files under `.opencode/rules/**`, `.opencode/agents/**`, `.claude/agents/**`, `opencode.jsonc`, the review constitution, CI/test gates) are **gated-approval, not autonomous**: present the PASS and get explicit user approval before committing, using the authoritative `review-final`. See `.opencode/rules/control-integrity.md` and `.opencode/rules/risk-authority-classification.md`.
 - NEVER run `git commit` without first completing the full pre-commit workflow in `.opencode/rules/commit-workflow.md` (classify → validate → changelog → adversarial review (PASS) → re-verify → commit). Use the `/commit` command to ensure the workflow is followed. If any gate fails, do NOT commit.
 - NEVER run destructive git commands without confirmation (see `.opencode/rules/git-safety.md`) — auto-commit/push of new commits is authorized; `reset --hard`, `push --force`, history rewrites, and discarding uncommitted work are NOT.
 - NEVER add Co-Authored-By, Signed-off-by, or any other trailers to commit messages
@@ -208,7 +208,7 @@ Multiple opencode sessions may run concurrently on the same repository. Follow `
 
 ## Pre-Commit Workflow
 
-The full workflow in `.opencode/rules/commit-workflow.md` (classify -> validate -> changelog -> adversarial review (PASS) -> re-verify -> commit) is the gate chain that authorizes an autonomous commit — run it whenever a unit of work is complete, not only when asked. `/commit` enforces it. Skip steps only when the user explicitly requests it; if any non-skipped gate fails, do NOT commit.
+The full workflow in `.opencode/rules/commit-workflow.md` (classify -> validate -> changelog -> adversarial review (PASS) -> re-verify -> commit) is the gate chain that authorizes an autonomous commit — for higher-scrutiny **control / AI-component changes** it authorizes only a *gated-approval* commit (see Git Policy above). Run it whenever a unit of work is complete, not only when asked. `/commit` enforces it. Skip steps only when the user explicitly requests it; if any non-skipped gate fails, do NOT commit.
 
 ## Documentation Style
 
@@ -305,8 +305,6 @@ When the user asks for a code review:
 | Task decomposition | `taskify-agent` |
 | Design council seat | `council-seat` |
 | GitHub issue review | Direct skill (no subagent) |
-
-## Subagent Routing
 
 Follow `.opencode/rules/subagent-routing.md` for both slash-command and conversational routing. Keep skill descriptions focused on behavior; keep routing policy in command metadata and routing rules.
 
