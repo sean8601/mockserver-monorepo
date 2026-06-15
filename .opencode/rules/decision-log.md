@@ -55,3 +55,6 @@ LLM output is not bit-reproducible, so the **decision trace is the reproducibili
 guarantee**: record model, temperature, pinned inputs/context, and the reasoning
 so a later agent or human can re-evaluate, challenge, or repeat the work — even if
 the exact output differs.
+
+The fields recorded here are also the primary data source for the AI-integration
+metrics ([[metrics]]).
