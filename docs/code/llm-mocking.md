@@ -176,6 +176,7 @@ Two MCP tools expose the LLM mocking feature to agents:
 | `explain_agent_run` | Summarises a recorded agent run: turn/tool-call sequence, tool results, latest role. Supports `provider=AUTO` to auto-detect from request paths |
 | `verify_structured_output` | Validates the JSON output text of recorded LLM responses against a JSON Schema (decodes each response via the runtime-LLM client SPI, then `JsonSchemaValidator`); reports per-response conformance |
 | `verify_cost_budget` | Sums input/output tokens from recorded responses' usage, prices them via `org.mockserver.llm.cost.LlmPricing`, and asserts the total USD cost is within `maxCostUsd` — a deterministic CI cost gate. Unpriceable models are reported and excluded |
+| `mock_llm_failover` | Creates a failover/retry scenario: the first N requests fail with specified HTTP statuses, then subsequent requests succeed with a provider-correct LLM response. Uses `LlmFailoverBuilder` |
 
 The first two validate provider availability against `ProviderCodecRegistry` at registration time. The analysis tools delegate to `org.mockserver.llm.analysis.AgentRunAnalyzer`.
 
@@ -452,6 +453,31 @@ These are operational settings (config + MCP, for CI/automation), not dashboard 
 | `mockserver.llmMetricsEnabled` | `false` | — | Enable LLM token/cost Prometheus counters (requires `metricsEnabled`); activates forward-path response parsing even without OTLP tracing |
 | `mockserver.llmCostBudgetUsd` | `-1.0` (disabled) | — | Cumulative LLM cost budget in USD; enforced on ALL forward paths (matched FORWARD, breakpoint-continuation, unmatched proxy). When exceeded, LLM forwards return 429. Negative = disabled. Resets on server reset. Trip surfaces via `mock_server_llm_cost_budget_tripped` counter, WARN log, and the dashboard Circuit Breakers section |
 
+## LLM failover scenarios
+
+`LlmFailoverBuilder` (`org.mockserver.client`) produces an ordered array of expectations that simulate a provider returning failures for the first N attempts, then succeeding on subsequent attempts. This is the deterministic way to test retry/failover logic (LiteLLM, Envoy AI Gateway, SDK retries) against MockServer.
+
+The mechanism relies on expectation registration order and `Times` exhaustion: failure expectations with `Times.exactly(n)` are registered before the success expectation with `Times.unlimited()`. MockServer matches expectations in priority-then-insertion order (`SortableExpectationId`), so the first N requests match and consume the failure expectations, then fall through to the unlimited success expectation.
+
+```java
+// Java builder
+llmFailover()
+    .withPath("/v1/chat/completions")
+    .withProvider(Provider.OPENAI)
+    .withModel("gpt-4o")
+    .failWith(503)
+    .failWith(503)
+    .failWith(429)
+    .thenRespondWith(completion().withText("The answer is 42."))
+    .applyTo(mockServerClient);
+```
+
+Consecutive failures with the same status code and body are coalesced into a single expectation with `Times.exactly(count)` for efficiency. Custom error bodies can be provided per failure via `failWith(status, body)`.
+
+| MCP Tool | Description |
+|----------|-------------|
+| `mock_llm_failover` | Creates a failover scenario: `failStatuses` array of HTTP status codes (one per failure attempt), then a success response with provider-correct encoding. Validates provider against `ProviderCodecRegistry`. |
+
 ## Related Documents
 
 - [Security Audit](llm-security-audit.md) -- M5 security review including known codec limitations
@@ -482,6 +508,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/ParsedConversation.java` | Decoded conversation model |
 | `llm/ParsedMessage.java` | Single decoded message (role, text, tool name, tool call ID) |
 | `client/LlmConversationBuilder.java` | Fluent builder producing per-turn `Expectation` arrays |
+| `client/LlmFailoverBuilder.java` | Fluent builder producing failover/retry `Expectation` arrays (failures then success) |
 | `client/TurnBuilder.java` | Per-turn predicate and response configuration |
 | `matchers/LlmConversationMatcher.java` | Evaluates `ConversationPredicates` against decoded requests |
 | `llm/PromptNormalizer.java` | Deterministic prompt normalisation (whitespace/case/JSON-key-sort/volatile-field drop) |

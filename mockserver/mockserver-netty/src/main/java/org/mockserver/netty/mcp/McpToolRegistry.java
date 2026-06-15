@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.commons.lang3.tuple.Pair;
 import org.mockserver.client.LlmConversationBuilder;
+import org.mockserver.client.LlmFailoverBuilder;
 import org.mockserver.client.TurnBuilder;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.configuration.ConfigurationProperties;
@@ -137,6 +138,7 @@ public class McpToolRegistry {
         registerLoadExpectationsFromFile();
         registerMockLlmCompletion();
         registerCreateLlmConversation();
+        registerMockLlmFailover();
         registerVerifyToolCall();
         registerVerifyStructuredOutput();
         registerVerifyCostBudget();
@@ -3140,6 +3142,177 @@ public class McpToolRegistry {
             return errorResult(e.getMessage());
         } catch (Exception e) {
             return errorResult("Failed to create LLM conversation", e);
+        }
+    }
+
+    // --- mock_llm_failover ---
+
+    private void registerMockLlmFailover() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode providerProp = properties.putObject("provider");
+        providerProp.put("type", "string").put("description", "LLM provider with a registered codec (ANTHROPIC, OPENAI, OPENAI_RESPONSES, GEMINI, BEDROCK, AZURE_OPENAI, OLLAMA).");
+        ArrayNode providerEnum = providerProp.putArray("enum");
+        for (String name : ProviderCodecRegistry.getInstance().supportedProviderNames()) {
+            providerEnum.add(name);
+        }
+        properties.putObject("path").put("type", "string").put("description", "Request path to match (e.g. /v1/chat/completions)");
+        properties.putObject("model").put("type", "string").put("description", "Model name for the success response (e.g. gpt-4o, claude-sonnet-4)");
+        ObjectNode failStatusesProp = properties.putObject("failStatuses");
+        failStatusesProp.put("type", "array").put("description", "Ordered array of HTTP status codes — one per failure attempt (e.g. [503, 503, 429]). The first N requests return these statuses in order, then subsequent requests succeed.");
+        failStatusesProp.putObject("items").put("type", "integer");
+        properties.putObject("text").put("type", "string").put("description", "Success response text content");
+        ObjectNode toolCallsProp = properties.putObject("toolCalls");
+        toolCallsProp.put("type", "array").put("description", "Tool/function calls for the success response");
+        ObjectNode toolCallItems = toolCallsProp.putObject("items");
+        toolCallItems.put("type", "object");
+        ObjectNode toolCallProps = toolCallItems.putObject("properties");
+        toolCallProps.putObject("name").put("type", "string");
+        ObjectNode argsProp = toolCallProps.putObject("arguments");
+        argsProp.put("description", "Tool arguments as a JSON string or object");
+        ArrayNode argsAnyOf = argsProp.putArray("anyOf");
+        argsAnyOf.add(objectMapper.createObjectNode().put("type", "string"));
+        argsAnyOf.add(objectMapper.createObjectNode().put("type", "object"));
+        toolCallItems.putArray("required").add("name");
+        properties.putObject("stopReason").put("type", "string").put("description", "Stop reason for the success response");
+        ObjectNode usageProp = properties.putObject("usage");
+        usageProp.put("type", "object").put("description", "Token usage for the success response");
+        ObjectNode usageProps = usageProp.putObject("properties");
+        usageProps.putObject("inputTokens").put("type", "integer");
+        usageProps.putObject("outputTokens").put("type", "integer");
+        ArrayNode required = schema.putArray("required");
+        required.add("provider");
+        required.add("path");
+        required.add("failStatuses");
+
+        tools.put("mock_llm_failover", new ToolDefinition(
+            "mock_llm_failover",
+            "Creates an LLM failover/retry scenario: the first N requests fail with the specified HTTP statuses, then subsequent requests succeed with a provider-correct LLM response. Use this to test that retry/failover logic (LiteLLM, Envoy AI Gateway, SDK retries) works correctly.",
+            schema,
+            this::handleMockLlmFailover
+        ));
+    }
+
+    private JsonNode handleMockLlmFailover(JsonNode params) {
+        try {
+            // Validate provider
+            String providerStr = params.path("provider").asText(null);
+            if (providerStr == null || providerStr.trim().isEmpty()) {
+                return errorResult("'provider' is required");
+            }
+            Provider provider;
+            try {
+                provider = Provider.valueOf(providerStr.trim());
+            } catch (IllegalArgumentException e) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+
+            // Pre-validate codec availability
+            if (!ProviderCodecRegistry.getInstance().lookup(provider).isPresent()) {
+                return unsupportedLlmProviderResult(providerStr);
+            }
+
+            // Validate path
+            String path = params.path("path").asText(null);
+            if (path == null || path.trim().isEmpty()) {
+                return errorResult("'path' is required and must not be blank");
+            }
+
+            // Validate failStatuses
+            JsonNode failStatusesNode = params.path("failStatuses");
+            if (!failStatusesNode.isArray() || failStatusesNode.size() == 0) {
+                return errorResult("'failStatuses' must be a non-empty array of HTTP status codes");
+            }
+
+            // Build using LlmFailoverBuilder
+            LlmFailoverBuilder builder = LlmFailoverBuilder.llmFailover()
+                .withPath(path)
+                .withProvider(provider)
+                .withModel(params.path("model").asText(null));
+
+            // Add failures
+            for (int i = 0; i < failStatusesNode.size(); i++) {
+                JsonNode statusNode = failStatusesNode.get(i);
+                if (!statusNode.isIntegralNumber()) {
+                    return errorResult("failStatuses[" + i + "] must be an integer");
+                }
+                int status = statusNode.asInt();
+                if (status < 100 || status > 999) {
+                    return errorResult("failStatuses[" + i + "] must be between 100 and 999");
+                }
+                builder.failWith(status);
+            }
+
+            // Build success completion
+            Completion completion = Completion.completion();
+            JsonNode textNode = params.path("text");
+            if (!textNode.isMissingNode() && !textNode.isNull()) {
+                completion.withText(textNode.asText());
+            }
+            JsonNode stopReasonNode = params.path("stopReason");
+            if (!stopReasonNode.isMissingNode() && !stopReasonNode.isNull()) {
+                completion.withStopReason(stopReasonNode.asText());
+            }
+            JsonNode toolCallsNode = params.path("toolCalls");
+            if (toolCallsNode.isArray()) {
+                for (JsonNode tcNode : toolCallsNode) {
+                    String toolName = tcNode.path("name").asText(null);
+                    if (toolName == null || toolName.trim().isEmpty()) {
+                        return errorResult("each toolCalls entry must have a non-empty 'name'");
+                    }
+                    ToolUse toolUse = ToolUse.toolUse(toolName);
+                    JsonNode argsNode = tcNode.path("arguments");
+                    if (!argsNode.isMissingNode() && !argsNode.isNull()) {
+                        if (argsNode.isTextual()) {
+                            toolUse.withArguments(argsNode.asText());
+                        } else if (argsNode.isObject()) {
+                            toolUse.withArguments(objectMapper.writeValueAsString(argsNode));
+                        } else {
+                            return errorResult("toolCalls[].arguments must be a string or object");
+                        }
+                    }
+                    completion.withToolCall(toolUse);
+                }
+            }
+            JsonNode usageNode = params.path("usage");
+            if (usageNode.isObject()) {
+                Usage usage = Usage.usage();
+                JsonNode inputTokensNode = usageNode.path("inputTokens");
+                if (!inputTokensNode.isMissingNode() && !inputTokensNode.isNull() && inputTokensNode.isIntegralNumber()) {
+                    usage.withInputTokens(inputTokensNode.asInt());
+                }
+                JsonNode outputTokensNode = usageNode.path("outputTokens");
+                if (!outputTokensNode.isMissingNode() && !outputTokensNode.isNull() && outputTokensNode.isIntegralNumber()) {
+                    usage.withOutputTokens(outputTokensNode.asInt());
+                }
+                completion.withUsage(usage);
+            }
+
+            builder.thenRespondWith(completion);
+
+            // Build and register expectations
+            Expectation[] expectations = builder.build();
+            List<Expectation> allResults = new ArrayList<>();
+            for (Expectation exp : expectations) {
+                allResults.addAll(httpState.add(exp));
+            }
+
+            // Build result
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("status", "created");
+            resultNode.put("count", allResults.size());
+            resultNode.put("failureAttempts", builder.getFailureCount());
+            resultNode.put("provider", provider.name());
+            ArrayNode ids = resultNode.putArray("ids");
+            for (Expectation exp : allResults) {
+                ids.add(exp.getId());
+            }
+            return resultNode;
+        } catch (IllegalStateException e) {
+            return errorResult(e.getMessage());
+        } catch (Exception e) {
+            return errorResult("Failed to create LLM failover scenario", e);
         }
     }
 
