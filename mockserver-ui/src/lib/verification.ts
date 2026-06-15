@@ -68,6 +68,46 @@ async function putVerify(
 }
 
 /**
+ * Build the JSON body for PUT /mockserver/verify from the UI's form state.
+ * Exported so the verification codegen module can produce the same wire body
+ * the panel actually posts.
+ */
+export function buildVerifyBody(
+  httpRequest: Record<string, unknown>,
+  times: VerificationTimesSpec,
+  httpResponse?: Record<string, unknown>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (httpRequest && Object.keys(httpRequest).length > 0) {
+    body.httpRequest = httpRequest;
+  }
+  body.times = timesToWire(times);
+  if (httpResponse && Object.keys(httpResponse).length > 0) {
+    body.httpResponse = httpResponse;
+  }
+  return body;
+}
+
+/**
+ * Build the JSON body for PUT /mockserver/verifySequence from the UI's form state.
+ * Exported so the verification codegen module can produce the same wire body
+ * the panel actually posts.
+ */
+export function buildVerifySequenceBody(
+  httpRequests: Record<string, unknown>[],
+  httpResponses?: (Record<string, unknown> | undefined)[],
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (httpRequests.some((r) => r && Object.keys(r).length > 0)) {
+    body.httpRequests = httpRequests.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
+  }
+  if (httpResponses && httpResponses.some((r) => r && Object.keys(r).length > 0)) {
+    body.httpResponses = httpResponses.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
+  }
+  return body;
+}
+
+/**
  * Verify a request matcher and/or a response matcher was matched the expected number of times.
  * Empty matchers are omitted from the wire body; at least one of httpRequest / httpResponse must
  * be non-empty (the caller is responsible for enforcing that). When both are present they are

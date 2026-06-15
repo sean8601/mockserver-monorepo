@@ -462,7 +462,7 @@ export function parseKeyValueLines(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function escapeJava(s: string): string {
+export function escapeJava(s: string): string {
   return s
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
@@ -1924,7 +1924,7 @@ export function standardToCurl(
 // hydration — the JSON tab remains the authoritative, lossless source.
 // ---------------------------------------------------------------------------
 
-function clientHostPort(baseUrl: string): { host: string; port: number } {
+export function clientHostPort(baseUrl: string): { host: string; port: number } {
   try {
     const u = new URL(baseUrl);
     return {
@@ -1938,12 +1938,12 @@ function clientHostPort(baseUrl: string): { host: string; port: number } {
 
 /** Re-indents every line of `block` after the first by `pad` spaces (the first line is already
  *  positioned by the caller). */
-function indentAfterFirst(block: string, pad: number): string {
+export function indentAfterFirst(block: string, pad: number): string {
   return block.split('\n').join('\n' + ' '.repeat(pad));
 }
 
 /** Renders a JSON-compatible value as a Python literal (true/false/null → True/False/None). */
-function toPythonLiteral(value: unknown, indent: number): string {
+export function toPythonLiteral(value: unknown, indent: number): string {
   const pad = ' '.repeat(indent);
   const pad2 = ' '.repeat(indent + 4);
   if (value === null || value === undefined) return 'None';
@@ -2055,7 +2055,7 @@ export function standardToRuby(matcher: StandardMatcher, action: StandardActionP
 
 /** Wraps `s` in a Rust raw string literal, using as many `#`s as needed so the content can't
  *  prematurely terminate it. */
-function rustRawString(s: string): string {
+export function rustRawString(s: string): string {
   let hashes = '#';
   while (s.includes('"' + hashes)) hashes += '#';
   return `r${hashes}"${s}"${hashes}`;

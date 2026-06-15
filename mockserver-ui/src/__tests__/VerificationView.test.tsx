@@ -352,6 +352,52 @@ describe('VerificationView', () => {
     expect(body.times).toBeDefined();
   });
 
+  // --- Code generation panel tests ---
+
+  it('does NOT show generated code panel when no matchers are filled', () => {
+    renderView();
+    expect(screen.queryByText('Generated code')).not.toBeInTheDocument();
+  });
+
+  it('shows generated code panel with Java tab when a request path is filled', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    const pathField = screen.getByLabelText('Path');
+    await user.type(pathField, '/api/orders');
+
+    expect(screen.getByText('Generated code')).toBeInTheDocument();
+    // Java tab should be present and selected by default
+    expect(screen.getByRole('tab', { name: 'Java' })).toBeInTheDocument();
+    // The code should contain the Java verify call
+    expect(screen.getByText(/mockServerClient/)).toBeInTheDocument();
+    expect(screen.getByText(/request\(\)/)).toBeInTheDocument();
+  });
+
+  it('shows generated code panel in sequence mode when a path is filled', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
+    const pathFields = screen.getAllByLabelText('Path');
+    await user.type(pathFields[0]!, '/a');
+
+    expect(screen.getByText('Generated code')).toBeInTheDocument();
+  });
+
+  it('shows all 9 language tabs in the generated code panel', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    const pathField = screen.getByLabelText('Path');
+    await user.type(pathField, '/api');
+
+    const tabLabels = ['Java', 'Node.js', 'Python', 'Go', 'C#', 'Ruby', 'Rust', 'JSON', 'curl'];
+    for (const label of tabLabels) {
+      expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
+    }
+  });
+
   it('enables Verify sequence button when only a response matcher is filled in one step', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 202,

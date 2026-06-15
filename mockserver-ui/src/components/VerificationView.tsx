@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -18,12 +18,14 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { parseKeyValueLines } from '../lib/standardCodegen';
+import { buildBaseUrl } from '../lib/mcpClient';
 import {
   verifyRequest,
   verifySequence,
   type VerificationTimesMode,
   type VerifyResult,
 } from '../lib/verification';
+import VerificationReview from './VerificationReview';
 
 const METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -356,6 +358,69 @@ export default function VerificationView({ connectionParams }: { connectionParam
 
       {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
       <ResultAlert result={result} />
+
+      {/* Code generation panel — shown when at least one matcher is present */}
+      {((mode === 'single' && singleHasMatcher) || (mode === 'sequence' && sequenceHasMatcher)) && (
+        <VerificationReviewMemo
+          mode={mode}
+          single={single}
+          singleResponse={singleResponse}
+          timesMode={timesMode}
+          count={count}
+          atMost={atMost}
+          sequence={sequence}
+          seqResponses={seqResponses}
+          connectionParams={connectionParams}
+        />
+      )}
     </Box>
+  );
+}
+
+/** Memoised wrapper that builds the matcher objects and passes them to VerificationReview. */
+function VerificationReviewMemo({
+  mode,
+  single,
+  singleResponse,
+  timesMode,
+  count,
+  atMost,
+  sequence,
+  seqResponses,
+  connectionParams,
+}: {
+  mode: 'single' | 'sequence';
+  single: RequestForm;
+  singleResponse: ResponseForm;
+  timesMode: VerificationTimesMode;
+  count: number;
+  atMost: number;
+  sequence: RequestForm[];
+  seqResponses: ResponseForm[];
+  connectionParams: ConnectionParams;
+}) {
+  const httpRequest = useMemo(() => buildHttpRequest(single), [single]);
+  const httpResponse = useMemo(() => buildHttpResponse(singleResponse), [singleResponse]);
+  const times = useMemo(() => ({ mode: timesMode, count, atMost }), [timesMode, count, atMost]);
+  const httpRequests = useMemo(() => sequence.map(buildHttpRequest), [sequence]);
+  const httpResponses = useMemo(
+    () => seqResponses.map((r) => {
+      const built = buildHttpResponse(r);
+      return Object.keys(built).length > 0 ? built : undefined;
+    }),
+    [seqResponses],
+  );
+  const baseUrl = useMemo(() => buildBaseUrl(connectionParams), [connectionParams]);
+
+  return (
+    <VerificationReview
+      mode={mode}
+      httpRequest={httpRequest}
+      httpResponse={httpResponse}
+      times={times}
+      httpRequests={httpRequests}
+      httpResponses={httpResponses}
+      baseUrl={baseUrl}
+    />
   );
 }
