@@ -30,8 +30,11 @@ TERRAFORM_IMAGE="${TERRAFORM_IMAGE:-hashicorp/terraform:1.15}"
 # the go/rust/dotnet publish components fell back to a host `command -v` probe,
 # found nothing on the release-queue AMI, and silently skipped. Pin them so those
 # publishes run in a container like every other toolchain. GO_IMAGE tracks the
-# go.mod `go` directive (1.21).
-GO_IMAGE="${GO_IMAGE:-golang:1.21-bookworm}"
+# highest `go` directive across our modules: mockserver-testcontainers/go needs
+# 1.25 (its testcontainers-go v0.42 dep requires go >= 1.25.0), and mockserver-
+# client-go (go 1.21) runs fine on a newer toolchain — so pin to 1.25 and avoid a
+# runtime GOTOOLCHAIN download.
+GO_IMAGE="${GO_IMAGE:-golang:1.25-bookworm}"
 RUST_IMAGE="${RUST_IMAGE:-rust:1-bookworm}"
 DOTNET_IMAGE="${DOTNET_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
 export MAVEN_IMAGE NODE_IMAGE RUBY_IMAGE HELM_IMAGE GH_IMAGE PYTHON_IMAGE TERRAFORM_IMAGE
