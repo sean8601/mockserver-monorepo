@@ -563,13 +563,12 @@ PY
     return $rc
   }
   log_info "Sync Docker Hub overview from docker/DOCKERHUB.md"
-  # SURFACED-soft (not silent, not aborting): the overview PATCH needs a repo:admin
-  # Docker Hub token, but the release token is push-scoped, so this 403s. Updating
-  # the repo README is cosmetic — never worth aborting a release whose images all
-  # published. Emit a loud, actionable warning instead. To make this HARD, provision
-  # an admin-scoped Docker Hub token.
-  sync_dockerhub_description \
-    || log_info ":warning: Docker Hub overview NOT updated — release token lacks repo:admin (push-only). Non-fatal; provision an admin-scoped token to enable. (surfaced, not silently ignored)"
+  # HARD (with internal retry): the release token's account has repo-admin on the
+  # mockserver Docker Hub repos, and the full_description PATCH returns 200 — the
+  # old "needs repo:admin scope / 403" note was stale (it predates the account
+  # being granted admin; verified live). sync_dockerhub_description retries the
+  # token exchange + PATCH internally, so a genuine failure aborts under set -e.
+  sync_dockerhub_description
 fi
 
 log_info "Docker publish complete"
