@@ -18,7 +18,7 @@ buildkite-agents/"]
 Suspender"]
         EC2["EC2 c5/m5 instances
 0–10 build agents
-20% on-demand / 80% spot"]
+60% on-demand / 40% spot"]
         EC2_T["EC2 t3 instances
 0–4 trigger agents
 100% spot, 4 agents/instance"]
@@ -124,12 +124,12 @@ default · trigger · release · perf"]
             subgraph "Public Subnet eu-west-2a — 10.0.1.0/24"
                 EC2_1["EC2 c5/m5
 Buildkite Agent
-20% on-demand / 80% spot"]
+60% on-demand / 40% spot"]
             end
             subgraph "Public Subnet eu-west-2b — 10.0.2.0/24"
                 EC2_2["EC2 c5/m5
 Buildkite Agent
-20% on-demand / 80% spot"]
+60% on-demand / 40% spot"]
             end
             VPCE["VPC Endpoints
 SSM · SSM Messages · EC2 Messages"]
@@ -173,7 +173,7 @@ rate 1 min"]
 
 | Resource | Details |
 |----------|---------|
-| ASG `default` | Min 0, Max 10, 20% on-demand / 80% Spot, diversified instance types (c5, c5a, m5), on-demand base capacity 1, 1 agent/instance, AZRebalance suspended |
+| ASG `default` | Min 0, Max 10, 60% on-demand / 40% Spot, diversified instance types (c5, c5a, m5), on-demand base capacity 1, 1 agent/instance, AZRebalance suspended |
 | ASG `trigger` | Min 0, Max 4, 100% Spot, t3.small/t3a.small/t3.micro, 4 agents/instance — cheap instances for trigger polling jobs |
 | ASG `release` | Min 0, Max 2, 100% on-demand, same instance types as default, 1 agent/instance |
 | ASG `perf` | Min 0, Max 1, 100% on-demand, c5.4xlarge, on-demand base 0 — scale-to-zero, never more than one concurrent perf run |
@@ -288,7 +288,7 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 - **Minimum:** 0 instances (scales to zero when idle)
 - **Maximum:** 10 instances, 1 agent per instance
 - **Instance types:** Diversified (c5.2xlarge, c5a.2xlarge, m5.2xlarge)
-- **Capacity mix:** 20% on-demand, 80% Spot, with on-demand base capacity of 1
+- **Capacity mix:** 60% on-demand, 40% Spot, with on-demand base capacity of 1 (raised from 20% on-demand after Spot reclamations were killing long Maven builds; see CI/CD doc)
 - **Build cost:** ~$0.03–0.10/hr per agent (mixed on-demand/spot pricing)
 
 #### Trigger Queue (polling)
@@ -371,7 +371,7 @@ terraform/
 | Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` ~0.7.x |
 | Region | `eu-west-2` |
 | Instance types | Diversified (c5, c5a, m5 families) |
-| Capacity | 20% on-demand / 80% Spot, base capacity 1 on-demand |
+| Capacity | 60% on-demand / 40% Spot, base capacity 1 on-demand |
 | Scaling | 0–10 instances |
 | State backend | S3 in `eu-west-2` (native lockfile) |
 | Monitoring | CloudWatch alarms, SNS email alerts, dashboard |
@@ -393,7 +393,7 @@ The bootstrap (`terraform/buildkite-agents/bootstrap/`) uses `import` blocks, ma
 | `instance_types` | `string` | `c5.2xlarge` | EC2 instance types for default/release queues |
 | `min_size` | `number` | `0` | Minimum default queue instances (0 = scale to zero) |
 | `max_size` | `number` | `10` | Maximum default queue instances |
-| `on_demand_percentage` | `number` | `0` | % on-demand vs spot for default queue (terraform.tfvars overrides to 20) |
+| `on_demand_percentage` | `number` | `0` | % on-demand vs spot for default queue (terraform.tfvars overrides to 60) |
 | `trigger_instance_types` | `string` | `t3.small` | EC2 instance types for trigger queue (cheap polling) |
 | `trigger_min_size` | `number` | `0` | Minimum trigger queue instances |
 | `trigger_max_size` | `number` | `4` | Maximum trigger queue instances |
