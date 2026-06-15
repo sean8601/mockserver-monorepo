@@ -24,7 +24,7 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [Dashboard UI](code/dashboard-ui.md) | Medium | React SPA, Zustand state, twelve top-level views (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verification / AsyncAPI / Metrics / Breakpoints / Get Started), WebSocket communication, data assembly |
 | [Domain Model](code/domain-model.md) | Low | Model hierarchy, matchers, codecs, OpenAPI support, configuration (incl. MCP) |
 | [TLS & Security](code/tls-and-security.md) | Low | BouncyCastle CA, SNI, mTLS, JWT auth, control plane security |
-| [Client & Integrations](code/client-and-integrations.md) | Low | MockServerClient, JUnit 4/5, Spring, WebSocket callbacks |
+| [Client & Integrations](code/client-and-integrations.md) | Low | MockServerClient, JUnit 4/5, Spring, WebSocket callbacks, VS Code extension, JetBrains plugin |
 | [Memory Management](code/memory-management.md) | Medium | Log entry and expectation memory analysis, default limit calculation, tuning guide |
 | [Metrics & Monitoring](code/metrics.md) | Low | Prometheus metrics, memory monitoring, CSV export |
 | [Telemetry](code/telemetry.md) | Low | OpenTelemetry integration: OTLP export, GenAI spans, W3C trace context propagation |

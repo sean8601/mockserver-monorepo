@@ -485,6 +485,45 @@ graph TB
 | `MockServerServlet` | war | Servlet bridge for WAR deployment |
 | `ProxyServlet` | proxy-war | Proxy servlet for WAR deployment |
 
+## IDE Extensions
+
+MockServer ships two IDE extensions that let developers start, stop, and inspect MockServer without leaving their editor. Both are published as part of the standard MockServer release and versioned in lockstep with the server.
+
+### VS Code Extension
+
+**Source:** `mockserver-vscode/`
+**Publisher ID:** `mockserver` (extension ID `mockserver.mockserver`)
+**Registries:** VS Code Marketplace and Open VSX Registry
+
+The extension is built with TypeScript and bundled via `vsce`. It contributes three commands and a set of JSON snippets.
+
+| Feature | Detail |
+|---------|--------|
+| Commands | `mockserver.start` (Start Docker), `mockserver.stop`, `mockserver.openDashboard` |
+| Snippets | `mockserver-expectation`, `mockserver-forward`, `mockserver-verify` — expand in any `.json` file |
+| VS Code minimum | 1.80 |
+| Runtime dependency | Docker Desktop (pulls `mockserver/mockserver:<version>` on demand) |
+
+**Release publishing** (`scripts/release/components/vscode.sh`): bumps the version in `package.json`, builds and packages a `.vsix` inside a pinned Node.js Docker container (no host toolchain required), then publishes to VS Code Marketplace via `vsce publish` and to Open VSX via `ovsx publish`. Secrets are loaded from `mockserver-release/vsce` and `mockserver-release/ovsx` in AWS Secrets Manager.
+
+### JetBrains / IntelliJ Plugin
+
+**Source:** `mockserver-jetbrains/`
+**Plugin ID:** `com.mock-server.mockserver`
+**Registry:** JetBrains Marketplace
+
+The plugin is written in Kotlin and built with the IntelliJ Platform Gradle Plugin 2.x. It targets IntelliJ Platform 2023.3+ (build 233) and is compatible through 2025.3.x (build 253).
+
+| Feature | Detail |
+|---------|--------|
+| Actions | `MockServer.OpenDashboard`, `MockServer.StartDocker` — added to the **Tools > MockServer** menu group |
+| Tool window | Bottom-panel **MockServer** window with buttons for the same two actions |
+| Notifications | Balloon notification group `MockServer Notifications` |
+| Minimum platform | 2023.3 (build `sinceBuild=243`) |
+| Language | Kotlin 2.1.x, JVM toolchain 17 |
+
+**Release publishing** (`scripts/release/components/jetbrains.sh`): bumps `pluginVersion` in `gradle.properties`, builds the plugin ZIP (`./gradlew clean buildPlugin`) inside the pinned Maven Docker image (which ships JDK 17; Gradle is downloaded by the wrapper), then publishes via `./gradlew publishPlugin` with the `JETBRAINS_TOKEN` environment variable set from `mockserver-release/jetbrains` in AWS Secrets Manager.
+
 ## MCP (Model Context Protocol) Integration
 
 MockServer exposes its control-plane capabilities via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), enabling AI agents and LLM-based tools to interact with MockServer programmatically.

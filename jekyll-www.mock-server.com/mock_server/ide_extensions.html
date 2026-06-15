@@ -1,0 +1,185 @@
+---
+title: IDE Extensions
+description: Install the MockServer VS Code extension (VS Code Marketplace and Open VSX) or the MockServer IntelliJ plugin (JetBrains Marketplace) to start, stop, and manage MockServer directly from your IDE.
+layout: page
+pageOrder: 6
+section: 'Getting Started'
+subsection: true
+sitemap:
+  priority: 0.7
+  changefreq: 'monthly'
+  lastmod: 2026-06-15T00:00:00+00:00
+---
+
+<p>MockServer publishes IDE extensions so you can start, stop, and open the MockServer Dashboard without leaving your editor. Two extensions are available:</p>
+
+<table class="comparison_table">
+    <thead>
+    <tr>
+        <th>IDE</th>
+        <th>Extension</th>
+        <th>Registry</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td>VS Code (and Theia / Gitpod / Cursor)</td>
+        <td><span class="inline_code">mockserver.mockserver</span></td>
+        <td>
+            <a href="https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver" target="_blank" rel="noopener noreferrer">VS Code Marketplace</a>
+            &nbsp;&amp;&nbsp;
+            <a href="https://open-vsx.org/extension/mockserver/mockserver" target="_blank" rel="noopener noreferrer">Open VSX</a>
+        </td>
+    </tr>
+    <tr>
+        <td>IntelliJ IDEA (and all JetBrains IDEs)</td>
+        <td><span class="inline_code">com.mock-server.mockserver</span></td>
+        <td>
+            <a href="https://plugins.jetbrains.com/search?search=MockServer" target="_blank" rel="noopener noreferrer">JetBrains Marketplace</a>
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<p>Both extensions require <a href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener noreferrer">Docker Desktop</a> to be running when using the "Start MockServer" command. No Java or separate server installation is required — the extension pulls and starts the official <span class="inline_code">mockserver/mockserver:{{ site.mockserver_version }}</span> Docker image automatically.</p>
+
+<a id="vscode-extension" class="anchor" href="#vscode-extension">&nbsp;</a>
+
+<h2>VS Code Extension</h2>
+
+<p>The MockServer extension for Visual Studio Code provides commands to manage MockServer Docker containers and JSON snippets to quickly author expectations in any <span class="inline_code">.json</span> file.</p>
+
+<h3>Installation</h3>
+
+<p>Install directly from within VS Code:</p>
+
+<ol>
+    <li>Open the Extensions view (<span class="inline_code">Cmd+Shift+X</span> / <span class="inline_code">Ctrl+Shift+X</span>)</li>
+    <li>Search for <strong>MockServer</strong></li>
+    <li>Click <strong>Install</strong></li>
+</ol>
+
+<p>Alternatively, install from the command line:</p>
+
+<pre class="prettyprint lang-sh code"><code class="code">code --install-extension mockserver.mockserver</code></pre>
+
+<p>For Eclipse Theia, Gitpod, Cursor, and other Open VSX compatible editors, install from <a href="https://open-vsx.org/extension/mockserver/mockserver" target="_blank" rel="noopener noreferrer">open-vsx.org</a>.</p>
+
+<h3>Prerequisites</h3>
+
+<ul>
+    <li>VS Code 1.80+</li>
+    <li>Docker Desktop installed and running</li>
+</ul>
+
+<h3>Commands</h3>
+
+<p>Open the Command Palette (<span class="inline_code">Cmd+Shift+P</span> / <span class="inline_code">Ctrl+Shift+P</span>) and type <strong>MockServer</strong>:</p>
+
+<table>
+    <thead>
+    <tr>
+        <th>Command</th>
+        <th>What it does</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td><strong>MockServer: Start (Docker)</strong></td>
+        <td>Pulls and starts <span class="inline_code">mockserver/mockserver:{{ site.mockserver_version }}</span> on port 1080</td>
+    </tr>
+    <tr>
+        <td><strong>MockServer: Stop</strong></td>
+        <td>Stops the running MockServer container</td>
+    </tr>
+    <tr>
+        <td><strong>MockServer: Open Dashboard</strong></td>
+        <td>Opens the MockServer Dashboard at <span class="inline_code">http://localhost:1080/mockserver/dashboard</span> in your browser</td>
+    </tr>
+    </tbody>
+</table>
+
+<h3>JSON Snippets</h3>
+
+<p>In any <span class="inline_code">.json</span> file, type one of the following prefixes and press <span class="inline_code">Tab</span> to expand a full expectation template:</p>
+
+<table>
+    <thead>
+    <tr>
+        <th>Prefix</th>
+        <th>Inserts</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td><span class="inline_code">mockserver-expectation</span></td>
+        <td>A request matcher with an HTTP response action</td>
+    </tr>
+    <tr>
+        <td><span class="inline_code">mockserver-forward</span></td>
+        <td>A request matcher with a forward proxy action</td>
+    </tr>
+    <tr>
+        <td><span class="inline_code">mockserver-verify</span></td>
+        <td>A request verification template</td>
+    </tr>
+    </tbody>
+</table>
+
+<h3>Quick Start</h3>
+
+<ol>
+    <li>Run <strong>MockServer: Start (Docker)</strong> from the Command Palette</li>
+    <li>Create expectations by POSTing JSON to <span class="inline_code">http://localhost:1080/mockserver/expectation</span>, or use the JSON snippets to build them in a file</li>
+    <li>Run <strong>MockServer: Open Dashboard</strong> to inspect recorded requests and active expectations</li>
+    <li>Run <strong>MockServer: Stop</strong> when finished</li>
+</ol>
+
+<a id="jetbrains-plugin" class="anchor" href="#jetbrains-plugin">&nbsp;</a>
+
+<h2>IntelliJ / JetBrains Plugin</h2>
+
+<p>The MockServer plugin for IntelliJ IDEA (and all JetBrains IDEs) adds a <strong>Tools &gt; MockServer</strong> menu and a persistent tool window in the bottom panel.</p>
+
+<h3>Installation</h3>
+
+<ol>
+    <li>Open <strong>Settings &gt; Plugins &gt; Marketplace</strong> (<span class="inline_code">Ctrl+Alt+S</span> then <em>Plugins</em>)</li>
+    <li>Search for <strong>MockServer</strong></li>
+    <li>Click <strong>Install</strong> and restart the IDE</li>
+</ol>
+
+<h3>Prerequisites</h3>
+
+<ul>
+    <li>IntelliJ IDEA 2023.3+ (build 233+) or any JetBrains IDE on IntelliJ Platform 2023.3+</li>
+    <li>Docker (for the "Start MockServer" action)</li>
+</ul>
+
+<h3>Features</h3>
+
+<table>
+    <thead>
+    <tr>
+        <th>Action</th>
+        <th>Where</th>
+        <th>What it does</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td><strong>Open MockServer Dashboard</strong></td>
+        <td><em>Tools &gt; MockServer</em> menu and tool window</td>
+        <td>Opens <span class="inline_code">http://localhost:1080/mockserver/dashboard</span> in the default browser</td>
+    </tr>
+    <tr>
+        <td><strong>Start MockServer (Docker)</strong></td>
+        <td><em>Tools &gt; MockServer</em> menu and tool window</td>
+        <td>Runs <span class="inline_code">docker run -d --rm -p 1080:1080 mockserver/mockserver:{{ site.mockserver_version }}</span></td>
+    </tr>
+    </tbody>
+</table>
+
+<p>The <strong>MockServer</strong> tool window appears in the bottom panel and provides button access to the same actions — useful without opening the Tools menu.</p>
+
+<p>For more information see <a href="/mock_server/mockserver_ui.html">MockServer Dashboard</a> and <a href="/mock_server/running_mock_server.html">Running MockServer</a>.</p>
