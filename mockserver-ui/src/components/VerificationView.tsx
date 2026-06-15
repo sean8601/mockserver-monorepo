@@ -239,14 +239,6 @@ export default function VerificationView({ connectionParams }: { connectionParam
     );
   });
 
-  // A verification needs at least one matcher (request, response, or both) in either mode.
-  const singleHasMatcher =
-    Object.keys(buildHttpRequest(single)).length > 0 ||
-    Object.keys(buildHttpResponse(singleResponse)).length > 0;
-  const sequenceHasMatcher =
-    sequence.some((r) => Object.keys(buildHttpRequest(r)).length > 0) ||
-    seqResponses.some((r) => Object.keys(buildHttpResponse(r)).length > 0);
-
   const addSequenceStep = () => {
     setSequence([...sequence, emptyRequest()]);
     setSeqResponses([...seqResponses, emptyResponse()]);
@@ -273,15 +265,18 @@ export default function VerificationView({ connectionParams }: { connectionParam
         </ToggleButtonGroup>
       </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        Assert against what MockServer has already seen: a request it received, the response
-        returned for a proxied/forwarded request, or both. A request matcher alone checks received
-        requests; a response matcher alone checks recorded responses (any request); when both are
-        given they must match on the same exchange. Pass means it happened the expected number of
-        times; fail shows the closest matches and the actual count.
+        Assert against what MockServer has already seen. Both matchers are optional — fill the
+        request, the response, or both: a request matcher alone checks received requests; a
+        response matcher alone checks recorded responses for proxied/forwarded traffic (any
+        request); when both are given they must match on the same exchange. Pass means it happened
+        the expected number of times; fail shows the closest matches and the actual count.
       </Typography>
 
       {mode === 'single' ? (
         <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mb: 1 }}>
+            Request matcher (optional)
+          </Typography>
           <RequestFields form={single} onChange={setSingle} />
           <ResponseMatcherSection
             expanded={singleResponseExpanded}
@@ -307,15 +302,10 @@ export default function VerificationView({ connectionParams }: { connectionParam
               </>
             )}
             <Typography variant="body2" color="text.secondary">time(s)</Typography>
-            <Button variant="contained" size="small" disabled={busy || !singleHasMatcher} onClick={verifySingle} sx={{ ml: 'auto' }}>
+            <Button variant="contained" size="small" disabled={busy} onClick={verifySingle} sx={{ ml: 'auto' }}>
               Verify
             </Button>
           </Box>
-          {!singleHasMatcher && (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              Add a request matcher, a response matcher, or both to verify.
-            </Typography>
-          )}
         </Paper>
       ) : (
         <Paper variant="outlined" sx={{ p: 2 }}>
@@ -326,6 +316,9 @@ export default function VerificationView({ connectionParams }: { connectionParam
             <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 1.5 }}>
               <Typography variant="caption" sx={{ mt: 1, width: 20 }}>{i + 1}.</Typography>
               <Box sx={{ flex: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, mb: 0.5, display: 'block' }}>
+                  Request matcher (optional)
+                </Typography>
                 <RequestFields form={row} onChange={(f) => setSequence(sequence.map((r, j) => j === i ? f : r))} />
                 <ResponseMatcherSection
                   expanded={seqResponseExpanded[i] ?? false}
@@ -344,35 +337,28 @@ export default function VerificationView({ connectionParams }: { connectionParam
             <Button size="small" startIcon={<AddIcon />} onClick={addSequenceStep}>
               Add step
             </Button>
-            <Button variant="contained" size="small" disabled={busy || !sequenceHasMatcher} onClick={verifySeq} sx={{ ml: 'auto' }}>
+            <Button variant="contained" size="small" disabled={busy} onClick={verifySeq} sx={{ ml: 'auto' }}>
               Verify sequence
             </Button>
           </Box>
-          {!sequenceHasMatcher && (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              Add a request matcher, a response matcher, or both to at least one step.
-            </Typography>
-          )}
         </Paper>
       )}
 
       {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
       <ResultAlert result={result} />
 
-      {/* Code generation panel — shown when at least one matcher is present */}
-      {((mode === 'single' && singleHasMatcher) || (mode === 'sequence' && sequenceHasMatcher)) && (
-        <VerificationReviewMemo
-          mode={mode}
-          single={single}
-          singleResponse={singleResponse}
-          timesMode={timesMode}
-          count={count}
-          atMost={atMost}
-          sequence={sequence}
-          seqResponses={seqResponses}
-          connectionParams={connectionParams}
-        />
-      )}
+      {/* Code generation panel — always shown; an empty form previews a "verify any request" call. */}
+      <VerificationReviewMemo
+        mode={mode}
+        single={single}
+        singleResponse={singleResponse}
+        timesMode={timesMode}
+        count={count}
+        atMost={atMost}
+        sequence={sequence}
+        seqResponses={seqResponses}
+        connectionParams={connectionParams}
+      />
     </Box>
   );
 }

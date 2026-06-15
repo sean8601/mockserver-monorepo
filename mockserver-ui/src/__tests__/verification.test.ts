@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { timesToWire, verifyRequest, verifySequence } from '../lib/verification';
+import { timesToWire, verifyRequest, verifySequence, buildVerifyBody, buildVerifySequenceBody } from '../lib/verification';
 
 const params = { host: '127.0.0.1', port: '1080', secure: false };
 
@@ -15,6 +15,72 @@ describe('timesToWire', () => {
 
   it('clamps a between upper bound below the lower bound up to the lower bound', () => {
     expect(timesToWire({ mode: 'between', count: 4, atMost: 1 })).toEqual({ atLeast: 4, atMost: 4 });
+  });
+});
+
+describe('buildVerifyBody', () => {
+  it('defaults to httpRequest:{} when request is empty and no response is provided', () => {
+    const body = buildVerifyBody({}, { mode: 'atLeast', count: 1 });
+    expect(body).toEqual({ httpRequest: {}, times: { atLeast: 1 } });
+  });
+
+  it('includes httpRequest when a request matcher is provided', () => {
+    const body = buildVerifyBody({ method: 'GET', path: '/api' }, { mode: 'exactly', count: 2 });
+    expect(body).toEqual({ httpRequest: { method: 'GET', path: '/api' }, times: { atLeast: 2, atMost: 2 } });
+  });
+
+  it('omits httpRequest when request is empty and a response matcher is provided (response-only)', () => {
+    const body = buildVerifyBody({}, { mode: 'atLeast', count: 1 }, { statusCode: 200 });
+    expect(body).not.toHaveProperty('httpRequest');
+    expect(body.httpResponse).toEqual({ statusCode: 200 });
+    expect(body.times).toEqual({ atLeast: 1 });
+  });
+
+  it('includes both httpRequest and httpResponse when both are provided', () => {
+    const body = buildVerifyBody({ path: '/api' }, { mode: 'atLeast', count: 1 }, { statusCode: 200 });
+    expect(body.httpRequest).toEqual({ path: '/api' });
+    expect(body.httpResponse).toEqual({ statusCode: 200 });
+  });
+
+  it('omits httpResponse when response is an empty object', () => {
+    const body = buildVerifyBody({ path: '/api' }, { mode: 'atLeast', count: 1 }, {});
+    expect(body).not.toHaveProperty('httpResponse');
+  });
+});
+
+describe('buildVerifySequenceBody', () => {
+  it('defaults to httpRequests with empty objects when all requests are empty and no responses are provided', () => {
+    const body = buildVerifySequenceBody([{}, {}]);
+    expect(body).toEqual({ httpRequests: [{}, {}] });
+  });
+
+  it('includes httpRequests when any step has a request', () => {
+    const body = buildVerifySequenceBody([{ path: '/a' }, {}]);
+    expect(body).toEqual({ httpRequests: [{ path: '/a' }, {}] });
+  });
+
+  it('omits httpRequests when all requests are empty and responses are provided (response-only)', () => {
+    const body = buildVerifySequenceBody([{}, {}], [{ statusCode: 201 }, { statusCode: 200 }]);
+    expect(body).not.toHaveProperty('httpRequests');
+    expect(body.httpResponses).toEqual([{ statusCode: 201 }, { statusCode: 200 }]);
+  });
+
+  it('includes both httpRequests and httpResponses when both are present', () => {
+    const body = buildVerifySequenceBody(
+      [{ path: '/a' }, { path: '/b' }],
+      [{ statusCode: 201 }, { statusCode: 200 }],
+    );
+    expect(body.httpRequests).toEqual([{ path: '/a' }, { path: '/b' }]);
+    expect(body.httpResponses).toEqual([{ statusCode: 201 }, { statusCode: 200 }]);
+  });
+
+  it('includes httpRequests when requests are present even with responses', () => {
+    const body = buildVerifySequenceBody(
+      [{ path: '/a' }, {}],
+      [{ statusCode: 201 }, undefined],
+    );
+    expect(body.httpRequests).toEqual([{ path: '/a' }, {}]);
+    expect(body.httpResponses).toEqual([{ statusCode: 201 }, {}]);
   });
 });
 

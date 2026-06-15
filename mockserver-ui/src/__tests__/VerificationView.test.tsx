@@ -175,7 +175,7 @@ describe('VerificationView', () => {
     expect(screen.getByLabelText('Status code')).toBeInTheDocument();
     expect(screen.getByLabelText(/Response body/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Response headers/)).toBeInTheDocument();
-    expect(screen.getByText(/proxied\/forwarded traffic/)).toBeInTheDocument();
+    expect(screen.getByText(/Match against responses recorded from proxied\/forwarded traffic/)).toBeInTheDocument();
   });
 
   it('sends httpResponse when status code is filled in single mode', async () => {
@@ -296,26 +296,27 @@ describe('VerificationView', () => {
     expect(body).not.toHaveProperty('httpResponses');
   });
 
-  // --- New: optional request matcher behaviour ---
+  // --- Optional request matcher behaviour ---
 
-  it('disables Verify button and shows hint when no request or response fields are filled', () => {
+  it('enables Verify button with an empty form (verify-any-request default)', () => {
     renderView();
     const verifyBtn = screen.getByRole('button', { name: 'Verify' });
-    expect(verifyBtn).toBeDisabled();
-    expect(screen.getByText('Add a request matcher, a response matcher, or both to verify.')).toBeInTheDocument();
+    expect(verifyBtn).toBeEnabled();
+    // No hint caption — both matchers are optional and the empty form is valid
+    expect(screen.queryByText(/Add a request matcher/)).not.toBeInTheDocument();
   });
 
-  it('disables Verify sequence button and shows hint when no fields are filled in any step', async () => {
+  it('enables Verify sequence button with empty steps', async () => {
     const user = userEvent.setup();
     renderView();
 
     await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
     const seqBtn = screen.getByRole('button', { name: 'Verify sequence' });
-    expect(seqBtn).toBeDisabled();
-    expect(screen.getByText('Add a request matcher, a response matcher, or both to at least one step.')).toBeInTheDocument();
+    expect(seqBtn).toBeEnabled();
+    expect(screen.queryByText(/Add a request matcher/)).not.toBeInTheDocument();
   });
 
-  it('enables Verify button when only a response matcher is filled (response-only verify)', async () => {
+  it('sends httpRequest:{} when form is empty (verify-any-request default)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 202,
       text: async () => '',
@@ -325,18 +326,34 @@ describe('VerificationView', () => {
     const user = userEvent.setup();
     renderView();
 
-    // Button starts disabled
-    expect(screen.getByRole('button', { name: 'Verify' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body as string);
+    // Empty form defaults to a request verification matching any request
+    expect(body.httpRequest).toEqual({});
+    expect(body.times).toBeDefined();
+    expect(body).not.toHaveProperty('httpResponse');
+  });
+
+  it('sends response-only body when only a response matcher is filled', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 202,
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    renderView();
 
     // Expand the response matcher section and fill a status code
     await user.click(screen.getByText('Response matcher (optional)'));
     const statusField = screen.getByLabelText('Status code');
     await user.type(statusField, '200');
-
-    // Button should now be enabled
-    expect(screen.getByRole('button', { name: 'Verify' })).toBeEnabled();
-    // Hint should be gone
-    expect(screen.queryByText('Add a request matcher, a response matcher, or both to verify.')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
@@ -354,9 +371,13 @@ describe('VerificationView', () => {
 
   // --- Code generation panel tests ---
 
-  it('does NOT show generated code panel when no matchers are filled', () => {
+  it('shows generated code panel even when no matchers are filled (empty form = verify any request)', () => {
     renderView();
-    expect(screen.queryByText('Generated code')).not.toBeInTheDocument();
+    expect(screen.getByText('Generated code')).toBeInTheDocument();
+    // Java tab should be present and selected by default
+    expect(screen.getByRole('tab', { name: 'Java' })).toBeInTheDocument();
+    // The empty-form code should contain a verify call with request()
+    expect(screen.getByText(/mockServerClient/)).toBeInTheDocument();
   });
 
   it('shows generated code panel with Java tab when a request path is filled', async () => {
@@ -374,23 +395,14 @@ describe('VerificationView', () => {
     expect(screen.getByText(/request\(\)/)).toBeInTheDocument();
   });
 
-  it('shows generated code panel in sequence mode when a path is filled', async () => {
-    const user = userEvent.setup();
+  it('shows generated code panel in sequence mode even with empty steps', () => {
     renderView();
-
-    await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
-    const pathFields = screen.getAllByLabelText('Path');
-    await user.type(pathFields[0]!, '/a');
-
+    // The panel is always present, even before switching to sequence mode
     expect(screen.getByText('Generated code')).toBeInTheDocument();
   });
 
-  it('shows all 9 language tabs in the generated code panel', async () => {
-    const user = userEvent.setup();
+  it('shows all 9 language tabs in the generated code panel', () => {
     renderView();
-
-    const pathField = screen.getByLabelText('Path');
-    await user.type(pathField, '/api');
 
     const tabLabels = ['Java', 'Node.js', 'Python', 'Go', 'C#', 'Ruby', 'Rust', 'JSON', 'curl'];
     for (const label of tabLabels) {
@@ -398,7 +410,7 @@ describe('VerificationView', () => {
     }
   });
 
-  it('enables Verify sequence button when only a response matcher is filled in one step', async () => {
+  it('sends response-only sequence body when only a response matcher is filled in one step', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 202,
       text: async () => '',
@@ -410,17 +422,11 @@ describe('VerificationView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
 
-    // Button starts disabled
-    expect(screen.getByRole('button', { name: 'Verify sequence' })).toBeDisabled();
-
     // Expand the response matcher in the first step and fill a status code
     const toggles = screen.getAllByText('Response matcher (optional)');
     await user.click(toggles[0]!);
     const statusFields = screen.getAllByLabelText('Status code');
     await user.type(statusFields[0]!, '201');
-
-    // Button should now be enabled
-    expect(screen.getByRole('button', { name: 'Verify sequence' })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: 'Verify sequence' }));
 

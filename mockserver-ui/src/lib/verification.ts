@@ -77,12 +77,18 @@ export function buildVerifyBody(
   times: VerificationTimesSpec,
   httpResponse?: Record<string, unknown>,
 ): Record<string, unknown> {
+  const hasRequest = !!httpRequest && Object.keys(httpRequest).length > 0;
+  const hasResponse = !!httpResponse && Object.keys(httpResponse).length > 0;
   const body: Record<string, unknown> = {};
-  if (httpRequest && Object.keys(httpRequest).length > 0) {
+  if (hasRequest) {
     body.httpRequest = httpRequest;
+  } else if (!hasResponse) {
+    // No matcher entered → default to a request verification that matches any request,
+    // so the body is valid (the server's schema requires at least one matcher).
+    body.httpRequest = {};
   }
   body.times = timesToWire(times);
-  if (httpResponse && Object.keys(httpResponse).length > 0) {
+  if (hasResponse) {
     body.httpResponse = httpResponse;
   }
   return body;
@@ -97,12 +103,16 @@ export function buildVerifySequenceBody(
   httpRequests: Record<string, unknown>[],
   httpResponses?: (Record<string, unknown> | undefined)[],
 ): Record<string, unknown> {
+  const hasAnyResponse = !!httpResponses && httpResponses.some((r) => r && Object.keys(r).length > 0);
+  const hasAnyRequest = httpRequests.some((r) => r && Object.keys(r).length > 0);
   const body: Record<string, unknown> = {};
-  if (httpRequests.some((r) => r && Object.keys(r).length > 0)) {
+  // Include httpRequests when any step has a request, or when there are no responses at all
+  // (default to a request sequence so the body is valid). Empty steps become {} = match any.
+  if (hasAnyRequest || !hasAnyResponse) {
     body.httpRequests = httpRequests.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
   }
-  if (httpResponses && httpResponses.some((r) => r && Object.keys(r).length > 0)) {
-    body.httpResponses = httpResponses.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
+  if (hasAnyResponse) {
+    body.httpResponses = httpResponses!.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
   }
   return body;
 }
@@ -119,15 +129,7 @@ export function verifyRequest(
   times: VerificationTimesSpec,
   httpResponse?: Record<string, unknown>,
 ): Promise<VerifyResult> {
-  const body: Record<string, unknown> = {};
-  if (httpRequest && Object.keys(httpRequest).length > 0) {
-    body.httpRequest = httpRequest;
-  }
-  body.times = timesToWire(times);
-  if (httpResponse && Object.keys(httpResponse).length > 0) {
-    body.httpResponse = httpResponse;
-  }
-  return putVerify(params, '/mockserver/verify', body);
+  return putVerify(params, '/mockserver/verify', buildVerifyBody(httpRequest, times, httpResponse));
 }
 
 /**
@@ -141,14 +143,5 @@ export function verifySequence(
   httpRequests: Record<string, unknown>[],
   httpResponses?: (Record<string, unknown> | undefined)[],
 ): Promise<VerifyResult> {
-  const body: Record<string, unknown> = {};
-  if (httpRequests.some((r) => r && Object.keys(r).length > 0)) {
-    // Index-aligned: empty entries become empty objects so indices match httpResponses.
-    body.httpRequests = httpRequests.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
-  }
-  if (httpResponses && httpResponses.some((r) => r && Object.keys(r).length > 0)) {
-    // Index-aligned: undefined/empty entries become empty objects so indices match httpRequests.
-    body.httpResponses = httpResponses.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
-  }
-  return putVerify(params, '/mockserver/verifySequence', body);
+  return putVerify(params, '/mockserver/verifySequence', buildVerifySequenceBody(httpRequests, httpResponses));
 }
