@@ -161,6 +161,10 @@ and reintegrate it onto `master`**.
   lightweight path (inline edit + one adversarial review + targeted verify) for
   small changes; a direct edit for trivial ones. Don't manufacture ceremony that
   adds no safety.
+- **Cap parallelism — no more than 10 active subagents and no more than 10-way
+  parallelism at any one time** (hard caps; apply a lower limit for complexity,
+  cost, contention, or model availability). Queue or defer rather than exceed
+  them. See `.opencode/rules/operating-model.md` (Parallelism Limits).
 - **Isolate independent agents, not every task** — the primary interactive
   session stays in the main checkout (IntelliJ MCP visible); independent/long
   autonomous sessions use `/worktree`; subagents share the primary's filesystem.

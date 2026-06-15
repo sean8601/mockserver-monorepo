@@ -49,6 +49,22 @@ flowchart LR
 | **Commit** | One coherent unit → one commit. Never bundle unrelated changes. Preserves traceability, reviewability, and clean rollback. | [[commit-workflow]] |
 | **Reintegrate** | Rebase the unit onto the latest `master` and push. Conflicts surface here; resolve them, then re-verify. Concurrent rebases serialise through the `flock` rebase lock. | [[worktree-workflow]] (steps 7–8), `/worktree-merge` |
 
+## Parallelism Limits (Hard Caps)
+
+Parallelism is the default, but it is **bounded**. These caps are absolute and
+**must not** be exceeded:
+
+- **No more than 10 active subagents at any one time.**
+- **No more than 10-way parallelism at any one time.**
+
+Queue or defer work rather than exceed a cap, and say so when work is deferred
+for this reason. Apply a **lower** effective limit when warranted by task
+complexity, cost budget, model availability, repository-contention risk,
+verification capacity, or operational constraints; the effective limit and its
+rationale **must be recorded**. The caps bound coordination cost and merge
+risk; they intentionally forgo unbounded throughput. (Spec:
+`docs/operations/ai-sdlc-integration-spec.md` §8.1–§8.2.)
+
 ## Autonomy & The Commit Gate
 
 **The gate chain is the authority to ship — not a human prompt.** Once a unit
