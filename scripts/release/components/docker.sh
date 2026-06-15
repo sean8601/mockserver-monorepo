@@ -305,10 +305,11 @@ else
     docker/graaljs
 
   if [[ "$BUILD_CLUSTERED" == "true" ]]; then
-    # Error-isolated: a clustered image push failure must never abort the
-    # release — the main + GraalJS images have already been published above.
+    # HARD-fail with retry: a transient registry blip is retried, but a real
+    # clustered image push failure aborts the release rather than being silently
+    # swallowed. No release error should be ignored.
     echo "--- :docker: Building and pushing clustered image variant"
-    if ! docker buildx build \
+    retry 3 5 -- docker buildx build \
       --platform "linux/amd64,linux/arm64" \
       --push \
       --tag "mockserver/mockserver:clustered-$FULL_TAG" \
@@ -317,63 +318,56 @@ else
       --tag "${ECR_REPO}:clustered-$FULL_TAG" \
       --tag "${ECR_REPO}:clustered-$SHORT_TAG" \
       --tag "${ECR_REPO}:clustered-latest" \
-      docker/clustered; then
-      log_info "WARNING: clustered image push failed — continuing (main images already published)"
-    fi
+      docker/clustered
   fi
 
   if [[ "$BUILD_WEBHOOK" == "true" ]]; then
     # Push webhook to Docker Hub first (primary registry used by Helm chart).
-    # Error-isolated: a webhook push failure must never abort the release —
-    # the main + GraalJS images have already been published above.
-    if ! docker buildx build \
+    # HARD-fail with retry: the webhook repo + push scope are provisioned, so a
+    # push failure is a real error and must abort the release, not be swallowed.
+    retry 3 5 -- docker buildx build \
       --platform "linux/amd64,linux/arm64" \
       --push \
       --tag "mockserver/mockserver-webhook:$FULL_TAG" \
       --tag "mockserver/mockserver-webhook:$SHORT_TAG" \
       --tag "mockserver/mockserver-webhook:latest" \
-      docker/webhook; then
-      log_info "WARNING: webhook Docker Hub push failed — continuing (main images already published)"
-    fi
-    # Push webhook to ECR separately — the ECR repo may not be provisioned yet.
-    if ! docker buildx build \
+      docker/webhook
+    # Push webhook to ECR separately. HARD-fail with retry — same policy as the
+    # Docker Hub push above; a real failure aborts rather than being swallowed.
+    retry 3 5 -- docker buildx build \
       --platform "linux/amd64,linux/arm64" \
       --push \
       --tag "${ECR_REPO}-webhook:$FULL_TAG" \
       --tag "${ECR_REPO}-webhook:$SHORT_TAG" \
       --tag "${ECR_REPO}-webhook:latest" \
-      docker/webhook; then
-      log_info "WARNING: webhook ECR push failed — continuing (Docker Hub is the primary registry)"
-    fi
+      docker/webhook
   fi
 
   # ---- Mirror images to GHCR -----------------------------------------------
   # Copy the already-pushed multi-arch manifests from Docker Hub to GHCR with
   # `docker buildx imagetools create` (a registry-to-registry manifest copy — no
-  # rebuild, identical digest). Strictly non-fatal and error-isolated per tag:
-  # the primary Docker Hub + ECR images are already published above, so a GHCR
-  # hiccup must never abort the release. Signed below alongside the other refs.
+  # rebuild, identical digest). The MIRROR_GHCR gate (set only when GHCR login
+  # succeeded) decides WHETHER to mirror; once we're inside it, the GHCR mirror
+  # is a committed surface, so a per-tag mirror failure is HARD with retry — a
+  # transient blip is retried, a real failure aborts the release.
   if [[ "$MIRROR_GHCR" == "true" ]]; then
     echo "--- :docker: Mirroring images to ghcr.io/mock-server/mockserver"
     mirror_to_ghcr() {
       # $1 = source ref (Docker Hub), $2 = destination ref (GHCR)
-      if ! docker buildx imagetools create --tag "$2" "$1"; then
-        log_info "WARNING: GHCR mirror failed for $2 (non-fatal)"
-        return 1
-      fi
+      docker buildx imagetools create --tag "$2" "$1"
     }
     for t in "$FULL_TAG" "$SHORT_TAG" "latest" \
              "$FULL_TAG-graaljs" "$SHORT_TAG-graaljs" "latest-graaljs"; do
-      mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t" || true
+      retry 3 5 -- mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t"
     done
     if [[ "$BUILD_CLUSTERED" == "true" ]]; then
       for t in "clustered-$FULL_TAG" "clustered-$SHORT_TAG" "clustered-latest"; do
-        mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t" || true
+        retry 3 5 -- mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t"
       done
     fi
     if [[ "$BUILD_WEBHOOK" == "true" ]]; then
       for t in "$FULL_TAG" "$SHORT_TAG" "latest"; do
-        mirror_to_ghcr "mockserver/mockserver-webhook:$t" "${GHCR_REPO}-webhook:$t" || true
+        retry 3 5 -- mirror_to_ghcr "mockserver/mockserver-webhook:$t" "${GHCR_REPO}-webhook:$t"
       done
     fi
   fi
@@ -401,8 +395,8 @@ else
     # curl (not wget) — docker.sh runs on the bare agent host and only curl is
     # a guaranteed-present tool here (require_cmd curl); helm.sh uses wget only
     # because it runs inside a container image that bundles it.
-    if ! curl -fsSL --max-time 120 -o "$target" "https://github.com/sigstore/cosign/releases/download/v2.4.3/cosign-linux-amd64"; then
-      log_info "WARNING: failed to download cosign — skipping signing"
+    if ! retry 3 5 -- curl -fsSL --max-time 120 -o "$target" "https://github.com/sigstore/cosign/releases/download/v2.4.3/cosign-linux-amd64"; then
+      log_error "failed to download cosign after retries — cannot sign images"
       return 1
     fi
     if ! echo "caaad125acef1cb81d58dcdc454a1e429d09a750d1e9e2b3ed1aed8964454708  $target" | sha256sum -c - >/dev/null 2>&1; then
@@ -474,8 +468,12 @@ else
       [[ "$BUILD_WEBHOOK" == "true" ]]   && images_to_sign+=( "${GHCR_REPO}-webhook:$FULL_TAG" )
     fi
     for img in "${images_to_sign[@]}"; do
-      cosign_sign_docker_image "$img" || {
-        log_info "WARNING: cosign signing failed for $img (non-fatal)"
+      # HARD with retry: all secrets (cosign-key, ghcr-token) exist, so signing
+      # is expected to work. A transient blip (registry 5xx, digest-resolution
+      # lag) is retried; a real signing failure sets rc=1 and is propagated so
+      # the release aborts rather than silently publishing unsigned images.
+      retry 3 5 -- cosign_sign_docker_image "$img" || {
+        log_error "cosign signing failed for $img after retries"
         rc=1
       }
     done
@@ -490,10 +488,14 @@ else
     # cosign signs on the HOST (the images are already pushed to a registry).
     # cosign_sign_docker_images resolves a cosign binary via ensure_cosign,
     # installing the pinned release into .tmp/ if one is not already on PATH.
+    # HARD-fail: the presence-gate above decides WHETHER to sign; once the key
+    # exists, a signing failure (after per-image retries) is a real error and
+    # must abort the release rather than publishing some images unsigned.
     if cosign_sign_docker_images; then
       log_info "Docker images signed with cosign"
     else
-      log_info ":warning: cosign signing had partial failures (non-fatal) — images published but some unsigned"
+      log_error "cosign signing failed — one or more Docker images could not be signed"
+      exit 1
     fi
   else
     log_info "cosign key not configured (mockserver-release/cosign-key) — skipping Docker image signing"
@@ -502,22 +504,31 @@ else
   # ---- Sync the Docker Hub "Overview" from docker/DOCKERHUB.md --------------
   # Keeps the repo's Docker Hub landing page in sync with version control so it
   # never goes stale (it previously drifted: dead Trello board + Heroku Slack
-  # link). STRICTLY non-fatal: needs a Docker Hub token with repo-write scope,
-  # which the push/pull token may lack (403 insufficient scope) — skipped with a
-  # warning in that case so it never aborts a release.
-  sync_dockerhub_description() {
-    local desc_file="$REPO_ROOT/docker/DOCKERHUB.md" user token bearer code
-    [[ -f "$desc_file" ]] || { log_info "  no docker/DOCKERHUB.md — skipping overview sync"; return 0; }
+  # link). The release-scoped Docker Hub token has repo-write scope, so the
+  # token exchange + PATCH are expected to succeed. HARD-fail with retry: a
+  # transient HTTP/network blip is retried, but a real failure (e.g. token
+  # rejected, or a non-200 from the description PATCH) aborts the release rather
+  # than being silently swallowed. The "no docker/DOCKERHUB.md" branch is a
+  # legitimate capability gate (nothing to sync) and stays a clean skip.
+  # Writes the bearer to $1 (a 0600 file) rather than stdout, so it can be
+  # wrapped in `retry` without the retry's own log lines polluting the captured
+  # value.
+  exchange_dockerhub_bearer() {
+    local out_file="$1" user token bearer
     user=$(load_secret "mockserver-release/dockerhub" "username") || return 1
     token=$(load_secret "mockserver-release/dockerhub" "token") || return 1
     # A Docker Hub Personal/Org Access Token must be exchanged for a bearer via
     # /v2/auth/token (it cannot be used as a bearer directly, and the legacy
     # /v2/users/login JWT lacks the scope to edit repo metadata).
-    bearer=$(curl -s --max-time 30 -H "Content-Type: application/json" \
+    bearer=$(curl -sf --max-time 30 -H "Content-Type: application/json" \
       -d "{\"identifier\":\"${user}\",\"secret\":\"${token}\"}" \
       https://hub.docker.com/v2/auth/token \
       | python3 -c "import sys,json;print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
-    [[ -n "$bearer" ]] || { log_info "  Docker Hub token exchange failed — skipping overview sync"; return 1; }
+    [[ -n "$bearer" ]] || return 1
+    ( umask 077; printf '%s' "$bearer" > "$out_file" )
+  }
+  patch_dockerhub_description() {
+    local bearer="$1" desc_file="$2" code
     code=$(python3 - "$bearer" "$desc_file" <<'PY'
 import sys, json, urllib.request, urllib.error
 bearer, path = sys.argv[1], sys.argv[2]
@@ -534,15 +545,31 @@ PY
 )
     if [[ "$code" == "200" ]]; then
       log_info "  Docker Hub overview updated from docker/DOCKERHUB.md"
-    else
-      # Editing the repo description needs a token with repo:admin scope; the
-      # push token is typically repo:write only (HTTP 403). Non-fatal.
-      log_info "  WARNING: Docker Hub overview update returned HTTP ${code:-?} (the token needs repo:admin scope, not just repo:write) — skipped"
-      return 1
+      return 0
     fi
+    log_error "  Docker Hub overview update returned HTTP ${code:-?}"
+    return 1
+  }
+  sync_dockerhub_description() {
+    local desc_file="$REPO_ROOT/docker/DOCKERHUB.md" bearer_file bearer rc=0
+    [[ -f "$desc_file" ]] || { log_info "  no docker/DOCKERHUB.md — skipping overview sync"; return 0; }
+    mkdir -p "$REPO_ROOT/.tmp"
+    bearer_file="$REPO_ROOT/.tmp/dockerhub-bearer.$$"
+    retry 3 5 -- exchange_dockerhub_bearer "$bearer_file" \
+      || { log_error "  Docker Hub token exchange failed after retries"; rm -f "$bearer_file"; return 1; }
+    bearer=$(cat "$bearer_file")
+    rm -f "$bearer_file"
+    retry 3 5 -- patch_dockerhub_description "$bearer" "$desc_file" || rc=1
+    return $rc
   }
   log_info "Sync Docker Hub overview from docker/DOCKERHUB.md"
-  sync_dockerhub_description || log_info ":warning: Docker Hub overview not updated (non-fatal)"
+  # SURFACED-soft (not silent, not aborting): the overview PATCH needs a repo:admin
+  # Docker Hub token, but the release token is push-scoped, so this 403s. Updating
+  # the repo README is cosmetic — never worth aborting a release whose images all
+  # published. Emit a loud, actionable warning instead. To make this HARD, provision
+  # an admin-scoped Docker Hub token.
+  sync_dockerhub_description \
+    || log_info ":warning: Docker Hub overview NOT updated — release token lacks repo:admin (push-only). Non-fatal; provision an admin-scoped token to enable. (surfaced, not silently ignored)"
 fi
 
 log_info "Docker publish complete"
