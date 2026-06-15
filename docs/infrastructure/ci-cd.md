@@ -11,8 +11,6 @@ graph LR
 Build & Test"]
         BK_MAVEN["Docker Push
 Maven CI Image"]
-        BK_RELEASE["Docker Push
-Release Image"]
         BK_CLEANUP["PR Cleanup
 Cancel & Delete"]
     end
@@ -29,7 +27,6 @@ Auto-indexed"]
 
     BK -->|runs on| EC2[AWS EC2 Agents]
     BK_MAVEN -->|pushes to| DH[Docker Hub]
-    BK_RELEASE -->|pushes to| DH
     BK_CLEANUP -->|triggered by| GH_WH[GitHub Webhook]
     GA_CODEQL -->|reports to| GH_SEC[GitHub Security]
 ```
@@ -107,7 +104,6 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | `mockserver-website` | `pipeline-website.yml` | Orchestrator | Jekyll site build |
 | `mockserver-infra` | `pipeline-infra.yml` | Orchestrator | Infrastructure validation |
 | `mockserver-build-image` | `docker-push-maven.yml` | Orchestrator + Manual | Build/push maven CI image |
-| `mockserver-release-image` | `docker-push-release.yml` | Manual | Build/push release image |
 | `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central, maven-plugin, Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
 | `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs |
 | `mockserver-perf-regression` | `pipeline-perf-test.yml` | Daily Buildkite schedule (04:00 UTC) | Daily performance-regression pipeline — guard + k6 run + JMH microbench + rolling-baseline compare |
@@ -277,37 +273,39 @@ The pipeline has two steps separated by a `- wait` directive:
 1. **Build:** `.buildkite/scripts/steps/maven-image-build.sh` builds the `mockserver/mockserver:maven` image
 2. **Push** (master only): `.buildkite/scripts/steps/maven-image-push.sh` authenticates to Docker Hub via AWS Secrets Manager (`mockserver-build/dockerhub`) and pushes the image
 
-### Release Image Push Pipeline
+### Release Image Push (Docker step of the release pipeline)
 
-**File:** `.buildkite/docker-push-release.yml`
+**Script:** `scripts/release/components/docker.sh`, invoked as the `:docker: Docker Image` step of `release-pipeline.yml` (`release-runner.sh docker`).
 
-**Trigger:** Manual (during release process, step 7)
+**Trigger:** Runs automatically as part of the `mockserver-release` pipeline — there is no separate manual image pipeline.
 
-**Queue:** `release` — runs on the release agent queue so it has access to release secrets.
+**Queue:** `release` — needs `mockserver-release/cosign-key` (image signing) and the release-scoped Docker Hub / ECR push credentials.
 
-Builds and pushes the production MockServer Docker images as multi-arch images (`linux/amd64` + `linux/arm64` via QEMU). Three image variants are published: main, GraalJS, and webhook.
+Builds and pushes the production MockServer Docker images as multi-arch images (`linux/amd64` + `linux/arm64` via QEMU). Four image variants are published: main, GraalJS, clustered, and webhook. After push, each image is cosign-signed by digest, and the same digests are mirrored to GHCR.
 
-Set the `RELEASE_TAG` environment variable when triggering the build (e.g., `mockserver-7.0.0`). If triggered from a git tag, `BUILDKITE_TAG` is used as fallback.
+The `RELEASE_VERSION` / tag is derived from the release pipeline context.
 
 Tags pushed per image:
-- `mockserver/mockserver:mockserver-X.Y.Z` + `:X.Y.Z` (main + GraalJS variants)
+- `mockserver/mockserver:mockserver-X.Y.Z` + `:X.Y.Z` + `:latest` (main, GraalJS, clustered variants)
 - `mockserver/mockserver-webhook:mockserver-X.Y.Z` + `:X.Y.Z` (admission webhook)
-- Same tags to ECR Public (URI resolved dynamically via `aws ecr-public describe-repositories`)
+- Same tags to ECR Public (URI resolved dynamically via `aws ecr-public describe-repositories`) and mirrored to GHCR
 
 ```mermaid
 flowchart LR
-    TRIGGER["Manual trigger
-RELEASE_TAG=mockserver-X.Y.Z"] --> LOGIN["Docker Hub + ECR login
+    TRIGGER["release-runner.sh docker
+(release pipeline step)"] --> LOGIN["Docker Hub + ECR login
 via Secrets Manager"]
     LOGIN --> ECR_RESOLVE["Resolve ECR URI dynamically
 ecr-public describe-repositories"]
     ECR_RESOLVE --> BUILD["docker buildx build
 linux/amd64 + linux/arm64"]
-    BUILD --> PUSH["Push main + GraalJS + webhook
-:mockserver-X.Y.Z + :X.Y.Z"]
+    BUILD --> PUSH["Push main + GraalJS + clustered + webhook
+:mockserver-X.Y.Z + :X.Y.Z + :latest"]
+    PUSH --> SIGN["cosign sign by digest
++ mirror digests to GHCR"]
 ```
 
-The ECR repository URI is resolved at runtime via `aws ecr-public describe-repositories` rather than hardcoded — the registry alias is AWS-assigned and must not be hardcoded (`.buildkite/scripts/steps/docker-push-release.sh`).
+The ECR repository URI is resolved at runtime via `aws ecr-public describe-repositories` rather than hardcoded — the registry alias is AWS-assigned and must not be hardcoded (`scripts/release/components/docker.sh`).
 
 ### Release Pipeline Security
 

@@ -12,7 +12,6 @@ This stack manages Buildkite pipelines using the [Buildkite Terraform provider](
 |----------|------|---------|---------|
 | MockServer | `.buildkite/pipeline.yml` | Push to branches, PRs | CI build and test |
 | Docker Push Maven | `.buildkite/docker-push-maven.yml` | Manual | Build and push `mockserver/mockserver:maven` CI image |
-| Docker Push Release | `.buildkite/docker-push-release.yml` | Manual | Build and push multi-arch release image |
 
 ## Prerequisites
 

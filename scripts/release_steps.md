@@ -54,7 +54,7 @@
 7. update docker image
     1. ensure maven returns the latest release
         1. curl -v https://oss.sonatype.org/service/local/artifact/maven/redirect\?r\=releases\&g\=org.mock-server\&a\=mockserver-netty\&c\=shaded\&e\=jar\&v\=RELEASE
-    2. trigger buildkite docker-push-release pipeline with RELEASE_TAG=mockserver-X.Y.Z
+    2. release pipeline Docker step (scripts/release/components/docker.sh) builds and pushes the images
 8. update helm chart
     1. find and replace previous MockServer release version to new release
     2. cd helm

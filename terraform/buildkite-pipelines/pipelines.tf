@@ -121,13 +121,6 @@ locals {
       emoji       = ":docker:"
       trigger     = "none"
     }
-    "docker-push-release" = {
-      name        = "MockServer Release Image"
-      description = "Build and push multi-arch release image to Docker Hub"
-      file        = ".buildkite/docker-push-release.yml"
-      emoji       = ":docker:"
-      trigger     = "none"
-    }
     "cleanup" = {
       name        = "MockServer Cleanup"
       description = "Cancel and delete Buildkite builds for closed/merged PRs"
