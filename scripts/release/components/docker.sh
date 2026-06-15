@@ -49,6 +49,10 @@ if [[ -z "$SHADED_JAR" ]]; then
     # Use a locally-built shaded jar as a stand-in for local docker build test.
     SHADED_JAR=$(find_local_shaded)
     if [[ -z "$SHADED_JAR" ]]; then
+      # `package` (not `install`) is sufficient here: the shaded jar is consumed
+      # by file path (find_local_shaded), with no subsequent Maven resolution of
+      # a mock-server SNAPSHOT — unlike the infinispan path below, which needs
+      # `install` so dependency:copy-dependencies can resolve mockserver-core.
       log_dry "no local JAR available — running 'mvn package' to produce one"
       in_maven -w /build/mockserver \
         -- mvn -DskipTests -pl mockserver-netty-no-dependencies -am package
@@ -100,9 +104,14 @@ if [[ -z "$INFINISPAN_JAR" ]]; then
     log_dry "skip: download infinispan $RELEASE_VERSION JAR (not yet on Maven Central)"
     INFINISPAN_JAR=$(find_local_infinispan_jar)
     if [[ -z "$INFINISPAN_JAR" ]]; then
-      log_dry "no local infinispan JAR available — running 'mvn package' to produce one"
+      # `install` (not `package`) so the reactor's mockserver-core SNAPSHOT lands
+      # in the shared .m2 — the `dependency:copy-dependencies` call below resolves
+      # mockserver-state-infinispan's deps from the local repo, and in dry-run the
+      # SNAPSHOT core is not on Maven Central, so `package` (target/ only) would
+      # fail with "Could not find artifact org.mock-server:mockserver-core".
+      log_dry "no local infinispan JAR available — running 'mvn install' to produce one (+ install core to .m2)"
       in_maven -w /build/mockserver \
-        -- mvn -DskipTests -pl mockserver-state-infinispan -am package
+        -- mvn -DskipTests -pl mockserver-state-infinispan -am install
       INFINISPAN_JAR=$(find_local_infinispan_jar)
     fi
   else
