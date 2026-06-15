@@ -155,7 +155,10 @@ The review prompt MUST include:
 Review these changes adversarially using `.opencode/rules/review-constitution.md`.
 
 Apply all 8 lenses (Ambiguity, Incompleteness, Inconsistency, Infeasibility, Insecurity, 
-Inoperability, Incorrectness, Overcomplexity). Pay special attention to:
+Inoperability, Incorrectness, Overcomplexity) as the baseline, and additionally apply the 
+matching per-artefact profile — select it from the profiles table in the constitution 
+(e.g. review-coding for code+tests, review-deployment for infra/Terraform, review-documentation 
+for docs). The profile extends the baseline; it never lets you skip a lens. Pay special attention to:
 - Hallucinated function/method/module names that don't exist (COR-07)
 - Plausible-looking but incorrect logic (COR-05)
 - Missing error handling or edge cases (INC-01, INC-07)
