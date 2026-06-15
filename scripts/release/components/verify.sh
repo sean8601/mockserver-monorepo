@@ -308,9 +308,14 @@ check_http_soft "mockserver-client $V on crates.io" \
 
 log_info ""
 log_info "== PHP Client (soft — Packagist webhook may lag) =="
+# `jq -e` exits non-zero when the version key is absent (the normal case while
+# the Packagist webhook lags). Under `set -euo pipefail` that non-zero in a
+# command substitution aborts the WHOLE verify run mid-PHP-check (it did, in
+# release build #50 — the step exited 1 right after this header). `|| true`
+# keeps it soft like every other check here, which use `|| echo`/`jq -r //empty`.
 php_check=$(curl -sS --connect-timeout 10 --max-time 30 \
   "https://packagist.org/packages/mock-server/mockserver-client.json" 2>/dev/null \
-  | jq -e ".package.versions[\"${V}\"]" 2>/dev/null)
+  | jq -e ".package.versions[\"${V}\"]" 2>/dev/null || true)
 if [[ -n "$php_check" && "$php_check" != "null" ]]; then
   log_info "  PASS  PHP client $V on Packagist"
 else
