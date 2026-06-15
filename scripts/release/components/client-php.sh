@@ -19,8 +19,15 @@
 # FAILURE POLICY (no silent error-swallowing):
 #   - The git operations (subtree split + push mirror master + push tag) ARE the
 #     publish. Each push is wrapped in `retry` to ride out transient git/network
-#     errors and HARD-fails the step if it ultimately fails. These run with host
-#     git (present on the release agent) — no container needed.
+#     errors and HARD-fails the step if it ultimately fails.
+#   - The `git subtree split` runs INSIDE the pinned Maven container, because the
+#     release-agent host git lacks the git-subtree subcommand (release build #51
+#     died with `git: 'subtree' is not a git command`). The container writes the
+#     split commit to a temp branch in the SHARED, bind-mounted .git; the host
+#     then resolves that branch's sha and PUSHES it (the host — not a container —
+#     holds the mirror push credentials via `git config http.extraheader`). The
+#     Maven image (already pinned in _lib.sh) ships git-subtree at
+#     /usr/lib/git-core/git-subtree, so `git subtree` works with no apt install.
 #   - A missing or invalid composer.json is a real prerequisite failure and now
 #     HARD-fails (it used to silent-skip).
 #   - Packagist *indexing* (the package appearing on packagist.org) is
@@ -76,19 +83,38 @@ if is_dry_run; then
   exit 0
 fi
 
+# Temp branch the container writes the split commit to in the shared .git. The
+# host reads its sha and pushes from there. Cleaned up on every exit path.
+SPLIT_BRANCH="release/php-subtree-split-$$"
+
+cleanup_php_release() {
+  clear_git_push_credentials
+  git -C "$REPO_ROOT" branch -D "$SPLIT_BRANCH" >/dev/null 2>&1 || true
+}
+
 # Authenticate git pushes to github.com via the release github-token (sets an
-# http extraheader + release identity) and ensure the credential is cleared on
-# every exit path. Register the cleanup trap BEFORE configuring, so a failure
-# inside configure_git_for_push can't leak a half-written credential.
-trap 'clear_git_push_credentials' EXIT
+# http extraheader + release identity) and ensure the credential AND the temp
+# split branch are cleared on every exit path. Register the cleanup trap BEFORE
+# configuring, so a failure inside configure_git_for_push can't leak a
+# half-written credential.
+trap 'cleanup_php_release' EXIT
 configure_git_for_push
 
 # Regenerate the mirror content: split mockserver-client-php/ into a commit whose
 # root is the package. Deterministic and idempotent on a stable git version, so
 # the mirror's master fast-forwards on each release. HARD: this is the first half
 # of the publish — if the split fails there is nothing to push.
-log_info "Splitting $PREFIX/ into a root-level commit"
-SPLIT_REF=$(git -C "$REPO_ROOT" subtree split --prefix="$PREFIX")
+#
+# The host git on the release agent lacks the git-subtree subcommand (build #51:
+# `git: 'subtree' is not a git command`), so run ONLY the split inside the pinned
+# Maven container, which ships git-subtree. The repo is bind-mounted at /build,
+# so the temp branch the container creates is visible to the host afterwards.
+# `safe.directory` suppresses git's "dubious ownership" error on the mount.
+log_info "Splitting $PREFIX/ into a root-level commit (in $MAVEN_IMAGE)"
+git -C "$REPO_ROOT" branch -D "$SPLIT_BRANCH" >/dev/null 2>&1 || true
+in_docker "$MAVEN_IMAGE" -w /build -- sh -c \
+  "git config --global --add safe.directory /build && git -C /build subtree split --prefix='$PREFIX' -b '$SPLIT_BRANCH'"
+SPLIT_REF=$(git -C "$REPO_ROOT" rev-parse "$SPLIT_BRANCH")
 log_info "subtree split: $SPLIT_REF"
 
 # Push to the mirror's master. This IS the publish — HARD-fail, with retry to
