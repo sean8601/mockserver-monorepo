@@ -229,6 +229,27 @@ class TestVerify:
         assert sent["times"]["atMost"] == 5
 
     @pytest.mark.asyncio
+    async def test_verify_with_response(self, mock_server):
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.verify(
+            HttpRequest(path="/test"),
+            response=HttpResponse(status_code=200),
+        )
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent["httpRequest"]["path"] == "/test"
+        assert sent["httpResponse"]["statusCode"] == 200
+
+    @pytest.mark.asyncio
+    async def test_verify_response_only(self, mock_server):
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.verify(
+            response=HttpResponse(status_code=200),
+        )
+        sent = json.loads(MockHandler.last_request_body)
+        assert "httpRequest" not in sent
+        assert sent["httpResponse"]["statusCode"] == 200
+
+    @pytest.mark.asyncio
     async def test_verify_failure_raises(self, mock_server):
         MockHandler.response_status = 406
         MockHandler.response_body = "Request not found"
@@ -250,6 +271,23 @@ class TestVerifySequence:
         assert len(sent["httpRequests"]) == 2
         assert sent["httpRequests"][0]["path"] == "/first"
         assert sent["httpRequests"][1]["path"] == "/second"
+
+    @pytest.mark.asyncio
+    async def test_verify_sequence_with_responses(self, mock_server):
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.verify_sequence(
+            HttpRequest(path="/a"),
+            HttpRequest(path="/b"),
+            responses=[
+                HttpResponse(status_code=200),
+                HttpResponse(status_code=201),
+            ],
+        )
+        sent = json.loads(MockHandler.last_request_body)
+        assert len(sent["httpRequests"]) == 2
+        assert len(sent["httpResponses"]) == 2
+        assert sent["httpResponses"][0]["statusCode"] == 200
+        assert sent["httpResponses"][1]["statusCode"] == 201
 
     @pytest.mark.asyncio
     async def test_verify_sequence_failure(self, mock_server):

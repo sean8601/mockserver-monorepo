@@ -1928,6 +1928,7 @@ class TestVerification:
     def test_defaults(self):
         v = Verification()
         assert v.http_request is None
+        assert v.http_response is None
         assert v.expectation_id is None
         assert v.times is None
 
@@ -1969,10 +1970,26 @@ class TestVerification:
         result = v.to_dict()
         assert result["expectationId"] == {"id": "eid"}
 
+    def test_with_http_response(self):
+        v = Verification(
+            http_request=HttpRequest(path="/test"),
+            http_response=HttpResponse(status_code=200),
+        )
+        assert v.http_response.status_code == 200
+        result = v.to_dict()
+        assert result["httpResponse"] == {"statusCode": 200}
+
+    def test_to_dict_response_only(self):
+        v = Verification(http_response=HttpResponse(status_code=404))
+        result = v.to_dict()
+        assert "httpRequest" not in result
+        assert result["httpResponse"] == {"statusCode": 404}
+
     def test_to_dict_strips_none(self):
         v = Verification(http_request=HttpRequest(path="/p"))
         result = v.to_dict()
         assert "expectationId" not in result
+        assert "httpResponse" not in result
         assert "times" not in result
 
     def test_from_dict(self):
@@ -1991,6 +2008,14 @@ class TestVerification:
         })
         assert v.expectation_id.id == "eid-123"
 
+    def test_from_dict_with_http_response(self):
+        v = Verification.from_dict({
+            "httpRequest": {"path": "/test"},
+            "httpResponse": {"statusCode": 200},
+        })
+        assert v.http_request.path == "/test"
+        assert v.http_response.status_code == 200
+
     def test_from_dict_none(self):
         assert Verification.from_dict(None) is None
 
@@ -2007,11 +2032,23 @@ class TestVerification:
         assert restored.times.at_most == 5
         assert restored.maximum_number_of_request_to_return_in_verification_failure == 20
 
+    def test_round_trip_with_response(self):
+        original = Verification(
+            http_request=HttpRequest.request("/api").with_method("POST"),
+            http_response=HttpResponse(status_code=201),
+            times=VerificationTimes.once(),
+        )
+        restored = Verification.from_dict(original.to_dict())
+        assert restored.http_request.path == "/api"
+        assert restored.http_response.status_code == 201
+        assert restored.times.at_least == 1
+
 
 class TestVerificationSequence:
     def test_defaults(self):
         vs = VerificationSequence()
         assert vs.http_requests is None
+        assert vs.http_responses is None
         assert vs.expectation_ids is None
 
     def test_with_requests(self):
@@ -2032,6 +2069,15 @@ class TestVerificationSequence:
         )
         assert len(vs.expectation_ids) == 2
 
+    def test_with_http_responses(self):
+        vs = VerificationSequence(
+            http_requests=[HttpRequest(path="/a"), HttpRequest(path="/b")],
+            http_responses=[HttpResponse(status_code=200), HttpResponse(status_code=201)],
+        )
+        assert len(vs.http_responses) == 2
+        assert vs.http_responses[0].status_code == 200
+        assert vs.http_responses[1].status_code == 201
+
     def test_to_dict(self):
         vs = VerificationSequence(
             http_requests=[HttpRequest(path="/a"), HttpRequest(path="/b")],
@@ -2050,10 +2096,22 @@ class TestVerificationSequence:
             "expectationIds": [{"id": "e1"}, {"id": "e2"}],
         }
 
+    def test_to_dict_with_http_responses(self):
+        vs = VerificationSequence(
+            http_requests=[HttpRequest(path="/a"), HttpRequest(path="/b")],
+            http_responses=[HttpResponse(status_code=200), HttpResponse(status_code=201)],
+        )
+        result = vs.to_dict()
+        assert result == {
+            "httpRequests": [{"path": "/a"}, {"path": "/b"}],
+            "httpResponses": [{"statusCode": 200}, {"statusCode": 201}],
+        }
+
     def test_to_dict_strips_none(self):
         vs = VerificationSequence(http_requests=[HttpRequest(path="/a")])
         result = vs.to_dict()
         assert "expectationIds" not in result
+        assert "httpResponses" not in result
 
     def test_from_dict(self):
         vs = VerificationSequence.from_dict({
@@ -2076,9 +2134,20 @@ class TestVerificationSequence:
     def test_from_dict_none(self):
         assert VerificationSequence.from_dict(None) is None
 
+    def test_from_dict_with_http_responses(self):
+        vs = VerificationSequence.from_dict({
+            "httpRequests": [{"path": "/a"}, {"path": "/b"}],
+            "httpResponses": [{"statusCode": 200}, {"statusCode": 201}],
+        })
+        assert len(vs.http_requests) == 2
+        assert len(vs.http_responses) == 2
+        assert vs.http_responses[0].status_code == 200
+        assert vs.http_responses[1].status_code == 201
+
     def test_from_dict_empty(self):
         vs = VerificationSequence.from_dict({})
         assert vs.http_requests is None
+        assert vs.http_responses is None
         assert vs.expectation_ids is None
 
     def test_round_trip(self):
@@ -2098,6 +2167,23 @@ class TestVerificationSequence:
         assert restored.http_requests[1].method == "POST"
         assert len(restored.expectation_ids) == 2
         assert restored.expectation_ids[0].id == "ea"
+
+    def test_round_trip_with_responses(self):
+        original = VerificationSequence(
+            http_requests=[
+                HttpRequest.request("/a").with_method("GET"),
+                HttpRequest.request("/b").with_method("POST"),
+            ],
+            http_responses=[
+                HttpResponse(status_code=200),
+                HttpResponse(status_code=201),
+            ],
+        )
+        restored = VerificationSequence.from_dict(original.to_dict())
+        assert len(restored.http_requests) == 2
+        assert len(restored.http_responses) == 2
+        assert restored.http_responses[0].status_code == 200
+        assert restored.http_responses[1].status_code == 201
 
 
 class TestPorts:

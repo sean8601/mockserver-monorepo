@@ -169,13 +169,19 @@ class MockServerClient:
 
     def verify(
         self,
-        request: HttpRequest,
+        request: HttpRequest | None = None,
         times: VerificationTimes | None = None,
+        *,
+        response: HttpResponse | None = None,
     ) -> None:
-        return self._run(self._async_client.verify(request, times))
+        return self._run(self._async_client.verify(request, times, response=response))
 
-    def verify_sequence(self, *requests: HttpRequest) -> None:
-        return self._run(self._async_client.verify_sequence(*requests))
+    def verify_sequence(
+        self,
+        *requests: HttpRequest,
+        responses: list[HttpResponse] | None = None,
+    ) -> None:
+        return self._run(self._async_client.verify_sequence(*requests, responses=responses))
 
     def verify_zero_interactions(self) -> None:
         return self._run(self._async_client.verify_zero_interactions())

@@ -28,11 +28,13 @@ func ExactlyTimes(n int) *VerificationTimes {
 
 // verification is the internal representation sent to the verify endpoint.
 type verification struct {
-	HttpRequest *HttpRequest       `json:"httpRequest"`
-	Times       *VerificationTimes `json:"times,omitempty"`
+	HttpRequest  *HttpRequest       `json:"httpRequest,omitempty"`
+	HttpResponse *HttpResponse      `json:"httpResponse,omitempty"`
+	Times        *VerificationTimes `json:"times,omitempty"`
 }
 
 // verificationSequence is the internal representation sent to the verifySequence endpoint.
 type verificationSequence struct {
-	HttpRequests []HttpRequest `json:"httpRequests"`
+	HttpRequests  []HttpRequest  `json:"httpRequests,omitempty"`
+	HttpResponses []HttpResponse `json:"httpResponses,omitempty"`
 }

@@ -1282,6 +1282,90 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         }
     });
 
+    // ---- response verification tests ----
+
+    it('should verify response by status code', async function () {
+        await client.mockSimpleResponse('/somePath', {name: 'value'}, 203);
+        var r = await sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody");
+        assert.equal(r.statusCode, 203);
+
+        await client.verifyResponse({ 'statusCode': 203 }, 1, 1);
+    });
+
+    it('should fail verifyResponse when no matching response exists', async function () {
+        await client.mockSimpleResponse('/somePath', {name: 'value'}, 200);
+        await sendRequest("GET", mockServerHost, mockServerPort, "/somePath");
+
+        try {
+            await client.verifyResponse({ 'statusCode': 404 }, 1);
+            assert.fail("should have thrown");
+        } catch (message) {
+            assert.ok(typeof message === 'string', "error should be a string");
+        }
+    });
+
+    it('should verify request and response pair', async function () {
+        await client.mockSimpleResponse('/somePath', {name: 'value'}, 203);
+        var r = await sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody");
+        assert.equal(r.statusCode, 203);
+
+        await client.verifyRequestAndResponse(
+            { 'method': 'POST', 'path': '/somePath', 'body': 'someBody' },
+            { 'statusCode': 203 },
+            1, 1
+        );
+    });
+
+    it('should fail verifyRequestAndResponse when request matches but response does not', async function () {
+        await client.mockSimpleResponse('/somePath', {name: 'value'}, 200);
+        await sendRequest("POST", mockServerHost, mockServerPort, "/somePath", "someBody");
+
+        try {
+            await client.verifyRequestAndResponse(
+                { 'method': 'POST', 'path': '/somePath', 'body': 'someBody' },
+                { 'statusCode': 404 },
+                1
+            );
+            assert.fail("should have thrown");
+        } catch (message) {
+            assert.ok(typeof message === 'string', "error should be a string");
+        }
+    });
+
+    it('should verify sequence with responses', async function () {
+        await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);
+        await client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202);
+
+        var r1 = await sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody");
+        assert.equal(r1.statusCode, 201);
+
+        var r2 = await sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo");
+        assert.equal(r2.statusCode, 202);
+
+        await client.verifySequenceWithResponses([
+            { request: { 'method': 'POST', 'path': '/somePathOne', 'body': 'someBody' }, response: { 'statusCode': 201 } },
+            { request: { 'method': 'GET', 'path': '/somePathTwo' }, response: { 'statusCode': 202 } }
+        ]);
+    });
+
+    it('should fail verifySequenceWithResponses when response does not match', async function () {
+        await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);
+        await client.mockSimpleResponse('/somePathTwo', {name: 'two'}, 202);
+
+        await sendRequest("POST", mockServerHost, mockServerPort, "/somePathOne", "someBody");
+        await sendRequest("GET", mockServerHost, mockServerPort, "/somePathTwo");
+
+        try {
+            await client.verifySequenceWithResponses([
+                { request: { 'method': 'POST', 'path': '/somePathOne' }, response: { 'statusCode': 201 } },
+                { request: { 'method': 'GET', 'path': '/somePathTwo' }, response: { 'statusCode': 404 } }
+            ]);
+            assert.fail("should have thrown");
+        } catch (message) {
+            assert.ok(typeof message === 'string', "error should be a string");
+        }
+    });
+
     it('should retrieve recorded expectations', async function () {
         // retrieveRecordedExpectations returns expectations recorded by the
         // proxy. Since we are not proxying, this should return an empty array

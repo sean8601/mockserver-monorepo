@@ -146,14 +146,79 @@ class MockServerClient
     /**
      * Verify that a request was received the expected number of times.
      *
+     * Optionally also verify the response that was returned. When both
+     * $request and $httpResponse are provided, the server checks that the
+     * request was received AND the matching response was returned.
+     *
      * @param HttpRequest $request The request to verify
+     * @param VerificationTimes|null $times Expected call count (null = at least once)
+     * @param HttpResponse|null $httpResponse Optional response matcher
+     * @throws VerificationException If verification fails
+     * @throws MockServerException On communication errors
+     */
+    public function verify(
+        HttpRequest $request,
+        ?VerificationTimes $times = null,
+        ?HttpResponse $httpResponse = null,
+    ): void {
+        $payload = ['httpRequest' => $request->toArray()];
+        if ($httpResponse !== null) {
+            $payload['httpResponse'] = $httpResponse->toArray();
+        }
+        if ($times !== null) {
+            $payload['times'] = $times->toArray();
+        }
+
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/verify', $body);
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 406) {
+            throw new VerificationException($responseBody ?: 'Verification failed');
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Verification request failed (HTTP {$status}): {$responseBody}");
+        }
+    }
+
+    /**
+     * Verify that a request+response pair was received the expected number of times.
+     *
+     * Convenience method combining request and response matchers.
+     *
+     * @param HttpRequest $request The request matcher
+     * @param HttpResponse $httpResponse The response matcher
      * @param VerificationTimes|null $times Expected call count (null = at least once)
      * @throws VerificationException If verification fails
      * @throws MockServerException On communication errors
      */
-    public function verify(HttpRequest $request, ?VerificationTimes $times = null): void
-    {
-        $payload = ['httpRequest' => $request->toArray()];
+    public function verifyRequestAndResponse(
+        HttpRequest $request,
+        HttpResponse $httpResponse,
+        ?VerificationTimes $times = null,
+    ): void {
+        $this->verify($request, $times, $httpResponse);
+    }
+
+    /**
+     * Verify that a response was returned the expected number of times,
+     * regardless of which request triggered it (response-only verification).
+     *
+     * The httpRequest field is omitted from the JSON payload so the server
+     * matches any request that produced a response matching $httpResponse.
+     *
+     * @param HttpResponse $httpResponse The response matcher
+     * @param VerificationTimes|null $times Expected call count (null = at least once)
+     * @throws VerificationException If verification fails
+     * @throws MockServerException On communication errors
+     */
+    public function verifyResponse(
+        HttpResponse $httpResponse,
+        ?VerificationTimes $times = null,
+    ): void {
+        $payload = ['httpResponse' => $httpResponse->toArray()];
         if ($times !== null) {
             $payload['times'] = $times->toArray();
         }
@@ -184,6 +249,71 @@ class MockServerClient
         $payload = [
             'httpRequests' => array_map(fn(HttpRequest $r) => $r->toArray(), $requests),
         ];
+
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/verifySequence', $body);
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 406) {
+            throw new VerificationException($responseBody ?: 'Sequence verification failed');
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Verify sequence request failed (HTTP {$status}): {$responseBody}");
+        }
+    }
+
+    /**
+     * Verify that requests were received in sequence with specific responses.
+     *
+     * Responses are index-aligned with requests: $responses[0] is the expected
+     * response for $requests[0], etc. Both arrays must have the same length.
+     *
+     * When a request entry is null, the httpRequests array entry is omitted
+     * for that index (response-only verification for that position).
+     *
+     * @param array<HttpRequest|null> $requests Request matchers (null entries omitted from payload)
+     * @param array<HttpResponse> $responses Response matchers (index-aligned with requests)
+     * @throws \InvalidArgumentException If array lengths differ
+     * @throws VerificationException If sequence verification fails
+     * @throws MockServerException On communication errors
+     */
+    public function verifySequenceWithResponses(array $requests, array $responses): void
+    {
+        if (count($requests) !== count($responses)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Requests and responses arrays must have the same length, got %d requests and %d responses',
+                    count($requests),
+                    count($responses),
+                )
+            );
+        }
+
+        $payload = [];
+
+        // Build httpRequests array — null entries become absent (not serialized as null)
+        $hasRequests = false;
+        $httpRequests = [];
+        foreach ($requests as $request) {
+            if ($request !== null) {
+                $hasRequests = true;
+                $httpRequests[] = $request->toArray();
+            } else {
+                // Placeholder to maintain index alignment; server expects
+                // httpRequests and httpResponses to be index-aligned
+                $httpRequests[] = new \stdClass();
+            }
+        }
+        if ($hasRequests) {
+            $payload['httpRequests'] = $httpRequests;
+        }
+
+        $payload['httpResponses'] = array_map(
+            fn(HttpResponse $r) => $r->toArray(),
+            $responses,
+        );
 
         $body = json_encode($payload, JSON_THROW_ON_ERROR);
         $response = $this->put('/mockserver/verifySequence', $body);

@@ -254,6 +254,36 @@ RSpec.describe MockServer::Client do
       req = MockServer::HttpRequest.new(path: '/test')
       expect { client.verify(req) }.to raise_error(MockServer::Error, /Failed to verify/)
     end
+
+    it 'sends httpResponse when response keyword is given' do
+      stub_request(:put, "#{base_url}/mockserver/verify")
+        .to_return(status: 202, body: '')
+
+      req = MockServer::HttpRequest.new(path: '/test')
+      resp = MockServer::HttpResponse.new(status_code: 200)
+      client.verify(req, response: resp)
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/verify")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['httpRequest']['path'] == '/test' &&
+            parsed['httpResponse']['statusCode'] == 200
+        }
+    end
+
+    it 'sends response-only verification (no request)' do
+      stub_request(:put, "#{base_url}/mockserver/verify")
+        .to_return(status: 202, body: '')
+
+      resp = MockServer::HttpResponse.new(status_code: 200)
+      client.verify(response: resp)
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/verify")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          !parsed.key?('httpRequest') && parsed['httpResponse']['statusCode'] == 200
+        }
+    end
   end
 
   # -------------------------------------------------------------------
@@ -276,6 +306,40 @@ RSpec.describe MockServer::Client do
 
       req = MockServer::HttpRequest.new(path: '/a')
       expect { client.verify_sequence(req) }.to raise_error(MockServer::VerificationError)
+    end
+
+    it 'sends index-aligned httpRequests and httpResponses' do
+      stub_request(:put, "#{base_url}/mockserver/verifySequence")
+        .to_return(status: 202, body: '')
+
+      req1 = MockServer::HttpRequest.new(path: '/a')
+      req2 = MockServer::HttpRequest.new(path: '/b')
+      resp1 = MockServer::HttpResponse.new(status_code: 200)
+      resp2 = MockServer::HttpResponse.new(status_code: 201)
+      client.verify_sequence(req1, req2, responses: [resp1, resp2])
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/verifySequence")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          parsed['httpRequests'].length == 2 &&
+            parsed['httpResponses'].length == 2 &&
+            parsed['httpResponses'][0]['statusCode'] == 200 &&
+            parsed['httpResponses'][1]['statusCode'] == 201
+        }
+    end
+
+    it 'omits httpResponses when responses keyword is not given' do
+      stub_request(:put, "#{base_url}/mockserver/verifySequence")
+        .to_return(status: 202, body: '')
+
+      req = MockServer::HttpRequest.new(path: '/a')
+      client.verify_sequence(req)
+
+      expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/verifySequence")
+        .with { |r|
+          parsed = JSON.parse(r.body)
+          !parsed.key?('httpResponses')
+        }
     end
   end
 

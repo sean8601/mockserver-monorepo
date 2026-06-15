@@ -1769,6 +1769,7 @@ VerificationTimes.between = staticmethod(_vt_between)
 @dataclass
 class Verification:
     http_request: HttpRequest | None = None
+    http_response: HttpResponse | None = None
     expectation_id: ExpectationId | None = None
     times: VerificationTimes | None = None
     maximum_number_of_request_to_return_in_verification_failure: int | None = None
@@ -1776,6 +1777,7 @@ class Verification:
     def to_dict(self) -> dict:
         return _strip_none({
             "httpRequest": self.http_request.to_dict() if self.http_request else None,
+            "httpResponse": self.http_response.to_dict() if self.http_response else None,
             "expectationId": self.expectation_id.to_dict() if self.expectation_id else None,
             "times": self.times.to_dict() if self.times else None,
             "maximumNumberOfRequestToReturnInVerificationFailure": self.maximum_number_of_request_to_return_in_verification_failure,
@@ -1787,6 +1789,7 @@ class Verification:
             return None
         return cls(
             http_request=HttpRequest.from_dict(data.get("httpRequest")),
+            http_response=HttpResponse.from_dict(data.get("httpResponse")),
             expectation_id=ExpectationId.from_dict(data.get("expectationId")),
             times=VerificationTimes.from_dict(data.get("times")),
             maximum_number_of_request_to_return_in_verification_failure=data.get("maximumNumberOfRequestToReturnInVerificationFailure"),
@@ -1796,11 +1799,13 @@ class Verification:
 @dataclass
 class VerificationSequence:
     http_requests: list[HttpRequest] | None = None
+    http_responses: list[HttpResponse] | None = None
     expectation_ids: list[ExpectationId] | None = None
 
     def to_dict(self) -> dict:
         return _strip_none({
             "httpRequests": [r.to_dict() for r in self.http_requests] if self.http_requests else None,
+            "httpResponses": [r.to_dict() for r in self.http_responses] if self.http_responses else None,
             "expectationIds": [e.to_dict() for e in self.expectation_ids] if self.expectation_ids else None,
         })
 
@@ -1809,9 +1814,11 @@ class VerificationSequence:
         if data is None:
             return None
         http_requests_data = data.get("httpRequests")
+        http_responses_data = data.get("httpResponses")
         expectation_ids_data = data.get("expectationIds")
         return cls(
             http_requests=[HttpRequest.from_dict(r) for r in http_requests_data] if http_requests_data else None,
+            http_responses=[HttpResponse.from_dict(r) for r in http_responses_data] if http_responses_data else None,
             expectation_ids=[ExpectationId.from_dict(e) for e in expectation_ids_data] if expectation_ids_data else None,
         )
 

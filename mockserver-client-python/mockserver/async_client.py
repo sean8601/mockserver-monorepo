@@ -284,10 +284,12 @@ class AsyncMockServerClient:
 
     async def verify(
         self,
-        request: HttpRequest,
+        request: HttpRequest | None = None,
         times: VerificationTimes | None = None,
+        *,
+        response: HttpResponse | None = None,
     ) -> None:
-        verification = Verification(http_request=request, times=times)
+        verification = Verification(http_request=request, http_response=response, times=times)
         body = json.dumps(verification.to_dict())
         status, response_body = await self._request("PUT", "/mockserver/verify", body)
         if status == 406:
@@ -297,9 +299,14 @@ class AsyncMockServerClient:
                 f"Failed to verify (status={status}): {response_body}"
             )
 
-    async def verify_sequence(self, *requests: HttpRequest) -> None:
+    async def verify_sequence(
+        self,
+        *requests: HttpRequest,
+        responses: list[HttpResponse] | None = None,
+    ) -> None:
         verification = VerificationSequence(
-            http_requests=list(requests)
+            http_requests=list(requests) if requests else None,
+            http_responses=responses,
         )
         body = json.dumps(verification.to_dict())
         status, response_body = await self._request(

@@ -172,48 +172,90 @@ impl MockServerClient {
     /// `Err(Error::VerificationFailure)` with the server's failure message.
     pub fn verify(&self, request: HttpRequest, times: VerificationTimes) -> Result<()> {
         let verification = Verification {
-            http_request: request,
+            http_request: Some(request),
+            http_response: None,
             times: Some(times),
+            maximum_number_of_request_to_return_in_verification_failure: None,
         };
-        let resp = self
-            .http
-            .put(self.url("/mockserver/verify"))
-            .json(&verification)
-            .send()?;
+        self.do_verify(&verification)
+    }
 
-        let status = resp.status().as_u16();
-        match status {
-            200 | 202 => Ok(()),
-            406 => Err(Error::VerificationFailure(resp.text()?)),
-            400 => Err(Error::InvalidRequest(resp.text()?)),
-            _ => Err(Error::UnexpectedStatus {
-                status,
-                body: resp.text().unwrap_or_default(),
-            }),
-        }
+    /// Verify that a request/response pair was received the specified number of times.
+    ///
+    /// Both the request matcher and the response matcher must match for a
+    /// recorded exchange to count. The response matcher uses the same
+    /// [`HttpResponse`] type as expectations — the server matches against the
+    /// recorded response's status code, headers, and body.
+    pub fn verify_request_and_response(
+        &self,
+        request: HttpRequest,
+        response: HttpResponse,
+        times: VerificationTimes,
+    ) -> Result<()> {
+        let verification = Verification {
+            http_request: Some(request),
+            http_response: Some(response),
+            times: Some(times),
+            maximum_number_of_request_to_return_in_verification_failure: None,
+        };
+        self.do_verify(&verification)
+    }
+
+    /// Verify that a response (regardless of request) was returned the
+    /// specified number of times.
+    ///
+    /// The `httpRequest` field is omitted from the JSON so the server matches
+    /// any request.
+    pub fn verify_response(
+        &self,
+        response: HttpResponse,
+        times: VerificationTimes,
+    ) -> Result<()> {
+        let verification = Verification {
+            http_request: None,
+            http_response: Some(response),
+            times: Some(times),
+            maximum_number_of_request_to_return_in_verification_failure: None,
+        };
+        self.do_verify(&verification)
+    }
+
+    /// Send a fully constructed [`Verification`] to the server.
+    ///
+    /// This is the most flexible form — callers can set every field,
+    /// including `maximum_number_of_request_to_return_in_verification_failure`.
+    pub fn verify_raw(&self, verification: &Verification) -> Result<()> {
+        self.do_verify(verification)
     }
 
     /// Verify that requests were received in the given order.
     pub fn verify_sequence(&self, requests: Vec<HttpRequest>) -> Result<()> {
         let verification = VerificationSequence {
-            http_requests: requests,
+            http_requests: Some(requests),
+            http_responses: None,
         };
-        let resp = self
-            .http
-            .put(self.url("/mockserver/verifySequence"))
-            .json(&verification)
-            .send()?;
+        self.do_verify_sequence(&verification)
+    }
 
-        let status = resp.status().as_u16();
-        match status {
-            200 | 202 => Ok(()),
-            406 => Err(Error::VerificationFailure(resp.text()?)),
-            400 => Err(Error::InvalidRequest(resp.text()?)),
-            _ => Err(Error::UnexpectedStatus {
-                status,
-                body: resp.text().unwrap_or_default(),
-            }),
-        }
+    /// Verify that request/response pairs were received in the given order.
+    ///
+    /// `responses` is index-aligned with `requests` — each entry constrains
+    /// the response that must have been returned for the corresponding request.
+    pub fn verify_sequence_with_responses(
+        &self,
+        requests: Vec<HttpRequest>,
+        responses: Vec<HttpResponse>,
+    ) -> Result<()> {
+        let verification = VerificationSequence {
+            http_requests: Some(requests),
+            http_responses: Some(responses),
+        };
+        self.do_verify_sequence(&verification)
+    }
+
+    /// Send a fully constructed [`VerificationSequence`] to the server.
+    pub fn verify_sequence_raw(&self, verification: &VerificationSequence) -> Result<()> {
+        self.do_verify_sequence(verification)
     }
 
     // ------------------------------------------------------------------
@@ -661,6 +703,44 @@ impl MockServerClient {
     // ------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------
+
+    fn do_verify(&self, verification: &Verification) -> Result<()> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/verify"))
+            .json(verification)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 | 202 => Ok(()),
+            406 => Err(Error::VerificationFailure(resp.text()?)),
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    fn do_verify_sequence(&self, verification: &VerificationSequence) -> Result<()> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/verifySequence"))
+            .json(verification)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 | 202 => Ok(()),
+            406 => Err(Error::VerificationFailure(resp.text()?)),
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
 
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base_url)

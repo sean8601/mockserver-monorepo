@@ -52,9 +52,15 @@ export interface MockServerClient {
 
     verify(matcher: RequestDefinition, atLeast?: number, atMost?: number): Promise<void | string>;
 
+    verifyResponse(responseMatcher: HttpResponse, atLeast?: number, atMost?: number): Promise<void | string>;
+
+    verifyRequestAndResponse(requestMatcher: RequestDefinition, responseMatcher: HttpResponse, atLeast?: number, atMost?: number): Promise<void | string>;
+
     verifyById(expectationId: ExpectationId, atLeast?: number, atMost?: number): Promise<void | string>;
 
     verifySequence(...matchers: RequestDefinition[]): Promise<void | string>;
+
+    verifySequenceWithResponses(requestsAndResponses: Array<{request: RequestDefinition, response: HttpResponse}>): Promise<void | string>;
 
     verifySequenceById(...expectationIds: ExpectationId[]): Promise<void | string>;
 

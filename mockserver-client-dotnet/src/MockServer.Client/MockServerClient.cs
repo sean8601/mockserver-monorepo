@@ -137,6 +137,33 @@ public sealed class MockServerClient : IDisposable
     }
 
     /// <summary>
+    /// Verify that a request-response pair was recorded (proxied/forwarded).
+    /// When <paramref name="response"/> is provided, verification switches from
+    /// "request received" to "response received" mode.
+    /// </summary>
+    /// <param name="request">Optional request matcher. Null to verify response only.</param>
+    /// <param name="response">Response matcher to verify against recorded responses.</param>
+    /// <param name="times">Optional number of times the response should have been recorded.</param>
+    /// <exception cref="VerificationException">If the verification fails (HTTP 406).</exception>
+    public void Verify(HttpRequest? request, HttpResponse response, VerificationTimes? times = null)
+        => VerifyAsync(request, response, times).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Verify that a request-response pair was recorded (async).
+    /// </summary>
+    public async Task VerifyAsync(HttpRequest? request, HttpResponse response, VerificationTimes? times = null)
+    {
+        var verification = new Verification { HttpRequest = request, HttpResponse = response, Times = times };
+        var json = JsonSerializer.Serialize(verification, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/verify", json).ConfigureAwait(false);
+
+        if (statusCode == 406)
+            throw new VerificationException(body ?? "Verification failed");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to verify (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
     /// Verify that requests were received in a specific sequence.
     /// </summary>
     /// <exception cref="VerificationException">If the verification fails (HTTP 406).</exception>
@@ -149,6 +176,36 @@ public sealed class MockServerClient : IDisposable
     public async Task VerifySequenceAsync(params HttpRequest[] requests)
     {
         var verification = new VerificationSequence { HttpRequests = new List<HttpRequest>(requests) };
+        var json = JsonSerializer.Serialize(verification, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/verifySequence", json).ConfigureAwait(false);
+
+        if (statusCode == 406)
+            throw new VerificationException(body ?? "Verification sequence failed");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to verify sequence (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Verify that request-response pairs were recorded in a specific sequence.
+    /// Requests and responses are index-aligned — the request at position i is
+    /// paired with the response at position i.
+    /// </summary>
+    /// <param name="requests">Request matchers for the sequence.</param>
+    /// <param name="responses">Response matchers index-aligned with <paramref name="requests"/>.</param>
+    /// <exception cref="VerificationException">If the verification fails (HTTP 406).</exception>
+    public void VerifySequence(IList<HttpRequest> requests, IList<HttpResponse> responses)
+        => VerifySequenceAsync(requests, responses).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Verify that request-response pairs were recorded in a specific sequence (async).
+    /// </summary>
+    public async Task VerifySequenceAsync(IList<HttpRequest> requests, IList<HttpResponse> responses)
+    {
+        var verification = new VerificationSequence
+        {
+            HttpRequests = new List<HttpRequest>(requests),
+            HttpResponses = new List<HttpResponse>(responses)
+        };
         var json = JsonSerializer.Serialize(verification, JsonOptions);
         var (statusCode, body) = await PutAsync("/mockserver/verifySequence", json).ConfigureAwait(false);
 

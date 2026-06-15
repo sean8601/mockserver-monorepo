@@ -260,13 +260,14 @@ module MockServer
       response_body && !response_body.empty? ? JSON.parse(response_body) : {}
     end
 
-    # Verify that a request was received.
-    # @param request [HttpRequest]
+    # Verify that a request (and optionally a response) was received.
+    # @param request [HttpRequest, nil]
     # @param times [VerificationTimes, nil]
+    # @param response [HttpResponse, nil]
     # @return [nil]
     # @raise [VerificationError] if verification fails (HTTP 406)
-    def verify(request, times: nil)
-      verification = Verification.new(http_request: request, times: times)
+    def verify(request = nil, times: nil, response: nil)
+      verification = Verification.new(http_request: request, http_response: response, times: times)
       body = JSON.generate(verification.to_h)
       status, response_body = do_request('PUT', '/mockserver/verify', body)
       if status == 406
@@ -282,10 +283,14 @@ module MockServer
 
     # Verify that requests were received in sequence.
     # @param requests [Array<HttpRequest>]
+    # @param responses [Array<HttpResponse>, nil] index-aligned response matchers
     # @return [nil]
     # @raise [VerificationError] if verification fails (HTTP 406)
-    def verify_sequence(*requests)
-      verification = VerificationSequence.new(http_requests: requests.to_a)
+    def verify_sequence(*requests, responses: nil)
+      verification = VerificationSequence.new(
+        http_requests: requests.empty? ? nil : requests.to_a,
+        http_responses: responses
+      )
       body = JSON.generate(verification.to_h)
       status, response_body = request('PUT', '/mockserver/verifySequence', body)
       if status == 406

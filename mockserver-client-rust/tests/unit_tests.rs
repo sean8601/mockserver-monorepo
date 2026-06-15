@@ -312,28 +312,151 @@ fn test_expectation_with_id() {
 #[test]
 fn test_verification_json() {
     let v = Verification {
-        http_request: HttpRequest::new().method("GET").path("/hello"),
+        http_request: Some(HttpRequest::new().method("GET").path("/hello")),
+        http_response: None,
         times: Some(VerificationTimes::at_least(1)),
+        maximum_number_of_request_to_return_in_verification_failure: None,
     };
     let json = serde_json::to_value(&v).unwrap();
     assert_eq!(json["httpRequest"]["method"], "GET");
     assert_eq!(json["httpRequest"]["path"], "/hello");
     assert_eq!(json["times"]["atLeast"], 1);
+    // httpResponse should be absent (not null)
+    assert!(json.get("httpResponse").is_none());
+    // maximumNumberOfRequestToReturnInVerificationFailure should be absent
+    assert!(json.get("maximumNumberOfRequestToReturnInVerificationFailure").is_none());
+}
+
+#[test]
+fn test_verification_with_response_json() {
+    let v = Verification {
+        http_request: Some(HttpRequest::new().method("POST").path("/api")),
+        http_response: Some(HttpResponse::new().status_code(201).header("Location", "/api/42")),
+        times: Some(VerificationTimes::exactly(1)),
+        maximum_number_of_request_to_return_in_verification_failure: None,
+    };
+    let json = serde_json::to_value(&v).unwrap();
+    assert_eq!(json["httpRequest"]["method"], "POST");
+    assert_eq!(json["httpRequest"]["path"], "/api");
+    assert_eq!(json["httpResponse"]["statusCode"], 201);
+    assert_eq!(json["httpResponse"]["headers"]["Location"], serde_json::json!(["/api/42"]));
+    assert_eq!(json["times"]["atLeast"], 1);
+    assert_eq!(json["times"]["atMost"], 1);
+}
+
+#[test]
+fn test_verification_response_only_json() {
+    let v = Verification {
+        http_request: None,
+        http_response: Some(HttpResponse::new().status_code(500)),
+        times: Some(VerificationTimes::at_most(0)),
+        maximum_number_of_request_to_return_in_verification_failure: None,
+    };
+    let json = serde_json::to_value(&v).unwrap();
+    // httpRequest should be ABSENT (not null) for response-only verification
+    assert!(json.get("httpRequest").is_none(), "httpRequest must be absent for response-only verification");
+    assert_eq!(json["httpResponse"]["statusCode"], 500);
+    assert_eq!(json["times"]["atMost"], 0);
+}
+
+#[test]
+fn test_verification_with_max_failures() {
+    let v = Verification {
+        http_request: Some(HttpRequest::new().path("/test")),
+        http_response: None,
+        times: Some(VerificationTimes::at_least(1)),
+        maximum_number_of_request_to_return_in_verification_failure: Some(5),
+    };
+    let json = serde_json::to_value(&v).unwrap();
+    assert_eq!(json["maximumNumberOfRequestToReturnInVerificationFailure"], 5);
 }
 
 #[test]
 fn test_verification_sequence_json() {
     let vs = VerificationSequence {
-        http_requests: vec![
+        http_requests: Some(vec![
             HttpRequest::new().path("/first"),
             HttpRequest::new().path("/second"),
-        ],
+        ]),
+        http_responses: None,
     };
     let json = serde_json::to_value(&vs).unwrap();
     let requests = json["httpRequests"].as_array().unwrap();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0]["path"], "/first");
     assert_eq!(requests[1]["path"], "/second");
+    // httpResponses should be absent
+    assert!(json.get("httpResponses").is_none());
+}
+
+#[test]
+fn test_verification_sequence_with_responses_json() {
+    let vs = VerificationSequence {
+        http_requests: Some(vec![
+            HttpRequest::new().method("GET").path("/a"),
+            HttpRequest::new().method("POST").path("/b"),
+        ]),
+        http_responses: Some(vec![
+            HttpResponse::new().status_code(200),
+            HttpResponse::new().status_code(201).body("{\"id\":1}"),
+        ]),
+    };
+    let json = serde_json::to_value(&vs).unwrap();
+
+    let requests = json["httpRequests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["method"], "GET");
+    assert_eq!(requests[1]["method"], "POST");
+
+    let responses = json["httpResponses"].as_array().unwrap();
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0]["statusCode"], 200);
+    assert_eq!(responses[1]["statusCode"], 201);
+    assert_eq!(responses[1]["body"], "{\"id\":1}");
+}
+
+#[test]
+fn test_verification_sequence_responses_only_json() {
+    // Edge case: verify a sequence of responses without constraining requests
+    let vs = VerificationSequence {
+        http_requests: None,
+        http_responses: Some(vec![
+            HttpResponse::new().status_code(200),
+            HttpResponse::new().status_code(404),
+        ]),
+    };
+    let json = serde_json::to_value(&vs).unwrap();
+    // httpRequests should be absent
+    assert!(json.get("httpRequests").is_none(), "httpRequests must be absent when None");
+    let responses = json["httpResponses"].as_array().unwrap();
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0]["statusCode"], 200);
+    assert_eq!(responses[1]["statusCode"], 404);
+}
+
+#[test]
+fn test_verification_deserialization_with_response() {
+    let json = r#"{
+        "httpRequest": {"method": "GET", "path": "/x"},
+        "httpResponse": {"statusCode": 200},
+        "times": {"atLeast": 1}
+    }"#;
+    let v: Verification = serde_json::from_str(json).unwrap();
+    assert_eq!(v.http_request.as_ref().unwrap().path, Some("/x".to_string()));
+    assert_eq!(v.http_response.as_ref().unwrap().status_code, Some(200));
+    assert_eq!(v.times.as_ref().unwrap().at_least, Some(1));
+}
+
+#[test]
+fn test_verification_sequence_deserialization_with_responses() {
+    let json = r#"{
+        "httpRequests": [{"path": "/a"}],
+        "httpResponses": [{"statusCode": 200}]
+    }"#;
+    let vs: VerificationSequence = serde_json::from_str(json).unwrap();
+    assert_eq!(vs.http_requests.as_ref().unwrap().len(), 1);
+    assert_eq!(vs.http_responses.as_ref().unwrap().len(), 1);
+    assert_eq!(vs.http_responses.as_ref().unwrap()[0].status_code, Some(200));
 }
 
 // ---------------------------------------------------------------------------

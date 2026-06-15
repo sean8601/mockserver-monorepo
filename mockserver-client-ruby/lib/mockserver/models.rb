@@ -83,7 +83,8 @@ module MockServer
     'degradation_ramp_millis'        => 'degradationRampMillis',
     'http_class_callback'            => 'httpClassCallback',
     'http_object_callback'           => 'httpObjectCallback',
-    'failure_policy'                 => 'failurePolicy'
+    'failure_policy'                 => 'failurePolicy',
+    'http_responses'                 => 'httpResponses'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -1937,12 +1938,13 @@ module MockServer
   end
 
   class Verification
-    attr_accessor :http_request, :expectation_id, :times,
+    attr_accessor :http_request, :http_response, :expectation_id, :times,
                   :maximum_number_of_request_to_return_in_verification_failure
 
-    def initialize(http_request: nil, expectation_id: nil, times: nil,
+    def initialize(http_request: nil, http_response: nil, expectation_id: nil, times: nil,
                    maximum_number_of_request_to_return_in_verification_failure: nil)
       @http_request = http_request
+      @http_response = http_response
       @expectation_id = expectation_id
       @times = times
       @maximum_number_of_request_to_return_in_verification_failure = maximum_number_of_request_to_return_in_verification_failure
@@ -1951,6 +1953,7 @@ module MockServer
     def to_h
       MockServer.strip_none({
         'httpRequest'    => @http_request&.to_h,
+        'httpResponse'   => @http_response&.to_h,
         'expectationId'  => @expectation_id&.to_h,
         'times'          => @times&.to_h,
         'maximumNumberOfRequestToReturnInVerificationFailure' => @maximum_number_of_request_to_return_in_verification_failure
@@ -1962,6 +1965,7 @@ module MockServer
 
       new(
         http_request:    HttpRequest.from_hash(data['httpRequest']),
+        http_response:   HttpResponse.from_hash(data['httpResponse']),
         expectation_id:  ExpectationId.from_hash(data['expectationId']),
         times:           VerificationTimes.from_hash(data['times']),
         maximum_number_of_request_to_return_in_verification_failure: data['maximumNumberOfRequestToReturnInVerificationFailure']
@@ -1970,16 +1974,18 @@ module MockServer
   end
 
   class VerificationSequence
-    attr_accessor :http_requests, :expectation_ids
+    attr_accessor :http_requests, :http_responses, :expectation_ids
 
-    def initialize(http_requests: nil, expectation_ids: nil)
+    def initialize(http_requests: nil, http_responses: nil, expectation_ids: nil)
       @http_requests = http_requests
+      @http_responses = http_responses
       @expectation_ids = expectation_ids
     end
 
     def to_h
       MockServer.strip_none({
         'httpRequests'   => @http_requests&.map(&:to_h),
+        'httpResponses'  => @http_responses&.map(&:to_h),
         'expectationIds' => @expectation_ids&.map(&:to_h)
       })
     end
@@ -1988,9 +1994,11 @@ module MockServer
       return nil if data.nil?
 
       http_requests_data = data['httpRequests']
+      http_responses_data = data['httpResponses']
       expectation_ids_data = data['expectationIds']
       new(
-        http_requests:  http_requests_data&.map { |r| HttpRequest.from_hash(r) },
+        http_requests:   http_requests_data&.map { |r| HttpRequest.from_hash(r) },
+        http_responses:  http_responses_data&.map { |r| HttpResponse.from_hash(r) },
         expectation_ids: expectation_ids_data&.map { |e| ExpectationId.from_hash(e) }
       )
     end

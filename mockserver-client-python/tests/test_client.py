@@ -150,6 +150,41 @@ class TestSyncVerify:
             )
             assert "/mockserver/verifySequence" in SyncMockHandler.last_path
 
+    def test_verify_with_response(self, sync_mock_server):
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.verify(
+                HttpRequest(path="/test"),
+                response=HttpResponse(status_code=200),
+            )
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent["httpRequest"]["path"] == "/test"
+            assert sent["httpResponse"]["statusCode"] == 200
+
+    def test_verify_response_only(self, sync_mock_server):
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.verify(
+                response=HttpResponse(status_code=200),
+            )
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert "httpRequest" not in sent
+            assert sent["httpResponse"]["statusCode"] == 200
+
+    def test_verify_sequence_with_responses(self, sync_mock_server):
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.verify_sequence(
+                HttpRequest(path="/a"),
+                HttpRequest(path="/b"),
+                responses=[
+                    HttpResponse(status_code=200),
+                    HttpResponse(status_code=201),
+                ],
+            )
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert len(sent["httpRequests"]) == 2
+            assert len(sent["httpResponses"]) == 2
+            assert sent["httpResponses"][0]["statusCode"] == 200
+            assert sent["httpResponses"][1]["statusCode"] == 201
+
     def test_verify_zero_interactions(self, sync_mock_server):
         with MockServerClient("127.0.0.1", sync_mock_server) as client:
             client.verify_zero_interactions()

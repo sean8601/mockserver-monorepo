@@ -741,20 +741,40 @@ impl Expectation {
 // ---------------------------------------------------------------------------
 
 /// A verification request sent to MockServer.
+///
+/// At least one of `http_request` or `http_response` must be set.
+/// `http_response` uses the same [`HttpResponse`] type as expectations —
+/// the server matches against the recorded response's status code, headers,
+/// and body.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Verification {
-    pub http_request: HttpRequest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_request: Option<HttpRequest>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_response: Option<HttpResponse>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub times: Option<VerificationTimes>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maximum_number_of_request_to_return_in_verification_failure: Option<u32>,
 }
 
 /// A verification sequence request.
+///
+/// `http_responses` is index-aligned with `http_requests` — each entry
+/// constrains the response that must have been returned for the
+/// corresponding request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationSequence {
-    pub http_requests: Vec<HttpRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_requests: Option<Vec<HttpRequest>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_responses: Option<Vec<HttpResponse>>,
 }
 
 // ---------------------------------------------------------------------------

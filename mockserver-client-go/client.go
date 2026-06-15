@@ -236,6 +236,42 @@ func (c *Client) Verify(rb *RequestBuilder, times *VerificationTimes) error {
 	return nil
 }
 
+// VerifyResponse asserts that a request-response pair matching the given
+// builders was recorded. This verifies proxied/forwarded responses rather
+// than simply whether a request was received. Pass nil for request to verify
+// only the response. Pass nil for times to use the server default.
+func (c *Client) VerifyResponse(rb *RequestBuilder, respB *ResponseBuilder, times *VerificationTimes) error {
+	v := verification{
+		Times: times,
+	}
+	if rb != nil {
+		req := rb.Build()
+		v.HttpRequest = &req
+	}
+	if respB != nil {
+		resp := respB.Build()
+		v.HttpResponse = &resp
+	}
+
+	body, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("mockserver: marshal verification: %w", err)
+	}
+
+	respBody, statusCode, err := c.doRequest("PUT", "/mockserver/verify", body, nil)
+	if err != nil {
+		return err
+	}
+
+	if statusCode == 406 {
+		return &VerificationError{Message: string(respBody)}
+	}
+	if statusCode >= 400 {
+		return fmt.Errorf("mockserver: verify failed (status %d): %s", statusCode, string(respBody))
+	}
+	return nil
+}
+
 // VerifySequence asserts that requests matching the given builders were received
 // in the specified order.
 func (c *Client) VerifySequence(builders ...*RequestBuilder) error {
@@ -244,6 +280,56 @@ func (c *Client) VerifySequence(builders ...*RequestBuilder) error {
 		requests[i] = b.Build()
 	}
 	v := verificationSequence{HttpRequests: requests}
+
+	body, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("mockserver: marshal verification sequence: %w", err)
+	}
+
+	respBody, statusCode, err := c.doRequest("PUT", "/mockserver/verifySequence", body, nil)
+	if err != nil {
+		return err
+	}
+
+	if statusCode == 406 {
+		return &VerificationError{Message: string(respBody)}
+	}
+	if statusCode >= 400 {
+		return fmt.Errorf("mockserver: verify sequence failed (status %d): %s", statusCode, string(respBody))
+	}
+	return nil
+}
+
+// VerifyResponseSequence asserts that request-response pairs were recorded in
+// order. Requests and responses are index-aligned — each request builder at
+// position i is paired with the response builder at position i. Either slice
+// may contain nil entries for positions where only the request or only the
+// response should be matched.
+func (c *Client) VerifyResponseSequence(requestBuilders []*RequestBuilder, responseBuilders []*ResponseBuilder) error {
+	var requests []HttpRequest
+	if len(requestBuilders) > 0 {
+		requests = make([]HttpRequest, len(requestBuilders))
+		for i, b := range requestBuilders {
+			if b != nil {
+				requests[i] = b.Build()
+			}
+		}
+	}
+
+	var responses []HttpResponse
+	if len(responseBuilders) > 0 {
+		responses = make([]HttpResponse, len(responseBuilders))
+		for i, b := range responseBuilders {
+			if b != nil {
+				responses[i] = b.Build()
+			}
+		}
+	}
+
+	v := verificationSequence{
+		HttpRequests:  requests,
+		HttpResponses: responses,
+	}
 
 	body, err := json.Marshal(v)
 	if err != nil {

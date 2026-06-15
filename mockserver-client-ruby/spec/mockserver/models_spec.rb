@@ -1659,6 +1659,32 @@ RSpec.describe 'MockServer models' do
       expect(v.to_h['expectationId']).to eq({ 'id' => 'exp-1' })
     end
 
+    it 'serializes with http_response' do
+      v = MockServer::Verification.new(
+        http_request: MockServer::HttpRequest.new(path: '/test'),
+        http_response: MockServer::HttpResponse.new(status_code: 200)
+      )
+      h = v.to_h
+      expect(h['httpRequest']['path']).to eq('/test')
+      expect(h['httpResponse']['statusCode']).to eq(200)
+    end
+
+    it 'omits httpResponse when nil' do
+      v = MockServer::Verification.new(
+        http_request: MockServer::HttpRequest.new(path: '/test')
+      )
+      expect(v.to_h).not_to have_key('httpResponse')
+    end
+
+    it 'serializes response-only verification (no request)' do
+      v = MockServer::Verification.new(
+        http_response: MockServer::HttpResponse.new(status_code: 201)
+      )
+      h = v.to_h
+      expect(h).not_to have_key('httpRequest')
+      expect(h['httpResponse']['statusCode']).to eq(201)
+    end
+
     it 'deserializes from hash' do
       data = {
         'httpRequest' => { 'path' => '/api' },
@@ -1671,6 +1697,19 @@ RSpec.describe 'MockServer models' do
       expect(v.expectation_id.id).to eq('x')
     end
 
+    it 'deserializes http_response from hash' do
+      data = {
+        'httpRequest' => { 'path' => '/api' },
+        'httpResponse' => { 'statusCode' => 200, 'reasonPhrase' => 'OK' },
+        'times' => { 'atLeast' => 1 }
+      }
+      v = MockServer::Verification.from_hash(data)
+      expect(v.http_request.path).to eq('/api')
+      expect(v.http_response).not_to be_nil
+      expect(v.http_response.status_code).to eq(200)
+      expect(v.http_response.reason_phrase).to eq('OK')
+    end
+
     it 'returns nil from_hash when data is nil' do
       expect(MockServer::Verification.from_hash(nil)).to be_nil
     end
@@ -1679,6 +1718,16 @@ RSpec.describe 'MockServer models' do
       original = MockServer::Verification.new(
         http_request: MockServer::HttpRequest.new(path: '/x'),
         times: MockServer::VerificationTimes.once
+      )
+      roundtrip = MockServer::Verification.from_hash(original.to_h)
+      expect(roundtrip.to_h).to eq(original.to_h)
+    end
+
+    it 'round-trips with http_response' do
+      original = MockServer::Verification.new(
+        http_request: MockServer::HttpRequest.new(path: '/x'),
+        http_response: MockServer::HttpResponse.new(status_code: 200),
+        times: MockServer::VerificationTimes.at_least(1)
       )
       roundtrip = MockServer::Verification.from_hash(original.to_h)
       expect(roundtrip.to_h).to eq(original.to_h)
@@ -1718,6 +1767,31 @@ RSpec.describe 'MockServer models' do
       expect(h['expectationIds'].length).to eq(2)
     end
 
+    it 'serializes http_responses' do
+      vs = MockServer::VerificationSequence.new(
+        http_requests: [
+          MockServer::HttpRequest.new(path: '/a'),
+          MockServer::HttpRequest.new(path: '/b')
+        ],
+        http_responses: [
+          MockServer::HttpResponse.new(status_code: 200),
+          MockServer::HttpResponse.new(status_code: 201)
+        ]
+      )
+      h = vs.to_h
+      expect(h['httpRequests'].length).to eq(2)
+      expect(h['httpResponses'].length).to eq(2)
+      expect(h['httpResponses'][0]['statusCode']).to eq(200)
+      expect(h['httpResponses'][1]['statusCode']).to eq(201)
+    end
+
+    it 'omits httpResponses when nil' do
+      vs = MockServer::VerificationSequence.new(
+        http_requests: [MockServer::HttpRequest.new(path: '/a')]
+      )
+      expect(vs.to_h).not_to have_key('httpResponses')
+    end
+
     it 'deserializes from hash' do
       data = {
         'httpRequests' => [{ 'path' => '/x' }, { 'path' => '/y' }],
@@ -1728,6 +1802,18 @@ RSpec.describe 'MockServer models' do
       expect(vs.expectation_ids.length).to eq(1)
     end
 
+    it 'deserializes http_responses from hash' do
+      data = {
+        'httpRequests' => [{ 'path' => '/a' }, { 'path' => '/b' }],
+        'httpResponses' => [{ 'statusCode' => 200 }, { 'statusCode' => 404 }]
+      }
+      vs = MockServer::VerificationSequence.from_hash(data)
+      expect(vs.http_requests.length).to eq(2)
+      expect(vs.http_responses.length).to eq(2)
+      expect(vs.http_responses[0].status_code).to eq(200)
+      expect(vs.http_responses[1].status_code).to eq(404)
+    end
+
     it 'returns nil from_hash when data is nil' do
       expect(MockServer::VerificationSequence.from_hash(nil)).to be_nil
     end
@@ -1735,6 +1821,21 @@ RSpec.describe 'MockServer models' do
     it 'round-trips correctly' do
       original = MockServer::VerificationSequence.new(
         http_requests: [MockServer::HttpRequest.new(path: '/test')]
+      )
+      roundtrip = MockServer::VerificationSequence.from_hash(original.to_h)
+      expect(roundtrip.to_h).to eq(original.to_h)
+    end
+
+    it 'round-trips with http_responses' do
+      original = MockServer::VerificationSequence.new(
+        http_requests: [
+          MockServer::HttpRequest.new(path: '/a'),
+          MockServer::HttpRequest.new(path: '/b')
+        ],
+        http_responses: [
+          MockServer::HttpResponse.new(status_code: 200),
+          MockServer::HttpResponse.new(status_code: 201)
+        ]
       )
       roundtrip = MockServer::VerificationSequence.from_hash(original.to_h)
       expect(roundtrip.to_h).to eq(original.to_h)

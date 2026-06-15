@@ -1047,6 +1047,143 @@ var mockServerClient;
             };
         };
         /**
+         * Verify a response has been received, for example:
+         *
+         *   await client.verifyResponse({ 'statusCode': 200 }, 1, 1);
+         *
+         * @param responseMatcher the http response matcher that must be matched for this verification to pass
+         * @param atLeast the minimum number of times this response must be matched
+         * @param atMost  the maximum number of times this response must be matched
+         */
+        var verifyResponse = function (responseMatcher, atLeast, atMost) {
+            if (atLeast === undefined && atMost === undefined) {
+                atLeast = 1;
+            }
+            return {
+                then: function (sucess, error) {
+                    return makeRequest(host, port, "/mockserver/verify", {
+                        "httpResponse": responseMatcher,
+                        "times": {
+                            "atLeast": atLeast,
+                            "atMost": atMost
+                        }
+                    }).then(
+                        function () {
+                            if (sucess) {
+                                sucess();
+                            }
+                        },
+                        function (result) {
+                            if (!result.statusCode || result.statusCode !== 202) {
+                                if (error) {
+                                    error(simplifyVerificationError(result));
+                                }
+                            } else {
+                                if (error) {
+                                    sucess(result);
+                                }
+                            }
+                        }
+                    );
+                }
+            };
+        };
+        /**
+         * Verify a request and response pair has been exchanged, for example:
+         *
+         *   await client.verifyRequestAndResponse(
+         *       { 'method': 'POST', 'path': '/somePath' },
+         *       { 'statusCode': 200 },
+         *       1, 1
+         *   );
+         *
+         * @param requestMatcher the http request matcher that must be matched for this verification to pass
+         * @param responseMatcher the http response matcher that must be matched for this verification to pass
+         * @param atLeast the minimum number of times this request/response pair must be matched
+         * @param atMost  the maximum number of times this request/response pair must be matched
+         */
+        var verifyRequestAndResponse = function (requestMatcher, responseMatcher, atLeast, atMost) {
+            if (atLeast === undefined && atMost === undefined) {
+                atLeast = 1;
+            }
+            return {
+                then: function (sucess, error) {
+                    requestMatcher.headers = headersUniqueConcatenate(requestMatcher.headers, defaultRequestHeaders);
+                    return makeRequest(host, port, "/mockserver/verify", {
+                        "httpRequest": requestMatcher,
+                        "httpResponse": responseMatcher,
+                        "times": {
+                            "atLeast": atLeast,
+                            "atMost": atMost
+                        }
+                    }).then(
+                        function () {
+                            if (sucess) {
+                                sucess();
+                            }
+                        },
+                        function (result) {
+                            if (!result.statusCode || result.statusCode !== 202) {
+                                if (error) {
+                                    error(simplifyVerificationError(result));
+                                }
+                            } else {
+                                if (error) {
+                                    sucess(result);
+                                }
+                            }
+                        }
+                    );
+                }
+            };
+        };
+        /**
+         * Verify a sequence of request and response pairs has been exchanged, for example:
+         *
+         *   await client.verifySequenceWithResponses([
+         *       { request: { 'method': 'POST', 'path': '/first' }, response: { 'statusCode': 201 } },
+         *       { request: { 'method': 'GET', 'path': '/second' }, response: { 'statusCode': 200 } }
+         *   ]);
+         *
+         * @param requestsAndResponses array of {request, response} objects, index-aligned
+         */
+        var verifySequenceWithResponses = function (requestsAndResponses) {
+            var requestSequence = [];
+            var responseSequence = [];
+            for (var i = 0; i < requestsAndResponses.length; i++) {
+                var pair = requestsAndResponses[i];
+                var requestMatcher = pair.request || {};
+                requestMatcher.headers = headersUniqueConcatenate(requestMatcher.headers, defaultRequestHeaders);
+                requestSequence.push(requestMatcher);
+                responseSequence.push(pair.response || {});
+            }
+            return {
+                then: function (sucess, error) {
+                    return makeRequest(host, port, "/mockserver/verifySequence", {
+                        "httpRequests": requestSequence,
+                        "httpResponses": responseSequence
+                    }).then(
+                        function () {
+                            if (sucess) {
+                                sucess();
+                            }
+                        },
+                        function (result) {
+                            if (!result.statusCode || result.statusCode !== 202) {
+                                if (error) {
+                                    error(simplifyVerificationError(result));
+                                }
+                            } else {
+                                if (error) {
+                                    sucess(result);
+                                }
+                            }
+                        }
+                    );
+                }
+            };
+        };
+        /**
          * Verify that no requests have been received by the MockServer
          */
         var verifyZeroInteractions = function () {
@@ -1497,8 +1634,11 @@ var mockServerClient;
             mockSimpleResponse: mockSimpleResponse,
             setDefaultHeaders: setDefaultHeaders,
             verify: verify,
+            verifyResponse: verifyResponse,
+            verifyRequestAndResponse: verifyRequestAndResponse,
             verifyById: verifyById,
             verifySequence: verifySequence,
+            verifySequenceWithResponses: verifySequenceWithResponses,
             verifySequenceById: verifySequenceById,
             verifyZeroInteractions: verifyZeroInteractions,
             reset: reset,
