@@ -484,7 +484,7 @@ A shared CloudFront response headers policy (`mockserver-security-headers`) is a
 The build-account Buildkite agents push releases into the website account by assuming `mockserver-release-website` via `sts:AssumeRole`. **Managed by `terraform/website/cross-account-role.tf`.** Permissions are scoped:
 
 - S3 object and bucket verbs (`GetObject`, `PutObject`, `DeleteObject`, `ListBucket`, etc.) on `arn:aws:s3:::aws-website-mockserver-*` only — ACL and website-configuration verbs are removed (buckets use OAC + `BucketOwnerEnforced`)
-- S3 bucket verbs on `arn:aws:s3:::aws-binaries-mockserver` (the `downloads.mock-server.com` bundle host, `binaries.tf`) — adds `s3:PutBucketVersioning` and `s3:PutEncryptionConfiguration` on top of the website-bucket verbs because that bucket enables versioning + SSE
+- S3 bucket verbs on `arn:aws:s3:::aws-binaries-mockserver` (the `downloads.mock-server.com` bundle host, `binaries.tf`) — adds `s3:PutBucketVersioning` + `s3:PutEncryptionConfiguration` (the bucket enables versioning + SSE) and `s3:ListBucket` (backs the provider's `HeadBucket` probe; without it the refresh 403s and the provider misreads it as a deleted bucket, planning a destructive recreate)
 - `cloudfront:*` (account-wide — CloudFront lacks resource-level permissions for distribution-list/create)
 - `route53:ChangeResourceRecordSets` on the `mock-server.com` hosted zone only
 

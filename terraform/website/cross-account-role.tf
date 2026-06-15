@@ -83,6 +83,13 @@ resource "aws_iam_role_policy" "release_website" {
         Sid    = "BinariesBucket"
         Effect = "Allow"
         Action = [
+          # s3:ListBucket backs the provider's HeadBucket existence probe. Without
+          # it the probe gets a 403 that the AWS provider misreads as "bucket
+          # deleted", planning a destructive recreate of the bucket and its
+          # config sub-resources (this is what failed the first retry of build
+          # #49). The release role manages no objects here, so this is the only
+          # ListBucket-class verb it needs.
+          "s3:ListBucket",
           # Bucket-level reads Terraform performs on every plan/apply refresh.
           "s3:GetBucketLocation",
           "s3:GetBucketVersioning",
