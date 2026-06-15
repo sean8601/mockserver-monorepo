@@ -26,6 +26,14 @@ HELM_IMAGE="${HELM_IMAGE:-alpine/helm:3.16.2}"
 GH_IMAGE="${GH_IMAGE:-maniator/gh:v2.62.0}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim-bookworm}"
 TERRAFORM_IMAGE="${TERRAFORM_IMAGE:-hashicorp/terraform:1.15}"
+# Polyglot client/testcontainers publish toolchains. Previously absent here, so
+# the go/rust/dotnet publish components fell back to a host `command -v` probe,
+# found nothing on the release-queue AMI, and silently skipped. Pin them so those
+# publishes run in a container like every other toolchain. GO_IMAGE tracks the
+# go.mod `go` directive (1.21).
+GO_IMAGE="${GO_IMAGE:-golang:1.21-bookworm}"
+RUST_IMAGE="${RUST_IMAGE:-rust:1-bookworm}"
+DOTNET_IMAGE="${DOTNET_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
 export MAVEN_IMAGE NODE_IMAGE RUBY_IMAGE HELM_IMAGE GH_IMAGE PYTHON_IMAGE TERRAFORM_IMAGE
 
 REGION="${AWS_REGION:-eu-west-2}"
@@ -224,6 +232,39 @@ PYEOF
 # -----------------------------------------------------------------------------
 # Docker helpers
 # -----------------------------------------------------------------------------
+
+# Retry a command with exponential backoff, to ride out TRANSIENT failures
+# (network blips, registry 5xx/429, brief auth propagation). Pair with the
+# hard-fail publish policy: a real failure still aborts the release, but a flaky
+# one is retried first so a transient hiccup never reddens a release whose
+# artifacts are fine.
+#
+# Usage: retry [attempts] [base_delay_s] -- CMD ARGS...
+#   attempts     total attempts (default 3)
+#   base_delay_s first backoff in seconds, doubled each retry (default 5)
+# Returns the command's exit code from the last attempt (0 on eventual success).
+# Honours dry-run transparently — it just runs the (dry-run-aware) command.
+retry() {
+  local attempts=3 delay=5
+  [[ "${1:-}" =~ ^[0-9]+$ ]] && { attempts="$1"; shift; }
+  [[ "${1:-}" =~ ^[0-9]+$ ]] && { delay="$1"; shift; }
+  [[ "${1:-}" == "--" ]] && shift
+  if [[ $# -eq 0 ]]; then log_error "retry: no command given"; return 2; fi
+  local attempt=1 rc=0
+  while true; do
+    # Capture the failure code in the else branch: an `if` whose condition fails
+    # with no else returns 0, so `rc=$?` after `fi` would always read 0.
+    if "$@"; then return 0; else rc=$?; fi
+    if (( attempt >= attempts )); then
+      log_info "retry: '$1' failed after ${attempt} attempt(s) (exit ${rc})"
+      return "$rc"
+    fi
+    log_info "retry: '$1' failed (exit ${rc}); attempt ${attempt}/${attempts} — retrying in ${delay}s"
+    sleep "$delay"
+    delay=$(( delay * 2 ))
+    attempt=$(( attempt + 1 ))
+  done
+}
 
 # Run a command inside a Docker container with the repo mounted at /build.
 # Usage:
