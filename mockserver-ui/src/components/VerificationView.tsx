@@ -8,11 +8,14 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Alert from '@mui/material/Alert';
+import Collapse from '@mui/material/Collapse';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { parseKeyValueLines } from '../lib/standardCodegen';
 import {
@@ -36,6 +39,16 @@ function emptyRequest(): RequestForm {
   return { method: '', path: '', headers: '', queryString: '', body: '' };
 }
 
+interface ResponseForm {
+  statusCode: string;
+  headers: string;
+  body: string;
+}
+
+function emptyResponse(): ResponseForm {
+  return { statusCode: '', headers: '', body: '' };
+}
+
 /** Build an httpRequest matcher object from a form row (omitting empty fields). */
 function buildHttpRequest(form: RequestForm): Record<string, unknown> {
   const req: Record<string, unknown> = {};
@@ -47,6 +60,22 @@ function buildHttpRequest(form: RequestForm): Record<string, unknown> {
   if (query) req['queryStringParameters'] = query;
   if (form.body.trim()) req['body'] = form.body;
   return req;
+}
+
+/** Build an httpResponse matcher object from a form row (omitting empty fields). */
+function buildHttpResponse(form: ResponseForm): Record<string, unknown> {
+  const resp: Record<string, unknown> = {};
+  const code = form.statusCode.trim();
+  if (code) {
+    const parsed = Number(code);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      resp['statusCode'] = parsed;
+    }
+  }
+  const headers = parseKeyValueLines(form.headers, ':');
+  if (headers) resp['headers'] = headers;
+  if (form.body.trim()) resp['body'] = form.body;
+  return resp;
 }
 
 function RequestFields({ form, onChange }: { form: RequestForm; onChange: (f: RequestForm) => void }) {
@@ -79,6 +108,59 @@ function RequestFields({ form, onChange }: { form: RequestForm; onChange: (f: Re
   );
 }
 
+function ResponseFields({ form, onChange }: { form: ResponseForm; onChange: (f: ResponseForm) => void }) {
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <TextField size="small" label="Status code" placeholder="200" value={form.statusCode}
+        onChange={(e) => onChange({ ...form, statusCode: e.target.value })} sx={{ width: 150 }} />
+      <TextField size="small" label="Response headers (Name: value per line)" multiline minRows={1} maxRows={4}
+        value={form.headers} onChange={(e) => onChange({ ...form, headers: e.target.value })} sx={{ flex: 1 }} />
+      <TextField size="small" label="Response body (substring/JSON match)" multiline minRows={1} maxRows={6}
+        value={form.body} onChange={(e) => onChange({ ...form, body: e.target.value })}
+        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }} />
+    </Box>
+  );
+}
+
+function ResponseMatcherSection({
+  expanded,
+  onToggle,
+  form,
+  onChange,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  form: ResponseForm;
+  onChange: (f: ResponseForm) => void;
+}) {
+  return (
+    <Box sx={{ mt: 1.5 }}>
+      <Box
+        onClick={onToggle}
+        sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+        role="button"
+        aria-expanded={expanded}
+        aria-label={expanded ? 'Collapse response matcher' : 'Expand response matcher'}
+      >
+        <IconButton size="small" aria-label={expanded ? 'Collapse response matcher' : 'Expand response matcher'}>
+          {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+        </IconButton>
+        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+          Response matcher (optional)
+        </Typography>
+      </Box>
+      <Collapse in={expanded}>
+        <Box sx={{ mt: 1, pl: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            Match against responses recorded from proxied/forwarded traffic.
+          </Typography>
+          <ResponseFields form={form} onChange={onChange} />
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
 function ResultAlert({ result }: { result: VerifyResult | null }) {
   if (!result) return null;
   if (result.verified) {
@@ -107,8 +189,16 @@ export default function VerificationView({ connectionParams }: { connectionParam
   const [count, setCount] = useState(1);
   const [atMost, setAtMost] = useState(1);
 
+  // Single-request response matcher
+  const [singleResponse, setSingleResponse] = useState<ResponseForm>(emptyResponse);
+  const [singleResponseExpanded, setSingleResponseExpanded] = useState(false);
+
   // Sequence verification
   const [sequence, setSequence] = useState<RequestForm[]>([emptyRequest(), emptyRequest()]);
+
+  // Sequence response matchers
+  const [seqResponses, setSeqResponses] = useState<ResponseForm[]>([emptyResponse(), emptyResponse()]);
+  const [seqResponseExpanded, setSeqResponseExpanded] = useState<boolean[]>([false, false]);
 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VerifyResult | null>(null);
@@ -127,11 +217,37 @@ export default function VerificationView({ connectionParams }: { connectionParam
     }
   }, []);
 
-  const verifySingle = () => run(() =>
-    verifyRequest(connectionParams, buildHttpRequest(single), { mode: timesMode, count, atMost }));
+  const verifySingle = () => run(() => {
+    const httpResponse = buildHttpResponse(singleResponse);
+    return verifyRequest(
+      connectionParams,
+      buildHttpRequest(single),
+      { mode: timesMode, count, atMost },
+      Object.keys(httpResponse).length > 0 ? httpResponse : undefined,
+    );
+  });
 
-  const verifySeq = () => run(() =>
-    verifySequence(connectionParams, sequence.map(buildHttpRequest)));
+  const verifySeq = () => run(() => {
+    const builtResponses = seqResponses.map(buildHttpResponse);
+    const hasAnyResponse = builtResponses.some((r) => Object.keys(r).length > 0);
+    return verifySequence(
+      connectionParams,
+      sequence.map(buildHttpRequest),
+      hasAnyResponse ? builtResponses.map((r) => Object.keys(r).length > 0 ? r : undefined) : undefined,
+    );
+  });
+
+  const addSequenceStep = () => {
+    setSequence([...sequence, emptyRequest()]);
+    setSeqResponses([...seqResponses, emptyResponse()]);
+    setSeqResponseExpanded([...seqResponseExpanded, false]);
+  };
+
+  const removeSequenceStep = (index: number) => {
+    setSequence(sequence.filter((_, j) => j !== index));
+    setSeqResponses(seqResponses.filter((_, j) => j !== index));
+    setSeqResponseExpanded(seqResponseExpanded.filter((_, j) => j !== index));
+  };
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -154,6 +270,12 @@ export default function VerificationView({ connectionParams }: { connectionParam
       {mode === 'single' ? (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <RequestFields form={single} onChange={setSingle} />
+          <ResponseMatcherSection
+            expanded={singleResponseExpanded}
+            onToggle={() => setSingleResponseExpanded(!singleResponseExpanded)}
+            form={singleResponse}
+            onChange={setSingleResponse}
+          />
           <Box sx={{ display: 'flex', gap: 1, mt: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography variant="body2" color="text.secondary">Received</Typography>
             <Select size="small" value={timesMode} onChange={(e) => setTimesMode(e.target.value as VerificationTimesMode)} sx={{ width: 150 }}>
@@ -185,15 +307,23 @@ export default function VerificationView({ connectionParams }: { connectionParam
           {sequence.map((row, i) => (
             <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 1.5 }}>
               <Typography variant="caption" sx={{ mt: 1, width: 20 }}>{i + 1}.</Typography>
-              <Box sx={{ flex: 1 }}><RequestFields form={row} onChange={(f) => setSequence(sequence.map((r, j) => j === i ? f : r))} /></Box>
+              <Box sx={{ flex: 1 }}>
+                <RequestFields form={row} onChange={(f) => setSequence(sequence.map((r, j) => j === i ? f : r))} />
+                <ResponseMatcherSection
+                  expanded={seqResponseExpanded[i] ?? false}
+                  onToggle={() => setSeqResponseExpanded(seqResponseExpanded.map((v, j) => j === i ? !v : v))}
+                  form={seqResponses[i] ?? emptyResponse()}
+                  onChange={(f) => setSeqResponses(seqResponses.map((r, j) => j === i ? f : r))}
+                />
+              </Box>
               <IconButton size="small" aria-label="Remove step" disabled={sequence.length <= 1}
-                onClick={() => setSequence(sequence.filter((_, j) => j !== i))}>
+                onClick={() => removeSequenceStep(i)}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
           ))}
           <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-            <Button size="small" startIcon={<AddIcon />} onClick={() => setSequence([...sequence, emptyRequest()])}>
+            <Button size="small" startIcon={<AddIcon />} onClick={addSequenceStep}>
               Add step
             </Button>
             <Button variant="contained" size="small" disabled={busy} onClick={verifySeq} sx={{ ml: 'auto' }}>

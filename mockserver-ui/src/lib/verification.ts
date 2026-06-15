@@ -68,14 +68,25 @@ export function verifyRequest(
   params: ConnectionParams,
   httpRequest: Record<string, unknown>,
   times: VerificationTimesSpec,
+  httpResponse?: Record<string, unknown>,
 ): Promise<VerifyResult> {
-  return putVerify(params, '/mockserver/verify', { httpRequest, times: timesToWire(times) });
+  const body: Record<string, unknown> = { httpRequest, times: timesToWire(times) };
+  if (httpResponse && Object.keys(httpResponse).length > 0) {
+    body.httpResponse = httpResponse;
+  }
+  return putVerify(params, '/mockserver/verify', body);
 }
 
 /** Verify an ordered sequence of request matchers was received (in order, allowing gaps). */
 export function verifySequence(
   params: ConnectionParams,
   httpRequests: Record<string, unknown>[],
+  httpResponses?: (Record<string, unknown> | undefined)[],
 ): Promise<VerifyResult> {
-  return putVerify(params, '/mockserver/verifySequence', { httpRequests });
+  const body: Record<string, unknown> = { httpRequests };
+  if (httpResponses && httpResponses.some((r) => r && Object.keys(r).length > 0)) {
+    // Index-aligned: undefined/empty entries become empty objects so indices match httpRequests.
+    body.httpResponses = httpResponses.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
+  }
+  return putVerify(params, '/mockserver/verifySequence', body);
 }
