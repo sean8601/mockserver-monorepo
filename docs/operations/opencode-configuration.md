@@ -203,6 +203,10 @@ opencode sets an explicit per-agent `temperature` (deterministic/high-risk work 
 | **0.3–0.4** | taskify-agent (0.3), docs-writer (0.4) | Structuring and prose benefit from mild latitude |
 | **0.7** | council-seat | Design debate / ideation — creativity wanted |
 
+For work that benefits from exploration before convergence, stage these
+temperatures as a descending **multi-pass pipeline** (explore → refine → validate)
+rather than a single pass — see `.opencode/rules/multi-pass-temperature.md`.
+
 ### Provider Strategy
 
 opencode uses OpenAI models exclusively. Claude Code (`.claude/`) uses Anthropic models exclusively. Independence between the implementation and review agents is achieved at two levels:
