@@ -15,11 +15,10 @@
 #   release:  buildkite-api-token, dockerhub, sonatype, pypi, rubygems,
 #             plus release-only secrets in read_release_secrets
 #
-# The Buildkite API token used by build queues is split two ways: a READ-ONLY
-# token for change detection and a WRITE token (buildkite-api-token) for
-# trigger/cleanup build control. Pipeline management (the buildkite-pipelines
-# Terraform stack) uses a classic API Access Token supplied by the local admin
-# via BUILDKITE_API_TOKEN — never a shared secret, never granted to a queue.
+# The Buildkite API token is split three ways: a READ-ONLY token for change
+# detection, a WRITE token (buildkite-api-token) for trigger/cleanup build
+# control, and a separate management token (buildkite-tf-token) used only by the
+# Terraform provider (never granted to a queue).
 # ---------------------------------------------------------------------------
 
 # --- Secret resources -------------------------------------------------------
@@ -89,8 +88,8 @@ resource "aws_secretsmanager_secret" "website_role" {
 # trigger-pipeline.sh (create/cancel builds) and cleanup-closed-pr-builds.sh
 # (cancel/delete). Change-detection (last-successful-commit.sh) uses the separate
 # READ-ONLY token below. The Terraform provider's pipeline/cluster management uses
-# a classic API Access Token supplied by the local admin via BUILDKITE_API_TOKEN
-# (no shared secret; see terraform/buildkite-pipelines/providers.tf).
+# yet another token (mockserver-build/buildkite-tf-token) read only by local admin —
+# no build-agent IAM policy grants it (see terraform/buildkite-pipelines/providers.tf).
 resource "aws_iam_policy" "read_buildkite_api_token" {
   name        = "buildkite-read-buildkite-api-token"
   description = "Allow Buildkite agents to read the Buildkite API token from Secrets Manager"

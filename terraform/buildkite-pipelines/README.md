@@ -15,18 +15,17 @@ This stack manages Buildkite pipelines using the [Buildkite Terraform provider](
 
 ## Prerequisites
 
-- AWS CLI with SSO profile `mockserver-build` authenticated (for the AWS provider used elsewhere in this stack)
-- A Buildkite **classic API Access Token** exported as `BUILDKITE_API_TOKEN` before running `terraform plan`/`apply`:
-  - Create one at https://buildkite.com/user/api-access-tokens scoped to org `mockserver` with `read_pipelines`, `write_pipelines`, and GraphQL enabled
+- AWS CLI with SSO profile `mockserver-build` authenticated (used to read the provider token from Secrets Manager)
+- A Buildkite **classic API Access Token** stored in Secrets Manager (`mockserver-build/buildkite-tf-token`) — the secret must hold a valid token before running `terraform plan`/`apply`:
+  - Scope it to org `mockserver` with `read_pipelines`, `write_pipelines`, and GraphQL enabled (create/rotate at https://buildkite.com/user/api-access-tokens)
   - This is **not** the `bk` CLI login (that is an OAuth token the GraphQL/Terraform API rejects)
-  - Run only by a local admin — the token is never stored in Secrets Manager or granted to a build queue
+  - The secret is read only by a local admin running this stack — no build-agent IAM policy grants it
 - On macOS with Python 3.14+, set `export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib"` before running Terraform
 
 ## Usage
 
 ```bash
 aws sso login --profile mockserver-build
-export BUILDKITE_API_TOKEN=...   # classic API Access Token (see Prerequisites)
 cd terraform/buildkite-pipelines
 terraform init
 terraform plan
