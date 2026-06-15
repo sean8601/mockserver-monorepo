@@ -72,7 +72,7 @@
     },
     "security-auditor": {
       "description": "Security-focused code auditor for Java applications",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5",
       "temperature": 0.1,
       "agent": ".opencode/agents/security-auditor.md",
       "tools": {
@@ -95,7 +95,7 @@
     },
     "implementer": {
       "description": "Implementation specialist — writes production code and tests",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5",
       "temperature": 0.2,
       "agent": ".opencode/agents/implementer.md"
     },
@@ -111,7 +111,7 @@
     },
     "review-final": {
       "description": "Authoritative final reviewer — binding PASS/BLOCK verdict",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5",
       "temperature": 0.1,
       "agent": ".opencode/agents/review-final.md",
       "tools": {
@@ -121,7 +121,7 @@
     },
     "debugger": {
       "description": "Production debugger — investigates issues using logs, metrics, and CI data",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5",
       "temperature": 0.2,
       "agent": ".opencode/agents/debugger.md",
       "tools": {

@@ -149,25 +149,22 @@ Different tasks have different cognitive demands *and* different needs for deter
 
 ```mermaid
 flowchart LR
-    subgraph Premium["Premium Tier"]
+    subgraph Reasoning["Reasoning Tier"]
+        RF["review-final"]
+        SA["security-auditor"]
+        DB["debugger"]
         IMP["implementer"]
+    end
+
+    subgraph Premium["Premium Tier"]
         SIM["simplifier"]
+        PI["pipeline-investigator"]
     end
 
     subgraph Standard["Standard Tier"]
         CR["code-reviewer"]
-        SA["security-auditor"]
         DW["docs-writer"]
         TA["taskify-agent"]
-    end
-
-    subgraph Premium2["Premium Tier (cont.)"]
-        RF["review-final"]
-        DB["debugger"]
-        PI["pipeline-investigator"]
-    end
-
-    subgraph Standard2["Standard Tier (cont.)"]
         RC["review-cheap"]
     end
 
@@ -176,20 +173,22 @@ flowchart LR
         CS["council-seat"]
     end
 
+    style Reasoning fill:#f3e8fd,stroke:#7a00cc
     style Premium fill:#fde8ec,stroke:#e4002b
     style Standard fill:#e8f0fa,stroke:#00539f
-    style Premium2 fill:#fde8ec,stroke:#e4002b
-    style Standard2 fill:#e8f0fa,stroke:#00539f
     style Fast fill:#e8f8f0,stroke:#00a651
 ```
 
 | Tier | opencode (OpenAI) | Claude Code (Anthropic) | Agents | Rationale |
 |------|-------------------|--------------------------|--------|-----------|
-| **Premium** | `openai/gpt-4o` \* | `claude-opus-4-8` | implementer, simplifier, review-final, debugger, pipeline-investigator | Highest capability for production code, complex refactoring, and authoritative review |
-| **Standard** | `openai/gpt-4o` | `claude-sonnet-4-6` | code-reviewer, security-auditor, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost |
+| **Reasoning** | `openai/gpt-5` | `claude-opus-4-8` + `effort: high` | review-final, security-auditor, debugger, implementer | Highest-stakes reasoning — authoritative binding review, security audit, hard debugging, and production code |
+| **Premium** | `openai/gpt-4o` | `claude-opus-4-8` | simplifier, pipeline-investigator | Strong reasoning for refactoring and CI investigation at moderate cost |
+| **Standard** | `openai/gpt-4o` | `claude-sonnet-4-6` | code-reviewer, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost |
 | **Fast** | `openai/gpt-4o-mini` | `claude-haiku-4-5-20251001` | test-runner, council-seat | Rote operations (run tests, emit short verdicts) — speed over depth |
 
-\* On opencode the Premium and Standard agents currently **share `gpt-4o`** — a stronger OpenAI tier (`openai/o3` / `o1`) is not provisioned. When one is enabled, promote the Premium agents to it; until then `gpt-4o` + a low temperature carries the high-risk differentiation. On the Claude side the three tiers are genuinely distinct (opus / sonnet / haiku).
+This gives the review escalation a genuine **capability gradient** on both harnesses: `review-cheap` (gpt-4o / sonnet) → `review-final` (gpt-5 / opus + `effort: high`), so the binding gate is a stronger second brain, not a same-model re-run. On the Claude side the high-stakes lanes additionally raise the reasoning budget via the supported `effort: high` frontmatter field (see Temperature note below). `implementer` is deliberately on the Reasoning tier alongside the reviewers: generating production code has equal or higher blast radius than reviewing it, so it warrants the same model capability and reasoning budget.
+
+**Caveat — reasoning models and `temperature`:** OpenAI reasoning models may reject or ignore a custom sampling `temperature` (only the default is accepted). The Reasoning-tier agents retain their low `temperature` entries for documentation/auditability, but if the provider rejects them, drop the `temperature` field for those four agents and rely on the model's native low-variance reasoning. Re-verify against the OpenAI API behaviour for `gpt-5` after provisioning.
 
 ### Temperature (opencode)
 
@@ -224,15 +223,15 @@ Each sub-agent is a configured AI persona with a specific model, system prompt, 
 
 | Agent | Model Tier | Role | Write | Edit | Bash | Skill |
 |-------|-----------|------|:-----:|:----:|:----:|:-----:|
-| **implementer** | Premium | Writes production code and tests | Y | Y | Y | Y |
+| **implementer** | Reasoning | Writes production code and tests | Y | Y | Y | Y |
 | **simplifier** | Premium | Reduces code to smallest correct form | Y | Y | Y | Y |
 | **docs-writer** | Standard | Architecture docs, ADRs, READMEs | Y | Y | Y | Y |
 | **taskify-agent** | Standard | Breaks specs into structured task graphs | Y | Y | Y | Y |
 | **code-reviewer** | Standard | Pre-commit correctness, security, conventions | - | - | Y | - |
-| **security-auditor** | Standard | Security-focused Java/Netty audits | - | - | Y | - |
-| **review-final** | Premium | Authoritative binding PASS/BLOCK verdict | - | - | Y | Y |
+| **security-auditor** | Reasoning | Security-focused Java/Netty audits | - | - | Y | - |
+| **review-final** | Reasoning | Authoritative binding PASS/BLOCK verdict | - | - | Y | Y |
 | **review-cheap** | Standard | Non-authoritative intermediate review | - | - | Y | Y |
-| **debugger** | Premium | Investigates issues using logs, CI, AWS | - | - | Y | Y |
+| **debugger** | Reasoning | Investigates issues using logs, CI, AWS | - | - | Y | Y |
 | **pipeline-investigator** | Premium | Buildkite pipeline failure analysis | - | - | Y | Y |
 | **test-runner** | Fast | Runs Maven tests, reports results | - | - | Y | - |
 | **council-seat** | Fast | Design council parallel debate seat | - | - | - | - |

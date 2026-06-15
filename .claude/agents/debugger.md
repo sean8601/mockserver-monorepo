@@ -2,6 +2,7 @@
 name: debugger
 description: Production debugger — investigates issues using logs, CI data, metrics, and AWS infrastructure. Spawn this agent to diagnose build failures, runtime errors, or infrastructure problems. It reports findings; it does not fix.
 model: claude-opus-4-8
+effort: high
 tools:
   - Read
   - Bash
