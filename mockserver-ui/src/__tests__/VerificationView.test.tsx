@@ -72,6 +72,10 @@ describe('VerificationView', () => {
     const user = userEvent.setup();
     renderView();
 
+    // Fill in a path so the Verify button is enabled (request matcher is now optional but at least one matcher required)
+    const pathField = screen.getByLabelText('Path');
+    await user.type(pathField, '/test');
+
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
     await waitFor(() => {
@@ -92,6 +96,10 @@ describe('VerificationView', () => {
     const user = userEvent.setup();
     renderView();
 
+    // Fill in a path so the Verify button is enabled
+    const pathField = screen.getByLabelText('Path');
+    await user.type(pathField, '/test');
+
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
     await waitFor(() => {
@@ -108,6 +116,10 @@ describe('VerificationView', () => {
 
     const user = userEvent.setup();
     renderView();
+
+    // Fill in a path so the Verify button is enabled
+    const pathField = screen.getByLabelText('Path');
+    await user.type(pathField, '/test');
 
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
@@ -127,6 +139,11 @@ describe('VerificationView', () => {
     renderView();
 
     await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
+
+    // Fill in a path in the first step so the Verify sequence button is enabled
+    const pathFields = screen.getAllByLabelText('Path');
+    await user.type(pathFields[0]!, '/a');
+
     await user.click(screen.getByRole('button', { name: 'Verify sequence' }));
 
     await waitFor(() => {
@@ -199,6 +216,10 @@ describe('VerificationView', () => {
     const user = userEvent.setup();
     renderView();
 
+    // Fill in a path so the Verify button is enabled (need at least one matcher)
+    const pathField = screen.getByLabelText('Path');
+    await user.type(pathField, '/test');
+
     // Click verify without expanding/filling response matcher
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
@@ -259,6 +280,11 @@ describe('VerificationView', () => {
     renderView();
 
     await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
+
+    // Fill in a path in the first step so the Verify sequence button is enabled
+    const pathFields = screen.getAllByLabelText('Path');
+    await user.type(pathFields[0]!, '/a');
+
     await user.click(screen.getByRole('button', { name: 'Verify sequence' }));
 
     await waitFor(() => {
@@ -268,5 +294,98 @@ describe('VerificationView', () => {
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse(init.body as string);
     expect(body).not.toHaveProperty('httpResponses');
+  });
+
+  // --- New: optional request matcher behaviour ---
+
+  it('disables Verify button and shows hint when no request or response fields are filled', () => {
+    renderView();
+    const verifyBtn = screen.getByRole('button', { name: 'Verify' });
+    expect(verifyBtn).toBeDisabled();
+    expect(screen.getByText('Add a request matcher, a response matcher, or both to verify.')).toBeInTheDocument();
+  });
+
+  it('disables Verify sequence button and shows hint when no fields are filled in any step', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
+    const seqBtn = screen.getByRole('button', { name: 'Verify sequence' });
+    expect(seqBtn).toBeDisabled();
+    expect(screen.getByText('Add a request matcher, a response matcher, or both to at least one step.')).toBeInTheDocument();
+  });
+
+  it('enables Verify button when only a response matcher is filled (response-only verify)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 202,
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    renderView();
+
+    // Button starts disabled
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeDisabled();
+
+    // Expand the response matcher section and fill a status code
+    await user.click(screen.getByText('Response matcher (optional)'));
+    const statusField = screen.getByLabelText('Status code');
+    await user.type(statusField, '200');
+
+    // Button should now be enabled
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeEnabled();
+    // Hint should be gone
+    expect(screen.queryByText('Add a request matcher, a response matcher, or both to verify.')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body as string);
+    // Response-only: no httpRequest key in the body
+    expect(body).not.toHaveProperty('httpRequest');
+    expect(body.httpResponse).toEqual({ statusCode: 200 });
+    expect(body.times).toBeDefined();
+  });
+
+  it('enables Verify sequence button when only a response matcher is filled in one step', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 202,
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole('button', { name: 'Ordered sequence' }));
+
+    // Button starts disabled
+    expect(screen.getByRole('button', { name: 'Verify sequence' })).toBeDisabled();
+
+    // Expand the response matcher in the first step and fill a status code
+    const toggles = screen.getAllByText('Response matcher (optional)');
+    await user.click(toggles[0]!);
+    const statusFields = screen.getAllByLabelText('Status code');
+    await user.type(statusFields[0]!, '201');
+
+    // Button should now be enabled
+    expect(screen.getByRole('button', { name: 'Verify sequence' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Verify sequence' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body as string);
+    // Response-only sequence: no httpRequests key
+    expect(body).not.toHaveProperty('httpRequests');
+    expect(body.httpResponses).toBeDefined();
   });
 });

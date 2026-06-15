@@ -166,7 +166,7 @@ function ResultAlert({ result }: { result: VerifyResult | null }) {
   if (result.verified) {
     return (
       <Alert severity="success" icon={<CheckCircleIcon fontSize="inherit" />} sx={{ mt: 1.5 }}>
-        Verified — the server received requests matching this assertion.
+        Verified — MockServer saw matching traffic the expected number of times.
       </Alert>
     );
   }
@@ -237,6 +237,14 @@ export default function VerificationView({ connectionParams }: { connectionParam
     );
   });
 
+  // A verification needs at least one matcher (request, response, or both) in either mode.
+  const singleHasMatcher =
+    Object.keys(buildHttpRequest(single)).length > 0 ||
+    Object.keys(buildHttpResponse(singleResponse)).length > 0;
+  const sequenceHasMatcher =
+    sequence.some((r) => Object.keys(buildHttpRequest(r)).length > 0) ||
+    seqResponses.some((r) => Object.keys(buildHttpResponse(r)).length > 0);
+
   const addSequenceStep = () => {
     setSequence([...sequence, emptyRequest()]);
     setSeqResponses([...seqResponses, emptyResponse()]);
@@ -263,8 +271,11 @@ export default function VerificationView({ connectionParams }: { connectionParam
         </ToggleButtonGroup>
       </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        Assert against the requests MockServer has already received — pass means it happened, fail
-        shows the closest matches and the actual count.
+        Assert against what MockServer has already seen: a request it received, the response
+        returned for a proxied/forwarded request, or both. A request matcher alone checks received
+        requests; a response matcher alone checks recorded responses (any request); when both are
+        given they must match on the same exchange. Pass means it happened the expected number of
+        times; fail shows the closest matches and the actual count.
       </Typography>
 
       {mode === 'single' ? (
@@ -294,10 +305,15 @@ export default function VerificationView({ connectionParams }: { connectionParam
               </>
             )}
             <Typography variant="body2" color="text.secondary">time(s)</Typography>
-            <Button variant="contained" size="small" disabled={busy} onClick={verifySingle} sx={{ ml: 'auto' }}>
+            <Button variant="contained" size="small" disabled={busy || !singleHasMatcher} onClick={verifySingle} sx={{ ml: 'auto' }}>
               Verify
             </Button>
           </Box>
+          {!singleHasMatcher && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              Add a request matcher, a response matcher, or both to verify.
+            </Typography>
+          )}
         </Paper>
       ) : (
         <Paper variant="outlined" sx={{ p: 2 }}>
@@ -326,10 +342,15 @@ export default function VerificationView({ connectionParams }: { connectionParam
             <Button size="small" startIcon={<AddIcon />} onClick={addSequenceStep}>
               Add step
             </Button>
-            <Button variant="contained" size="small" disabled={busy} onClick={verifySeq} sx={{ ml: 'auto' }}>
+            <Button variant="contained" size="small" disabled={busy || !sequenceHasMatcher} onClick={verifySeq} sx={{ ml: 'auto' }}>
               Verify sequence
             </Button>
           </Box>
+          {!sequenceHasMatcher && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              Add a request matcher, a response matcher, or both to at least one step.
+            </Typography>
+          )}
         </Paper>
       )}
 

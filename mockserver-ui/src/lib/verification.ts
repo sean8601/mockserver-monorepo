@@ -1,10 +1,14 @@
 /**
  * Client for MockServer's verification control plane:
- *   PUT /mockserver/verify          — assert a request was received the expected number of times
- *   PUT /mockserver/verifySequence  — assert an ordered sequence of requests was received
+ *   PUT /mockserver/verify          — assert a request was received, and/or a response was
+ *                                      returned for a proxied/forwarded request, the expected
+ *                                      number of times
+ *   PUT /mockserver/verifySequence  — assert an ordered sequence of requests/responses occurred
  *
- * Both return 202 Accepted when the assertion holds, or 406 Not Acceptable with a plain-text
- * failure report (the closest matches / count) when it does not.
+ * A verification carries an optional request matcher and an optional response matcher; at least
+ * one must be present. When both are present they are correlated against the same recorded
+ * request-response exchange. Both endpoints return 202 Accepted when the assertion holds, or
+ * 406 Not Acceptable with a plain-text failure report (the closest matches / count) otherwise.
  */
 import { buildBaseUrl } from './mcpClient';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
@@ -63,27 +67,45 @@ async function putVerify(
   return { verified: false, failureMessage: text || `Verification failed (HTTP ${res.status} ${res.statusText})` };
 }
 
-/** Verify a single request matcher was received the expected number of times. */
+/**
+ * Verify a request matcher and/or a response matcher was matched the expected number of times.
+ * Empty matchers are omitted from the wire body; at least one of httpRequest / httpResponse must
+ * be non-empty (the caller is responsible for enforcing that). When both are present they are
+ * correlated against the same recorded request-response exchange.
+ */
 export function verifyRequest(
   params: ConnectionParams,
   httpRequest: Record<string, unknown>,
   times: VerificationTimesSpec,
   httpResponse?: Record<string, unknown>,
 ): Promise<VerifyResult> {
-  const body: Record<string, unknown> = { httpRequest, times: timesToWire(times) };
+  const body: Record<string, unknown> = {};
+  if (httpRequest && Object.keys(httpRequest).length > 0) {
+    body.httpRequest = httpRequest;
+  }
+  body.times = timesToWire(times);
   if (httpResponse && Object.keys(httpResponse).length > 0) {
     body.httpResponse = httpResponse;
   }
   return putVerify(params, '/mockserver/verify', body);
 }
 
-/** Verify an ordered sequence of request matchers was received (in order, allowing gaps). */
+/**
+ * Verify an ordered sequence of request and/or response matchers occurred (in order, allowing
+ * gaps). httpResponses is index-aligned with httpRequests; either list is omitted from the wire
+ * body when every entry is empty, so a request-only, response-only, or correlated sequence can all
+ * be expressed.
+ */
 export function verifySequence(
   params: ConnectionParams,
   httpRequests: Record<string, unknown>[],
   httpResponses?: (Record<string, unknown> | undefined)[],
 ): Promise<VerifyResult> {
-  const body: Record<string, unknown> = { httpRequests };
+  const body: Record<string, unknown> = {};
+  if (httpRequests.some((r) => r && Object.keys(r).length > 0)) {
+    // Index-aligned: empty entries become empty objects so indices match httpResponses.
+    body.httpRequests = httpRequests.map((r) => (r && Object.keys(r).length > 0 ? r : {}));
+  }
   if (httpResponses && httpResponses.some((r) => r && Object.keys(r).length > 0)) {
     // Index-aligned: undefined/empty entries become empty objects so indices match httpRequests.
     body.httpResponses = httpResponses.map((r) => (r && Object.keys(r).length > 0 ? r : {}));

@@ -44,6 +44,20 @@ describe('verifyRequest / verifySequence', () => {
     expect(res.failureMessage).toContain('Request not found');
   });
 
+  it('omits httpRequest from /verify body when request matcher is empty (response-only verify)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ status: 202, text: async () => '' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await verifyRequest(params, {}, { mode: 'atLeast', count: 1 }, { statusCode: 200 });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('http://127.0.0.1:1080/mockserver/verify');
+    const body = JSON.parse(init.body);
+    expect(body).not.toHaveProperty('httpRequest');
+    expect(body.httpResponse).toEqual({ statusCode: 200 });
+    expect(body.times).toEqual({ atLeast: 1 });
+  });
+
   it('posts httpRequests[] to /verifySequence', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ status: 202, text: async () => '' });
     vi.stubGlobal('fetch', fetchMock);
@@ -52,6 +66,23 @@ describe('verifyRequest / verifySequence', () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('http://127.0.0.1:1080/mockserver/verifySequence');
     expect(JSON.parse(init.body)).toEqual({ httpRequests: [{ method: 'POST', path: '/a' }, { method: 'GET', path: '/b' }] });
+  });
+
+  it('omits httpRequests from /verifySequence body when all request entries are empty (response-only sequence)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ status: 202, text: async () => '' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await verifySequence(
+      params,
+      [{}, {}],
+      [{ statusCode: 201 }, { statusCode: 200 }],
+    );
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('http://127.0.0.1:1080/mockserver/verifySequence');
+    const body = JSON.parse(init.body);
+    expect(body).not.toHaveProperty('httpRequests');
+    expect(body.httpResponses).toEqual([{ statusCode: 201 }, { statusCode: 200 }]);
   });
 
   // --- Response matcher tests ---
