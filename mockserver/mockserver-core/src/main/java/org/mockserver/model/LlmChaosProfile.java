@@ -23,6 +23,13 @@ import java.util.Objects;
  * deterministic and counts real requests across the process (see
  * {@link org.mockserver.llm.LlmQuotaRegistry}); expectations sharing a
  * {@code quotaName} share one counter.
+ * <p>
+ * A separate <em>token-based</em> quota ({@code tokenQuotaLimit} +
+ * {@code tokenQuotaWindowMillis}) models TPM/TPD limits: the cumulative token
+ * count of each response is charged against the window and a 429 is returned
+ * when the sum exceeds the limit. Both request-count and token quotas can be
+ * active simultaneously on the same profile (they use independent counters
+ * within the registry, namespaced by suffix).
  */
 public class LlmChaosProfile extends ObjectWithJsonToString {
 
@@ -43,6 +50,8 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     private Integer quotaLimit;        // stateful quota: max requests allowed per window
     private Long quotaWindowMillis;    // stateful quota: window length in milliseconds
     private Integer quotaErrorStatus;  // stateful quota: status when exceeded (default 429)
+    private Long tokenQuotaLimit;     // stateful token quota: max tokens allowed per window (TPM/TPD)
+    private Long tokenQuotaWindowMillis; // stateful token quota: window length in milliseconds
 
     public static LlmChaosProfile llmChaosProfile() {
         return new LlmChaosProfile();
@@ -176,6 +185,42 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
         return quotaErrorStatus;
     }
 
+    /**
+     * Maximum tokens allowed within the token quota window (TPM or TPD depending
+     * on window size). Requires {@code quotaName} and {@code tokenQuotaWindowMillis}
+     * to be set. Uses the same {@code quotaErrorStatus} and {@code retryAfter} as
+     * the request-count quota.
+     */
+    public LlmChaosProfile withTokenQuotaLimit(Long tokenQuotaLimit) {
+        if (tokenQuotaLimit != null && tokenQuotaLimit < 1) {
+            throw new IllegalArgumentException("tokenQuotaLimit must be >= 1, got " + tokenQuotaLimit);
+        }
+        this.tokenQuotaLimit = tokenQuotaLimit;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Long getTokenQuotaLimit() {
+        return tokenQuotaLimit;
+    }
+
+    /**
+     * Window length in milliseconds for the token-based quota. Requires
+     * {@code quotaName} and {@code tokenQuotaLimit} to be set.
+     */
+    public LlmChaosProfile withTokenQuotaWindowMillis(Long tokenQuotaWindowMillis) {
+        if (tokenQuotaWindowMillis != null && tokenQuotaWindowMillis < 1) {
+            throw new IllegalArgumentException("tokenQuotaWindowMillis must be >= 1, got " + tokenQuotaWindowMillis);
+        }
+        this.tokenQuotaWindowMillis = tokenQuotaWindowMillis;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Long getTokenQuotaWindowMillis() {
+        return tokenQuotaWindowMillis;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -198,14 +243,16 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
             Objects.equals(quotaName, that.quotaName) &&
             Objects.equals(quotaLimit, that.quotaLimit) &&
             Objects.equals(quotaWindowMillis, that.quotaWindowMillis) &&
-            Objects.equals(quotaErrorStatus, that.quotaErrorStatus);
+            Objects.equals(quotaErrorStatus, that.quotaErrorStatus) &&
+            Objects.equals(tokenQuotaLimit, that.tokenQuotaLimit) &&
+            Objects.equals(tokenQuotaWindowMillis, that.tokenQuotaWindowMillis);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
             hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, truncateMode, truncateAtFraction, malformedSse, seed,
-                quotaName, quotaLimit, quotaWindowMillis, quotaErrorStatus);
+                quotaName, quotaLimit, quotaWindowMillis, quotaErrorStatus, tokenQuotaLimit, tokenQuotaWindowMillis);
         }
         return hashCode;
     }

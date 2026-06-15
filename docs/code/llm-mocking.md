@@ -202,6 +202,10 @@ Structured-output validation against a JSON Schema works on **both sides** of a 
 
 Truncation, malformed-SSE, and the stateful quota are fully deterministic; the probabilistic error path is deterministic at probability 0.0/1.0. Each injection increments the `LLM_CHAOS_INJECTED_COUNT` metric. The profile round-trips as the top-level `chaos` field on `HttpLlmResponse` (alongside `completion`, `embedding`, and `conversationPredicates`) and is exposed per turn in the dashboard wizard and via the `chaos` MCP parameter.
 
+### Token-based quota (TPM/TPD)
+
+Real LLM providers (OpenAI, Anthropic) enforce token-per-minute (TPM) and token-per-day (TPD) limits in addition to request-count limits. MockServer models this with two additional `LlmChaosProfile` fields: `tokenQuotaLimit` (Long, >= 1) and `tokenQuotaWindowMillis` (Long, >= 1). When both are set alongside `quotaName`, each response charges its cumulative token count (from `Usage.inputTokens + outputTokens`, or `ceil(text.length()/4)` as a fallback when no Usage is present) against a separate fixed-window counter in `LlmQuotaRegistry` under the key `quotaName + ":tokens"`. Once the in-window token sum exceeds `tokenQuotaLimit`, the response path returns a 429 (or custom `quotaErrorStatus`) with error type `token_quota_exceeded` and the `Retry-After` header when set. The request-count quota and token quota are independent counters that can coexist on the same profile; the request-count quota is checked first. Embeddings contribute zero tokens. The `LlmQuotaRegistry.tryAcquire(name, limit, windowMillis, amount)` overload supports arbitrary increment amounts for this purpose.
+
 ## Agent-run analysis
 
 `AgentRunAnalyzer` (`org.mockserver.llm.analysis`) is a deterministic, read-only inspector. Given the LLM requests MockServer recorded (retrieved via the normal request log), it decodes each with the provider's `ProviderCodec` and treats the **richest** conversation (most messages — the latest dialogue snapshot) as the canonical run. From that it derives:

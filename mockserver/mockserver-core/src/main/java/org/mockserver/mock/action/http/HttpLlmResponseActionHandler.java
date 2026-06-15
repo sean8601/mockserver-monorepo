@@ -248,10 +248,13 @@ public class HttpLlmResponseActionHandler {
         if (chaos == null) {
             return null;
         }
+        // Compute token count for this response (used by the token-based quota).
+        long requestTokens = estimateTokenCount(httpLlmResponse);
+
         // Stateful quota (a hard, deterministic rate limit) is checked first and
         // consumes one slot per call. An exceeded quota short-circuits to its own
         // error before any probabilistic-error decision.
-        HttpResponse quotaError = quotaErrorResponseOrNull(chaos);
+        HttpResponse quotaError = quotaErrorResponseOrNull(chaos, requestTokens);
         if (quotaError != null) {
             return quotaError;
         }
@@ -272,31 +275,77 @@ public class HttpLlmResponseActionHandler {
     }
 
     /**
-     * If the profile declares a stateful quota and this request exceeds it within
-     * the current window, return the quota error response (status
-     * {@code quotaErrorStatus}, default 429, plus the {@code Retry-After} header
-     * when set); otherwise {@code null}. Calling this records one request against
-     * the quota. A quota that is not fully configured ({@code quotaName} +
-     * {@code quotaLimit} + {@code quotaWindowMillis}) is ignored.
+     * Estimate the token count for the given LLM response. If the completion has
+     * a {@link Usage} with inputTokens/outputTokens, returns their sum. Otherwise
+     * falls back to {@code ceil(text.length() / 4)} as a rough approximation.
+     * Returns 0 for embeddings or missing completions.
+     */
+    static long estimateTokenCount(HttpLlmResponse httpLlmResponse) {
+        Completion completion = httpLlmResponse.getCompletion();
+        if (completion == null) {
+            return 0L;
+        }
+        Usage usage = completion.getUsage();
+        if (usage != null) {
+            int input = usage.getInputTokens() != null ? usage.getInputTokens() : 0;
+            int output = usage.getOutputTokens() != null ? usage.getOutputTokens() : 0;
+            if (input > 0 || output > 0) {
+                return (long) input + output;
+            }
+        }
+        // Fall back to a rough character-based estimate
+        String text = completion.getText();
+        if (text != null && !text.isEmpty()) {
+            return (long) Math.ceil(text.length() / 4.0);
+        }
+        return 0L;
+    }
+
+    /**
+     * If the profile declares a stateful request-count quota and/or a token-based
+     * quota and this request exceeds either within its current window, return the
+     * quota error response (status {@code quotaErrorStatus}, default 429, plus the
+     * {@code Retry-After} header when set); otherwise {@code null}.
+     * <p>
+     * The request-count quota is checked first. If it passes, the token-based quota
+     * is checked (charging {@code requestTokens} against the token window). Both
+     * quotas use independent counters within the registry, namespaced by suffix
+     * ({@code quotaName} for request-count, {@code quotaName + ":tokens"} for
+     * token-based).
      * <p>
      * Called once per matched LLM request (via {@link #chaosErrorResponseOrNull})
      * regardless of whether the response path ultimately delivers an LLM payload,
      * so the count reflects requests received, not payloads returned.
+     *
+     * @param chaos         the chaos profile (never null)
+     * @param requestTokens estimated token count for this response
      */
-    HttpResponse quotaErrorResponseOrNull(LlmChaosProfile chaos) {
-        if (chaos.getQuotaName() == null || chaos.getQuotaLimit() == null || chaos.getQuotaWindowMillis() == null) {
-            return null;
+    HttpResponse quotaErrorResponseOrNull(LlmChaosProfile chaos, long requestTokens) {
+        // --- request-count quota ---
+        if (chaos.getQuotaName() != null && chaos.getQuotaLimit() != null && chaos.getQuotaWindowMillis() != null) {
+            boolean allowed = LlmQuotaRegistry.getInstance()
+                .tryAcquire(chaos.getQuotaName(), chaos.getQuotaLimit(), chaos.getQuotaWindowMillis());
+            if (!allowed) {
+                return buildQuotaErrorResponse(chaos, "quota_exceeded", "LLM request quota exceeded");
+            }
         }
-        boolean allowed = LlmQuotaRegistry.getInstance()
-            .tryAcquire(chaos.getQuotaName(), chaos.getQuotaLimit(), chaos.getQuotaWindowMillis());
-        if (allowed) {
-            return null;
+        // --- token-based quota ---
+        if (chaos.getQuotaName() != null && chaos.getTokenQuotaLimit() != null && chaos.getTokenQuotaWindowMillis() != null) {
+            boolean allowed = LlmQuotaRegistry.getInstance()
+                .tryAcquire(chaos.getQuotaName() + ":tokens", chaos.getTokenQuotaLimit(), chaos.getTokenQuotaWindowMillis(), requestTokens);
+            if (!allowed) {
+                return buildQuotaErrorResponse(chaos, "token_quota_exceeded", "LLM token quota exceeded");
+            }
         }
+        return null;
+    }
+
+    private HttpResponse buildQuotaErrorResponse(LlmChaosProfile chaos, String errorType, String message) {
         int status = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : 429;
         HttpResponse errorResponse = response()
             .withStatusCode(status)
             .withHeader("content-type", "application/json")
-            .withBody("{\"error\":{\"type\":\"quota_exceeded\",\"message\":\"LLM request quota exceeded\"}}");
+            .withBody("{\"error\":{\"type\":\"" + errorType + "\",\"message\":\"" + message + "\"}}");
         if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
             errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
         }

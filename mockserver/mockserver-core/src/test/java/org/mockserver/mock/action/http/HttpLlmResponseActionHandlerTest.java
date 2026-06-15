@@ -409,6 +409,208 @@ public class HttpLlmResponseActionHandlerTest {
         }
     }
 
+    // --- token-based quota (TPM/TPD) ---
+
+    @Test
+    public void shouldReturnTokenQuotaErrorAfterTokenLimitExceeded() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-token-quota-" + System.nanoTime();
+        // Token limit = 100; completion has usage with 60 input + 40 output = 100 tokens
+        HttpLlmResponse firstResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi")
+                .withUsage(Usage.usage().withInputTokens(60).withOutputTokens(40)))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withTokenQuotaLimit(100L)
+                .withTokenQuotaWindowMillis(600_000L));
+
+        // First call: 100 tokens, exactly at limit -> allowed
+        assertThat(handler.chaosErrorResponseOrNull(firstResponse), is(nullValue()));
+
+        // Second call: 100 more tokens -> total 200, exceeds 100
+        HttpResponse tokenError = handler.chaosErrorResponseOrNull(firstResponse);
+        assertThat(tokenError, is(notNullValue()));
+        assertThat(tokenError.getStatusCode(), is(429));
+        assertThat(tokenError.getBodyAsString(), containsString("token_quota_exceeded"));
+    }
+
+    @Test
+    public void shouldEstimateTokensFromTextWhenUsageAbsent() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-text-estimate-" + System.nanoTime();
+        // 12 chars -> ceil(12/4) = 3 tokens; limit = 5
+        HttpLlmResponse llmResp = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("twelve chars"))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withTokenQuotaLimit(5L)
+                .withTokenQuotaWindowMillis(600_000L));
+
+        // First call: 3 tokens -> within limit
+        assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));
+        // Second call: 3 + 3 = 6 -> over limit of 5
+        HttpResponse tokenError = handler.chaosErrorResponseOrNull(llmResp);
+        assertThat(tokenError, is(notNullValue()));
+        assertThat(tokenError.getStatusCode(), is(429));
+        assertThat(tokenError.getBodyAsString(), containsString("token_quota_exceeded"));
+    }
+
+    @Test
+    public void shouldUseZeroTokensForEmbedding() {
+        // Embedding responses have no completion, so token count = 0; token quota never trips
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-embedding-tokens-" + System.nanoTime();
+        HttpLlmResponse llmResp = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withEmbedding(EmbeddingResponse.embedding().withDimensions(8))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withTokenQuotaLimit(1L)
+                .withTokenQuotaWindowMillis(600_000L));
+
+        // amount=0 per call, never exceeds
+        for (int i = 0; i < 10; i++) {
+            assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));
+        }
+    }
+
+    @Test
+    public void shouldAllowBothRequestAndTokenQuotaToCoexist() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-dual-" + System.nanoTime();
+        // Request quota: 10 requests; Token quota: 50 tokens
+        HttpLlmResponse llmResp = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi")
+                .withUsage(Usage.usage().withInputTokens(10).withOutputTokens(10)))  // 20 tokens each
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withQuotaLimit(10)
+                .withQuotaWindowMillis(600_000L)
+                .withTokenQuotaLimit(50L)
+                .withTokenQuotaWindowMillis(600_000L));
+
+        // Calls 1 and 2: request ok (2 of 10), tokens ok (20, 40 of 50)
+        assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));
+        assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));
+
+        // Call 3: request ok (3 of 10), but tokens = 60 > 50 -> token quota exceeded
+        HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
+        assertThat(error, is(notNullValue()));
+        assertThat(error.getStatusCode(), is(429));
+        assertThat(error.getBodyAsString(), containsString("token_quota_exceeded"));
+    }
+
+    @Test
+    public void shouldReturnRequestQuotaErrorBeforeTokenQuota() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-order-" + System.nanoTime();
+        // Request quota: 1; Token quota: 1000 (generous)
+        HttpLlmResponse llmResp = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi")
+                .withUsage(Usage.usage().withInputTokens(5).withOutputTokens(5)))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(600_000L)
+                .withTokenQuotaLimit(1000L)
+                .withTokenQuotaWindowMillis(600_000L));
+
+        assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));  // 1st -> ok
+        // 2nd -> request quota exceeded (tokens still fine)
+        HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
+        assertThat(error, is(notNullValue()));
+        assertThat(error.getBodyAsString(), containsString("quota_exceeded"));
+        assertThat(error.getBodyAsString(), not(containsString("token_quota_exceeded")));
+    }
+
+    @Test
+    public void shouldUseRetryAfterAndCustomStatusForTokenQuota() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-token-retry-" + System.nanoTime();
+        HttpLlmResponse llmResp = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi")
+                .withUsage(Usage.usage().withInputTokens(100).withOutputTokens(0)))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withTokenQuotaLimit(50L)
+                .withTokenQuotaWindowMillis(600_000L)
+                .withQuotaErrorStatus(529)
+                .withRetryAfter("60"));
+
+        // First call: 100 tokens > 50 limit? No, first call = 100 which exceeds 50...
+        // Actually: first call charges 100 to the counter. 100 > 50, so it's over.
+        HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
+        assertThat(error, is(notNullValue()));
+        assertThat(error.getStatusCode(), is(529));
+        assertThat(error.getFirstHeader("Retry-After"), is("60"));
+        assertThat(error.getBodyAsString(), containsString("token_quota_exceeded"));
+    }
+
+    @Test
+    public void existingRequestQuotaTestStillWorksUnchanged() {
+        // Verify the existing request-count quota path is unaffected by the refactoring
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String quotaName = "test-existing-" + System.nanoTime();
+        HttpLlmResponse llmResp = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withCompletion(completion().withText("hi"))
+            .withChaos(new LlmChaosProfile()
+                .withQuotaName(quotaName)
+                .withQuotaLimit(2)
+                .withQuotaWindowMillis(600_000L));
+
+        assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));
+        assertThat(handler.chaosErrorResponseOrNull(llmResp), is(nullValue()));
+        HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
+        assertThat(error, is(notNullValue()));
+        assertThat(error.getStatusCode(), is(429));
+        assertThat(error.getBodyAsString(), containsString("quota_exceeded"));
+    }
+
+    // --- estimateTokenCount unit tests ---
+
+    @Test
+    public void shouldEstimateTokensFromUsage() {
+        long tokens = HttpLlmResponseActionHandler.estimateTokenCount(
+            llmResponse().withCompletion(completion().withText("ignored")
+                .withUsage(Usage.usage().withInputTokens(10).withOutputTokens(20))));
+        assertThat(tokens, is(30L));
+    }
+
+    @Test
+    public void shouldEstimateTokensFromTextLengthWhenNoUsage() {
+        // "hello world!" = 12 chars -> ceil(12/4) = 3
+        long tokens = HttpLlmResponseActionHandler.estimateTokenCount(
+            llmResponse().withCompletion(completion().withText("hello world!")));
+        assertThat(tokens, is(3L));
+    }
+
+    @Test
+    public void shouldReturnZeroTokensForNullCompletion() {
+        long tokens = HttpLlmResponseActionHandler.estimateTokenCount(
+            llmResponse().withProvider(Provider.ANTHROPIC));
+        assertThat(tokens, is(0L));
+    }
+
+    @Test
+    public void shouldReturnZeroTokensForEmptyTextAndNoUsage() {
+        long tokens = HttpLlmResponseActionHandler.estimateTokenCount(
+            llmResponse().withCompletion(completion().withText("")));
+        assertThat(tokens, is(0L));
+    }
+
     @Test
     public void shouldNotAlterStreamingEventsWhenOutputViolatesSchema() {
         // given — a streaming completion whose text violates its declared schema.
