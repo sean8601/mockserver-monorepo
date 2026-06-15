@@ -73,7 +73,15 @@ steps:
   # Maven Central publish and downstream artifact deploys (npm, PyPI,
   # RubyGems, Helm, Docker, SwaggerHub, GitHub).
   - block: ":rocket: Approve downstream publish"
-    prompt: "Maven Central published. Re-authenticate with a fresh TOTP to authorize downstream artifact publishing."
+    prompt: |
+      Maven Central published — **verify the artifacts are live on repo1 before approving** (they usually appear within a few minutes of the publish step):
+
+      - Version index (authoritative, no UI lag): https://repo1.maven.org/maven2/org/mock-server/mockserver-netty/maven-metadata.xml — the `<release>` element should be the version just released.
+      - Folder listing: https://repo1.maven.org/maven2/org/mock-server/mockserver-netty/ — a directory for the new version should be present (with the `.jar`/`.pom` inside it).
+
+      Note: the central.sonatype.com / search.maven.org web UI can lag hours behind repo1 — confirm with the repo1 URLs above, not the search UI.
+
+      Then re-authenticate with a fresh TOTP to authorize downstream artifact publishing (npm, PyPI, RubyGems, Helm, Docker, SwaggerHub, GitHub).
     allowed_teams: ["release-managers"]
     fields:
       - text: "TOTP Code"
