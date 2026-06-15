@@ -179,6 +179,7 @@ If the review returns **PASS**, proceed to commit.
 
 Only after all validations, the changelog review, and the adversarial review pass:
 
+0. **Check the operator halt**: Run `.opencode/scripts/check-halt.sh commit` (checks the global `AGENT_HALT` and the scoped `AGENT_HALT_commit`). If it exits non-zero, an operator has engaged the kill-switch — **do not commit**; stop and wait (see [[operator-halt]]).
 1. **Acquire commit lock**: Run `.opencode/scripts/acquire-commit-lock.sh`
    - If lock is held by another session, this will wait (up to 5 minutes)
    - If lock acquisition fails, stop and inform the user
@@ -225,7 +226,9 @@ flowchart TD
     review-cheap agent via Task tool
     fresh context, different model"]
     E --> F{PASS?}
-    F -->|Yes| G["Acquire commit lock
+    F -->|Yes| HALT{"Operator halt?"}
+    HALT -->|"engaged"| HSTOP["Stop — wait for operator"]
+    HALT -->|"clear"| G["Acquire commit lock
     acquire-commit-lock.sh"]
     F -->|"No (<8 iters)"| H["Fix issues"] --> D
     F -->|"No (8th iter)"| CAP["Record residual risk

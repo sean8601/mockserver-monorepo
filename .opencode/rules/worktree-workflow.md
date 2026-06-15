@@ -135,6 +135,9 @@ the worktree unmerged for inspection.
 ### Step 7 — Atomic merge via flock
 
 ```bash
+# Respect the operator halt before any reintegration (see [[operator-halt]]).
+.opencode/scripts/check-halt.sh || { echo "operator halt engaged — not merging"; exit 1; }
+
 LOCK_FILE=".git/agent-rebase.lock"
 flock --timeout 300 "${LOCK_FILE}" bash -c '
     set -euo pipefail

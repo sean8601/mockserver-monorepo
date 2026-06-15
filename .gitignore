@@ -154,6 +154,11 @@ terraform/**/*.tfplan
 ##############################################
 .worktrees/
 
+# operator halt sentinels (kill-switch; global + scoped) #
+##########################################################
+/AGENT_HALT
+/AGENT_HALT_*
+
 # opencode commit lock (parallel session safety) #
 ###################################################
 /.tmp/.commit-lock
