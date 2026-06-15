@@ -271,9 +271,8 @@ public class HttpLlmResponseActionHandler {
             .withStatusCode(chaos.getErrorStatus())
             .withHeader("content-type", "application/json")
             .withBody("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}");
-        if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
-            errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
-        }
+        // applyRateLimitHeaders is the single owner of the Retry-After header (and the
+        // provider-specific rate-limit headers) so it is never emitted twice.
         applyRateLimitHeaders(errorResponse, httpLlmResponse.getProvider(), true, chaos);
         return errorResponse;
     }
@@ -334,6 +333,9 @@ public class HttpLlmResponseActionHandler {
             }
         }
         // --- token-based quota ---
+        // Note: when the request-count quota fires above, this block is skipped and
+        // the token window is intentionally not charged — a blocked request produces
+        // no response and therefore consumes no tokens.
         if (chaos.getQuotaName() != null && chaos.getTokenQuotaLimit() != null && chaos.getTokenQuotaWindowMillis() != null) {
             boolean allowed = LlmQuotaRegistry.getInstance()
                 .tryAcquire(chaos.getQuotaName() + ":tokens", chaos.getTokenQuotaLimit(), chaos.getTokenQuotaWindowMillis(), requestTokens);
@@ -350,9 +352,8 @@ public class HttpLlmResponseActionHandler {
             .withStatusCode(status)
             .withHeader("content-type", "application/json")
             .withBody("{\"error\":{\"type\":\"" + errorType + "\",\"message\":\"" + message + "\"}}");
-        if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
-            errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
-        }
+        // applyRateLimitHeaders is the single owner of the Retry-After header (and the
+        // provider-specific rate-limit headers) so it is never emitted twice.
         applyRateLimitHeaders(errorResponse, provider, true, chaos);
         return errorResponse;
     }
@@ -401,14 +402,18 @@ public class HttpLlmResponseActionHandler {
             return;
         }
         Integer requestLimit = chaos.getQuotaLimit();
+        // Reset window comes from whichever quota is configured (request-count first,
+        // then token-based), falling back to a numeric Retry-After value.
         Long resetSeconds = null;
         if (chaos.getQuotaWindowMillis() != null) {
             resetSeconds = Math.max(1, chaos.getQuotaWindowMillis() / 1000);
+        } else if (chaos.getTokenQuotaWindowMillis() != null) {
+            resetSeconds = Math.max(1, chaos.getTokenQuotaWindowMillis() / 1000);
         } else if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
             try {
                 resetSeconds = Long.parseLong(chaos.getRetryAfter());
             } catch (NumberFormatException ignored) {
-                // retryAfter may be a date string — fall through
+                // retryAfter may be an HTTP-date string — handled via the literal Retry-After below
             }
         }
         Integer requestRemaining = limited ? 0 : null;
@@ -417,6 +422,19 @@ public class HttpLlmResponseActionHandler {
             provider, requestLimit, requestRemaining, resetSeconds, nowEpochSecond, limited);
         for (Map.Entry<String, String> entry : headers.entrySet()) {
             response.withHeader(entry.getKey(), entry.getValue());
+        }
+        // Retry-After is a standard HTTP header (not provider-specific), so it is set
+        // here for every provider — including Gemini, Bedrock, and Ollama, which have
+        // no provider-specific rate-limit headers. Prefer the literal configured
+        // Retry-After (which may be an HTTP-date), else the computed reset seconds.
+        // Single source → no duplicate header.
+        if (limited) {
+            String retryAfter = chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()
+                ? chaos.getRetryAfter()
+                : (resetSeconds != null ? String.valueOf(resetSeconds) : null);
+            if (retryAfter != null) {
+                response.withHeader("Retry-After", retryAfter);
+            }
         }
     }
 

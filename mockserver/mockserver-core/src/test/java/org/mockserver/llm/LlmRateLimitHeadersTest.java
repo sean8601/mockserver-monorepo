@@ -10,8 +10,9 @@ import static org.hamcrest.Matchers.*;
 
 /**
  * Unit tests for {@link LlmRateLimitHeaders} — verifies that each provider
- * returns the correct header names, that OLLAMA returns empty, and that
- * {@code retry-after} only appears when {@code limited} is {@code true}.
+ * returns the correct provider-specific header names, and that Gemini, Bedrock,
+ * and Ollama return empty (the standard {@code Retry-After} header is owned by the
+ * handler, not this helper).
  */
 public class LlmRateLimitHeadersTest {
 
@@ -20,19 +21,20 @@ public class LlmRateLimitHeadersTest {
     // ---- OpenAI / OpenAI Responses / Azure OpenAI ----
 
     @Test
-    public void openAiLimitedReturnsAllHeaders() {
+    public void openAiLimitedReturnsAllProviderHeaders() {
         Map<String, String> headers = LlmRateLimitHeaders.headersFor(
             Provider.OPENAI, 60, 0, 30L, NOW_EPOCH, true);
 
         assertThat(headers, hasEntry("x-ratelimit-limit-requests", "60"));
         assertThat(headers, hasEntry("x-ratelimit-remaining-requests", "0"));
         assertThat(headers, hasEntry("x-ratelimit-reset-requests", "30s"));
-        assertThat(headers, hasEntry("retry-after", "30"));
-        assertThat(headers.size(), is(4));
+        // retry-after is owned by the handler, not this helper
+        assertThat(headers, not(hasKey("retry-after")));
+        assertThat(headers.size(), is(3));
     }
 
     @Test
-    public void openAiNotLimitedOmitsRetryAfter() {
+    public void openAiNeverEmitsRetryAfter() {
         Map<String, String> headers = LlmRateLimitHeaders.headersFor(
             Provider.OPENAI, 60, 55, 10L, NOW_EPOCH, false);
 
@@ -58,7 +60,7 @@ public class LlmRateLimitHeadersTest {
             Provider.AZURE_OPENAI, 10, 0, 60L, NOW_EPOCH, true);
 
         assertThat(headers, hasEntry("x-ratelimit-limit-requests", "10"));
-        assertThat(headers, hasEntry("retry-after", "60"));
+        assertThat(headers, not(hasKey("retry-after")));
     }
 
     // ---- Anthropic ----
@@ -71,7 +73,8 @@ public class LlmRateLimitHeadersTest {
         assertThat(headers, hasEntry("anthropic-ratelimit-requests-limit", "50"));
         assertThat(headers, hasEntry("anthropic-ratelimit-requests-remaining", "0"));
         assertThat(headers, hasKey("anthropic-ratelimit-requests-reset"));
-        assertThat(headers, hasEntry("retry-after", "30"));
+        // retry-after is owned by the handler, not this helper
+        assertThat(headers, not(hasKey("retry-after")));
         // The reset value should be an RFC 3339 timestamp
         String reset = headers.get("anthropic-ratelimit-requests-reset");
         assertThat("should be RFC 3339 timestamp", reset, containsString("T"));
@@ -105,39 +108,25 @@ public class LlmRateLimitHeadersTest {
     // ---- Gemini ----
 
     @Test
-    public void geminiLimitedReturnsOnlyRetryAfter() {
-        Map<String, String> headers = LlmRateLimitHeaders.headersFor(
-            Provider.GEMINI, 60, 0, 30L, NOW_EPOCH, true);
-
-        assertThat(headers, hasEntry("retry-after", "30"));
-        assertThat(headers.size(), is(1));
-    }
-
-    @Test
-    public void geminiNotLimitedReturnsEmpty() {
-        Map<String, String> headers = LlmRateLimitHeaders.headersFor(
-            Provider.GEMINI, 60, 55, 30L, NOW_EPOCH, false);
-
-        assertThat(headers.isEmpty(), is(true));
+    public void geminiHasNoProviderSpecificHeaders() {
+        // Gemini's only rate-limit signal is the standard Retry-After (added by the
+        // handler), so this helper returns empty for it whether limited or not.
+        assertThat(LlmRateLimitHeaders.headersFor(
+            Provider.GEMINI, 60, 0, 30L, NOW_EPOCH, true).isEmpty(), is(true));
+        assertThat(LlmRateLimitHeaders.headersFor(
+            Provider.GEMINI, 60, 55, 30L, NOW_EPOCH, false).isEmpty(), is(true));
     }
 
     // ---- Bedrock ----
 
     @Test
-    public void bedrockLimitedReturnsOnlyRetryAfter() {
-        Map<String, String> headers = LlmRateLimitHeaders.headersFor(
-            Provider.BEDROCK, 10, 0, 15L, NOW_EPOCH, true);
-
-        assertThat(headers, hasEntry("retry-after", "15"));
-        assertThat(headers.size(), is(1));
-    }
-
-    @Test
-    public void bedrockNotLimitedReturnsEmpty() {
-        Map<String, String> headers = LlmRateLimitHeaders.headersFor(
-            Provider.BEDROCK, 10, 5, 15L, NOW_EPOCH, false);
-
-        assertThat(headers.isEmpty(), is(true));
+    public void bedrockHasNoProviderSpecificHeaders() {
+        // Bedrock's only rate-limit signal is the standard Retry-After (added by the
+        // handler), so this helper returns empty for it whether limited or not.
+        assertThat(LlmRateLimitHeaders.headersFor(
+            Provider.BEDROCK, 10, 0, 15L, NOW_EPOCH, true).isEmpty(), is(true));
+        assertThat(LlmRateLimitHeaders.headersFor(
+            Provider.BEDROCK, 10, 5, 15L, NOW_EPOCH, false).isEmpty(), is(true));
     }
 
     // ---- Ollama ----

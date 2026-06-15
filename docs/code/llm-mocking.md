@@ -210,17 +210,17 @@ Real LLM providers (OpenAI, Anthropic) enforce token-per-minute (TPM) and token-
 
 When an LLM response path returns a rate-limit / quota error (probabilistic `errorStatus` or stateful quota 429), MockServer emits the **provider-correct rate-limit HTTP headers** that real LLM providers send, so client SDK retry/backoff logic (which reads those headers) can be exercised faithfully against a mock. The same headers are stamped on **successful** responses when a quota is configured, so a client can observe the limit counting down.
 
-`LlmRateLimitHeaders` (`org.mockserver.llm`) is a pure, deterministic helper that maps a `Provider` + quota parameters to the correct header names and values:
+`LlmRateLimitHeaders` (`org.mockserver.llm`) is a pure, deterministic helper that maps a `Provider` + quota parameters to the **provider-specific** header names and values. The standard `Retry-After` header is generic HTTP (not provider-specific), so it is owned by `HttpLlmResponseActionHandler.applyRateLimitHeaders(...)` — emitted once for every provider on a 429 — rather than by the helper, so it can never appear twice on the wire.
 
-| Provider | Headers on error (429) | Headers on success (with quota) |
-|----------|----------------------|-------------------------------|
-| OPENAI / OPENAI_RESPONSES / AZURE_OPENAI | `x-ratelimit-limit-requests`, `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests` (e.g. `"60s"`), `retry-after` (seconds) | `x-ratelimit-limit-requests`, `x-ratelimit-reset-requests` |
-| ANTHROPIC | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-remaining`, `anthropic-ratelimit-requests-reset` (RFC 3339 timestamp), `retry-after` (seconds) | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-reset` |
-| GEMINI | `retry-after` (seconds) | *(none)* |
-| BEDROCK | `retry-after` (seconds) | *(none)* |
-| OLLAMA | *(none)* | *(none)* |
+| Provider | Provider-specific headers on error (429) | Headers on success (with quota) | `Retry-After` on 429 |
+|----------|----------------------|-------------------------------|---------------------|
+| OPENAI / OPENAI_RESPONSES / AZURE_OPENAI | `x-ratelimit-limit-requests`, `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests` (e.g. `"60s"`) | `x-ratelimit-limit-requests`, `x-ratelimit-reset-requests` | yes (seconds) |
+| ANTHROPIC | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-remaining`, `anthropic-ratelimit-requests-reset` (RFC 3339 timestamp) | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-reset` | yes (seconds) |
+| GEMINI | *(none)* | *(none)* | yes (seconds) |
+| BEDROCK | *(none)* | *(none)* | yes (seconds) |
+| OLLAMA | *(none)* | *(none)* | only if literal `retryAfter` set |
 
-Header values are derived from the `LlmChaosProfile` fields: `quotaLimit` becomes the limit header, `quotaWindowMillis / 1000` becomes the reset duration, and `remaining` is `0` on a 429 (omitted on success since the registry window count is not cheaply re-readable). Applied by `HttpLlmResponseActionHandler.applyRateLimitHeaders(...)` at three sites: the probabilistic chaos error, the quota-exceeded error, and the successful non-streaming response when a quota is configured.
+Header values are derived from the `LlmChaosProfile` fields: `quotaLimit` becomes the limit header; the reset duration is `quotaWindowMillis / 1000` (falling back to `tokenQuotaWindowMillis / 1000` for a token-only quota, then to a numeric `retryAfter`), so a **token-quota-only** 429 still carries reset/`Retry-After` headers; `remaining` is `0` on a 429 (omitted on success since the registry window count is not cheaply re-readable). On a 429 `Retry-After` is the literal configured `retryAfter` (which may be an HTTP-date) when set, otherwise the computed reset seconds. Applied at three sites: the probabilistic chaos error, the quota-exceeded error, and the successful non-streaming response when a quota is configured.
 
 ## Agent-run analysis
 

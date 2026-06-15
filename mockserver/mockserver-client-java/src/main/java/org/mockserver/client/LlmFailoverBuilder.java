@@ -159,10 +159,12 @@ public class LlmFailoverBuilder {
     /**
      * Build all expectations without registering them.
      * <p>
-     * Returns an ordered array: one expectation per failure (each with
-     * {@code Times.once()}), followed by a success expectation with
-     * {@code Times.unlimited()}. Registration order ensures failures
-     * are matched first and consumed before the success expectation.
+     * Returns an ordered array of failure expectations followed by a single
+     * success expectation with {@code Times.unlimited()}. Consecutive failures
+     * with the same status code (and body) are coalesced into one expectation with
+     * {@code Times.exactly(count)}; otherwise each failure is its own expectation
+     * with {@code Times.exactly(1)}. Registration order ensures failures are matched
+     * first and consumed before the success expectation.
      *
      * @return the array of expectations
      */
