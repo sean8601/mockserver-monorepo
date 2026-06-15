@@ -71,7 +71,7 @@ fi
 log_info "Publishing to crates.io from $RUST_IMAGE"
 retry 3 5 -- in_docker "$RUST_IMAGE" \
   -e "CARGO_REGISTRY_TOKEN=$CARGO_TOKEN" \
-  -w /build/mockserver-client-rust -- cargo publish
+  -w /build/mockserver-client-rust -- cargo publish --allow-dirty
 
 # Confirm the crate appears in the crates.io API. Indexing is eventually-consistent
 # and genuinely lags a fresh publish, so this is best-effort: retry, then tolerate

@@ -68,10 +68,13 @@ fi
 # Publish to crates.io inside the container. HARD-fail on a real publish error,
 # with retry to ride out transient registry/network blips. The token is passed
 # via -e (run-in-docker redacts -e values in its logged command).
+# --allow-dirty: the version bump above leaves Cargo.toml/Cargo.lock uncommitted
+# (cargo refuses a dirty tree otherwise); those edits ARE the release version we
+# intend to publish, and they're committed separately by the version-bump step.
 log_info "Publishing to crates.io from $RUST_IMAGE"
 retry 3 5 -- in_docker "$RUST_IMAGE" \
   -e "CARGO_REGISTRY_TOKEN=$CARGO_TOKEN" \
-  -w /build/mockserver-testcontainers/rust -- cargo publish
+  -w /build/mockserver-testcontainers/rust -- cargo publish --allow-dirty
 
 # Confirm the crate appears in the crates.io API. Indexing is eventually-consistent
 # and genuinely lags a fresh publish, so this is best-effort: retry, then tolerate

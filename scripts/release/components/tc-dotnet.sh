@@ -38,6 +38,13 @@ if ! is_dry_run; then
   rm -f "$BUILD_PROPS.bak"
 fi
 
+# Pre-pull the SDK image ONCE with generous backoff — MCR rate-limits anonymous
+# pulls with `toomanyrequests` (failed build #51); pulling up front (5x, 30s base)
+# outlasts the transient limit and warms the cache so the in_docker runs don't
+# re-pull. (If MCR limits persist, mirror the SDK image to our own registry.)
+log_info "Pre-pulling $DOTNET_IMAGE (MCR rate-limit resilience)"
+retry 5 30 -- docker pull "$DOTNET_IMAGE"
+
 # Restore + build + pack in the pinned .NET SDK container. HARD-fail on error.
 # Scope every command to the src csproj — NOT the .sln / module dir. The tests
 # project targets net10.0, which the pinned SDK 8.0 image cannot restore, so a

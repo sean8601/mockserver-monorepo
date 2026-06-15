@@ -38,6 +38,15 @@ if ! is_dry_run; then
   rm -f "$CSPROJ.bak"
 fi
 
+# Pre-pull the SDK image ONCE with generous backoff. Microsoft's container
+# registry (MCR) rate-limits anonymous pulls with `toomanyrequests`, which failed
+# build #51's .NET steps; a short 3x5s retry on the build step re-pulled and hit
+# the same limit. Pulling up front (5 attempts, 30s base → ~8min) outlasts the
+# transient limit and warms the local cache so the in_docker runs below don't
+# re-pull. (If MCR limits ever persist, mirror the SDK image to our own registry.)
+log_info "Pre-pulling $DOTNET_IMAGE (MCR rate-limit resilience)"
+retry 5 30 -- docker pull "$DOTNET_IMAGE"
+
 # Restore + pack in the pinned .NET SDK container. HARD-fail on error.
 # `restore` is the network-touching step, so it gets retried to ride out
 # transient NuGet outages; pack is deterministic and runs once.
