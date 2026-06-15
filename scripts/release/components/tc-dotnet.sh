@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Publish Testcontainers.MockServer to NuGet.
 #
-# Dry-run: build + pack, skip push.
-# SOFT: if the secret is absent or the publish fails, log a warning and exit 0.
+# Dry-run: build + pack in-container, skip push.
+# HARD: a failed build/pack/push aborts the release. The .NET toolchain runs
+# inside the pinned $DOTNET_IMAGE container (the release agent has no host
+# `dotnet`) — it used to probe `command -v dotnet`, find nothing, and silently
+# `exit 0`, so the Testcontainers module never published despite a green build.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,29 +27,31 @@ log_step "Publish Testcontainers.MockServer $RELEASE_VERSION (dry-run=$DRY_RUN)"
 
 COMPONENT_DIR="$REPO_ROOT/mockserver-testcontainers/dotnet"
 BUILD_PROPS="$COMPONENT_DIR/Directory.Build.props"
+# Module path inside the container (repo is mounted at /build).
+MODULE_DIR="/build/mockserver-testcontainers/dotnet"
+CSPROJ_REL="src/Testcontainers.MockServer/Testcontainers.MockServer.csproj"
 
-if ! command -v dotnet >/dev/null 2>&1; then
-  log_info "WARNING: 'dotnet' not found on PATH — skipping tc-dotnet publish (non-fatal)"
-  exit 0
-fi
-
-# Bump version in Directory.Build.props
+# Bump version in Directory.Build.props (host-side string edit; no dotnet needed).
 if ! is_dry_run; then
   log_info "Updating MockServerVersion to $RELEASE_VERSION in Directory.Build.props"
   sed -i.bak "s|<MockServerVersion>.*</MockServerVersion>|<MockServerVersion>${RELEASE_VERSION}</MockServerVersion>|" "$BUILD_PROPS"
   rm -f "$BUILD_PROPS.bak"
 fi
 
-# Build and pack
-log_info "Building and packing"
-(cd "$COMPONENT_DIR" && \
-  dotnet restore && \
-  dotnet build -c Release --no-restore && \
-  dotnet pack src/Testcontainers.MockServer/Testcontainers.MockServer.csproj \
-    -c Release --no-build -o ./artifacts) || {
-  log_info "WARNING: dotnet build/pack failed — skipping tc-dotnet publish (non-fatal)"
-  exit 0
-}
+# Restore + build + pack in the pinned .NET SDK container. HARD-fail on error.
+# Scope every command to the src csproj — NOT the .sln / module dir. The tests
+# project targets net10.0, which the pinned SDK 8.0 image cannot restore, so a
+# solution-wide `dotnet restore` aborts; the publishable library targets net8.0
+# and only the src csproj is ever packed.
+# `restore` is the network-touching step, so it gets retried to ride out
+# transient NuGet outages; build + pack are deterministic and run once.
+log_info "Restoring + building + packing in $DOTNET_IMAGE"
+retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
+  dotnet restore "$CSPROJ_REL"
+in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
+  dotnet build "$CSPROJ_REL" -c Release --no-restore
+in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
+  dotnet pack "$CSPROJ_REL" -c Release --no-build -o ./artifacts
 
 if is_dry_run; then
   log_dry "skip: dotnet nuget push to NuGet.org"
@@ -55,35 +60,47 @@ if is_dry_run; then
   exit 0
 fi
 
-# Check if secret exists
-if ! aws secretsmanager describe-secret --region "$REGION" \
-     --secret-id mockserver-release/nuget >/dev/null 2>&1; then
-  log_info "WARNING: mockserver-release/nuget secret not configured — skipping tc-dotnet publish (non-fatal)"
-  exit 0
-fi
-
-# Idempotent: check if already published
+# Idempotent: skip push if this version is already on NuGet. A non-200 just
+# means "not yet published" — proceed.
 http_code=$(curl -s -o /dev/null -w "%{http_code}" \
   "https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/${RELEASE_VERSION}/testcontainers.mockserver.${RELEASE_VERSION}.nupkg" 2>/dev/null || echo "000")
 if [[ "$http_code" == "200" ]]; then
-  log_info "Testcontainers.MockServer $RELEASE_VERSION already on NuGet — skipping"
+  log_info "Testcontainers.MockServer $RELEASE_VERSION already on NuGet — skipping push"
   exit 0
 fi
 
+# The NuGet API key MUST exist — a missing secret is a hard failure now, not a
+# silent skip. load_secret aborts (set -e) if the secret can't be read.
 NUGET_API_KEY=$(load_secret "mockserver-release/nuget" "api_key")
+if [[ -z "$NUGET_API_KEY" || "$NUGET_API_KEY" == "null" ]]; then
+  log_error "mockserver-release/nuget api_key is empty — cannot publish Testcontainers.MockServer"
+  exit 1
+fi
 
-log_info "Pushing to NuGet.org"
-dotnet nuget push "$COMPONENT_DIR/artifacts/Testcontainers.MockServer.${RELEASE_VERSION}.nupkg" \
-  --api-key "$NUGET_API_KEY" \
-  --source https://api.nuget.org/v3/index.json \
-  --skip-duplicate || {
-  log_info "WARNING: dotnet nuget push failed — skipping (non-fatal)"
-  exit 0
-}
+# Push from inside the container. The API key is passed ONLY via `-e` (redacted
+# by run-in-docker) and dereferenced INSIDE the container by a single-quoted
+# `sh -c` body, so the literal key never lands in COMMAND_ARGS (which is NOT
+# redacted). Non-secret nupkg path passed via -e to keep the body literal.
+# HARD-fail on push error, with retry for transient blips; --skip-duplicate
+# makes retry idempotent.
+log_info "Pushing Testcontainers.MockServer $RELEASE_VERSION to NuGet.org"
+retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" \
+  -e "NUPKG=./artifacts/Testcontainers.MockServer.${RELEASE_VERSION}.nupkg" \
+  -e "NUGET_API_KEY=$NUGET_API_KEY" -- \
+  sh -c 'dotnet nuget push "$NUPKG" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate'
 
-# Commit version bump
+# NuGet indexing is eventually-consistent: a freshly-pushed package can take
+# minutes to appear on api.nuget.org. The push above is the real publish (HARD);
+# this visibility check is best-effort — retry, then tolerate with a warning.
+log_info "Verifying NuGet visibility (eventually-consistent)"
+if ! retry 3 10 -- bash -c "[[ \"\$(curl -s -o /dev/null -w '%{http_code}' \
+     'https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/${RELEASE_VERSION}/testcontainers.mockserver.${RELEASE_VERSION}.nupkg')\" == \"200\" ]]"; then
+  log_info ":warning: Testcontainers.MockServer $RELEASE_VERSION not yet visible on NuGet — non-fatal (push succeeded; indexing lags)"
+fi
+
+# Commit version bump (host-side git; never blocks the publish).
 git_commit_and_push "release: publish Testcontainers.MockServer $RELEASE_VERSION to NuGet" \
   "$BUILD_PROPS" || \
-  log_info "WARNING: could not commit version bump (non-fatal)"
+  log_info ":warning: could not commit version bump (non-fatal)"
 
 log_info "Testcontainers.MockServer publish complete"
