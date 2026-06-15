@@ -38,6 +38,23 @@ SPEC="$REPO_ROOT/jekyll-www.mock-server.com/mockserver-openapi.yaml"
 # info.version). Mirrors swaggerhub.sh's version guard.
 SPEC_VERSION=$(grep -E '^[[:space:]]+version:' "$SPEC" | head -1 | sed -E 's/^[[:space:]]+version:[[:space:]]*//; s/[[:space:]]*$//')
 log_info "Spec version: $SPEC_VERSION"
+# In dry-run, prepare.sh (which bumps the spec's info.version) is skipped and its
+# commit never reaches this step's fresh checkout, so the on-disk spec still has
+# the previous version. Bump it in-place to RELEASE_VERSION so the dry-run
+# validates against the real release's spec; restore on exit (dry-run never
+# commits). The generated collections don't embed info.version, so this does not
+# perturb the drift guard below.
+if is_dry_run && [[ "$SPEC_VERSION" != "$RELEASE_VERSION" ]]; then
+  mkdir -p "$REPO_ROOT/.tmp"
+  cp "$SPEC" "$REPO_ROOT/.tmp/postman-spec.bak"
+  # shellcheck disable=SC2064  # expand the path now, not at trap-fire time
+  trap "cp '$REPO_ROOT/.tmp/postman-spec.bak' '$SPEC' 2>/dev/null || true" EXIT
+  _newspec="$REPO_ROOT/.tmp/postman-spec.new"
+  awk -v v="$RELEASE_VERSION" 'seen!=1 && /^[[:space:]]+version:/ {sub(/version:[[:space:]]*.*/, "version: " v); seen=1} {print}' "$SPEC" > "$_newspec" && mv "$_newspec" "$SPEC"
+  SPEC_VERSION=$(grep -E '^[[:space:]]+version:' "$SPEC" | head -1 | sed -E 's/^[[:space:]]+version:[[:space:]]*//; s/[[:space:]]*$//')
+  [[ "$SPEC_VERSION" == "$RELEASE_VERSION" ]] || { log_error "dry-run: failed to bump spec info.version"; exit 1; }
+  log_info "dry-run: bumped spec info.version to $RELEASE_VERSION in-place (not committed)"
+fi
 if [[ "$SPEC_VERSION" != "$RELEASE_VERSION" ]]; then
   log_error "OpenAPI spec info.version ($SPEC_VERSION) != RELEASE_VERSION ($RELEASE_VERSION)"
   exit 1
