@@ -410,7 +410,12 @@ sync_to_origin_master() {
     return
   fi
   git -C "$REPO_ROOT" fetch --quiet --tags origin master
-  git -C "$REPO_ROOT" reset --quiet --hard origin/master
+  # Reset to FETCH_HEAD (the ref just fetched) rather than the origin/master
+  # remote-tracking ref. In a normal clone `fetch origin master` updates
+  # refs/remotes/origin/master too, but in a shallow/CI clone whose configured
+  # refspec doesn't cover the branch it may only move FETCH_HEAD — and then
+  # `reset --hard origin/master` would silently land on a stale commit.
+  git -C "$REPO_ROOT" reset --quiet --hard FETCH_HEAD
 }
 
 # Configure git identity (no-op if already configured) and install a push
