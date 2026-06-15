@@ -95,31 +95,55 @@ find_local_infinispan_jar() {
 }
 
 mkdir -p docker/clustered/libs
-INFINISPAN_JAR=$(find_local_infinispan_jar)
-if [[ -z "$INFINISPAN_JAR" ]]; then
-  log_info "Infinispan JAR not found locally — downloading from Maven Central"
-  INFINISPAN_JAR="mockserver/mockserver-state-infinispan/target/mockserver-state-infinispan-${RELEASE_VERSION}.jar"
-  INFINISPAN_CENTRAL_URL="https://repo1.maven.org/maven2/org/mock-server/mockserver-state-infinispan/${RELEASE_VERSION}/mockserver-state-infinispan-${RELEASE_VERSION}.jar"
-  if is_dry_run && ! curl -sf -I "$INFINISPAN_CENTRAL_URL" >/dev/null 2>&1; then
-    log_dry "skip: download infinispan $RELEASE_VERSION JAR (not yet on Maven Central)"
-    INFINISPAN_JAR=$(find_local_infinispan_jar)
-    if [[ -z "$INFINISPAN_JAR" ]]; then
-      # `install` (not `package`) so the reactor's mockserver-core SNAPSHOT lands
-      # in the shared .m2 — the `dependency:copy-dependencies` call below resolves
-      # mockserver-state-infinispan's deps from the local repo, and in dry-run the
-      # SNAPSHOT core is not on Maven Central, so `package` (target/ only) would
-      # fail with "Could not find artifact org.mock-server:mockserver-core".
-      log_dry "no local infinispan JAR available — running 'mvn install' to produce one (+ install core to .m2)"
-      in_maven -w /build/mockserver \
-        -- mvn -DskipTests -pl mockserver-state-infinispan -am install
-      INFINISPAN_JAR=$(find_local_infinispan_jar)
-    fi
-  else
-    mkdir -p mockserver/mockserver-state-infinispan/target
-    curl -fsSL --max-time 300 --connect-timeout 30 --retry 3 --retry-delay 5 \
-      -o "$INFINISPAN_JAR" \
-      "$INFINISPAN_CENTRAL_URL"
-  fi
+
+# Populate .m2 with the reactor's mock-server artifacts (mockserver-core etc.)
+# at the CURRENT working-tree version BEFORE the dependency:copy-dependencies
+# call below. This is mandatory in ALL modes, because sync_to_origin_master has
+# left the tree at master's in-dev version (e.g. 7.1.1-SNAPSHOT):
+#
+#   dependency:copy-dependencies must first RESOLVE mockserver-state-infinispan's
+#   full transitive tree — which includes mockserver-core at the master SNAPSHOT
+#   version — before -DexcludeGroupIds=org.mock-server filters the mock-server
+#   artifacts out of what gets copied. The exclusion controls what is COPIED, not
+#   what is RESOLVED. In a FULL release the Maven Central step has already
+#   `mvn install`ed the whole reactor into .m2, so resolution succeeds. In a
+#   POST-MAVEN release that install is skipped and the SNAPSHOT core is neither
+#   in .m2 nor on Maven Central, so resolution previously failed with
+#   "Could not find artifact org.mock-server:mockserver-core:jar:<SNAPSHOT>".
+#
+# `mvn -am install` is idempotent and populates .m2 with core (and the
+# infinispan module itself) at the current version, satisfying resolution. It
+# ALSO builds the infinispan module JAR into target/, so we can locate it below.
+#
+# -DskipTests AND -Djacoco.skip=true are BOTH required: mockserver-core binds
+# jacoco:check to the `verify` phase (part of `install`) with a BUNDLE LINE
+# coverage floor of 0.65. With tests skipped no coverage data is produced, so
+# without -Djacoco.skip=true the install aborts with "Coverage checks have not
+# been met" before any artifact reaches .m2. We only need the artifacts
+# installed for dependency resolution, not the coverage gate.
+log_info "Installing reactor artifacts to .m2 so infinispan deps resolve (post-maven safe)"
+in_maven -w /build/mockserver \
+  -- mvn -DskipTests -Djacoco.skip=true -pl mockserver-state-infinispan -am install
+
+# Choose the module JAR to copy INTO the image. Prefer the RELEASE_VERSION
+# artifact from Maven Central over the locally-installed SNAPSHOT the step above
+# just built: the image must ship the released module JAR, not master's in-dev
+# SNAPSHOT (the install above exists only to make dependency:copy-dependencies
+# resolve mockserver-core; it is not the artifact we publish). The transitive
+# lib versions are pom-pinned and identical between the release and master, so
+# resolving them from the master reactor is correct. Fall back to the local
+# build only when the release JAR is not (yet) on Central (e.g. dry-run).
+INFINISPAN_JAR="mockserver/mockserver-state-infinispan/target/mockserver-state-infinispan-${RELEASE_VERSION}.jar"
+INFINISPAN_CENTRAL_URL="https://repo1.maven.org/maven2/org/mock-server/mockserver-state-infinispan/${RELEASE_VERSION}/mockserver-state-infinispan-${RELEASE_VERSION}.jar"
+if curl -sf -I "$INFINISPAN_CENTRAL_URL" >/dev/null 2>&1; then
+  log_info "Downloading released infinispan $RELEASE_VERSION JAR from Maven Central"
+  mkdir -p mockserver/mockserver-state-infinispan/target
+  curl -fsSL --max-time 300 --connect-timeout 30 --retry 3 --retry-delay 5 \
+    -o "$INFINISPAN_JAR" \
+    "$INFINISPAN_CENTRAL_URL"
+else
+  log_info "Released infinispan $RELEASE_VERSION JAR not on Maven Central — using locally-built module JAR"
+  INFINISPAN_JAR=$(find_local_infinispan_jar)
 fi
 
 BUILD_CLUSTERED=false
@@ -127,7 +151,10 @@ if [[ -n "$INFINISPAN_JAR" && -f "$INFINISPAN_JAR" ]]; then
   log_info "Using infinispan JAR: $INFINISPAN_JAR"
   cp "$INFINISPAN_JAR" docker/clustered/libs/
 
-  # Resolve transitive runtime dependencies (Infinispan, JGroups, etc.)
+  # Resolve transitive runtime dependencies (Infinispan, JGroups, etc.). The
+  # mock-server reactor artifacts these depend on were installed to .m2 above,
+  # so resolution succeeds; -DexcludeGroupIds=org.mock-server then keeps them
+  # out of the copied set (the module JAR is copied separately, just above).
   log_info "Resolving infinispan transitive dependencies"
   in_maven -w /build/mockserver \
     -- mvn -pl mockserver-state-infinispan dependency:copy-dependencies \
