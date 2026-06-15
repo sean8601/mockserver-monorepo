@@ -259,4 +259,19 @@ public class LlmFailoverBuilderTest {
         assertThat(expectations[0].getHttpResponse().getBodyAsString(), is(customBody));
         assertThat(expectations[1].getHttpResponse().getBodyAsString(), containsString("service_unavailable"));
     }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectOutOfRangeStatusCode() {
+        llmFailover().failWith(700);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectTooLowStatusCode() {
+        llmFailover().failWith(99);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectNonPositiveCount() {
+        llmFailover().failWith(503, 0);
+    }
 }

@@ -218,7 +218,7 @@ When an LLM response path returns a rate-limit / quota error (probabilistic `err
 | ANTHROPIC | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-remaining`, `anthropic-ratelimit-requests-reset` (RFC 3339 timestamp) | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-reset` | yes (seconds) |
 | GEMINI | *(none)* | *(none)* | yes (seconds) |
 | BEDROCK | *(none)* | *(none)* | yes (seconds) |
-| OLLAMA | *(none)* | *(none)* | only if literal `retryAfter` set |
+| OLLAMA | *(none)* | *(none)* | yes, when a quota window or literal `retryAfter` is set |
 
 Header values are derived from the `LlmChaosProfile` fields: `quotaLimit` becomes the limit header; the reset duration is `quotaWindowMillis / 1000` (falling back to `tokenQuotaWindowMillis / 1000` for a token-only quota, then to a numeric `retryAfter`), so a **token-quota-only** 429 still carries reset/`Retry-After` headers; `remaining` is `0` on a 429 (omitted on success since the registry window count is not cheaply re-readable). On a 429 `Retry-After` is the literal configured `retryAfter` (which may be an HTTP-date) when set, otherwise the computed reset seconds. Applied at three sites: the probabilistic chaos error, the quota-exceeded error, and the successful non-streaming response when a quota is configured.
 

@@ -539,6 +539,7 @@
                         <exclude>**/GrpcChaosRegistryTest.java</exclude>
                         <exclude>**/ValidationProxyTest.java</exclude>
                         <exclude>**/HttpLlmResponseActionHandlerTest.java</exclude>
+                        <exclude>**/HttpLlmResponseActionHandlerChaosTest.java</exclude>
                         <exclude>**/DnsIntentRegistryTest.java</exclude>
                         <exclude>**/WasmRuntimeTest.java</exclude>
                         <exclude>**/WasmRuntimeRealModuleTest.java</exclude>
@@ -613,6 +614,7 @@
                                 <include>**/GrpcChaosRegistryTest.java</include>
                                 <include>**/ValidationProxyTest.java</include>
                                 <include>**/HttpLlmResponseActionHandlerTest.java</include>
+                                <include>**/HttpLlmResponseActionHandlerChaosTest.java</include>
                                 <include>**/DnsIntentRegistryTest.java</include>
                                 <include>**/WasmRuntimeTest.java</include>
                                 <include>**/WasmRuntimeRealModuleTest.java</include>

@@ -3238,8 +3238,8 @@ public class McpToolRegistry {
                     return errorResult("failStatuses[" + i + "] must be an integer");
                 }
                 int status = statusNode.asInt();
-                if (status < 100 || status > 999) {
-                    return errorResult("failStatuses[" + i + "] must be between 100 and 999");
+                if (status < 100 || status > 599) {
+                    return errorResult("failStatuses[" + i + "] must be between 100 and 599");
                 }
                 builder.failWith(status);
             }

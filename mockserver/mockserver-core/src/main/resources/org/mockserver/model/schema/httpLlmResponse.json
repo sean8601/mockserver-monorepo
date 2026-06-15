@@ -209,6 +209,14 @@
         },
         "quotaErrorStatus": {
           "type": "integer"
+        },
+        "tokenQuotaLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tokenQuotaWindowMillis": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

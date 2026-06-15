@@ -279,6 +279,8 @@ public class ExpectationLlmRoundTripTest {
                             .withQuotaLimit(100)
                             .withQuotaWindowMillis(60_000L)
                             .withQuotaErrorStatus(529)
+                            .withTokenQuotaLimit(50_000L)
+                            .withTokenQuotaWindowMillis(60_000L)
                     )
             );
 
@@ -300,6 +302,9 @@ public class ExpectationLlmRoundTripTest {
         assertThat(chaos.getQuotaLimit(), is(100));
         assertThat(chaos.getQuotaWindowMillis(), is(60_000L));
         assertThat(chaos.getQuotaErrorStatus(), is(529));
+        // token-based quota fields must survive the schema-validated JSON round-trip
+        assertThat(chaos.getTokenQuotaLimit(), is(50_000L));
+        assertThat(chaos.getTokenQuotaWindowMillis(), is(60_000L));
     }
 
     @Test

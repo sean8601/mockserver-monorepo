@@ -102,8 +102,15 @@ public class LlmFailoverBuilder {
      * @return this builder
      */
     public LlmFailoverBuilder failWith(int statusCode) {
+        validateStatusCode(statusCode);
         failures.add(new FailureSpec(statusCode, null));
         return this;
+    }
+
+    private static void validateStatusCode(int statusCode) {
+        if (statusCode < 100 || statusCode > 599) {
+            throw new IllegalArgumentException("statusCode must be between 100 and 599, got " + statusCode);
+        }
     }
 
     /**
@@ -115,6 +122,7 @@ public class LlmFailoverBuilder {
      * @return this builder
      */
     public LlmFailoverBuilder failWith(int statusCode, String errorBody) {
+        validateStatusCode(statusCode);
         failures.add(new FailureSpec(statusCode, errorBody));
         return this;
     }
@@ -128,6 +136,10 @@ public class LlmFailoverBuilder {
      * @return this builder
      */
     public LlmFailoverBuilder failWith(int statusCode, int count) {
+        validateStatusCode(statusCode);
+        if (count < 1) {
+            throw new IllegalArgumentException("count must be >= 1, got " + count);
+        }
         for (int i = 0; i < count; i++) {
             failures.add(new FailureSpec(statusCode, null));
         }

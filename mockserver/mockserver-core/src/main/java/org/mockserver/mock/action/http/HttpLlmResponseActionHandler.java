@@ -235,6 +235,9 @@ public class HttpLlmResponseActionHandler {
         validateStructuredOutput(completion, null, provider, request);
         org.mockserver.telemetry.GenAiSpans.recordCompletion(provider, model, completion);
         HttpActionHandler.recordLlmUsageMetrics(provider, model, completion);
+        // Rate-limit headers are intentionally not applied on the streaming path: it
+        // returns SSE events rather than an HttpResponse, and a quota breach is
+        // surfaced as a non-streaming error before streaming begins.
         return applyStreamingChaos(events, httpLlmResponse.getChaos());
     }
 
