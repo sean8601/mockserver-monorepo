@@ -107,4 +107,130 @@ public class HttpLlmResponseActionHandlerChaosTest {
         assertThat(handler.applyStreamingChaos(input, LlmChaosProfile.llmChaosProfile()).size(), is(4));
         assertThat(handler.applyStreamingChaos(input, null).size(), is(4));
     }
+
+    // --- Provider-correct rate-limit headers ---
+
+    @Test
+    public void chaosErrorForOpenAiCarriesOpenAiRateLimitHeaders() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.OPENAI)
+                .withChaos(LlmChaosProfile.llmChaosProfile()
+                    .withErrorStatus(429)
+                    .withRetryAfter("30")
+                    .withQuotaName("openai-acct")
+                    .withQuotaLimit(10)
+                    .withQuotaWindowMillis(60_000L)));
+        // first call is within quota, so the probabilistic error fires (errorStatus=429, no errorProbability = always)
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getFirstHeader("x-ratelimit-limit-requests"), is("10"));
+        assertThat(response.getFirstHeader("x-ratelimit-reset-requests"), is("60s"));
+    }
+
+    @Test
+    public void chaosErrorForAnthropicCarriesAnthropicRateLimitHeaders() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.ANTHROPIC)
+                .withChaos(LlmChaosProfile.llmChaosProfile()
+                    .withErrorStatus(429)
+                    .withQuotaName("anthropic-acct")
+                    .withQuotaLimit(5)
+                    .withQuotaWindowMillis(30_000L)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getFirstHeader("anthropic-ratelimit-requests-limit"), is("5"));
+        // Anthropic uses RFC 3339 timestamps for reset
+        assertThat(response.getFirstHeader("anthropic-ratelimit-requests-reset"), containsString("T"));
+    }
+
+    @Test
+    public void quotaExceededForOpenAiCarriesOpenAiHeaders() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withChaos(LlmChaosProfile.llmChaosProfile()
+                .withQuotaName("openai-quota-test")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(60_000L));
+        // first call is within quota
+        handler.chaosErrorResponseOrNull(llmResponse);
+        // second call exceeds quota
+        HttpResponse response = handler.chaosErrorResponseOrNull(llmResponse);
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getFirstHeader("x-ratelimit-limit-requests"), is("1"));
+        assertThat(response.getFirstHeader("x-ratelimit-remaining-requests"), is("0"));
+        assertThat(response.getFirstHeader("x-ratelimit-reset-requests"), is("60s"));
+        assertThat(response.getFirstHeader("retry-after"), is("60"));
+    }
+
+    @Test
+    public void quotaExceededForAnthropicCarriesAnthropicHeaders() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withChaos(LlmChaosProfile.llmChaosProfile()
+                .withQuotaName("anthropic-quota-test")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(30_000L));
+        handler.chaosErrorResponseOrNull(llmResponse);
+        HttpResponse response = handler.chaosErrorResponseOrNull(llmResponse);
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getFirstHeader("anthropic-ratelimit-requests-limit"), is("1"));
+        assertThat(response.getFirstHeader("anthropic-ratelimit-requests-remaining"), is("0"));
+        assertThat(response.getFirstHeader("anthropic-ratelimit-requests-reset"), containsString("T"));
+        assertThat(response.getFirstHeader("retry-after"), is("30"));
+    }
+
+    @Test
+    public void ollamaCarriesNoRateLimitHeaders() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.OLLAMA)
+                .withChaos(LlmChaosProfile.llmChaosProfile()
+                    .withErrorStatus(429)
+                    .withRetryAfter("10")));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        // Ollama should NOT have provider-specific rate-limit headers
+        assertThat(response.getFirstHeader("x-ratelimit-limit-requests"), is(""));
+        assertThat(response.getFirstHeader("anthropic-ratelimit-requests-limit"), is(""));
+        // But the explicit Retry-After from the chaos profile is still present
+        assertThat(response.getFirstHeader("Retry-After"), is("10"));
+    }
+
+    @Test
+    public void successfulResponseWithQuotaCarriesLimitHeaders() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withCompletion(org.mockserver.model.Completion.completion().withText("Hello"))
+            .withChaos(LlmChaosProfile.llmChaosProfile()
+                .withQuotaName("success-quota-test")
+                .withQuotaLimit(10)
+                .withQuotaWindowMillis(60_000L));
+        HttpResponse response = handler.handle(llmResponse, org.mockserver.model.HttpRequest.request().withPath("/v1/chat/completions"));
+        assertThat(response.getStatusCode(), is(200));
+        // Should carry rate-limit headers even on success when quota is configured
+        assertThat(response.getFirstHeader("x-ratelimit-limit-requests"), is("10"));
+        assertThat(response.getFirstHeader("x-ratelimit-reset-requests"), is("60s"));
+        // Not limited, so no retry-after
+        assertThat(response.getFirstHeader("retry-after"), is(""));
+    }
+
+    @Test
+    public void successfulResponseWithoutChaosHasNoRateLimitHeaders() {
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withCompletion(org.mockserver.model.Completion.completion().withText("Hello"));
+        HttpResponse response = handler.handle(llmResponse, org.mockserver.model.HttpRequest.request().withPath("/v1/chat/completions"));
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getFirstHeader("x-ratelimit-limit-requests"), is(""));
+        assertThat(response.getFirstHeader("retry-after"), is(""));
+    }
 }

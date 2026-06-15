@@ -3,6 +3,7 @@ package org.mockserver.mock.action.http;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockserver.llm.LlmQuotaRegistry;
+import org.mockserver.llm.LlmRateLimitHeaders;
 import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.ProviderCodecRegistry;
 import org.mockserver.llm.StreamingFormat;
@@ -14,6 +15,7 @@ import org.slf4j.event.Level;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.mockserver.log.model.LogEntry.LogMessageType.EXPECTATION_RESPONSE;
@@ -81,6 +83,7 @@ public class HttpLlmResponseActionHandler {
             if (completion != null && !Boolean.TRUE.equals(completion.getStreaming())) {
                 HttpResponse encoded = codecInstance.encode(completion, model);
                 validateStructuredOutput(completion, encoded, provider, request);
+                applyRateLimitHeaders(encoded, provider, false, httpLlmResponse.getChaos());
                 org.mockserver.telemetry.GenAiSpans.recordCompletion(provider, model, completion);
                 HttpActionHandler.recordLlmUsageMetrics(provider, model, completion);
                 return encoded;
@@ -254,7 +257,7 @@ public class HttpLlmResponseActionHandler {
         // Stateful quota (a hard, deterministic rate limit) is checked first and
         // consumes one slot per call. An exceeded quota short-circuits to its own
         // error before any probabilistic-error decision.
-        HttpResponse quotaError = quotaErrorResponseOrNull(chaos, requestTokens);
+        HttpResponse quotaError = quotaErrorResponseOrNull(chaos, requestTokens, httpLlmResponse.getProvider());
         if (quotaError != null) {
             return quotaError;
         }
@@ -271,6 +274,7 @@ public class HttpLlmResponseActionHandler {
         if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
             errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
         }
+        applyRateLimitHeaders(errorResponse, httpLlmResponse.getProvider(), true, chaos);
         return errorResponse;
     }
 
@@ -320,13 +324,13 @@ public class HttpLlmResponseActionHandler {
      * @param chaos         the chaos profile (never null)
      * @param requestTokens estimated token count for this response
      */
-    HttpResponse quotaErrorResponseOrNull(LlmChaosProfile chaos, long requestTokens) {
+    HttpResponse quotaErrorResponseOrNull(LlmChaosProfile chaos, long requestTokens, Provider provider) {
         // --- request-count quota ---
         if (chaos.getQuotaName() != null && chaos.getQuotaLimit() != null && chaos.getQuotaWindowMillis() != null) {
             boolean allowed = LlmQuotaRegistry.getInstance()
                 .tryAcquire(chaos.getQuotaName(), chaos.getQuotaLimit(), chaos.getQuotaWindowMillis());
             if (!allowed) {
-                return buildQuotaErrorResponse(chaos, "quota_exceeded", "LLM request quota exceeded");
+                return buildQuotaErrorResponse(chaos, "quota_exceeded", "LLM request quota exceeded", provider);
             }
         }
         // --- token-based quota ---
@@ -334,13 +338,13 @@ public class HttpLlmResponseActionHandler {
             boolean allowed = LlmQuotaRegistry.getInstance()
                 .tryAcquire(chaos.getQuotaName() + ":tokens", chaos.getTokenQuotaLimit(), chaos.getTokenQuotaWindowMillis(), requestTokens);
             if (!allowed) {
-                return buildQuotaErrorResponse(chaos, "token_quota_exceeded", "LLM token quota exceeded");
+                return buildQuotaErrorResponse(chaos, "token_quota_exceeded", "LLM token quota exceeded", provider);
             }
         }
         return null;
     }
 
-    private HttpResponse buildQuotaErrorResponse(LlmChaosProfile chaos, String errorType, String message) {
+    private HttpResponse buildQuotaErrorResponse(LlmChaosProfile chaos, String errorType, String message, Provider provider) {
         int status = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : 429;
         HttpResponse errorResponse = response()
             .withStatusCode(status)
@@ -349,6 +353,7 @@ public class HttpLlmResponseActionHandler {
         if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
             errorResponse.withHeader("Retry-After", chaos.getRetryAfter());
         }
+        applyRateLimitHeaders(errorResponse, provider, true, chaos);
         return errorResponse;
     }
 
@@ -381,6 +386,38 @@ public class HttpLlmResponseActionHandler {
             result.add(SseEvent.sseEvent().withData("{\"malformed\":true"));
         }
         return result;
+    }
+
+    /**
+     * Apply provider-correct rate-limit headers to the response. When a quota is
+     * configured, derives {@code requestLimit} and {@code resetSeconds} from the
+     * chaos profile; {@code requestRemaining} is {@code null} (we cannot cheaply
+     * compute it without re-reading the registry window, and omitting it is safe —
+     * real providers sometimes omit it too). Delegates to the pure helper
+     * {@link LlmRateLimitHeaders#headersFor}.
+     */
+    private void applyRateLimitHeaders(HttpResponse response, Provider provider, boolean limited, LlmChaosProfile chaos) {
+        if (chaos == null || provider == null) {
+            return;
+        }
+        Integer requestLimit = chaos.getQuotaLimit();
+        Long resetSeconds = null;
+        if (chaos.getQuotaWindowMillis() != null) {
+            resetSeconds = Math.max(1, chaos.getQuotaWindowMillis() / 1000);
+        } else if (chaos.getRetryAfter() != null && !chaos.getRetryAfter().isEmpty()) {
+            try {
+                resetSeconds = Long.parseLong(chaos.getRetryAfter());
+            } catch (NumberFormatException ignored) {
+                // retryAfter may be a date string — fall through
+            }
+        }
+        Integer requestRemaining = limited ? 0 : null;
+        long nowEpochSecond = System.currentTimeMillis() / 1000;
+        Map<String, String> headers = LlmRateLimitHeaders.headersFor(
+            provider, requestLimit, requestRemaining, resetSeconds, nowEpochSecond, limited);
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            response.withHeader(entry.getKey(), entry.getValue());
+        }
     }
 
     private String extractInputFromRequest(HttpRequest request) {

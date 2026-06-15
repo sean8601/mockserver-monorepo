@@ -206,6 +206,22 @@ Truncation, malformed-SSE, and the stateful quota are fully deterministic; the p
 
 Real LLM providers (OpenAI, Anthropic) enforce token-per-minute (TPM) and token-per-day (TPD) limits in addition to request-count limits. MockServer models this with two additional `LlmChaosProfile` fields: `tokenQuotaLimit` (Long, >= 1) and `tokenQuotaWindowMillis` (Long, >= 1). When both are set alongside `quotaName`, each response charges its cumulative token count (from `Usage.inputTokens + outputTokens`, or `ceil(text.length()/4)` as a fallback when no Usage is present) against a separate fixed-window counter in `LlmQuotaRegistry` under the key `quotaName + ":tokens"`. Once the in-window token sum exceeds `tokenQuotaLimit`, the response path returns a 429 (or custom `quotaErrorStatus`) with error type `token_quota_exceeded` and the `Retry-After` header when set. The request-count quota and token quota are independent counters that can coexist on the same profile; the request-count quota is checked first. Embeddings contribute zero tokens. The `LlmQuotaRegistry.tryAcquire(name, limit, windowMillis, amount)` overload supports arbitrary increment amounts for this purpose.
 
+### Provider rate-limit headers
+
+When an LLM response path returns a rate-limit / quota error (probabilistic `errorStatus` or stateful quota 429), MockServer emits the **provider-correct rate-limit HTTP headers** that real LLM providers send, so client SDK retry/backoff logic (which reads those headers) can be exercised faithfully against a mock. The same headers are stamped on **successful** responses when a quota is configured, so a client can observe the limit counting down.
+
+`LlmRateLimitHeaders` (`org.mockserver.llm`) is a pure, deterministic helper that maps a `Provider` + quota parameters to the correct header names and values:
+
+| Provider | Headers on error (429) | Headers on success (with quota) |
+|----------|----------------------|-------------------------------|
+| OPENAI / OPENAI_RESPONSES / AZURE_OPENAI | `x-ratelimit-limit-requests`, `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests` (e.g. `"60s"`), `retry-after` (seconds) | `x-ratelimit-limit-requests`, `x-ratelimit-reset-requests` |
+| ANTHROPIC | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-remaining`, `anthropic-ratelimit-requests-reset` (RFC 3339 timestamp), `retry-after` (seconds) | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-reset` |
+| GEMINI | `retry-after` (seconds) | *(none)* |
+| BEDROCK | `retry-after` (seconds) | *(none)* |
+| OLLAMA | *(none)* | *(none)* |
+
+Header values are derived from the `LlmChaosProfile` fields: `quotaLimit` becomes the limit header, `quotaWindowMillis / 1000` becomes the reset duration, and `remaining` is `0` on a 429 (omitted on success since the registry window count is not cheaply re-readable). Applied by `HttpLlmResponseActionHandler.applyRateLimitHeaders(...)` at three sites: the probabilistic chaos error, the quota-exceeded error, and the successful non-streaming response when a quota is configured.
+
 ## Agent-run analysis
 
 `AgentRunAnalyzer` (`org.mockserver.llm.analysis`) is a deterministic, read-only inspector. Given the LLM requests MockServer recorded (retrieved via the normal request log), it decodes each with the provider's `ProviderCodec` and treats the **richest** conversation (most messages — the latest dialogue snapshot) as the canonical run. From that it derives:
