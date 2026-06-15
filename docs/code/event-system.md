@@ -220,6 +220,68 @@ sequenceDiagram
 - `atMost(n)` — n or fewer
 - `between(min, max)` — within range
 
+### Response Verification
+
+When `Verification.httpResponse` is non-null, the verification switches from the request-only path to a response-aware path that counts matching **request-response pairs** rather than received requests.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant HS as HttpState
+    participant EL as MockServerEventLog
+    participant RB as Ring Buffer
+
+    C->>HS: PUT /mockserver/verify (with httpResponse)
+    HS->>EL: verify(Verification)
+    EL->>RB: Publish RUNNABLE
+    RB->>RB: Consumer thread runs verifyResponse logic
+
+    Note over RB: 1. retrieveRequestResponses() using requestResponseLogPredicate
+    Note over RB: 2. Map LogEntry → LogEventRequestAndResponse (request + response pair)
+    Note over RB: 3. If httpRequest set, filter pairs by HttpRequestMatcher
+    Note over RB: 4. Build HttpResponseMatcher from httpResponse template
+    Note over RB: 5. Filter pairs by responseMatcher.matches(pair.getHttpResponse())
+    Note over RB: 6. Check VerificationTimes.matches(matchingPairs.size())
+
+    alt Count matches
+        RB->>EL: Log VERIFICATION_PASSED
+        EL-->>C: 202 Accepted (empty body)
+    else Count mismatch
+        RB->>RB: Serialize actual responses for error message
+        RB->>EL: Log VERIFICATION_FAILED
+        EL-->>C: 406 Not Acceptable ("Response not found ..." message)
+    end
+```
+
+**Dispatch logic** in `MockServerEventLog.verify(Verification, Consumer<String>)`:
+
+```java
+if (verification.getHttpResponse() != null) {
+    verifyResponse(verification, logCorrelationId, resultConsumer);
+} else {
+    verifyRequest(verification, logCorrelationId, resultConsumer);
+}
+```
+
+The `verifyResponse` path uses `requestResponseLogPredicate` (passes `EXPECTATION_RESPONSE`, `NO_MATCH_RESPONSE`, `FORWARDED_REQUEST`) rather than `requestLogPredicate` (passes only `RECEIVED_REQUEST`). This ensures all recorded exchanges are considered -- proxied responses, served expectation responses, and unmatched responses.
+
+#### HttpResponseMatcher
+
+`HttpResponseMatcher` is a self-contained matcher built from the `HttpResponse` template in the verification:
+
+| Field | Matching Strategy |
+|-------|-------------------|
+| Status code | Exact `Integer.equals()` |
+| Reason phrase | `RegexStringMatcher` (supports regex patterns) |
+| Headers | `MultiValueMapMatcher` (same as request header matching -- subset match, multi-value) |
+| Body | Delegated to `BodyMatcherBuilder.buildBodyMatcher()` -- supports all body matcher types |
+
+A null template (no response matcher) matches everything, preserving backward compatibility.
+
+#### BodyMatcherBuilder
+
+`BodyMatcherBuilder` is a factory extracted from `HttpRequestPropertiesMatcher` so that the same body-matching logic can be reused for response bodies without duplication. It supports all body matcher types: `STRING`, `REGEX`, `PARAMETERS`, `XPATH`, `XML`, `JSON`, `JSON_SCHEMA`, `JSON_PATH`, `XML_SCHEMA`, `BINARY`, and `WASM`, plus `not()` negation. The `bodyMatcherMatches()` method on `HttpResponseMatcher` dispatches on the concrete `BodyMatcher` subtype to extract the appropriate representation from `HttpResponse` (binary matchers use `getBodyAsRawBytes()`, all others use `getBodyAsString()`).
+
 ### Sequence Verification
 
 Sequence verification checks that requests were received in a specific order:
@@ -236,6 +298,17 @@ sequenceDiagram
 Verification can be done by request matcher or by expectation ID.
 
 **Request matcher count verification** filters `RECEIVED_REQUEST` entries. **Expectation ID verification** retrieves entries matching `expectationLogPredicate` (includes `EXPECTATION_RESPONSE`, `FORWARDED_REQUEST`). **Sequence verification** scans recorded requests in order rather than counting.
+
+#### Response-Aware Sequence Verification
+
+When `VerificationSequence.httpResponses` is non-empty, sequence verification switches to a response-aware path that checks both requests and responses at each step:
+
+1. Retrieves all recorded request-response pairs via `retrieveRequestResponses()` (no request pre-filter)
+2. Iterates steps from `0` to `max(httpRequests.size(), httpResponses.size())`
+3. At each step, creates an `HttpRequestMatcher` from `httpRequests[i]` and an `HttpResponseMatcher` from `httpResponses[i]` (either can be null, acting as a wildcard)
+4. Uses a forward-scanning pointer (`pairLogCounter`) that only advances -- order is preserved
+5. A step passes when both matchers match the same `LogEventRequestAndResponse` entry: `requestMatches && responseMatches`
+6. If any step fails to find a match after the previous step's position, the sequence verification fails
 
 ### Verification in Parallel Testing
 
@@ -372,6 +445,8 @@ Thread names follow the pattern `MockServer-<name><N>`. The pool uses `CallerRun
 | `Verification` | `mockserver-core/.../verify/Verification.java` | Request count verification |
 | `VerificationSequence` | `mockserver-core/.../verify/VerificationSequence.java` | Ordered sequence verification |
 | `VerificationTimes` | `mockserver-core/.../verify/VerificationTimes.java` | Expected count constraints |
+| `HttpResponseMatcher` | `mockserver-core/.../matchers/HttpResponseMatcher.java` | Response matcher for response verification (status, headers, body) |
+| `BodyMatcherBuilder` | `mockserver-core/.../matchers/BodyMatcherBuilder.java` | Factory for body matchers, shared by request and response matching |
 | `ExpectationFileSystemPersistence` | `mockserver-core/.../persistence/ExpectationFileSystemPersistence.java` | Write expectations to disk |
 | `ExpectationFileWatcher` | `mockserver-core/.../persistence/ExpectationFileWatcher.java` | Monitor initialization files |
 | `FileWatcher` | `mockserver-core/.../persistence/FileWatcher.java` | Low-level file polling |
