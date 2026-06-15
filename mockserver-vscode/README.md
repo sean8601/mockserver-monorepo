@@ -19,7 +19,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 
 | Command | Description |
 |---------|-------------|
-| **MockServer: Start (Docker)** | Pulls and starts `mockserver/mockserver:7.0.0` on port 1080 |
+| **MockServer: Start (Docker)** | Pulls and starts `mockserver/mockserver:7.1.0` on port 1080 |
 | **MockServer: Stop** | Stops the running MockServer container |
 | **MockServer: Open Dashboard** | Opens the MockServer dashboard in your browser |
 

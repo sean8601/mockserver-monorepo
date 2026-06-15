@@ -36,7 +36,7 @@
     "downloadJar.js",
     "downloadBinary.js",
     "bin",
-    "mockserver-netty-7.0.0-jar-with-dependencies.jar",
+    "mockserver-netty-7.1.0-jar-with-dependencies.jar",
     "stop_MockServer.sh"
   ],
   "devDependencies": {

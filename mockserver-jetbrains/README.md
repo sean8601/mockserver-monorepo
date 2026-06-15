@@ -5,7 +5,7 @@
 ## Features
 
 - **Open MockServer Dashboard** — launches `http://localhost:1080/mockserver/dashboard` in your default browser
-- **Start MockServer (Docker)** — runs a MockServer container (`docker run -d --rm -p 1080:1080 mockserver/mockserver:7.0.0`)
+- **Start MockServer (Docker)** — runs a MockServer container (`docker run -d --rm -p 1080:1080 mockserver/mockserver:7.1.0`)
 - **Tool Window** — bottom panel with quick-access buttons for the above actions
 
 ## Requirements
