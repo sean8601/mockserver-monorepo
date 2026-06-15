@@ -165,9 +165,11 @@ and reintegrate it onto `master`**.
   parallelism at any one time** (hard caps; apply a lower limit for complexity,
   cost, contention, or model availability). Queue or defer rather than exceed
   them. See `.opencode/rules/operating-model.md` (Parallelism Limits).
-- **Isolate independent agents, not every task** — the primary interactive
-  session stays in the main checkout (IntelliJ MCP visible); independent/long
-  autonomous sessions use `/worktree`; subagents share the primary's filesystem.
+- **Isolate independent sessions, not every task** — every independent session
+  (primary interactive, parallel windows, long autonomous runs) works in its own
+  worktree on a local-only branch by default; helper subagents spawned by a
+  primary share its tree so they can review its uncommitted in-flight work. See
+  `.opencode/rules/worktree-workflow.md`.
 - **Clarify well, rarely** — proceed on the strongest safe assumptions; escalate
   only when ambiguity materially affects correctness, safety, or intent, and use
   a structured `AskUserQuestion` (what's unclear, why it matters, recommended
@@ -265,13 +267,9 @@ files live alongside committed plans but never get staged. Use this for brainsto
 design notes, and session-resume docs. Committed plans use a plain `.md` suffix in the same
 directory. See `.opencode/rules/local-plans.md`.
 
-## IDE Integration — Prefer IntelliJ MCP When Available
+## Parallel Sessions
 
-When the conversation has the IntelliJ MCP toolset (tools prefixed `mcp__idea__*`, indicating IntelliJ is open with the project loaded), **prefer the IDE tools over Bash / `Edit` / `Read`** so the user can watch progress live in tool windows. This applies to terminal commands (use `mcp__idea__execute_terminal_command`), Java builds (`mcp__idea__build_project`), file edits (`mcp__idea__replace_text_in_file`), search (`mcp__idea__search_in_files_by_*`), and per-file inspections (`mcp__idea__get_file_problems`).
-
-For long-running commands that exceed the MCP terminal timeout (`mvn install`, `mvn verify`, large test suites): the MCP `&` background pattern is unreliable (MCP kills the shell before the process detaches — verified). Use **Bash run_in_background** to launch the build (for the completion notification) and `mcp__idea__open_file_in_editor` on the log file so IntelliJ auto-tails it for the user. Even better when a saved Run Configuration exists: `mcp__idea__execute_run_configuration` streams into IntelliJ's Run tool window with click-to-source. See `.opencode/rules/intellij-mcp-preference.md` for the full rule, the four default behaviors when MCP is available (auto-open-before-edit, auto-validate-java-edits, prefer rename refactoring, record activity in `.tmp/agent-activity`), gotchas, and fallback cases.
-
-Multiple Claude/opencode sessions can run in parallel — the default agent stays in the main checkout (IntelliJ MCP visible); independent agents opt into `/worktree` for filesystem isolation; subagents spawned from the primary share the primary's filesystem. Run `/agent-status` to see active worktrees, their branch, age, current activity, commit count ahead of master, and rebase-lock status. See `.opencode/rules/worktree-workflow.md` for the full opt-in flow with verification gates and the `flock`-serialized merge.
+Multiple Claude/opencode sessions can run in parallel. Every independent session works in its **own worktree** on a local-only branch by default (start via `/worktree`); helper subagents spawned by a primary **share the primary's filesystem** so they can see its uncommitted in-flight work (isolating them would break the review gate). Run `/agent-status` to see active worktrees — their branch, age, current activity, commit count ahead of master, and rebase-lock status. See `.opencode/rules/worktree-workflow.md` for the default-isolation flow with verification gates and the `flock`-serialized merge.
 
 ## Code Review Routing
 
