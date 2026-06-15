@@ -50,8 +50,18 @@ Run `git status --short` to see all changed, staged, and untracked files. From t
 | `npm` | `package.json`, `package-lock.json`, `*.js`, `*.ts`, `*.tsx`, `*.jsx` (in `mockserver-ui/`, `mockserver-client-node/`, `mockserver-node/`) |
 | `python` | `*.py`, `pyproject.toml`, `requirements*.txt` (in `mockserver-client-python/`) |
 | `ruby` | `*.rb`, `Gemfile`, `Gemfile.lock`, `*.gemspec` (in `mockserver-client-ruby/`) |
+| `control` (AI component) | `.opencode/rules/**`, `.opencode/agents/**`, `.claude/agents/**`, `opencode.jsonc`, the review constitution, and CI / test-gate definitions — i.e. changes to **the controls AI is judged by** |
 
 A commit may contain files from multiple categories. Run ALL applicable validations.
+
+**Higher-scrutiny control class.** If any changed file is in the `control`
+(AI-component) category, this is a **higher-scrutiny change** ([[control-integrity]],
+[[risk-authority-classification]]). It is **NOT act-autonomously**: it additionally
+requires (a) the evaluation harness in Step 2, (b) the **authoritative `review-final`**
+reviewer in Step 4 — a distinct agent from the one that authored the change
+(**separation of duties**) — and (c) **gated approval**: surface the change and the
+review verdict to the user and get explicit approval before committing, rather than
+auto-committing on PASS.
 
 ## Step 2: Run Category-Specific Validations
 
@@ -60,6 +70,16 @@ Validation principle: prefer executable verification over static inspection. Whe
 **Control integrity:** never weaken, disable, skip, or game a gate to make it pass — a gate satisfied by lowering its bar is a *failure*, not a pass. If a test or rule is genuinely wrong, fix it openly as a higher-scrutiny control change, not as a silent workaround. See [[control-integrity]].
 
 **Licence / IP provenance:** for generated code, do not reproduce non-trivial verbatim third-party blocks, and ensure any new dependency carries an Apache-2.0-compatible licence — escalate copyleft/incompatible cases rather than committing them. See [[licence-provenance]].
+
+### Control / AI-component changes (`control`)
+
+Changes to the controls AI is judged by (rules, agent prompts, `opencode.jsonc`, the review constitution, CI/test gates) MUST run the evaluation harness as a gate:
+
+```bash
+bash .opencode/evals/run-evals.sh    # exits non-zero on a regressed golden task or a malformed fixture
+```
+
+A **regression** (a recorded `.result` flips from its expected verdict) or a malformed fixture **blocks** the change ([[evaluation-harness]]). Where the baseline for an affected agent is missing (fixtures show `PENDING`), establish it — run the agent on the relevant fixtures and record the results — or record the gap as residual risk for the user's gated approval. (This is in addition to the per-category validations above, e.g. `docs`/`config` link and JSON checks.)
 
 ### Java changes (`java`)
 1. Identify affected Maven modules from file paths (see testing-policy.md for module mapping)
@@ -145,9 +165,11 @@ If the change is **not** user-facing (tests, CI, internal refactors with no beha
 
 ## Step 4: Adversarial Code Review (MANDATORY for all commits)
 
-After validations and the changelog review pass, launch an adversarial review using a subagent on a **different model** with a **fresh context**. This catches issues the implementing agent may have blind spots for.
+After validations and the changelog review pass, launch an adversarial review using a subagent with a **fresh context** (a different model where a stronger tier is provisioned; on opencode, fresh context + low temperature — see `docs/operations/opencode-configuration.md`). The reviewer MUST be a distinct agent from the one that authored the change (**separation of duties**). This catches issues the implementing agent may have blind spots for.
 
-Spawn a `review-cheap` subagent (use the Agent tool in Claude Code; the Task tool in opencode) and provide:
+**Control / AI-component changes use the authoritative `review-final`** (not `review-cheap`), and are **gated-approval, not act-autonomously**: after a PASS, present the change and the verdict to the user and get explicit approval before committing (per the higher-scrutiny note in Step 1). All other changes use `review-cheap` as below.
+
+Spawn the review subagent (`review-cheap` by default, `review-final` for control changes; use the Agent tool in Claude Code, the Task tool in opencode) and provide:
 - The diff of files being committed: stage them first with `git add`, then capture `git diff --cached`
 - The commit message you intend to use
 - The file categories from Step 1

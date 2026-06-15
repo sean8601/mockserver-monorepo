@@ -84,6 +84,12 @@ sessions alike.
 
 This autonomy is bounded by hard rules that **remain fully in force**:
 
+- **Control changes are not autonomous.** Changes to the controls AI is judged by
+  (rules, agent prompts, model/temperature routing, the review constitution,
+  CI/test gates) are the **higher-scrutiny class** — gated-approval with the
+  authoritative `review-final` and the evaluation-harness gate, never
+  auto-committed. See [[risk-authority-classification]], [[control-integrity]],
+  and [[commit-workflow]] (Step 1).
 - **Gates are mandatory and fail-closed.** If any gate cannot run or does not
   return a clean PASS (tests fail, review returns BLOCK, the review subagent is
   unavailable, lint errors), **do not commit**. Stop, surface the failure, and
