@@ -157,6 +157,11 @@ and reintegrate it onto `master`**.
   with a PASS verdict → re-verify), commit and push autonomously. Gates are **mandatory and
   fail-closed** — if any gate cannot run or does not return a clean PASS, do not
   commit; surface the failure and leave the work for inspection.
+- **Match autonomy to risk** — classify each unit by risk and act within its
+  authority class (act-autonomously / gated-approval / advisory / reserved).
+  Changes to the controls themselves (tests, gates, the review constitution,
+  model/temperature routing) and irreversible/production actions are never
+  act-autonomously. See `.opencode/rules/risk-authority-classification.md`.
 - **Scale the ceremony to the task** — full DVRR for substantial/risky work; a
   lightweight path (inline edit + one adversarial review + targeted verify) for
   small changes; a direct edit for trivial ones. Don't manufacture ceremony that
