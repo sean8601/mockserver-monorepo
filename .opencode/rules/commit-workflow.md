@@ -57,6 +57,8 @@ A commit may contain files from multiple categories. Run ALL applicable validati
 
 Validation principle: prefer executable verification over static inspection. When a file can be executed, built, rendered, or planned, run that command and use its output as evidence.
 
+**Control integrity:** never weaken, disable, skip, or game a gate to make it pass — a gate satisfied by lowering its bar is a *failure*, not a pass. If a test or rule is genuinely wrong, fix it openly as a higher-scrutiny control change, not as a silent workaround. See [[control-integrity]].
+
 ### Java changes (`java`)
 1. Identify affected Maven modules from file paths (see testing-policy.md for module mapping)
 2. Run unit tests: `cd mockserver && ./mvnw test -pl <module1>,<module2>`
