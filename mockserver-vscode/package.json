@@ -2,7 +2,7 @@
   "name": "mockserver",
   "displayName": "MockServer",
   "description": "Start, stop, and manage MockServer Docker containers directly from VS Code",
-  "version": "7.0.1",
+  "version": "7.1.0",
   "publisher": "mockserver",
   "license": "Apache-2.0",
   "repository": {
