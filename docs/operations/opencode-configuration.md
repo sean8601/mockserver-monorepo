@@ -145,7 +145,7 @@ This file acts as the agent's "onboarding document" — everything a new enginee
 
 ## Building Block 2: Model Strategy
 
-Different tasks have different cognitive demands. Using a premium model for test execution wastes money; using a cheap model for security auditing misses vulnerabilities. MockServer uses 5 model tiers:
+Different tasks have different cognitive demands *and* different needs for determinism. Two decision variables are set explicitly per agent — **model** (capability/cost) and **temperature** (determinism vs creativity) — and both are recorded so the routing is auditable (see `docs/operations/ai-sdlc-integration-spec.md` §9). Agents are grouped into model tiers:
 
 ```mermaid
 flowchart LR
@@ -183,17 +183,31 @@ flowchart LR
     style Fast fill:#e8f8f0,stroke:#00a651
 ```
 
-| Tier | Model | Agents | Rationale |
-|------|-------|--------|-----------|
-| **Premium** | `openai/o3` | implementer, simplifier, review-final, debugger, pipeline-investigator | Highest capability for production code, complex refactoring, and authoritative review |
-| **Standard** | `openai/gpt-4o` | code-reviewer, security-auditor, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost |
-| **Fast** | `openai/gpt-4o-mini` | test-runner, council-seat | Rote operations (run tests, emit short verdicts) — speed over depth |
+| Tier | opencode (OpenAI) | Claude Code (Anthropic) | Agents | Rationale |
+|------|-------------------|--------------------------|--------|-----------|
+| **Premium** | `openai/gpt-4o` \* | `claude-opus-4-8` | implementer, simplifier, review-final, debugger, pipeline-investigator | Highest capability for production code, complex refactoring, and authoritative review |
+| **Standard** | `openai/gpt-4o` | `claude-sonnet-4-6` | code-reviewer, security-auditor, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost |
+| **Fast** | `openai/gpt-4o-mini` | `claude-haiku-4-5-20251001` | test-runner, council-seat | Rote operations (run tests, emit short verdicts) — speed over depth |
+
+\* On opencode the Premium and Standard agents currently **share `gpt-4o`** — a stronger OpenAI tier (`openai/o3` / `o1`) is not provisioned. When one is enabled, promote the Premium agents to it; until then `gpt-4o` + a low temperature carries the high-risk differentiation. On the Claude side the three tiers are genuinely distinct (opus / sonnet / haiku).
+
+### Temperature (opencode)
+
+opencode sets an explicit per-agent `temperature` (deterministic/high-risk work low, ideation higher). **Claude Code does not support a per-subagent sampling `temperature`** (the field is silently ignored — verified against the Claude Code subagent docs, 2026-06; re-check release notes before adding a `temperature` frontmatter field), so on the Claude side determinism is governed by model choice and the supported `effort` lever, not temperature.
+
+| Temp | Agents | Why |
+|:----:|--------|-----|
+| **0** | test-runner | Rote execution — fully deterministic |
+| **0.1** | review-cheap, review-final, code-reviewer, security-auditor, simplifier | Review/verify and high-risk work — low variance |
+| **0.2** | implementer, debugger, pipeline-investigator | Mostly deterministic with a little hypothesis search |
+| **0.3–0.4** | taskify-agent (0.3), docs-writer (0.4) | Structuring and prose benefit from mild latitude |
+| **0.7** | council-seat | Design debate / ideation — creativity wanted |
 
 ### Provider Strategy
 
 opencode uses OpenAI models exclusively. Claude Code (`.claude/`) uses Anthropic models exclusively. Independence between the implementation and review agents is achieved at two levels:
 
-1. **Model tier**: `review-cheap` (`gpt-4o`) and `review-final` (`o3`) run on different model tiers than `implementer` (`o3`), but more importantly they run with a **fresh context** — the reviewer never sees the implementing agent's reasoning, only the diff.
+1. **Model & temperature**: `review-cheap` and `review-final` run with their own model and temperature settings (see the tables above) and — more importantly — with a **fresh context**: the reviewer never sees the implementing agent's reasoning, only the diff.
 2. **Cross-tool independence**: When switching between tools, a Claude Code session reviews OpenAI-generated work and vice versa, providing genuine cross-provider independence at the workflow level.
 
 ---
@@ -340,7 +354,7 @@ different model)"]
     style N fill:#e8f8f0,stroke:#00a651
 ```
 
-The adversarial review (Step 3) is critical: the `review-cheap` agent (`gpt-4o`) runs with a fresh context, specifically scanning for LLM-generated issues — hallucinated names, plausible but wrong logic, missing error handling, and accidentally committed secrets. The `review-final` agent (`o3`) provides the binding verdict.
+The adversarial review (Step 3) is critical: the `review-cheap` agent runs with a fresh context, specifically scanning for LLM-generated issues — hallucinated names, plausible but wrong logic, missing error handling, and accidentally committed secrets. The `review-final` agent provides the binding verdict.
 
 Skip conditions exist for speed: `"skip tests"` skips validation, `"skip review"` skips the adversarial review, `"just commit"` skips both. These are used when the user is confident in the change.
 
