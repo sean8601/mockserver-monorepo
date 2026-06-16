@@ -74,6 +74,86 @@ class MockServerRestClientTest {
         assertTrue(req.uri().toString().endsWith("format=java"))
     }
 
+    // --- retrieve drift -------------------------------------------------
+
+    @Test
+    fun `retrieve drift GETs the drift endpoint`() {
+        val req = MockServerRestClient.buildRetrieveDriftRequest("http://localhost:1080")
+        assertEquals("GET", req.method())
+        assertEquals("http://localhost:1080/mockserver/drift", req.uri().toString())
+    }
+
+    @Test
+    fun `retrieve drift appends the limit query param when provided`() {
+        val req = MockServerRestClient.buildRetrieveDriftRequest("http://localhost:1080", 25)
+        assertEquals("GET", req.method())
+        assertEquals("http://localhost:1080/mockserver/drift?limit=25", req.uri().toString())
+    }
+
+    // --- formatDriftReport ----------------------------------------------
+
+    @Test
+    fun `formatDriftReport treats an empty drift payload as empty`() {
+        val report = MockServerRestClient.formatDriftReport("""{ "count": 0, "drifts": [] }""")
+        assertTrue(report.empty)
+        assertEquals(0, report.count)
+        assertTrue(report.report.contains("0 record(s)"))
+    }
+
+    @Test
+    fun `formatDriftReport renders one line per drift with type and field`() {
+        val body = """
+            {
+              "count": 2,
+              "drifts": [
+                { "expectationId": "e1", "driftType": "STATUS_CODE", "field": "statusCode",
+                  "expectedValue": "200", "actualValue": "500", "confidence": 0.9, "epochTimeMs": 1 },
+                { "expectationId": "e2", "driftType": "HEADER", "field": "Content-Type",
+                  "expectedValue": "text/plain", "actualValue": "application/json", "confidence": 0.7, "epochTimeMs": 2 }
+              ]
+            }
+        """.trimIndent()
+        val report = MockServerRestClient.formatDriftReport(body)
+        assertFalse(report.empty)
+        assertEquals(2, report.count)
+        assertTrue(report.report.contains("STATUS_CODE"), report.report)
+        assertTrue(report.report.contains("statusCode"), report.report)
+        assertTrue(report.report.contains("HEADER"), report.report)
+        assertTrue(report.report.contains("Content-Type"), report.report)
+        assertTrue(report.report.contains("expected 200 / actual 500"), report.report)
+        assertTrue(report.report.contains("expectation e1"), report.report)
+    }
+
+    @Test
+    fun `formatDriftReport falls back to the drifts array size when count is missing`() {
+        val body = """{ "drifts": [ { "driftType": "BODY", "field": "x" } ] }"""
+        val report = MockServerRestClient.formatDriftReport(body)
+        assertEquals(1, report.count)
+        assertFalse(report.empty)
+    }
+
+    @Test
+    fun `formatDriftReport renders missing expected and actual values as a dash`() {
+        val body = """{ "count": 1, "drifts": [ { "driftType": "BODY", "field": "name", "confidence": 0.5, "expectationId": "e3" } ] }"""
+        val report = MockServerRestClient.formatDriftReport(body)
+        assertFalse(report.empty)
+        assertTrue(report.report.contains("expected — / actual —"), report.report)
+    }
+
+    @Test
+    fun `formatDriftReport handles a non-json body as non-empty raw passthrough`() {
+        val report = MockServerRestClient.formatDriftReport("not json at all")
+        assertFalse(report.empty)
+        assertTrue(report.report.contains("not json at all"))
+    }
+
+    @Test
+    fun `formatDriftReport treats a blank body as empty`() {
+        val report = MockServerRestClient.formatDriftReport("   ")
+        assertTrue(report.empty)
+        assertEquals(0, report.count)
+    }
+
     // --- OpenAPI body branch --------------------------------------------
 
     @Test

@@ -70,6 +70,20 @@ object MockServerRestClient {
             .build()
 
     /**
+     * `GET /mockserver/drift` — retrieve the mock-drift records MockServer recorded
+     * when it proxied/forwarded traffic to a real upstream and a matching stub
+     * differed. When [limit] is provided it is appended as `?limit=<n>`.
+     */
+    fun buildRetrieveDriftRequest(baseUrl: String, limit: Int? = null): HttpRequest {
+        val uri = if (limit != null) "$baseUrl/mockserver/drift?limit=$limit" else "$baseUrl/mockserver/drift"
+        return HttpRequest.newBuilder()
+            .uri(URI.create(uri))
+            .header("Accept", "application/json")
+            .GET()
+            .build()
+    }
+
+    /**
      * `PUT /mockserver/openapi` — generate expectations from an OpenAPI/Swagger
      * spec. A JSON spec is sent as a parsed object so the server treats it
      * unambiguously as an inline payload; anything else (YAML) is sent as a
@@ -203,6 +217,59 @@ object MockServerRestClient {
         if (trimmed.isEmpty()) return true
         val parsed = tryParseJson(trimmed) ?: return false
         return parsed.isJsonArray && parsed.asJsonArray.isEmpty
+    }
+
+    /**
+     * A formatted mock-drift report: the record [count], the human-readable [report]
+     * text, and whether the server reported no drift ([empty]).
+     */
+    data class DriftReport(val count: Int, val report: String, val empty: Boolean)
+
+    /**
+     * Format the `GET /mockserver/drift` response body into a readable text report.
+     *
+     * The expected shape is
+     * `{ "count": <n>, "drifts": [ { expectationId, driftType, field, expectedValue?, actualValue?, confidence, epochTimeMs } ] }`.
+     * Robust to non-JSON or missing fields: an unparseable body falls back to the raw
+     * text (treated as non-empty); a missing value renders as `—`; when `count` is
+     * absent it falls back to the size of the `drifts` array.
+     */
+    fun formatDriftReport(body: String): DriftReport {
+        val parsed = tryParseJson(body)
+        if (parsed == null || !parsed.isJsonObject) {
+            val raw = body.trim()
+            return DriftReport(0, if (raw.isEmpty()) "MockServer drift report — 0 record(s)" else raw, raw.isEmpty())
+        }
+        val root = parsed.asJsonObject
+        val drifts = if (root.has("drifts") && root.get("drifts").isJsonArray) root.getAsJsonArray("drifts") else null
+        val count = if (root.has("count") && root.get("count").isJsonPrimitive) {
+            try { root.get("count").asInt } catch (_: Exception) { drifts?.size() ?: 0 }
+        } else {
+            drifts?.size() ?: 0
+        }
+        val builder = StringBuilder()
+        builder.append("MockServer drift report — ").append(count).append(" record(s)")
+        if (drifts != null) {
+            for (element in drifts) {
+                if (!element.isJsonObject) continue
+                val drift = element.asJsonObject
+                builder.append('\n')
+                    .append('[').append(driftString(drift, "driftType")).append("] ")
+                    .append(driftString(drift, "field")).append(": expected ")
+                    .append(driftString(drift, "expectedValue")).append(" / actual ")
+                    .append(driftString(drift, "actualValue")).append(" (confidence ")
+                    .append(driftString(drift, "confidence")).append(", expectation ")
+                    .append(driftString(drift, "expectationId")).append(')')
+            }
+        }
+        return DriftReport(count, builder.toString(), count == 0)
+    }
+
+    /** Render a drift field as a string, falling back to `—` when missing/null. */
+    private fun driftString(obj: JsonObject, field: String): String {
+        if (!obj.has(field) || obj.get(field).isJsonNull) return "—"
+        val element = obj.get(field)
+        return if (element.isJsonPrimitive) element.asString else element.toString()
     }
 
     /** Pretty-print a JSON body; returns the input unchanged if it is not valid JSON. */

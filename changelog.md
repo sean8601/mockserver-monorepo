@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drift records (`GET /mockserver/drift`) — how real upstream responses have drifted from your stub
   expectations — and opens a readable text summary in a new tab (one line per drift: type, field,
   expected vs actual value, confidence, and the affected expectation).
+- JetBrains plugin brings the same mock-drift report to the **Tools > MockServer** menu: **Show Drift
+  Report** fetches the latest drift records (`GET /mockserver/drift`) and opens a readable text summary in
+  a new tab (one line per drift: type, field, expected vs actual value, confidence, and the affected
+  expectation). The HTTP call runs off the UI thread.
 - JetBrains plugin brings the same server-interaction actions to the **Tools > MockServer** menu:
   **Load Expectations Into Running Server** (`PUT /mockserver/expectation`, a single expectation or an array),
   **Save Recorded Expectations** (`PUT /mockserver/retrieve?type=recorded_expectations`, opens the

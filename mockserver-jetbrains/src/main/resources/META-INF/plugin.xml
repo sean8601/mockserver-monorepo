@@ -67,6 +67,10 @@
                     class="com.mockserver.jetbrains.SendRequestAction"
                     text="Send Test Request"
                     description="Sends the active editor's ad-hoc HTTP request to the running MockServer and opens the response"/>
+            <action id="MockServer.ShowDriftReport"
+                    class="com.mockserver.jetbrains.ShowDriftReportAction"
+                    text="Show Drift Report"
+                    description="Fetches MockServer's mock-drift records and opens a readable text report in a new tab"/>
         </group>
     </actions>
 

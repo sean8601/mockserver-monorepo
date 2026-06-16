@@ -22,6 +22,9 @@ MockServer integration for IntelliJ-based IDEs: expectation-file validation, plu
 - **Send Test Request** — sends the ad-hoc HTTP request described in the active editor
   (a JSON object `{ "method", "path", "headers"?, "body"? }`) at the running server on the configured port
   and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab
+- **Show Drift Report** — fetches MockServer's mock-drift records (`GET /mockserver/drift`) — how real
+  upstream responses have drifted from your stub expectations — and opens a readable text report in a new
+  tab (one line per drift: type, field, expected vs actual value, confidence, and the affected expectation)
 - **Tool Window** — bottom panel with quick-access buttons for the above actions
 - **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
 
