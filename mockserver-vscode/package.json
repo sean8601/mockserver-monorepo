@@ -52,6 +52,10 @@
       {
         "command": "mockserver.saveRecorded",
         "title": "MockServer: Save Recorded Expectations (JSON or Java)"
+      },
+      {
+        "command": "mockserver.generateFromOpenApi",
+        "title": "MockServer: Generate Expectations From OpenAPI Spec"
       }
     ],
     "snippets": [

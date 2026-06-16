@@ -204,10 +204,11 @@ async function runTests(): Promise<void> {
         assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
     });
 
-    await test("activate registers the load + diff + record commands", () => {
+    await test("activate registers the load + diff + record + openapi commands", () => {
         assert.ok(registeredCommands.has("mockserver.loadExpectations"), "load command not registered");
         assert.ok(registeredCommands.has("mockserver.diffAgainstLive"), "diff command not registered");
         assert.ok(registeredCommands.has("mockserver.saveRecorded"), "record command not registered");
+        assert.ok(registeredCommands.has("mockserver.generateFromOpenApi"), "openapi command not registered");
     });
 
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
@@ -297,6 +298,42 @@ async function runTests(): Promise<void> {
             Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("   ") });
         const empty = await client.retrieveRecordedExpectations("http://localhost:1080", "java", emptyJava);
         assert.strictEqual(empty.empty, true);
+    });
+
+    await test("generateExpectationsFromOpenApi sends a JSON spec as an object", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve('[{"id":"op"}]') });
+        };
+        const out = await client.generateExpectationsFromOpenApi(
+            "http://localhost:1080",
+            '{"openapi":"3.0.0","paths":{}}',
+            fakeFetch
+        );
+        assert.ok(captured.url.endsWith("/mockserver/openapi"), `url=${captured.url}`);
+        const sent = JSON.parse(captured.init.body);
+        assert.strictEqual(typeof sent.specUrlOrPayload, "object", "JSON spec should be sent as an object");
+        assert.ok(out.includes('"id": "op"'), "expected pretty-printed expectations");
+    });
+
+    await test("generateExpectationsFromOpenApi sends a YAML spec as a string", async () => {
+        let body: any = {};
+        const fakeFetch = (_url: string, init: any) => {
+            body = JSON.parse(init.body);
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve("[]") });
+        };
+        await client.generateExpectationsFromOpenApi("http://localhost:1080", "openapi: 3.0.0\npaths: {}", fakeFetch);
+        assert.strictEqual(typeof body.specUrlOrPayload, "string", "YAML spec should be sent as a string");
+    });
+
+    await test("generateExpectationsFromOpenApi throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve("invalid spec") });
+        await assert.rejects(
+            () => client.generateExpectationsFromOpenApi("http://localhost:1080", "{}", fakeFetch),
+            /400: invalid spec/
+        );
     });
 
     // --- CodeLens provider ---

@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VS Code extension can record real traffic into code: **MockServer: Save Recorded Expectations** opens the
   expectations the server recorded from proxied/forwarded traffic
   (`PUT /mockserver/retrieve?type=recorded_expectations`) as JSON or Java DSL in a new editor tab.
+- VS Code extension can generate expectations from an OpenAPI/Swagger spec: **MockServer: Generate
+  Expectations From OpenAPI Spec** sends the active editor's spec (JSON or YAML) to the running server
+  (`PUT /mockserver/openapi`) and opens the generated expectations in a new tab.
 
 ### Changed
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable

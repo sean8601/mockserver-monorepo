@@ -57,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const loadCmd = vscode.commands.registerCommand("mockserver.loadExpectations", loadExpectations);
     const diffCmd = vscode.commands.registerCommand("mockserver.diffAgainstLive", diffAgainstLive);
     const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
+    const openApiCmd = vscode.commands.registerCommand("mockserver.generateFromOpenApi", generateFromOpenApi);
 
     const codeLensProvider = vscode.languages.registerCodeLensProvider(
         EXPECTATION_FILE_SELECTOR,
@@ -74,6 +75,7 @@ export function activate(context: vscode.ExtensionContext): void {
         loadCmd,
         diffCmd,
         recordCmd,
+        openApiCmd,
         codeLensProvider,
         contentProvider,
         liveContentChanged,
@@ -248,5 +250,35 @@ async function saveRecordedExpectations(): Promise<void> {
         await vscode.window.showTextDocument(doc);
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to retrieve recorded expectations — ${(e as Error).message}`);
+    }
+}
+
+async function generateFromOpenApi(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("Open an OpenAPI/Swagger spec file first.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const generated = await client.generateExpectationsFromOpenApi(
+            client.buildBaseUrl(port),
+            doc.getText(),
+            httpFetch
+        );
+        if (generated.trim() === "[]") {
+            vscode.window.showInformationMessage(
+                "The OpenAPI spec produced no expectations (no operations matched)."
+            );
+            return;
+        }
+        const out = await vscode.workspace.openTextDocument({ content: generated, language: "json" });
+        await vscode.window.showTextDocument(out);
+        vscode.window.showInformationMessage(
+            "Generated MockServer expectations from the OpenAPI spec. Save as a *.mockserver.json file to keep them."
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to generate from OpenAPI — ${(e as Error).message}`);
     }
 }

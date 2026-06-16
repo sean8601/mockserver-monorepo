@@ -91,6 +91,42 @@ export async function retrieveActiveExpectations(
     }
 }
 
+/**
+ * Generate MockServer expectations from an OpenAPI / Swagger specification via
+ * `PUT /mockserver/openapi`. The spec text is sent inline as `specUrlOrPayload`:
+ * a JSON spec is sent as a parsed object, anything else (YAML) as a string —
+ * the server parses both. The 201 response IS the generated expectations array,
+ * returned pretty-printed and ready to save as a `*.mockserver.json` file.
+ */
+export async function generateExpectationsFromOpenApi(
+    baseUrl: string,
+    specText: string,
+    fetchFn: FetchLike
+): Promise<string> {
+    let specUrlOrPayload: unknown;
+    try {
+        // A JSON spec is sent as an object so the server treats it unambiguously
+        // as an inline payload; YAML falls through and is sent as a string.
+        specUrlOrPayload = JSON.parse(specText);
+    } catch {
+        specUrlOrPayload = specText;
+    }
+    const res = await fetchFn(`${baseUrl}/mockserver/openapi`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ specUrlOrPayload }),
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    try {
+        return JSON.stringify(JSON.parse(body), null, 2) + "\n";
+    } catch {
+        return body;
+    }
+}
+
 export type RecordedFormat = "json" | "java";
 
 export interface RecordedExpectations {

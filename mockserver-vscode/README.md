@@ -25,6 +25,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Load Expectations Into Running Server** | Sends the current expectation file to the running server |
 | **MockServer: Diff Expectations Against Live Server** | Opens a diff between the file and the server's active expectations |
 | **MockServer: Save Recorded Expectations (JSON or Java)** | Opens expectations recorded from proxied traffic as JSON or Java DSL |
+| **MockServer: Generate Expectations From OpenAPI Spec** | Turns the OpenAPI/Swagger spec in the active editor into expectations |
 
 ## Expectation file validation
 
@@ -51,6 +52,12 @@ Run **MockServer: Save Recorded Expectations** to capture expectations the serve
 proxying or forwarding to a real upstream, and open them in a new editor tab as either **JSON** (ready to
 save as a `*.mockserver.json` file) or **Java** (MockServerClient DSL to paste into a test). If the server
 has not proxied any traffic yet, the command tells you so rather than opening an empty file.
+
+## Generate expectations from an OpenAPI spec
+
+With an OpenAPI/Swagger spec (JSON or YAML) open in the editor, run **MockServer: Generate Expectations
+From OpenAPI Spec**. The extension sends the spec to the running server (`PUT /mockserver/openapi`), which
+generates expectations covering the spec's operations, and opens them in a new tab to review and save.
 
 ## Snippets
 
