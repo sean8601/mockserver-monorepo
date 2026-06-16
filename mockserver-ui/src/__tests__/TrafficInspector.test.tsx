@@ -473,6 +473,113 @@ describe('TrafficInspector — compare two requests (diff)', () => {
   });
 });
 
+describe('TrafficInspector — Capture as mock for standard HTTP (WS5.2)', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({
+      proxiedRequests: [],
+      recordedRequests: [],
+      activeExpectations: [],
+      trafficSearch: '',
+      selectedTrafficKey: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the "Capture as mock" button when a standard (non-LLM) HTTP request is selected', async () => {
+    const user = userEvent.setup();
+
+    useDashboardStore.setState({
+      proxiedRequests: [
+        {
+          key: 'req-plain-http',
+          value: {
+            httpRequest: {
+              method: 'GET',
+              path: '/api/widgets',
+              headers: [{ name: 'host', values: ['example.com'] }],
+            },
+            httpResponse: {
+              statusCode: 200,
+              body: { type: 'JSON', json: '{"widgets":[]}' },
+            },
+          },
+        },
+      ],
+    });
+
+    renderTrafficInspector();
+
+    // Select the standard HTTP row
+    const row = screen.getByText(/\/api\/widgets/);
+    await user.click(row);
+
+    // The capture button must be offered for plain HTTP traffic, not just LLM traffic.
+    expect(
+      screen.getByRole('button', { name: /Capture as mock/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the capture dialog and registers a generic expectation via PUT /mockserver/expectation', async () => {
+    const user = userEvent.setup();
+
+    useDashboardStore.setState({
+      proxiedRequests: [
+        {
+          key: 'req-capture-http',
+          value: {
+            httpRequest: {
+              method: 'POST',
+              path: '/api/orders',
+              headers: [{ name: 'host', values: ['example.com'] }],
+              body: { type: 'JSON', json: '{"sku":"A1"}' },
+            },
+            httpResponse: {
+              statusCode: 201,
+              body: { type: 'JSON', json: '{"id":7}' },
+            },
+          },
+        },
+      ],
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderTrafficInspector();
+
+    const row = screen.getByText(/\/api\/orders/);
+    await user.click(row);
+
+    await user.click(screen.getByRole('button', { name: /Capture as mock/i }));
+
+    // Dialog opens in generic-HTTP mode pre-populated from the captured request.
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Capture as Mock')).toBeInTheDocument();
+
+    // Register the expectation.
+    await user.click(within(dialog).getByRole('button', { name: 'Register' }));
+
+    // The generic path uses PUT /mockserver/expectation with the captured method/path/status/body.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/mockserver/expectation'),
+      expect.objectContaining({ method: 'PUT' }),
+    );
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.httpRequest).toMatchObject({ method: 'POST', path: '/api/orders' });
+    expect(body.httpResponse).toMatchObject({ statusCode: 201 });
+    expect(body.httpResponse.body).toBe('{"id":7}');
+  });
+});
+
 describe('TrafficInspector — Replay button', () => {
   beforeEach(() => {
     useDashboardStore.setState({
