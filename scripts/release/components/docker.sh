@@ -455,14 +455,21 @@ else
     # ALL signing failed (aborting the release). Capture stderr INTO the var and
     # surface it: on success the value is `sha256:…`; on failure it is the error
     # text, which we now log instead of swallowing.
-    # Keep stderr OUT of $digest: capture it to a temp file so an innocuous
-    # buildx/daemon warning on a successful inspect can't prepend the sha256 and
-    # trip the `!= sha256:*` check into a false "could not resolve" skip. On
-    # failure we surface the captured stderr instead of swallowing it.
+    # Parse the `Digest:` line from `imagetools inspect`'s PLAIN output rather
+    # than a `--format` Go-template. The template field name is NOT portable
+    # across buildx versions: locally `.Digest` errors and `.Manifest.Digest`
+    # works, but on the release agent `.Manifest.Digest` yields an EMPTY string
+    # with NO error (build #54: "skipping cosign sign ()") — so neither template
+    # is safe everywhere. The first `^Digest:` line of the plain output is the
+    # index/manifest-list digest (exactly what cosign should sign) and that format
+    # has been stable for years. Stderr is captured (not merged into $digest, and
+    # not swallowed) so a real failure — auth, missing image — is surfaced; the
+    # trailing `|| true` keeps a non-zero inspect from aborting under pipefail.
     local digest inspect_err
     mkdir -p "$REPO_ROOT/.tmp"
     inspect_err="$REPO_ROOT/.tmp/imagetools-inspect.$$"
-    digest=$(docker buildx imagetools inspect "$image_ref" --format '{{.Manifest.Digest}}' 2>"$inspect_err" || true)
+    digest=$(docker buildx imagetools inspect "$image_ref" 2>"$inspect_err" \
+      | awk '/^Digest:/{print $2; exit}' || true)
     if [[ "$digest" != sha256:* ]]; then
       log_info "WARNING: could not resolve digest for $image_ref — skipping cosign sign ($(cat "$inspect_err" 2>/dev/null))"
       rm -f "$inspect_err"
