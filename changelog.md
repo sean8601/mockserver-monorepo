@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- VS Code and JetBrains extensions now validate MockServer expectation files. Name a file `*.mockserver.json`
+  (or `*.mockserver.jsonc`) and the editor gives inline schema validation, autocompletion, and hover
+  documentation for expectations — driven by the same schema MockServer itself validates against, generated
+  from `mockserver-core` (`scripts/generate-editor-expectation-schema.mjs`). A single expectation or an array
+  of expectations (initialization JSON) is accepted.
+- JetBrains plugin adds a **Settings | Tools | MockServer** panel to configure the Docker image, container
+  name, and port.
 
 ### Changed
+- VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
+  (VS Code: `mockserver.*` settings). The Docker image tag now defaults to the extension's own version instead
+  of a hardcoded constant, so it can no longer drift behind the release (previously pinned to `7.0.0`).
 
 ### Fixed
 - Stop leaking the vulnerable `commons-beanutils` (1.9.4 and, via `commons-digester3`, 1.8.3) to downstream
