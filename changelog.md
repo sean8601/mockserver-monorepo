@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The HTTP call runs off the UI thread.
 
 ### Changed
+- Dashboard is now more usable on small screens (mobile and the IDE-embedded dashboard): the Get Started
+  feature tiles collapse to a compact bulleted list below a medium viewport width, and the Log Messages list
+  hides the inline message preview when narrow (it wrapped one word per line) — the full message is still
+  available by expanding the row.
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
   (VS Code: `mockserver.*` settings). The Docker image tag now defaults to the extension's own version instead
   of a hardcoded constant, so it can no longer drift behind the release (previously pinned to `7.0.0`).

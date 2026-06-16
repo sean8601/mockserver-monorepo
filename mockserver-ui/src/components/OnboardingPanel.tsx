@@ -73,6 +73,51 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
 
   const go = (view: ViewMode) => () => setView(view);
 
+  // The five key features, rendered as tiles on wide screens and as a compact
+  // bulleted list on narrow ones (mobile / the IDE-embedded dashboard).
+  const primaryActions: ActionCardProps[] = [
+    {
+      icon: <PauseCircleIcon color="primary" />,
+      title: 'Breakpoints',
+      description:
+        'Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them.',
+      actionLabel: 'Open Breakpoints',
+      onAction: go('breakpoints'),
+    },
+    {
+      icon: <SwapHorizIcon color="primary" />,
+      title: 'Debugging Proxy',
+      description:
+        'Sit MockServer between your app and a real API to record, inspect, and replay live traffic — and validate or rewrite it on the way through.',
+      actionLabel: 'View Traffic',
+      onAction: go('traffic'),
+    },
+    {
+      icon: <SmartToyIcon color="primary" />,
+      title: 'LLM / AI Debugging',
+      description:
+        'Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session.',
+      actionLabel: 'Open Sessions',
+      onAction: go('sessions'),
+    },
+    {
+      icon: <UploadFileIcon color="primary" />,
+      title: 'Mocking',
+      description:
+        'Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically.',
+      actionLabel: 'Import OpenAPI',
+      onAction: () => setOpenApiOpen(true),
+    },
+    {
+      icon: <BoltIcon color="primary" />,
+      title: 'Chaos Testing',
+      description:
+        'Inject latency, errors, and dropped connections to test how your system copes when the APIs it depends on misbehave.',
+      actionLabel: 'Open Chaos',
+      onAction: go('chaos'),
+    },
+  ];
+
   return (
     <Box
       sx={{
@@ -98,9 +143,10 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
         full feature set.
       </Typography>
 
+      {/* Wide screens: feature tiles side by side. */}
       <Box
         sx={{
-          display: 'flex',
+          display: { xs: 'none', md: 'flex' },
           flexWrap: 'nowrap',
           gap: 2,
           alignItems: 'stretch',
@@ -109,45 +155,32 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
           maxWidth: 1200,
         }}
       >
-        <ActionCard
-          icon={<PauseCircleIcon color="primary" />}
-          title="Breakpoints"
-          description="Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them."
-          actionLabel="Open Breakpoints"
-          onAction={go('breakpoints')}
-        />
+        {primaryActions.map((action) => (
+          <ActionCard key={action.title} {...action} />
+        ))}
+      </Box>
 
-        <ActionCard
-          icon={<SwapHorizIcon color="primary" />}
-          title="Debugging Proxy"
-          description="Sit MockServer between your app and a real API to record, inspect, and replay live traffic — and validate or rewrite it on the way through."
-          actionLabel="View Traffic"
-          onAction={go('traffic')}
-        />
-
-        <ActionCard
-          icon={<SmartToyIcon color="primary" />}
-          title="LLM / AI Debugging"
-          description="Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session."
-          actionLabel="Open Sessions"
-          onAction={go('sessions')}
-        />
-
-        <ActionCard
-          icon={<UploadFileIcon color="primary" />}
-          title="Mocking"
-          description="Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically."
-          actionLabel="Import OpenAPI"
-          onAction={() => setOpenApiOpen(true)}
-        />
-
-        <ActionCard
-          icon={<BoltIcon color="primary" />}
-          title="Chaos Testing"
-          description="Inject latency, errors, and dropped connections to test how your system copes when the APIs it depends on misbehave."
-          actionLabel="Open Chaos"
-          onAction={go('chaos')}
-        />
+      {/* Narrow screens (mobile / IDE-embedded): a compact bulleted list, since
+          five tiles side by side become unreadably squished. */}
+      <Box
+        component="ul"
+        sx={{ display: { xs: 'block', md: 'none' }, m: 0, pl: 3, width: '100%', maxWidth: 760 }}
+      >
+        {primaryActions.map((action) => (
+          <Box component="li" key={action.title} sx={{ mb: 1 }}>
+            <Link
+              component="button"
+              type="button"
+              onClick={action.onAction}
+              sx={{ verticalAlign: 'baseline', fontWeight: 600 }}
+            >
+              {action.title}
+            </Link>
+            <Typography component="span" variant="body2" color="text.secondary">
+              {' '}— {action.description}
+            </Typography>
+          </Box>
+        ))}
       </Box>
 
       <Box sx={{ mt: 4, maxWidth: 760, width: '100%' }}>
