@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JetBrains plugin adds a **Settings | Tools | MockServer** panel to configure the Docker image, container
   name, and port.
 - VS Code extension turns expectation files into a live control surface: CodeLens actions at the top of any
-  `*.mockserver.json` file **Load into running MockServer** (`PUT /mockserver/expectation`) and **Diff against
-  live** (side-by-side diff against the server's active expectations), both reachable from the Command Palette.
+  `*.mockserver.json` / `*.mockserver.jsonc` file **Load into running MockServer** (`PUT /mockserver/expectation`,
+  comments and trailing commas tolerated) and **Diff against live** (side-by-side diff against the server's
+  active expectations), both reachable from the Command Palette.
 
 ### Changed
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
