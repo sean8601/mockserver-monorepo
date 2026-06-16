@@ -211,10 +211,45 @@ function summaryForExpectation(value: Record<string, unknown>, expKind: Expectat
     return path || '(gRPC)';
   }
 
-  // HTTP / MCP — METHOD /path
+  // HTTP / MCP — METHOD /path  → <what it does>
   const method = typeof req['method'] === 'string' ? (req['method'] as string) : 'ANY';
   const path = typeof req['path'] === 'string' ? (req['path'] as string) : '(no path)';
-  return `${method} ${path}`;
+  const action = actionSummaryForExpectation(value);
+  return action ? `${method} ${path}  ${action}` : `${method} ${path}`;
+}
+
+/**
+ * Short, human-readable description of what an expectation *does* (its action /
+ * response), appended to the request summary so two mocks that share a request
+ * matcher (e.g. two `GET /users` returning 200 vs 500, or a static response vs a
+ * forward) are distinguishable in the existing-mocks picker. Returns '' when no
+ * recognised action is present.
+ */
+function actionSummaryForExpectation(value: Record<string, unknown>): string {
+  const resp = value['httpResponse'] as Record<string, unknown> | undefined;
+  if (resp) {
+    // MockServer defaults an omitted statusCode to 200.
+    const status = typeof resp['statusCode'] === 'number' ? resp['statusCode'] : 200;
+    return `→ ${status}`;
+  }
+  if (value['httpResponses']) return '→ sequential';
+  if (value['httpResponseTemplate']) return '→ template';
+  if (value['httpResponseClassCallback'] || value['httpResponseObjectCallback']) return '→ callback';
+  if (value['binaryResponse']) return '→ binary';
+  if (value['httpSseResponse']) return '→ SSE';
+  if (value['httpWebSocketResponse']) return '→ WebSocket';
+  if (value['httpError']) return '→ error';
+  if (value['httpOverrideForwardedRequest']) return '→ forward + override';
+  if (value['httpForwardWithFallback']) return '→ forward (fallback)';
+  if (value['httpForwardTemplate']) return '→ forward (template)';
+  if (value['httpForwardClassCallback'] || value['httpForwardObjectCallback']) return '→ forward callback';
+  const fwd = value['httpForward'] as Record<string, unknown> | undefined;
+  if (fwd) {
+    const host = typeof fwd['host'] === 'string' ? (fwd['host'] as string) : '';
+    const port = typeof fwd['port'] === 'number' ? `:${fwd['port']}` : '';
+    return host ? `→ forward ${host}${port}` : '→ forward';
+  }
+  return '';
 }
 
 /**
