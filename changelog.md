@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- Stop leaking the vulnerable `commons-beanutils` (1.9.4 and, via `commons-digester3`, 1.8.3) to downstream
+  consumers through `velocity-tools-generic`. These transitive versions are affected by GHSA-wxr5-93ph-8wr9
+  (CVE-2025-48734). MockServer's own build already pinned 1.11.0, but that pin lived in
+  `dependencyManagement`, which is not transitive, so consumers of `mockserver-core` still resolved the
+  vulnerable versions. `commons-beanutils` is now excluded from `velocity-tools-generic` and declared as a
+  direct dependency at 1.11.0 so the fixed version propagates to consumers. (#1981)
 
 ## [7.1.0] - 2026-06-16
 
