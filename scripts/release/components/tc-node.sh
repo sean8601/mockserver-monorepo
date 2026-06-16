@@ -28,6 +28,11 @@ log_step "Publish @mockserver/testcontainers $RELEASE_VERSION (dry-run=$DRY_RUN)
 COMPONENT_DIR="$REPO_ROOT/mockserver-testcontainers/node"
 PKG_JSON="$COMPONENT_DIR/package.json"
 
+# The in-container `npm ci` below writes a root-owned node_modules into the
+# bind-mounted workspace that the next job's git checkout cannot clean (see
+# clean_workspace_node_modules). Remove it on every exit path.
+trap 'clean_workspace_node_modules mockserver-testcontainers/node' EXIT
+
 # Read current package name for idempotency check (host jq — package.json is a
 # plain file on the bind-mounted repo).
 NPM_NAME=$(jq -r '.name' "$PKG_JSON" 2>/dev/null || echo "@mockserver/testcontainers")

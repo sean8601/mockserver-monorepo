@@ -31,6 +31,14 @@ log_step "Publish VS Code extension $RELEASE_VERSION (dry-run=$DRY_RUN)"
 COMPONENT_DIR="$REPO_ROOT/mockserver-vscode"
 PKG_JSON="$COMPONENT_DIR/package.json"
 
+# The in-container `npm ci` below writes a root-owned node_modules into the
+# bind-mounted workspace that the next job's git checkout cannot clean (see
+# clean_workspace_node_modules). The EXIT trap fires on every exit path (build
+# failure, dry-run early-exit, or publish success) and runs AFTER the build,
+# package and vsce/ovsx publish steps that need node_modules, so it never races
+# them.
+trap 'clean_workspace_node_modules mockserver-vscode' EXIT
+
 # Bump version in package.json. Host edit — package.json is on the bind-mounted
 # repo, so the in-container build/package/publish sees the bumped version. Done
 # without npm/git (sed) so no host toolchain is required.

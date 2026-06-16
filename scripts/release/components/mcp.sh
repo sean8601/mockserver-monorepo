@@ -56,7 +56,14 @@ IMAGE_REF="docker.io/mockserver/mockserver:${RELEASE_VERSION}"
 # Pin the CLI version; pin MCP_PUBLISHER_SHA256 on the agent to make the
 # download checksum-verified (a security control). When set, a mismatch is HARD;
 # when unset, the gap is surfaced with a :warning:.
-MCP_PUBLISHER_VERSION="${MCP_PUBLISHER_VERSION:-1.2.3}"
+# v1.7.0+ is the first line that ships the `validate` subcommand used below; the
+# old 1.2.3 pin only had init/login/logout/publish, so `validate` hard-failed
+# with "Unknown command: validate". Note the release asset-name scheme also
+# changed at v1.7.0 (no version in the filename) — see the download URL; pinning
+# back to a 1.6.x or older version would 404 against the URL below.
+# To enforce the download checksum, set on the agent (linux/amd64, v1.7.9):
+#   MCP_PUBLISHER_SHA256=ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+MCP_PUBLISHER_VERSION="${MCP_PUBLISHER_VERSION:-1.7.9}"
 MCP_PUBLISHER_SHA256="${MCP_PUBLISHER_SHA256:-}"
 
 # A missing committed manifest is a real defect — HARD-fail.
@@ -72,7 +79,9 @@ else
   os="linux"; arch="amd64"
   case "$(uname -m)" in aarch64|arm64) arch="arm64" ;; esac
   case "$(uname -s)" in Darwin) os="darwin" ;; esac
-  url="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_${MCP_PUBLISHER_VERSION}_${os}_${arch}.tar.gz"
+  # Asset name carries no version (changed from the 1.2.x `..._${ver}_${os}_${arch}`
+  # scheme); the tag still does.
+  url="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_${os}_${arch}.tar.gz"
   log_info "mcp-publisher not on PATH — downloading v${MCP_PUBLISHER_VERSION} ($os/$arch)"
   mkdir -p "$REPO_ROOT/.tmp"
   # HARD-fail (with retry) on a real download error — without the CLI we cannot

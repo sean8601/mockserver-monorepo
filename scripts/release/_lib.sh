@@ -337,6 +337,26 @@ in_docker() {
   "$REPO_ROOT/.buildkite/scripts/run-in-docker.sh" -i "$1" "${ca_args[@]+"${ca_args[@]}"}" "${@:2}"
 }
 
+# Remove bind-mounted node_modules dir(s) from INSIDE a container, as the
+# container user that created them. Under the elastic-ci-stack's userns-remap,
+# files an in-container `npm ci`/`npm i` writes into the bind-mounted workspace
+# are owned by a remapped UID the host buildkite-agent user CANNOT delete, so a
+# node_modules left behind breaks the NEXT job's git checkout/clean on the same
+# agent with "unlinkat .../node_modules/...: permission denied" ->
+# "cloning git repository: exit status 128". The container owns the files, so it
+# can remove them. Best-effort by design: output is suppressed and the call can
+# never fail the caller (so it is safe in an EXIT trap and on agents without
+# Docker — a missing `docker` or `node_modules` is a no-op, not a red step). A
+# genuine cleanup failure surfaces later as the next job's checkout error, which
+# is the same signal we had before this helper. Register on EXIT after the
+# workspace npm install, e.g.:  trap 'clean_workspace_node_modules mockserver-vscode' EXIT
+clean_workspace_node_modules() {
+  local d
+  for d in "$@"; do
+    in_docker "$NODE_IMAGE" -w "/build/$d" -- sh -c 'rm -rf node_modules' >/dev/null 2>&1 || true
+  done
+}
+
 # Maven-specific Docker invocation that ALSO installs the host's corp CA
 # into the JDK truststore so plugins that download from HTTPS (e.g. the
 # frontend-maven-plugin downloading Node.js) work behind a TLS proxy.
