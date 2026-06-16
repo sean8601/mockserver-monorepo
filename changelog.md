@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VS Code extension can generate expectations from an OpenAPI/Swagger spec: **MockServer: Generate
   Expectations From OpenAPI Spec** sends the active editor's spec (JSON or YAML) to the running server
   (`PUT /mockserver/openapi`) and opens the generated expectations in a new tab.
+- JetBrains plugin brings the same server-interaction actions to the **Tools > MockServer** menu:
+  **Load Expectations Into Running Server** (`PUT /mockserver/expectation`, a single expectation or an array),
+  **Save Recorded Expectations** (`PUT /mockserver/retrieve?type=recorded_expectations`, opens the
+  recorded expectations in a new JSON tab), and **Generate Expectations From OpenAPI Spec**
+  (`PUT /mockserver/openapi`, sends the active editor's JSON or YAML spec and opens the generated
+  expectations in a new JSON tab). All HTTP calls run off the UI thread.
 
 ### Changed
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable

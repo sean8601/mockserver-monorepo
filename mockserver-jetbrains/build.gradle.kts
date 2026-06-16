@@ -20,6 +20,11 @@ dependencies {
         // associate the expectation schema with *.mockserver.json files.
         bundledPlugin("com.intellij.modules.json")
     }
+    // Gson for building/parsing the small JSON payloads exchanged with the running
+    // MockServer (OpenAPI spec wrapping, pretty-printing). Declared explicitly so
+    // MockServerRestClient is unit-testable on the plain test classpath without the
+    // IntelliJ platform; the platform also bundles a compatible Gson at runtime.
+    implementation("com.google.code.gson:gson:2.11.0")
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")

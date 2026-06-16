@@ -46,6 +46,18 @@
                     class="com.mockserver.jetbrains.StartDockerAction"
                     text="Start MockServer (Docker)"
                     description="Starts a MockServer container via Docker"/>
+            <action id="MockServer.LoadExpectations"
+                    class="com.mockserver.jetbrains.LoadExpectationsAction"
+                    text="Load Expectations Into Running Server"
+                    description="Sends the active editor file to PUT /mockserver/expectation on the running MockServer"/>
+            <action id="MockServer.SaveRecordedExpectations"
+                    class="com.mockserver.jetbrains.SaveRecordedExpectationsAction"
+                    text="Save Recorded Expectations"
+                    description="Retrieves expectations recorded from proxied traffic and opens them in a new JSON tab"/>
+            <action id="MockServer.GenerateFromOpenApi"
+                    class="com.mockserver.jetbrains.GenerateFromOpenApiAction"
+                    text="Generate Expectations From OpenAPI Spec"
+                    description="Sends the active editor's OpenAPI/Swagger spec to MockServer and opens the generated expectations"/>
         </group>
     </actions>
 

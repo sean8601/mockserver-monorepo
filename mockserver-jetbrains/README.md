@@ -10,6 +10,12 @@ MockServer integration for IntelliJ-based IDEs: expectation-file validation, plu
   (initialization JSON) is accepted.
 - **Open MockServer Dashboard** — launches the dashboard in your default browser (port from Settings)
 - **Start MockServer (Docker)** — runs a MockServer container using the configured image, name, and port
+- **Load Expectations Into Running Server** — sends the active editor file to `PUT /mockserver/expectation`
+  on the running server (a single expectation or an array of expectations is accepted)
+- **Save Recorded Expectations** — retrieves the expectations MockServer recorded from proxied/forwarded
+  traffic (`PUT /mockserver/retrieve?type=recorded_expectations`) and opens them in a new JSON tab
+- **Generate Expectations From OpenAPI Spec** — sends the active editor's OpenAPI/Swagger spec (JSON or YAML)
+  to `PUT /mockserver/openapi` and opens the generated expectations in a new JSON tab
 - **Tool Window** — bottom panel with quick-access buttons for the above actions
 - **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
 
