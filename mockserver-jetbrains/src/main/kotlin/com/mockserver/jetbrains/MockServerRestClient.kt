@@ -3,6 +3,7 @@ package com.mockserver.jetbrains
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.net.URI
 import java.net.http.HttpClient
@@ -92,6 +93,104 @@ object MockServerRestClient {
         val wrapper = com.google.gson.JsonObject()
         wrapper.add("specUrlOrPayload", payload)
         return COMPACT.toJson(wrapper)
+    }
+
+    // ---------------------------------------------------------------------
+    // Ad-hoc ("scratch") request support — pure + unit-testable.
+    // ---------------------------------------------------------------------
+
+    /**
+     * An ad-hoc HTTP request the user authored in the editor to fire at the running
+     * MockServer. Mirrors the VS Code "Send Test Request" spec shape:
+     * `{ "method": "GET", "path": "/api/x", "headers": { "K": "V" }, "body": "..." }`.
+     * [method] and [path] are required; [headers] and [body] are optional.
+     */
+    data class RequestSpec(
+        val method: String,
+        val path: String,
+        val headers: Map<String, String> = emptyMap(),
+        val body: String? = null,
+    )
+
+    /**
+     * Parse a scratch-request spec from [text]. Mirrors the VS Code `parseRequestSpec`
+     * semantics: the text must be a JSON object with non-blank string `method` and
+     * `path`; `headers` (if present) must be an object whose values are all strings;
+     * `body` (if present) must be a string. Throws [IllegalArgumentException] with a
+     * clear message otherwise.
+     */
+    fun parseRequestSpec(text: String): RequestSpec {
+        val element: JsonElement = try {
+            JsonParser.parseString(text)
+        } catch (ex: Exception) {
+            throw IllegalArgumentException("The active editor isn't valid JSON: ${ex.message}")
+        }
+        if (!element.isJsonObject) {
+            throw IllegalArgumentException(
+                "The request must be a JSON object, e.g. " +
+                    """{ "method": "GET", "path": "/api/x", "headers": {}, "body": "" }."""
+            )
+        }
+        val obj = element.asJsonObject
+        val method = requiredString(obj, "method")
+        val path = requiredString(obj, "path")
+
+        val headers = LinkedHashMap<String, String>()
+        if (obj.has("headers") && !obj.get("headers").isJsonNull) {
+            val headersElement = obj.get("headers")
+            if (!headersElement.isJsonObject) {
+                throw IllegalArgumentException("\"headers\" must be a JSON object of string values.")
+            }
+            for ((key, value) in headersElement.asJsonObject.entrySet()) {
+                if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString) {
+                    throw IllegalArgumentException("Header \"$key\" must have a string value.")
+                }
+                headers[key] = value.asString
+            }
+        }
+
+        var body: String? = null
+        if (obj.has("body") && !obj.get("body").isJsonNull) {
+            val bodyElement = obj.get("body")
+            if (!bodyElement.isJsonPrimitive || !bodyElement.asJsonPrimitive.isString) {
+                throw IllegalArgumentException("\"body\" must be a string.")
+            }
+            body = bodyElement.asString
+        }
+
+        return RequestSpec(method, path, headers, body)
+    }
+
+    private fun requiredString(obj: JsonObject, field: String): String {
+        if (!obj.has(field) || obj.get(field).isJsonNull) {
+            throw IllegalArgumentException("\"$field\" is required and must be a non-blank string.")
+        }
+        val element = obj.get(field)
+        if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) {
+            throw IllegalArgumentException("\"$field\" is required and must be a non-blank string.")
+        }
+        val value = element.asString
+        if (value.isBlank()) {
+            throw IllegalArgumentException("\"$field\" is required and must be a non-blank string.")
+        }
+        return value
+    }
+
+    /**
+     * Build the ad-hoc request described by [spec] against [baseUrl]. The URI is
+     * `baseUrl + spec.path`, the method is `spec.method`, each header is set, and the
+     * body is `spec.body` (an empty body for a body-less method, e.g. GET).
+     */
+    fun buildScratchRequest(baseUrl: String, spec: RequestSpec): HttpRequest {
+        val builder = HttpRequest.newBuilder().uri(URI.create("$baseUrl${spec.path}"))
+        for ((key, value) in spec.headers) {
+            builder.header(key, value)
+        }
+        val bodyPublisher =
+            if (spec.body.isNullOrEmpty()) HttpRequest.BodyPublishers.noBody()
+            else HttpRequest.BodyPublishers.ofString(spec.body)
+        builder.method(spec.method, bodyPublisher)
+        return builder.build()
     }
 
     // ---------------------------------------------------------------------

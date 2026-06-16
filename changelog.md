@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the
   configured port and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a
   new tab.
+- JetBrains plugin brings the same ad-hoc request feature to the **Tools > MockServer** menu:
+  **Send Test Request** parses the active editor's JSON request spec
+  (`{ "method", "path", "headers"?, "body"? }`), fires it at the running server on the configured port,
+  and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab.
+  The HTTP call runs off the UI thread.
 
 ### Changed
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable

@@ -2,9 +2,11 @@ package com.mockserver.jetbrains
 
 import com.google.gson.JsonParser
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.net.http.HttpRequest
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -177,6 +179,99 @@ class MockServerRestClientTest {
         assertFalse(MockServerRestClient.looksLikeOpenApiSpec("just some text"))
         // a value merely containing the substring is not a top-level key
         assertFalse(MockServerRestClient.looksLikeOpenApiSpec("""{ "note": "openapi is great" }"""))
+    }
+
+    // --- parseRequestSpec -----------------------------------------------
+
+    @Test
+    fun `parseRequestSpec reads method path headers and body`() {
+        val spec = MockServerRestClient.parseRequestSpec(
+            """{ "method": "POST", "path": "/api/x", "headers": { "X-A": "1", "X-B": "2" }, "body": "hi" }"""
+        )
+        assertEquals("POST", spec.method)
+        assertEquals("/api/x", spec.path)
+        assertEquals(mapOf("X-A" to "1", "X-B" to "2"), spec.headers)
+        assertEquals("hi", spec.body)
+    }
+
+    @Test
+    fun `parseRequestSpec defaults headers and body when omitted`() {
+        val spec = MockServerRestClient.parseRequestSpec("""{ "method": "GET", "path": "/" }""")
+        assertEquals("GET", spec.method)
+        assertEquals("/", spec.path)
+        assertTrue(spec.headers.isEmpty())
+        assertNull(spec.body)
+    }
+
+    @Test
+    fun `parseRequestSpec rejects a missing method`() {
+        assertThrows<IllegalArgumentException> {
+            MockServerRestClient.parseRequestSpec("""{ "path": "/api/x" }""")
+        }
+    }
+
+    @Test
+    fun `parseRequestSpec rejects a blank method`() {
+        assertThrows<IllegalArgumentException> {
+            MockServerRestClient.parseRequestSpec("""{ "method": "  ", "path": "/api/x" }""")
+        }
+    }
+
+    @Test
+    fun `parseRequestSpec rejects a missing path`() {
+        assertThrows<IllegalArgumentException> {
+            MockServerRestClient.parseRequestSpec("""{ "method": "GET" }""")
+        }
+    }
+
+    @Test
+    fun `parseRequestSpec rejects a non-string header value`() {
+        assertThrows<IllegalArgumentException> {
+            MockServerRestClient.parseRequestSpec("""{ "method": "GET", "path": "/", "headers": { "X-A": 1 } }""")
+        }
+    }
+
+    @Test
+    fun `parseRequestSpec rejects a non-object input`() {
+        assertThrows<IllegalArgumentException> {
+            MockServerRestClient.parseRequestSpec("""[ { "method": "GET", "path": "/" } ]""")
+        }
+        assertThrows<IllegalArgumentException> {
+            MockServerRestClient.parseRequestSpec("not json")
+        }
+    }
+
+    // --- buildScratchRequest --------------------------------------------
+
+    @Test
+    fun `buildScratchRequest targets base plus path with the given method`() {
+        val spec = MockServerRestClient.RequestSpec("DELETE", "/api/x")
+        val req = MockServerRestClient.buildScratchRequest("http://localhost:1080", spec)
+        assertEquals("DELETE", req.method())
+        assertEquals("http://localhost:1080/api/x", req.uri().toString())
+    }
+
+    @Test
+    fun `buildScratchRequest sets each header`() {
+        val spec = MockServerRestClient.RequestSpec("GET", "/", mapOf("X-A" to "1", "Accept" to "application/json"))
+        val req = MockServerRestClient.buildScratchRequest("http://localhost:1080", spec)
+        assertEquals("1", req.headers().firstValue("X-A").orElse(""))
+        assertEquals("application/json", req.headers().firstValue("Accept").orElse(""))
+    }
+
+    @Test
+    fun `buildScratchRequest sends the body when present`() {
+        val spec = MockServerRestClient.RequestSpec("POST", "/api/x", body = """{"a":1}""")
+        val req = MockServerRestClient.buildScratchRequest("http://localhost:1080", spec)
+        assertEquals("POST", req.method())
+        assertEquals("""{"a":1}""", bodyOf(req))
+    }
+
+    @Test
+    fun `buildScratchRequest uses no body for a body-less spec`() {
+        val spec = MockServerRestClient.RequestSpec("GET", "/")
+        val req = MockServerRestClient.buildScratchRequest("http://localhost:1080", spec)
+        assertEquals(0L, req.bodyPublisher().orElseThrow().contentLength())
     }
 
     @Test

@@ -19,6 +19,9 @@ MockServer integration for IntelliJ-based IDEs: expectation-file validation, plu
   traffic (`PUT /mockserver/retrieve?type=recorded_expectations`) and opens them in a new JSON tab
 - **Generate Expectations From OpenAPI Spec** — sends the active editor's OpenAPI/Swagger spec (JSON or YAML)
   to `PUT /mockserver/openapi` and opens the generated expectations in a new JSON tab
+- **Send Test Request** — sends the ad-hoc HTTP request described in the active editor
+  (a JSON object `{ "method", "path", "headers"?, "body"? }`) at the running server on the configured port
+  and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab
 - **Tool Window** — bottom panel with quick-access buttons for the above actions
 - **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
 

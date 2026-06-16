@@ -63,6 +63,10 @@
                     class="com.mockserver.jetbrains.GenerateFromOpenApiAction"
                     text="Generate Expectations From OpenAPI Spec"
                     description="Sends the active editor's OpenAPI/Swagger spec to MockServer and opens the generated expectations"/>
+            <action id="MockServer.SendRequest"
+                    class="com.mockserver.jetbrains.SendRequestAction"
+                    text="Send Test Request"
+                    description="Sends the active editor's ad-hoc HTTP request to the running MockServer and opens the response"/>
         </group>
     </actions>
 
