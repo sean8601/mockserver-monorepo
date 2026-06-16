@@ -115,6 +115,40 @@ public sealed class MockServerClient : IDisposable
     }
 
     /// <summary>
+    /// Register expectations from an OpenAPI v3 specification.
+    /// </summary>
+    /// <param name="expectation">The OpenAPI spec (URL/classpath/inline payload) and optional operation-to-response map.</param>
+    public void OpenApiExpectation(OpenApiExpectation expectation)
+        => OpenApiExpectationAsync(expectation).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Register expectations from an OpenAPI v3 specification (async).
+    /// </summary>
+    public async Task OpenApiExpectationAsync(OpenApiExpectation expectation)
+    {
+        if (expectation == null) throw new ArgumentNullException(nameof(expectation));
+        var json = JsonSerializer.Serialize(expectation, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/openapi", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid OpenAPI expectation: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to create OpenAPI expectation (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Register expectations from an OpenAPI v3 spec given by URL, classpath, or inline payload.
+    /// </summary>
+    public void OpenApiExpectation(string specUrlOrPayload)
+        => OpenApiExpectation(Models.OpenApiExpectation.Of(specUrlOrPayload));
+
+    /// <summary>
+    /// Register expectations from an OpenAPI v3 spec given by URL, classpath, or inline payload (async).
+    /// </summary>
+    public Task OpenApiExpectationAsync(string specUrlOrPayload)
+        => OpenApiExpectationAsync(Models.OpenApiExpectation.Of(specUrlOrPayload));
+
+    /// <summary>
     /// Verify that a request has been received a specific number of times.
     /// </summary>
     /// <exception cref="VerificationException">If the verification fails (HTTP 406).</exception>
@@ -162,6 +196,19 @@ public sealed class MockServerClient : IDisposable
         if (statusCode >= 400)
             throw new MockServerClientException($"Failed to verify (HTTP {statusCode}): {body}");
     }
+
+    /// <summary>
+    /// Verify that MockServer received no requests at all.
+    /// </summary>
+    /// <exception cref="VerificationException">If any request was received (HTTP 406).</exception>
+    public void VerifyZeroInteractions()
+        => VerifyZeroInteractionsAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Verify that MockServer received no requests at all (async).
+    /// </summary>
+    public Task VerifyZeroInteractionsAsync()
+        => VerifyAsync(HttpRequest.Request().Build(), VerificationTimes.AtMostTimes(0));
 
     /// <summary>
     /// Verify that requests were received in a specific sequence.

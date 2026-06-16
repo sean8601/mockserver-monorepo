@@ -67,6 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
 - Rust client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, `openapi()` import, and
   `verify_zero_interactions()`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
+- .NET client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
+  `VerifyZeroInteractions` (sync + async), moving it toward feature parity with the Java/Node/Python/Ruby clients.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
