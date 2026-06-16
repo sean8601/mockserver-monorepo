@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in IDE** (and a dedicated right-hand tool window), embedding it with the bundled JCEF (Chromium) engine and
   Reload / Open-in-Browser controls. When JCEF is unavailable in the IDE or runtime it falls back gracefully
   to opening the external browser.
+- VS Code extension can show the live dashboard inside the editor: **MockServer: Open Dashboard
+  (in editor)** opens the running server's dashboard in a VS Code editor tab (a webview that frames
+  `http://localhost:<port>/mockserver/dashboard`) on the configured port, alongside the existing
+  external-browser **MockServer: Open Dashboard** command.
 - VS Code extension can send an ad-hoc test request without leaving the editor: name a file
   `*.mockserver-request.json` (`{ "method", "path", "headers"?, "body"? }`) and the **MockServer: Send
   Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the

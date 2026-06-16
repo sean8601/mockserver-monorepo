@@ -59,6 +59,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const startCmd = vscode.commands.registerCommand("mockserver.start", startMockServer);
     const stopCmd = vscode.commands.registerCommand("mockserver.stop", stopMockServer);
     const dashboardCmd = vscode.commands.registerCommand("mockserver.openDashboard", openDashboard);
+    const dashboardInEditorCmd = vscode.commands.registerCommand(
+        "mockserver.openDashboardInEditor",
+        openDashboardInEditor
+    );
     const loadCmd = vscode.commands.registerCommand("mockserver.loadExpectations", loadExpectations);
     const diffCmd = vscode.commands.registerCommand("mockserver.diffAgainstLive", diffAgainstLive);
     const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
@@ -82,6 +86,7 @@ export function activate(context: vscode.ExtensionContext): void {
         startCmd,
         stopCmd,
         dashboardCmd,
+        dashboardInEditorCmd,
         loadCmd,
         diffCmd,
         recordCmd,
@@ -177,6 +182,32 @@ async function openDashboard(): Promise<void> {
     if (!opened) {
         vscode.window.showErrorMessage(`Failed to open dashboard at ${url}`);
     }
+}
+
+// Open the live dashboard inside a VS Code editor tab, in a webview that frames
+// the running server's dashboard. Keeps the external-browser command available;
+// this is the in-editor alternative for users who prefer to stay in VS Code.
+let dashboardPanel: vscode.WebviewPanel | undefined;
+
+async function openDashboardInEditor(): Promise<void> {
+    const { port } = getConfig();
+    const url = `${client.buildBaseUrl(port)}/mockserver/dashboard`;
+    // Reuse a single panel: reveal the existing one rather than stacking duplicates.
+    if (dashboardPanel) {
+        dashboardPanel.reveal(vscode.ViewColumn.Active);
+        dashboardPanel.webview.html = client.buildDashboardWebviewHtml(url);
+        return;
+    }
+    dashboardPanel = vscode.window.createWebviewPanel(
+        "mockserverDashboard",
+        "MockServer Dashboard",
+        vscode.ViewColumn.Active,
+        { enableScripts: true }
+    );
+    dashboardPanel.onDidDispose(() => {
+        dashboardPanel = undefined;
+    });
+    dashboardPanel.webview.html = client.buildDashboardWebviewHtml(url);
 }
 
 // Resolve the expectation file a CodeLens/command should act on: the explicit

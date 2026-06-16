@@ -22,11 +22,19 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Start (Docker)** | Starts the `mockserver/mockserver` container (see Settings below) |
 | **MockServer: Stop** | Stops the running MockServer container |
 | **MockServer: Open Dashboard** | Opens the MockServer dashboard in your browser |
+| **MockServer: Open Dashboard (in editor)** | Opens the MockServer dashboard inside a VS Code editor tab, without leaving the editor |
 | **MockServer: Load Expectations Into Running Server** | Sends the current expectation file to the running server |
 | **MockServer: Diff Expectations Against Live Server** | Opens a diff between the file and the server's active expectations |
 | **MockServer: Save Recorded Expectations (JSON or Java)** | Opens expectations recorded from proxied traffic as JSON or Java DSL |
 | **MockServer: Generate Expectations From OpenAPI Spec** | Turns the OpenAPI/Swagger spec in the active editor into expectations |
 | **MockServer: Send Test Request** | Fires the request described by the active `*.mockserver-request.json` file at the running server and shows the response |
+
+## Live dashboard inside the editor
+
+**MockServer: Open Dashboard (in editor)** opens the running server's dashboard in a VS Code editor tab
+(a webview that frames `http://localhost:<port>/mockserver/dashboard`), so you can watch live requests
+without switching to a browser. The external-browser **MockServer: Open Dashboard** command is still
+available if you prefer it. Both use the configured `mockserver.port`.
 
 ## Expectation file validation
 

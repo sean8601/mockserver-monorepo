@@ -18,6 +18,33 @@ export function buildBaseUrl(port: number): string {
 }
 
 /**
+ * Build the HTML document for the in-editor dashboard webview: a full-size
+ * `<iframe>` pointing at the running server's dashboard. VS Code webviews block
+ * framing by default, so the document carries a Content-Security-Policy that
+ * explicitly allows framing localhost (`frame-src http://localhost:* http://127.0.0.1:*`)
+ * and inline styles for the full-bleed iframe. Kept free of the `vscode` API so
+ * it can be unit-tested directly.
+ */
+export function buildDashboardWebviewHtml(dashboardUrl: string): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; frame-src http://localhost:* http://127.0.0.1:*;">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MockServer Dashboard</title>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; }
+        iframe { width: 100%; height: 100vh; border: none; }
+    </style>
+</head>
+<body>
+    <iframe src="${dashboardUrl}" title="MockServer Dashboard"></iframe>
+</body>
+</html>`;
+}
+
+/**
  * A scratch request spec parsed from a `*.mockserver-request.json` file: a small
  * ad-hoc HTTP request a developer fires at the running mock from the editor.
  * `method` and `path` are required; `headers` and `body` are optional.

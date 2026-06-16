@@ -80,7 +80,11 @@ const vscodeStub = {
         showInformationMessage(_msg: string) {},
         showErrorMessage(_msg: string) {},
         showWarningMessage(_msg: string) {},
+        createWebviewPanel(_viewType: string, _title: string, _column: any, _options: any) {
+            return { webview: { html: "" }, dispose() {} };
+        },
     },
+    ViewColumn: { Active: -1 },
     env: {
         openExternal(_uri: any) { return Promise.resolve(true); },
     },
@@ -204,6 +208,13 @@ async function runTests(): Promise<void> {
         assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
     });
 
+    await test("activate registers mockserver.openDashboardInEditor command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.openDashboardInEditor"),
+            "mockserver.openDashboardInEditor command not registered"
+        );
+    });
+
     await test("activate registers the load + diff + record + openapi commands", () => {
         assert.ok(registeredCommands.has("mockserver.loadExpectations"), "load command not registered");
         assert.ok(registeredCommands.has("mockserver.diffAgainstLive"), "diff command not registered");
@@ -220,6 +231,16 @@ async function runTests(): Promise<void> {
 
     await test("buildBaseUrl builds a localhost URL", () => {
         assert.strictEqual(client.buildBaseUrl(1080), "http://localhost:1080");
+    });
+
+    await test("buildDashboardWebviewHtml embeds the URL in an iframe and allows framing localhost", () => {
+        const url = "http://localhost:1080/mockserver/dashboard";
+        const html = client.buildDashboardWebviewHtml(url) as string;
+        assert.ok(html.includes(`<iframe src="${url}"`), "iframe src should be the dashboard URL");
+        assert.ok(
+            /Content-Security-Policy[^>]*frame-src[^>]*http:\/\/localhost:\*/.test(html),
+            "CSP should allow frame-src http://localhost:*"
+        );
     });
 
     await test("parseExpectations accepts a single object and an array", () => {

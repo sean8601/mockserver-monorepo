@@ -42,6 +42,10 @@
         "title": "MockServer: Open Dashboard"
       },
       {
+        "command": "mockserver.openDashboardInEditor",
+        "title": "MockServer: Open Dashboard (in editor)"
+      },
+      {
         "command": "mockserver.loadExpectations",
         "title": "MockServer: Load Expectations Into Running Server"
       },
