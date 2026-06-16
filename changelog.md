@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`{ "method", "path", "headers"?, "body"? }`), fires it at the running server on the configured port,
   and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab.
   The HTTP call runs off the UI thread.
+- Go client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
+  `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the

@@ -141,6 +141,41 @@ func (f *ForwardChainExpectation) RespondWithError(eb *ErrorBuilder) ([]Expectat
 	return f.client.Upsert(f.expectation)
 }
 
+// RespondSse completes the expectation with a Server-Sent Events response action.
+func (f *ForwardChainExpectation) RespondSse(sb *SseResponseBuilder) ([]Expectation, error) {
+	resp := sb.Build()
+	f.expectation.HttpSseResponse = &resp
+	return f.client.Upsert(f.expectation)
+}
+
+// RespondWebSocket completes the expectation with a WebSocket response action.
+func (f *ForwardChainExpectation) RespondWebSocket(wb *WebSocketResponseBuilder) ([]Expectation, error) {
+	resp := wb.Build()
+	f.expectation.HttpWebSocketResponse = &resp
+	return f.client.Upsert(f.expectation)
+}
+
+// RespondGrpcStream completes the expectation with a gRPC streaming response action.
+func (f *ForwardChainExpectation) RespondGrpcStream(gb *GrpcStreamResponseBuilder) ([]Expectation, error) {
+	resp := gb.Build()
+	f.expectation.GrpcStreamResponse = &resp
+	return f.client.Upsert(f.expectation)
+}
+
+// RespondBinary completes the expectation with a raw binary response action.
+func (f *ForwardChainExpectation) RespondBinary(bb *BinaryResponseBuilder) ([]Expectation, error) {
+	resp := bb.Build()
+	f.expectation.BinaryResponse = &resp
+	return f.client.Upsert(f.expectation)
+}
+
+// RespondDns completes the expectation with a DNS response action.
+func (f *ForwardChainExpectation) RespondDns(db *DnsResponseBuilder) ([]Expectation, error) {
+	resp := db.Build()
+	f.expectation.DnsResponse = &resp
+	return f.client.Upsert(f.expectation)
+}
+
 // When begins building an expectation with a fluent API.
 func (c *Client) When(rb *RequestBuilder, opts ...ExpectationOption) *ForwardChainExpectation {
 	req := rb.Build()
@@ -251,6 +286,34 @@ func (c *Client) VerifyResponse(rb *RequestBuilder, respB *ResponseBuilder, time
 	if respB != nil {
 		resp := respB.Build()
 		v.HttpResponse = &resp
+	}
+
+	body, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("mockserver: marshal verification: %w", err)
+	}
+
+	respBody, statusCode, err := c.doRequest("PUT", "/mockserver/verify", body, nil)
+	if err != nil {
+		return err
+	}
+
+	if statusCode == 406 {
+		return &VerificationError{Message: string(respBody)}
+	}
+	if statusCode >= 400 {
+		return fmt.Errorf("mockserver: verify failed (status %d): %s", statusCode, string(respBody))
+	}
+	return nil
+}
+
+// VerifyZeroInteractions asserts that MockServer received no requests at all.
+// It is a thin wrapper over Verify with an empty request matcher and an
+// at-most-zero times constraint (matching the Java/Python/Ruby/Node clients).
+func (c *Client) VerifyZeroInteractions() error {
+	v := verification{
+		HttpRequest: &HttpRequest{},
+		Times:       &VerificationTimes{atMostSet: true},
 	}
 
 	body, err := json.Marshal(v)
