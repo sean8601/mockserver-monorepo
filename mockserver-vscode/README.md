@@ -83,6 +83,16 @@ In any `.json` file, type:
 4. Run **MockServer: Open Dashboard** to inspect recorded requests
 5. Run **MockServer: Stop** when done
 
+## Try it locally
+
+From the repo root, one command builds the extension, starts a local MockServer, drops in sample files,
+and opens a sandboxed VS Code Extension Development Host (nothing to install or uninstall):
+
+```bash
+scripts/try-editor-extensions.sh           # VS Code dev host
+scripts/try-editor-extensions.sh --install # or install the packaged .vsix into your VS Code
+```
+
 ## Building from Source
 
 ```bash

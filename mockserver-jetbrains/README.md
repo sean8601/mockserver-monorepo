@@ -55,6 +55,15 @@ The plugin ZIP will be at `build/distributions/mockserver-jetbrains-<version>.zi
 ./gradlew test
 ```
 
+## Try it locally
+
+From the repo root, one command builds the plugin and launches it in a sandbox IDE (and starts a local
+MockServer so the actions work):
+
+```bash
+scripts/try-editor-extensions.sh jetbrains
+```
+
 ## Running in a sandbox IDE
 
 ```bash
