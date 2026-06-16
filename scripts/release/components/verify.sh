@@ -64,7 +64,12 @@ check_http() {
   local label="$1" url="$2"
   local expected="${3:-200|301|302}"
   local code
-  code=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' -L -I "$url" 2>/dev/null || echo "000")
+  # Send a real User-Agent: crates.io returns 403 to UA-less requests, which made
+  # the crates.io checks report a misleading HTTP 403. A UA is harmless for every
+  # other host, so set it unconditionally.
+  code=$(curl -sS --connect-timeout 10 --max-time 30 \
+    -A 'mockserver-release (+https://github.com/mock-server/mockserver-monorepo)' \
+    -o /dev/null -w '%{http_code}' -L -I "$url" 2>/dev/null || echo "000")
   if [[ "$code" =~ ^(${expected})$ ]]; then
     log_info "  PASS  $label  (HTTP $code)"
   else
@@ -79,7 +84,12 @@ check_http_soft() {
   local label="$1" url="$2"
   local expected="${3:-200|301|302}"
   local code
-  code=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' -L -I "$url" 2>/dev/null || echo "000")
+  # Send a real User-Agent: crates.io returns 403 to UA-less requests, which made
+  # the crates.io checks report a misleading HTTP 403. A UA is harmless for every
+  # other host, so set it unconditionally.
+  code=$(curl -sS --connect-timeout 10 --max-time 30 \
+    -A 'mockserver-release (+https://github.com/mock-server/mockserver-monorepo)' \
+    -o /dev/null -w '%{http_code}' -L -I "$url" 2>/dev/null || echo "000")
   if [[ "$code" =~ ^(${expected})$ ]]; then
     log_info "  PASS  $label  (HTTP $code)"
   else
@@ -334,9 +344,11 @@ check_http_soft "testcontainers-mockserver $V on PyPI" \
   "https://pypi.org/pypi/testcontainers-mockserver/$V/json" "200"
 
 log_info ""
-log_info "== Testcontainers.MockServer (NuGet, soft) =="
-check_http_soft "Testcontainers.MockServer $V on NuGet" \
-  "https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/${V}/testcontainers.mockserver.${V}.nupkg"
+log_info "== MockServer.Testcontainers (NuGet, soft) =="
+# Package id is MockServer.Testcontainers (not Testcontainers.MockServer — that
+# prefix is NuGet-reserved); the flat-container path is the lowercased id.
+check_http_soft "MockServer.Testcontainers $V on NuGet" \
+  "https://api.nuget.org/v3-flatcontainer/mockserver.testcontainers/${V}/mockserver.testcontainers.${V}.nupkg"
 
 log_info ""
 log_info "== testcontainers-go (soft — pkg.go.dev indexing may lag) =="

@@ -49,8 +49,13 @@ fi
 # Idempotent: if this exact version is already on crates.io, skip the publish.
 # crates.io API visibility is eventually-consistent so this check can lag a fresh
 # publish — that's fine here, it only ever causes us to (re)attempt a publish,
-# which cargo itself rejects as a duplicate.
-crates_http=$(curl -s -o /dev/null -w "%{http_code}" \
+# which the run_idempotent wrapper below absorbs as a duplicate.
+# The `-A` User-Agent is REQUIRED: crates.io returns 403 to requests without a
+# User-Agent (curl's default counts as missing), which made this check return
+# non-200, skip the fast-path, and let `cargo publish` hard-fail with "already
+# exists on crates.io index" (build #53). A UA makes the pre-check actually work.
+CRATES_UA='mockserver-release (+https://github.com/mock-server/mockserver-monorepo)'
+crates_http=$(curl -s -A "$CRATES_UA" -o /dev/null -w "%{http_code}" \
   "https://crates.io/api/v1/crates/testcontainers-mockserver/${RELEASE_VERSION}" 2>/dev/null || echo "000")
 if [[ "$crates_http" == "200" ]]; then
   log_info "testcontainers-mockserver $RELEASE_VERSION already on crates.io — skipping"
@@ -71,8 +76,14 @@ fi
 # --allow-dirty: the version bump above leaves Cargo.toml/Cargo.lock uncommitted
 # (cargo refuses a dirty tree otherwise); those edits ARE the release version we
 # intend to publish, and they're committed separately by the version-bump step.
+# run_idempotent absorbs a duplicate publish: if a prior build (or the
+# eventually-consistent pre-check above missing it) already shipped this version,
+# `cargo publish` exits 101 with "already exists on crates.io index" — that is the
+# desired end state, so treat it as success while still HARD-failing on any other
+# error. The token is passed via -e (run-in-docker redacts -e values), so it never
+# reaches the captured output.
 log_info "Publishing to crates.io from $RUST_IMAGE"
-retry 3 5 -- in_docker "$RUST_IMAGE" \
+retry 3 5 -- run_idempotent 'already (exists|uploaded)' -- in_docker "$RUST_IMAGE" \
   -e "CARGO_REGISTRY_TOKEN=$CARGO_TOKEN" \
   -w /build/mockserver-testcontainers/rust -- cargo publish --allow-dirty
 
@@ -82,7 +93,7 @@ retry 3 5 -- in_docker "$RUST_IMAGE" \
 # swallowed.
 log_info "Verifying crates.io visibility for testcontainers-mockserver $RELEASE_VERSION"
 if ! retry 3 5 -- bash -c '
-  code=$(curl -s -o /dev/null -w "%{http_code}" \
+  code=$(curl -s -A "'"$CRATES_UA"'" -o /dev/null -w "%{http_code}" \
     "https://crates.io/api/v1/crates/testcontainers-mockserver/'"${RELEASE_VERSION}"'" 2>/dev/null || echo "000")
   [[ "$code" == "200" ]]
 '; then

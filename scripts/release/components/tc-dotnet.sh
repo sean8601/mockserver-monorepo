@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Publish Testcontainers.MockServer to NuGet.
+# Publish the MockServer.Testcontainers NuGet package (assembly/namespace remain
+# Testcontainers.MockServer; the package id differs to avoid NuGet's reserved
+# `Testcontainers.*` prefix — see the csproj).
 #
 # Dry-run: build + pack in-container, skip push.
 # HARD: a failed build/pack/push aborts the release. The .NET toolchain runs
@@ -23,7 +25,7 @@ done
 require_release_inputs
 skip_unless_release_type "tc-dotnet" full,post-maven
 
-log_step "Publish Testcontainers.MockServer $RELEASE_VERSION (dry-run=$DRY_RUN)"
+log_step "Publish MockServer.Testcontainers $RELEASE_VERSION (dry-run=$DRY_RUN)"
 
 COMPONENT_DIR="$REPO_ROOT/mockserver-testcontainers/dotnet"
 BUILD_PROPS="$COMPONENT_DIR/Directory.Build.props"
@@ -73,11 +75,14 @@ if is_dry_run; then
 fi
 
 # Idempotent: skip push if this version is already on NuGet. A non-200 just
-# means "not yet published" — proceed.
+# means "not yet published" — proceed. The flat-container URL uses the LOWERCASED
+# PackageId (mockserver.testcontainers) — the package id is MockServer.Testcontainers,
+# NOT Testcontainers.MockServer, because the latter sits under NuGet's reserved
+# `Testcontainers.*` prefix (build #53 403). See the csproj for the full rationale.
 http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-  "https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/${RELEASE_VERSION}/testcontainers.mockserver.${RELEASE_VERSION}.nupkg" 2>/dev/null || echo "000")
+  "https://api.nuget.org/v3-flatcontainer/mockserver.testcontainers/${RELEASE_VERSION}/mockserver.testcontainers.${RELEASE_VERSION}.nupkg" 2>/dev/null || echo "000")
 if [[ "$http_code" == "200" ]]; then
-  log_info "Testcontainers.MockServer $RELEASE_VERSION already on NuGet — skipping push"
+  log_info "MockServer.Testcontainers $RELEASE_VERSION already on NuGet — skipping push"
   exit 0
 fi
 
@@ -85,7 +90,7 @@ fi
 # silent skip. load_secret aborts (set -e) if the secret can't be read.
 NUGET_API_KEY=$(load_secret "mockserver-release/nuget" "api_key")
 if [[ -z "$NUGET_API_KEY" || "$NUGET_API_KEY" == "null" ]]; then
-  log_error "mockserver-release/nuget api_key is empty — cannot publish Testcontainers.MockServer"
+  log_error "mockserver-release/nuget api_key is empty — cannot publish MockServer.Testcontainers"
   exit 1
 fi
 
@@ -95,9 +100,12 @@ fi
 # redacted). Non-secret nupkg path passed via -e to keep the body literal.
 # HARD-fail on push error, with retry for transient blips; --skip-duplicate
 # makes retry idempotent.
-log_info "Pushing Testcontainers.MockServer $RELEASE_VERSION to NuGet.org"
+# `dotnet pack` names the nupkg after the PackageId, so the file is
+# MockServer.Testcontainers.<ver>.nupkg (the assembly is still
+# Testcontainers.MockServer; only the package id differs).
+log_info "Pushing MockServer.Testcontainers $RELEASE_VERSION to NuGet.org"
 retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" \
-  -e "NUPKG=./artifacts/Testcontainers.MockServer.${RELEASE_VERSION}.nupkg" \
+  -e "NUPKG=./artifacts/MockServer.Testcontainers.${RELEASE_VERSION}.nupkg" \
   -e "NUGET_API_KEY=$NUGET_API_KEY" -- \
   sh -c 'dotnet nuget push "$NUPKG" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate'
 
@@ -106,13 +114,13 @@ retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" \
 # this visibility check is best-effort — retry, then tolerate with a warning.
 log_info "Verifying NuGet visibility (eventually-consistent)"
 if ! retry 3 10 -- bash -c "[[ \"\$(curl -s -o /dev/null -w '%{http_code}' \
-     'https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/${RELEASE_VERSION}/testcontainers.mockserver.${RELEASE_VERSION}.nupkg')\" == \"200\" ]]"; then
-  log_info ":warning: Testcontainers.MockServer $RELEASE_VERSION not yet visible on NuGet — non-fatal (push succeeded; indexing lags)"
+     'https://api.nuget.org/v3-flatcontainer/mockserver.testcontainers/${RELEASE_VERSION}/mockserver.testcontainers.${RELEASE_VERSION}.nupkg')\" == \"200\" ]]"; then
+  log_info ":warning: MockServer.Testcontainers $RELEASE_VERSION not yet visible on NuGet — non-fatal (push succeeded; indexing lags)"
 fi
 
 # Commit version bump (host-side git; never blocks the publish).
-git_commit_and_push "release: publish Testcontainers.MockServer $RELEASE_VERSION to NuGet" \
+git_commit_and_push "release: publish MockServer.Testcontainers $RELEASE_VERSION to NuGet" \
   "$BUILD_PROPS" || \
   log_info ":warning: could not commit version bump (non-fatal)"
 
-log_info "Testcontainers.MockServer publish complete"
+log_info "MockServer.Testcontainers publish complete"

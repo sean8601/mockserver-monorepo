@@ -448,12 +448,27 @@ else
   cosign_sign_docker_image() {
     local image_ref="$1"
     # Resolve the tag to a digest so we sign by content, not by mutable tag.
-    local digest
-    digest=$(docker buildx imagetools inspect "$image_ref" --format '{{.Digest}}' 2>/dev/null || true)
-    if [[ -z "$digest" ]]; then
-      log_info "WARNING: could not resolve digest for $image_ref — skipping cosign sign"
+    # The template field is `.Manifest.Digest` — NOT `.Digest`, which does not
+    # exist on imagetools' tplInputs and makes buildx error with
+    # `can't evaluate field Digest in type imagetools.tplInputs`. Build #53 hid
+    # that behind `2>/dev/null`, so every image's digest came back empty and
+    # ALL signing failed (aborting the release). Capture stderr INTO the var and
+    # surface it: on success the value is `sha256:…`; on failure it is the error
+    # text, which we now log instead of swallowing.
+    # Keep stderr OUT of $digest: capture it to a temp file so an innocuous
+    # buildx/daemon warning on a successful inspect can't prepend the sha256 and
+    # trip the `!= sha256:*` check into a false "could not resolve" skip. On
+    # failure we surface the captured stderr instead of swallowing it.
+    local digest inspect_err
+    mkdir -p "$REPO_ROOT/.tmp"
+    inspect_err="$REPO_ROOT/.tmp/imagetools-inspect.$$"
+    digest=$(docker buildx imagetools inspect "$image_ref" --format '{{.Manifest.Digest}}' 2>"$inspect_err" || true)
+    if [[ "$digest" != sha256:* ]]; then
+      log_info "WARNING: could not resolve digest for $image_ref — skipping cosign sign ($(cat "$inspect_err" 2>/dev/null))"
+      rm -f "$inspect_err"
       return 1
     fi
+    rm -f "$inspect_err"
     local repo="${image_ref%%:*}"
     local ref_by_digest="${repo}@${digest}"
     log_info "  cosign sign $ref_by_digest"

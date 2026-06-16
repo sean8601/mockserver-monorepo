@@ -34,9 +34,14 @@ the release-queue IAM policy access.
    - **Expiration:** 365 days (the maximum; set a calendar reminder to rotate)
    - **Package owner:** select the account/org that owns `MockServerClient`
    - **Glob pattern:** `*` (or scope to the two specific package IDs
-     `MockServerClient` and `Testcontainers.MockServer` — note the client id has
-     no dot, so a `MockServer.*` glob would NOT match it)
-   - **Scopes:** Push (push new packages and package versions)
+     `MockServerClient` and `MockServer.Testcontainers`). The Testcontainers
+     module publishes as `MockServer.Testcontainers`, NOT `Testcontainers.MockServer`:
+     the `Testcontainers.*` ID prefix is NuGet-reserved by the Testcontainers org,
+     so a push under it 403s regardless of the key (build #53). A `MockServer.*`
+     glob matches `MockServer.Testcontainers` but NOT `MockServerClient` (no dot),
+     so scope must list both ids (or use `*`).
+   - **Scopes:** Push (push new packages and package versions). "Push new
+     packages" is required the first time `MockServer.Testcontainers` is published.
 4. Click **Create** and copy the API key immediately (it is shown only once).
 
 ### Store the secret
@@ -45,7 +50,7 @@ the release-queue IAM policy access.
 aws secretsmanager create-secret \
   --region eu-west-2 \
   --name mockserver-release/nuget \
-  --description "NuGet.org API key for publishing MockServerClient and Testcontainers.MockServer" \
+  --description "NuGet.org API key for publishing MockServerClient and MockServer.Testcontainers" \
   --secret-string '{"api_key":"<PASTE_NUGET_API_KEY>"}'
 ```
 
@@ -57,8 +62,8 @@ aws secretsmanager create-secret \
 .NET Client (soft):
   https://api.nuget.org/v3-flatcontainer/mockserverclient/<VERSION>/mockserverclient.<VERSION>.nupkg
 
-Testcontainers.MockServer (NuGet, soft):
-  https://api.nuget.org/v3-flatcontainer/testcontainers.mockserver/<VERSION>/testcontainers.mockserver.<VERSION>.nupkg
+MockServer.Testcontainers (NuGet, soft):
+  https://api.nuget.org/v3-flatcontainer/mockserver.testcontainers/<VERSION>/mockserver.testcontainers.<VERSION>.nupkg
 ```
 
 Both should return HTTP 200 after NuGet indexing completes (typically < 15 min).

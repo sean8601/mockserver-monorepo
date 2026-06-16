@@ -1,11 +1,13 @@
-# Testcontainers.MockServer
+# MockServer.Testcontainers
 
 A [Testcontainers](https://dotnet.testcontainers.org/) module for [MockServer](https://www.mock-server.com) that starts a `mockserver/mockserver` Docker container, waits for readiness, and provides connection helpers.
+
+> **Package id:** `MockServer.Testcontainers`. The namespace stays `Testcontainers.MockServer` (NuGet's `Testcontainers.*` ID prefix is reserved), so the install id and the `using` differ by design.
 
 ## Installation
 
 ```bash
-dotnet add package Testcontainers.MockServer
+dotnet add package MockServer.Testcontainers
 ```
 
 ## Usage

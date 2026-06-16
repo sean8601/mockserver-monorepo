@@ -30,8 +30,8 @@ sitemap:
     </tr>
     <tr>
         <td><a href="#dotnet-testcontainers">.NET</a></td>
-        <td><span class="inline_code">Testcontainers.MockServer</span> (NuGet)</td>
-        <td><span class="inline_code">dotnet add package Testcontainers.MockServer</span></td>
+        <td><span class="inline_code">MockServer.Testcontainers</span> (NuGet)</td>
+        <td><span class="inline_code">dotnet add package MockServer.Testcontainers</span></td>
     </tr>
     <tr>
         <td><a href="#node-testcontainers">Node.js</a></td>
@@ -152,12 +152,12 @@ class ExampleTest {
 
 <h2>.NET</h2>
 
-<p>The <span class="inline_code">Testcontainers.MockServer</span> NuGet package integrates with the <a href="https://dotnet.testcontainers.org/">Testcontainers for .NET</a> library. It starts a <span class="inline_code">mockserver/mockserver</span> container, waits for readiness, and exposes the mapped URL via helper methods.</p>
+<p>The <span class="inline_code">MockServer.Testcontainers</span> NuGet package integrates with the <a href="https://dotnet.testcontainers.org/">Testcontainers for .NET</a> library. It starts a <span class="inline_code">mockserver/mockserver</span> container, waits for readiness, and exposes the mapped URL via helper methods. The C# namespace is <span class="inline_code">Testcontainers.MockServer</span> (NuGet's <span class="inline_code">Testcontainers.*</span> id prefix is reserved, so the install id and the <span class="inline_code">using</span> differ).</p>
 
 <button id="button_dotnet_dependency" class="accordion title"><strong>Add The Dependency</strong></button>
 <div class="panel">
 
-<pre class="prettyprint lang-sh code"><code class="code">dotnet add package Testcontainers.MockServer</code></pre>
+<pre class="prettyprint lang-sh code"><code class="code">dotnet add package MockServer.Testcontainers</code></pre>
 
 <p>Requires .NET 8.0 SDK and Docker.</p>
 

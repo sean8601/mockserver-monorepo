@@ -49,8 +49,12 @@ fi
 # Idempotent: if this exact version is already on crates.io, skip the publish.
 # crates.io API visibility is eventually-consistent so this check can lag a fresh
 # publish — that's fine here, it only ever causes us to (re)attempt a publish,
-# which cargo itself rejects as a duplicate.
-crates_http=$(curl -s -o /dev/null -w "%{http_code}" \
+# which the run_idempotent wrapper below absorbs as a duplicate.
+# The `-A` User-Agent is REQUIRED: crates.io returns 403 to requests without a
+# User-Agent, which would make this pre-check return non-200 and skip the
+# fast-path (see the tc-rust build #53 failure for the same root cause).
+CRATES_UA='mockserver-release (+https://github.com/mock-server/mockserver-monorepo)'
+crates_http=$(curl -s -A "$CRATES_UA" -o /dev/null -w "%{http_code}" \
   "https://crates.io/api/v1/crates/mockserver-client/${RELEASE_VERSION}" 2>/dev/null || echo "000")
 if [[ "$crates_http" == "200" ]]; then
   log_info "mockserver-client $RELEASE_VERSION already on crates.io — skipping"
@@ -68,8 +72,12 @@ fi
 # Publish to crates.io inside the container. HARD-fail on a real publish error,
 # with retry to ride out transient registry/network blips. The token is passed
 # via -e (run-in-docker redacts -e values in its logged command).
+# run_idempotent absorbs a duplicate publish: if a prior build already shipped
+# this version, `cargo publish` exits 101 with "already exists on crates.io
+# index" — the desired end state, so treat it as success while still HARD-failing
+# on any other error. Token via -e (redacted), so it never reaches captured output.
 log_info "Publishing to crates.io from $RUST_IMAGE"
-retry 3 5 -- in_docker "$RUST_IMAGE" \
+retry 3 5 -- run_idempotent 'already (exists|uploaded)' -- in_docker "$RUST_IMAGE" \
   -e "CARGO_REGISTRY_TOKEN=$CARGO_TOKEN" \
   -w /build/mockserver-client-rust -- cargo publish --allow-dirty
 
@@ -79,7 +87,7 @@ retry 3 5 -- in_docker "$RUST_IMAGE" \
 # swallowed.
 log_info "Verifying crates.io visibility for mockserver-client $RELEASE_VERSION"
 if ! retry 3 5 -- bash -c '
-  code=$(curl -s -o /dev/null -w "%{http_code}" \
+  code=$(curl -s -A "'"$CRATES_UA"'" -o /dev/null -w "%{http_code}" \
     "https://crates.io/api/v1/crates/mockserver-client/'"${RELEASE_VERSION}"'" 2>/dev/null || echo "000")
   [[ "$code" == "200" ]]
 '; then
