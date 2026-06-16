@@ -11,6 +11,7 @@
       <li><b>Expectation file validation</b> — name a file <code>*.mockserver.json</code> (or <code>*.mockserver.jsonc</code>) and the IDE validates it as you type, with autocompletion and hover documentation, using the same schema MockServer validates against. A single expectation or an array of expectations (initialization JSON) is accepted.</li>
       <li><b>Start MockServer (Docker)</b> — launches the official <code>mockserver/mockserver</code> container (default port <code>1080</code>) with a single click.</li>
       <li><b>Open MockServer Dashboard</b> — opens the live dashboard in your browser to watch requests as they arrive, inspect why a request did or didn't match, and review active expectations.</li>
+      <li><b>Open MockServer Dashboard in IDE</b> — embeds the live dashboard inside the IDE in a dedicated tool window using the bundled JCEF (Chromium) engine, with Reload and Open-in-Browser controls. Falls back to the external browser when JCEF is unavailable.</li>
       <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar giving one-click access to the same actions, always within reach.</li>
       <li><b>Settings</b> — configure the Docker image, container name, and port under <b>Settings | Tools | MockServer</b>.</li>
     </ul>
@@ -42,6 +43,10 @@
                     class="com.mockserver.jetbrains.OpenDashboardAction"
                     text="Open MockServer Dashboard"
                     description="Opens the MockServer dashboard in your default browser"/>
+            <action id="MockServer.OpenDashboardInIde"
+                    class="com.mockserver.jetbrains.OpenDashboardInIdeAction"
+                    text="Open MockServer Dashboard in IDE"
+                    description="Shows the live MockServer dashboard inside the IDE using the bundled Chromium engine"/>
             <action id="MockServer.StartDocker"
                     class="com.mockserver.jetbrains.StartDockerAction"
                     text="Start MockServer (Docker)"
@@ -67,6 +72,11 @@
                     anchor="bottom"
                     secondary="true"
                     icon="AllIcons.Nodes.Plugin"/>
+        <toolWindow id="MockServerDashboard"
+                    factoryClass="com.mockserver.jetbrains.MockServerDashboardToolWindowFactory"
+                    anchor="right"
+                    canCloseContents="false"
+                    icon="AllIcons.Toolwindows.WebToolWindow"/>
         <notificationGroup id="MockServer Notifications"
                            displayType="BALLOON"
                            isLogByDefault="true"/>

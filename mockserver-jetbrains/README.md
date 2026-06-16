@@ -9,6 +9,9 @@ MockServer integration for IntelliJ-based IDEs: expectation-file validation, plu
   validates against, generated from `mockserver-core`. A single expectation or an array of expectations
   (initialization JSON) is accepted.
 - **Open MockServer Dashboard** — launches the dashboard in your default browser (port from Settings)
+- **Open MockServer Dashboard in IDE** — embeds the live dashboard inside the IDE using the bundled JCEF
+  (Chromium) engine in a dedicated right-hand tool window, with Reload and Open-in-Browser controls. When
+  JCEF is unavailable (e.g. a runtime without the JCEF engine) it falls back to opening the external browser
 - **Start MockServer (Docker)** — runs a MockServer container using the configured image, name, and port
 - **Load Expectations Into Running Server** — sends the active editor file to `PUT /mockserver/expectation`
   on the running server (a single expectation or an array of expectations is accepted)

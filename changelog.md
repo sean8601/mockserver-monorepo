@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded expectations in a new JSON tab), and **Generate Expectations From OpenAPI Spec**
   (`PUT /mockserver/openapi`, sends the active editor's JSON or YAML spec and opens the generated
   expectations in a new JSON tab). All HTTP calls run off the UI thread.
+- JetBrains plugin can show the live MockServer dashboard **inside the IDE** via **Open MockServer Dashboard
+  in IDE** (and a dedicated right-hand tool window), embedding it with the bundled JCEF (Chromium) engine and
+  Reload / Open-in-Browser controls. When JCEF is unavailable in the IDE or runtime it falls back gracefully
+  to opening the external browser.
 - VS Code extension can send an ad-hoc test request without leaving the editor: name a file
   `*.mockserver-request.json` (`{ "method", "path", "headers"?, "body"? }`) and the **MockServer: Send
   Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the
