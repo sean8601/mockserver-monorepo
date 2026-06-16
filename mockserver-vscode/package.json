@@ -48,6 +48,10 @@
       {
         "command": "mockserver.diffAgainstLive",
         "title": "MockServer: Diff Expectations Against Live Server"
+      },
+      {
+        "command": "mockserver.saveRecorded",
+        "title": "MockServer: Save Recorded Expectations (JSON or Java)"
       }
     ],
     "snippets": [

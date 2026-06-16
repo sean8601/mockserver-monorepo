@@ -90,3 +90,44 @@ export async function retrieveActiveExpectations(
         return body; // return as-is if the server sent something unparseable
     }
 }
+
+export type RecordedFormat = "json" | "java";
+
+export interface RecordedExpectations {
+    /** Formatted content (pretty JSON, or Java DSL as the server emitted it). */
+    content: string;
+    /** True when the server has not recorded any expectations yet. */
+    empty: boolean;
+}
+
+/**
+ * Retrieve expectations generated from traffic the server has recorded while
+ * proxying/forwarding, via `PUT /mockserver/retrieve?type=recorded_expectations`,
+ * as either JSON (pretty-printed) or Java DSL — the "record real traffic into
+ * code" flow. Returns the content plus whether it is empty (no recorded traffic).
+ */
+export async function retrieveRecordedExpectations(
+    baseUrl: string,
+    format: RecordedFormat,
+    fetchFn: FetchLike
+): Promise<RecordedExpectations> {
+    const res = await fetchFn(
+        `${baseUrl}/mockserver/retrieve?type=recorded_expectations&format=${format}`,
+        { method: "PUT" }
+    );
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    if (format === "java") {
+        return { content: body, empty: body.trim().length === 0 };
+    }
+    // JSON: pretty-print and detect the empty-array case.
+    try {
+        const parsed = JSON.parse(body);
+        const empty = Array.isArray(parsed) && parsed.length === 0;
+        return { content: JSON.stringify(parsed, null, 2) + "\n", empty };
+    } catch {
+        return { content: body, empty: body.trim().length === 0 };
+    }
+}

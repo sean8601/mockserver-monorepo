@@ -24,6 +24,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Open Dashboard** | Opens the MockServer dashboard in your browser |
 | **MockServer: Load Expectations Into Running Server** | Sends the current expectation file to the running server |
 | **MockServer: Diff Expectations Against Live Server** | Opens a diff between the file and the server's active expectations |
+| **MockServer: Save Recorded Expectations (JSON or Java)** | Opens expectations recorded from proxied traffic as JSON or Java DSL |
 
 ## Expectation file validation
 
@@ -43,6 +44,13 @@ At the top of any `*.mockserver.json` file the extension shows two CodeLens acti
   diff against your file, so you can see what's actually loaded versus what's in source.
 
 Both use the `mockserver.port` setting to reach the server. They are also available from the Command Palette.
+
+## Record real traffic into code
+
+Run **MockServer: Save Recorded Expectations** to capture expectations the server has recorded while
+proxying or forwarding to a real upstream, and open them in a new editor tab as either **JSON** (ready to
+save as a `*.mockserver.json` file) or **Java** (MockServerClient DSL to paste into a test). If the server
+has not proxied any traffic yet, the command tells you so rather than opening an empty file.
 
 ## Snippets
 

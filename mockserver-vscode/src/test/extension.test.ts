@@ -204,9 +204,10 @@ async function runTests(): Promise<void> {
         assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
     });
 
-    await test("activate registers the load + diff commands", () => {
+    await test("activate registers the load + diff + record commands", () => {
         assert.ok(registeredCommands.has("mockserver.loadExpectations"), "load command not registered");
         assert.ok(registeredCommands.has("mockserver.diffAgainstLive"), "diff command not registered");
+        assert.ok(registeredCommands.has("mockserver.saveRecorded"), "record command not registered");
     });
 
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
@@ -265,6 +266,37 @@ async function runTests(): Promise<void> {
             Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"id":"x"}]') });
         const out = await client.retrieveActiveExpectations("http://localhost:1080", fakeFetch);
         assert.ok(out.includes('"id": "x"'), "expected pretty-printed JSON");
+    });
+
+    await test("retrieveRecordedExpectations (json) flags empty and pretty-prints", async () => {
+        const emptyFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("[]") });
+        const empty = await client.retrieveRecordedExpectations("http://localhost:1080", "json", emptyFetch);
+        assert.strictEqual(empty.empty, true);
+
+        const dataFetch = (url: string) => {
+            assert.ok(url.includes("type=recorded_expectations&format=json"), `url=${url}`);
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"id":"r"}]') });
+        };
+        const data = await client.retrieveRecordedExpectations("http://localhost:1080", "json", dataFetch);
+        assert.strictEqual(data.empty, false);
+        assert.ok(data.content.includes('"id": "r"'), "expected pretty-printed JSON");
+    });
+
+    await test("retrieveRecordedExpectations (java) returns the DSL verbatim and flags empty", async () => {
+        const dsl = "new MockServerClient(...).when(request()...)";
+        const javaFetch = (url: string) => {
+            assert.ok(url.includes("format=java"), `url=${url}`);
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(dsl) });
+        };
+        const out = await client.retrieveRecordedExpectations("http://localhost:1080", "java", javaFetch);
+        assert.strictEqual(out.content, dsl);
+        assert.strictEqual(out.empty, false);
+
+        const emptyJava = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("   ") });
+        const empty = await client.retrieveRecordedExpectations("http://localhost:1080", "java", emptyJava);
+        assert.strictEqual(empty.empty, true);
     });
 
     // --- CodeLens provider ---

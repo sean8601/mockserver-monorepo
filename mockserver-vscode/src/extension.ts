@@ -56,6 +56,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const dashboardCmd = vscode.commands.registerCommand("mockserver.openDashboard", openDashboard);
     const loadCmd = vscode.commands.registerCommand("mockserver.loadExpectations", loadExpectations);
     const diffCmd = vscode.commands.registerCommand("mockserver.diffAgainstLive", diffAgainstLive);
+    const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
 
     const codeLensProvider = vscode.languages.registerCodeLensProvider(
         EXPECTATION_FILE_SELECTOR,
@@ -72,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): void {
         dashboardCmd,
         loadCmd,
         diffCmd,
+        recordCmd,
         codeLensProvider,
         contentProvider,
         liveContentChanged,
@@ -211,5 +213,40 @@ async function diffAgainstLive(uri?: vscode.Uri): Promise<void> {
         );
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to diff against live — ${(e as Error).message}`);
+    }
+}
+
+async function saveRecordedExpectations(): Promise<void> {
+    const pick = await vscode.window.showQuickPick(
+        [
+            { label: "JSON", description: "Expectation JSON (loadable as *.mockserver.json)", format: "json" as const },
+            { label: "Java", description: "MockServerClient Java DSL", format: "java" as const },
+        ],
+        { placeHolder: "Format for recorded expectations" }
+    );
+    if (!pick) {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        const recorded = await client.retrieveRecordedExpectations(
+            client.buildBaseUrl(port),
+            pick.format,
+            httpFetch
+        );
+        if (recorded.empty) {
+            vscode.window.showInformationMessage(
+                "MockServer has not recorded any expectations yet. Recorded expectations are generated " +
+                "from traffic the server proxies or forwards to a real upstream."
+            );
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: recorded.content,
+            language: pick.format === "java" ? "java" : "json",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve recorded expectations — ${(e as Error).message}`);
     }
 }

@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `*.mockserver.json` / `*.mockserver.jsonc` file **Load into running MockServer** (`PUT /mockserver/expectation`,
   comments and trailing commas tolerated) and **Diff against live** (side-by-side diff against the server's
   active expectations), both reachable from the Command Palette.
+- VS Code extension can record real traffic into code: **MockServer: Save Recorded Expectations** opens the
+  expectations the server recorded from proxied/forwarded traffic
+  (`PUT /mockserver/retrieve?type=recorded_expectations`) as JSON or Java DSL in a new editor tab.
 
 ### Changed
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
