@@ -248,6 +248,8 @@ public class ObjectMapperFactory {
             new JsonPathBodyDTOSerializer(),
             new ParameterBodySerializer(),
             new ParameterBodyDTOSerializer(),
+            new MultipartBodySerializer(),
+            new MultipartBodyDTOSerializer(),
             new RegexBodySerializer(),
             new RegexBodyDTOSerializer(),
             new StringBodySerializer(serialiseDefaultValues),

@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked before expectations are stored. Redaction can be disabled or extended via import options.
 - Response-template helpers `crypto` (`md5`/`sha1`/`sha256`/`sha512`/`hmacSha256`, lowercase hex) and `regex`
   (`matches`/`replaceAll`/`group`) for hashing/signing and extracting or rewriting values inside templates.
+- `multipart/form-data` request-body matching: a new `MultipartBody` matcher matches on individual parts by
+  field name/value, filename, and part content-type (regex and negation supported, like form parameters), via
+  both the Java DSL and the JSON/REST API. OpenAPI operations with `multipart/form-data` request bodies now
+  build field matchers from the schema's required properties instead of being matched on path and method only.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the

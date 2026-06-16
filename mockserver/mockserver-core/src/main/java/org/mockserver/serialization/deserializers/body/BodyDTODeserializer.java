@@ -54,6 +54,8 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
         fieldNameToType.put("graphql".toLowerCase(), Body.Type.GRAPHQL);
         fieldNameToType.put("filePath".toLowerCase(), Body.Type.FILE);
         fieldNameToType.put("moduleName".toLowerCase(), Body.Type.WASM);
+        fieldNameToType.put("filenames".toLowerCase(), Body.Type.MULTIPART);
+        fieldNameToType.put("partContentTypes".toLowerCase(), Body.Type.MULTIPART);
     }
 
     private static final MockServerLogger MOCK_SERVER_LOGGER = new MockServerLogger(BodyDTODeserializer.class);
@@ -77,6 +79,9 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
         MatchType matchType = JsonBody.DEFAULT_MATCH_TYPE;
         boolean matchNumbersAsStrings = false;
         Parameters parameters = null;
+        Parameters multipartFields = null;
+        Parameters multipartFilenames = null;
+        Parameters multipartPartContentTypes = null;
         Map<String, ParameterStyle> parameterStyles = null;
         Map<String, String> namespacePrefixes = null;
         String jsonRpcMethod = null;
@@ -350,6 +355,36 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
                         }
                         parameters = objectMapper.readValue(objectWriter.writeValueAsString(entry.getValue()), Parameters.class);
                     }
+                    if (key.equalsIgnoreCase("fields") && !(entry.getValue() instanceof List)) {
+                        if (objectMapper == null) {
+                            objectMapper = ObjectMapperFactory.createObjectMapper();
+                        }
+                        if (objectWriter == null) {
+                            objectWriter = objectMapper.writerWithDefaultPrettyPrinter();
+                        }
+                        type = Body.Type.MULTIPART;
+                        multipartFields = objectMapper.readValue(objectWriter.writeValueAsString(entry.getValue()), Parameters.class);
+                    }
+                    if (key.equalsIgnoreCase("filenames")) {
+                        if (objectMapper == null) {
+                            objectMapper = ObjectMapperFactory.createObjectMapper();
+                        }
+                        if (objectWriter == null) {
+                            objectWriter = objectMapper.writerWithDefaultPrettyPrinter();
+                        }
+                        type = Body.Type.MULTIPART;
+                        multipartFilenames = objectMapper.readValue(objectWriter.writeValueAsString(entry.getValue()), Parameters.class);
+                    }
+                    if (key.equalsIgnoreCase("partContentTypes")) {
+                        if (objectMapper == null) {
+                            objectMapper = ObjectMapperFactory.createObjectMapper();
+                        }
+                        if (objectWriter == null) {
+                            objectWriter = objectMapper.writerWithDefaultPrettyPrinter();
+                        }
+                        type = Body.Type.MULTIPART;
+                        multipartPartContentTypes = objectMapper.readValue(objectWriter.writeValueAsString(entry.getValue()), Parameters.class);
+                    }
                 }
             }
             if (type != null) {
@@ -381,6 +416,9 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
                         break;
                     case PARAMETERS:
                         result = new ParameterBodyDTO(new ParameterBody(parameters), not);
+                        break;
+                    case MULTIPART:
+                        result = new MultipartBodyDTO(new MultipartBody(multipartFields, multipartFilenames, multipartPartContentTypes), not);
                         break;
                     case REGEX:
                         result = new RegexBodyDTO(new RegexBody(valueJsonValue), not);

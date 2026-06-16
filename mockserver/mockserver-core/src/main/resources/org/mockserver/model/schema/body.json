@@ -140,6 +140,32 @@
         },
         "type": {
           "enum": [
+            "MULTIPART"
+          ]
+        },
+        "fields": {
+          "$ref": "#/definitions/keyToMultiValue"
+        },
+        "filenames": {
+          "$ref": "#/definitions/keyToMultiValue"
+        },
+        "partContentTypes": {
+          "$ref": "#/definitions/keyToMultiValue"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "not": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "type": {
+          "enum": [
             "REGEX"
           ]
         },

@@ -38,6 +38,8 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
             result = new JsonPathBodyDTO(jsonPathBody, jsonPathBody.getNot());
         } else if (body instanceof ParameterBody parameterBody) {
             result = new ParameterBodyDTO(parameterBody, parameterBody.getNot());
+        } else if (body instanceof MultipartBody multipartBody) {
+            result = new MultipartBodyDTO(multipartBody, multipartBody.getNot());
         } else if (body instanceof RegexBody regexBody) {
             result = new RegexBodyDTO(regexBody, regexBody.getNot());
         } else if (body instanceof StringBody stringBody) {
@@ -83,6 +85,19 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
                         new LogEntry()
                             .setLogLevel(ERROR)
                             .setMessageFormat("serialising parameter body into json string for javascript template " + (isNotBlank(throwable.getMessage()) ? " " + throwable.getMessage() : ""))
+                            .setThrowable(throwable)
+                    );
+                return "";
+            }
+        } else if (body instanceof MultipartBodyDTO multipartBodyDTO) {
+            try {
+                return OBJECT_MAPPER.writeValueAsString(multipartBodyDTO.getFields().getMultimap().asMap());
+            } catch (Throwable throwable) {
+                MOCK_SERVER_LOGGER
+                    .logEvent(
+                        new LogEntry()
+                            .setLogLevel(ERROR)
+                            .setMessageFormat("serialising multipart body into json string for javascript template " + (isNotBlank(throwable.getMessage()) ? " " + throwable.getMessage() : ""))
                             .setThrowable(throwable)
                     );
                 return "";
