@@ -226,6 +226,10 @@ async function runTests(): Promise<void> {
         assert.ok(registeredCommands.has("mockserver.sendRequest"), "sendRequest command not registered");
     });
 
+    await test("activate registers the mockserver.showDrift command", () => {
+        assert.ok(registeredCommands.has("mockserver.showDrift"), "showDrift command not registered");
+    });
+
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
     const client = require("../mockServerClient");
 
@@ -402,6 +406,71 @@ async function runTests(): Promise<void> {
         assert.strictEqual(captured.init.body, "payload");
         assert.strictEqual(response.status, 200);
         assert.strictEqual(response.body, '{"ok":true}');
+    });
+
+    await test("retrieveDrift flags the empty state (count 0, no drifts)", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
+        const out = await client.retrieveDrift("http://localhost:1080", fakeFetch);
+        assert.strictEqual(out.empty, true);
+        assert.strictEqual(out.count, 0);
+    });
+
+    await test("retrieveDrift summarises records and GETs /mockserver/drift", async () => {
+        let captured: any = {};
+        const payload = {
+            count: 2,
+            drifts: [
+                {
+                    expectationId: "exp-1",
+                    driftType: "VALUE_CHANGED",
+                    field: "$.status",
+                    expectedValue: "active",
+                    actualValue: "archived",
+                    confidence: 0.9,
+                    epochTimeMs: 1,
+                },
+                {
+                    expectationId: "exp-2",
+                    driftType: "FIELD_ADDED",
+                    field: "$.newField",
+                    confidence: 0.5,
+                    epochTimeMs: 2,
+                },
+            ],
+        };
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(payload)) });
+        };
+        const out = await client.retrieveDrift("http://localhost:1080", fakeFetch);
+        assert.strictEqual(out.empty, false);
+        assert.strictEqual(out.count, 2);
+        assert.ok(captured.url.includes("/mockserver/drift"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+        assert.ok(out.report.includes("VALUE_CHANGED"), "report should include the driftType");
+        assert.ok(out.report.includes("$.status"), "report should include the field");
+        assert.ok(out.report.includes("FIELD_ADDED"), "report should include the second driftType");
+        assert.ok(out.report.includes("— "), "missing value should render as an em dash");
+    });
+
+    await test("retrieveDrift passes the limit as a query param when provided", async () => {
+        let url = "";
+        const fakeFetch = (u: string) => {
+            url = u;
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
+        };
+        await client.retrieveDrift("http://localhost:1080", fakeFetch, 10);
+        assert.ok(url.includes("/mockserver/drift?limit=10"), `url=${url}`);
+    });
+
+    await test("retrieveDrift throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("drift not enabled") });
+        await assert.rejects(
+            () => client.retrieveDrift("http://localhost:1080", fakeFetch),
+            /404: drift not enabled/
+        );
     });
 
     await test("looksLikeOpenApiSpec detects specs and rejects expectations/junk", () => {

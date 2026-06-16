@@ -28,6 +28,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Save Recorded Expectations (JSON or Java)** | Opens expectations recorded from proxied traffic as JSON or Java DSL |
 | **MockServer: Generate Expectations From OpenAPI Spec** | Turns the OpenAPI/Swagger spec in the active editor into expectations |
 | **MockServer: Send Test Request** | Fires the request described by the active `*.mockserver-request.json` file at the running server and shows the response |
+| **MockServer: Show Drift Report** | Shows the latest mock-drift records (how real upstream responses differ from your stub expectations) in a readable text tab |
 
 ## Live dashboard inside the editor
 
@@ -88,6 +89,15 @@ appears at the top of the file (the command is also available from the Command P
 `mockserver.port` and opens the response in a new tab as `HTTP <status>` followed by the body
 (pretty-printed when it is JSON). Error responses are shown too, so you can probe both matched and
 unmatched paths.
+
+## Show a drift report
+
+Run **MockServer: Show Drift Report** to see how the real upstream's responses have drifted from your
+stub expectations. MockServer records drift when it proxies traffic to a real upstream and a matching stub
+expectation differs structurally from the real response (`GET /mockserver/drift`). The command opens the
+latest records in a new text tab — one line per drift showing the drift type, field, expected vs actual
+value, confidence, and the affected expectation. If no drift has been recorded, the command says so rather
+than opening an empty tab.
 
 ## Snippets
 

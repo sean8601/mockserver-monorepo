@@ -68,6 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
     const openApiCmd = vscode.commands.registerCommand("mockserver.generateFromOpenApi", generateFromOpenApi);
     const sendRequestCmd = vscode.commands.registerCommand("mockserver.sendRequest", sendRequest);
+    const showDriftCmd = vscode.commands.registerCommand("mockserver.showDrift", showDrift);
 
     const codeLensProvider = vscode.languages.registerCodeLensProvider(
         EXPECTATION_FILE_SELECTOR,
@@ -92,6 +93,7 @@ export function activate(context: vscode.ExtensionContext): void {
         recordCmd,
         openApiCmd,
         sendRequestCmd,
+        showDriftCmd,
         codeLensProvider,
         requestCodeLensProvider,
         contentProvider,
@@ -360,6 +362,27 @@ async function sendRequest(uri?: vscode.Uri): Promise<void> {
         await vscode.window.showTextDocument(out);
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to send request — ${(e as Error).message}`);
+    }
+}
+
+async function showDrift(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const drift = await client.retrieveDrift(client.buildBaseUrl(port), httpFetch);
+        if (drift.empty) {
+            vscode.window.showInformationMessage(
+                "No drift detected. Drift is recorded when MockServer proxies traffic to a real " +
+                "upstream and a matching stub expectation differs from the real response."
+            );
+            return;
+        }
+        const out = await vscode.workspace.openTextDocument({
+            content: drift.report,
+            language: "text",
+        });
+        await vscode.window.showTextDocument(out);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve drift report — ${(e as Error).message}`);
     }
 }
 

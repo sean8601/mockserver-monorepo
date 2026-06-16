@@ -64,6 +64,10 @@
       {
         "command": "mockserver.sendRequest",
         "title": "MockServer: Send Test Request"
+      },
+      {
+        "command": "mockserver.showDrift",
+        "title": "MockServer: Show Drift Report"
       }
     ],
     "snippets": [

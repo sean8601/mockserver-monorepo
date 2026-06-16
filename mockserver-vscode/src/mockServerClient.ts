@@ -294,3 +294,78 @@ export async function retrieveRecordedExpectations(
         return { content: body, empty: body.trim().length === 0 };
     }
 }
+
+export interface DriftReport {
+    /** Number of drift records the server reported. */
+    count: number;
+    /** A readable, plain-text summary of the drift records. */
+    report: string;
+    /** True when the server reported no drift (count === 0). */
+    empty: boolean;
+}
+
+/**
+ * Format a single drift value for the report. The server may omit
+ * `expectedValue`/`actualValue`, send a primitive, or send a nested object —
+ * render objects/arrays compactly as JSON and show "—" when absent.
+ */
+function formatDriftValue(value: unknown): string {
+    if (value === undefined || value === null) {
+        return "—";
+    }
+    if (typeof value === "object") {
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }
+    return String(value);
+}
+
+/**
+ * Retrieve the latest mock-drift records via `GET /mockserver/drift`. Drift is
+ * recorded when the server proxies traffic to a real upstream and a matching
+ * stub expectation differs structurally from the real response. Returns the
+ * record count, a readable text summary, and whether it is empty (no drift).
+ * `limit` (when provided) caps how many records the server returns.
+ */
+export async function retrieveDrift(
+    baseUrl: string,
+    fetchFn: FetchLike,
+    limit?: number
+): Promise<DriftReport> {
+    const query = typeof limit === "number" ? `?limit=${limit}` : "";
+    const res = await fetchFn(`${baseUrl}/mockserver/drift${query}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    let parsed: { count?: number; drifts?: unknown[] } | undefined;
+    try {
+        parsed = JSON.parse(body);
+    } catch {
+        // Non-JSON or unexpected body — surface the raw text so nothing is lost.
+        return { count: 0, report: body, empty: body.trim().length === 0 };
+    }
+    const drifts = Array.isArray(parsed?.drifts) ? parsed!.drifts : [];
+    const count = typeof parsed?.count === "number" ? parsed!.count : drifts.length;
+    const header = `MockServer drift report — ${count} record(s)`;
+    if (count === 0 && drifts.length === 0) {
+        return { count: 0, report: header, empty: true };
+    }
+    const lines = drifts.map((entry) => {
+        const d = (entry ?? {}) as Record<string, unknown>;
+        const expected = formatDriftValue(d.expectedValue);
+        const actual = formatDriftValue(d.actualValue);
+        return (
+            `[${formatDriftValue(d.driftType)}] ${formatDriftValue(d.field)}: ` +
+            `expected ${expected} / actual ${actual} ` +
+            `(confidence ${formatDriftValue(d.confidence)}, expectation ${formatDriftValue(d.expectationId)})`
+        );
+    });
+    return { count, report: [header, ...lines].join("\n") + "\n", empty: count === 0 };
+}
