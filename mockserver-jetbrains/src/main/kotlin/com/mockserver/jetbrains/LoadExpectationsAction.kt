@@ -30,6 +30,24 @@ class LoadExpectationsAction : AnAction() {
             MockServerNotifier.notify(project, "The active editor file is empty.", NotificationType.WARNING)
             return
         }
+        if (!MockServerRestClient.isJsonObjectOrArray(text)) {
+            MockServerNotifier.notify(
+                project,
+                "The active editor isn't valid JSON. Open a MockServer expectation file " +
+                    "(a single expectation object, or an array of expectations).",
+                NotificationType.WARNING
+            )
+            return
+        }
+        if (MockServerRestClient.looksLikeOpenApiSpec(text)) {
+            MockServerNotifier.notify(
+                project,
+                "This looks like an OpenAPI/Swagger spec, not an expectation. " +
+                    "Use \"Generate Expectations From OpenAPI Spec\" instead.",
+                NotificationType.WARNING
+            )
+            return
+        }
         val baseUrl = MockServerRestClient.buildBaseUrl(MockServerSettings.getInstance().effectivePort())
 
         object : Task.Backgroundable(project, "Loading expectations into MockServer", true) {

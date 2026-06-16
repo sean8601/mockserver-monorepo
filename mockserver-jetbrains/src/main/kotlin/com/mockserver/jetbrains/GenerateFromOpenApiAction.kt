@@ -30,6 +30,15 @@ class GenerateFromOpenApiAction : AnAction() {
             MockServerNotifier.notify(project, "The active editor file is empty.", NotificationType.WARNING)
             return
         }
+        if (!MockServerRestClient.looksLikeOpenApiSpec(specText)) {
+            MockServerNotifier.notify(
+                project,
+                "The active editor doesn't look like an OpenAPI/Swagger spec (no top-level \"openapi\" or " +
+                    "\"swagger\" field). Open your OpenAPI/Swagger spec file and run this action again.",
+                NotificationType.WARNING
+            )
+            return
+        }
         val baseUrl = MockServerRestClient.buildBaseUrl(MockServerSettings.getInstance().effectivePort())
 
         object : Task.Backgroundable(project, "Generating expectations from OpenAPI spec", true) {

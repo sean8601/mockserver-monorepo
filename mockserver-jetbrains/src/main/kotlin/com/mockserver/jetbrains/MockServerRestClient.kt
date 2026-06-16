@@ -112,6 +112,27 @@ object MockServerRestClient {
         return PRETTY.toJson(parsed)
     }
 
+    /** True when [text] parses as a JSON object or array (the shape an expectation file must take). */
+    fun isJsonObjectOrArray(text: String): Boolean = tryParseJson(text) != null
+
+    private val OPENAPI_YAML_KEY = Regex("""(?im)^\s*["']?(openapi|swagger)["']?\s*:""")
+
+    /**
+     * Heuristic check that [specText] looks like an OpenAPI/Swagger specification —
+     * i.e. it has a top-level `openapi` (3.x) or `swagger` (2.0) field, in either
+     * JSON or YAML. Used to warn the user clearly when the active editor is not a
+     * spec, instead of sending it to the server and surfacing a raw 400.
+     */
+    fun looksLikeOpenApiSpec(specText: String): Boolean {
+        val parsed = tryParseJson(specText)
+        if (parsed != null && parsed.isJsonObject) {
+            val obj = parsed.asJsonObject
+            return obj.has("openapi") || obj.has("swagger")
+        }
+        // YAML (or any non-JSON-object content): look for a top-level openapi:/swagger: key.
+        return OPENAPI_YAML_KEY.containsMatchIn(specText)
+    }
+
     private fun tryParseJson(text: String): JsonElement? =
         try {
             val element = JsonParser.parseString(text)

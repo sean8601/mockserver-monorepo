@@ -383,6 +383,16 @@ async function runTests(): Promise<void> {
         assert.strictEqual(response.body, '{"ok":true}');
     });
 
+    await test("looksLikeOpenApiSpec detects specs and rejects expectations/junk", () => {
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"openapi":"3.0.0","paths":{}}'), true);
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"swagger":"2.0","paths":{}}'), true);
+        assert.strictEqual(client.looksLikeOpenApiSpec("openapi: 3.0.0\npaths: {}"), true);
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"httpRequest":{},"httpResponse":{}}'), false);
+        assert.strictEqual(client.looksLikeOpenApiSpec('[{"httpResponse":{}}]'), false);
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"note":"openapi is great"}'), false);
+        assert.strictEqual(client.looksLikeOpenApiSpec("just text"), false);
+    });
+
     // --- CodeLens providers ---
     const { ExpectationCodeLensProvider, ScratchRequestCodeLensProvider } = require("../codeLens");
 

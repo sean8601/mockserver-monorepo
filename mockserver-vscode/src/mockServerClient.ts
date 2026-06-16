@@ -78,6 +78,26 @@ export function parseRequestSpec(text: string): RequestSpec {
     };
 }
 
+const OPENAPI_YAML_KEY = /^\s*["']?(openapi|swagger)["']?\s*:/im;
+
+/**
+ * Heuristic: does `text` look like an OpenAPI/Swagger specification? True when it
+ * has a top-level `openapi` (3.x) or `swagger` (2.0) field, in either JSON or YAML.
+ * Used to warn clearly when the wrong kind of file is submitted (e.g. an OpenAPI
+ * spec sent to "load expectations", or an expectation file sent to "generate").
+ */
+export function looksLikeOpenApiSpec(text: string): boolean {
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return "openapi" in parsed || "swagger" in parsed;
+        }
+        return false; // valid JSON but an array/primitive — not a spec
+    } catch {
+        return OPENAPI_YAML_KEY.test(text); // not JSON → check for a YAML spec key
+    }
+}
+
 /**
  * Fire a scratch request at the running server: send `spec.method spec.path`
  * (relative to `baseUrl`) with the spec's headers and body, and return the

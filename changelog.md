@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
   (VS Code: `mockserver.*` settings). The Docker image tag now defaults to the extension's own version instead
   of a hardcoded constant, so it can no longer drift behind the release (previously pinned to `7.0.0`).
+- VS Code and JetBrains extensions now validate the active editor before submitting it to MockServer and show
+  a clear warning instead of a raw server error: **Generate From OpenAPI Spec** warns when the file is not an
+  OpenAPI/Swagger spec, and **Load Expectations** warns when the file is not valid JSON or is actually an
+  OpenAPI spec (redirecting to the Generate action).
 
 ### Fixed
 - Stop leaking the vulnerable `commons-beanutils` (1.9.4 and, via `commons-digester3`, 1.8.3) to downstream

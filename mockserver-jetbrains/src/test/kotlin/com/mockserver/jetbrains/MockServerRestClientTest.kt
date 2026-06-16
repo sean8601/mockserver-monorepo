@@ -160,4 +160,31 @@ class MockServerRestClientTest {
         assertFalse(MockServerRestClient.Result(404, "").ok)
         assertFalse(MockServerRestClient.Result(500, "").ok)
     }
+
+    @Test
+    fun `looksLikeOpenApiSpec detects json and yaml specs`() {
+        assertTrue(MockServerRestClient.looksLikeOpenApiSpec("""{ "openapi": "3.0.0", "paths": {} }"""))
+        assertTrue(MockServerRestClient.looksLikeOpenApiSpec("""{ "swagger": "2.0", "paths": {} }"""))
+        assertTrue(MockServerRestClient.looksLikeOpenApiSpec("openapi: 3.0.0\npaths: {}"))
+        assertTrue(MockServerRestClient.looksLikeOpenApiSpec("swagger: \"2.0\"\npaths: {}"))
+    }
+
+    @Test
+    fun `looksLikeOpenApiSpec rejects expectations and junk`() {
+        assertFalse(MockServerRestClient.looksLikeOpenApiSpec("""{ "httpRequest": {}, "httpResponse": {} }"""))
+        assertFalse(MockServerRestClient.looksLikeOpenApiSpec("""[ { "httpResponse": {} } ]"""))
+        assertFalse(MockServerRestClient.looksLikeOpenApiSpec(""))
+        assertFalse(MockServerRestClient.looksLikeOpenApiSpec("just some text"))
+        // a value merely containing the substring is not a top-level key
+        assertFalse(MockServerRestClient.looksLikeOpenApiSpec("""{ "note": "openapi is great" }"""))
+    }
+
+    @Test
+    fun `isJsonObjectOrArray distinguishes shapes`() {
+        assertTrue(MockServerRestClient.isJsonObjectOrArray("""{ "a": 1 }"""))
+        assertTrue(MockServerRestClient.isJsonObjectOrArray("""[ 1, 2 ]"""))
+        assertFalse(MockServerRestClient.isJsonObjectOrArray("not json"))
+        assertFalse(MockServerRestClient.isJsonObjectOrArray("42"))
+        assertFalse(MockServerRestClient.isJsonObjectOrArray("openapi: 3.0.0"))
+    }
 }

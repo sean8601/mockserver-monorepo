@@ -194,11 +194,15 @@ async function loadExpectations(uri?: vscode.Uri): Promise<void> {
     const { port } = getConfig();
     try {
         const doc = await vscode.workspace.openTextDocument(target);
-        const count = await client.loadExpectations(
-            client.buildBaseUrl(port),
-            doc.getText(),
-            httpFetch
-        );
+        const text = doc.getText();
+        if (client.looksLikeOpenApiSpec(text)) {
+            vscode.window.showWarningMessage(
+                "MockServer: this looks like an OpenAPI/Swagger spec, not an expectation. " +
+                "Use \"Generate Expectations From OpenAPI Spec\" instead."
+            );
+            return;
+        }
+        const count = await client.loadExpectations(client.buildBaseUrl(port), text, httpFetch);
         vscode.window.showInformationMessage(
             `Loaded ${count} expectation(s) into MockServer on port ${port}.`
         );
@@ -274,9 +278,17 @@ async function generateFromOpenApi(uri?: vscode.Uri): Promise<void> {
     const { port } = getConfig();
     try {
         const doc = await vscode.workspace.openTextDocument(target);
+        const text = doc.getText();
+        if (!client.looksLikeOpenApiSpec(text)) {
+            vscode.window.showWarningMessage(
+                "MockServer: the active editor doesn't look like an OpenAPI/Swagger spec (no top-level " +
+                "\"openapi\" or \"swagger\" field). Open your spec file and run this again."
+            );
+            return;
+        }
         const generated = await client.generateExpectationsFromOpenApi(
             client.buildBaseUrl(port),
-            doc.getText(),
+            text,
             httpFetch
         );
         if (generated.trim() === "[]") {
