@@ -3,10 +3,12 @@ package org.mockserver.templates.engine;
 import com.google.common.collect.ImmutableMap;
 import net.datafaker.Faker;
 import org.mockserver.serialization.Base64Converter;
+import org.mockserver.templates.engine.helpers.CryptoTemplateHelper;
 import org.mockserver.templates.engine.helpers.DateTemplateHelper;
 import org.mockserver.templates.engine.helpers.JsonTemplateHelper;
 import org.mockserver.templates.engine.helpers.JwtTemplateHelper;
 import org.mockserver.templates.engine.helpers.MathTemplateHelper;
+import org.mockserver.templates.engine.helpers.RegexTemplateHelper;
 import org.mockserver.templates.engine.helpers.StringTemplateHelper;
 import org.mockserver.time.TimeService;
 import org.mockserver.uuid.UUIDService;
@@ -47,6 +49,8 @@ public class TemplateFunctions implements Supplier<Object> {
         .put("dates", new DateTemplateHelper())
         .put("calc", new MathTemplateHelper())
         .put("faker", FAKER)
+        .put("crypto", new CryptoTemplateHelper())
+        .put("regex", new RegexTemplateHelper())
         .build();
 
     private final Supplier<String> supplier;

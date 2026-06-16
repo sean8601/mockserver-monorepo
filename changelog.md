@@ -72,6 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sensitive data is now redacted by default when importing HAR or Postman collections (`PUT /mockserver/import`):
   sensitive request/response headers (Authorization, API keys, cookies) and common secret JSON body fields are
   masked before expectations are stored. Redaction can be disabled or extended via import options.
+- Response-template helpers `crypto` (`md5`/`sha1`/`sha256`/`sha512`/`hmacSha256`, lowercase hex) and `regex`
+  (`matches`/`replaceAll`/`group`) for hashing/signing and extracting or rewriting values inside templates.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
