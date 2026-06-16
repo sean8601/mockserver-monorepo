@@ -1,16 +1,21 @@
-# MockServer JetBrains Plugin (Initial Scaffold)
+# MockServer JetBrains Plugin
 
-> **Status: Initial scaffold** — this plugin provides basic MockServer integration for IntelliJ-based IDEs. More features (expectation management, log viewing, inline test support) are planned for follow-up iterations.
+MockServer integration for IntelliJ-based IDEs: expectation-file validation, plus Docker container controls.
 
 ## Features
 
-- **Open MockServer Dashboard** — launches `http://localhost:1080/mockserver/dashboard` in your default browser
-- **Start MockServer (Docker)** — runs a MockServer container (`docker run -d --rm -p 1080:1080 mockserver/mockserver:7.1.0`)
+- **Expectation file validation** — name a file `*.mockserver.json` (or `*.mockserver.jsonc`) and the IDE
+  validates it as you type, with autocompletion and hover docs. The schema is the same one MockServer
+  validates against, generated from `mockserver-core`. A single expectation or an array of expectations
+  (initialization JSON) is accepted.
+- **Open MockServer Dashboard** — launches the dashboard in your default browser (port from Settings)
+- **Start MockServer (Docker)** — runs a MockServer container using the configured image, name, and port
 - **Tool Window** — bottom panel with quick-access buttons for the above actions
+- **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
 
 ## Requirements
 
-- IntelliJ IDEA 2023.3+ (or any JetBrains IDE based on IntelliJ Platform build 233+)
+- IntelliJ IDEA 2024.3+ (or any JetBrains IDE based on IntelliJ Platform build 243+)
 - Docker (for the "Start MockServer" action)
 
 ## Installation
@@ -28,13 +33,15 @@ cd mockserver-jetbrains
 ./gradlew buildPlugin
 ```
 
-The plugin ZIP will be at `build/distributions/mockserver-jetbrains-7.0.1.zip`. Install via **Settings > Plugins > gear icon > Install Plugin from Disk**.
+The plugin ZIP will be at `build/distributions/mockserver-jetbrains-<version>.zip`. Install via **Settings > Plugins > gear icon > Install Plugin from Disk**.
 
 ## Usage
 
-1. Go to **Tools > MockServer > Open MockServer Dashboard** to view the dashboard
-2. Go to **Tools > MockServer > Start MockServer (Docker)** to launch a container
-3. The **MockServer** tool window (bottom bar) provides the same actions as buttons
+1. Create an expectation file named `*.mockserver.json` and start typing — validation and completion are automatic
+2. Go to **Tools > MockServer > Open MockServer Dashboard** to view the dashboard
+3. Go to **Tools > MockServer > Start MockServer (Docker)** to launch a container
+4. The **MockServer** tool window (bottom bar) provides the same actions as buttons
+5. Adjust the image, container name, and port under **Settings | Tools | MockServer**
 
 ## Building
 
@@ -58,5 +65,6 @@ The plugin ZIP will be at `build/distributions/mockserver-jetbrains-7.0.1.zip`. 
 
 - **Language:** Kotlin
 - **Build system:** Gradle with IntelliJ Platform Gradle Plugin 2.x
-- **Minimum platform:** IntelliJ Platform 2023.3 (build 233)
+- **Minimum platform:** IntelliJ Platform 2024.3 (build 243)
 - **Java:** 17+
+- **Expectation schema:** generated from `mockserver-core` by `scripts/generate-editor-expectation-schema.mjs` into `src/main/resources/schemas/`; re-run that script after changing the core schemas.

@@ -30,22 +30,14 @@ class MockServerToolWindowFactory : ToolWindowFactory {
         val buttonPanel = JPanel()
         val openDashboardButton = JButton("Open Dashboard")
         openDashboardButton.addActionListener {
-            com.intellij.ide.BrowserUtil.browse(OpenDashboardAction.DEFAULT_DASHBOARD_URL)
+            com.intellij.ide.BrowserUtil.browse(MockServerSettings.getInstance().dashboardUrl())
         }
         buttonPanel.add(openDashboardButton)
 
         val startDockerButton = JButton("Start MockServer (Docker)")
         startDockerButton.addActionListener {
-            val commandLine = com.intellij.execution.configurations.GeneralCommandLine(
-                "docker", "run", "-d", "--rm",
-                "--name", StartDockerAction.CONTAINER_NAME,
-                "-p", "${StartDockerAction.DEFAULT_PORT}:${StartDockerAction.DEFAULT_PORT}",
-                "${StartDockerAction.IMAGE}:${StartDockerAction.MOCKSERVER_VERSION}"
-            )
             try {
-                com.intellij.execution.process.ProcessHandlerFactory.getInstance()
-                    .createProcessHandler(commandLine)
-                    .startNotify()
+                MockServerDocker.start()
             } catch (ex: Exception) {
                 JOptionPane.showMessageDialog(
                     panel,

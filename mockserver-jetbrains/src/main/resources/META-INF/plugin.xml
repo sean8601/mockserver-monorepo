@@ -31,6 +31,7 @@
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.json</depends>
 
     <actions>
         <group id="MockServer.ActionGroup" text="MockServer" description="MockServer actions" popup="true">
@@ -55,5 +56,14 @@
         <notificationGroup id="MockServer Notifications"
                            displayType="BALLOON"
                            isLogByDefault="true"/>
+        <applicationService serviceImplementation="com.mockserver.jetbrains.MockServerSettings"/>
+        <applicationConfigurable parentId="tools"
+                                 instance="com.mockserver.jetbrains.MockServerConfigurable"
+                                 id="com.mockserver.jetbrains.MockServerConfigurable"
+                                 displayName="MockServer"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij.json">
+        <jsonSchema.ProviderFactory implementation="com.mockserver.jetbrains.MockServerSchemaProviderFactory"/>
     </extensions>
 </idea-plugin>

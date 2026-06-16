@@ -16,6 +16,9 @@ repositories {
 dependencies {
     intellijPlatform {
         intellijIdeaCommunity(providers.gradleProperty("platformVersion").get())
+        // Bundled JSON plugin — provides the JsonSchemaProviderFactory API used to
+        // associate the expectation schema with *.mockserver.json files.
+        bundledPlugin("com.intellij.modules.json")
     }
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
