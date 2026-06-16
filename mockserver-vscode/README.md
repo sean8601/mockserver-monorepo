@@ -26,6 +26,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Diff Expectations Against Live Server** | Opens a diff between the file and the server's active expectations |
 | **MockServer: Save Recorded Expectations (JSON or Java)** | Opens expectations recorded from proxied traffic as JSON or Java DSL |
 | **MockServer: Generate Expectations From OpenAPI Spec** | Turns the OpenAPI/Swagger spec in the active editor into expectations |
+| **MockServer: Send Test Request** | Fires the request described by the active `*.mockserver-request.json` file at the running server and shows the response |
 
 ## Expectation file validation
 
@@ -58,6 +59,27 @@ has not proxied any traffic yet, the command tells you so rather than opening an
 With an OpenAPI/Swagger spec (JSON or YAML) open in the editor, run **MockServer: Generate Expectations
 From OpenAPI Spec**. The extension sends the spec to the running server (`PUT /mockserver/openapi`), which
 generates expectations covering the spec's operations, and opens them in a new tab to review and save.
+
+## Send a test request without leaving the editor
+
+Create a file named `*.mockserver-request.json` (for example `ping.mockserver-request.json`) describing
+a single HTTP request:
+
+```json
+{
+  "method": "GET",
+  "path": "/api/x",
+  "headers": { "Accept": "application/json" },
+  "body": ""
+}
+```
+
+`method` and `path` are required; `headers` and `body` are optional. A **Send to MockServer** CodeLens
+appears at the top of the file (the command is also available from the Command Palette as
+**MockServer: Send Test Request**). Running it fires the request at the running server on the configured
+`mockserver.port` and opens the response in a new tab as `HTTP <status>` followed by the body
+(pretty-printed when it is JSON). Error responses are shown too, so you can probe both matched and
+unmatched paths.
 
 ## Snippets
 

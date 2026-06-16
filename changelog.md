@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded expectations in a new JSON tab), and **Generate Expectations From OpenAPI Spec**
   (`PUT /mockserver/openapi`, sends the active editor's JSON or YAML spec and opens the generated
   expectations in a new JSON tab). All HTTP calls run off the UI thread.
+- VS Code extension can send an ad-hoc test request without leaving the editor: name a file
+  `*.mockserver-request.json` (`{ "method", "path", "headers"?, "body"? }`) and the **MockServer: Send
+  Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the
+  configured port and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a
+  new tab.
 
 ### Changed
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable

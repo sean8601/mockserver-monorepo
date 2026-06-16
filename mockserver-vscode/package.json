@@ -56,6 +56,10 @@
       {
         "command": "mockserver.generateFromOpenApi",
         "title": "MockServer: Generate Expectations From OpenAPI Spec"
+      },
+      {
+        "command": "mockserver.sendRequest",
+        "title": "MockServer: Send Test Request"
       }
     ],
     "snippets": [

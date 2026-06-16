@@ -28,3 +28,26 @@ export const EXPECTATION_FILE_SELECTOR: vscode.DocumentSelector = [
     { scheme: "file", pattern: "**/*.mockserver.json" },
     { scheme: "file", pattern: "**/*.mockserver.jsonc" },
 ];
+
+/**
+ * Adds a "Send to MockServer" action at the top of every
+ * `*.mockserver-request.json` scratch-request file, so a developer can fire the
+ * request at the running mock and see the response in one click.
+ */
+export class ScratchRequestCodeLensProvider implements vscode.CodeLensProvider {
+    provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+        const topOfFile = new vscode.Range(0, 0, 0, 0);
+        return [
+            new vscode.CodeLens(topOfFile, {
+                title: "$(run) Send to MockServer",
+                command: "mockserver.sendRequest",
+                arguments: [document.uri],
+            }),
+        ];
+    }
+}
+
+/** Document selector matching the scratch-request files this extension understands. */
+export const REQUEST_FILE_SELECTOR: vscode.DocumentSelector = [
+    { scheme: "file", pattern: "**/*.mockserver-request.json" },
+];

@@ -18,6 +18,86 @@ export function buildBaseUrl(port: number): string {
 }
 
 /**
+ * A scratch request spec parsed from a `*.mockserver-request.json` file: a small
+ * ad-hoc HTTP request a developer fires at the running mock from the editor.
+ * `method` and `path` are required; `headers` and `body` are optional.
+ */
+export interface RequestSpec {
+    method: string;
+    path: string;
+    headers?: Record<string, string>;
+    body?: string;
+}
+
+/** A scratch request's response: the HTTP status and the (possibly empty) body. */
+export interface ScratchResponse {
+    status: number;
+    body: string;
+}
+
+/**
+ * Parse a scratch request file's text into a {@link RequestSpec}. Throws a clear
+ * error if the JSON is invalid, the top level is not an object, or `method`/`path`
+ * are missing or not strings.
+ */
+export function parseRequestSpec(text: string): RequestSpec {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch (e) {
+        throw new Error(`Not valid JSON: ${(e as Error).message}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Expected a request object with \"method\" and \"path\"");
+    }
+    const spec = parsed as Record<string, unknown>;
+    if (typeof spec.method !== "string" || spec.method.trim().length === 0) {
+        throw new Error('Request spec is missing a "method" (e.g. "GET")');
+    }
+    if (typeof spec.path !== "string" || spec.path.trim().length === 0) {
+        throw new Error('Request spec is missing a "path" (e.g. "/api/x")');
+    }
+    if (spec.headers !== undefined) {
+        if (typeof spec.headers !== "object" || spec.headers === null || Array.isArray(spec.headers)) {
+            throw new Error('"headers" must be an object of header name to value');
+        }
+        for (const [name, value] of Object.entries(spec.headers as Record<string, unknown>)) {
+            if (typeof value !== "string") {
+                throw new Error(`"headers.${name}" must be a string`);
+            }
+        }
+    }
+    if (spec.body !== undefined && typeof spec.body !== "string") {
+        throw new Error('"body" must be a string');
+    }
+    return {
+        method: spec.method,
+        path: spec.path,
+        headers: spec.headers as Record<string, string> | undefined,
+        body: spec.body as string | undefined,
+    };
+}
+
+/**
+ * Fire a scratch request at the running server: send `spec.method spec.path`
+ * (relative to `baseUrl`) with the spec's headers and body, and return the
+ * response status and body text. Unlike the expectation helpers this does NOT
+ * throw on a non-2xx status — the caller wants to see error responses too.
+ */
+export async function sendScratchRequest(
+    baseUrl: string,
+    spec: RequestSpec,
+    fetchFn: FetchLike
+): Promise<ScratchResponse> {
+    const res = await fetchFn(`${baseUrl}${spec.path}`, {
+        method: spec.method,
+        headers: spec.headers,
+        body: spec.body,
+    });
+    return { status: res.status, body: await res.text() };
+}
+
+/**
  * Parse an expectation file's text into a list of expectations. A file may hold
  * a single expectation object or an array of them (initialization JSON).
  * Throws a clear error if the JSON is invalid or the shape is unexpected.

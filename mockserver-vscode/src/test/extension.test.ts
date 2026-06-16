@@ -211,6 +211,10 @@ async function runTests(): Promise<void> {
         assert.ok(registeredCommands.has("mockserver.generateFromOpenApi"), "openapi command not registered");
     });
 
+    await test("activate registers the mockserver.sendRequest command", () => {
+        assert.ok(registeredCommands.has("mockserver.sendRequest"), "sendRequest command not registered");
+    });
+
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
     const client = require("../mockServerClient");
 
@@ -336,8 +340,51 @@ async function runTests(): Promise<void> {
         );
     });
 
-    // --- CodeLens provider ---
-    const { ExpectationCodeLensProvider } = require("../codeLens");
+    await test("parseRequestSpec accepts a valid spec with headers and body", () => {
+        const spec = client.parseRequestSpec(
+            '{"method":"POST","path":"/api/x","headers":{"Accept":"application/json"},"body":"hi"}'
+        );
+        assert.strictEqual(spec.method, "POST");
+        assert.strictEqual(spec.path, "/api/x");
+        assert.deepStrictEqual(spec.headers, { Accept: "application/json" });
+        assert.strictEqual(spec.body, "hi");
+    });
+
+    await test("parseRequestSpec rejects a missing method", () => {
+        assert.throws(() => client.parseRequestSpec('{"path":"/api/x"}'), /missing a "method"/);
+    });
+
+    await test("parseRequestSpec rejects a missing path", () => {
+        assert.throws(() => client.parseRequestSpec('{"method":"GET"}'), /missing a "path"/);
+    });
+
+    await test("parseRequestSpec rejects invalid JSON", () => {
+        assert.throws(() => client.parseRequestSpec("{not json"), /Not valid JSON/);
+    });
+
+    await test("sendScratchRequest passes url, method, headers, body to fetch and returns status+body", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"ok":true}') });
+        };
+        const spec = {
+            method: "POST",
+            path: "/api/x",
+            headers: { Accept: "application/json" },
+            body: "payload",
+        };
+        const response = await client.sendScratchRequest("http://localhost:1080", spec, fakeFetch);
+        assert.strictEqual(captured.url, "http://localhost:1080/api/x");
+        assert.strictEqual(captured.init.method, "POST");
+        assert.deepStrictEqual(captured.init.headers, { Accept: "application/json" });
+        assert.strictEqual(captured.init.body, "payload");
+        assert.strictEqual(response.status, 200);
+        assert.strictEqual(response.body, '{"ok":true}');
+    });
+
+    // --- CodeLens providers ---
+    const { ExpectationCodeLensProvider, ScratchRequestCodeLensProvider } = require("../codeLens");
 
     await test("CodeLens provider offers load + diff lenses", () => {
         const provider = new ExpectationCodeLensProvider();
@@ -345,6 +392,13 @@ async function runTests(): Promise<void> {
         assert.strictEqual(lenses.length, 2);
         assert.strictEqual(lenses[0].command.command, "mockserver.loadExpectations");
         assert.strictEqual(lenses[1].command.command, "mockserver.diffAgainstLive");
+    });
+
+    await test("scratch-request CodeLens provider offers a send lens", () => {
+        const provider = new ScratchRequestCodeLensProvider();
+        const lenses = provider.provideCodeLenses({ uri: { toString: () => "file:///x.mockserver-request.json" } });
+        assert.strictEqual(lenses.length, 1);
+        assert.strictEqual(lenses[0].command.command, "mockserver.sendRequest");
     });
 
     console.log(`\nResults: ${passed} passed, ${failed} failed, ${passed + failed} total`);

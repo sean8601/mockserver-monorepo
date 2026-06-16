@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { execFileSync, execFile } from "child_process";
-import { ExpectationCodeLensProvider, EXPECTATION_FILE_SELECTOR } from "./codeLens";
+import {
+    ExpectationCodeLensProvider,
+    EXPECTATION_FILE_SELECTOR,
+    ScratchRequestCodeLensProvider,
+    REQUEST_FILE_SELECTOR,
+} from "./codeLens";
 import * as client from "./mockServerClient";
 
 let outputChannel: vscode.OutputChannel;
@@ -58,10 +63,15 @@ export function activate(context: vscode.ExtensionContext): void {
     const diffCmd = vscode.commands.registerCommand("mockserver.diffAgainstLive", diffAgainstLive);
     const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
     const openApiCmd = vscode.commands.registerCommand("mockserver.generateFromOpenApi", generateFromOpenApi);
+    const sendRequestCmd = vscode.commands.registerCommand("mockserver.sendRequest", sendRequest);
 
     const codeLensProvider = vscode.languages.registerCodeLensProvider(
         EXPECTATION_FILE_SELECTOR,
         new ExpectationCodeLensProvider()
+    );
+    const requestCodeLensProvider = vscode.languages.registerCodeLensProvider(
+        REQUEST_FILE_SELECTOR,
+        new ScratchRequestCodeLensProvider()
     );
     const contentProvider = vscode.workspace.registerTextDocumentContentProvider(
         LIVE_SCHEME,
@@ -76,7 +86,9 @@ export function activate(context: vscode.ExtensionContext): void {
         diffCmd,
         recordCmd,
         openApiCmd,
+        sendRequestCmd,
         codeLensProvider,
+        requestCodeLensProvider,
         contentProvider,
         liveContentChanged,
         outputChannel
@@ -281,4 +293,41 @@ async function generateFromOpenApi(uri?: vscode.Uri): Promise<void> {
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to generate from OpenAPI — ${(e as Error).message}`);
     }
+}
+
+async function sendRequest(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("Open a *.mockserver-request.json file first.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const spec = client.parseRequestSpec(doc.getText());
+        const response = await client.sendScratchRequest(
+            client.buildBaseUrl(port),
+            spec,
+            httpFetch
+        );
+        const out = await vscode.workspace.openTextDocument({
+            content: formatScratchResponse(response),
+            language: "text",
+        });
+        await vscode.window.showTextDocument(out);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to send request — ${(e as Error).message}`);
+    }
+}
+
+// Render a scratch response as a small text summary: `HTTP <status>` then the
+// body, pretty-printed when it parses as JSON.
+function formatScratchResponse(response: client.ScratchResponse): string {
+    let body = response.body;
+    try {
+        body = JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+        // not JSON — show the body verbatim
+    }
+    return `HTTP ${response.status}\n\n${body}`;
 }
