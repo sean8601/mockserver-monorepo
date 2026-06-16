@@ -179,8 +179,10 @@ fi
 # ---- Publish ----------------------------------------------------------------
 # Registry preconditions (enforced server-side): the referenced image must
 # carry LABEL io.modelcontextprotocol.server.name="com.mock-server/mockserver"
-# (set in docker/Dockerfile). The docker step publishes that image before this
-# step runs, so on a full release the label is live.
+# (set in docker/local/Dockerfile — the buildx context the docker step actually
+# builds + pushes as mockserver/mockserver:<ver>; NOT docker/Dockerfile, which
+# is not used by the release). The docker step publishes that image before this
+# step runs, so on a full/post-maven release the label is live.
 #
 # KNOWN eventually-consistent case: if the $RELEASE_VERSION image with the
 # ownership label is not yet visible on Docker Hub, the registry rejects the

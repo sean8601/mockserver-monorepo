@@ -232,6 +232,24 @@ for p in updated:
 PYEOF
 }
 
+# Read-only counterpart to update_pom_versions: return 0 if ANY pom.xml beneath a
+# directory (excluding target/) contains <version>$2</version>, else 1. Used to
+# detect an already-applied version bump so a re-run can no-op instead of failing.
+poms_contain_version() {
+  local search_dir="$1" v="$2"
+  require_cmd python3
+  python3 - "$v" "$search_dir" << 'PYEOF'
+import sys, pathlib
+v, search = sys.argv[1], sys.argv[2]
+tag = f"<version>{v}</version>"
+for path in pathlib.Path(search).rglob("pom.xml"):
+    if "target" in path.parts: continue
+    if tag in path.read_text():
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
 # -----------------------------------------------------------------------------
 # Docker helpers
 # -----------------------------------------------------------------------------
