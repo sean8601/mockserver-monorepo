@@ -1,6 +1,6 @@
 # MockServer for VS Code
 
-Start, stop, and manage [MockServer](https://www.mock-server.com) Docker containers directly from Visual Studio Code.
+Author, validate, and run [MockServer](https://www.mock-server.com) expectations directly from Visual Studio Code, and start/stop a MockServer Docker container without leaving the editor.
 
 ## Prerequisites
 
@@ -19,9 +19,17 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 
 | Command | Description |
 |---------|-------------|
-| **MockServer: Start (Docker)** | Pulls and starts `mockserver/mockserver:7.1.0` on port 1080 |
+| **MockServer: Start (Docker)** | Starts the `mockserver/mockserver` container (see Settings below) |
 | **MockServer: Stop** | Stops the running MockServer container |
 | **MockServer: Open Dashboard** | Opens the MockServer dashboard in your browser |
+
+## Expectation file validation
+
+Name an expectation file `*.mockserver.json` (for example `login.mockserver.json`) and the editor
+validates it as you type — inline error squiggles, autocompletion of properties and enums, and hover
+documentation. The schema is the same one MockServer validates against, so the editor is never stricter or
+laxer than the server. A file may contain a single expectation **or** an array of expectations
+(initialization JSON). `*.mockserver.jsonc` (JSON with comments) is also recognised.
 
 ## Snippets
 
@@ -31,12 +39,21 @@ In any `.json` file, type:
 - `mockserver-forward` - inserts an expectation with a forward action
 - `mockserver-verify` - inserts a verify request template
 
+## Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `mockserver.dockerImage` | _(empty)_ | Docker image to start. Empty uses `mockserver/mockserver:<extension version>`, keeping the image tag in lockstep with this extension. |
+| `mockserver.containerName` | `mockserver-vscode` | Name of the container started/stopped by the extension. |
+| `mockserver.port` | `1080` | Host port mapped to the container's port 1080 (used for the dashboard URL and the run command). |
+
 ## Quick Start
 
 1. Run **MockServer: Start (Docker)** from the Command Palette
-2. Create expectations by POSTing JSON to `http://localhost:1080/mockserver/expectation`
-3. Run **MockServer: Open Dashboard** to inspect recorded requests
-4. Run **MockServer: Stop** when done
+2. Create a `login.mockserver.json` file and start typing — you get validation and completion for free
+3. Create expectations by POSTing JSON to `http://localhost:1080/mockserver/expectation`
+4. Run **MockServer: Open Dashboard** to inspect recorded requests
+5. Run **MockServer: Stop** when done
 
 ## Building from Source
 

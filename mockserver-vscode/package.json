@@ -47,13 +47,43 @@
         "language": "json",
         "path": "./snippets/expectation.json"
       }
-    ]
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "*.mockserver.json",
+          "*.mockserver.jsonc"
+        ],
+        "url": "./schemas/mockserver-expectation.schema.json"
+      }
+    ],
+    "configuration": {
+      "title": "MockServer",
+      "properties": {
+        "mockserver.dockerImage": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Docker image used to start MockServer. Leave empty to use `mockserver/mockserver:<extension-version>`, which keeps the image tag in lockstep with this extension."
+        },
+        "mockserver.containerName": {
+          "type": "string",
+          "default": "mockserver-vscode",
+          "description": "Name of the MockServer Docker container started and stopped by this extension."
+        },
+        "mockserver.port": {
+          "type": "number",
+          "default": 1080,
+          "description": "Host port mapped to the MockServer container's port 1080 (used for the dashboard URL and the run command)."
+        }
+      }
+    }
   },
   "scripts": {
+    "generate-schema": "node ../scripts/generate-editor-expectation-schema.mjs",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "node ./out/test/extension.test.js",
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run generate-schema && npm run compile",
     "package": "vsce package",
     "publish:marketplace": "vsce publish -p $VSCE_PAT",
     "publish:openvsx": "ovsx publish -p $OVSX_PAT"
