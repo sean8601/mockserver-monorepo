@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The HTTP call runs off the UI thread.
 - Go client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
   `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
+- Rust client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, `openapi()` import, and
+  `verify_zero_interactions()`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
@@ -82,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAPI spec (redirecting to the Generate action).
 
 ### Fixed
+- Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
+  Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
+  `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.
 - Stop leaking the vulnerable `commons-beanutils` (1.9.4 and, via `commons-digester3`, 1.8.3) to downstream
   consumers through `velocity-tools-generic`. These transitive versions are affected by GHSA-wxr5-93ph-8wr9
   (CVE-2025-48734). MockServer's own build already pinned 1.11.0, but that pin lived in

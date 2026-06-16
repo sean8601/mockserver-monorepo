@@ -137,6 +137,52 @@ impl MockServerClient {
     }
 
     // ------------------------------------------------------------------
+    // OpenAPI import
+    // ------------------------------------------------------------------
+
+    /// Register expectations from an OpenAPI/Swagger specification.
+    ///
+    /// Sends a `PUT /mockserver/openapi` with the given [`OpenApiExpectation`].
+    /// MockServer parses the spec and creates request matchers and example
+    /// responses for the selected operations (or every operation when none are
+    /// specified). Returns the created expectations as echoed by the server.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use mockserver_client::{ClientBuilder, OpenApiExpectation};
+    ///
+    /// let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+    /// client.openapi(
+    ///     &OpenApiExpectation::new("https://example.com/petstore.yaml")
+    ///         .operation("listPets", "200"),
+    /// ).unwrap();
+    /// ```
+    pub fn openapi(&self, expectation: &OpenApiExpectation) -> Result<Vec<Expectation>> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/openapi"))
+            .json(expectation)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 | 201 => {
+                let text = resp.text()?;
+                if text.is_empty() {
+                    Ok(vec![])
+                } else {
+                    Ok(serde_json::from_str(&text)?)
+                }
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Fluent API entry point
     // ------------------------------------------------------------------
 
@@ -206,11 +252,7 @@ impl MockServerClient {
     ///
     /// The `httpRequest` field is omitted from the JSON so the server matches
     /// any request.
-    pub fn verify_response(
-        &self,
-        response: HttpResponse,
-        times: VerificationTimes,
-    ) -> Result<()> {
+    pub fn verify_response(&self, response: HttpResponse, times: VerificationTimes) -> Result<()> {
         let verification = Verification {
             http_request: None,
             http_response: Some(response),
@@ -218,6 +260,15 @@ impl MockServerClient {
             maximum_number_of_request_to_return_in_verification_failure: None,
         };
         self.do_verify(&verification)
+    }
+
+    /// Verify that no requests at all were received by the server.
+    ///
+    /// Thin wrapper over [`verify`](Self::verify): matches any request (an empty
+    /// matcher) with `exactly(0)` times. Returns `Ok(())` if the server received
+    /// no requests, or `Err(Error::VerificationFailure)` otherwise.
+    pub fn verify_zero_interactions(&self) -> Result<()> {
+        self.verify(HttpRequest::new(), VerificationTimes::exactly(0))
     }
 
     /// Send a fully constructed [`Verification`] to the server.
@@ -348,8 +399,7 @@ impl MockServerClient {
         &self,
         request: Option<&HttpRequest>,
     ) -> Result<Vec<HttpRequest>> {
-        let text =
-            self.do_retrieve(request, RetrieveType::Requests, RetrieveFormat::Json)?;
+        let text = self.do_retrieve(request, RetrieveType::Requests, RetrieveFormat::Json)?;
         if text.is_empty() {
             return Ok(vec![]);
         }
@@ -389,12 +439,8 @@ impl MockServerClient {
     }
 
     /// Retrieve log messages matching the optional filter.
-    pub fn retrieve_log_messages(
-        &self,
-        request: Option<&HttpRequest>,
-    ) -> Result<Vec<String>> {
-        let text =
-            self.do_retrieve(request, RetrieveType::Logs, RetrieveFormat::LogEntries)?;
+    pub fn retrieve_log_messages(&self, request: Option<&HttpRequest>) -> Result<Vec<String>> {
+        let text = self.do_retrieve(request, RetrieveType::Logs, RetrieveFormat::LogEntries)?;
         if text.is_empty() {
             return Ok(vec![]);
         }
@@ -412,10 +458,7 @@ impl MockServerClient {
     }
 
     /// Retrieve recorded request/response pairs.
-    pub fn retrieve_request_responses(
-        &self,
-        request: Option<&HttpRequest>,
-    ) -> Result<Vec<Value>> {
+    pub fn retrieve_request_responses(&self, request: Option<&HttpRequest>) -> Result<Vec<Value>> {
         let text = self.do_retrieve(
             request,
             RetrieveType::RequestResponses,
@@ -550,10 +593,7 @@ impl MockServerClient {
         let status = resp.status().as_u16();
         let text = resp.text()?;
         if status >= 400 {
-            return Err(Error::UnexpectedStatus {
-                status,
-                body: text,
-            });
+            return Err(Error::UnexpectedStatus { status, body: text });
         }
 
         let result: BreakpointMatcherResponse = serde_json::from_str(&text)?;
@@ -630,10 +670,7 @@ impl MockServerClient {
         let status = resp.status().as_u16();
         let text = resp.text()?;
         if status >= 400 {
-            return Err(Error::UnexpectedStatus {
-                status,
-                body: text,
-            });
+            return Err(Error::UnexpectedStatus { status, body: text });
         }
 
         Ok(serde_json::from_str(&text)?)
@@ -837,6 +874,41 @@ impl<'a> ForwardChainExpectation<'a> {
     pub fn error(self, error: HttpError) -> Result<Vec<Expectation>> {
         let (client, expectation) = self.into_parts();
         let expectation = expectation.error(error);
+        client.upsert(&[expectation])
+    }
+
+    /// Complete the expectation with a Server-Sent Events (SSE) response action.
+    pub fn respond_sse(self, sse: HttpSseResponse) -> Result<Vec<Expectation>> {
+        let (client, expectation) = self.into_parts();
+        let expectation = expectation.respond_sse(sse);
+        client.upsert(&[expectation])
+    }
+
+    /// Complete the expectation with a WebSocket response action.
+    pub fn respond_web_socket(self, ws: HttpWebSocketResponse) -> Result<Vec<Expectation>> {
+        let (client, expectation) = self.into_parts();
+        let expectation = expectation.respond_web_socket(ws);
+        client.upsert(&[expectation])
+    }
+
+    /// Complete the expectation with a DNS response action.
+    pub fn respond_dns(self, dns: DnsResponse) -> Result<Vec<Expectation>> {
+        let (client, expectation) = self.into_parts();
+        let expectation = expectation.respond_dns(dns);
+        client.upsert(&[expectation])
+    }
+
+    /// Complete the expectation with a raw binary response action.
+    pub fn respond_binary(self, binary: BinaryResponse) -> Result<Vec<Expectation>> {
+        let (client, expectation) = self.into_parts();
+        let expectation = expectation.respond_binary(binary);
+        client.upsert(&[expectation])
+    }
+
+    /// Complete the expectation with a gRPC streaming response action.
+    pub fn respond_grpc_stream(self, grpc: GrpcStreamResponse) -> Result<Vec<Expectation>> {
+        let (client, expectation) = self.into_parts();
+        let expectation = expectation.respond_grpc_stream(grpc);
         client.upsert(&[expectation])
     }
 

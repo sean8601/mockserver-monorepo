@@ -29,8 +29,14 @@ fn test_request_query_params() {
         .query_param("q", "rust")
         .query_param("page", "1");
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["queryStringParameters"]["q"], serde_json::json!(["rust"]));
-    assert_eq!(json["queryStringParameters"]["page"], serde_json::json!(["1"]));
+    assert_eq!(
+        json["queryStringParameters"]["q"],
+        serde_json::json!(["rust"])
+    );
+    assert_eq!(
+        json["queryStringParameters"]["page"],
+        serde_json::json!(["1"])
+    );
 }
 
 #[test]
@@ -55,10 +61,7 @@ fn test_request_headers() {
         json["headers"]["Content-Type"],
         serde_json::json!(["application/json"])
     );
-    assert_eq!(
-        json["headers"]["Accept"],
-        serde_json::json!(["text/plain"])
-    );
+    assert_eq!(json["headers"]["Accept"], serde_json::json!(["text/plain"]));
 }
 
 #[test]
@@ -99,10 +102,7 @@ fn test_response_with_body_and_headers() {
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["statusCode"], 201);
     assert_eq!(json["body"], "{\"id\": 42}");
-    assert_eq!(
-        json["headers"]["Location"],
-        serde_json::json!(["/api/42"])
-    );
+    assert_eq!(json["headers"]["Location"], serde_json::json!(["/api/42"]));
 }
 
 #[test]
@@ -200,7 +200,18 @@ fn test_verification_times_at_least() {
     let vt = VerificationTimes::at_least(2);
     let json = serde_json::to_value(&vt).unwrap();
     assert_eq!(json["atLeast"], 2);
-    assert!(json.get("atMost").is_none());
+    // atMost is always sent as the -1 "unbounded" sentinel so the server does
+    // not default it to 0 (which would make at_least(2) an impossible between(2,0)).
+    assert_eq!(json["atMost"], -1);
+}
+
+#[test]
+fn test_verification_times_at_most() {
+    let vt = VerificationTimes::at_most(3);
+    let json = serde_json::to_value(&vt).unwrap();
+    // atLeast is sent as the -1 "unbounded" sentinel; atMost carries the bound.
+    assert_eq!(json["atLeast"], -1);
+    assert_eq!(json["atMost"], 3);
 }
 
 #[test]
@@ -248,8 +259,14 @@ fn test_full_expectation_json() {
     // Verify request
     assert_eq!(json["httpRequest"]["method"], "GET");
     assert_eq!(json["httpRequest"]["path"], "/hello");
-    assert_eq!(json["httpRequest"]["queryStringParameters"]["q"], serde_json::json!(["x"]));
-    assert_eq!(json["httpRequest"]["headers"]["H"], serde_json::json!(["v"]));
+    assert_eq!(
+        json["httpRequest"]["queryStringParameters"]["q"],
+        serde_json::json!(["x"])
+    );
+    assert_eq!(
+        json["httpRequest"]["headers"]["H"],
+        serde_json::json!(["v"])
+    );
 
     // Verify response
     assert_eq!(json["httpResponse"]["statusCode"], 200);
@@ -324,14 +341,20 @@ fn test_verification_json() {
     // httpResponse should be absent (not null)
     assert!(json.get("httpResponse").is_none());
     // maximumNumberOfRequestToReturnInVerificationFailure should be absent
-    assert!(json.get("maximumNumberOfRequestToReturnInVerificationFailure").is_none());
+    assert!(json
+        .get("maximumNumberOfRequestToReturnInVerificationFailure")
+        .is_none());
 }
 
 #[test]
 fn test_verification_with_response_json() {
     let v = Verification {
         http_request: Some(HttpRequest::new().method("POST").path("/api")),
-        http_response: Some(HttpResponse::new().status_code(201).header("Location", "/api/42")),
+        http_response: Some(
+            HttpResponse::new()
+                .status_code(201)
+                .header("Location", "/api/42"),
+        ),
         times: Some(VerificationTimes::exactly(1)),
         maximum_number_of_request_to_return_in_verification_failure: None,
     };
@@ -339,7 +362,10 @@ fn test_verification_with_response_json() {
     assert_eq!(json["httpRequest"]["method"], "POST");
     assert_eq!(json["httpRequest"]["path"], "/api");
     assert_eq!(json["httpResponse"]["statusCode"], 201);
-    assert_eq!(json["httpResponse"]["headers"]["Location"], serde_json::json!(["/api/42"]));
+    assert_eq!(
+        json["httpResponse"]["headers"]["Location"],
+        serde_json::json!(["/api/42"])
+    );
     assert_eq!(json["times"]["atLeast"], 1);
     assert_eq!(json["times"]["atMost"], 1);
 }
@@ -354,7 +380,10 @@ fn test_verification_response_only_json() {
     };
     let json = serde_json::to_value(&v).unwrap();
     // httpRequest should be ABSENT (not null) for response-only verification
-    assert!(json.get("httpRequest").is_none(), "httpRequest must be absent for response-only verification");
+    assert!(
+        json.get("httpRequest").is_none(),
+        "httpRequest must be absent for response-only verification"
+    );
     assert_eq!(json["httpResponse"]["statusCode"], 500);
     assert_eq!(json["times"]["atMost"], 0);
 }
@@ -368,7 +397,10 @@ fn test_verification_with_max_failures() {
         maximum_number_of_request_to_return_in_verification_failure: Some(5),
     };
     let json = serde_json::to_value(&v).unwrap();
-    assert_eq!(json["maximumNumberOfRequestToReturnInVerificationFailure"], 5);
+    assert_eq!(
+        json["maximumNumberOfRequestToReturnInVerificationFailure"],
+        5
+    );
 }
 
 #[test]
@@ -427,7 +459,10 @@ fn test_verification_sequence_responses_only_json() {
     };
     let json = serde_json::to_value(&vs).unwrap();
     // httpRequests should be absent
-    assert!(json.get("httpRequests").is_none(), "httpRequests must be absent when None");
+    assert!(
+        json.get("httpRequests").is_none(),
+        "httpRequests must be absent when None"
+    );
     let responses = json["httpResponses"].as_array().unwrap();
     assert_eq!(responses.len(), 2);
     assert_eq!(responses[0]["statusCode"], 200);
@@ -442,7 +477,10 @@ fn test_verification_deserialization_with_response() {
         "times": {"atLeast": 1}
     }"#;
     let v: Verification = serde_json::from_str(json).unwrap();
-    assert_eq!(v.http_request.as_ref().unwrap().path, Some("/x".to_string()));
+    assert_eq!(
+        v.http_request.as_ref().unwrap().path,
+        Some("/x".to_string())
+    );
     assert_eq!(v.http_response.as_ref().unwrap().status_code, Some(200));
     assert_eq!(v.times.as_ref().unwrap().at_least, Some(1));
 }
@@ -456,7 +494,10 @@ fn test_verification_sequence_deserialization_with_responses() {
     let vs: VerificationSequence = serde_json::from_str(json).unwrap();
     assert_eq!(vs.http_requests.as_ref().unwrap().len(), 1);
     assert_eq!(vs.http_responses.as_ref().unwrap().len(), 1);
-    assert_eq!(vs.http_responses.as_ref().unwrap()[0].status_code, Some(200));
+    assert_eq!(
+        vs.http_responses.as_ref().unwrap()[0].status_code,
+        Some(200)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -549,7 +590,9 @@ fn test_client_connection_refused() {
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
     assert!(
-        err_msg.contains("transport") || err_msg.contains("error") || err_msg.contains("Connection refused"),
+        err_msg.contains("transport")
+            || err_msg.contains("error")
+            || err_msg.contains("Connection refused"),
         "Should get a transport error: {err_msg}"
     );
 }
@@ -611,8 +654,7 @@ fn test_http_template_from_file() {
 
 #[test]
 fn test_http_template_with_inline_and_file() {
-    let tmpl = HttpTemplate::new("VELOCITY", "inline body")
-        .template_file("/path/to/override.vm");
+    let tmpl = HttpTemplate::new("VELOCITY", "inline body").template_file("/path/to/override.vm");
     let json = serde_json::to_value(&tmpl).unwrap();
     assert_eq!(json["templateType"], "VELOCITY");
     assert_eq!(json["template"], "inline body");
@@ -656,8 +698,7 @@ fn test_body_file_serialization_minimal() {
 
 #[test]
 fn test_body_file_serialization_with_content_type() {
-    let body = Body::file("/data/response.xml")
-        .with_content_type("application/xml");
+    let body = Body::file("/data/response.xml").with_content_type("application/xml");
     let json = serde_json::to_value(&body).unwrap();
     assert_eq!(json["type"], "FILE");
     assert_eq!(json["filePath"], "/data/response.xml");
@@ -683,7 +724,11 @@ fn test_body_file_deserialization() {
     let req_json = format!(r#"{{"body":{}}}"#, json_str);
     let req: HttpRequest = serde_json::from_str(&req_json).unwrap();
     match req.body {
-        Some(Body::File { file_path, content_type, template_type }) => {
+        Some(Body::File {
+            file_path,
+            content_type,
+            template_type,
+        }) => {
             assert_eq!(file_path, "/data/resp.json");
             assert_eq!(content_type, Some("application/json".to_string()));
             assert_eq!(template_type, Some("MUSTACHE".to_string()));
@@ -697,7 +742,11 @@ fn test_body_file_deserialization_minimal() {
     let json_str = r#"{"body":{"type":"FILE","filePath":"/data/x.txt"}}"#;
     let req: HttpRequest = serde_json::from_str(json_str).unwrap();
     match req.body {
-        Some(Body::File { file_path, content_type, template_type }) => {
+        Some(Body::File {
+            file_path,
+            content_type,
+            template_type,
+        }) => {
             assert_eq!(file_path, "/data/x.txt");
             assert_eq!(content_type, None);
             assert_eq!(template_type, None);
@@ -731,37 +780,43 @@ fn test_expectation_with_response_template() {
 
     let json = serde_json::to_value(&expectation).unwrap();
     assert_eq!(json["httpResponseTemplate"]["templateType"], "VELOCITY");
-    assert_eq!(json["httpResponseTemplate"]["template"], "{ \"statusCode\": 200 }");
+    assert_eq!(
+        json["httpResponseTemplate"]["template"],
+        "{ \"statusCode\": 200 }"
+    );
     assert!(json.get("httpResponse").is_none());
     assert!(json.get("httpForwardTemplate").is_none());
 }
 
 #[test]
 fn test_expectation_with_forward_template() {
-    let expectation = Expectation::new(HttpRequest::new().path("/proxy"))
-        .forward_template(
-            HttpTemplate::from_file("MUSTACHE", "/templates/forward.mustache")
-        );
+    let expectation = Expectation::new(HttpRequest::new().path("/proxy")).forward_template(
+        HttpTemplate::from_file("MUSTACHE", "/templates/forward.mustache"),
+    );
 
     let json = serde_json::to_value(&expectation).unwrap();
     assert_eq!(json["httpForwardTemplate"]["templateType"], "MUSTACHE");
-    assert_eq!(json["httpForwardTemplate"]["templateFile"], "/templates/forward.mustache");
+    assert_eq!(
+        json["httpForwardTemplate"]["templateFile"],
+        "/templates/forward.mustache"
+    );
     assert!(json.get("httpResponseTemplate").is_none());
     assert!(json.get("httpForward").is_none());
 }
 
 #[test]
 fn test_expectation_with_response_template_and_template_file() {
-    let expectation = Expectation::new(HttpRequest::new().path("/t"))
-        .respond_template(
-            HttpTemplate::new("VELOCITY", "fallback")
-                .template_file("/path/to/template.vm")
-        );
+    let expectation = Expectation::new(HttpRequest::new().path("/t")).respond_template(
+        HttpTemplate::new("VELOCITY", "fallback").template_file("/path/to/template.vm"),
+    );
 
     let json = serde_json::to_value(&expectation).unwrap();
     assert_eq!(json["httpResponseTemplate"]["templateType"], "VELOCITY");
     assert_eq!(json["httpResponseTemplate"]["template"], "fallback");
-    assert_eq!(json["httpResponseTemplate"]["templateFile"], "/path/to/template.vm");
+    assert_eq!(
+        json["httpResponseTemplate"]["templateFile"],
+        "/path/to/template.vm"
+    );
 }
 
 #[test]
@@ -814,8 +869,14 @@ fn test_request_body_value_builder() {
 #[test]
 fn test_retrieve_type_strings() {
     assert_eq!(RetrieveType::Requests.as_str(), "REQUESTS");
-    assert_eq!(RetrieveType::ActiveExpectations.as_str(), "ACTIVE_EXPECTATIONS");
-    assert_eq!(RetrieveType::RecordedExpectations.as_str(), "RECORDED_EXPECTATIONS");
+    assert_eq!(
+        RetrieveType::ActiveExpectations.as_str(),
+        "ACTIVE_EXPECTATIONS"
+    );
+    assert_eq!(
+        RetrieveType::RecordedExpectations.as_str(),
+        "RECORDED_EXPECTATIONS"
+    );
     assert_eq!(RetrieveType::Logs.as_str(), "LOGS");
     assert_eq!(RetrieveType::RequestResponses.as_str(), "REQUEST_RESPONSES");
 }
@@ -831,4 +892,250 @@ fn test_clear_type_strings() {
     assert_eq!(ClearType::All.as_str(), "ALL");
     assert_eq!(ClearType::Log.as_str(), "LOG");
     assert_eq!(ClearType::Expectations.as_str(), "EXPECTATIONS");
+}
+
+// ---------------------------------------------------------------------------
+// HttpSseResponse (Server-Sent Events) tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_sse_response_serialization() {
+    let sse = HttpSseResponse::new()
+        .status_code(200)
+        .header("Content-Type", "text/event-stream")
+        .event(
+            SseEvent::new()
+                .event("message")
+                .data("hello")
+                .id("1")
+                .retry(3000),
+        )
+        .close_connection(true);
+    let json = serde_json::to_value(&sse).unwrap();
+    assert_eq!(json["statusCode"], 200);
+    assert_eq!(
+        json["headers"]["Content-Type"],
+        serde_json::json!(["text/event-stream"])
+    );
+    let events = json["events"].as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["event"], "message");
+    assert_eq!(events[0]["data"], "hello");
+    assert_eq!(events[0]["id"], "1");
+    assert_eq!(events[0]["retry"], 3000);
+    assert_eq!(json["closeConnection"], true);
+}
+
+#[test]
+fn test_sse_event_omits_unset_fields() {
+    let event = SseEvent::new().data("only-data");
+    let json = serde_json::to_value(&event).unwrap();
+    assert_eq!(json["data"], "only-data");
+    assert!(json.get("event").is_none());
+    assert!(json.get("id").is_none());
+    assert!(json.get("retry").is_none());
+    assert!(json.get("delay").is_none());
+}
+
+#[test]
+fn test_expectation_with_sse_response() {
+    let expectation = Expectation::new(HttpRequest::new().method("GET").path("/events"))
+        .respond_sse(HttpSseResponse::new().event(SseEvent::new().data("tick")));
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["httpSseResponse"]["events"][0]["data"], "tick");
+    assert!(json.get("httpResponse").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// HttpWebSocketResponse tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_websocket_response_text_message() {
+    let ws = HttpWebSocketResponse::new()
+        .subprotocol("chat")
+        .message(WebSocketMessage::text("hello"))
+        .close_connection(true);
+    let json = serde_json::to_value(&ws).unwrap();
+    assert_eq!(json["subprotocol"], "chat");
+    let messages = json["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["text"], "hello");
+    assert!(messages[0].get("binary").is_none());
+    assert_eq!(json["closeConnection"], true);
+}
+
+#[test]
+fn test_websocket_binary_message_is_base64() {
+    // bytes [0x01, 0x02, 0x03] -> base64 "AQID"
+    let msg = WebSocketMessage::binary([0x01, 0x02, 0x03]);
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["binary"], "AQID");
+    assert!(json.get("text").is_none());
+}
+
+#[test]
+fn test_websocket_binary_base64_passthrough() {
+    let msg = WebSocketMessage::binary_base64("AQID");
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["binary"], "AQID");
+}
+
+#[test]
+fn test_expectation_with_websocket_response() {
+    let expectation = Expectation::new(HttpRequest::new().path("/ws"))
+        .respond_web_socket(HttpWebSocketResponse::new().message(WebSocketMessage::text("hi")));
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["httpWebSocketResponse"]["messages"][0]["text"], "hi");
+}
+
+// ---------------------------------------------------------------------------
+// DnsResponse tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dns_response_serialization() {
+    let dns = DnsResponse::new()
+        .response_code("NOERROR")
+        .answer_record(DnsRecord::a("example.com", "1.2.3.4").ttl(300));
+    let json = serde_json::to_value(&dns).unwrap();
+    assert_eq!(json["responseCode"], "NOERROR");
+    let answers = json["answerRecords"].as_array().unwrap();
+    assert_eq!(answers.len(), 1);
+    assert_eq!(answers[0]["name"], "example.com");
+    assert_eq!(answers[0]["type"], "A");
+    assert_eq!(answers[0]["value"], "1.2.3.4");
+    assert_eq!(answers[0]["ttl"], 300);
+}
+
+#[test]
+fn test_dns_record_type_field_name() {
+    // The Rust field is `record_type` but the wire key must be `type`.
+    let record = DnsRecord::cname("www.example.com", "example.com");
+    let json = serde_json::to_value(&record).unwrap();
+    assert_eq!(json["type"], "CNAME");
+    assert!(json.get("recordType").is_none());
+}
+
+#[test]
+fn test_dns_srv_record_full_fields() {
+    let record = DnsRecord::new()
+        .name("_sip._tcp.example.com")
+        .record_type("SRV")
+        .priority(10)
+        .weight(60)
+        .port(5060)
+        .value("sipserver.example.com")
+        .dns_class("IN");
+    let json = serde_json::to_value(&record).unwrap();
+    assert_eq!(json["priority"], 10);
+    assert_eq!(json["weight"], 60);
+    assert_eq!(json["port"], 5060);
+    assert_eq!(json["dnsClass"], "IN");
+}
+
+#[test]
+fn test_expectation_with_dns_response() {
+    let expectation = Expectation::new(HttpRequest::new())
+        .respond_dns(DnsResponse::new().answer_record(DnsRecord::a("host", "10.0.0.1")));
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["dnsResponse"]["answerRecords"][0]["value"], "10.0.0.1");
+}
+
+// ---------------------------------------------------------------------------
+// BinaryResponse tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_binary_response_is_base64() {
+    // bytes [0xDE, 0xAD, 0xBE, 0xEF] -> base64 "3q2+7w=="
+    let resp = BinaryResponse::from_bytes([0xDE, 0xAD, 0xBE, 0xEF]);
+    let json = serde_json::to_value(&resp).unwrap();
+    assert_eq!(json["binaryData"], "3q2+7w==");
+}
+
+#[test]
+fn test_binary_response_from_base64_passthrough() {
+    let resp = BinaryResponse::from_base64("3q2+7w==");
+    let json = serde_json::to_value(&resp).unwrap();
+    assert_eq!(json["binaryData"], "3q2+7w==");
+}
+
+#[test]
+fn test_expectation_with_binary_response() {
+    let expectation = Expectation::new(HttpRequest::new().path("/raw"))
+        .respond_binary(BinaryResponse::from_bytes([0x00, 0xFF]));
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["binaryResponse"]["binaryData"], "AP8=");
+}
+
+// ---------------------------------------------------------------------------
+// GrpcStreamResponse tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_grpc_stream_response_serialization() {
+    let grpc = GrpcStreamResponse::new()
+        .status_name("OK")
+        .status_message("done")
+        .header("grpc-meta", "v")
+        .message(GrpcStreamMessage::json("{\"id\":1}"))
+        .message(GrpcStreamMessage::json("{\"id\":2}").delay(Delay::milliseconds(50)))
+        .close_connection(true);
+    let json = serde_json::to_value(&grpc).unwrap();
+    assert_eq!(json["statusName"], "OK");
+    assert_eq!(json["statusMessage"], "done");
+    assert_eq!(json["headers"]["grpc-meta"], serde_json::json!(["v"]));
+    let messages = json["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["json"], "{\"id\":1}");
+    assert_eq!(messages[1]["delay"]["timeUnit"], "MILLISECONDS");
+    assert_eq!(messages[1]["delay"]["value"], 50);
+    assert_eq!(json["closeConnection"], true);
+}
+
+#[test]
+fn test_expectation_with_grpc_stream_response() {
+    let expectation = Expectation::new(HttpRequest::new().path("/grpc"))
+        .respond_grpc_stream(GrpcStreamResponse::new().message(GrpcStreamMessage::json("{}")));
+    let json = serde_json::to_value(&expectation).unwrap();
+    assert_eq!(json["grpcStreamResponse"]["messages"][0]["json"], "{}");
+}
+
+// ---------------------------------------------------------------------------
+// OpenApiExpectation tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_openapi_expectation_serialization() {
+    let exp = OpenApiExpectation::new("https://example.com/petstore.yaml")
+        .operation("listPets", "200")
+        .operation("showPetById", "default")
+        .context_path_prefix("/v1");
+    let json = serde_json::to_value(&exp).unwrap();
+    assert_eq!(
+        json["specUrlOrPayload"],
+        "https://example.com/petstore.yaml"
+    );
+    assert_eq!(json["operationsAndResponses"]["listPets"], "200");
+    assert_eq!(json["operationsAndResponses"]["showPetById"], "default");
+    assert_eq!(json["contextPathPrefix"], "/v1");
+}
+
+#[test]
+fn test_openapi_expectation_minimal() {
+    // Only the spec is required; operations and context path are omitted.
+    let exp = OpenApiExpectation::new("file:///specs/api.json");
+    let json = serde_json::to_value(&exp).unwrap();
+    assert_eq!(json["specUrlOrPayload"], "file:///specs/api.json");
+    assert!(json.get("operationsAndResponses").is_none());
+    assert!(json.get("contextPathPrefix").is_none());
+}
+
+#[test]
+fn test_openapi_expectation_inline_payload() {
+    let payload = r#"{"openapi":"3.0.0","info":{"title":"x","version":"1"}}"#;
+    let exp = OpenApiExpectation::new(payload);
+    let json = serde_json::to_value(&exp).unwrap();
+    assert_eq!(json["specUrlOrPayload"], payload);
 }

@@ -3,6 +3,7 @@
 //! All types implement `Serialize`/`Deserialize` and use builder methods that
 //! take `self` and return `Self`, enabling fluent construction.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -62,21 +63,17 @@ impl HttpRequest {
 
     /// Add a query string parameter (multiple values per key supported).
     pub fn query_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        let params = self.query_string_parameters.get_or_insert_with(HashMap::new);
-        params
-            .entry(key.into())
-            .or_default()
-            .push(value.into());
+        let params = self
+            .query_string_parameters
+            .get_or_insert_with(HashMap::new);
+        params.entry(key.into()).or_default().push(value.into());
         self
     }
 
     /// Add a header (multiple values per key supported).
     pub fn header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         let headers = self.headers.get_or_insert_with(HashMap::new);
-        headers
-            .entry(key.into())
-            .or_default()
-            .push(value.into());
+        headers.entry(key.into()).or_default().push(value.into());
         self
     }
 
@@ -311,10 +308,7 @@ impl HttpResponse {
     /// Add a response header.
     pub fn header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         let headers = self.headers.get_or_insert_with(HashMap::new);
-        headers
-            .entry(key.into())
-            .or_default()
-            .push(value.into());
+        headers.entry(key.into()).or_default().push(value.into());
         self
     }
 
@@ -473,6 +467,705 @@ impl HttpError {
 }
 
 // ---------------------------------------------------------------------------
+// HttpSseResponse (Server-Sent Events)
+// ---------------------------------------------------------------------------
+
+/// A single Server-Sent Event in an [`HttpSseResponse`].
+///
+/// Maps to the `events[]` entries of the `httpSseResponse` wire shape.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SseEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl SseEvent {
+    /// Create a new empty SSE event.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the `event:` field (event type/name).
+    pub fn event(mut self, event: impl Into<String>) -> Self {
+        self.event = Some(event.into());
+        self
+    }
+
+    /// Set the `data:` payload.
+    pub fn data(mut self, data: impl Into<String>) -> Self {
+        self.data = Some(data.into());
+        self
+    }
+
+    /// Set the `id:` field.
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Set the `retry:` reconnection time in milliseconds.
+    pub fn retry(mut self, retry: u32) -> Self {
+        self.retry = Some(retry);
+        self
+    }
+
+    /// Set a delay before this event is emitted.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+/// Builder for a Server-Sent Events (SSE) streaming response action.
+///
+/// Serialized as the `httpSseResponse` action in an expectation.
+///
+/// # Example
+/// ```
+/// use mockserver_client::{HttpSseResponse, SseEvent};
+///
+/// let sse = HttpSseResponse::new()
+///     .status_code(200)
+///     .header("Content-Type", "text/event-stream")
+///     .event(SseEvent::new().event("message").data("hello").id("1"))
+///     .close_connection(true);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpSseResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_code: Option<u16>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, Vec<String>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<Vec<SseEvent>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_connection: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl HttpSseResponse {
+    /// Create a new empty SSE response.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the HTTP status code.
+    pub fn status_code(mut self, code: u16) -> Self {
+        self.status_code = Some(code);
+        self
+    }
+
+    /// Add a response header.
+    pub fn header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let headers = self.headers.get_or_insert_with(HashMap::new);
+        headers.entry(key.into()).or_default().push(value.into());
+        self
+    }
+
+    /// Append an SSE event to the stream.
+    pub fn event(mut self, event: SseEvent) -> Self {
+        self.events.get_or_insert_with(Vec::new).push(event);
+        self
+    }
+
+    /// Replace all SSE events.
+    pub fn events(mut self, events: Vec<SseEvent>) -> Self {
+        self.events = Some(events);
+        self
+    }
+
+    /// Whether to close the connection after emitting all events.
+    pub fn close_connection(mut self, close: bool) -> Self {
+        self.close_connection = Some(close);
+        self
+    }
+
+    /// Set a delay before the response starts.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HttpWebSocketResponse
+// ---------------------------------------------------------------------------
+
+/// A single WebSocket message in an [`HttpWebSocketResponse`].
+///
+/// Either `text` or `binary` should be set. Binary data is base64-encoded
+/// on the wire (the schema declares `binary` as `format: byte`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSocketMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl WebSocketMessage {
+    /// Create a text WebSocket message.
+    pub fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: Some(text.into()),
+            binary: None,
+            delay: None,
+        }
+    }
+
+    /// Create a binary WebSocket message from raw bytes (base64-encoded on the wire).
+    pub fn binary(data: impl AsRef<[u8]>) -> Self {
+        Self {
+            text: None,
+            binary: Some(BASE64.encode(data.as_ref())),
+            delay: None,
+        }
+    }
+
+    /// Create a binary WebSocket message from an already base64-encoded string.
+    pub fn binary_base64(base64: impl Into<String>) -> Self {
+        Self {
+            text: None,
+            binary: Some(base64.into()),
+            delay: None,
+        }
+    }
+
+    /// Set a delay before this message is sent.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+/// Builder for a WebSocket streaming response action.
+///
+/// Serialized as the `httpWebSocketResponse` action in an expectation.
+///
+/// # Example
+/// ```
+/// use mockserver_client::{HttpWebSocketResponse, WebSocketMessage};
+///
+/// let ws = HttpWebSocketResponse::new()
+///     .subprotocol("chat")
+///     .message(WebSocketMessage::text("hello"))
+///     .message(WebSocketMessage::binary([0x01, 0x02]))
+///     .close_connection(true);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpWebSocketResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subprotocol: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages: Option<Vec<WebSocketMessage>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_connection: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl HttpWebSocketResponse {
+    /// Create a new empty WebSocket response.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the negotiated subprotocol.
+    pub fn subprotocol(mut self, subprotocol: impl Into<String>) -> Self {
+        self.subprotocol = Some(subprotocol.into());
+        self
+    }
+
+    /// Append a WebSocket message to send.
+    pub fn message(mut self, message: WebSocketMessage) -> Self {
+        self.messages.get_or_insert_with(Vec::new).push(message);
+        self
+    }
+
+    /// Replace all WebSocket messages.
+    pub fn messages(mut self, messages: Vec<WebSocketMessage>) -> Self {
+        self.messages = Some(messages);
+        self
+    }
+
+    /// Whether to close the connection after emitting all messages.
+    pub fn close_connection(mut self, close: bool) -> Self {
+        self.close_connection = Some(close);
+        self
+    }
+
+    /// Set a delay before the response starts.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DnsResponse
+// ---------------------------------------------------------------------------
+
+/// A single DNS resource record in a [`DnsResponse`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DnsRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub record_type: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_class: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+}
+
+impl DnsRecord {
+    /// Create a new empty DNS record.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create an `A` (IPv4 address) record.
+    pub fn a(name: impl Into<String>, ip: impl Into<String>) -> Self {
+        Self::new().name(name).record_type("A").value(ip)
+    }
+
+    /// Create an `AAAA` (IPv6 address) record.
+    pub fn aaaa(name: impl Into<String>, ip: impl Into<String>) -> Self {
+        Self::new().name(name).record_type("AAAA").value(ip)
+    }
+
+    /// Create a `CNAME` record.
+    pub fn cname(name: impl Into<String>, target: impl Into<String>) -> Self {
+        Self::new().name(name).record_type("CNAME").value(target)
+    }
+
+    /// Create a `TXT` record.
+    pub fn txt(name: impl Into<String>, text: impl Into<String>) -> Self {
+        Self::new().name(name).record_type("TXT").value(text)
+    }
+
+    /// Set the record name.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set the record type (e.g. "A", "AAAA", "CNAME", "MX", "SRV", "TXT", "PTR").
+    pub fn record_type(mut self, record_type: impl Into<String>) -> Self {
+        self.record_type = Some(record_type.into());
+        self
+    }
+
+    /// Set the DNS class (e.g. "IN", "CH", "HS", "ANY").
+    pub fn dns_class(mut self, dns_class: impl Into<String>) -> Self {
+        self.dns_class = Some(dns_class.into());
+        self
+    }
+
+    /// Set the time-to-live in seconds.
+    pub fn ttl(mut self, ttl: u32) -> Self {
+        self.ttl = Some(ttl);
+        self
+    }
+
+    /// Set the record value (address, target, text, etc.).
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.value = Some(value.into());
+        self
+    }
+
+    /// Set the priority (MX/SRV).
+    pub fn priority(mut self, priority: u32) -> Self {
+        self.priority = Some(priority);
+        self
+    }
+
+    /// Set the weight (SRV).
+    pub fn weight(mut self, weight: u32) -> Self {
+        self.weight = Some(weight);
+        self
+    }
+
+    /// Set the port (SRV).
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = Some(port);
+        self
+    }
+}
+
+/// Builder for a DNS response action.
+///
+/// Serialized as the `dnsResponse` action in an expectation.
+///
+/// # Example
+/// ```
+/// use mockserver_client::{DnsResponse, DnsRecord};
+///
+/// let dns = DnsResponse::new()
+///     .response_code("NOERROR")
+///     .answer_record(DnsRecord::a("example.com", "1.2.3.4").ttl(300));
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DnsResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answer_records: Option<Vec<DnsRecord>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authority_records: Option<Vec<DnsRecord>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_records: Option<Vec<DnsRecord>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_code: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl DnsResponse {
+    /// Create a new empty DNS response.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append an answer-section record.
+    pub fn answer_record(mut self, record: DnsRecord) -> Self {
+        self.answer_records
+            .get_or_insert_with(Vec::new)
+            .push(record);
+        self
+    }
+
+    /// Replace all answer-section records.
+    pub fn answer_records(mut self, records: Vec<DnsRecord>) -> Self {
+        self.answer_records = Some(records);
+        self
+    }
+
+    /// Append an authority-section record.
+    pub fn authority_record(mut self, record: DnsRecord) -> Self {
+        self.authority_records
+            .get_or_insert_with(Vec::new)
+            .push(record);
+        self
+    }
+
+    /// Append an additional-section record.
+    pub fn additional_record(mut self, record: DnsRecord) -> Self {
+        self.additional_records
+            .get_or_insert_with(Vec::new)
+            .push(record);
+        self
+    }
+
+    /// Set the DNS response code (e.g. "NOERROR", "NXDOMAIN", "SERVFAIL").
+    pub fn response_code(mut self, code: impl Into<String>) -> Self {
+        self.response_code = Some(code.into());
+        self
+    }
+
+    /// Set a delay before the response is returned.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BinaryResponse
+// ---------------------------------------------------------------------------
+
+/// Builder for a raw binary response action.
+///
+/// Serialized as the `binaryResponse` action in an expectation. The binary
+/// payload is base64-encoded on the wire (the schema declares `binaryData`
+/// as a string).
+///
+/// # Example
+/// ```
+/// use mockserver_client::BinaryResponse;
+///
+/// let resp = BinaryResponse::from_bytes([0xDE, 0xAD, 0xBE, 0xEF]);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BinaryResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_data: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl BinaryResponse {
+    /// Create a new empty binary response.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a binary response from raw bytes (base64-encoded on the wire).
+    pub fn from_bytes(data: impl AsRef<[u8]>) -> Self {
+        Self {
+            binary_data: Some(BASE64.encode(data.as_ref())),
+            delay: None,
+        }
+    }
+
+    /// Create a binary response from an already base64-encoded string.
+    pub fn from_base64(base64: impl Into<String>) -> Self {
+        Self {
+            binary_data: Some(base64.into()),
+            delay: None,
+        }
+    }
+
+    /// Set the binary payload from raw bytes (base64-encoded on the wire).
+    pub fn binary_data(mut self, data: impl AsRef<[u8]>) -> Self {
+        self.binary_data = Some(BASE64.encode(data.as_ref()));
+        self
+    }
+
+    /// Set a delay before the response is returned.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GrpcStreamResponse
+// ---------------------------------------------------------------------------
+
+/// A single gRPC stream message in a [`GrpcStreamResponse`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcStreamMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl GrpcStreamMessage {
+    /// Create a gRPC stream message from a JSON-encoded protobuf message string.
+    pub fn json(json: impl Into<String>) -> Self {
+        Self {
+            json: Some(json.into()),
+            delay: None,
+        }
+    }
+
+    /// Set a delay before this message is sent.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+/// Builder for a gRPC streaming response action.
+///
+/// Serialized as the `grpcStreamResponse` action in an expectation.
+///
+/// # Example
+/// ```
+/// use mockserver_client::{GrpcStreamResponse, GrpcStreamMessage};
+///
+/// let grpc = GrpcStreamResponse::new()
+///     .status_name("OK")
+///     .message(GrpcStreamMessage::json("{\"id\":1}"))
+///     .close_connection(true);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcStreamResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, Vec<String>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages: Option<Vec<GrpcStreamMessage>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_connection: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+}
+
+impl GrpcStreamResponse {
+    /// Create a new empty gRPC stream response.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the gRPC status name (e.g. "OK", "NOT_FOUND").
+    pub fn status_name(mut self, status_name: impl Into<String>) -> Self {
+        self.status_name = Some(status_name.into());
+        self
+    }
+
+    /// Set the gRPC status message.
+    pub fn status_message(mut self, status_message: impl Into<String>) -> Self {
+        self.status_message = Some(status_message.into());
+        self
+    }
+
+    /// Add a response header (gRPC metadata).
+    pub fn header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let headers = self.headers.get_or_insert_with(HashMap::new);
+        headers.entry(key.into()).or_default().push(value.into());
+        self
+    }
+
+    /// Append a gRPC stream message.
+    pub fn message(mut self, message: GrpcStreamMessage) -> Self {
+        self.messages.get_or_insert_with(Vec::new).push(message);
+        self
+    }
+
+    /// Replace all gRPC stream messages.
+    pub fn messages(mut self, messages: Vec<GrpcStreamMessage>) -> Self {
+        self.messages = Some(messages);
+        self
+    }
+
+    /// Whether to close the stream after emitting all messages.
+    pub fn close_connection(mut self, close: bool) -> Self {
+        self.close_connection = Some(close);
+        self
+    }
+
+    /// Set a delay before the response starts.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OpenApiExpectation
+// ---------------------------------------------------------------------------
+
+/// An OpenAPI specification import — registers matchers and example responses
+/// for the operations in an OpenAPI/Swagger spec.
+///
+/// Sent via `PUT /mockserver/openapi`. The spec may be a URL, a filesystem
+/// path (`file://...`), a classpath resource, or an inline JSON/YAML payload.
+///
+/// # Example
+/// ```
+/// use mockserver_client::OpenApiExpectation;
+///
+/// let expectation = OpenApiExpectation::new(
+///     "https://example.com/petstore.yaml",
+/// )
+/// .operation("listPets", "200")
+/// .operation("showPetById", "200");
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenApiExpectation {
+    pub spec_url_or_payload: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operations_and_responses: Option<HashMap<String, String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_path_prefix: Option<String>,
+}
+
+impl OpenApiExpectation {
+    /// Create an OpenAPI import from a spec URL, file path, classpath resource,
+    /// or inline JSON/YAML payload.
+    pub fn new(spec_url_or_payload: impl Into<String>) -> Self {
+        Self {
+            spec_url_or_payload: spec_url_or_payload.into(),
+            operations_and_responses: None,
+            context_path_prefix: None,
+        }
+    }
+
+    /// Map an `operationId` to the status code (or example name) to respond with.
+    ///
+    /// When no operations are specified, MockServer creates example responses
+    /// for every operation in the spec.
+    pub fn operation(
+        mut self,
+        operation_id: impl Into<String>,
+        status_code: impl Into<String>,
+    ) -> Self {
+        self.operations_and_responses
+            .get_or_insert_with(HashMap::new)
+            .insert(operation_id.into(), status_code.into());
+        self
+    }
+
+    /// Replace the full operations-to-responses map.
+    pub fn operations_and_responses(mut self, map: HashMap<String, String>) -> Self {
+        self.operations_and_responses = Some(map);
+        self
+    }
+
+    /// Set a context-path prefix to prepend to every generated matcher path.
+    pub fn context_path_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.context_path_prefix = Some(prefix.into());
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Delay
 // ---------------------------------------------------------------------------
 
@@ -590,14 +1283,30 @@ impl TimeToLive {
 // ---------------------------------------------------------------------------
 
 /// Verification constraints — how many times a request must have been received.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+///
+/// On the wire both `atLeast` and `atMost` are ALWAYS sent, using `-1` to mean
+/// "unbounded". The MockServer server deserializes these into primitive `int`
+/// fields, so an omitted bound defaults to `0` server-side — which would turn
+/// `at_least(n)` into an impossible `between(n, 0)` constraint. Emitting the
+/// explicit `-1` sentinel (matching the Java client) avoids that.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationTimes {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub at_least: Option<u32>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub at_most: Option<u32>,
+}
+
+impl Serialize for VerificationTimes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("VerificationTimes", 2)?;
+        state.serialize_field("atLeast", &self.at_least.map_or(-1_i64, i64::from))?;
+        state.serialize_field("atMost", &self.at_most.map_or(-1_i64, i64::from))?;
+        state.end()
+    }
 }
 
 impl VerificationTimes {
@@ -666,6 +1375,21 @@ pub struct Expectation {
     pub http_error: Option<HttpError>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_sse_response: Option<HttpSseResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_web_socket_response: Option<HttpWebSocketResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_response: Option<DnsResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_response: Option<BinaryResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grpc_stream_response: Option<GrpcStreamResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub times: Option<Times>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -720,6 +1444,36 @@ impl Expectation {
     /// Set an error action.
     pub fn error(mut self, error: HttpError) -> Self {
         self.http_error = Some(error);
+        self
+    }
+
+    /// Set a Server-Sent Events (SSE) response action.
+    pub fn respond_sse(mut self, sse: HttpSseResponse) -> Self {
+        self.http_sse_response = Some(sse);
+        self
+    }
+
+    /// Set a WebSocket response action.
+    pub fn respond_web_socket(mut self, ws: HttpWebSocketResponse) -> Self {
+        self.http_web_socket_response = Some(ws);
+        self
+    }
+
+    /// Set a DNS response action.
+    pub fn respond_dns(mut self, dns: DnsResponse) -> Self {
+        self.dns_response = Some(dns);
+        self
+    }
+
+    /// Set a raw binary response action.
+    pub fn respond_binary(mut self, binary: BinaryResponse) -> Self {
+        self.binary_response = Some(binary);
+        self
+    }
+
+    /// Set a gRPC streaming response action.
+    pub fn respond_grpc_stream(mut self, grpc: GrpcStreamResponse) -> Self {
+        self.grpc_stream_response = Some(grpc);
         self
     }
 
