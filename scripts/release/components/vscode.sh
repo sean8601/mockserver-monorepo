@@ -68,8 +68,12 @@ if [[ -z "$VSCE_PAT" || "$VSCE_PAT" == "null" ]]; then
   log_error "mockserver-release/vsce secret missing/empty — cannot publish to VS Code Marketplace"
   exit 1
 fi
+# Idempotent: re-running a release (or a prior build that already shipped the
+# extension) makes `vsce publish` fail with "… vX.Y.Z already exists." — that is
+# the desired end state, so run_idempotent treats it as success while still
+# HARD-failing on any other publish error.
 log_info "Publishing to VS Code Marketplace from $NODE_IMAGE"
-retry 3 5 -- in_docker "$NODE_IMAGE" \
+retry 3 5 -- run_idempotent 'already exists|already published' -- in_docker "$NODE_IMAGE" \
   -e "VSCE_PAT=$VSCE_PAT" \
   -w /build/mockserver-vscode -- \
   sh -c 'npm i -g @vscode/vsce && vsce publish -p "$VSCE_PAT"'
@@ -82,8 +86,10 @@ if [[ -z "$OVSX_PAT" || "$OVSX_PAT" == "null" ]]; then
   log_error "mockserver-release/ovsx secret missing/empty — cannot publish to Open VSX"
   exit 1
 fi
+# Idempotent for the same reason as the Marketplace publish above: ovsx reports
+# "already exists" when the version is already on Open VSX — treat as success.
 log_info "Publishing to Open VSX from $NODE_IMAGE"
-retry 3 5 -- in_docker "$NODE_IMAGE" \
+retry 3 5 -- run_idempotent 'already exists|already published' -- in_docker "$NODE_IMAGE" \
   -e "OVSX_PAT=$OVSX_PAT" \
   -w /build/mockserver-vscode -- \
   sh -c 'npm i -g ovsx && ovsx publish -p "$OVSX_PAT"'

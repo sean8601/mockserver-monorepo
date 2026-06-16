@@ -371,30 +371,39 @@ else
   fi
 
   # ---- Mirror images to GHCR -----------------------------------------------
-  # Copy the already-pushed multi-arch manifests from Docker Hub to GHCR with
-  # `docker buildx imagetools create` (a registry-to-registry manifest copy — no
-  # rebuild, identical digest). The MIRROR_GHCR gate (set only when GHCR login
-  # succeeded) decides WHETHER to mirror; once we're inside it, the GHCR mirror
-  # is a committed surface, so a per-tag mirror failure is HARD with retry — a
+  # Copy the already-pushed multi-arch manifests to GHCR with `docker buildx
+  # imagetools create` (a registry-to-registry manifest copy — no rebuild,
+  # identical digest). The MIRROR_GHCR gate (set only when GHCR login succeeded)
+  # decides WHETHER to mirror; once we're inside it, the GHCR mirror is a
+  # committed surface, so a per-tag mirror failure is HARD with retry — a
   # transient blip is retried, a real failure aborts the release.
+  #
+  # Source the copy from ECR Public, NOT Docker Hub. The single buildx build
+  # above pushed the SAME manifest (identical digest) to both registries, so
+  # either is a valid source — but Docker Hub rate-limits authenticated pulls
+  # (`429 toomanyrequests` for mockserverprincipal), and a manifest copy re-pulls
+  # every layer. Build #52's mirror exhausted the Docker Hub pull budget and
+  # aborted the release; ECR Public has no such pull limit, so mirroring from it
+  # sidesteps the rate limit entirely while producing the identical GHCR digest.
   if [[ "$MIRROR_GHCR" == "true" ]]; then
-    echo "--- :docker: Mirroring images to ghcr.io/mock-server/mockserver"
+    echo "--- :docker: Mirroring images to ghcr.io/mock-server/mockserver (source: ECR Public)"
     mirror_to_ghcr() {
-      # $1 = source ref (Docker Hub), $2 = destination ref (GHCR)
+      # $1 = source ref (ECR Public — not Docker Hub, to dodge its pull limit),
+      # $2 = destination ref (GHCR)
       docker buildx imagetools create --tag "$2" "$1"
     }
     for t in "$FULL_TAG" "$SHORT_TAG" "latest" \
              "$FULL_TAG-graaljs" "$SHORT_TAG-graaljs" "latest-graaljs"; do
-      retry 3 5 -- mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t"
+      retry 3 5 -- mirror_to_ghcr "${ECR_REPO}:$t" "${GHCR_REPO}:$t"
     done
     if [[ "$BUILD_CLUSTERED" == "true" ]]; then
       for t in "clustered-$FULL_TAG" "clustered-$SHORT_TAG" "clustered-latest"; do
-        retry 3 5 -- mirror_to_ghcr "mockserver/mockserver:$t" "${GHCR_REPO}:$t"
+        retry 3 5 -- mirror_to_ghcr "${ECR_REPO}:$t" "${GHCR_REPO}:$t"
       done
     fi
     if [[ "$BUILD_WEBHOOK" == "true" ]]; then
       for t in "$FULL_TAG" "$SHORT_TAG" "latest"; do
-        retry 3 5 -- mirror_to_ghcr "mockserver/mockserver-webhook:$t" "${GHCR_REPO}-webhook:$t"
+        retry 3 5 -- mirror_to_ghcr "${ECR_REPO}-webhook:$t" "${GHCR_REPO}-webhook:$t"
       done
     fi
   fi

@@ -48,13 +48,20 @@ log_info "Pre-pulling $DOTNET_IMAGE (MCR rate-limit resilience)"
 retry 5 30 -- docker pull "$DOTNET_IMAGE"
 
 # Restore + pack in the pinned .NET SDK container. HARD-fail on error.
-# `restore` is the network-touching step, so it gets retried to ride out
-# transient NuGet outages; pack is deterministic and runs once.
+# restore + pack MUST run in the SAME `docker run`: restore populates the
+# container-local NuGet global-packages folder (~/.nuget/packages), which is
+# discarded when the `--rm` container exits. A previous split — `restore` in one
+# in_docker, `pack --no-restore` in a second — left the second container with
+# only obj/project.assets.json on the bind-mounted /build but none of the actual
+# package files, so pack aborted with `NETSDK1064: Package … was not found. It
+# might have been deleted since NuGet restore.` Combining them keeps the restored
+# packages in scope for pack. `restore` is the network-touching step, so the
+# whole command is wrapped in `retry` to ride out transient NuGet outages; a
+# repeated pack is deterministic and harmless. CSPROJ_REL is passed as $0 to the
+# sh -c body (no secrets, just a path).
 log_info "Restoring + packing in $DOTNET_IMAGE"
 retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
-  dotnet restore "$CSPROJ_REL"
-in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
-  dotnet pack "$CSPROJ_REL" -c Release --no-restore -o ./artifacts
+  sh -c 'dotnet restore "$0" && dotnet pack "$0" -c Release --no-restore -o ./artifacts' "$CSPROJ_REL"
 
 if is_dry_run; then
   log_dry "skip: dotnet nuget push to NuGet.org"

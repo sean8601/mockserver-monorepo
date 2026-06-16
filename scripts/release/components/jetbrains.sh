@@ -77,8 +77,12 @@ if [[ -z "$JETBRAINS_TOKEN" || "$JETBRAINS_TOKEN" == "null" ]]; then
   log_error "mockserver-release/jetbrains secret missing/empty — cannot publish to JetBrains Marketplace"
   exit 1
 fi
+# Idempotent: re-running a release (or a prior build that already uploaded the
+# plugin) makes publishPlugin fail with "… already contains version X.Y.Z in
+# channel …" — that is the desired end state, so run_idempotent treats it as
+# success while still HARD-failing on any other publish error.
 log_info "Publishing to JetBrains Marketplace from $MAVEN_IMAGE"
-retry 3 5 -- in_docker "$MAVEN_IMAGE" \
+retry 3 5 -- run_idempotent 'already contains version|already exists' -- in_docker "$MAVEN_IMAGE" \
   -e "JETBRAINS_TOKEN=$JETBRAINS_TOKEN" \
   -w /build/mockserver-jetbrains -- \
   bash -ec "${ca_install_prelude}"'./gradlew publishPlugin'

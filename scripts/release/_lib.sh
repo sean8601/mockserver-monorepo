@@ -269,6 +269,39 @@ retry() {
   done
 }
 
+# Run a publish command that may legitimately fail because this exact VERSION is
+# already published (re-running a release after a partial failure, or a prior
+# build already shipped this component). An "already published" outcome is a
+# SUCCESS for an idempotent release — the artifact the user wants is live — so
+# this swallows ONLY that specific case and HARD-fails on every other error.
+#
+# Usage (pair with retry for transient blips):
+#   retry 3 5 -- run_idempotent 'already exists|already published' -- CMD ARGS...
+#
+#   $1 = extended-regex matched case-insensitively against the command's combined
+#        stdout+stderr; a match means "already published".
+#
+# Because an already-published match returns 0 on the FIRST attempt, `retry` does
+# not waste attempts re-publishing something that will never change. Output is
+# captured (so it can be inspected) and re-echoed, so the log still shows it. Do
+# NOT pass secrets in the command BODY — they would be captured here; pass them
+# via `-e` to in_docker, which keeps them out of stdout/stderr (and the banner
+# redacts -e values), exactly as the publish components already do.
+run_idempotent() {
+  local marker="$1"; shift
+  [[ "${1:-}" == "--" ]] && shift
+  if [[ $# -eq 0 ]]; then log_error "run_idempotent: no command given"; return 2; fi
+  local out rc=0
+  out=$("$@" 2>&1) || rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then return 0; fi
+  if printf '%s' "$out" | grep -qiE "$marker"; then
+    log_info ":information_source: '$1' reports this version already published (matched /$marker/) — treating as success (idempotent)"
+    return 0
+  fi
+  return "$rc"
+}
+
 # Run a command inside a Docker container with the repo mounted at /build.
 # Usage:
 #   in_docker IMAGE [-w WORKDIR] [-v VOL:DST] [-e KEY=VAL] -- CMD ARGS...
