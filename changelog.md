@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Report** fetches the latest drift records (`GET /mockserver/drift`) and opens a readable text summary in
   a new tab (one line per drift: type, field, expected vs actual value, confidence, and the affected
   expectation). The HTTP call runs off the UI thread.
+- VS Code extension can surface mock drift as **inline diagnostics** on the open expectation file:
+  **MockServer: Show Drift as Diagnostics** fetches the latest drift records (`GET /mockserver/drift`),
+  matches each to its expectation by `id`, and shows it as a diagnostic on that expectation's line
+  (unmatched drift attaches to the first line) — so "the real upstream differs from this stub" appears
+  right in the `*.mockserver.json` file. Status-code drift, a removed schema field, or a fully-confident
+  drift shows as an error; a newly added schema field shows as a warning; everything else as information.
+  Re-running refreshes the diagnostics and a clean result clears them.
 - JetBrains plugin brings the same server-interaction actions to the **Tools > MockServer** menu:
   **Load Expectations Into Running Server** (`PUT /mockserver/expectation`, a single expectation or an array),
   **Save Recorded Expectations** (`PUT /mockserver/retrieve?type=recorded_expectations`, opens the

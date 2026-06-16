@@ -12,6 +12,10 @@ import * as client from "./mockServerClient";
 let outputChannel: vscode.OutputChannel;
 let extensionVersion = "latest";
 
+// Collection backing the inline drift diagnostics shown on expectation files.
+// Created in activate() so it shares the extension lifecycle.
+let driftDiagnostics: vscode.DiagnosticCollection;
+
 // Adapter from the global fetch to the small FetchLike used by mockServerClient.
 const httpFetch: client.FetchLike = async (url, init) => {
     const res = await fetch(url, init);
@@ -69,6 +73,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const openApiCmd = vscode.commands.registerCommand("mockserver.generateFromOpenApi", generateFromOpenApi);
     const sendRequestCmd = vscode.commands.registerCommand("mockserver.sendRequest", sendRequest);
     const showDriftCmd = vscode.commands.registerCommand("mockserver.showDrift", showDrift);
+    const showDriftDiagnosticsCmd = vscode.commands.registerCommand(
+        "mockserver.showDriftDiagnostics",
+        showDriftDiagnostics
+    );
+
+    driftDiagnostics = vscode.languages.createDiagnosticCollection("mockserver-drift");
 
     const codeLensProvider = vscode.languages.registerCodeLensProvider(
         EXPECTATION_FILE_SELECTOR,
@@ -94,10 +104,12 @@ export function activate(context: vscode.ExtensionContext): void {
         openApiCmd,
         sendRequestCmd,
         showDriftCmd,
+        showDriftDiagnosticsCmd,
         codeLensProvider,
         requestCodeLensProvider,
         contentProvider,
         liveContentChanged,
+        driftDiagnostics,
         outputChannel
     );
 }
@@ -383,6 +395,57 @@ async function showDrift(): Promise<void> {
         await vscode.window.showTextDocument(out);
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to retrieve drift report — ${(e as Error).message}`);
+    }
+}
+
+// Map the pure DriftDiagnostic severity strings to the vscode enum.
+function toDiagnosticSeverity(
+    severity: "error" | "warning" | "info"
+): vscode.DiagnosticSeverity {
+    switch (severity) {
+        case "error":
+            return vscode.DiagnosticSeverity.Error;
+        case "warning":
+            return vscode.DiagnosticSeverity.Warning;
+        default:
+            return vscode.DiagnosticSeverity.Information;
+    }
+}
+
+// Surface the server's drift records as inline diagnostics on the open
+// expectation file: each drift attaches to the line of its matching expectation
+// (by id), so a developer sees "the real upstream differs from this stub" right
+// in the *.mockserver.json file. Re-running refreshes; no drift clears them.
+async function showDriftDiagnostics(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("No expectation file is open.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const records = await client.retrieveDriftRecords(client.buildBaseUrl(port), httpFetch);
+        if (records.length === 0) {
+            driftDiagnostics.delete(target);
+            vscode.window.showInformationMessage(
+                "No drift detected. Drift is recorded when MockServer proxies traffic to a real " +
+                "upstream and a matching stub expectation differs from the real response."
+            );
+            return;
+        }
+        const mapped = client.mapDriftToDiagnostics(records, doc.getText());
+        const diagnostics = mapped.map((d) => {
+            const lineLength = doc.lineAt(d.line).text.length;
+            const range = new vscode.Range(d.line, 0, d.line, lineLength);
+            return new vscode.Diagnostic(range, d.message, toDiagnosticSeverity(d.severity));
+        });
+        driftDiagnostics.set(target, diagnostics);
+        vscode.window.showInformationMessage(
+            `${diagnostics.length} drift record(s) shown as diagnostics.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve drift — ${(e as Error).message}`);
     }
 }
 

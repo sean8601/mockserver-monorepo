@@ -29,6 +29,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Generate Expectations From OpenAPI Spec** | Turns the OpenAPI/Swagger spec in the active editor into expectations |
 | **MockServer: Send Test Request** | Fires the request described by the active `*.mockserver-request.json` file at the running server and shows the response |
 | **MockServer: Show Drift Report** | Shows the latest mock-drift records (how real upstream responses differ from your stub expectations) in a readable text tab |
+| **MockServer: Show Drift as Diagnostics** | Surfaces drift records as inline diagnostics on the open `*.mockserver.json` file, anchored to the affected expectation |
 
 ## Live dashboard inside the editor
 
@@ -98,6 +99,13 @@ expectation differs structurally from the real response (`GET /mockserver/drift`
 latest records in a new text tab — one line per drift showing the drift type, field, expected vs actual
 value, confidence, and the affected expectation. If no drift has been recorded, the command says so rather
 than opening an empty tab.
+
+For drift you can act on right in the file, run **MockServer: Show Drift as Diagnostics** with a
+`*.mockserver.json` file open. Each drift record is matched to its expectation by `id` and surfaced as an
+inline diagnostic on that expectation's line (drift that can't be matched attaches to the first line). A
+status-code drift, a removed schema field, or a fully-confident drift shows as an error; a newly added
+schema field shows as a warning; everything else shows as information. Re-run the command to refresh, and
+when there is no drift the diagnostics are cleared.
 
 ## Snippets
 

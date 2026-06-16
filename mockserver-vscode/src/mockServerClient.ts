@@ -324,6 +324,55 @@ function formatDriftValue(value: unknown): string {
 }
 
 /**
+ * A single mock-drift record as reported by `GET /mockserver/drift`. The server
+ * may omit `expectedValue`/`actualValue` (e.g. a field added or removed). All
+ * other fields are always present.
+ */
+export interface DriftRecord {
+    /** The id of the expectation whose stub has drifted from the real upstream. */
+    expectationId: string;
+    /** The kind of drift, e.g. `HEADER_CHANGED`, `STATUS`, `SCHEMA_FIELD_ADDED`. */
+    driftType: string;
+    /** The drifted field (a JSON path or response location), e.g. `$.status`. */
+    field: string;
+    /** The value the stub expectation declares (absent for some drift types). */
+    expectedValue?: unknown;
+    /** The value the real upstream returned (absent for some drift types). */
+    actualValue?: unknown;
+    /** The detector's confidence in the drift, 0..1 (1.0 = certain). */
+    confidence: number;
+    /** When the drift was observed, in epoch milliseconds. */
+    epochTimeMs: number;
+}
+
+/**
+ * Fetch the drift endpoint and return the parsed `{ count, drifts }` body, or
+ * `undefined` when the body is not parseable JSON (so callers can fall back to
+ * the raw text). Shared by {@link retrieveDrift} and {@link retrieveDriftRecords}.
+ * Throws (with status + body) on a non-ok response.
+ */
+async function fetchDrift(
+    baseUrl: string,
+    fetchFn: FetchLike,
+    limit?: number
+): Promise<{ parsed?: { count?: number; drifts?: unknown[] }; body: string }> {
+    const query = typeof limit === "number" ? `?limit=${limit}` : "";
+    const res = await fetchFn(`${baseUrl}/mockserver/drift${query}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    try {
+        return { parsed: JSON.parse(body), body };
+    } catch {
+        return { parsed: undefined, body };
+    }
+}
+
+/**
  * Retrieve the latest mock-drift records via `GET /mockserver/drift`. Drift is
  * recorded when the server proxies traffic to a real upstream and a matching
  * stub expectation differs structurally from the real response. Returns the
@@ -335,24 +384,13 @@ export async function retrieveDrift(
     fetchFn: FetchLike,
     limit?: number
 ): Promise<DriftReport> {
-    const query = typeof limit === "number" ? `?limit=${limit}` : "";
-    const res = await fetchFn(`${baseUrl}/mockserver/drift${query}`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
-    }
-    const body = await res.text();
-    let parsed: { count?: number; drifts?: unknown[] } | undefined;
-    try {
-        parsed = JSON.parse(body);
-    } catch {
+    const { parsed, body } = await fetchDrift(baseUrl, fetchFn, limit);
+    if (parsed === undefined) {
         // Non-JSON or unexpected body — surface the raw text so nothing is lost.
         return { count: 0, report: body, empty: body.trim().length === 0 };
     }
-    const drifts = Array.isArray(parsed?.drifts) ? parsed!.drifts : [];
-    const count = typeof parsed?.count === "number" ? parsed!.count : drifts.length;
+    const drifts = Array.isArray(parsed.drifts) ? parsed.drifts : [];
+    const count = typeof parsed.count === "number" ? parsed.count : drifts.length;
     const header = `MockServer drift report — ${count} record(s)`;
     if (count === 0 && drifts.length === 0) {
         return { count: 0, report: header, empty: true };
@@ -368,4 +406,97 @@ export async function retrieveDrift(
         );
     });
     return { count, report: [header, ...lines].join("\n") + "\n", empty: count === 0 };
+}
+
+/**
+ * Retrieve the latest mock-drift records via `GET /mockserver/drift` as a
+ * structured array of {@link DriftRecord}, for programmatic use (e.g. mapping to
+ * editor diagnostics). Throws (with status + body) on a non-ok response; returns
+ * `[]` when the server reports no drift or sends a non-JSON / unexpected body.
+ * `limit` (when provided) caps how many records the server returns.
+ */
+export async function retrieveDriftRecords(
+    baseUrl: string,
+    fetchFn: FetchLike,
+    limit?: number
+): Promise<DriftRecord[]> {
+    const { parsed } = await fetchDrift(baseUrl, fetchFn, limit);
+    if (parsed === undefined || !Array.isArray(parsed.drifts)) {
+        return [];
+    }
+    return parsed.drifts as DriftRecord[];
+}
+
+/** A drift mapped to a position in an open expectation file, ready to surface as a diagnostic. */
+export interface DriftDiagnostic {
+    /** Zero-based line in the document the diagnostic attaches to (0 when no match found). */
+    line: number;
+    /** Human-readable message describing the drift. */
+    message: string;
+    /** Severity bucket, mapped from the drift type / confidence. */
+    severity: "error" | "warning" | "info";
+}
+
+/**
+ * Map drift severity from a record. The mapping (a heuristic — drift is advisory):
+ * - `error`   — a status-code drift (`driftType` contains `STATUS`), a removed
+ *               schema field (`SCHEMA_FIELD_REMOVED`), or a certain drift
+ *               (`confidence >= 1.0`): the stub is very likely wrong.
+ * - `warning` — a newly added schema field (`SCHEMA_FIELD_ADDED`): the upstream
+ *               grew a field the stub doesn't model.
+ * - `info`    — everything else (value changes, low-confidence drift).
+ */
+function driftSeverity(record: DriftRecord): "error" | "warning" | "info" {
+    const type = record.driftType ?? "";
+    if (type.includes("STATUS") || type.startsWith("SCHEMA_FIELD_REMOVED") || record.confidence >= 1.0) {
+        return "error";
+    }
+    if (type === "SCHEMA_FIELD_ADDED") {
+        return "warning";
+    }
+    return "info";
+}
+
+/**
+ * Find the zero-based line in `docText` of the expectation whose `"id"` equals
+ * `expectationId`. Heuristic: scan for a line that contains both an `"id"` key
+ * and the id string as a quoted value. Returns -1 when no such line is found.
+ */
+function findExpectationLine(docText: string, expectationId: string): number {
+    if (!expectationId) {
+        return -1;
+    }
+    const quotedId = `"${expectationId}"`;
+    const lines = docText.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('"id"') && lines[i].includes(quotedId)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/**
+ * Map drift records to {@link DriftDiagnostic}s anchored to the matching
+ * expectation lines in `docText`. For each record, the line is found by scanning
+ * for a JSON `"id"` line whose value equals `record.expectationId`; when no line
+ * matches, the diagnostic attaches to line 0 so it is still surfaced. The message
+ * reads `Drift [<driftType>] <field>: expected <e> / actual <a> (confidence <c>)`,
+ * with absent values shown as `—`. Pure and `vscode`-free so it can be unit-tested.
+ */
+export function mapDriftToDiagnostics(records: DriftRecord[], docText: string): DriftDiagnostic[] {
+    return records.map((record) => {
+        const found = findExpectationLine(docText, record.expectationId);
+        const expected = formatDriftValue(record.expectedValue);
+        const actual = formatDriftValue(record.actualValue);
+        const message =
+            `Drift [${record.driftType}] ${record.field}: ` +
+            `expected ${expected} / actual ${actual} ` +
+            `(confidence ${formatDriftValue(record.confidence)})`;
+        return {
+            line: found >= 0 ? found : 0,
+            message,
+            severity: driftSeverity(record),
+        };
+    });
 }

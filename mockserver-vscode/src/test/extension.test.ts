@@ -52,6 +52,18 @@ const vscodeStub = {
         registerCodeLensProvider(_selector: any, _provider: any): Disposable {
             return { dispose() {} };
         },
+        createDiagnosticCollection(_name?: string) {
+            return {
+                set(_uri: any, _diags?: any) {},
+                delete(_uri: any) {},
+                clear() {},
+                dispose() {},
+            };
+        },
+    },
+    DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+    Diagnostic: class {
+        constructor(public range: any, public message: string, public severity?: number) {}
     },
     EventEmitter: class {
         event = (_listener?: any): Disposable => ({ dispose() {} });
@@ -228,6 +240,13 @@ async function runTests(): Promise<void> {
 
     await test("activate registers the mockserver.showDrift command", () => {
         assert.ok(registeredCommands.has("mockserver.showDrift"), "showDrift command not registered");
+    });
+
+    await test("activate registers the mockserver.showDriftDiagnostics command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.showDriftDiagnostics"),
+            "showDriftDiagnostics command not registered"
+        );
     });
 
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
@@ -423,7 +442,7 @@ async function runTests(): Promise<void> {
             drifts: [
                 {
                     expectationId: "exp-1",
-                    driftType: "VALUE_CHANGED",
+                    driftType: "HEADER_CHANGED",
                     field: "$.status",
                     expectedValue: "active",
                     actualValue: "archived",
@@ -448,7 +467,7 @@ async function runTests(): Promise<void> {
         assert.strictEqual(out.count, 2);
         assert.ok(captured.url.includes("/mockserver/drift"), `url=${captured.url}`);
         assert.strictEqual(captured.init.method, "GET");
-        assert.ok(out.report.includes("VALUE_CHANGED"), "report should include the driftType");
+        assert.ok(out.report.includes("HEADER_CHANGED"), "report should include the driftType");
         assert.ok(out.report.includes("$.status"), "report should include the field");
         assert.ok(out.report.includes("FIELD_ADDED"), "report should include the second driftType");
         assert.ok(out.report.includes("— "), "missing value should render as an em dash");
@@ -471,6 +490,98 @@ async function runTests(): Promise<void> {
             () => client.retrieveDrift("http://localhost:1080", fakeFetch),
             /404: drift not enabled/
         );
+    });
+
+    await test("retrieveDriftRecords returns the parsed drifts array and GETs /mockserver/drift", async () => {
+        let captured: any = {};
+        const payload = {
+            count: 2,
+            drifts: [
+                { expectationId: "exp-1", driftType: "STATUS", field: "$.status", confidence: 1.0, epochTimeMs: 1 },
+                { expectationId: "exp-2", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", confidence: 0.5, epochTimeMs: 2 },
+            ],
+        };
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(payload)) });
+        };
+        const records = await client.retrieveDriftRecords("http://localhost:1080", fakeFetch);
+        assert.strictEqual(records.length, 2);
+        assert.strictEqual(records[0].expectationId, "exp-1");
+        assert.ok(captured.url.includes("/mockserver/drift"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+    });
+
+    await test("retrieveDriftRecords returns [] when the server reports no drift", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
+        const records = await client.retrieveDriftRecords("http://localhost:1080", fakeFetch);
+        assert.deepStrictEqual(records, []);
+    });
+
+    await test("retrieveDriftRecords returns [] on a non-JSON body", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("not json") });
+        const records = await client.retrieveDriftRecords("http://localhost:1080", fakeFetch);
+        assert.deepStrictEqual(records, []);
+    });
+
+    await test("retrieveDriftRecords throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("drift not enabled") });
+        await assert.rejects(
+            () => client.retrieveDriftRecords("http://localhost:1080", fakeFetch),
+            /404: drift not enabled/
+        );
+    });
+
+    await test("mapDriftToDiagnostics anchors a record to the line of its matching expectation id", () => {
+        const docText = [
+            "[",
+            "  {",
+            '    "id": "exp-1",',
+            '    "httpRequest": { "path": "/a" }',
+            "  }",
+            "]",
+        ].join("\n");
+        const records = [
+            { expectationId: "exp-1", driftType: "HEADER_CHANGED", field: "$.x", confidence: 0.8, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, docText);
+        assert.strictEqual(diags.length, 1);
+        assert.strictEqual(diags[0].line, 2, "should anchor to the line containing the matching id");
+    });
+
+    await test("mapDriftToDiagnostics falls back to line 0 when no expectation id matches", () => {
+        const docText = '[{"id":"other"}]';
+        const records = [
+            { expectationId: "missing", driftType: "HEADER_CHANGED", field: "$.x", confidence: 0.8, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, docText);
+        assert.strictEqual(diags[0].line, 0, "no match should fall back to line 0");
+    });
+
+    await test("mapDriftToDiagnostics maps STATUS drift to error and SCHEMA_FIELD_ADDED to warning", () => {
+        const records = [
+            { expectationId: "a", driftType: "STATUS", field: "$.status", confidence: 0.2, epochTimeMs: 1 },
+            { expectationId: "b", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", confidence: 0.2, epochTimeMs: 2 },
+            { expectationId: "c", driftType: "HEADER_CHANGED", field: "$.x", confidence: 0.2, epochTimeMs: 3 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, "{}");
+        assert.strictEqual(diags[0].severity, "error", "STATUS drift should be error");
+        assert.strictEqual(diags[1].severity, "warning", "SCHEMA_FIELD_ADDED should be warning");
+        assert.strictEqual(diags[2].severity, "info", "value change should be info");
+    });
+
+    await test("mapDriftToDiagnostics message includes the driftType and field, and — for absent values", () => {
+        const records = [
+            { expectationId: "a", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", confidence: 0.5, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, "{}");
+        assert.ok(diags[0].message.includes("SCHEMA_FIELD_ADDED"), "message should include driftType");
+        assert.ok(diags[0].message.includes("$.newField"), "message should include field");
+        assert.ok(diags[0].message.includes("—"), "absent values should render as an em dash");
+        assert.ok(diags[0].message.includes("confidence 0.5"), "message should include confidence");
     });
 
     await test("looksLikeOpenApiSpec detects specs and rejects expectations/junk", () => {

@@ -68,6 +68,10 @@
       {
         "command": "mockserver.showDrift",
         "title": "MockServer: Show Drift Report"
+      },
+      {
+        "command": "mockserver.showDriftDiagnostics",
+        "title": "MockServer: Show Drift as Diagnostics"
       }
     ],
     "snippets": [
