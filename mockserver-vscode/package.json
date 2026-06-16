@@ -40,6 +40,14 @@
       {
         "command": "mockserver.openDashboard",
         "title": "MockServer: Open Dashboard"
+      },
+      {
+        "command": "mockserver.loadExpectations",
+        "title": "MockServer: Load Expectations Into Running Server"
+      },
+      {
+        "command": "mockserver.diffAgainstLive",
+        "title": "MockServer: Diff Expectations Against Live Server"
       }
     ],
     "snippets": [
@@ -94,5 +102,8 @@
     "@vscode/vsce": "^3.0.0",
     "ovsx": "^0.9.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
   }
 }

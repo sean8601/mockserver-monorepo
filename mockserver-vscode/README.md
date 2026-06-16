@@ -22,6 +22,8 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Start (Docker)** | Starts the `mockserver/mockserver` container (see Settings below) |
 | **MockServer: Stop** | Stops the running MockServer container |
 | **MockServer: Open Dashboard** | Opens the MockServer dashboard in your browser |
+| **MockServer: Load Expectations Into Running Server** | Sends the current expectation file to the running server |
+| **MockServer: Diff Expectations Against Live Server** | Opens a diff between the file and the server's active expectations |
 
 ## Expectation file validation
 
@@ -30,6 +32,17 @@ validates it as you type — inline error squiggles, autocompletion of propertie
 documentation. The schema is the same one MockServer validates against, so the editor is never stricter or
 laxer than the server. A file may contain a single expectation **or** an array of expectations
 (initialization JSON). `*.mockserver.jsonc` (JSON with comments) is also recognised.
+
+## Expectation files as a live control surface
+
+At the top of any `*.mockserver.json` file the extension shows two CodeLens actions:
+
+- **Load into running MockServer** — sends the file's expectation(s) to the running server
+  (`PUT /mockserver/expectation`) on the configured port, so you can go from editing to live in one click.
+- **Diff against live** — fetches the server's currently-registered expectations and opens a side-by-side
+  diff against your file, so you can see what's actually loaded versus what's in source.
+
+Both use the `mockserver.port` setting to reach the server. They are also available from the Command Palette.
 
 ## Snippets
 

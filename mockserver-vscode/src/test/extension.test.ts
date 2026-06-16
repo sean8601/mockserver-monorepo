@@ -34,12 +34,40 @@ const vscodeStub = {
                 },
             };
         },
+        registerTextDocumentContentProvider(_scheme: string, _provider: any): Disposable {
+            return { dispose() {} };
+        },
+        openTextDocument(_uri: any) {
+            return Promise.resolve({ getText: () => "{}" });
+        },
     },
     commands: {
         registerCommand(id: string, handler: Function): Disposable {
             registeredCommands.set(id, handler);
             return { dispose() { registeredCommands.delete(id); } };
         },
+        executeCommand(_id: string, ..._args: any[]) { return Promise.resolve(undefined); },
+    },
+    languages: {
+        registerCodeLensProvider(_selector: any, _provider: any): Disposable {
+            return { dispose() {} };
+        },
+    },
+    EventEmitter: class {
+        event = (_listener?: any): Disposable => ({ dispose() {} });
+        fire(_e?: any): void {}
+        dispose(): void {}
+    },
+    Range: class {
+        constructor(
+            public startLine: number,
+            public startCharacter: number,
+            public endLine: number,
+            public endCharacter: number
+        ) {}
+    },
+    CodeLens: class {
+        constructor(public range: any, public command?: any) {}
     },
     window: {
         createOutputChannel(_name: string) {
@@ -174,6 +202,80 @@ async function runTests(): Promise<void> {
         const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
         assert.ok(schema.definitions && schema.definitions.expectation, "missing expectation definition");
         assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
+    });
+
+    await test("activate registers the load + diff commands", () => {
+        assert.ok(registeredCommands.has("mockserver.loadExpectations"), "load command not registered");
+        assert.ok(registeredCommands.has("mockserver.diffAgainstLive"), "diff command not registered");
+    });
+
+    // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
+    const client = require("../mockServerClient");
+
+    await test("buildBaseUrl builds a localhost URL", () => {
+        assert.strictEqual(client.buildBaseUrl(1080), "http://localhost:1080");
+    });
+
+    await test("parseExpectations accepts a single object and an array", () => {
+        assert.deepStrictEqual(client.parseExpectations('{"httpRequest":{}}'), [{ httpRequest: {} }]);
+        assert.strictEqual(client.parseExpectations('[{"a":1},{"b":2}]').length, 2);
+    });
+
+    await test("parseExpectations rejects empty array, invalid JSON, and non-objects", () => {
+        assert.throws(() => client.parseExpectations("[]"), /empty array/);
+        assert.throws(() => client.parseExpectations("{not json"), /Not valid JSON/);
+        assert.throws(() => client.parseExpectations("42"), /Expected an expectation/);
+    });
+
+    await test("parseExpectations accepts JSONC (comments + trailing comma) without corrupting URLs", () => {
+        const jsonc = `{
+            // a forward to an http URL — the // inside the string must survive
+            "httpRequest": { "path": "/x" },
+            "httpForward": { "host": "http://example.com", "port": 80 },
+        }`;
+        const result = client.parseExpectations(jsonc) as any[];
+        assert.strictEqual(result.length, 1);
+        assert.strictEqual(result[0].httpForward.host, "http://example.com");
+    });
+
+    await test("loadExpectations PUTs an array and returns the count", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve("") });
+        };
+        const count = await client.loadExpectations("http://localhost:1080", '[{"a":1},{"b":2}]', fakeFetch);
+        assert.strictEqual(count, 2);
+        assert.strictEqual(captured.url, "http://localhost:1080/mockserver/expectation");
+        assert.strictEqual(captured.init.method, "PUT");
+        assert.ok(Array.isArray(JSON.parse(captured.init.body)), "body should be a JSON array");
+    });
+
+    await test("loadExpectations throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve("bad matcher") });
+        await assert.rejects(
+            () => client.loadExpectations("http://localhost:1080", '{"httpResponse":{}}', fakeFetch),
+            /400: bad matcher/
+        );
+    });
+
+    await test("retrieveActiveExpectations pretty-prints the server JSON", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"id":"x"}]') });
+        const out = await client.retrieveActiveExpectations("http://localhost:1080", fakeFetch);
+        assert.ok(out.includes('"id": "x"'), "expected pretty-printed JSON");
+    });
+
+    // --- CodeLens provider ---
+    const { ExpectationCodeLensProvider } = require("../codeLens");
+
+    await test("CodeLens provider offers load + diff lenses", () => {
+        const provider = new ExpectationCodeLensProvider();
+        const lenses = provider.provideCodeLenses({ uri: { toString: () => "file:///x.mockserver.json" } });
+        assert.strictEqual(lenses.length, 2);
+        assert.strictEqual(lenses[0].command.command, "mockserver.loadExpectations");
+        assert.strictEqual(lenses[1].command.command, "mockserver.diffAgainstLive");
     });
 
     console.log(`\nResults: ${passed} passed, ${failed} failed, ${passed + failed} total`);
