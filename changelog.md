@@ -69,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `verify_zero_interactions()`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
 - .NET client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
   `VerifyZeroInteractions` (sync + async), moving it toward feature parity with the Java/Node/Python/Ruby clients.
+- Sensitive data is now redacted by default when importing HAR or Postman collections (`PUT /mockserver/import`):
+  sensitive request/response headers (Authorization, API keys, cookies) and common secret JSON body fields are
+  masked before expectations are stored. Redaction can be disabled or extended via import options.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
