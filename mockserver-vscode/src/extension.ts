@@ -11,6 +11,7 @@ import * as client from "./mockServerClient";
 
 let outputChannel: vscode.OutputChannel;
 let extensionVersion = "latest";
+let extensionUri: vscode.Uri | undefined;
 
 // Collection backing the inline drift diagnostics shown on expectation files.
 // Created in activate() so it shares the extension lifecycle.
@@ -59,6 +60,7 @@ function getConfig(): MockServerConfig {
 export function activate(context: vscode.ExtensionContext): void {
     outputChannel = vscode.window.createOutputChannel("MockServer");
     extensionVersion = (context.extension.packageJSON as { version?: string }).version ?? "latest";
+    extensionUri = context.extensionUri;
 
     const startCmd = vscode.commands.registerCommand("mockserver.start", startMockServer);
     const stopCmd = vscode.commands.registerCommand("mockserver.stop", stopMockServer);
@@ -218,6 +220,10 @@ async function openDashboardInEditor(): Promise<void> {
         vscode.ViewColumn.Active,
         { enableScripts: true }
     );
+    // Show the MockServer "M" icon on the tab instead of the default webview icon.
+    if (extensionUri) {
+        dashboardPanel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "mockserver.svg");
+    }
     dashboardPanel.onDidDispose(() => {
         dashboardPanel = undefined;
     });

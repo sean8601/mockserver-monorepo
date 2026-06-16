@@ -84,7 +84,7 @@
                     factoryClass="com.mockserver.jetbrains.MockServerDashboardToolWindowFactory"
                     anchor="right"
                     canCloseContents="false"
-                    icon="AllIcons.Toolwindows.WebToolWindow"/>
+                    icon="/icons/mockserver.svg"/>
         <notificationGroup id="MockServer Notifications"
                            displayType="BALLOON"
                            isLogByDefault="true"/>

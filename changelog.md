@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The HTTP call runs off the UI thread.
 
 ### Changed
+- The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
+  JetBrains "MockServer Dashboard" tool window (light/dark variants) and the VS Code dashboard webview tab.
 - Dashboard is now more usable on small screens (mobile and the IDE-embedded dashboard): the Get Started
   feature tiles collapse to a compact bulleted list below a medium viewport width, and the Log Messages list
   hides the inline message preview when narrow (it wrapped one word per line) — the full message is still
