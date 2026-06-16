@@ -8,13 +8,15 @@
 
     <h3>Features</h3>
     <ul>
-      <li><b>Start MockServer (Docker)</b> — launches the official <code>mockserver/mockserver</code> container, listening on port <code>1080</code>, with a single click.</li>
-      <li><b>Open MockServer Dashboard</b> — opens the live dashboard (<code>http://localhost:1080/mockserver/dashboard</code>) in your browser to watch requests as they arrive, inspect why a request did or didn't match, and review active expectations.</li>
+      <li><b>Expectation file validation</b> — name a file <code>*.mockserver.json</code> (or <code>*.mockserver.jsonc</code>) and the IDE validates it as you type, with autocompletion and hover documentation, using the same schema MockServer validates against. A single expectation or an array of expectations (initialization JSON) is accepted.</li>
+      <li><b>Start MockServer (Docker)</b> — launches the official <code>mockserver/mockserver</code> container (default port <code>1080</code>) with a single click.</li>
+      <li><b>Open MockServer Dashboard</b> — opens the live dashboard in your browser to watch requests as they arrive, inspect why a request did or didn't match, and review active expectations.</li>
       <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar giving one-click access to the same actions, always within reach.</li>
+      <li><b>Settings</b> — configure the Docker image, container name, and port under <b>Settings | Tools | MockServer</b>.</li>
     </ul>
 
     <h3>Usage</h3>
-    <p>Run the actions from the <b>Tools &gt; MockServer</b> menu or the <b>MockServer</b> tool window. A typical flow: <i>Start MockServer (Docker)</i>, create expectations by sending JSON to <code>http://localhost:1080/mockserver/expectation</code> (or via any MockServer client library), then <i>Open MockServer Dashboard</i> to inspect traffic.</p>
+    <p>Run the actions from the <b>Tools &gt; MockServer</b> menu or the <b>MockServer</b> tool window. A typical flow: author a <code>*.mockserver.json</code> file with validation and completion, <i>Start MockServer (Docker)</i>, create expectations by sending JSON to <code>/mockserver/expectation</code> (or via any MockServer client library), then <i>Open MockServer Dashboard</i> to inspect traffic.</p>
 
     <h3>Requirements</h3>
     <ul>

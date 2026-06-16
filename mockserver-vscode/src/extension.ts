@@ -16,10 +16,13 @@ interface MockServerConfig {
 function getConfig(): MockServerConfig {
     const cfg = vscode.workspace.getConfiguration("mockserver");
     const configuredImage = (cfg.get<string>("dockerImage") ?? "").trim();
+    const configuredPort = cfg.get<number>("port");
+    const validPort =
+        typeof configuredPort === "number" && configuredPort >= 1 && configuredPort <= 65535;
     return {
         dockerImage: configuredImage || `mockserver/mockserver:${extensionVersion}`,
         containerName: cfg.get<string>("containerName") || "mockserver-vscode",
-        port: cfg.get<number>("port") || 1080,
+        port: validPort ? configuredPort : 1080,
     };
 }
 
