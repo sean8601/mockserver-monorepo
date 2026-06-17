@@ -155,6 +155,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duplicates — without merging requests that have genuinely different responses.
 - Dashboard matcher test playground: enter a sample request and see whether a candidate expectation would
   match it (a browser-side preview) before registering — reached from a new toolbar button.
+- Baseline traffic drift comparison: `PUT /mockserver/baseline/compare` diffs current recorded interactions
+  against a saved baseline and returns a structured drift report (added / removed / changed), using
+  value-insensitive JSON-shape comparison (a changed field value is not drift, but a new/removed field or a
+  type change is) — usable from CI to catch traffic-shape regressions.
+- Dashboard composer can now author `capture` rules on an expectation (extract a request value via
+  jsonPath/xpath/header/query/cookie/pathParameter into scenario state).
+- More configuration properties are editable at runtime from the dashboard configuration dialog (matching &
+  proxying, logging, and CORS toggles that the server applies live).
 
 ### Changed
 - JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a

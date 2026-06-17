@@ -1617,6 +1617,60 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/baseline/compare", "/baseline/compare")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    try {
+                        String requestBody = request.getBodyAsJsonOrXmlString();
+                        if (requestBody == null || requestBody.trim().isEmpty()) {
+                            throw new IllegalArgumentException("baseline compare request body is required — must be a JSON document with a \"baseline\" (and optional \"current\") array of expectations");
+                        }
+                        com.fasterxml.jackson.databind.JsonNode rootNode = ObjectMapperFactory.createObjectMapper().readTree(requestBody);
+                        com.fasterxml.jackson.databind.JsonNode baselineNode = rootNode.get("baseline");
+                        if (baselineNode == null || baselineNode.isNull()) {
+                            throw new IllegalArgumentException("baseline compare request body must contain a \"baseline\" array of expectations");
+                        }
+                        List<Expectation> baselineExpectations = java.util.Arrays.asList(
+                            getExpectationSerializer().deserializeArray(baselineNode.toString(), true));
+
+                        List<Expectation> currentExpectations;
+                        com.fasterxml.jackson.databind.JsonNode currentNode = rootNode.get("current");
+                        if (currentNode == null || currentNode.isNull()) {
+                            // no current supplied — diff against the live recorded expectations
+                            currentExpectations = requestMatchers.retrieveActiveExpectations(null);
+                        } else {
+                            currentExpectations = java.util.Arrays.asList(
+                                getExpectationSerializer().deserializeArray(currentNode.toString(), true));
+                        }
+
+                        org.mockserver.mock.diff.BaselineDiffReport report =
+                            new org.mockserver.mock.diff.BaselineDiffer().diffExpectations(baselineExpectations, currentExpectations);
+
+                        responseWriter.writeResponse(request, response()
+                            .withStatusCode(OK.code())
+                            .withBody(ObjectMapperFactory.createObjectMapper().writeValueAsString(report), MediaType.JSON_UTF_8), true);
+                    } catch (IllegalArgumentException iae) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for baseline compare:{}error:{}")
+                                .setArguments(request, iae.getMessage())
+                                .setThrowable(iae)
+                        );
+                        responseWriter.writeResponse(request, BAD_REQUEST, iae.getMessage(), MediaType.create("text", "plain").toString());
+                    } catch (Exception e) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for baseline compare:{}error:{}")
+                                .setArguments(request, e.getMessage())
+                                .setThrowable(e)
+                        );
+                        responseWriter.writeResponse(request, BAD_REQUEST, e.getMessage(), MediaType.create("text", "plain").toString());
+                    }
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/pact/import", "/pact/import")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {

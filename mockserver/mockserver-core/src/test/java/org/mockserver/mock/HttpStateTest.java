@@ -146,6 +146,65 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldHandleBaselineCompareRequestWithExplicitCurrent() throws Exception {
+        // given — baseline has one interaction, current adds a field to the response body
+        String baseline = expectationSerializer.serialize(Collections.singletonList(
+            new Expectation(request().withMethod("GET").withPath("/api/users"))
+                .thenRespond(response().withStatusCode(200).withBody("{\"id\":1}"))));
+        String current = expectationSerializer.serialize(Collections.singletonList(
+            new Expectation(request().withMethod("GET").withPath("/api/users"))
+                .thenRespond(response().withStatusCode(200).withBody("{\"id\":1,\"email\":\"a@b.com\"}"))));
+        HttpRequest compareRequest = request("/mockserver/baseline/compare")
+            .withMethod("PUT")
+            .withBody("{\"baseline\":" + baseline + ",\"current\":" + current + "}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(compareRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        com.fasterxml.jackson.databind.JsonNode report =
+            org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                .readTree(responseWriter.response.getBodyAsString());
+        assertThat(report.get("added").size(), is(0));
+        assertThat(report.get("removed").size(), is(0));
+        assertThat(report.get("changed").size(), is(1));
+        assertThat(report.get("changed").get(0).get("key").asText(), is("GET /api/users"));
+        assertThat(report.get("changed").get(0).get("responseDiffs").get(0).get("field").asText(),
+            is("response.body.email"));
+    }
+
+    @Test
+    public void shouldHandleBaselineCompareRequestAgainstLiveRecordedExpectations() throws Exception {
+        // given — live recorded expectation matches the baseline exactly (no current supplied)
+        httpState.add(new Expectation(request().withMethod("GET").withPath("/api/users"))
+            .thenRespond(response().withStatusCode(200).withBody("{\"id\":1}")));
+        String baseline = expectationSerializer.serialize(Collections.singletonList(
+            new Expectation(request().withMethod("GET").withPath("/api/users"))
+                .thenRespond(response().withStatusCode(200).withBody("{\"id\":1}"))));
+        HttpRequest compareRequest = request("/mockserver/baseline/compare")
+            .withMethod("PUT")
+            .withBody("{\"baseline\":" + baseline + "}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(compareRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        com.fasterxml.jackson.databind.JsonNode report =
+            org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                .readTree(responseWriter.response.getBodyAsString());
+        assertThat(report.get("hasDrift").asBoolean(), is(false));
+        assertThat(report.get("added").size(), is(0));
+        assertThat(report.get("removed").size(), is(0));
+        assertThat(report.get("changed").size(), is(0));
+    }
+
+    @Test
     public void shouldHandleClearRequest() {
         // given
         httpState.add(new Expectation(request("request_one")).thenRespond(response("response_one")));
