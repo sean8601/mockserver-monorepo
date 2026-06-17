@@ -58,15 +58,34 @@ public class ExampleBuilder {
     public static final double SAMPLE_DECIMAL_PROPERTY_VALUE = 1.5;
 
     public static Example fromSchema(Schema<?> property, Map<String, Schema> definitions) {
-        SampleDataGenerator generator = ConfigurationProperties.generateRealisticExampleValues() ? new SampleDataGenerator() : null;
-        return fromProperty(null, property, definitions, new ConcurrentHashMap<>(), new ConcurrentSkipListSet<>(), new StringBuilder(), generator);
+        return fromSchema(property, definitions, null);
+    }
+
+    /**
+     * Builds an example from a schema, optionally honouring per-run {@link GenerationOptions}
+     * (a caller-chosen seed for reproducible realistic values and per-field value overrides).
+     * When {@code generationOptions} is {@code null} behaviour is identical to the historic
+     * two-arg overload (fixed seed 42, no overrides).
+     */
+    public static Example fromSchema(Schema<?> property, Map<String, Schema> definitions, GenerationOptions generationOptions) {
+        SampleDataGenerator generator = null;
+        if (ConfigurationProperties.generateRealisticExampleValues()) {
+            generator = (generationOptions != null && generationOptions.getSeed() != null)
+                ? new SampleDataGenerator(generationOptions.getSeed())
+                : new SampleDataGenerator();
+        }
+        return fromProperty(null, property, definitions, new ConcurrentHashMap<>(), new ConcurrentSkipListSet<>(), new StringBuilder(), generator, generationOptions);
     }
 
     public static Example fromProperty(String name, Schema<?> property, Map<String, Schema> definitions, Map<String, Example> processedModels, Set<String> modelsStartedProcessing, StringBuilder location) {
-        return fromProperty(name, property, definitions, processedModels, modelsStartedProcessing, location, null);
+        return fromProperty(name, property, definitions, processedModels, modelsStartedProcessing, location, null, null);
     }
 
     private static Example fromProperty(String name, Schema<?> property, Map<String, Schema> definitions, Map<String, Example> processedModels, Set<String> modelsStartedProcessing, StringBuilder location, SampleDataGenerator generator) {
+        return fromProperty(name, property, definitions, processedModels, modelsStartedProcessing, location, generator, null);
+    }
+
+    private static Example fromProperty(String name, Schema<?> property, Map<String, Schema> definitions, Map<String, Example> processedModels, Set<String> modelsStartedProcessing, StringBuilder location, SampleDataGenerator generator, GenerationOptions generationOptions) {
         location = new StringBuilder(location);
         if (isNotBlank(name)) {
             location.append(name).append(".");
@@ -74,6 +93,18 @@ public class ExampleBuilder {
 
         if (property == null) {
             return null;
+        }
+
+        // Per-field override by leaf property name — pins a fixed value for every property with this
+        // name, at any nesting depth. An author-declared schema example still wins (handled below).
+        if (generationOptions != null && property.getExample() == null && generationOptions.hasOverrideFor(name)) {
+            Example overrideExample = overrideToExample(generationOptions.getOverride(name));
+            if (overrideExample != null) {
+                if (name != null) {
+                    overrideExample.setName(name);
+                }
+                return overrideExample;
+            }
         }
 
         // name = null;
@@ -113,7 +144,7 @@ public class ExampleBuilder {
             } else if (definitions != null) {
                 Schema<?> model = definitions.get(ref);
                 if (model != null) {
-                    output = fromProperty(ref, model, definitions, processedModels, modelsStartedProcessing, location, generator);
+                    output = fromProperty(ref, model, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     processedModels.put(ref, output);
                 }
             }
@@ -327,7 +358,7 @@ public class ExampleBuilder {
                 if (objectSchema.getProperties() != null) {
                     for (String propertyname : objectSchema.getProperties().keySet()) {
                         Schema<?> inner = objectSchema.getProperties().get(propertyname);
-                        Example innerExample = fromProperty(propertyname, inner, definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example innerExample = fromProperty(propertyname, inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         outputExample.put(propertyname, innerExample);
                     }
                     output = outputExample;
@@ -350,7 +381,7 @@ public class ExampleBuilder {
             } else {
                 Schema<?> inner = arraySchema.getItems();
                 if (inner != null) {
-                    Example innerExample = fromProperty(property.getType(), inner, definitions, processedModels, modelsStartedProcessing, location, generator);
+                    Example innerExample = fromProperty(property.getType(), inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     if (innerExample != null) {
                         ArrayExample an = new ArrayExample();
                         an.add(innerExample);
@@ -366,7 +397,7 @@ public class ExampleBuilder {
                 List<Example> innerExamples = new ArrayList<>();
                 if (models != null) {
                     for (Schema im : models) {
-                        Example innerExample = fromProperty(im.getType(), im, definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example innerExample = fromProperty(im.getType(), im, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         if (innerExample != null) {
                             innerExamples.add(innerExample);
                         }
@@ -375,7 +406,7 @@ public class ExampleBuilder {
                 if (composedSchema.getProperties() != null) {
                     Map<String, Schema> ownProperties = composedSchema.getProperties();
                     for (Map.Entry<String, Schema> entry : ownProperties.entrySet()) {
-                        Example propExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example propExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         if (propExample != null) {
                             ex.put(entry.getKey(), propExample);
                         }
@@ -388,7 +419,7 @@ public class ExampleBuilder {
                 List<Schema> models = composedSchema.getAnyOf();
                 if (models != null) {
                     for (Schema im : models) {
-                        Example innerExample = fromProperty(property.getType(), im, definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example innerExample = fromProperty(property.getType(), im, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         if (innerExample != null) {
                             output = innerExample;
                             break;
@@ -400,7 +431,7 @@ public class ExampleBuilder {
                 List<Schema> models = composedSchema.getOneOf();
                 if (models != null) {
                     for (Schema im : models) {
-                        Example innerExample = fromProperty(property.getType(), im, definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example innerExample = fromProperty(property.getType(), im, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         if (innerExample != null) {
                             output = innerExample;
                             break;
@@ -412,7 +443,7 @@ public class ExampleBuilder {
             // OpenAPI 3.1 type arrays (e.g. type: [string, "null"]) — pick the first non-null type
             String primaryType = resolveOas31PrimaryType(property.getTypes());
             if (primaryType != null) {
-                output = generateExampleForType(primaryType, property, example, definitions, processedModels, modelsStartedProcessing, location, generator);
+                output = generateExampleForType(primaryType, property, example, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
             }
         } else if (property.getProperties() != null) {
             if (example != null) {
@@ -433,7 +464,7 @@ public class ExampleBuilder {
                     Map<String, Schema> properties = property.getProperties();
                     for (String propertyKey : properties.keySet()) {
                         Schema inner = properties.get(propertyKey);
-                        Example propExample = fromProperty(propertyKey, inner, definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example propExample = fromProperty(propertyKey, inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         ex.put(propertyKey, propExample);
                     }
                 }
@@ -445,7 +476,7 @@ public class ExampleBuilder {
         if (property.getAdditionalProperties() instanceof Schema<?> inner) {
             if (inner != null) {
                 for (int i = 1; i <= 3; i++) {
-                    Example innerExample = fromProperty(inner.getType(), inner, definitions, processedModels, modelsStartedProcessing, location, generator);
+                    Example innerExample = fromProperty(inner.getType(), inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     if (innerExample != null) {
                         if (output == null) {
                             output = new ObjectExample();
@@ -550,6 +581,33 @@ public class ExampleBuilder {
     }
 
     /**
+     * Converts a per-field override value (from {@link GenerationOptions}) into the matching
+     * {@link Example} type so it serialises with the right JSON shape (string vs number vs boolean).
+     * Unknown/complex types fall back to their {@code toString()} as a string example.
+     */
+    private static Example overrideToExample(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return new BooleanExample(booleanValue);
+        }
+        if (value instanceof Integer || value instanceof Short || value instanceof Byte) {
+            return new IntegerExample(((Number) value).intValue());
+        }
+        if (value instanceof Long longValue) {
+            return new LongExample(longValue);
+        }
+        if (value instanceof BigDecimal bigDecimal) {
+            return new DecimalExample(bigDecimal);
+        }
+        if (value instanceof Number number) {
+            return new DoubleExample(number.doubleValue());
+        }
+        return new StringExample(value.toString());
+    }
+
+    /**
      * Generates an example value for a schema based on its type string.
      * Used when the schema does not match any typed subclass (e.g. OpenAPI 3.1
      * schemas with {@code type} as an array).
@@ -563,7 +621,8 @@ public class ExampleBuilder {
         Map<String, Example> processedModels,
         Set<String> modelsStartedProcessing,
         StringBuilder location,
-        SampleDataGenerator generator
+        SampleDataGenerator generator,
+        GenerationOptions generationOptions
     ) {
         return switch (type) {
             case "string" -> {
@@ -655,7 +714,7 @@ public class ExampleBuilder {
                 objectEx.setName(property.getName());
                 if (property.getProperties() != null) {
                     for (Map.Entry<String, Schema> entry : ((Map<String, Schema>) property.getProperties()).entrySet()) {
-                        Example innerExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator);
+                        Example innerExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                         objectEx.put(entry.getKey(), innerExample);
                     }
                 }
@@ -677,7 +736,7 @@ public class ExampleBuilder {
                 }
                 Schema<?> items = property.getItems();
                 if (items != null) {
-                    Example innerExample = fromProperty(type, items, definitions, processedModels, modelsStartedProcessing, location, generator);
+                    Example innerExample = fromProperty(type, items, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     if (innerExample != null) {
                         ArrayExample arrayEx = new ArrayExample();
                         arrayEx.add(innerExample);

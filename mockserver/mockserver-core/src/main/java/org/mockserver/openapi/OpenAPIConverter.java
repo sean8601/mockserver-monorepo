@@ -18,6 +18,7 @@ import org.mockserver.model.AfterAction;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.OpenAPIDefinition;
 import org.mockserver.openapi.examples.ExampleBuilder;
+import org.mockserver.openapi.examples.GenerationOptions;
 import org.mockserver.openapi.examples.JsonNodeExampleSerializer;
 import org.mockserver.openapi.examples.models.StringExample;
 import org.mockserver.serialization.ObjectMapperFactory;
@@ -53,6 +54,9 @@ public class OpenAPIConverter {
     public List<Expectation> buildExpectations(String specUrlOrPayload, Map<String, Object> operationsAndResponses, String contextPathPrefix) {
         OpenAPI openAPI = buildOpenAPI(specUrlOrPayload, mockServerLogger);
         String specKey = deriveSpecKey(openAPI, specUrlOrPayload);
+        // Optional per-run example-generation options (seed + per-field overrides) embedded under a
+        // reserved namespaced key in operationsAndResponses; null when neither is supplied.
+        GenerationOptions generationOptions = GenerationOptions.fromOperationsMap(operationsAndResponses);
         // Track how many times each operationId appears so we can disambiguate
         // when the same operationId maps to multiple expectations (e.g. multiple response codes)
         Map<String, Integer> operationIdCounts = new HashMap<>();
@@ -90,8 +94,8 @@ public class OpenAPIConverter {
                     openAPIDefinition.withContextPathPrefix(contextPathPrefix);
                 }
                 Expectation expectation = new Expectation(openAPIDefinition)
-                    .thenRespond(buildHttpResponse(openAPI, operation.getResponses(), apiResponseKey, exampleName));
-                List<AfterAction> afterActions = buildAfterActions(openAPI, operation);
+                    .thenRespond(buildHttpResponse(openAPI, operation.getResponses(), apiResponseKey, exampleName, generationOptions));
+                List<AfterAction> afterActions = buildAfterActions(openAPI, operation, generationOptions);
                 if (!afterActions.isEmpty()) {
                     expectation.withAfterActions(afterActions);
                 }
@@ -125,7 +129,7 @@ public class OpenAPIConverter {
         return key;
     }
 
-    private List<AfterAction> buildAfterActions(OpenAPI openAPI, io.swagger.v3.oas.models.Operation operation) {
+    private List<AfterAction> buildAfterActions(OpenAPI openAPI, io.swagger.v3.oas.models.Operation operation, GenerationOptions generationOptions) {
         List<AfterAction> afterActions = new ArrayList<>();
         Map<String, io.swagger.v3.oas.models.callbacks.Callback> callbacks = operation.getCallbacks();
         if (callbacks == null || callbacks.isEmpty()) {
@@ -168,7 +172,8 @@ public class OpenAPIConverter {
                                 if (mediaType != null && mediaType.getSchema() != null) {
                                     org.mockserver.openapi.examples.models.Example example = ExampleBuilder.fromSchema(
                                         mediaType.getSchema(),
-                                        openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null
+                                        openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null,
+                                        generationOptions
                                     );
                                     if (example != null) {
                                         callbackRequest.withBody(serialise(example));
@@ -200,11 +205,7 @@ public class OpenAPIConverter {
         return callbackUrl;
     }
 
-    private HttpResponse buildHttpResponse(OpenAPI openAPI, ApiResponses apiResponses, String apiResponseKey) {
-        return buildHttpResponse(openAPI, apiResponses, apiResponseKey, null);
-    }
-
-    private HttpResponse buildHttpResponse(OpenAPI openAPI, ApiResponses apiResponses, String apiResponseKey, String exampleName) {
+    private HttpResponse buildHttpResponse(OpenAPI openAPI, ApiResponses apiResponses, String apiResponseKey, String exampleName, GenerationOptions generationOptions) {
         HttpResponse response = response();
         Optional
             .ofNullable(apiResponses)
@@ -224,7 +225,7 @@ public class OpenAPIConverter {
                             if (headerExample != null) {
                                 response.withHeader(entry.getKey(), String.valueOf(headerExample));
                             } else if (value.getSchema() != null) {
-                                org.mockserver.openapi.examples.models.Example generatedExample = ExampleBuilder.fromSchema(value.getSchema(), openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null);
+                                org.mockserver.openapi.examples.models.Example generatedExample = ExampleBuilder.fromSchema(value.getSchema(), openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null, generationOptions);
                                 if (generatedExample instanceof StringExample stringExample) {
                                     response.withHeader(entry.getKey(), stringExample.getValue());
                                 } else {
@@ -261,7 +262,7 @@ public class OpenAPIConverter {
                                             response.withBody(serialise(schemaExample));
                                         }
                                     } else {
-                                        org.mockserver.openapi.examples.models.Example generatedExample = ExampleBuilder.fromSchema(mediaType.getSchema(), openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null);
+                                        org.mockserver.openapi.examples.models.Example generatedExample = ExampleBuilder.fromSchema(mediaType.getSchema(), openAPI.getComponents() != null ? openAPI.getComponents().getSchemas() : null, generationOptions);
                                         if (generatedExample instanceof StringExample stringExample) {
                                             if (isJsonContentType(contentType.getKey())) {
                                                 response.withBody(json(serialise(stringExample.getValue())));
