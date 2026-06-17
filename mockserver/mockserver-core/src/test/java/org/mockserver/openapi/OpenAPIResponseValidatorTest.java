@@ -324,4 +324,69 @@ public class OpenAPIResponseValidatorTest {
         assertThat(errors, is(empty()));
     }
 
+    private final String rangeSpec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_status_code_range.yaml");
+
+    @Test
+    public void shouldMatchStatusCodeAgainstRangeBucketKey() {
+        // given - operation defines only the "2XX" range bucket, no exact "200"
+        HttpResponse response = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("\"ok\"");
+
+        // when
+        List<String> errors = OpenAPIResponseValidator.validate(rangeSpec, "rangeOnly", response, mockServerLogger);
+
+        // then - 200 matches "2XX", no false "status code not defined" error
+        assertThat(errors, is(empty()));
+    }
+
+    @Test
+    public void shouldMatch404AgainstFourXXRangeBucketKey() {
+        // given - operation defines only the "4XX" range bucket
+        HttpResponse response = response()
+            .withStatusCode(404)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"message\": \"not found\"}");
+
+        // when
+        List<String> errors = OpenAPIResponseValidator.validate(rangeSpec, "notFoundRange", response, mockServerLogger);
+
+        // then - 404 matches "4XX"
+        assertThat(errors, is(empty()));
+    }
+
+    @Test
+    public void shouldPreferExactStatusCodeOverRangeBucketKey() {
+        // given - operation defines BOTH "200" (requires "exact") and "2XX" (requires "range"),
+        // each with additionalProperties:false; a body valid only for the exact "200" schema
+        HttpResponse response = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"exact\": \"value\"}");
+
+        // when
+        List<String> errors = OpenAPIResponseValidator.validate(rangeSpec, "exactAndRange", response, mockServerLogger);
+
+        // then - the exact "200" schema is used (no error); the "2XX" schema would have rejected this body
+        assertThat(errors, is(empty()));
+    }
+
+    @Test
+    public void shouldUseExactStatusCodeSchemaNotRangeBucketForValidation() {
+        // given - a body that is valid only for the "2XX" range schema (requires "range")
+        // but invalid for the exact "200" schema (requires "exact", additionalProperties:false)
+        HttpResponse response = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"range\": \"value\"}");
+
+        // when
+        List<String> errors = OpenAPIResponseValidator.validate(rangeSpec, "exactAndRange", response, mockServerLogger);
+
+        // then - the exact "200" schema is selected (range precedence loses), so the body fails validation
+        assertThat(errors, hasSize(1));
+        assertThat(errors.get(0), containsString("response body validation error"));
+    }
+
 }

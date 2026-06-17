@@ -8,6 +8,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.Expectation;
 import org.mockserver.model.AfterAction;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.OpenAPIDefinition;
 
 import java.util.List;
 
@@ -1312,6 +1313,74 @@ public class OpenAPIConverterTest {
                             "}"))
                 )
         ));
+    }
+
+    @Test
+    public void shouldBuildExpectationForStatusCodeRangeKey() {
+        // given - spec defines responses keyed only by the range bucket "2XX" (legal per OpenAPI 3.x)
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_status_code_range.yaml");
+
+        // when - must NOT throw NumberFormatException for the "2XX" key
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(
+            specUrlOrPayload,
+            ImmutableMap.<String, Object>of("rangeOnly", "2XX")
+        );
+
+        // then - the range key "2XX" resolves to status code 200
+        assertThat(actualExpectations, hasSize(1));
+        assertThat(actualExpectations.get(0).getHttpResponse().getStatusCode(), is(200));
+    }
+
+    @Test
+    public void shouldNotThrowWhenBuildingAllExpectationsForSpecWithRangeKeys() {
+        // given - a spec whose operations use range status-code keys throughout
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_status_code_range.yaml");
+
+        // when - building every expectation (operationsAndResponses == null) must not throw
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(
+            specUrlOrPayload,
+            null
+        );
+
+        // then - "2XX" -> 200 and "4XX" -> 400 (exactAndRange prefers exact "200")
+        assertThat(actualExpectations, hasSize(3));
+        Integer rangeOnlyStatus = actualExpectations.stream()
+            .filter(e -> "rangeOnly".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getStatusCode();
+        assertThat(rangeOnlyStatus, is(200));
+        Integer notFoundStatus = actualExpectations.stream()
+            .filter(e -> "notFoundRange".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getStatusCode();
+        assertThat(notFoundStatus, is(400));
+    }
+
+    @Test
+    public void shouldStillHandleNumericAndDefaultStatusCodeKeys() {
+        // given - regression: a spec mixing a numeric "200" and a "default" key behaves as before
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");
+
+        // when
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(
+            specUrlOrPayload,
+            ImmutableMap.<String, Object>of(
+                "showPetById", "200",
+                "createPets", "default"
+            )
+        );
+
+        // then - "200" sets status 200, "default" leaves the status unset (null), exactly as before this fix
+        Integer showPetByIdStatus = actualExpectations.stream()
+            .filter(e -> "showPetById".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getStatusCode();
+        assertThat(showPetByIdStatus, is(200));
+        Integer createPetsStatus = actualExpectations.stream()
+            .filter(e -> "createPets".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getStatusCode();
+        assertThat(createPetsStatus, is(nullValue()));
     }
 
 }

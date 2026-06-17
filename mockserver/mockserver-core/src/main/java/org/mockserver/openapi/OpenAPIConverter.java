@@ -211,8 +211,9 @@ public class OpenAPIConverter {
             .ofNullable(apiResponses)
             .flatMap(notNullApiResponses -> notNullApiResponses.entrySet().stream().filter(entry -> isBlank(apiResponseKey) | entry.getKey().equals(apiResponseKey)).findFirst())
             .ifPresent(apiResponse -> {
-                if (!apiResponse.getKey().equalsIgnoreCase("default")) {
-                    response.withStatusCode(Integer.parseInt(apiResponse.getKey()));
+                Integer statusCode = parseResponseStatusCode(apiResponse.getKey());
+                if (statusCode != null) {
+                    response.withStatusCode(statusCode);
                 }
                 Optional
                     .ofNullable(apiResponse.getValue().getHeaders())
@@ -283,6 +284,36 @@ public class OpenAPIConverter {
                     });
             });
         return response;
+    }
+
+    /**
+     * Resolves an OpenAPI response-map key to a concrete HTTP status code.
+     * <ul>
+     *   <li>a literal three-digit key (e.g. {@code "200"}) becomes that status code;</li>
+     *   <li>a range key (e.g. {@code "2XX"}, {@code "4xx"} — legal per OpenAPI 3.x) becomes the
+     *       first code in the range, i.e. {@code firstDigit * 100} ({@code "2XX"} -> 200);</li>
+     *   <li>{@code "default"} (case-insensitive) returns {@code null}, leaving the default status as-is;</li>
+     *   <li>any other unparseable key is logged at WARN and returns {@code null}.</li>
+     * </ul>
+     * Never throws.
+     */
+    private Integer parseResponseStatusCode(String key) {
+        if (key == null || key.equalsIgnoreCase("default")) {
+            return null;
+        }
+        if (key.matches("\\d{3}")) {
+            return Integer.parseInt(key);
+        }
+        if (key.matches("[1-5][xX]{2}")) {
+            return (key.charAt(0) - '0') * 100;
+        }
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setLogLevel(WARN)
+                .setMessageFormat("unable to parse OpenAPI response status code key {} - leaving default status code")
+                .setArguments(key)
+        );
+        return null;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

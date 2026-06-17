@@ -56,8 +56,14 @@ public class OpenAPIResponseValidator {
             ApiResponse apiResponse = null;
 
             if (operation.getResponses() != null) {
+                // exact three-digit match wins
                 apiResponse = operation.getResponses().get(statusCode);
                 if (apiResponse == null) {
+                    // then the range bucket (e.g. "2XX" for "200"); swagger-parser stores range keys literally
+                    apiResponse = operation.getResponses().get(Character.toUpperCase(statusCode.charAt(0)) + "XX");
+                }
+                if (apiResponse == null) {
+                    // finally fall back to the "default" response
                     apiResponse = operation.getResponses().get("default");
                 }
             }
