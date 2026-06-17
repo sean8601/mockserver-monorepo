@@ -73,6 +73,77 @@ The analysis runs on a scheduler thread and never blocks the response path.
 
 ## REST API
 
+### PUT /mockserver/baseline/compare
+
+Compares two sets of expectations offline and returns a structured drift report. This is the batch/CI counterpart to the runtime `GET /mockserver/drift` endpoint — it never touches live traffic and requires no proxy setup.
+
+**Request body:**
+```json
+{
+  "baseline": [ <expectations> ],
+  "current":  [ <expectations> ]
+}
+```
+
+`current` is optional. When omitted, MockServer uses `requestMatchers.retrieveActiveExpectations(null)` — the live active expectations.
+
+**Response (HTTP 200):**
+```json
+{
+  "hasDrift": true,
+  "added": [
+    { "key": "POST /api/orders", "requestDiffs": [], "responseDiffs": [] }
+  ],
+  "removed": [
+    { "key": "DELETE /api/users/{id}", "requestDiffs": [], "responseDiffs": [] }
+  ],
+  "changed": [
+    {
+      "key": "GET /api/users",
+      "requestDiffs": [],
+      "responseDiffs": [
+        {
+          "field": "response.body.role",
+          "diffType": "REMOVED",
+          "expectedValue": "string"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Error responses:** `400 Bad Request` for empty body, invalid JSON, or missing `baseline` field.
+
+#### BaselineDiffer — key components
+
+| Class | Location | Responsibility |
+|-------|----------|---------------|
+| `BaselineDiffer` | `mock/diff/BaselineDiffer.java` | Entry point; indexes interactions by request key; delegates to `TrafficDiffEngine` for request diffs and `diffResponseStructure()` for response diffs |
+| `BaselineDiffReport` | `mock/diff/BaselineDiffReport.java` | Report root: `hasDrift` flag + `added`/`removed`/`changed` lists |
+| `InteractionDiff` | `mock/diff/InteractionDiff.java` | Single entry in a report bucket; carries the matching `key` and optional `requestDiffs`/`responseDiffs` lists |
+| `FieldDiff` | `mock/diff/FieldDiff.java` | Single field-level difference: `field` path, `diffType` (`ADDED`/`REMOVED`/`CHANGED`), `expectedValue`, `actualValue` |
+| `TrafficDiffEngine` | `mock/diff/TrafficDiffEngine.java` | Request-side structural diff (method, path, headers, query, body, cookies) |
+
+#### Matching key and normalization
+
+`BaselineDiffer.requestKey(HttpRequest)` produces `METHOD normalized-path`. Method is upper-cased; a single trailing slash is stripped from the path (but `"/"` is preserved). Trailing-slash-only differences in the path are filtered out after matching to prevent false positives.
+
+#### Value-insensitive JSON response body diffing
+
+`diffBodyShape()` in `BaselineDiffer` recursively walks two JSON trees. Only the following count as drift:
+
+- A field present in one tree but absent in the other
+- A node whose JSON type changed (object, array, number, boolean, string, null)
+
+A different value at the same field with the same type is **not** drift (e.g. `"name": "Alice"` vs `"name": "Bob"`). All numeric subtypes (int, long, double) collapse to `"number"` so `1` vs `1.5` are the same shape.
+
+Non-JSON bodies fall back to exact-string comparison.
+
+#### Status code and header diffing
+
+Status code is compared as a string. Response headers are lowercased, values are comma-joined for multi-value headers, and added/removed/changed headers are each reported as separate `FieldDiff` entries under `response.header.<name>`.
+
 ### GET /mockserver/drift
 
 Returns recent drift records.
