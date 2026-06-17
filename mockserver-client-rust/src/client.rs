@@ -738,6 +738,102 @@ impl MockServerClient {
     }
 
     // ------------------------------------------------------------------
+    // gRPC descriptor management
+    // ------------------------------------------------------------------
+
+    /// Upload a compiled protobuf descriptor set so gRPC requests can be matched.
+    ///
+    /// `descriptor` must be the raw bytes of a `FileDescriptorSet` (e.g. the
+    /// output of `protoc --descriptor_set_out=... --include_imports`). The bytes
+    /// are sent verbatim as `application/octet-stream` — they are **not**
+    /// base64-encoded. Sends a `PUT /mockserver/grpc/descriptors`; the server
+    /// responds `201 Created` on success.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use mockserver_client::ClientBuilder;
+    ///
+    /// let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+    /// let descriptor_set: Vec<u8> = std::fs::read("greeter.desc").unwrap();
+    /// client.upload_grpc_descriptor(&descriptor_set).unwrap();
+    /// ```
+    pub fn upload_grpc_descriptor(&self, descriptor: &[u8]) -> Result<()> {
+        if descriptor.is_empty() {
+            return Err(Error::InvalidRequest(
+                "descriptor set bytes must not be empty".into(),
+            ));
+        }
+        let resp = self
+            .http
+            .put(self.url("/mockserver/grpc/descriptors"))
+            .header("Content-Type", "application/octet-stream")
+            .body(descriptor.to_vec())
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 | 201 => Ok(()),
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Retrieve the gRPC services registered from uploaded descriptor sets.
+    ///
+    /// Sends a `PUT /mockserver/grpc/services` and returns the parsed list of
+    /// [`GrpcService`]s, each with its [`GrpcMethod`]s.
+    pub fn retrieve_grpc_services(&self) -> Result<Vec<GrpcService>> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/grpc/services"))
+            .header("Content-Type", "application/json")
+            .body("")
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                let text = resp.text()?;
+                if text.is_empty() {
+                    Ok(vec![])
+                } else {
+                    Ok(serde_json::from_str(&text)?)
+                }
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Clear all uploaded gRPC descriptor sets and registered services.
+    ///
+    /// Sends a `PUT /mockserver/grpc/clear`; the server responds `200 OK`.
+    pub fn clear_grpc_descriptors(&self) -> Result<()> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/grpc/clear"))
+            .header("Content-Type", "application/json")
+            .body("")
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 => Ok(()),
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------
 

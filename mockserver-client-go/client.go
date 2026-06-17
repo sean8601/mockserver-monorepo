@@ -643,8 +643,15 @@ func (c *Client) IsRunning() bool {
 	return err == nil
 }
 
-// doRequest performs an HTTP request to MockServer.
+// doRequest performs an HTTP request to MockServer with a JSON content type.
 func (c *Client) doRequest(method, path string, body []byte, params url.Values) ([]byte, int, error) {
+	return c.doRequestWithContentType(method, path, body, params, "application/json; charset=utf-8")
+}
+
+// doRequestWithContentType performs an HTTP request to MockServer using the
+// given Content-Type. The body is sent verbatim (no encoding), which is
+// required for raw binary payloads such as gRPC descriptor sets.
+func (c *Client) doRequestWithContentType(method, path string, body []byte, params url.Values, contentType string) ([]byte, int, error) {
 	u := c.baseURL + path
 	if len(params) > 0 {
 		u = u + "?" + params.Encode()
@@ -659,7 +666,7 @@ func (c *Client) doRequest(method, path string, body []byte, params url.Values) 
 	if err != nil {
 		return nil, 0, fmt.Errorf("mockserver: create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Content-Type", contentType)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

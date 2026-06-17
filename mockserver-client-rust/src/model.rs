@@ -1608,3 +1608,143 @@ impl ClearType {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// gRPC descriptor management
+// ---------------------------------------------------------------------------
+
+/// A single gRPC method registered from an uploaded descriptor set.
+///
+/// Returned by [`MockServerClient::retrieve_grpc_services`] as part of a
+/// [`GrpcService`]. Maps to the `methods[]` entries of the
+/// `PUT /mockserver/grpc/services` wire shape.
+///
+/// [`MockServerClient::retrieve_grpc_services`]: crate::MockServerClient::retrieve_grpc_services
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcMethod {
+    /// The simple method name (e.g. `SayHello`).
+    pub name: String,
+
+    /// Fully-qualified name of the request message type.
+    pub input_type: String,
+
+    /// Fully-qualified name of the response message type.
+    pub output_type: String,
+
+    /// Whether the method uses client-side streaming.
+    pub client_streaming: bool,
+
+    /// Whether the method uses server-side streaming.
+    pub server_streaming: bool,
+}
+
+/// A gRPC service registered from an uploaded descriptor set.
+///
+/// Returned by [`MockServerClient::retrieve_grpc_services`]. Maps to the
+/// top-level entries of the `PUT /mockserver/grpc/services` wire shape.
+///
+/// [`MockServerClient::retrieve_grpc_services`]: crate::MockServerClient::retrieve_grpc_services
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcService {
+    /// Fully-qualified service name (e.g. `helloworld.Greeter`).
+    pub name: String,
+
+    /// The methods declared by this service.
+    pub methods: Vec<GrpcMethod>,
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_grpc_services_deserialize_from_server_wire_shape() {
+        // Mirrors the JSON array produced by `PUT /mockserver/grpc/services`
+        // in mockserver-core HttpState.java (camelCase keys, full type names).
+        let wire = r#"[
+            {
+                "name": "helloworld.Greeter",
+                "methods": [
+                    {
+                        "name": "SayHello",
+                        "inputType": "helloworld.HelloRequest",
+                        "outputType": "helloworld.HelloReply",
+                        "clientStreaming": false,
+                        "serverStreaming": false
+                    },
+                    {
+                        "name": "LotsOfReplies",
+                        "inputType": "helloworld.HelloRequest",
+                        "outputType": "helloworld.HelloReply",
+                        "clientStreaming": false,
+                        "serverStreaming": true
+                    }
+                ]
+            }
+        ]"#;
+
+        let services: Vec<GrpcService> = serde_json::from_str(wire).unwrap();
+        assert_eq!(services.len(), 1);
+        let svc = &services[0];
+        assert_eq!(svc.name, "helloworld.Greeter");
+        assert_eq!(svc.methods.len(), 2);
+
+        let unary = &svc.methods[0];
+        assert_eq!(unary.name, "SayHello");
+        assert_eq!(unary.input_type, "helloworld.HelloRequest");
+        assert_eq!(unary.output_type, "helloworld.HelloReply");
+        assert!(!unary.client_streaming);
+        assert!(!unary.server_streaming);
+
+        let server_stream = &svc.methods[1];
+        assert_eq!(server_stream.name, "LotsOfReplies");
+        assert!(!server_stream.client_streaming);
+        assert!(server_stream.server_streaming);
+    }
+
+    #[test]
+    fn test_grpc_method_serializes_with_camel_case_keys() {
+        let method = GrpcMethod {
+            name: "BidiChat".into(),
+            input_type: "chat.Message".into(),
+            output_type: "chat.Message".into(),
+            client_streaming: true,
+            server_streaming: true,
+        };
+        let value = serde_json::to_value(&method).unwrap();
+        assert_eq!(value["name"], "BidiChat");
+        assert_eq!(value["inputType"], "chat.Message");
+        assert_eq!(value["outputType"], "chat.Message");
+        assert_eq!(value["clientStreaming"], true);
+        assert_eq!(value["serverStreaming"], true);
+    }
+
+    #[test]
+    fn test_grpc_services_empty_array() {
+        let services: Vec<GrpcService> = serde_json::from_str("[]").unwrap();
+        assert!(services.is_empty());
+    }
+
+    #[test]
+    fn test_grpc_service_round_trips() {
+        let original = GrpcService {
+            name: "helloworld.Greeter".into(),
+            methods: vec![GrpcMethod {
+                name: "SayHello".into(),
+                input_type: "helloworld.HelloRequest".into(),
+                output_type: "helloworld.HelloReply".into(),
+                client_streaming: false,
+                server_streaming: false,
+            }],
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: GrpcService = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, parsed);
+    }
+}
