@@ -4,25 +4,40 @@
     <vendor email="jamesdbloom@gmail.com" url="https://www.mock-server.com">MockServer</vendor>
 
     <description><![CDATA[
-    <p><b><a href="https://www.mock-server.com">MockServer</a></b> lets you easily mock any system you integrate with via HTTP or HTTPS (services, REST or RPC APIs, and more), so you can develop and test against simulated dependencies instead of real ones. This plugin brings MockServer controls into IntelliJ IDEA and all other JetBrains IDEs, so you can run and inspect a local mock server without leaving the editor.</p>
+    <p><b><a href="https://www.mock-server.com">MockServer</a></b> lets you easily mock any system you integrate with via HTTP or HTTPS (services, REST or RPC APIs, and more), so you can develop and test against simulated dependencies instead of real ones. This plugin brings the full MockServer toolset into IntelliJ IDEA and all other JetBrains IDEs.</p>
 
     <h3>Features</h3>
     <ul>
-      <li><b>Expectation file validation</b> — name a file <code>*.mockserver.json</code> (or <code>*.mockserver.jsonc</code>) and the IDE validates it as you type, with autocompletion and hover documentation, using the same schema MockServer validates against. A single expectation or an array of expectations (initialization JSON) is accepted.</li>
-      <li><b>Start MockServer (Docker)</b> — launches the official <code>mockserver/mockserver</code> container (default port <code>1080</code>) with a single click.</li>
-      <li><b>Open MockServer Dashboard</b> — opens the live dashboard in your browser to watch requests as they arrive, inspect why a request did or didn't match, and review active expectations.</li>
-      <li><b>Open MockServer Dashboard in IDE</b> — embeds the live dashboard inside the IDE in a dedicated tool window using the bundled JCEF (Chromium) engine, with Reload and Open-in-Browser controls. Falls back to the external browser when JCEF is unavailable.</li>
-      <li><b>Reset MockServer</b> — clears all expectations and recorded logs on the running server with a single confirmed click.</li>
-      <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar that surfaces every action as a one-click button, grouped into server controls and editor actions, so the full action set is always within reach without opening the Tools menu.</li>
+      <li><b>Expectation file validation</b> — name a file <code>*.mockserver.json</code> (or <code>*.mockserver.jsonc</code>) and the IDE validates it as you type, with autocompletion and hover documentation, using the same JSON Schema MockServer validates against. A single expectation object or an array of expectations (initialization JSON) is accepted.</li>
+      <li><b>Open MockServer Dashboard</b> — opens the live dashboard in your default browser to watch requests, inspect match results, and review active expectations.</li>
+      <li><b>Open MockServer Dashboard in IDE</b> — embeds the live dashboard inside the IDE in a dedicated right-hand tool window using the bundled JCEF (Chromium) engine, with Reload and Open-in-Browser toolbar buttons. Falls back to the external browser when JCEF is unavailable.</li>
+      <li><b>Start MockServer (Docker)</b> — launches the configured <code>mockserver/mockserver</code> container on the configured port with a single click. Docker must be running; the image defaults to the plugin's own version.</li>
+      <li><b>Load Expectations Into Running Server</b> — sends the active editor file (a single expectation or an array) to <code>PUT /mockserver/expectation</code> on the running server.</li>
+      <li><b>Save Recorded Expectations</b> — retrieves expectations MockServer recorded from proxied/forwarded traffic and opens them as a <code>.mockserver.json</code> file in a new tab.</li>
+      <li><b>Generate Expectations From OpenAPI Spec</b> — sends the active editor's OpenAPI/Swagger spec (JSON or YAML) to MockServer and opens the generated expectations in a new tab.</li>
+      <li><b>Send Test Request</b> — sends the ad-hoc HTTP request described in the active editor (<code>{ "method", "path", "headers"?, "body"? }</code>) to the running MockServer and opens the response in a new tab.</li>
+      <li><b>Show Drift Report</b> — fetches MockServer's mock-drift records (how real upstream responses differ from your stub expectations) and opens a formatted text report in a new tab.</li>
+      <li><b>Find Requests by Trace</b> — enter a W3C trace id (32 hex) or a full <code>traceparent</code> header value; the plugin retrieves all received requests, filters those carrying a matching <code>traceparent</code> header, and opens the results as JSON in a new tab.</li>
+      <li><b>Upload WASM Module</b> — picks a compiled <code>.wasm</code> custom-rule module with the IDE file chooser and uploads it to MockServer; the module can then be referenced by name as a WASM body matcher in an expectation (<code>{ "type": "WASM", "moduleName": "&lt;name&gt;" }</code>).</li>
+      <li><b>List WASM Modules</b> — fetches and displays the WASM custom-rule modules registered on the running server.</li>
+      <li><b>Reset MockServer</b> — clears all expectations and recorded logs on the running server (confirms before acting).</li>
+      <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar that surfaces every action as a one-click button, grouped into <i>Server</i>, <i>Editor actions</i>, and <i>WASM</i> rows, so the full action set is always within reach without opening the Tools menu.</li>
       <li><b>Settings</b> — configure the Docker image, container name, and port under <b>Settings | Tools | MockServer</b>.</li>
     </ul>
 
-    <h3>Usage</h3>
-    <p>Run the actions from the <b>Tools &gt; MockServer</b> menu or the <b>MockServer</b> tool window. A typical flow: author a <code>*.mockserver.json</code> file with validation and completion, <i>Start MockServer (Docker)</i>, create expectations by sending JSON to <code>/mockserver/expectation</code> (or via any MockServer client library), then <i>Open MockServer Dashboard</i> to inspect traffic.</p>
+    <h3>Quick start</h3>
+    <ol>
+      <li>Create a file named <code>my-stubs.mockserver.json</code> — validation and completion start immediately.</li>
+      <li>Run <b>Tools &gt; MockServer &gt; Start MockServer (Docker)</b> to launch a container (requires Docker).</li>
+      <li>Run <b>Load Expectations Into Running Server</b> to push your expectations to the server.</li>
+      <li>Run <b>Open MockServer Dashboard in IDE</b> to watch and inspect live traffic.</li>
+    </ol>
 
     <h3>Requirements</h3>
     <ul>
-      <li><b>Docker</b> must be installed and running to use the <i>Start MockServer (Docker)</i> action. The dashboard action only needs a running MockServer (started by this plugin or anywhere else) reachable at <code>localhost:1080</code>.</li>
+      <li>IntelliJ IDEA 2024.3+ or any JetBrains IDE on IntelliJ Platform build 243+</li>
+      <li><b>Docker</b> is required only for <i>Start MockServer (Docker)</i>; all other actions connect to any MockServer already running at the configured port.</li>
+      <li>WASM actions require <code>wasmEnabled=true</code> on the running MockServer.</li>
     </ul>
 
     <p>Full documentation — creating expectations, verifying requests, the REST API, and client libraries for Java, JavaScript, Python, Ruby, Go, .NET, Rust and PHP — is at <a href="https://www.mock-server.com">www.mock-server.com</a>.</p>
@@ -30,7 +45,7 @@
 
     <change-notes><![CDATA[
     <ul>
-      <li><b>7.1.0</b> — Start MockServer via Docker, open the MockServer Dashboard, and a dedicated MockServer tool window, all from within the IDE.</li>
+      <li><b>7.1.0</b> — Full IDE integration: expectation-file validation with JSON Schema completion; Start MockServer via Docker; Open MockServer Dashboard in IDE (JCEF-embedded) or browser; Load Expectations, Save Recorded Expectations, Generate From OpenAPI Spec, Send Test Request; Show Drift Report; Find Requests by Trace (W3C traceparent); Upload and List WASM custom-rule modules; Reset; dockable MockServer tool window with one-click buttons; Settings (image, container, port).</li>
     </ul>
     ]]></change-notes>
 

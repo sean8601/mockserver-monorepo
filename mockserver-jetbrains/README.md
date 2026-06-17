@@ -1,96 +1,157 @@
 # MockServer JetBrains Plugin
 
-MockServer integration for IntelliJ-based IDEs: expectation-file validation, plus Docker container controls.
+MockServer integration for IntelliJ IDEA and all JetBrains IDEs. Author and validate expectation files with full schema completion, manage a local MockServer directly from the IDE, inspect live traffic in an embedded dashboard, and correlate distributed traces — all from the **Tools > MockServer** menu or the dockable **MockServer** tool window.
 
-## Features
+## Features at a glance
 
-- **Expectation file validation** — name a file `*.mockserver.json` (or `*.mockserver.jsonc`) and the IDE
-  validates it as you type, with autocompletion and hover docs. The schema is the same one MockServer
-  validates against, generated from `mockserver-core`. A single expectation or an array of expectations
-  (initialization JSON) is accepted.
-- **Open MockServer Dashboard** — launches the dashboard in your default browser (port from Settings)
-- **Open MockServer Dashboard in IDE** — embeds the live dashboard inside the IDE using the bundled JCEF
-  (Chromium) engine in a dedicated right-hand tool window, with Reload and Open-in-Browser controls. When
-  JCEF is unavailable (e.g. a runtime without the JCEF engine) it falls back to opening the external browser
-- **Start MockServer (Docker)** — runs a MockServer container using the configured image, name, and port
-- **Load Expectations Into Running Server** — sends the active editor file to `PUT /mockserver/expectation`
-  on the running server (a single expectation or an array of expectations is accepted)
-- **Save Recorded Expectations** — retrieves the expectations MockServer recorded from proxied/forwarded
-  traffic (`PUT /mockserver/retrieve?type=recorded_expectations`) and opens them in a new JSON tab
-- **Generate Expectations From OpenAPI Spec** — sends the active editor's OpenAPI/Swagger spec (JSON or YAML)
-  to `PUT /mockserver/openapi` and opens the generated expectations in a new JSON tab
-- **Send Test Request** — sends the ad-hoc HTTP request described in the active editor
-  (a JSON object `{ "method", "path", "headers"?, "body"? }`) at the running server on the configured port
-  and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab
-- **Show Drift Report** — fetches MockServer's mock-drift records (`GET /mockserver/drift`) — how real
-  upstream responses have drifted from your stub expectations — and opens a readable text report in a new
-  tab (one line per drift: type, field, expected vs actual value, confidence, and the affected expectation)
-- **Find Requests by Trace** — distributed-trace correlation: enter a W3C trace id (32 hex) or a full
-  `traceparent` header value, and the plugin retrieves the requests MockServer has received
-  (`PUT /mockserver/retrieve?type=requests`), filters them down to those carrying a `traceparent` header
-  with that trace id, and opens the matching requests as JSON in a new tab
-- **Upload WASM Module** — picks a compiled `.wasm` custom-rule module with the IDE file chooser, confirms
-  a module name, and uploads its raw bytes to `PUT /mockserver/wasm/modules?name=<name>`; the module can then
-  be referenced by name as a WASM body matcher in an expectation (the server reports clearly when WASM support
-  is disabled)
-- **List WASM Modules** — fetches the WASM custom-rule modules registered on the running server
-  (`GET /mockserver/wasm/modules`) and opens the JSON list of names in a new tab
-- **Reset MockServer** — clears all expectations and recorded logs on the running server
-  (`PUT /mockserver/reset`); asks for confirmation first
-- **Tool Window** — bottom panel that surfaces every action as a one-click button, grouped into
-  *Server* (Open Dashboard in IDE, Open Dashboard in Browser, Start (Docker), Reset), *Editor actions*
-  (Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report,
-  Find Requests by Trace) and
-  *WASM* (Upload WASM Module, List WASM Modules), so the full action set is reachable without opening the
-  **Tools > MockServer** menu
-- **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
+```mermaid
+flowchart LR
+    subgraph IDE
+        A["*.mockserver.json\nschema validation"] --> S[Running MockServer]
+        TW[Tool window buttons] --> S
+        Menu["Tools > MockServer menu"] --> S
+        DB["MockServerDashboard\ntool window (JCEF)"] --> S
+    end
+    S --> Docker["Docker container\n(Start action)"]
+```
+
+| Category | What you get |
+|----------|-------------|
+| Schema validation | Live validation, completion, and hover docs in `*.mockserver.json` / `*.mockserver.jsonc` files |
+| Server controls | Start via Docker, open dashboard in IDE or browser, reset |
+| Expectation management | Load from file, save recorded, generate from OpenAPI spec |
+| Testing | Send ad-hoc HTTP requests and see the response in a new tab |
+| Observability | Drift report, distributed-trace correlation by W3C `traceparent` |
+| WASM custom rules | Upload and list compiled `.wasm` modules on the running server |
+| Settings | Docker image, container name, and port under **Settings \| Tools \| MockServer** |
+
+## Actions
+
+All actions are available from **Tools > MockServer** and as buttons in the **MockServer** tool window at the bottom of the IDE.
+
+### Server controls
+
+| Menu text | What it does |
+|-----------|-------------|
+| Open MockServer Dashboard | Opens `http://localhost:<port>/mockserver/dashboard` in your default browser |
+| Open MockServer Dashboard in IDE | Activates the **MockServerDashboard** tool window (right side), which embeds the live dashboard using JCEF (the bundled Chromium engine). Falls back to the external browser when JCEF is unavailable. Has Reload and Open-in-Browser toolbar buttons. |
+| Start MockServer (Docker) | Starts the configured `mockserver/mockserver` container via Docker on the configured port |
+| Reset MockServer | Prompts for confirmation, then calls `PUT /mockserver/reset` to clear all expectations and recorded logs |
+
+### Editor actions (operate on the active file)
+
+| Menu text | What it does |
+|-----------|-------------|
+| Load Expectations Into Running Server | Sends the active editor's JSON content to `PUT /mockserver/expectation` — a single expectation object or an array of expectations |
+| Save Recorded Expectations | Calls `PUT /mockserver/retrieve?type=recorded_expectations&format=json`, opens the result as `recorded-expectations.mockserver.json` in a new tab |
+| Generate Expectations From OpenAPI Spec | Sends the active editor's OpenAPI/Swagger spec (JSON or YAML) to `PUT /mockserver/openapi`, opens the generated expectations in a new tab |
+| Send Test Request | Reads a JSON request spec from the active editor, sends it to the running MockServer at the configured port, and opens the response (`HTTP <status>` + body) in a new tab |
+| Show Drift Report | Calls `GET /mockserver/drift`, formats the results (type, field, expected vs actual, confidence, affected expectation), and opens them in a new tab |
+| Find Requests by Trace | Prompts for a W3C trace id (32 hex) or a full `traceparent` header value, retrieves all received requests, filters those carrying a matching `traceparent` header, and opens the results as JSON in a new tab |
+
+### WASM custom rules
+
+| Menu text | What it does |
+|-----------|-------------|
+| Upload WASM Module | Opens a file chooser for a `.wasm` file, prompts for a module name, and uploads the raw bytes to `PUT /mockserver/wasm/modules?name=<name>` |
+| List WASM Modules | Calls `GET /mockserver/wasm/modules` and opens the JSON list of registered module names in a new tab |
+
+## Tool window layout
+
+The dockable **MockServer** tool window (bottom bar, plugin icon) groups buttons into three rows matching the action categories above:
+
+- **Server** — Open Dashboard in IDE, Open Dashboard (Browser), Start (Docker), Reset
+- **Editor actions (use the active file)** — Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report, Find Requests by Trace
+- **WASM** — Upload WASM Module, List WASM Modules
+
+## File conventions
+
+### Expectation files — `*.mockserver.json`
+
+Name any file with the `.mockserver.json` (or `.mockserver.jsonc`) suffix to activate live schema validation, completion, and hover documentation. The schema is the same one MockServer validates against, generated from `mockserver-core`.
+
+A single expectation:
+
+```json
+{
+  "httpRequest": { "method": "GET", "path": "/api/hello" },
+  "httpResponse": { "statusCode": 200, "body": "Hello" }
+}
+```
+
+An array of expectations (initialization JSON):
+
+```json
+[
+  {
+    "httpRequest": { "method": "GET", "path": "/api/hello" },
+    "httpResponse": { "statusCode": 200, "body": "Hello" }
+  }
+]
+```
+
+### Request files — for Send Test Request
+
+The active file must be a JSON object with `method` and `path` (required), and optionally `headers` and `body`:
+
+```json
+{
+  "method": "GET",
+  "path": "/api/hello",
+  "headers": { "Accept": "application/json" }
+}
+```
+
+### WASM body matcher
+
+After uploading a `.wasm` module named `my-rule`, reference it in an expectation body matcher as:
+
+```json
+{
+  "httpRequest": {
+    "body": { "type": "WASM", "moduleName": "my-rule" }
+  },
+  "httpResponse": { "statusCode": 200 }
+}
+```
+
+WASM body matching requires `wasmEnabled=true` on the running MockServer (the server reports clearly when WASM support is disabled).
+
+## Settings — Settings | Tools | MockServer
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Docker image | `mockserver/mockserver:<plugin version>` | Image used by Start MockServer (Docker). Leave blank to track the plugin version automatically. |
+| Container name | `mockserver-ide` | Name given to the started container |
+| Host port | `1080` | Port used by all actions (dashboard URL, REST calls, Docker port binding) |
 
 ## Requirements
 
-- IntelliJ IDEA 2024.3+ (or any JetBrains IDE based on IntelliJ Platform build 243+)
-- Docker (for the "Start MockServer" action)
+- **IDE:** IntelliJ IDEA 2024.3+ or any JetBrains IDE based on IntelliJ Platform build **243** through **253**
+- **JDK:** Java 17+
+- **Docker:** required only for the **Start MockServer (Docker)** action; all other actions connect to any already-running MockServer at `localhost:<port>`
+- **WASM support:** `wasmEnabled=true` must be set on the MockServer instance for the Upload / List WASM actions to work
 
 ## Installation
 
-### From JetBrains Marketplace (once published)
+### From JetBrains Marketplace
 
 1. Open **Settings > Plugins > Marketplace**
-2. Search for "MockServer"
+2. Search for **MockServer**
 3. Click **Install**
 
-### From local build
+### From a local build
 
 ```bash
 cd mockserver-jetbrains
 ./gradlew buildPlugin
 ```
 
-The plugin ZIP will be at `build/distributions/mockserver-jetbrains-<version>.zip`. Install via **Settings > Plugins > gear icon > Install Plugin from Disk**.
-
-## Usage
-
-1. Create an expectation file named `*.mockserver.json` and start typing — validation and completion are automatic
-2. Go to **Tools > MockServer > Open MockServer Dashboard** to view the dashboard
-3. Go to **Tools > MockServer > Start MockServer (Docker)** to launch a container
-4. The **MockServer** tool window (bottom bar) provides the same actions as buttons
-5. Adjust the image, container name, and port under **Settings | Tools | MockServer**
-
-## Building
-
-```bash
-./gradlew buildPlugin
-```
-
-## Running tests
-
-```bash
-./gradlew test
-```
+The plugin ZIP is written to `build/distributions/mockserver-jetbrains-<version>.zip`. Install via **Settings > Plugins > gear icon > Install Plugin from Disk**.
 
 ## Try it locally
 
-From the repo root, one command builds the plugin and launches it in a sandbox IDE (and starts a local
-MockServer so the actions work):
+From the repo root, one command builds the plugin, starts a local MockServer Docker container, and launches it in a sandbox IDE so every action works immediately:
 
 ```bash
 scripts/try-editor-extensions.sh jetbrains
@@ -99,13 +160,23 @@ scripts/try-editor-extensions.sh jetbrains
 ## Running in a sandbox IDE
 
 ```bash
+cd mockserver-jetbrains
 ./gradlew runIde
+```
+
+## Running tests
+
+```bash
+cd mockserver-jetbrains
+./gradlew test
 ```
 
 ## Development
 
-- **Language:** Kotlin
-- **Build system:** Gradle with IntelliJ Platform Gradle Plugin 2.x
-- **Minimum platform:** IntelliJ Platform 2024.3 (build 243)
-- **Java:** 17+
-- **Expectation schema:** generated from `mockserver-core` by `scripts/generate-editor-expectation-schema.mjs` into `src/main/resources/schemas/`; re-run that script after changing the core schemas.
+| Detail | Value |
+|--------|-------|
+| Language | Kotlin |
+| Build system | Gradle with IntelliJ Platform Gradle Plugin 2.x |
+| Minimum platform | IntelliJ Platform 2024.3 (build 243) |
+| JDK | 17+ |
+| Expectation schema | Generated from `mockserver-core` by `scripts/generate-editor-expectation-schema.mjs` into `src/main/resources/schemas/`. Re-run that script after changing the core schemas. |
