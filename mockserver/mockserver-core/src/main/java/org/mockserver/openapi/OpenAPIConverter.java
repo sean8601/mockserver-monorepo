@@ -113,20 +113,22 @@ public class OpenAPIConverter {
     }
 
     /**
-     * Derives a stable spec key from the parsed OpenAPI object. Uses the
-     * spec title (sanitized) if available, otherwise falls back to a short
-     * hash of the raw spec URL or payload.
+     * Derives a stable, collision-resistant spec key from the parsed OpenAPI object
+     * and its source. The key combines the sanitized title (for human readability)
+     * with a short hash of the spec <em>source identity</em> (URL/file reference or
+     * inline payload), so two distinct specs that share the same {@code info.title}
+     * still get distinct namespaces and never prune/overwrite each other.
+     *
+     * <p>See {@link OpenApiSyncPlanner#deriveSpecKey(String, String)} for the exact
+     * identity semantics (URL vs inline payload) and the deliberate trade-off for
+     * edited inline payloads.
      */
     static String deriveSpecKey(OpenAPI openAPI, String specUrlOrPayload) {
         String title = null;
         if (openAPI.getInfo() != null) {
             title = openAPI.getInfo().getTitle();
         }
-        String key = OpenApiSyncPlanner.specKeyFromTitle(title);
-        if (key == null) {
-            key = OpenApiSyncPlanner.specKeyFromHash(specUrlOrPayload);
-        }
-        return key;
+        return OpenApiSyncPlanner.deriveSpecKey(title, specUrlOrPayload);
     }
 
     private List<AfterAction> buildAfterActions(OpenAPI openAPI, io.swagger.v3.oas.models.Operation operation, GenerationOptions generationOptions) {

@@ -1192,11 +1192,14 @@ public class OpenAPIConverterTest {
         // when
         List<Expectation> expectations = new OpenAPIConverter(mockServerLogger).buildExpectations(specUrlOrPayload, null);
 
-        // then - ids should be openapi:swagger_petstore:<operationId>
-        assertThat(expectations.get(0).getId(), is("openapi:swagger_petstore:listPets"));
-        assertThat(expectations.get(1).getId(), is("openapi:swagger_petstore:createPets"));
-        assertThat(expectations.get(2).getId(), is("openapi:swagger_petstore:showPetById"));
-        assertThat(expectations.get(3).getId(), is("openapi:swagger_petstore:somePath"));
+        // then - ids should be openapi:swagger_petstore_<hash>:<operationId>
+        // the key embeds a short hash of the spec source identity to avoid cross-spec collisions
+        String prefix = "openapi:" + OpenApiSyncPlanner.deriveSpecKey("Swagger Petstore", specUrlOrPayload) + ":";
+        assertThat(prefix, startsWith("openapi:swagger_petstore_"));
+        assertThat(expectations.get(0).getId(), is(prefix + "listPets"));
+        assertThat(expectations.get(1).getId(), is(prefix + "createPets"));
+        assertThat(expectations.get(2).getId(), is(prefix + "showPetById"));
+        assertThat(expectations.get(3).getId(), is(prefix + "somePath"));
     }
 
     @Test
@@ -1226,7 +1229,9 @@ public class OpenAPIConverterTest {
 
         // then
         assertThat(expectations.size(), is(1));
-        assertThat(expectations.get(0).getId(), is("openapi:simple_openapi:listPets"));
+        String prefix = "openapi:" + OpenApiSyncPlanner.deriveSpecKey("Simple OpenAPI", specUrlOrPayload) + ":";
+        assertThat(prefix, startsWith("openapi:simple_openapi_"));
+        assertThat(expectations.get(0).getId(), is(prefix + "listPets"));
     }
 
     @Test
@@ -1244,10 +1249,11 @@ public class OpenAPIConverterTest {
             )
         );
 
-        // then - ids should be based on spec title + operationId, regardless of response selection
-        assertThat(expectations.get(0).getId(), is("openapi:swagger_petstore:listPets"));
-        assertThat(expectations.get(1).getId(), is("openapi:swagger_petstore:createPets"));
-        assertThat(expectations.get(2).getId(), is("openapi:swagger_petstore:showPetById"));
+        // then - ids should be based on spec key (title + source hash) + operationId, regardless of response selection
+        String prefix = "openapi:" + OpenApiSyncPlanner.deriveSpecKey("Swagger Petstore", specUrlOrPayload) + ":";
+        assertThat(expectations.get(0).getId(), is(prefix + "listPets"));
+        assertThat(expectations.get(1).getId(), is(prefix + "createPets"));
+        assertThat(expectations.get(2).getId(), is(prefix + "showPetById"));
     }
 
     @Test
@@ -1271,7 +1277,53 @@ public class OpenAPIConverterTest {
 
         // then
         assertThat(expectations.size(), is(1));
-        assertThat(expectations.get(0).getId(), is("openapi:my_inline_api:sayHello"));
+        String prefix = "openapi:" + OpenApiSyncPlanner.deriveSpecKey("My Inline API", specUrlOrPayload) + ":";
+        assertThat(prefix, startsWith("openapi:my_inline_api_"));
+        assertThat(expectations.get(0).getId(), is(prefix + "sayHello"));
+    }
+
+    @Test
+    public void shouldGenerateDistinctSpecKeysForDifferentSpecsWithSameTitle() {
+        // given - two DIFFERENT inline specs that share the same info.title "Shared Title"
+        String specA =
+            "openapi: 3.0.0\n" +
+            "info:\n" +
+            "  title: Shared Title\n" +
+            "  version: 1.0.0\n" +
+            "paths:\n" +
+            "  /a:\n" +
+            "    get:\n" +
+            "      operationId: opA\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: OK\n";
+        String specB =
+            "openapi: 3.0.0\n" +
+            "info:\n" +
+            "  title: Shared Title\n" +
+            "  version: 1.0.0\n" +
+            "paths:\n" +
+            "  /b:\n" +
+            "    get:\n" +
+            "      operationId: opB\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: OK\n";
+
+        // when
+        OpenAPIConverter converter = new OpenAPIConverter(mockServerLogger);
+        List<Expectation> expectationsA = converter.buildExpectations(specA, null);
+        List<Expectation> expectationsB = converter.buildExpectations(specB, null);
+
+        // then - both sanitize to "shared_title" but the source hash differs, so the
+        // namespaces are distinct (no cross-spec collision -> no cross-spec data loss)
+        String idA = expectationsA.get(0).getId();
+        String idB = expectationsB.get(0).getId();
+        assertThat(idA, startsWith("openapi:shared_title_"));
+        assertThat(idB, startsWith("openapi:shared_title_"));
+        String prefixA = idA.substring(0, idA.lastIndexOf(':') + 1);
+        String prefixB = idB.substring(0, idB.lastIndexOf(':') + 1);
+        assertThat("distinct specs with the same title must get distinct namespaces", prefixA, is(not(prefixB)));
     }
 
     private void shouldBuildPetStoreExpectationsWithExamplesAndSpecificResponses(String specUrlOrPayload, List<Expectation> actualExpectations) {
