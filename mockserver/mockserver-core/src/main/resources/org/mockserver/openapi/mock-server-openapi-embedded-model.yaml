@@ -420,7 +420,18 @@ components:
         operationsAndResponses:
           type: object
           additionalProperties:
-            type: string
+            oneOf:
+              - type: string
+              - type: object
+                properties:
+                  statusCode:
+                    type: string
+                  exampleName:
+                    type: string
+                required:
+                  - statusCode
+        contextPathPrefix:
+          type: string
       required:
         - specUrlOrPayload
     RequestDefinition:
@@ -466,6 +477,8 @@ components:
         specUrlOrPayload:
           type: string
         operationId:
+          type: string
+        contextPathPrefix:
           type: string
     HttpResponse:
       description: "response to return"

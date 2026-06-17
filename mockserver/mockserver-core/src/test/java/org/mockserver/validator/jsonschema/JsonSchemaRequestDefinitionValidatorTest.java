@@ -131,6 +131,16 @@ public class JsonSchemaRequestDefinitionValidatorTest {
             "  }"), is(""));
     }
 
+    @Test
+    public void shouldValidateValidOpenAPIDefinitionWithContextPathPrefix() {
+        // when
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "    \"specUrlOrPayload\" : \"https://example.com/spec.json\"," + NEW_LINE +
+            "    \"operationId\" : \"listPets\"," + NEW_LINE +
+            "    \"contextPathPrefix\" : \"/api/v1\"" + NEW_LINE +
+            "  }"), is(""));
+    }
+
     // valid binaryRequestDefinition inputs
 
     @Test

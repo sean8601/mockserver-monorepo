@@ -15,6 +15,9 @@
     },
     "operationId": {
       "type": "string"
+    },
+    "contextPathPrefix": {
+      "type": "string"
     }
   },
   "required": [
