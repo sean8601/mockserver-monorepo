@@ -2866,6 +2866,31 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetAsyncAmqpUri() {
+        String original = ConfigurationProperties.asyncAmqpUri();
+        try {
+            // then - default value
+            assertThat(configuration.asyncAmqpUri(), equalTo(""));
+
+            // when - system property setter
+            ConfigurationProperties.asyncAmqpUri("amqp://guest:guest@localhost:5672/");
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.asyncAmqpUri(), equalTo("amqp://guest:guest@localhost:5672/"));
+            assertThat(System.getProperty("mockserver.asyncAmqpUri"), equalTo("amqp://guest:guest@localhost:5672/"));
+            assertThat(configuration.asyncAmqpUri(), equalTo("amqp://guest:guest@localhost:5672/"));
+
+            // when - setter
+            configuration.asyncAmqpUri("amqp://user:pass@amqp.example.com:5672/vhost");
+
+            // then - getter
+            assertThat(configuration.asyncAmqpUri(), equalTo("amqp://user:pass@amqp.example.com:5672/vhost"));
+        } finally {
+            ConfigurationProperties.asyncAmqpUri(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetAsyncRecordedMessageMaxEntries() {
         int original = ConfigurationProperties.asyncRecordedMessageMaxEntries();
         try {
