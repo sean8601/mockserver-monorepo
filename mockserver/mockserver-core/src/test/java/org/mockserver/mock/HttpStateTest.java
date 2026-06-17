@@ -3493,6 +3493,105 @@ public class HttpStateTest {
         assertThat(responseWriter.response.getBodyAsString(), containsString("unable to auto-detect"));
     }
 
+    private static final String PACT_V3_CONTRACT = "{" +
+        "\"consumer\":{\"name\":\"c\"},\"provider\":{\"name\":\"p\"}," +
+        "\"interactions\":[{" +
+        "  \"description\":\"get health\"," +
+        "  \"request\":{\"method\":\"GET\",\"path\":\"/health\"}," +
+        "  \"response\":{\"status\":200,\"body\":{\"status\":\"up\"}}" +
+        "}]," +
+        "\"metadata\":{\"pactSpecification\":{\"version\":\"3.0.0\"}}}";
+
+    @Test
+    public void shouldHandleImportPactWithFormatQueryParam() {
+        // given
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "pact")
+            .withBody(PACT_V3_CONTRACT);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+
+        // the imported expectation is now matchable
+        Expectation match = httpState.firstMatchingExpectation(
+            request("/health").withMethod("GET")
+        );
+        assertThat(match, is(notNullValue()));
+        assertThat(match.getHttpResponse().getStatusCode(), is(200));
+    }
+
+    @Test
+    public void shouldHandleImportPactAutoDetected() {
+        // given — no format param; top-level "interactions" array triggers Pact auto-detect
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody(PACT_V3_CONTRACT);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+    }
+
+    @Test
+    public void shouldHandlePactImportDedicatedRoute() {
+        // given
+        HttpRequest importRequest = request("/mockserver/pact/import")
+            .withMethod("PUT")
+            .withBody(PACT_V3_CONTRACT);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+
+        // the imported expectation is now matchable
+        Expectation match = httpState.firstMatchingExpectation(
+            request("/health").withMethod("GET")
+        );
+        assertThat(match, is(notNullValue()));
+    }
+
+    @Test
+    public void shouldHandlePactImportEmptyBody() {
+        // given
+        HttpRequest importRequest = request("/mockserver/pact/import")
+            .withMethod("PUT")
+            .withBody("");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+    }
+
     // ---- Pact Verify Endpoint Tests ----
 
     @Test
