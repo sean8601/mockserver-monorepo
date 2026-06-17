@@ -3275,7 +3275,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(6));
+        assertThat(returnedExpectations.length, is(7));
 
         // Verify the discovery endpoint is now matchable
         HttpResponse discoveryResponse = httpState.firstMatchingExpectation(
@@ -3306,7 +3306,10 @@ public class HttpStateTest {
             request("/custom/token").withMethod("POST")
         );
         assertThat(tokenMatch, is(notNullValue()));
-        assertThat(tokenMatch.getHttpResponse().getBodyAsString(), containsString("access_token"));
+        // /token is now served by the OidcTokenCallback class callback (authorization-code flow),
+        // so it has no static httpResponse — assert the callback wiring instead of a response body.
+        assertThat(tokenMatch.getHttpResponseClassCallback(), is(notNullValue()));
+        assertThat(tokenMatch.getHttpResponseClassCallback().getCallbackClass(), containsString("OidcTokenCallback"));
     }
 
     @Test
@@ -3326,7 +3329,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(6));
+        assertThat(returnedExpectations.length, is(7));
     }
 
     @Test
