@@ -405,6 +405,7 @@ public class HttpState {
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
+        org.mockserver.oidc.OidcAuthorizationStore.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
         CassetteRegistry.getInstance().reset();

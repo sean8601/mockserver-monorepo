@@ -7,6 +7,7 @@ import org.mockserver.keys.AsymmetricKeyGenerator;
 import org.mockserver.keys.AsymmetricKeyPair;
 import org.mockserver.keys.AsymmetricKeyPairAlgorithm;
 import org.mockserver.mock.Expectation;
+import org.mockserver.model.HttpClassCallback;
 import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.io.Serializable;
@@ -97,17 +98,29 @@ public class OidcProviderGenerator {
         // 2. JWKS endpoint
         expectations.add(buildJwksExpectation(config, jwksJson));
 
-        // 3. Token endpoint
-        expectations.add(buildTokenExpectation(config, accessToken, idToken, scopeString));
+        // 3. Token endpoint (also serves the authorization_code grant exchange)
+        String tokenResponseJson = buildTokenResponseJson(config, accessToken, idToken, scopeString);
+        expectations.add(buildTokenExpectation(config));
 
-        // 4. Userinfo endpoint
+        // 4. Authorize endpoint (authorization-code grant)
+        expectations.add(buildAuthorizeExpectation(config));
+
+        // 5. Userinfo endpoint
         expectations.add(buildUserinfoExpectation(config));
 
-        // 5. Introspection endpoint
+        // 6. Introspection endpoint
         expectations.add(buildIntrospectionExpectation(config));
 
-        // 6. Revocation endpoint
+        // 7. Revocation endpoint
         expectations.add(buildRevocationExpectation(config));
+
+        // Register provider state so the /authorize and /token callbacks can complete the
+        // authorization-code flow (issue codes, validate PKCE, return the minted tokens).
+        OidcAuthorizationStore.getInstance().registerProvider(
+            new OidcAuthorizationStore.Provider(
+                config.getAuthorizePath(), config.getTokenPath(), tokenResponseJson
+            )
+        );
 
         return expectations;
     }
@@ -156,25 +169,40 @@ public class OidcProviderGenerator {
                 .withBody(jwksJson));
     }
 
-    private Expectation buildTokenExpectation(OidcProviderConfiguration config,
-                                              String accessToken, String idToken, String scopeString) {
+    private String buildTokenResponseJson(OidcProviderConfiguration config,
+                                          String accessToken, String idToken, String scopeString) {
         Map<String, Object> tokenResponse = new LinkedHashMap<>();
         tokenResponse.put("access_token", accessToken);
         tokenResponse.put("id_token", idToken);
         tokenResponse.put("token_type", "Bearer");
         tokenResponse.put("expires_in", config.getTokenExpirySeconds());
         tokenResponse.put("scope", scopeString);
+        return serializeToJson(tokenResponse);
+    }
 
+    private Expectation buildTokenExpectation(OidcProviderConfiguration config) {
+        // A class callback so the same /token endpoint serves both the existing grants
+        // (client_credentials, refresh_token — returning the pre-minted token response) and the
+        // authorization_code grant (validating the code + PKCE before returning the tokens).
         return new Expectation(
             request()
                 .withMethod("POST")
                 .withPath(config.getTokenPath())
         )
             .withId("oidc.token")
-            .thenRespond(response()
-                .withStatusCode(200)
-                .withHeader("content-type", APPLICATION_JSON)
-                .withBody(serializeToJson(tokenResponse)));
+            .thenRespond(HttpClassCallback.callback(OidcTokenCallback.class.getName()));
+    }
+
+    private Expectation buildAuthorizeExpectation(OidcProviderConfiguration config) {
+        // A class callback so /authorize can echo the dynamic `state`, mint an authorization
+        // `code`, record any PKCE challenge, and 302-redirect back to the redirect_uri.
+        return new Expectation(
+            request()
+                .withMethod("GET")
+                .withPath(config.getAuthorizePath())
+        )
+            .withId("oidc.authorize")
+            .thenRespond(HttpClassCallback.callback(OidcAuthorizationCodeCallback.class.getName()));
     }
 
     private Expectation buildUserinfoExpectation(OidcProviderConfiguration config) {

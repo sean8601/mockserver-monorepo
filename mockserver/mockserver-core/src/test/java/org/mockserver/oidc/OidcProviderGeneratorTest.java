@@ -8,14 +8,18 @@ import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.SignedJWT;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.mock.Expectation;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,26 +30,44 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.mockserver.model.HttpRequest.request;
 
 public class OidcProviderGeneratorTest {
 
     private final OidcProviderGenerator generator = new OidcProviderGenerator();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Before
+    public void resetStore() {
+        OidcAuthorizationStore.getInstance().reset();
+    }
+
+    /**
+     * Returns the token response a client receives from the /token endpoint for a non
+     * authorization-code grant (e.g. client_credentials) — exercising the real callback.
+     */
+    private String tokenResponseBody() throws Exception {
+        return new OidcTokenCallback()
+            .handle(request().withMethod("POST").withPath("/token").withBody("grant_type=client_credentials"))
+            .getBodyAsString();
+    }
+
     @Test
-    public void defaultsProduceSixExpectations() {
+    public void defaultsProduceSevenExpectations() {
         List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
 
-        assertThat(expectations.size(), is(6));
+        assertThat(expectations.size(), is(7));
         assertThat(expectations.get(0).getId(), is("oidc.discovery"));
         assertThat(expectations.get(1).getId(), is("oidc.jwks"));
         assertThat(expectations.get(2).getId(), is("oidc.token"));
-        assertThat(expectations.get(3).getId(), is("oidc.userinfo"));
-        assertThat(expectations.get(4).getId(), is("oidc.introspect"));
-        assertThat(expectations.get(5).getId(), is("oidc.revoke"));
+        assertThat(expectations.get(3).getId(), is("oidc.authorize"));
+        assertThat(expectations.get(4).getId(), is("oidc.userinfo"));
+        assertThat(expectations.get(5).getId(), is("oidc.introspect"));
+        assertThat(expectations.get(6).getId(), is("oidc.revoke"));
     }
 
     @Test
@@ -103,9 +125,10 @@ public class OidcProviderGeneratorTest {
         // Verify the endpoint paths themselves match
         assertThat(((HttpRequest) expectations.get(1).getHttpRequest()).getPath().getValue(), is("/custom/jwks"));
         assertThat(((HttpRequest) expectations.get(2).getHttpRequest()).getPath().getValue(), is("/custom/token"));
-        assertThat(((HttpRequest) expectations.get(3).getHttpRequest()).getPath().getValue(), is("/custom/me"));
-        assertThat(((HttpRequest) expectations.get(4).getHttpRequest()).getPath().getValue(), is("/custom/introspect"));
-        assertThat(((HttpRequest) expectations.get(5).getHttpRequest()).getPath().getValue(), is("/custom/revoke"));
+        assertThat(((HttpRequest) expectations.get(3).getHttpRequest()).getPath().getValue(), is("/custom/auth"));
+        assertThat(((HttpRequest) expectations.get(4).getHttpRequest()).getPath().getValue(), is("/custom/me"));
+        assertThat(((HttpRequest) expectations.get(5).getHttpRequest()).getPath().getValue(), is("/custom/introspect"));
+        assertThat(((HttpRequest) expectations.get(6).getHttpRequest()).getPath().getValue(), is("/custom/revoke"));
     }
 
     @Test
@@ -145,8 +168,8 @@ public class OidcProviderGeneratorTest {
         RSAKey rsaKey = (RSAKey) jwk;
         JWSVerifier verifier = new RSASSAVerifier(rsaKey);
 
-        // Parse token response
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        // Parse token response served by the /token callback
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         String accessTokenStr = tokenResponse.get("access_token").asText();
         assertThat(accessTokenStr, is(notNullValue()));
 
@@ -174,7 +197,7 @@ public class OidcProviderGeneratorTest {
         RSAKey rsaKey = (RSAKey) jwkSet.getKeys().get(0);
         JWSVerifier verifier = new RSASSAVerifier(rsaKey);
 
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         String idTokenStr = tokenResponse.get("id_token").asText();
 
         SignedJWT signedJWT = SignedJWT.parse(idTokenStr);
@@ -193,7 +216,7 @@ public class OidcProviderGeneratorTest {
         assertThat(request.getMethod().getValue(), is("POST"));
         assertThat(request.getPath().getValue(), is("/token"));
 
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         assertThat(tokenResponse.get("token_type").asText(), is("Bearer"));
         assertThat(tokenResponse.get("expires_in").asInt(), is(7200));
         assertThat(tokenResponse.get("scope").asText(), is("openid custom"));
@@ -212,7 +235,7 @@ public class OidcProviderGeneratorTest {
             .setAdditionalClaims(additional);
 
         List<Expectation> expectations = generator.generate(config);
-        Expectation userinfo = expectations.get(3);
+        Expectation userinfo = expectations.get(4);
 
         HttpRequest request = (HttpRequest) userinfo.getHttpRequest();
         assertThat(request.getMethod().getValue(), is("GET"));
@@ -227,7 +250,7 @@ public class OidcProviderGeneratorTest {
     @Test
     public void introspectionReturnsActiveTrue() throws Exception {
         List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
-        Expectation introspect = expectations.get(4);
+        Expectation introspect = expectations.get(5);
 
         HttpRequest request = (HttpRequest) introspect.getHttpRequest();
         assertThat(request.getMethod().getValue(), is("POST"));
@@ -241,12 +264,223 @@ public class OidcProviderGeneratorTest {
     @Test
     public void revocationReturns200() {
         List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
-        Expectation revoke = expectations.get(5);
+        Expectation revoke = expectations.get(6);
 
         HttpRequest request = (HttpRequest) revoke.getHttpRequest();
         assertThat(request.getMethod().getValue(), is("POST"));
         assertThat(request.getPath().getValue(), is("/revoke"));
         assertThat(revoke.getHttpResponse().getStatusCode(), is(200));
+    }
+
+    // --- Authorize endpoint / authorization-code flow ---
+
+    @Test
+    public void authorizeExpectationIsGetClassCallback() {
+        List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
+        Expectation authorize = expectations.get(3);
+
+        assertThat(authorize.getId(), is("oidc.authorize"));
+        HttpRequest request = (HttpRequest) authorize.getHttpRequest();
+        assertThat(request.getMethod().getValue(), is("GET"));
+        assertThat(request.getPath().getValue(), is("/authorize"));
+        assertThat(authorize.getHttpResponseClassCallback().getCallbackClass(),
+            is(OidcAuthorizationCodeCallback.class.getName()));
+    }
+
+    @Test
+    public void authorizeRedirectsWithCodeAndState() {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse response = new OidcAuthorizationCodeCallback().handle(
+            request()
+                .withMethod("GET")
+                .withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("client_id", "mock-client")
+                .withQueryStringParameter("redirect_uri", "https://app.example.com/callback")
+                .withQueryStringParameter("scope", "openid profile")
+                .withQueryStringParameter("state", "xyz")
+        );
+
+        assertThat(response.getStatusCode(), is(302));
+        String location = response.getFirstHeader("location");
+        assertThat(location, containsString("https://app.example.com/callback?"));
+        assertThat(location, containsString("code=mock-auth-code-"));
+        assertThat(location, containsString("state=xyz"));
+    }
+
+    @Test
+    public void authorizeWithoutRedirectUriReturns400() {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse response = new OidcAuthorizationCodeCallback().handle(
+            request()
+                .withMethod("GET")
+                .withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("state", "xyz")
+        );
+
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(response.getBodyAsString(), containsString("invalid_request"));
+    }
+
+    @Test
+    public void authorizationCodeExchangeReturnsValidTokens() throws Exception {
+        List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
+
+        // 1. authorize -> 302 with code
+        HttpResponse authorizeResponse = new OidcAuthorizationCodeCallback().handle(
+            request()
+                .withMethod("GET")
+                .withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("client_id", "mock-client")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+                .withQueryStringParameter("state", "abc")
+        );
+        String code = extractCode(authorizeResponse.getFirstHeader("location"));
+
+        // 2. token exchange with the code
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(
+            request()
+                .withMethod("POST")
+                .withPath("/token")
+                .withBody("grant_type=authorization_code&code=" + code + "&redirect_uri=" + enc("https://app/cb"))
+        );
+
+        assertThat(tokenResponse.getStatusCode(), is(200));
+        JsonNode body = objectMapper.readTree(tokenResponse.getBodyAsString());
+        assertThat(body.get("token_type").asText(), is("Bearer"));
+        assertTrue(body.has("access_token"));
+        assertTrue(body.has("id_token"));
+
+        // token must verify against the JWKS public key
+        JWKSet jwkSet = JWKSet.parse(expectations.get(1).getHttpResponse().getBodyAsString());
+        JWSVerifier verifier = new RSASSAVerifier((RSAKey) jwkSet.getKeys().get(0));
+        assertTrue(SignedJWT.parse(body.get("access_token").asText()).verify(verifier));
+    }
+
+    @Test
+    public void authorizationCodeIsSingleUse() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+        ).getFirstHeader("location"));
+
+        String body = "grant_type=authorization_code&code=" + code + "&redirect_uri=" + enc("https://app/cb");
+        assertThat(new OidcTokenCallback().handle(tokenRequest(body)).getStatusCode(), is(200));
+        // second exchange of the same code must fail
+        assertThat(new OidcTokenCallback().handle(tokenRequest(body)).getStatusCode(), is(400));
+    }
+
+    @Test
+    public void authorizationCodeRejectsRedirectUriMismatch() {
+        generator.generate(new OidcProviderConfiguration());
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+        ).getFirstHeader("location"));
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=" + code + "&redirect_uri=" + enc("https://evil/cb")
+        ));
+        assertThat(tokenResponse.getStatusCode(), is(400));
+        assertThat(tokenResponse.getBodyAsString(), containsString("invalid_grant"));
+    }
+
+    @Test
+    public void pkceS256RoundTripSucceeds() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String codeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+        String codeChallenge = s256(codeVerifier);
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+                .withQueryStringParameter("code_challenge", codeChallenge)
+                .withQueryStringParameter("code_challenge_method", "S256")
+        ).getFirstHeader("location"));
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=" + code
+                + "&redirect_uri=" + enc("https://app/cb")
+                + "&code_verifier=" + codeVerifier
+        ));
+        assertThat(tokenResponse.getStatusCode(), is(200));
+        assertTrue(objectMapper.readTree(tokenResponse.getBodyAsString()).has("access_token"));
+    }
+
+    @Test
+    public void pkceWrongVerifierFails() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String codeChallenge = s256("the-correct-verifier-value-1234567890");
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+                .withQueryStringParameter("code_challenge", codeChallenge)
+                .withQueryStringParameter("code_challenge_method", "S256")
+        ).getFirstHeader("location"));
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=" + code
+                + "&redirect_uri=" + enc("https://app/cb")
+                + "&code_verifier=a-completely-different-wrong-verifier-0987"
+        ));
+        assertThat(tokenResponse.getStatusCode(), is(400));
+        assertThat(tokenResponse.getBodyAsString(), containsString("invalid_grant"));
+    }
+
+    @Test
+    public void pkceMissingVerifierFailsWhenChallengePresent() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+                .withQueryStringParameter("code_challenge", s256("some-verifier-value-aaaaaaaaaaaaaaaaaaaa"))
+                .withQueryStringParameter("code_challenge_method", "S256")
+        ).getFirstHeader("location"));
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=" + code + "&redirect_uri=" + enc("https://app/cb")
+        ));
+        assertThat(tokenResponse.getStatusCode(), is(400));
+    }
+
+    @Test
+    public void clientCredentialsGrantStillReturnsTokens() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(
+            tokenRequest("grant_type=client_credentials")
+        );
+        assertThat(tokenResponse.getStatusCode(), is(200));
+        JsonNode body = objectMapper.readTree(tokenResponse.getBodyAsString());
+        assertThat(body.get("token_type").asText(), is("Bearer"));
+        assertTrue(body.has("access_token"));
+    }
+
+    @Test
+    public void unknownCodeIsRejected() {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=never-issued&redirect_uri=" + enc("https://app/cb")
+        ));
+        assertThat(tokenResponse.getStatusCode(), is(400));
+        assertThat(tokenResponse.getBodyAsString(), containsString("invalid_grant"));
     }
 
     // --- Negative testing flags ---
@@ -256,9 +490,9 @@ public class OidcProviderGeneratorTest {
         OidcProviderConfiguration config = new OidcProviderConfiguration()
             .setIssueExpiredToken(true);
 
-        List<Expectation> expectations = generator.generate(config);
+        generator.generate(config);
 
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         String accessTokenStr = tokenResponse.get("access_token").asText();
         SignedJWT signedJWT = SignedJWT.parse(accessTokenStr);
 
@@ -273,7 +507,7 @@ public class OidcProviderGeneratorTest {
 
         List<Expectation> expectations = generator.generate(config);
 
-        JsonNode introspection = objectMapper.readTree(expectations.get(4).getHttpResponse().getBodyAsString());
+        JsonNode introspection = objectMapper.readTree(expectations.get(5).getHttpResponse().getBodyAsString());
         assertThat(introspection.get("active").asBoolean(), is(false));
     }
 
@@ -285,7 +519,7 @@ public class OidcProviderGeneratorTest {
 
         List<Expectation> expectations = generator.generate(config);
 
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         String accessTokenStr = tokenResponse.get("access_token").asText();
         SignedJWT signedJWT = SignedJWT.parse(accessTokenStr);
 
@@ -310,7 +544,7 @@ public class OidcProviderGeneratorTest {
         RSAKey rsaKey = (RSAKey) jwkSet.getKeys().get(0);
         JWSVerifier verifier = new RSASSAVerifier(rsaKey);
 
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         String accessTokenStr = tokenResponse.get("access_token").asText();
 
         SignedJWT signedJWT = SignedJWT.parse(accessTokenStr);
@@ -326,9 +560,9 @@ public class OidcProviderGeneratorTest {
         OidcProviderConfiguration config = new OidcProviderConfiguration()
             .setAdditionalClaims(additional);
 
-        List<Expectation> expectations = generator.generate(config);
+        generator.generate(config);
 
-        JsonNode tokenResponse = objectMapper.readTree(expectations.get(2).getHttpResponse().getBodyAsString());
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
         String accessTokenStr = tokenResponse.get("access_token").asText();
         SignedJWT signedJWT = SignedJWT.parse(accessTokenStr);
 
@@ -342,16 +576,48 @@ public class OidcProviderGeneratorTest {
     }
 
     @Test
-    public void allResponsesHaveJsonContentType() {
+    public void staticResponsesHaveJsonContentType() {
         List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
 
         for (Expectation expectation : expectations) {
-            String contentType = expectation.getHttpResponse().getFirstHeader("content-type");
+            HttpResponse response = expectation.getHttpResponse();
+            if (response == null) {
+                // /token and /authorize are class callbacks, not static responses
+                continue;
+            }
+            String contentType = response.getFirstHeader("content-type");
             assertThat(
                 "Expectation " + expectation.getId() + " should have JSON content type",
                 contentType,
                 containsString("application/json")
             );
         }
+    }
+
+    // --- helpers ---
+
+    private static HttpRequest tokenRequest(String body) {
+        return request().withMethod("POST").withPath("/token").withBody(body);
+    }
+
+    private static String extractCode(String location) {
+        assertThat("expected a redirect Location header", location, is(notNullValue()));
+        for (String pair : location.substring(location.indexOf('?') + 1).split("&")) {
+            if (pair.startsWith("code=")) {
+                return pair.substring("code=".length());
+            }
+        }
+        assertThat("location did not contain a code", location, is(nullValue()));
+        return null;
+    }
+
+    private static String enc(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String s256(String codeVerifier) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
 }
