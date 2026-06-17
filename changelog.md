@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Report** fetches the latest drift records (`GET /mockserver/drift`) and opens a readable text summary in
   a new tab (one line per drift: type, field, expected vs actual value, confidence, and the affected
   expectation). The HTTP call runs off the UI thread.
+- JetBrains plugin can author WASM custom-rule modules: **Upload WASM Module** picks a compiled `.wasm`
+  file with the IDE file chooser, confirms a module name, and uploads its raw bytes
+  (`PUT /mockserver/wasm/modules?name=<name>`, `application/octet-stream`) to the running server so it can
+  be referenced by name as a WASM body matcher; **List WASM Modules** fetches the registered modules
+  (`GET /mockserver/wasm/modules`) and opens the JSON list of names in a new tab. The upload reports
+  clearly when the server has WASM support disabled, and both HTTP calls run off the UI thread.
 - VS Code extension can surface mock drift as **inline diagnostics** on the open expectation file:
   **MockServer: Show Drift as Diagnostics** fetches the latest drift records (`GET /mockserver/drift`),
   matches each to its expectation by `id`, and shows it as a diagnostic on that expectation's line

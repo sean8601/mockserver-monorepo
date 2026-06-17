@@ -25,12 +25,19 @@ MockServer integration for IntelliJ-based IDEs: expectation-file validation, plu
 - **Show Drift Report** — fetches MockServer's mock-drift records (`GET /mockserver/drift`) — how real
   upstream responses have drifted from your stub expectations — and opens a readable text report in a new
   tab (one line per drift: type, field, expected vs actual value, confidence, and the affected expectation)
+- **Upload WASM Module** — picks a compiled `.wasm` custom-rule module with the IDE file chooser, confirms
+  a module name, and uploads its raw bytes to `PUT /mockserver/wasm/modules?name=<name>`; the module can then
+  be referenced by name as a WASM body matcher in an expectation (the server reports clearly when WASM support
+  is disabled)
+- **List WASM Modules** — fetches the WASM custom-rule modules registered on the running server
+  (`GET /mockserver/wasm/modules`) and opens the JSON list of names in a new tab
 - **Reset MockServer** — clears all expectations and recorded logs on the running server
   (`PUT /mockserver/reset`); asks for confirmation first
 - **Tool Window** — bottom panel that surfaces every action as a one-click button, grouped into
-  *Server* (Open Dashboard in IDE, Open Dashboard in Browser, Start (Docker), Reset) and *Editor actions*
-  (Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report), so the
-  full action set is reachable without opening the **Tools > MockServer** menu
+  *Server* (Open Dashboard in IDE, Open Dashboard in Browser, Start (Docker), Reset), *Editor actions*
+  (Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report) and
+  *WASM* (Upload WASM Module, List WASM Modules), so the full action set is reachable without opening the
+  **Tools > MockServer** menu
 - **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
 
 ## Requirements

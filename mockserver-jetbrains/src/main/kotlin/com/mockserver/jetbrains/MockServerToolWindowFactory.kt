@@ -68,6 +68,13 @@ class MockServerToolWindowFactory : ToolWindowFactory {
             add(actionButton("Show Drift Report", "MockServer.ShowDriftReport", project))
         })
 
+        panel.add(sectionGap())
+        panel.add(JBLabel("WASM"))
+        panel.add(row().apply {
+            add(actionButton("Upload WASM Module", "MockServer.UploadWasm", project))
+            add(actionButton("List WASM Modules", "MockServer.ListWasm", project))
+        })
+
         return panel
     }
 

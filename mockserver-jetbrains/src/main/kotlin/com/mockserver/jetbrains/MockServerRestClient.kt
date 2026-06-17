@@ -6,6 +6,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.net.URI
+import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -118,6 +119,33 @@ object MockServerRestClient {
         wrapper.add("specUrlOrPayload", payload)
         return COMPACT.toJson(wrapper)
     }
+
+    /**
+     * `PUT /mockserver/wasm/modules?name=<name>` — upload a compiled WebAssembly
+     * (`.wasm`) custom-rule module by name. The body is the raw module [bytes] sent
+     * as `application/octet-stream`; [name] is URL-encoded into the query string.
+     * Once uploaded the module can be referenced by name as a WASM body matcher.
+     * A 403 is returned when the server has WASM support disabled.
+     */
+    fun buildWasmUploadRequest(baseUrl: String, name: String, bytes: ByteArray): HttpRequest {
+        val encodedName = URLEncoder.encode(name, Charsets.UTF_8)
+        return HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/wasm/modules?name=$encodedName"))
+            .header("Content-Type", "application/octet-stream")
+            .PUT(HttpRequest.BodyPublishers.ofByteArray(bytes))
+            .build()
+    }
+
+    /**
+     * `GET /mockserver/wasm/modules` — list the names of the WASM custom-rule
+     * modules currently registered on the running MockServer (JSON array).
+     */
+    fun buildListWasmRequest(baseUrl: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/wasm/modules"))
+            .header("Accept", "application/json")
+            .GET()
+            .build()
 
     // ---------------------------------------------------------------------
     // Ad-hoc ("scratch") request support — pure + unit-testable.

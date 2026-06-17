@@ -100,6 +100,34 @@ class MockServerRestClientTest {
         assertEquals("http://localhost:1080/mockserver/drift?limit=25", req.uri().toString())
     }
 
+    // --- wasm modules ---------------------------------------------------
+
+    @Test
+    fun `wasm upload PUTs raw bytes to the modules endpoint with octet-stream content type`() {
+        val bytes = byteArrayOf(0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00)
+        val req = MockServerRestClient.buildWasmUploadRequest("http://localhost:1080", "myRule", bytes)
+        assertEquals("PUT", req.method())
+        assertTrue(req.uri().toString().contains("/mockserver/wasm/modules"), req.uri().toString())
+        assertTrue(req.uri().toString().contains("name=myRule"), req.uri().toString())
+        assertEquals("application/octet-stream", req.headers().firstValue("Content-Type").orElse(""))
+        assertEquals(bytes.size.toLong(), req.bodyPublisher().orElseThrow().contentLength())
+    }
+
+    @Test
+    fun `wasm upload url-encodes the module name`() {
+        val req = MockServerRestClient.buildWasmUploadRequest("http://localhost:1080", "my rule/v2", byteArrayOf(1, 2))
+        val uri = req.uri().toString()
+        assertTrue(uri.contains("name=my+rule%2Fv2"), uri)
+    }
+
+    @Test
+    fun `wasm list GETs the modules endpoint`() {
+        val req = MockServerRestClient.buildListWasmRequest("http://localhost:1080")
+        assertEquals("GET", req.method())
+        assertEquals("http://localhost:1080/mockserver/wasm/modules", req.uri().toString())
+        assertEquals("application/json", req.headers().firstValue("Accept").orElse(""))
+    }
+
     // --- formatDriftReport ----------------------------------------------
 
     @Test

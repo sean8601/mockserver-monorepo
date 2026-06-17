@@ -72,6 +72,14 @@
                     class="com.mockserver.jetbrains.ShowDriftReportAction"
                     text="Show Drift Report"
                     description="Fetches MockServer's mock-drift records and opens a readable text report in a new tab"/>
+            <action id="MockServer.UploadWasm"
+                    class="com.mockserver.jetbrains.UploadWasmModuleAction"
+                    text="Upload WASM Module"
+                    description="Uploads a compiled .wasm custom-rule module to the running MockServer (PUT /mockserver/wasm/modules)"/>
+            <action id="MockServer.ListWasm"
+                    class="com.mockserver.jetbrains.ListWasmModulesAction"
+                    text="List WASM Modules"
+                    description="Lists the WASM custom-rule modules registered on the running MockServer (GET /mockserver/wasm/modules)"/>
             <action id="MockServer.Reset"
                     class="com.mockserver.jetbrains.ResetAction"
                     text="Reset MockServer"
