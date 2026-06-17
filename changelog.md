@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Stream-level error injection** (HTTP/2 / HTTP/3): the `httpError` action gained
+  `withStreamError(long)` (plus a `withStreamError(StreamErrorCode)` enum overload and a
+  `withStreamErrorCodeName("REFUSED_STREAM")` convenience), serialised in JSON as a `streamError`
+  integer alongside `dropConnection`/`responseBytes`. When set, a matched request stream is reset
+  with the given error code instead of returning a response: over HTTP/2 MockServer sends an
+  `RST_STREAM` for that stream (RFC 7540 §7 codes, e.g. `REFUSED_STREAM`=0x7), over HTTP/3 a QUIC
+  `RESET_STREAM` (RFC 9114 §8.1 codes, e.g. `H3_REQUEST_CANCELLED`=0x10c); other multiplexed streams
+  on the same connection are unaffected. HTTP/1.1 has no stream concept, so a stream error falls back
+  to dropping the whole connection (the existing `dropConnection` behaviour). When both `streamError`
+  and `dropConnection` are set, `streamError` takes precedence and `dropConnection` is ignored. Also
+  exposed on the Node, Python and Ruby clients as `streamError` / `stream_error`. Useful for resilience
+  testing that clients handle mid-stream resets. Fully backward compatible — omitted when null, so
+  existing `dropConnection`/`responseBytes` behaviour is unchanged.
 - **HTTP response trailers** (trailing headers): a response can now carry trailing headers via
   `httpResponse().withTrailers(...)` / `withTrailer(name, values...)` (mirroring the existing header
   builder), serialised in JSON as a `trailers` object alongside `headers`. MockServer emits them as

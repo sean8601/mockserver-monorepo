@@ -27,6 +27,7 @@ import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.responsewriter.GrpcStreamResponseWriter;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.StreamErrorWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
 import org.mockserver.socket.tls.NettySslContextFactory;
@@ -145,18 +146,7 @@ public class HttpActionHandler {
                 }, expectationPostProcessor), synchronous);
             }
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
-                getHttpErrorActionHandler().handle((HttpError) action, ctx);
-                mockServerLogger.logEvent(
-                    new LogEntry()
-                        .setType(EXPECTATION_RESPONSE)
-                        .setLogLevel(Level.INFO)
-                        .setCorrelationId(request.getLogCorrelationId())
-                        .setHttpRequest(request)
-                        .setHttpError((HttpError) action)
-                        .setExpectationId(action.getExpectationId())
-                        .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
-                        .setArguments(action, request, action, action.getExpectationId())
-                );
+                dispatchErrorAction((HttpError) action, request, earlyResponseWriter, ctx);
                 expectationPostProcessor.run();
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
             default ->
@@ -668,18 +658,7 @@ public class HttpActionHandler {
                 }
             }
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
-                getHttpErrorActionHandler().handle((HttpError) action, ctx);
-                mockServerLogger.logEvent(
-                    new LogEntry()
-                        .setType(EXPECTATION_RESPONSE)
-                        .setLogLevel(Level.INFO)
-                        .setCorrelationId(request.getLogCorrelationId())
-                        .setHttpRequest(request)
-                        .setHttpError((HttpError) action)
-                        .setExpectationId(action.getExpectationId())
-                        .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
-                        .setArguments(action, request, action, action.getExpectationId())
-                );
+                dispatchErrorAction((HttpError) action, request, responseWriter, ctx);
                 expectationPostProcessor.run();
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
         }
@@ -2930,6 +2909,31 @@ public class HttpActionHandler {
             httpErrorActionHandler = new HttpErrorActionHandler();
         }
         return httpErrorActionHandler;
+    }
+
+    /**
+     * Apply an {@link HttpError} action and emit its expectation-response log entry. When the error
+     * carries a stream error and the active {@link ResponseWriter} can reset its own transport stream
+     * (HTTP/3 via {@link StreamErrorWriter}), the reset is delegated to it; otherwise the netty
+     * {@link HttpErrorActionHandler} resets the HTTP/2 stream (or drops the connection on HTTP/1.1).
+     */
+    private void dispatchErrorAction(final HttpError httpError, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx) {
+        if (httpError.getStreamError() != null && responseWriter instanceof StreamErrorWriter) {
+            ((StreamErrorWriter) responseWriter).writeStreamError(httpError.getStreamError());
+        } else {
+            getHttpErrorActionHandler().handle(httpError, request, ctx);
+        }
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setType(EXPECTATION_RESPONSE)
+                .setLogLevel(Level.INFO)
+                .setCorrelationId(request.getLogCorrelationId())
+                .setHttpRequest(request)
+                .setHttpError(httpError)
+                .setExpectationId(httpError.getExpectationId())
+                .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
+                .setArguments(httpError, request, httpError, httpError.getExpectationId())
+        );
     }
 
     public NettyHttpClient getHttpClient() {

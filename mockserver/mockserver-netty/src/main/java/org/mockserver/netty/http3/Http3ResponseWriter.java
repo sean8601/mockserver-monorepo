@@ -12,6 +12,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.StreamingBody;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.StreamErrorWriter;
 import org.mockserver.telemetry.TraceContextAttributes;
 import org.mockserver.telemetry.W3CTraceContext;
 import org.slf4j.event.Level;
@@ -31,13 +32,46 @@ import org.slf4j.event.Level;
  * Backpressure is implemented via {@link StreamingBody#requestMore()}: each
  * chunk write completion triggers the next upstream read.
  */
-public class Http3ResponseWriter extends ResponseWriter {
+public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWriter {
 
     private final ChannelHandlerContext ctx;
 
     public Http3ResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, ChannelHandlerContext ctx) {
         super(configuration, mockServerLogger);
         this.ctx = ctx;
+    }
+
+    /**
+     * Reset the QUIC stream with the supplied HTTP/3 error code (RESET_STREAM, RFC 9114
+     * section 4.1). Only this request stream is reset; other streams on the QUIC connection are
+     * unaffected. No ByteBuf is allocated, so there is nothing to release.
+     */
+    @Override
+    public void writeStreamError(long errorCode) {
+        if (ctx.channel() instanceof QuicStreamChannel && ctx.channel().isActive()) {
+            // Netty's QuicStreamChannel.shutdownOutput takes an int, but a QUIC application error code
+            // is a 62-bit varint. Every RFC 9114 §8.1 HTTP/3 code is tiny (<= 0x110), so this only
+            // matters for out-of-range vendor codes — clamp (and warn) rather than silently truncating.
+            int resetCode;
+            if (errorCode < 0 || errorCode > Integer.MAX_VALUE) {
+                if (MockServerLogger.isEnabled(Level.WARN) && mockServerLogger != null) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.WARN)
+                            .setMessageFormat("HTTP/3 stream error code {} is out of the supported int range, clamping to {}")
+                            .setArguments(errorCode, Integer.MAX_VALUE)
+                    );
+                }
+                resetCode = Integer.MAX_VALUE;
+            } else {
+                resetCode = (int) errorCode;
+            }
+            // shutdownOutput(int) sends a RESET_STREAM frame carrying the application error code,
+            // tearing down this stream's output without affecting the rest of the QUIC connection.
+            ((QuicStreamChannel) ctx.channel()).shutdownOutput(resetCode);
+        } else if (ctx.channel().isActive()) {
+            ctx.close();
+        }
     }
 
     @Override

@@ -1131,6 +1131,27 @@ RSpec.describe 'MockServer models' do
       roundtrip = MockServer::HttpError.from_hash(original.to_h)
       expect(roundtrip.to_h).to eq(original.to_h)
     end
+
+    it 'defaults stream_error to nil and omits it from the hash' do
+      expect(MockServer::HttpError.new.stream_error).to be_nil
+      expect(MockServer::HttpError.new(drop_connection: true).to_h).not_to have_key('streamError')
+    end
+
+    it 'serializes stream_error to the streamError key' do
+      err = MockServer::HttpError.new(stream_error: 7)
+      expect(err.to_h).to eq({ 'streamError' => 7 })
+    end
+
+    it 'deserializes streamError from a hash' do
+      err = MockServer::HttpError.from_hash({ 'streamError' => 268 })
+      expect(err.stream_error).to eq(268)
+    end
+
+    it 'round-trips stream_error correctly' do
+      original = MockServer::HttpError.new(stream_error: 7)
+      roundtrip = MockServer::HttpError.from_hash(original.to_h)
+      expect(roundtrip.stream_error).to eq(7)
+    end
   end
 
   # -------------------------------------------------------------------

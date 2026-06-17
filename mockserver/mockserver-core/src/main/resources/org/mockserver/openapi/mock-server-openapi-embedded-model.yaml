@@ -684,8 +684,13 @@ components:
           $ref: "#/components/schemas/Delay"
         dropConnection:
           type: boolean
+          description: "drop the connection; ignored when streamError is set (streamError takes precedence)"
         responseBytes:
           type: string
+        streamError:
+          type: integer
+          format: int64
+          description: "reset the matched request stream with this error code (HTTP/2 RST_STREAM / HTTP/3 RESET_STREAM) instead of returning a response; HTTP/1.1 has no stream concept so this falls back to dropping the connection"
     HttpSseResponse:
       description: "SSE response to return"
       type: object

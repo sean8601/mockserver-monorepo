@@ -608,3 +608,72 @@ curl_close($ch);</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
+
+<button id="button_stream_error" class="accordion">reset HTTP/2 or HTTP/3 stream with an error code</button>
+<div class="panel">
+    <p>For resilience testing of clients that must cope with mid-stream resets, an error action can
+        reset just the matched request stream instead of returning a response. Set <strong>streamError</strong>
+        to the stream error code to send: over HTTP/2 MockServer sends an <code>RST_STREAM</code> for that
+        stream (RFC 7540 codes, e.g. <code>REFUSED_STREAM</code> = 7), and over HTTP/3 a QUIC
+        <code>RESET_STREAM</code> (RFC 9114 codes, e.g. <code>H3_REQUEST_CANCELLED</code> = 268 / 0x10c).
+        Other streams multiplexed on the same connection are unaffected.</p>
+    <p><strong>HTTP/1.1 caveat:</strong> HTTP/1.1 has no stream concept, so a request that matches over
+        HTTP/1.1 cannot be reset at the stream level — MockServer instead drops the whole connection
+        (the same behaviour as <code>dropConnection</code>).</p>
+    <p><strong>Precedence:</strong> if both <code>streamError</code> and <code>dropConnection</code> are
+        set on the same error action, <code>streamError</code> wins and <code>dropConnection</code> is
+        ignored (over HTTP/1.1 the stream-error fallback drops the connection anyway).</p>
+    <p>Common stream error codes:</p>
+    <table>
+        <thead><tr><th>Protocol</th><th>Name</th><th>Code</th></tr></thead>
+        <tbody>
+            <tr><td>HTTP/2</td><td>NO_ERROR</td><td>0</td></tr>
+            <tr><td>HTTP/2</td><td>PROTOCOL_ERROR</td><td>1</td></tr>
+            <tr><td>HTTP/2</td><td>INTERNAL_ERROR</td><td>2</td></tr>
+            <tr><td>HTTP/2</td><td>REFUSED_STREAM</td><td>7</td></tr>
+            <tr><td>HTTP/2</td><td>CANCEL</td><td>8</td></tr>
+            <tr><td>HTTP/2</td><td>ENHANCE_YOUR_CALM</td><td>11</td></tr>
+            <tr><td>HTTP/2</td><td>HTTP_1_1_REQUIRED</td><td>13</td></tr>
+            <tr><td>HTTP/3</td><td>H3_REQUEST_REJECTED</td><td>267 (0x10b)</td></tr>
+            <tr><td>HTTP/3</td><td>H3_REQUEST_CANCELLED</td><td>268 (0x10c)</td></tr>
+            <tr><td>HTTP/3</td><td>H3_INTERNAL_ERROR</td><td>258 (0x102)</td></tr>
+        </tbody>
+    </table>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withPath("/some/path")
+    )
+    .error(
+        error()
+            .withStreamError(HttpError.StreamErrorCode.REFUSED_STREAM)
+    );</code></pre>
+        <p>The raw numeric form <code>error().withStreamError(7L)</code> and the
+            <code>error().withStreamErrorCodeName("REFUSED_STREAM")</code> convenience are equivalent.</p>
+    </div>
+    <button class="accordion inner">JSON</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpError" : {
+        "streamError" : 7
+    }
+}</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+    "httpRequest" : {
+        "path" : "/some/path"
+    },
+    "httpError" : {
+        "streamError" : 7
+    }
+}'</code></pre>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+</div>

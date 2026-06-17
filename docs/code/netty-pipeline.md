@@ -395,6 +395,39 @@ branches — it is handed to a `DefaultHttpContent` only when non-empty and rele
 response attaches an empty `Unpooled.EMPTY_BUFFER` `LastHttpContent`. The existing chunk-delay
 and HTTP/3 writer paths retain/release as before.
 
+## Stream-Level Error Injection (HttpError streamError)
+
+An `HttpError` action can reset the individual request stream instead of returning a response, for
+resilience testing of clients that must handle mid-stream resets. It is configured with
+`HttpError.withStreamError(long errorCode)` (or the `StreamErrorCode` enum / `withStreamErrorCodeName`
+convenience), serialised as a `streamError` integer. When `streamError` is null (the default) the
+existing `dropConnection` / `responseBytes` behaviour is unchanged.
+
+```mermaid
+flowchart TD
+    A["HttpError with streamError"] --> D{"Action dispatch\nHttpActionHandler.dispatchErrorAction"}
+    D -->|"responseWriter is StreamErrorWriter\n(HTTP/3)"| H3["Http3ResponseWriter.writeStreamError()\nQuicStreamChannel.shutdownOutput(code)\n→ QUIC RESET_STREAM"]
+    D -->|"otherwise"| HEH["HttpErrorActionHandler.handle()"]
+    HEH -->|"channel is Http2StreamChannel\n(multiplex child)"| MUX["write DefaultHttp2ResetFrame(code)\n→ RST_STREAM"]
+    HEH -->|"Http2ConnectionHandler present\n+ request.streamId (default h2 path)"| CONN["Http2ConnectionHandler.resetStream(streamId, code)\n→ RST_STREAM"]
+    HEH -->|"HTTP/1.1 (no stream)"| DROP["ctx.disconnect + close\n(connection drop fallback)"]
+```
+
+| Transport | Where | How the stream is reset |
+|-----------|-------|--------------------------|
+| HTTP/2 (default connection-level pipeline) | `HttpErrorActionHandler.resetHttp2Stream()` (`mockserver-core`) | Resolves the `Http2ConnectionHandler` (`HttpToHttp2ConnectionHandler`) via `ctx.pipeline().context(...)` and calls `resetStream(ctx, streamId, errorCode, promise)`. The stream id is carried on the `HttpRequest` (set from the `x-http2-stream-id` extension header that `InboundHttp2ToHttpAdapter` adds — now captured for both TLS h2 and cleartext h2c). |
+| HTTP/2 (gRPC multiplex pipeline) | `HttpErrorActionHandler.resetHttp2Stream()` | When the request is processed on a per-stream `Http2StreamChannel` child channel, writes a `DefaultHttp2ResetFrame(errorCode)` on that child channel; the parent `Http2MultiplexHandler`/`Http2FrameCodec` emits the `RST_STREAM`. |
+| HTTP/3 | `Http3ResponseWriter.writeStreamError()` (`mockserver-netty`), reached via the `StreamErrorWriter` seam | Calls `QuicStreamChannel.shutdownOutput(errorCode)`, sending a QUIC `RESET_STREAM` for just this stream. The QUIC types live only in the netty module, so dispatch delegates through the transport-neutral `StreamErrorWriter` seam in core (mirroring the `GrpcStreamResponseWriter` pattern). |
+| HTTP/1.1 | `HttpErrorActionHandler.handle()` | **No stream concept** — falls back to dropping the whole connection (`ctx.disconnect()` + `ctx.close()`), the same as the existing `dropConnection` behaviour. Documented caveat: a `streamError` on HTTP/1.1 closes the connection rather than resetting a single stream. |
+
+`HttpActionHandler.dispatchErrorAction()` is the single funnel for the `ERROR` action (both the
+early-match and main paths). It first checks whether the active `ResponseWriter` implements
+`StreamErrorWriter` (the HTTP/3 case) and delegates; otherwise it hands the `HttpError` plus the
+`HttpRequest` (for the stream id) to `HttpErrorActionHandler`. ByteBuf safety: the HTTP/2 reset uses
+`resetStream(...)`/a single `DefaultHttp2ResetFrame` (no body buffer), and the HTTP/3 reset allocates
+no buffer, so there is nothing to leak. Resetting one stream leaves the rest of the multiplexed
+connection intact.
+
 ## Relay Connect Pattern
 
 When HTTP CONNECT or SOCKS tunneling is established, MockServer uses a **self-loopback relay** rather than connecting directly to the target:
@@ -584,6 +617,8 @@ stateDiagram-v2
 | `PortUnificationHandler` | `mockserver-netty/.../netty/unification/PortUnificationHandler.java` | Protocol detection and pipeline assembly |
 | `HttpRequestHandler` | `mockserver-netty/.../netty/HttpRequestHandler.java` | Main request dispatcher |
 | `NettyResponseWriter` | `mockserver-netty/.../netty/responsewriter/NettyResponseWriter.java` | Writes responses to Netty channels |
+| `HttpErrorActionHandler` | `mockserver-core/.../mock/action/http/HttpErrorActionHandler.java` | Applies an `HttpError` action: raw response bytes, HTTP/2 stream reset (RST_STREAM), and/or connection drop (also the HTTP/1.1 stream-error fallback) |
+| `StreamErrorWriter` | `mockserver-core/.../responsewriter/StreamErrorWriter.java` | Transport-neutral seam for resetting the request stream; implemented by `Http3ResponseWriter` for the QUIC RESET_STREAM |
 | `HttpConnectHandler` | `mockserver-netty/.../netty/proxy/connect/HttpConnectHandler.java` | HTTP CONNECT tunnel handler |
 | `RelayConnectHandler` | `mockserver-netty/.../netty/proxy/relay/RelayConnectHandler.java` | Abstract relay establishment |
 | `UpstreamProxyRelayHandler` | `mockserver-netty/.../netty/proxy/relay/UpstreamProxyRelayHandler.java` | Client → MockServer relay |

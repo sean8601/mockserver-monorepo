@@ -44,6 +44,7 @@ _FIELD_MAP = {
     "response_callback": "responseCallback",
     "drop_connection": "dropConnection",
     "response_bytes": "responseBytes",
+    "stream_error": "streamError",
     "http_request": "httpRequest",
     "http_response": "httpResponse",
     "http_response_template": "httpResponseTemplate",
@@ -945,6 +946,10 @@ class HttpObjectCallback:
 class HttpError:
     drop_connection: bool | None = None
     response_bytes: str | None = None
+    # reset the matched request stream with this error code (HTTP/2 RST_STREAM / HTTP/3 RESET_STREAM)
+    # instead of returning a response; HTTP/1.1 has no stream concept so this falls back to dropping
+    # the connection. Takes precedence over drop_connection when both are set.
+    stream_error: int | None = None
     delay: Delay | None = None
     primary: bool | None = None
 
@@ -952,6 +957,7 @@ class HttpError:
         return _strip_none({
             "dropConnection": self.drop_connection,
             "responseBytes": self.response_bytes,
+            "streamError": self.stream_error,
             "delay": self.delay.to_dict() if self.delay else None,
             "primary": self.primary,
         })
@@ -963,6 +969,7 @@ class HttpError:
         return cls(
             drop_connection=data.get("dropConnection"),
             response_bytes=data.get("responseBytes"),
+            stream_error=data.get("streamError"),
             delay=Delay.from_dict(data.get("delay")),
             primary=data.get("primary"),
         )

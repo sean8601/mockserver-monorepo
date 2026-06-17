@@ -1274,6 +1274,23 @@ class TestHttpError:
         assert restored.response_bytes == "YWJj"
         assert restored.delay.value == 200
 
+    def test_stream_error_none_by_default(self):
+        assert HttpError.error().stream_error is None
+        assert "streamError" not in HttpError(drop_connection=True).to_dict()
+
+    def test_stream_error_serializes_to_camel_case(self):
+        e = HttpError(stream_error=7)
+        assert e.to_dict() == {"streamError": 7}
+
+    def test_stream_error_from_dict(self):
+        e = HttpError.from_dict({"streamError": 268})
+        assert e.stream_error == 268
+
+    def test_stream_error_round_trip(self):
+        original = HttpError(stream_error=7)
+        restored = HttpError.from_dict(original.to_dict())
+        assert restored.stream_error == 7
+
 
 class TestHttpOverrideForwardedRequest:
     def test_factory(self):

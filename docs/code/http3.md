@@ -327,6 +327,13 @@ declarations are needed -- they resolve automatically.
   frames the client sends while one is held (bounded by `maxRequestBodySize`). Held frames are
   evicted on stream close. (Outbound bidi response frames are not breakpointed, matching the
   HTTP/2 bidi handler.)
+- **Stream-level error injection (HttpError streamError)**: an `httpError` action carrying a
+  `streamError` resets the matched QUIC request stream with the given HTTP/3 error code (RFC 9114
+  §8.1, e.g. `H3_REQUEST_CANCELLED`=0x10c) instead of returning a response. Reached via the
+  transport-neutral `StreamErrorWriter` seam: `Http3ResponseWriter.writeStreamError(code)` calls
+  `QuicStreamChannel.shutdownOutput(code)`, sending a QUIC `RESET_STREAM` for just that stream; other
+  streams on the connection are unaffected and no ByteBuf is allocated. (On HTTP/2 the same action
+  sends `RST_STREAM`; on HTTP/1.1 it falls back to dropping the connection.)
 - **Alt-Svc auto-discovery (RFC 7838)**: when `http3Port > 0`, responses served over
   the TCP (HTTP/1.1 and HTTP/2) paths include an `Alt-Svc: h3=":<port>"; ma=<maxAge>`
   header so HTTP/3-capable clients automatically upgrade to QUIC. The max-age is

@@ -156,9 +156,19 @@ public class FullHttpRequestToMockServerHttpRequest {
                 }
             }
         }
+        // The HTTP/2 stream id is carried on the x-http2-stream-id extension header that
+        // InboundHttp2ToHttpAdapter sets on every converted HTTP/2 request. Capture it ONLY when the
+        // request genuinely arrived over HTTP/2 (protocol == HTTP_2). This guards against a plain
+        // HTTP/1.1 client forging an x-http2-stream-id header to contaminate the request model / logs /
+        // HAR export. The HTTP/2 protocol value is a server-side trusted signal: for TLS-negotiated h2
+        // it comes from ALPN, and for cleartext h2c the pipeline sets the negotiated protocol to HTTP_2
+        // when it detects the h2c connection preface (PortUnificationHandler.switchToH2c) — neither is
+        // derived from a client-supplied header, so it cannot be spoofed over an HTTP/1.1 connection.
         if (Protocol.HTTP_2.equals(httpRequest.getProtocol())) {
             Integer streamId = nettyHttpRequest.headers().getInt(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text());
-            httpRequest.withStreamId(streamId);
+            if (streamId != null) {
+                httpRequest.withStreamId(streamId);
+            }
         }
     }
 

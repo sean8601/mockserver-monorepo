@@ -18,6 +18,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.mock.crud.CrudDispatcher;
 import org.mockserver.model.*;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.StreamErrorWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
 import org.mockserver.time.FixedTime;
@@ -673,7 +674,7 @@ public class HttpActionHandlerTest {
         actionHandler.processAction(request, mockResponseWriter, mockChannelHandlerContext, new HashSet<>(), false, true);
 
         // then
-        verify(mockHttpErrorActionHandler).handle(error, mockChannelHandlerContext);
+        verify(mockHttpErrorActionHandler).handle(error, request, mockChannelHandlerContext);
         verify(mockServerLogger).logEvent(
             new LogEntry()
                 .setType(RECEIVED_REQUEST)
@@ -692,6 +693,72 @@ public class HttpActionHandlerTest {
                 .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
                 .setArguments(error, request, error, expectation.getId())
         );
+    }
+
+    /**
+     * INC fix: prove that the ERROR-action dispatch funnel ({@code HttpActionHandler.dispatchErrorAction})
+     * delegates a stream error to the active {@link ResponseWriter} when it can reset its own transport
+     * stream (the HTTP/3 case, where the writer implements {@link StreamErrorWriter}), rather than going
+     * through the netty {@link HttpErrorActionHandler}. This is the wiring the HTTP/3 integration test
+     * (which calls Http3ResponseWriter directly) does not exercise.
+     */
+    @Test
+    public void shouldDelegateStreamErrorToStreamErrorWriterWhenResponseWriterSupportsIt() {
+        // given - an error action carrying a stream error and a ResponseWriter that can reset its stream
+        HttpError error = error().withStreamError(HttpError.StreamErrorCode.REFUSED_STREAM);
+        expectation = new Expectation(request).thenError(error);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        StreamErrorAwareResponseWriter streamErrorWriter = mock(StreamErrorAwareResponseWriter.class);
+        ChannelHandlerContext mockChannelHandlerContext = mock(ChannelHandlerContext.class);
+
+        // when
+        actionHandler.processAction(request, streamErrorWriter, mockChannelHandlerContext, new HashSet<>(), false, true);
+
+        // then - the reset is delegated to the writer with the configured code, NOT to HttpErrorActionHandler
+        verify(streamErrorWriter).writeStreamError(0x7L);
+        verify(mockHttpErrorActionHandler, never()).handle(any(HttpError.class), any(HttpRequest.class), any(ChannelHandlerContext.class));
+        verify(mockServerLogger).logEvent(
+            new LogEntry()
+                .setLogLevel(INFO)
+                .setType(EXPECTATION_RESPONSE)
+                .setHttpRequest(request)
+                .setHttpError(error)
+                .setExpectationId(expectation.getAction().getExpectationId())
+                .setMessageFormat("returning error:{}for request:{}for action:{}from expectation:{}")
+                .setArguments(error, request, error, expectation.getId())
+        );
+    }
+
+    /**
+     * INC fix (companion): when the active {@link ResponseWriter} cannot reset its own stream (it does
+     * not implement {@link StreamErrorWriter} — the HTTP/1.1 and HTTP/2 cases), a stream error is handled
+     * by the netty {@link HttpErrorActionHandler} (which resets the HTTP/2 stream or drops the
+     * connection), not by the writer.
+     */
+    @Test
+    public void shouldHandleStreamErrorViaHttpErrorActionHandlerWhenResponseWriterCannotResetStream() {
+        // given - an error action carrying a stream error and a plain ResponseWriter (not StreamErrorWriter)
+        HttpError error = error().withStreamError(HttpError.StreamErrorCode.REFUSED_STREAM);
+        expectation = new Expectation(request).thenError(error);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        ResponseWriter plainResponseWriter = mock(ResponseWriter.class);
+        ChannelHandlerContext mockChannelHandlerContext = mock(ChannelHandlerContext.class);
+
+        // when
+        actionHandler.processAction(request, plainResponseWriter, mockChannelHandlerContext, new HashSet<>(), false, true);
+
+        // then - the netty HttpErrorActionHandler applies the reset/connection-drop
+        verify(mockHttpErrorActionHandler).handle(error, request, mockChannelHandlerContext);
+    }
+
+    /**
+     * Test double that is both a {@link ResponseWriter} and a {@link StreamErrorWriter}, so Mockito can
+     * mock the HTTP/3-style writer used to verify {@code dispatchErrorAction} delegation.
+     */
+    public static abstract class StreamErrorAwareResponseWriter extends ResponseWriter implements StreamErrorWriter {
+        protected StreamErrorAwareResponseWriter() {
+            super(null, null);
+        }
     }
 
     @Test

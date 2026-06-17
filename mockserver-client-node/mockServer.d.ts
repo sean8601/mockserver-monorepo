@@ -158,8 +158,11 @@ export interface HttpError {
   /** response delay */
   delay?: Delay;
   primary?: boolean;
+  /** drop the connection; ignored when streamError is set (streamError takes precedence) */
   dropConnection?: boolean;
   responseBytes?: string;
+  /** reset the matched request stream with this error code (HTTP/2 RST_STREAM / HTTP/3 RESET_STREAM) instead of returning a response; HTTP/1.1 has no stream concept so this falls back to dropping the connection */
+  streamError?: number;
 }
 
 export interface Times {
