@@ -224,6 +224,11 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 RequestDefinition matcher = requestDefinition != null ? requestDefinition : request().withLogCorrelationId(logCorrelationId);
                 HttpRequestMatcher requestMatcher = matcherBuilder.transformsToMatcher(matcher);
                 for (LogEntry logEntry : new LinkedList<>(eventLog)) {
+                    if (markAsDeletedOnly && logEntry.isDeleted()) {
+                        // already tombstoned by an earlier clear — skip the expensive matcher so
+                        // repeated clear cycles do not re-match the whole accumulated log (#2359)
+                        continue;
+                    }
                     RequestDefinition[] requests = logEntry.getHttpRequests();
                     boolean matches = false;
                     if (requests != null) {
@@ -440,8 +445,12 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(requestDefinition);
                 consumer.accept(this.eventLog
                     .stream()
-                    .filter(logItem -> logItem.matches(httpRequestMatcher))
+                    // cheap type/not-deleted predicate first so the expensive request matcher
+                    // (which clones the request and runs full matching) only runs for entries
+                    // that can actually be returned, not for deleted tombstones or wrong-type
+                    // entries — keeps /retrieve cost low as the log fills (#2359)
                     .filter(logEntryPredicate)
+                    .filter(logItem -> logItem.matches(httpRequestMatcher))
                 );
             })
         );
@@ -455,8 +464,9 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(requestDefinitionMatcher);
                 consumer.accept(this.eventLog
                     .stream()
-                    .filter(logItem -> logItem.matches(httpRequestMatcher))
+                    // cheap predicate before the expensive request matcher — see #2359
                     .filter(logEntryPredicate)
+                    .filter(logItem -> logItem.matches(httpRequestMatcher))
                     .map(logEntryMapper)
                 );
             })
@@ -536,8 +546,9 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 consumer.accept(
                     StreamSupport
                         .stream(Spliterators.spliteratorUnknownSize(this.eventLog.descendingIterator(), 0), false)
-                        .filter(logItem -> logItem.matches(httpRequestMatcher))
+                        // cheap predicate before the expensive request matcher — see #2359
                         .filter(logEntryPredicate)
+                        .filter(logItem -> logItem.matches(httpRequestMatcher))
                         .map(logEntryMapper)
                 );
             })
