@@ -407,6 +407,7 @@ public class HttpState {
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
         org.mockserver.oidc.OidcAuthorizationStore.getInstance().reset();
+        org.mockserver.saml.SamlAssertionStore.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
         CassetteRegistry.getInstance().reset();
@@ -1541,6 +1542,58 @@ public class HttpState {
                             new LogEntry()
                                 .setLogLevel(Level.ERROR)
                                 .setMessageFormat("exception handling request for oidc provider:{}error:{}")
+                                .setArguments(request, e.getMessage())
+                                .setThrowable(e)
+                        );
+                        responseWriter.writeResponse(
+                            request,
+                            BAD_REQUEST,
+                            e.getMessage(),
+                            MediaType.create("text", "plain").toString()
+                        );
+                    }
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/saml", "/saml")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    try {
+                        String requestBody = request.getBodyAsJsonOrXmlString();
+                        org.mockserver.saml.SamlProviderConfiguration samlConfig;
+                        if (requestBody == null || requestBody.trim().isEmpty()) {
+                            samlConfig = new org.mockserver.saml.SamlProviderConfiguration();
+                        } else {
+                            samlConfig = ObjectMapperFactory.createObjectMapper()
+                                .readValue(requestBody, org.mockserver.saml.SamlProviderConfiguration.class);
+                        }
+                        List<Expectation> upsertedExpectations = add(
+                            new org.mockserver.saml.SamlProviderGenerator()
+                                .generate(samlConfig)
+                                .toArray(new Expectation[0])
+                        );
+                        responseWriter.writeResponse(request, response()
+                            .withStatusCode(CREATED.code())
+                            .withBody(getExpectationSerializer().serialize(upsertedExpectations), MediaType.JSON_UTF_8), true);
+                    } catch (IllegalArgumentException iae) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for saml provider:{}error:{}")
+                                .setArguments(request, iae.getMessage())
+                                .setThrowable(iae)
+                        );
+                        responseWriter.writeResponse(
+                            request,
+                            BAD_REQUEST,
+                            iae.getMessage(),
+                            MediaType.create("text", "plain").toString()
+                        );
+                    } catch (Exception e) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for saml provider:{}error:{}")
                                 .setArguments(request, e.getMessage())
                                 .setThrowable(e)
                         );

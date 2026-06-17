@@ -533,6 +533,8 @@
                         <exclude>**/CaptureProcessorTest.java</exclude>
                         <!-- WS7.1 OIDC authorization-code test mutates the OidcAuthorizationStore singleton -->
                         <exclude>**/OidcProviderGeneratorTest.java</exclude>
+                        <!-- WS7.7 SAML SSO test mutates the SamlAssertionStore singleton -->
+                        <exclude>**/SamlProviderGeneratorTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/ExampleBuilderRealisticValuesTest.java</exclude>
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
@@ -624,6 +626,7 @@
                                 <include>**/JavaScriptScenarioStateTemplateTest.java</include>
                                 <include>**/CaptureProcessorTest.java</include>
                                 <include>**/OidcProviderGeneratorTest.java</include>
+                                <include>**/SamlProviderGeneratorTest.java</include>
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>

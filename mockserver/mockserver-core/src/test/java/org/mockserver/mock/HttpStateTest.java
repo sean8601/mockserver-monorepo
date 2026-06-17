@@ -3407,6 +3407,96 @@ public class HttpStateTest {
         assertThat(responseWriter.response.getStatusCode(), is(400));
     }
 
+    // --- PUT /saml tests ---
+
+    @Test
+    public void shouldHandleSamlRequestWithDefaults() {
+        // given
+        HttpRequest samlRequest = request("/mockserver/saml")
+            .withMethod("PUT");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(samlRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(2));
+
+        // Verify the metadata endpoint is now matchable and returns SAML metadata
+        HttpResponse metadataResponse = httpState.firstMatchingExpectation(
+            request("/saml/metadata").withMethod("GET")
+        ).getHttpResponse();
+        assertThat(metadataResponse, is(notNullValue()));
+        assertThat(metadataResponse.getStatusCode(), is(200));
+        assertThat(metadataResponse.getBodyAsString(), containsString("IDPSSODescriptor"));
+        assertThat(metadataResponse.getBodyAsString(), containsString("SingleSignOnService"));
+    }
+
+    @Test
+    public void shouldHandleSamlRequestWithCustomConfig() {
+        // given
+        HttpRequest samlRequest = request("/mockserver/saml")
+            .withMethod("PUT")
+            .withBody("{\"idpEntityId\":\"https://custom.idp/entity\",\"ssoServiceUrl\":\"/custom/sso\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(samlRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+
+        // Verify the SSO endpoint matches the custom path and is served by the class callback
+        Expectation ssoMatch = httpState.firstMatchingExpectation(
+            request("/custom/sso").withMethod("GET")
+        );
+        assertThat(ssoMatch, is(notNullValue()));
+        assertThat(ssoMatch.getHttpResponseClassCallback(), is(notNullValue()));
+        assertThat(ssoMatch.getHttpResponseClassCallback().getCallbackClass(), containsString("SamlSsoCallback"));
+    }
+
+    @Test
+    public void shouldHandleSamlRequestWithEmptyBody() {
+        // given
+        HttpRequest samlRequest = request("/mockserver/saml")
+            .withMethod("PUT")
+            .withBody("");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(samlRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(2));
+    }
+
+    @Test
+    public void shouldHandleInvalidSamlRequest() {
+        // given
+        HttpRequest samlRequest = request("/mockserver/saml")
+            .withMethod("PUT")
+            .withBody("{invalid json");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(samlRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+    }
+
     // --- PUT /import tests ---
 
     @Test
