@@ -15,6 +15,11 @@ class Expectation implements \JsonSerializable
     private ?HttpResponse $httpResponse = null;
     private ?HttpForward $httpForward = null;
     private ?HttpError $httpError = null;
+    private ?HttpSseResponse $httpSseResponse = null;
+    private ?HttpWebSocketResponse $httpWebSocketResponse = null;
+    private ?GrpcStreamResponse $grpcStreamResponse = null;
+    private ?BinaryResponse $binaryResponse = null;
+    private ?DnsResponse $dnsResponse = null;
     private ?Times $times = null;
     private ?TimeToLive $timeToLive = null;
 
@@ -51,6 +56,36 @@ class Expectation implements \JsonSerializable
     public function httpError(HttpError $error): self
     {
         $this->httpError = $error;
+        return $this;
+    }
+
+    public function httpSseResponse(HttpSseResponse $sseResponse): self
+    {
+        $this->httpSseResponse = $sseResponse;
+        return $this;
+    }
+
+    public function httpWebSocketResponse(HttpWebSocketResponse $webSocketResponse): self
+    {
+        $this->httpWebSocketResponse = $webSocketResponse;
+        return $this;
+    }
+
+    public function grpcStreamResponse(GrpcStreamResponse $grpcStreamResponse): self
+    {
+        $this->grpcStreamResponse = $grpcStreamResponse;
+        return $this;
+    }
+
+    public function binaryResponse(BinaryResponse $binaryResponse): self
+    {
+        $this->binaryResponse = $binaryResponse;
+        return $this;
+    }
+
+    public function dnsResponse(DnsResponse $dnsResponse): self
+    {
+        $this->dnsResponse = $dnsResponse;
         return $this;
     }
 
@@ -138,6 +173,21 @@ class Expectation implements \JsonSerializable
         }
         if ($this->httpError !== null) {
             $data['httpError'] = $this->httpError->toArray();
+        }
+        if ($this->httpSseResponse !== null) {
+            $data['httpSseResponse'] = $this->httpSseResponse->toArray();
+        }
+        if ($this->httpWebSocketResponse !== null) {
+            $data['httpWebSocketResponse'] = $this->httpWebSocketResponse->toArray();
+        }
+        if ($this->grpcStreamResponse !== null) {
+            $data['grpcStreamResponse'] = $this->grpcStreamResponse->toArray();
+        }
+        if ($this->binaryResponse !== null) {
+            $data['binaryResponse'] = $this->binaryResponse->toArray();
+        }
+        if ($this->dnsResponse !== null) {
+            $data['dnsResponse'] = $this->dnsResponse->toArray();
         }
         if ($this->times !== null) {
             $data['times'] = $this->times->toArray();
