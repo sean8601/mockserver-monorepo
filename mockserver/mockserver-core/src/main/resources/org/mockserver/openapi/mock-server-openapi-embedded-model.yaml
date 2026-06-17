@@ -475,7 +475,9 @@ components:
       additionalProperties: false
       properties:
         specUrlOrPayload:
-          type: string
+          anyOf:
+            - type: string
+            - type: object
         operationId:
           type: string
         contextPathPrefix:
