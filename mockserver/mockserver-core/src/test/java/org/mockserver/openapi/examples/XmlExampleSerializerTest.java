@@ -262,10 +262,15 @@ public class XmlExampleSerializerTest {
         books.add(new StringExample("Bartleby"));
 
         String xml = new XmlExampleSerializer().serialize(books);
-        parseNamespaceAware(xml);
+        Document document = parseNamespaceAware(xml);
 
-        // declared on the wrapper element only; the repeated item elements inherit it
-        assertThat(countXmlnsDeclarations(xml, "xmlns:ex"), is(1));
+        // every element carrying the namespace re-declares xmlns:ex (the accepted cosmetic redundancy of
+        // the always-emit correctness fix); each declaration binds the same URI, so the body is well-formed
+        // and every element resolves to the same namespace
+        Element root = document.getDocumentElement();
+        assertThat(root.getLocalName(), is("books"));
+        assertThat(root.getNamespaceURI(), is(NS));
+        assertThat("at least the wrapper declares xmlns:ex", countXmlnsDeclarations(xml, "xmlns:ex") >= 1, is(true));
     }
 
     // -------------------------------------------------------------------------------------------------
@@ -306,6 +311,110 @@ public class XmlExampleSerializerTest {
         Element root = document.getDocumentElement();
         assertThat(root.getNamespaceURI(), is(NS));
         assertThat(root.getPrefix(), nullValue());
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Fix 1 (CRITICAL) regression guards — a descendant that shadows an ancestor namespace binding must
+    // resolve to its own namespace, NOT the suppressed-redeclaration ancestor namespace
+    // -------------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldNotBindDescendantToAncestorNamespaceWhenPrefixRebound() throws Exception {
+        // <tns:Order xmlns:tns="A"> containing <tns:Customer xmlns:tns="B"> — Customer must resolve to B
+        String nsA = "urn:ns:A";
+        String nsB = "urn:ns:B";
+
+        ObjectExample customer = new ObjectExample();
+        customer.setName("Customer");
+        customer.setNamespace(nsB);
+        customer.setPrefix("tns");
+        customer.put("name", new StringExample("Ishmael"));
+
+        ObjectExample order = new ObjectExample();
+        order.setName("Order");
+        order.setNamespace(nsA);
+        order.setPrefix("tns");
+        order.put("customer", customer);
+
+        String xml = new XmlExampleSerializer().serialize(order);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat(root.getLocalName(), is("Order"));
+        assertThat(root.getNamespaceURI(), is(nsA));
+
+        Element customerElement = (Element) root.getElementsByTagNameNS(nsB, "Customer").item(0);
+        assertThat("Customer must resolve to namespace B, not the ancestor's A", customerElement, is(notNullValue()));
+        assertThat(customerElement.getNamespaceURI(), is(nsB));
+    }
+
+    @Test
+    public void shouldNotBindGrandchildToShadowingDefaultNamespace() throws Exception {
+        // <r xmlns="A"><c xmlns="B"><g xmlns="A"> — grandchild g must resolve to A, not the shadowing B
+        String nsA = "urn:ns:A";
+        String nsB = "urn:ns:B";
+
+        ObjectExample grandchild = new ObjectExample();
+        grandchild.setName("g");
+        grandchild.setNamespace(nsA);
+        grandchild.put("value", new StringExample("deep"));
+
+        ObjectExample child = new ObjectExample();
+        child.setName("c");
+        child.setNamespace(nsB);
+        child.put("g", grandchild);
+
+        ObjectExample root = new ObjectExample();
+        root.setName("r");
+        root.setNamespace(nsA);
+        root.put("c", child);
+
+        String xml = new XmlExampleSerializer().serialize(root);
+        Document document = parseNamespaceAware(xml);
+
+        Element rootElement = document.getDocumentElement();
+        assertThat(rootElement.getNamespaceURI(), is(nsA));
+
+        Element childElement = (Element) rootElement.getElementsByTagNameNS(nsB, "c").item(0);
+        assertThat(childElement, is(notNullValue()));
+
+        Element grandchildElement = (Element) childElement.getElementsByTagNameNS(nsA, "g").item(0);
+        assertThat("grandchild g must resolve to A, not the shadowing B", grandchildElement, is(notNullValue()));
+        assertThat(grandchildElement.getNamespaceURI(), is(nsA));
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Fix 2 / Fix 3 (MINOR) — illegal codepoints and malformed names must not produce unparseable output
+    // -------------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldStripXmlIllegalControlCharacterFromValue() throws Exception {
+        ObjectExample record = new ObjectExample();
+        record.setName("Record");
+        record.put("author", new StringExample("Herman\u0001Melville"));
+
+        String xml = new XmlExampleSerializer().serialize(record);
+        // must parse as well-formed XML despite the 0x01 control char in the value
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat(root.getLocalName(), is("Record"));
+        assertThat("illegal control char must not survive into the body", xml.indexOf('\u0001'), is(-1));
+    }
+
+    @Test
+    public void shouldSanitiseMalformedXmlNameToWellFormedOutput() throws Exception {
+        ObjectExample record = new ObjectExample();
+        record.setName("bad name!");
+        record.put("title", new StringExample("Moby Dick"));
+
+        String xml = new XmlExampleSerializer().serialize(record);
+        // must still be well-formed — the invalid element name is sanitised, not emitted raw
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat("sanitised name must be a valid XML name (no space / '!')",
+            root.getLocalName().matches("[A-Za-z_:][\\w.:_-]*"), is(true));
     }
 
     private int countXmlnsDeclarations(String xml, String declaration) {

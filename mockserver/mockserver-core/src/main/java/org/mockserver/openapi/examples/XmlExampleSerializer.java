@@ -27,8 +27,6 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
 
 import static org.slf4j.event.Level.WARN;
 
@@ -40,11 +38,6 @@ public class XmlExampleSerializer {
 
     int depth = 0;
 
-    // tracks namespace URIs already declared on an ancestor so each namespace is emitted only once
-    // (children inherit the declaration); prefix -> uri for prefixed namespaces, uri for default namespace
-    private final Set<String> declaredNamespaceUris = new HashSet<>();
-    private final Set<String> declaredPrefixes = new HashSet<>();
-
     public String serialize(Example o) {
         XMLStreamWriter writer = null;
         try {
@@ -53,7 +46,7 @@ public class XmlExampleSerializer {
 
             writer = f.createXMLStreamWriter(out, StandardCharsets.UTF_8.name());
 
-            writer.writeStartDocument("UTF-8", "1.1");
+            writer.writeStartDocument("UTF-8", "1.0");
             writeTo(writer, o);
             writer.close();
             return out.toString(StandardCharsets.UTF_8);
@@ -82,7 +75,7 @@ public class XmlExampleSerializer {
                 name = "AnonymousModel";
             }
 
-            String declaredUri = writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
+            writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
 
             for (String key : or.keySet()) {
                 Object obj = or.get(key);
@@ -96,19 +89,16 @@ public class XmlExampleSerializer {
                 }
             }
             writer.writeEndElement();
-            undeclareNamespace(o.getPrefix(), declaredUri);
         } else if (o instanceof ArrayExample) {
             ArrayExample ar = (ArrayExample) o;
-            String wrappedDeclaredUri = null;
             if (o.getWrapped() != null && o.getWrapped()) {
                 if (o.getWrappedName() != null) {
-                    wrappedDeclaredUri = writeStartElement(writer, o.getPrefix(), o.getWrappedName(), o.getNamespace());
+                    writeStartElement(writer, o.getPrefix(), o.getWrappedName(), o.getNamespace());
                 } else {
-                    wrappedDeclaredUri = writeStartElement(writer, o.getPrefix(), o.getName() + "s", o.getNamespace());
+                    writeStartElement(writer, o.getPrefix(), o.getName() + "s", o.getNamespace());
                 }
             }
             for (Example item : ar.getItems()) {
-                String itemDeclaredUri = null;
                 if (item.getName() == null) {
 
                     String name = o.getName();
@@ -116,17 +106,15 @@ public class XmlExampleSerializer {
                         name = item.getTypeName();
                     }
 
-                    itemDeclaredUri = writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
+                    writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
                 }
                 writeTo(writer, item);
                 if (item.getName() == null && o.getName() != null) {
                     writer.writeEndElement();
-                    undeclareNamespace(o.getPrefix(), itemDeclaredUri);
                 }
             }
             if (o.getWrapped() != null && o.getWrapped()) {
                 writer.writeEndElement();
-                undeclareNamespace(o.getPrefix(), wrappedDeclaredUri);
             }
         } else {
             String name = o.getName();
@@ -137,12 +125,11 @@ public class XmlExampleSerializer {
             if (o.getAttribute() != null && o.getAttribute()) {
                 writeAttribute(writer, o.getPrefix(), name, o.getNamespace(), o.asString());
             } else if (name == null) {
-                writer.writeCharacters(o.asString());
+                writer.writeCharacters(stripIllegalXmlChars(o.asString()));
             } else {
-                String declaredUri = writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
-                writer.writeCharacters(o.asString());
+                writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
+                writer.writeCharacters(stripIllegalXmlChars(o.asString()));
                 writer.writeEndElement();
-                undeclareNamespace(o.getPrefix(), declaredUri);
             }
         }
         depth -= 1;
@@ -150,37 +137,29 @@ public class XmlExampleSerializer {
 
     /**
      * Writes a start element, declaring its XML namespace via the StAX namespace API so the output is
-     * well-formed. Each namespace is declared only once on the element that introduces it (children
-     * inherit the declaration), avoiding redundant re-declaration.
-     *
-     * @return the namespace URI declared on this element (so the caller can un-declare it on close), or
-     * {@code null} if no namespace was declared here
+     * well-formed. The namespace declaration is emitted on every element that carries one and StAX scopes
+     * it correctly to the nearest in-scope binding, so a descendant that shadows an ancestor binding (a
+     * prefix rebind, or a default-namespace shadow) resolves to the right namespace. A child that carries
+     * no namespace metadata does not re-declare anything; a redundant identical re-declaration where a
+     * parent already declared the same binding is harmless and semantically identical.
      */
-    private String writeStartElement(XMLStreamWriter writer, String prefix, String name, String namespace) throws XMLStreamException {
+    private void writeStartElement(XMLStreamWriter writer, String prefix, String name, String namespace) throws XMLStreamException {
+        name = sanitiseXmlName(name);
         if (namespace == null) {
             writer.writeStartElement(name);
-            return null;
+            return;
         }
         if (prefix != null && !prefix.isEmpty()) {
             // prefixed namespace -> <prefix:name xmlns:prefix="ns">
             writer.setPrefix(prefix, namespace);
             writer.writeStartElement(prefix, name, namespace);
-            if (!declaredPrefixes.contains(prefix)) {
-                writer.writeNamespace(prefix, namespace);
-                declaredPrefixes.add(prefix);
-                return namespace;
-            }
-            return null;
+            writer.writeNamespace(prefix, namespace);
+            return;
         }
         // default namespace -> <name xmlns="ns">
         writer.setDefaultNamespace(namespace);
         writer.writeStartElement(namespace, name);
-        if (!declaredNamespaceUris.contains(namespace)) {
-            writer.writeDefaultNamespace(namespace);
-            declaredNamespaceUris.add(namespace);
-            return namespace;
-        }
-        return null;
+        writer.writeDefaultNamespace(namespace);
     }
 
     /**
@@ -189,11 +168,14 @@ public class XmlExampleSerializer {
      * that case the attribute is written without a namespace to keep the output well-formed.
      */
     private void writeAttribute(XMLStreamWriter writer, String prefix, String name, String namespace, String value) throws XMLStreamException {
+        name = sanitiseXmlName(name);
+        value = stripIllegalXmlChars(value);
         if (namespace != null && prefix != null && !prefix.isEmpty()) {
-            if (!declaredPrefixes.contains(prefix)) {
+            // only declare the prefix binding if it is not already in scope on this element (the owning
+            // element commonly declares the same prefix), otherwise a duplicate xmlns:prefix is emitted
+            if (!namespace.equals(writer.getNamespaceContext().getNamespaceURI(prefix))) {
                 writer.setPrefix(prefix, namespace);
                 writer.writeNamespace(prefix, namespace);
-                declaredPrefixes.add(prefix);
             }
             writer.writeAttribute(prefix, namespace, name, value);
         } else {
@@ -201,14 +183,112 @@ public class XmlExampleSerializer {
         }
     }
 
-    private void undeclareNamespace(String prefix, String declaredUri) {
-        if (declaredUri != null) {
-            if (prefix != null && !prefix.isEmpty()) {
-                declaredPrefixes.remove(prefix);
+    /**
+     * Removes characters that are illegal in XML 1.0 (control characters other than tab, newline and
+     * carriage return, plus a handful of non-characters) so a control char embedded in a schema
+     * example/default/enum cannot make the serialized body fail to parse. Ordinary XML metacharacters
+     * ({@code < & "}) are left untouched — StAX escapes those itself.
+     */
+    static String stripIllegalXmlChars(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        StringBuilder builder = null;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (isLegalXmlChar(c)) {
+                if (builder != null) {
+                    builder.append(c);
+                }
             } else {
-                declaredNamespaceUris.remove(declaredUri);
+                if (builder == null) {
+                    builder = new StringBuilder(value.length());
+                    builder.append(value, 0, i);
+                }
             }
         }
+        return builder == null ? value : builder.toString();
+    }
+
+    private static boolean isLegalXmlChar(char c) {
+        return c == 0x9 || c == 0xA || c == 0xD
+            || (c >= 0x20 && c <= 0xD7FF)
+            || (c >= 0xE000 && c <= 0xFFFD);
+    }
+
+    /**
+     * Returns a valid XML name, sanitising an invalid one to a valid NCName so the output stays
+     * well-formed (a malformed {@code xml.name} such as {@code "bad name!"} would otherwise produce a
+     * silently malformed document). Illegal name characters are replaced with {@code _}; a name that does
+     * not start with a valid name-start character is prefixed with {@code _}. The substitution is logged at
+     * WARN so the rewrite is visible.
+     */
+    static String sanitiseXmlName(String name) {
+        if (name == null || name.isEmpty()) {
+            return name;
+        }
+        if (isValidXmlName(name)) {
+            return name;
+        }
+        StringBuilder builder = new StringBuilder(name.length() + 1);
+        char first = name.charAt(0);
+        if (isXmlNameStartChar(first)) {
+            builder.append(first);
+        } else if (isXmlNameChar(first)) {
+            builder.append('_').append(first);
+        } else {
+            builder.append('_');
+        }
+        for (int i = 1; i < name.length(); i++) {
+            char c = name.charAt(i);
+            builder.append(isXmlNameChar(c) ? c : '_');
+        }
+        String sanitised = builder.toString();
+        MOCK_SERVER_LOGGER.logEvent(
+            new LogEntry()
+                .setLogLevel(WARN)
+                .setMessageFormat("invalid XML name \"{}\" in example schema sanitised to \"{}\"")
+                .setArguments(name, sanitised)
+        );
+        return sanitised;
+    }
+
+    private static boolean isValidXmlName(String name) {
+        if (!isXmlNameStartChar(name.charAt(0))) {
+            return false;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            if (!isXmlNameChar(name.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isXmlNameStartChar(char c) {
+        return c == ':' || c == '_'
+            || (c >= 'A' && c <= 'Z')
+            || (c >= 'a' && c <= 'z')
+            || (c >= 0xC0 && c <= 0xD6)
+            || (c >= 0xD8 && c <= 0xF6)
+            || (c >= 0xF8 && c <= 0x2FF)
+            || (c >= 0x370 && c <= 0x37D)
+            || (c >= 0x37F && c <= 0x1FFF)
+            || (c >= 0x200C && c <= 0x200D)
+            || (c >= 0x2070 && c <= 0x218F)
+            || (c >= 0x2C00 && c <= 0x2FEF)
+            || (c >= 0x3001 && c <= 0xD7FF)
+            || (c >= 0xF900 && c <= 0xFDCF)
+            || (c >= 0xFDF0 && c <= 0xFFFD);
+    }
+
+    private static boolean isXmlNameChar(char c) {
+        return isXmlNameStartChar(c)
+            || c == '-' || c == '.'
+            || (c >= '0' && c <= '9')
+            || c == 0xB7
+            || (c >= 0x0300 && c <= 0x036F)
+            || (c >= 0x203F && c <= 0x2040);
     }
 
     public String getTypeName(Example o) {
