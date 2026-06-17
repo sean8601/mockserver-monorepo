@@ -211,7 +211,7 @@ public class OpenAPIConverter {
         HttpResponse response = response();
         Optional
             .ofNullable(apiResponses)
-            .flatMap(notNullApiResponses -> notNullApiResponses.entrySet().stream().filter(entry -> isBlank(apiResponseKey) | entry.getKey().equals(apiResponseKey)).findFirst())
+            .flatMap(notNullApiResponses -> selectApiResponse(notNullApiResponses, apiResponseKey))
             .ifPresent(apiResponse -> {
                 Integer statusCode = parseResponseStatusCode(apiResponse.getKey());
                 if (statusCode != null) {
@@ -289,6 +289,37 @@ public class OpenAPIConverter {
     }
 
     /**
+     * Selects the response entry to render for the requested {@code apiResponseKey}.
+     * <ul>
+     *   <li>blank key: the first defined response (unchanged historical behaviour);</li>
+     *   <li>key present: the matching response;</li>
+     *   <li>key non-blank but absent: a WARN naming the requested key vs the available keys, then a
+     *       deliberate fall back to the first defined response — never a silently empty 200.</li>
+     * </ul>
+     */
+    private Optional<Map.Entry<String, io.swagger.v3.oas.models.responses.ApiResponse>> selectApiResponse(ApiResponses apiResponses, String apiResponseKey) {
+        if (isBlank(apiResponseKey)) {
+            return apiResponses.entrySet().stream().findFirst();
+        }
+        Optional<Map.Entry<String, io.swagger.v3.oas.models.responses.ApiResponse>> exactMatch = apiResponses
+            .entrySet()
+            .stream()
+            .filter(entry -> entry.getKey().equals(apiResponseKey))
+            .findFirst();
+        if (exactMatch.isPresent()) {
+            return exactMatch;
+        }
+        Optional<Map.Entry<String, io.swagger.v3.oas.models.responses.ApiResponse>> fallback = apiResponses.entrySet().stream().findFirst();
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setLogLevel(WARN)
+                .setMessageFormat("requested OpenAPI response status code {} not defined for operation - available response keys are {} - falling back to {}")
+                .setArguments(apiResponseKey, apiResponses.keySet(), fallback.map(Map.Entry::getKey).orElse("none"))
+        );
+        return fallback;
+    }
+
+    /**
      * Resolves an OpenAPI response-map key to a concrete HTTP status code.
      * <ul>
      *   <li>a literal three-digit key (e.g. {@code "200"}) becomes that status code;</li>
@@ -345,8 +376,11 @@ public class OpenAPIConverter {
                         Map<String, Schema> ownProperties = composedSchema.getProperties();
                         for (Map.Entry<String, Schema> entry : ownProperties.entrySet()) {
                             Object propExample = resolveSchemaExample(entry.getValue(), openAPI, activeStack);
+                            // skip a property that has no resolvable example rather than discarding all
+                            // already-merged allOf content and sibling properties (matches the array branch,
+                            // which tolerates a null item)
                             if (propExample == null) {
-                                return null;
+                                continue;
                             }
                             merged.put(entry.getKey(), propExample);
                         }
@@ -375,8 +409,10 @@ public class OpenAPIConverter {
                 Map<String, Object> result = new LinkedHashMap<>();
                 for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : properties.entrySet()) {
                     Object propExample = resolveSchemaExample(entry.getValue(), openAPI, activeStack);
+                    // skip a property with no resolvable example rather than nulling away the whole
+                    // object (and any partial schema-level example) because one property lacked one
                     if (propExample == null) {
-                        return null;
+                        continue;
                     }
                     result.put(entry.getKey(), propExample);
                 }
@@ -400,7 +436,19 @@ public class OpenAPIConverter {
         return org.mockserver.model.MediaType.parse(contentType).isJson();
     }
 
+    private void warnExampleNameNotFound(String exampleName, Map<String, Example> availableExamples) {
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setLogLevel(WARN)
+                .setMessageFormat("requested OpenAPI example name {} not defined - available example names are {} - falling back to the first defined example")
+                .setArguments(exampleName, availableExamples != null ? availableExamples.keySet() : Collections.emptySet())
+        );
+    }
+
     private Object findHeaderExample(Header value, OpenAPI openAPI, String exampleName) {
+        if (isNotBlank(exampleName) && (value.getExamples() == null || !value.getExamples().containsKey(exampleName))) {
+            warnExampleNameNotFound(exampleName, value.getExamples());
+        }
         if (exampleName != null && value.getExamples() != null && value.getExamples().containsKey(exampleName)) {
             Example example = value.getExamples().get(exampleName);
             if (example != null) {
@@ -425,6 +473,11 @@ public class OpenAPIConverter {
 
     private Object findExample(MediaType mediaType, OpenAPI openAPI, String exampleName) {
         Object example = null;
+        if (isNotBlank(exampleName) && (mediaType.getExamples() == null || !mediaType.getExamples().containsKey(exampleName))) {
+            // a specific example was requested but is not defined - warn before falling back rather
+            // than silently substituting a different (unrequested) named example or the inline example
+            warnExampleNameNotFound(exampleName, mediaType.getExamples());
+        }
         if (exampleName != null && mediaType.getExamples() != null && mediaType.getExamples().containsKey(exampleName)) {
             Example namedExample = mediaType.getExamples().get(exampleName);
             if (namedExample != null) {
@@ -456,7 +509,16 @@ public class OpenAPIConverter {
 
     @SuppressWarnings("unchecked")
     private Object resolveExampleRefs(Object value, OpenAPI openAPI, Set<String> activeRefChain, int refDepth, int structureDepth) {
-        if (structureDepth > MAX_STRUCTURE_DEPTH) {
+        // both depth guards use >= so the limit is the maximum *processed* depth (consistent with the
+        // refDepth guard below); truncation is logged at WARN, matching the ref-depth and cycle guards,
+        // so a silently-truncated example never goes unreported
+        if (structureDepth >= MAX_STRUCTURE_DEPTH) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(WARN)
+                    .setMessageFormat("example structure exceeded maximum nesting depth of {} — returning literal value")
+                    .setArguments(MAX_STRUCTURE_DEPTH)
+            );
             return value;
         }
         if (value instanceof ObjectNode node) {
@@ -487,6 +549,9 @@ public class OpenAPIConverter {
                     activeRefChain.remove(ref);
                     return result;
                 }
+                // unresolvable internal $ref - drop it (resolveRef already logged) rather than leaking
+                // the literal {"$ref": "..."} node into the generated response body
+                return null;
             }
             ObjectNode resolvedNode = node.objectNode();
             node.properties().forEach(entry -> {
@@ -538,6 +603,9 @@ public class OpenAPIConverter {
                     activeRefChain.remove(ref);
                     return result;
                 }
+                // unresolvable internal $ref - drop it (resolveRef already logged) rather than leaking
+                // the literal {"$ref": "..."} node into the generated response body
+                return null;
             }
             Map<String, Object> resolvedMap = new LinkedHashMap<>();
             for (Map.Entry<String, Object> entry : map.entrySet()) {
@@ -555,24 +623,63 @@ public class OpenAPIConverter {
         return value;
     }
 
+    /**
+     * Resolves an internal {@code $ref} appearing inside an example value. Handles
+     * {@code #/components/examples/<name>} and any JSON-pointer suffix beyond the example name
+     * (e.g. {@code #/components/examples/<name>/value/<field>}) by navigating into the resolved
+     * example value. Any {@code $ref} that cannot be resolved (unsupported target, missing component,
+     * or a pointer suffix that does not navigate) is logged at WARN and returns {@code null}; the
+     * caller drops the node rather than leaking the literal {@code $ref} into the response body.
+     */
     private Object resolveRef(String ref, OpenAPI openAPI) {
         if (ref != null && ref.startsWith("#/components/examples/") && openAPI.getComponents() != null && openAPI.getComponents().getExamples() != null) {
             String path = ref.substring("#/components/examples/".length());
             String[] parts = path.split("/");
-            if (parts.length >= 1) {
+            if (parts.length >= 1 && isNotBlank(parts[0])) {
                 Example componentExample = openAPI.getComponents().getExamples().get(parts[0]);
                 if (componentExample != null) {
-                    return componentExample.getValue();
+                    Object resolved = componentExample.getValue();
+                    // navigate any JSON-pointer suffix beyond the example name (parts[1..]);
+                    // a "value" segment immediately after the example name addresses the Example.value
+                    // object itself, so skip it
+                    int from = (parts.length >= 2 && "value".equals(parts[1])) ? 2 : 1;
+                    resolved = navigatePointer(resolved, parts, from);
+                    if (resolved != null) {
+                        return resolved;
+                    }
                 }
             }
-            mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(WARN)
-                    .setMessageFormat("unable to resolve $ref {} in example")
-                    .setArguments(ref)
-            );
         }
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setLogLevel(WARN)
+                .setMessageFormat("unable to resolve $ref {} in example — dropping unresolved reference")
+                .setArguments(ref)
+        );
         return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object navigatePointer(Object current, String[] parts, int from) {
+        for (int i = from; i < parts.length && current != null; i++) {
+            String segment = parts[i].replace("~1", "/").replace("~0", "~");
+            if (current instanceof JsonNode jsonNode) {
+                current = jsonNode.get(segment);
+            } else if (current instanceof Map) {
+                current = ((Map<String, Object>) current).get(segment);
+            } else if (current instanceof List) {
+                try {
+                    List<Object> list = (List<Object>) current;
+                    int index = Integer.parseInt(segment);
+                    current = (index >= 0 && index < list.size()) ? list.get(index) : null;
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        }
+        return current;
     }
 
     private String serialise(Object example) {

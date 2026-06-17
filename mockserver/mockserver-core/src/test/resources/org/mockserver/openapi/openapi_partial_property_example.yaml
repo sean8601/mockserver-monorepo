@@ -1,0 +1,31 @@
+---
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: Partial Property Example
+paths:
+  /widget:
+    get:
+      operationId: getWidget
+      responses:
+        '200':
+          description: a widget
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+components:
+  schemas:
+    Widget:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        name:
+          type: string
+          example: gadget
+        # 'colour' deliberately has NO example so resolveSchemaExample yields null for it;
+        # the object-level example must still retain id and name (Fix 2)
+        colour:
+          type: string

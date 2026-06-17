@@ -836,7 +836,8 @@ public class OpenAPIConverterTest {
 
     @Test
     public void shouldHandleUnresolvableExampleRef() {
-        // given - issue #1474 (unresolvable $ref returns literal $ref object)
+        // given - issue #1474 (unresolvable $ref). The unresolved reference must be DROPPED (logged at
+        // WARN), never leaked as a literal {"$ref": ...} node into the generated response body.
         String specUrlOrPayload = "org/mockserver/openapi/openapi_petstore_example_with_reusable_examples.yaml";
 
         // when
@@ -845,7 +846,7 @@ public class OpenAPIConverterTest {
             ImmutableMap.<String, Object>of("getTaskUnresolvable", "200")
         );
 
-        // then
+        // then - the unresolvable $ref element is dropped (null) rather than leaking the literal $ref
         assertThat(actualExpectations.size(), is(1));
         assertThat(actualExpectations.get(0), is(
             when(specUrlOrPayload, "getTaskUnresolvable")
@@ -854,9 +855,7 @@ public class OpenAPIConverterTest {
                         .withStatusCode(200)
                         .withHeader("content-type", "application/json")
                         .withBody(json("{" + NEW_LINE +
-                            "  \"data\" : [ {" + NEW_LINE +
-                            "    \"$ref\" : \"#/components/examples/nonExistentExample/value\"" + NEW_LINE +
-                            "  } ]" + NEW_LINE +
+                            "  \"data\" : [ null ]" + NEW_LINE +
                             "}"))
                 )
         ));
