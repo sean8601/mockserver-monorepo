@@ -526,6 +526,9 @@
                              single-threaded removes the contention without weakening the prod timeout. -->
                         <exclude>**/MustacheTemplateEngineTest.java</exclude>
                         <exclude>**/VelocityTemplateEngineTest.java</exclude>
+                        <!-- WS2.1 scenario-state template tests mutate the CrossProtocolEventBus singleton (live ScenarioManager) -->
+                        <exclude>**/VelocityScenarioStateTemplateTest.java</exclude>
+                        <exclude>**/JavaScriptScenarioStateTemplateTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/ExampleBuilderRealisticValuesTest.java</exclude>
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
@@ -607,6 +610,8 @@
                                 <!-- XPath-in-template tests: sequential to avoid flaky timeout under contention -->
                                 <include>**/MustacheTemplateEngineTest.java</include>
                                 <include>**/VelocityTemplateEngineTest.java</include>
+                                <include>**/VelocityScenarioStateTemplateTest.java</include>
+                                <include>**/JavaScriptScenarioStateTemplateTest.java</include>
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>

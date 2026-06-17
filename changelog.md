@@ -98,6 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (persisted in the browser) for quickly switching between common filters.
 - Numeric comparison operators (`> 60`, `>= 60`, `< 100`, `<= 30`, `== 5`; not-equal via `!== 5`) for matching
   header, cookie, and query-string parameter values, in addition to exact and regex matching.
+- Response templates can read and write scenario state via a `scenario` helper (`scenario.get(name)`,
+  `scenario.set(name, state)`, `scenario.matches(name, state)`) in Velocity, JavaScript and Mustache — capture a
+  value in one request and use it to drive a later response (stateful "scenario" mocking).
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the

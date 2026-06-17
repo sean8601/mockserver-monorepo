@@ -9,6 +9,7 @@ import org.mockserver.templates.engine.helpers.JsonTemplateHelper;
 import org.mockserver.templates.engine.helpers.JwtTemplateHelper;
 import org.mockserver.templates.engine.helpers.MathTemplateHelper;
 import org.mockserver.templates.engine.helpers.RegexTemplateHelper;
+import org.mockserver.templates.engine.helpers.ScenarioTemplateHelper;
 import org.mockserver.templates.engine.helpers.StringTemplateHelper;
 import org.mockserver.time.TimeService;
 import org.mockserver.uuid.UUIDService;
@@ -51,6 +52,7 @@ public class TemplateFunctions implements Supplier<Object> {
         .put("faker", FAKER)
         .put("crypto", new CryptoTemplateHelper())
         .put("regex", new RegexTemplateHelper())
+        .put("scenario", new ScenarioTemplateHelper())
         .build();
 
     private final Supplier<String> supplier;
