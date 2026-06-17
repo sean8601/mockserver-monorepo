@@ -32,8 +32,11 @@ import StandardReview from './StandardReview';
 import {
   buildExpectationJson,
   chaosFromExpectation,
+  captureFromExpectation,
   sideEffectsFromExpectation,
   stepsFromExpectation,
+  CAPTURE_SOURCES,
+  CAPTURE_SOURCE_LABELS,
   STEP_ACTION_TYPES,
   STEP_ACTION_LABELS,
   RESPONDER_CAPABLE_ACTIONS,
@@ -67,6 +70,8 @@ import {
   type StandardConnectionOptions,
   type StandardExpectationStep,
   type StepActionType,
+  type StandardCaptureRule,
+  type CaptureSource,
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
 import ImportForm from './ImportForm';
@@ -2607,6 +2612,107 @@ const SIDE_EFFECT_FIELD_SX = {
   '& .MuiInputBase-input': { py: 0 },
 };
 
+// ---------------------------------------------------------------------------
+// Capture rules panel — extract request values into scenario state. Each row
+// is { source, expression, into }. Mirrors the SideEffectsPanel pattern (add /
+// remove rows, grid layout). Empty rows are dropped at codegen time.
+// ---------------------------------------------------------------------------
+
+function emptyCaptureRule(): StandardCaptureRule {
+  return { source: 'jsonPath', expression: '', into: '' };
+}
+
+/** Placeholder hint for the expression field, scoped by the selected source. */
+function captureExpressionPlaceholder(source: CaptureSource): string {
+  switch (source) {
+    case 'jsonPath': return '$.order.id';
+    case 'xpath': return '/order/@id';
+    case 'header': return 'X-Request-Id';
+    case 'queryStringParameter': return 'sessionId';
+    case 'cookie': return 'JSESSIONID';
+    case 'pathParameter': return 'userId';
+  }
+}
+
+function CapturePanel({
+  capture,
+  setCapture,
+}: {
+  capture: StandardCaptureRule[];
+  setCapture: (c: StandardCaptureRule[]) => void;
+}) {
+  const addRow = () => setCapture([...capture, emptyCaptureRule()]);
+  const removeRow = (idx: number) => setCapture(capture.filter((_, i) => i !== idx));
+  const updateRow = (idx: number, patch: Partial<StandardCaptureRule>) => {
+    setCapture(capture.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="body2" color="text.secondary">
+        Extract a value from the matched request and store it in scenario state.
+        Response templates can read captured values via the <code>scenario</code> helper.
+      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          Rules ({capture.length})
+        </Typography>
+        <Button size="small" variant="outlined" onClick={addRow} data-testid="add-capture-rule">
+          Add rule
+        </Button>
+      </Box>
+      {capture.map((c, idx) => (
+        <Paper key={idx} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }} data-testid="capture-rule-row">
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(160px, 1.4fr) minmax(120px, 1fr) auto', gap: 1, alignItems: 'center' }}>
+            <TextField
+              label="Source"
+              size="small"
+              select
+              value={c.source}
+              onChange={(e) => updateRow(idx, { source: e.target.value as CaptureSource })}
+              sx={{ ...SIDE_EFFECT_FIELD_SX }}
+              fullWidth
+              slotProps={{ htmlInput: { 'data-testid': `capture-source-${idx}` } }}
+            >
+              {CAPTURE_SOURCES.map((s) => (
+                <MenuItem key={s} value={s}>{CAPTURE_SOURCE_LABELS[s]}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Expression"
+              size="small"
+              value={c.expression}
+              onChange={(e) => updateRow(idx, { expression: e.target.value })}
+              placeholder={captureExpressionPlaceholder(c.source)}
+              sx={{ minWidth: 0, ...SIDE_EFFECT_FIELD_SX }}
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              fullWidth
+            />
+            <TextField
+              label="Into (state key)"
+              size="small"
+              value={c.into}
+              onChange={(e) => updateRow(idx, { into: e.target.value })}
+              placeholder="orderId"
+              sx={{ minWidth: 0, ...SIDE_EFFECT_FIELD_SX }}
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              fullWidth
+            />
+            <IconButton
+              size="small"
+              color="error"
+              onClick={() => removeRow(idx)}
+              aria-label="Remove capture rule"
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        </Paper>
+      ))}
+    </Box>
+  );
+}
+
 function SideEffectsPanel({
   sideEffects,
   setSideEffects,
@@ -3308,6 +3414,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [stepsEnabled, setStepsEnabled] = useState(false);
   const [stepsState, setStepsState] = useState<StandardExpectationStep[]>([]);
 
+  // Capture rules — extract request values into scenario state. Cross-cutting,
+  // independent of the action type (a top-level `capture` sibling).
+  const [captureEnabled, setCaptureEnabled] = useState(false);
+  const [captureRules, setCaptureRules] = useState<StandardCaptureRule[]>([]);
+
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
@@ -3431,6 +3542,16 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
         setStepsEnabled(false);
         setStepsState([]);
       }
+
+      // Repopulate capture rules from an existing expectation
+      const existingCapture = captureFromExpectation(item.value);
+      if (existingCapture) {
+        setCaptureEnabled(true);
+        setCaptureRules(existingCapture);
+      } else {
+        setCaptureEnabled(false);
+        setCaptureRules([]);
+      }
     },
     [activeExpectations],
   );
@@ -3543,6 +3664,8 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               setSideEffects([]);
               setStepsEnabled(false);
               setStepsState([]);
+              setCaptureEnabled(false);
+              setCaptureRules([]);
             }}
           />
         )}
@@ -3887,6 +4010,40 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               </Collapse>
             </Paper>
 
+            {/* Capture rules — optional, cross-cutting. Extract request values into
+                scenario state for response templates to read via the scenario helper. */}
+            <Paper variant="outlined" sx={{ p: 2 }} data-testid="capture-section">
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={captureEnabled}
+                    onChange={(e) => {
+                      const enabled = e.target.checked;
+                      setCaptureEnabled(enabled);
+                      if (enabled) {
+                        // Seed an empty row so the panel is immediately usable.
+                        if (captureRules.length === 0) setCaptureRules([emptyCaptureRule()]);
+                      } else {
+                        setCaptureRules([]);
+                      }
+                    }}
+                  />
+                }
+                label={
+                  <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                    Capture into scenario state (optional)
+                  </Typography>
+                }
+                sx={{ m: 0 }}
+              />
+              <Collapse in={captureEnabled} unmountOnExit>
+                <Box sx={{ mt: 1.5 }}>
+                  <CapturePanel capture={captureRules} setCapture={setCaptureRules} />
+                </Box>
+              </Collapse>
+            </Paper>
+
             {/* Step 4: review & register — shows the generated Java / JSON /
                 curl, then the single Register button (mirrors the
                 LLM Conversation form's review-and-register section). */}
@@ -3917,6 +4074,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                 currentAction.steps = stepsState;
               } else if (sideEffectsEnabled && sideEffects.length > 0) {
                 currentAction.sideEffects = sideEffects;
+              }
+              // Capture rules are cross-cutting — they apply regardless of action
+              // / steps mode (blank rows are dropped at codegen time).
+              if (captureEnabled && captureRules.length > 0) {
+                currentAction.capture = captureRules;
               }
 
               // Build the effective matcher: for DNS kind, attach the DNS

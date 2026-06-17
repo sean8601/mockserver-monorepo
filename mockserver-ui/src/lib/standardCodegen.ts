@@ -301,6 +301,50 @@ export interface StandardSideEffectAction {
   failurePolicy: SideEffectFailurePolicy;
 }
 
+// ---------------------------------------------------------------------------
+// Capture rules — extract a value from the matched request into scenario state.
+// Each rule reads one request value (via a source-specific expression) and
+// stores it under `into` so response templates can read it via the `scenario`
+// helper. The wire shape is an array under the top-level `capture` key, omitted
+// entirely when empty (backward compatible).
+// ---------------------------------------------------------------------------
+
+export type CaptureSource =
+  | 'jsonPath'
+  | 'xpath'
+  | 'header'
+  | 'queryStringParameter'
+  | 'cookie'
+  | 'pathParameter';
+
+/** Human-readable labels for capture sources. */
+export const CAPTURE_SOURCE_LABELS: Record<CaptureSource, string> = {
+  jsonPath: 'JSON path (body)',
+  xpath: 'XPath (body)',
+  header: 'Header',
+  queryStringParameter: 'Query parameter',
+  cookie: 'Cookie',
+  pathParameter: 'Path parameter',
+};
+
+/** All capture sources exposed in the UI, in display order. */
+export const CAPTURE_SOURCES: CaptureSource[] = [
+  'jsonPath',
+  'xpath',
+  'header',
+  'queryStringParameter',
+  'cookie',
+  'pathParameter',
+];
+
+export interface StandardCaptureRule {
+  source: CaptureSource;
+  /** The source-specific expression (a JSON path, XPath, header name, etc.). */
+  expression: string;
+  /** The scenario-state key the captured value is stored under. */
+  into: string;
+}
+
 /**
  * Draft state for the HTTP chaos profile panel. Maps 1:1 to the seven
  * HttpChaosProfile fields. `undefined` means "not set / omit from JSON".
@@ -436,6 +480,9 @@ export interface StandardActionPayload {
   /** When present, the expectation uses the `steps` pipeline instead of a
    *  top-level action + before/after side-effects. */
   steps?: StandardExpectationStep[];
+  /** Capture rules — extract request values into scenario state. Omitted from
+   *  the payload when empty (backward compatible). */
+  capture?: StandardCaptureRule[];
 }
 
 // ---------------------------------------------------------------------------
@@ -888,6 +935,21 @@ export function buildExpectationJson(
     out['steps'] = action.steps.map(buildExpectationStepJson);
   }
 
+  // Capture rules — top-level sibling of httpRequest / httpResponse. Each rule
+  // needs a non-empty expression and target key to be meaningful; blank rows are
+  // dropped so the panel can keep placeholder rows without emitting them. The key
+  // is omitted entirely when nothing survives (backward compatible).
+  if (action.capture && action.capture.length > 0) {
+    const captureRules = action.capture
+      .filter((c) => c.expression.trim() && c.into.trim())
+      .map((c) => ({
+        source: c.source,
+        expression: c.expression.trim(),
+        into: c.into.trim(),
+      }));
+    if (captureRules.length > 0) out['capture'] = captureRules;
+  }
+
   if (matcher.id.trim()) out['id'] = matcher.id.trim();
   if (matcher.priority !== 0) out['priority'] = matcher.priority;
   if (matcher.times > 0) {
@@ -943,6 +1005,30 @@ export function chaosFromExpectation(value: Record<string, unknown>): StandardCh
   if (typeof c['failRequestCount'] === 'number') draft.failRequestCount = c['failRequestCount'] as number;
   // Only return if at least one field was populated
   return Object.keys(draft).length > 0 ? draft : undefined;
+}
+
+/**
+ * Round-trip: parse a top-level `capture` array from an existing expectation
+ * back into `StandardCaptureRule[]` for repopulating the composer. Returns
+ * `undefined` when there is no usable capture array, so the caller can leave the
+ * panel collapsed.
+ */
+export function captureFromExpectation(value: Record<string, unknown>): StandardCaptureRule[] | undefined {
+  const raw = value['capture'];
+  if (!Array.isArray(raw)) return undefined;
+  const validSources = new Set<string>(CAPTURE_SOURCES);
+  const result: StandardCaptureRule[] = [];
+  for (const entry of raw as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const c = entry as Record<string, unknown>;
+    const source = typeof c['source'] === 'string' && validSources.has(c['source'])
+      ? (c['source'] as CaptureSource)
+      : 'jsonPath';
+    const expression = typeof c['expression'] === 'string' ? (c['expression'] as string) : '';
+    const into = typeof c['into'] === 'string' ? (c['into'] as string) : '';
+    result.push({ source, expression, into });
+  }
+  return result.length > 0 ? result : undefined;
 }
 
 // ---------------------------------------------------------------------------
