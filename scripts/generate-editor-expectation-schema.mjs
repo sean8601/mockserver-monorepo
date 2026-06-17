@@ -73,12 +73,12 @@ const REFERENCE_FILES = [
   // it via `#/definitions/draft-07` to mean "any valid JSON schema" (for JSON
   // body matchers). Embedding the meta-schema breaks validators two ways: its
   // `$id` collides with the validator's built-in draft-07, and its internal
-  // `"$ref": "#"` self-references would re-root to the bundle. Instead we
-  // rewrite those refs to the canonical draft-07 URI below, which VS Code and
-  // every standard validator resolve from their built-in meta-schema.
+  // `"$ref": "#"` self-references would re-root to the bundle. We also must NOT
+  // rewrite those refs to the remote `http://json-schema.org/draft-07/schema#`
+  // URI: IntelliJ fetches a remote subschema `$ref` over the network, which
+  // fails offline / behind a TLS proxy and makes it discard the whole schema.
+  // Instead we replace them with a permissive INLINE schema below.
 ];
-
-const DRAFT_07_URI = "http://json-schema.org/draft-07/schema#";
 
 // Each extension keeps its own copy so it can be packaged into the .vsix / plugin
 // .jar without a build-time dependency on mockserver-core's resources.
@@ -151,18 +151,32 @@ const bundled = {
   definitions,
 };
 
-// Rewrite `#/definitions/draft-07` → canonical draft-07 URI (see NOTE above).
-function rewriteDraft07Refs(node) {
+// Replace `#/definitions/draft-07` with a permissive INLINE schema (see NOTE above).
+// These refs mark "this field is itself a JSON Schema" (the `jsonSchema` body matcher
+// and an OpenAPI parameter `schema`). We must NOT point them at the remote
+// `http://json-schema.org/draft-07/schema#` URI: IntelliJ resolves a remote subschema
+// `$ref` by actually fetching the URL, which silently fails behind an offline/TLS-proxy
+// network and makes IntelliJ discard the whole schema (no completion/validation for the
+// file). A permissive inline schema needs no network and keeps the rest of the schema
+// working in both editors. Trade-off: the embedded-schema field is no longer
+// meta-validated as a nested JSON Schema (a niche feature) — accept any object/boolean.
+const EMBEDDED_JSON_SCHEMA = {
+  type: ["object", "boolean"],
+  description: "An embedded JSON Schema (draft-07); accepted as-is.",
+};
+function inlineDraft07Refs(node) {
   if (Array.isArray(node)) {
-    node.forEach(rewriteDraft07Refs);
+    node.forEach(inlineDraft07Refs);
   } else if (node && typeof node === "object") {
     if (node.$ref === "#/definitions/draft-07") {
-      node.$ref = DRAFT_07_URI;
+      delete node.$ref;
+      Object.assign(node, EMBEDDED_JSON_SCHEMA);
+      return; // the node is now a concrete schema; nothing to recurse into
     }
-    for (const value of Object.values(node)) rewriteDraft07Refs(value);
+    for (const value of Object.values(node)) inlineDraft07Refs(value);
   }
 }
-rewriteDraft07Refs(bundled);
+inlineDraft07Refs(bundled);
 
 // Self-check: every internal `#/definitions/X` reference must resolve. This is
 // the guard that catches drift if the Java reference list changes but this one

@@ -124,6 +124,10 @@
         }
       ]
     },
+    "namespace": {
+      "description": "optional namespace (tenant) this expectation belongs to; when set, the expectation only matches requests carrying the configured matchNamespaceHeader with this value, plus it remains isolated from other namespaces",
+      "type": "string"
+    },
     "scenarioName": {
       "type": "string"
     },
@@ -466,6 +470,9 @@
           "$ref": "#/definitions/connectionOptions"
         },
         "headers": {
+          "$ref": "#/definitions/keyToMultiValue"
+        },
+        "trailers": {
           "$ref": "#/definitions/keyToMultiValue"
         },
         "statusCode": {
@@ -1772,7 +1779,11 @@
               "type": "string"
             },
             "schema": {
-              "$ref": "http://json-schema.org/draft-07/schema#"
+              "type": [
+                "object",
+                "boolean"
+              ],
+              "description": "An embedded JSON Schema (draft-07); accepted as-is."
             },
             "parameterStyle": {
               "type": "string",
@@ -1882,7 +1893,11 @@
                   "type": "string"
                 },
                 {
-                  "$ref": "http://json-schema.org/draft-07/schema#"
+                  "type": [
+                    "object",
+                    "boolean"
+                  ],
+                  "description": "An embedded JSON Schema (draft-07); accepted as-is."
                 }
               ]
             }
@@ -2664,6 +2679,10 @@
               "minItems": 1
             }
           ]
+        },
+        "namespace": {
+          "description": "optional namespace (tenant) this expectation belongs to; when set, the expectation only matches requests carrying the configured matchNamespaceHeader with this value, plus it remains isolated from other namespaces",
+          "type": "string"
         },
         "scenarioName": {
           "type": "string"

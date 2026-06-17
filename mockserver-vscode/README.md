@@ -53,7 +53,9 @@ Run **Open Dashboard** to reveal the real MockServer dashboard **docked in the b
 "MockServer Dashboard" view — active expectations, the request log, and live traffic, full width and separate
 from your code tabs). Prefer your browser? **Open Dashboard in Browser** opens the same URL there.
 
-<!-- TODO(media): dashboard-docked.gif here -->
+![The MockServer side panel in the VS Code Activity Bar — grouped one-click actions and a status line](https://www.mock-server.com/images/vscode_action_panel.png)
+
+![The MockServer status-bar quick menu](https://www.mock-server.com/images/vscode_status_menu.png)
 
 ---
 
