@@ -41,6 +41,19 @@ The `Metrics.Name` enum defines 24 request/action/websocket gauges (all Promethe
 | `response_expectations_matched_count` | Requests matched to a response expectation |
 | `forward_expectations_matched_count` | Requests matched to a forward expectation |
 
+#### Per-Expectation Match Counter (opt-in)
+
+`mock_server_expectation_matched` is a Prometheus `Counter` labelled by `expectation_id` that increments each time an expectation is matched and a response is served. It is registered only when **both** `metricsEnabled` and `perExpectationMetricsEnabled` are `true`; the default scrape is byte-for-byte unchanged when the property is off. Cardinality is bounded by the number of active expectations. Appears in the exposition output as `mock_server_expectation_matched_total{expectation_id="..."}`.
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `perExpectationMetricsEnabled` | `false` | Register the `mock_server_expectation_matched` counter labelled by expectation id (requires `metricsEnabled`) |
+
+Example PromQL (which expectations are never hit?):
+```promql
+mock_server_expectation_matched_total == 0
+```
+
 #### Action Execution (one per action type)
 
 | Metric Name | Description |

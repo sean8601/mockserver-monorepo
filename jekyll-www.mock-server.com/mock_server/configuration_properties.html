@@ -602,6 +602,18 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.customJsonUnitMatchersClass="com.example.MyJsonUnitMatchers"</code></pre>
 </div>
 
+<button id="button_configuration_json_schema_allow_remote_refs" class="accordion title"><strong>JSON Schema Remote $ref Resolution</strong></button>
+<div class="panel title">
+    <p>Controls whether JSON Schema body matchers are permitted to fetch remote <span class="inline_code">$ref</span> URIs (http, https, file, jar). By default MockServer blocks remote resolution to prevent <strong>server-side request forgery (SSRF)</strong>: a schema body that contains <span class="inline_code">"$ref": "https://attacker.example/evil.json"</span> would otherwise cause MockServer to make an outbound HTTP request when matching any incoming request against that expectation. Schemas that use only inline definitions or internal anchors (<span class="inline_code">#/...</span>) are unaffected by this setting.</p>
+    <p>Set to <span class="inline_code">true</span> only when you control all schema <span class="inline_code">$ref</span> URIs and genuinely need cross-document resolution.</p>
+    <p>Note: this property is read from the JVM system property at schema-build time via <span class="inline_code">System.getProperty</span>; it is not available as an environment variable or in a properties file.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.jsonSchemaAllowRemoteRefs=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.jsonSchemaAllowRemoteRefs="true"</code></pre>
+</div>
+
 <button id="button_configuration_attach_mismatch_diagnostic_to_response" class="accordion title"><strong>Attach Mismatch Diagnostic To Unmatched Response</strong></button>
 <div class="panel title">
     <p>When enabled, if no expectation matches an incoming request the 404 response carries the closest-match diagnostic: an <span class="inline_code">x-mockserver-closest-match</span> header plus a JSON body describing which expectation came closest to matching and which fields differed. This lets you see why a mock did not match directly from the response, without checking the MockServer logs or dashboard.</p>
@@ -1216,6 +1228,22 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.llmMetricsEnabled="true" -Dmockserver.llmCostBudgetUsd="10.0"</code></pre>
 </div>
 
+<button id="button_configuration_per_expectation_metrics" class="accordion title"><strong>Per-Expectation Match Counters</strong></button>
+<div class="panel title">
+    <p>When enabled (alongside <span class="inline_code">metricsEnabled</span>), MockServer registers a Prometheus counter <span class="inline_code">mock_server_expectation_matched</span> with an <span class="inline_code">expectation_id</span> label and increments it each time an expectation is matched and a response is served. This lets you track which expectations are hot and which are never hit.</p>
+    <p>This is <strong>off by default</strong> because each active expectation adds one Prometheus label value, so cardinality grows with the number of registered expectations. In long-running deployments with many expectations, enable only when you need per-expectation visibility. In CI or short-lived test runs with a bounded, small number of expectations, cardinality is not a concern.</p>
+    <p>The counter appears in the scrape output as <span class="inline_code">mock_server_expectation_matched_total{expectation_id="..."}</span>.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.perExpectationMetricsEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.perExpectationMetrics=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PER_EXPECTATION_METRICS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.perExpectationMetrics="true"</code></pre>
+</div>
+
 <button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>
@@ -1278,6 +1306,20 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.globalResponseDelayMillis=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.globalResponseDelayMillis="200"</code></pre>
+</div>
+
+<button id="button_configuration_stop_drain_millis" class="accordion title"><strong>Graceful Shutdown Connection Drain</strong></button>
+<div class="panel title">
+    <p>On shutdown (via <span class="inline_code">PUT /mockserver/stop</span> or <span class="inline_code">ClientAndServer.stop()</span>), MockServer stops accepting new connections and then waits up to this many milliseconds for in-flight requests that are already being processed to complete before tearing down the Netty event loops. If the timeout elapses before all in-flight requests finish, a <span class="inline_code">WARN</span> log entry is written with the number of requests still in progress, and shutdown proceeds anyway. Set to <span class="inline_code">0</span> to disable draining and stop immediately (the pre-7.2 behaviour).</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">15000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.stopDrainMillis(long millis)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.stopDrainMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_STOP_DRAIN_MILLIS=...</code></pre>
+    <p>Example (disable drain — stop immediately):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.stopDrainMillis="0"</code></pre>
 </div>
 
 <a id="liveness_configuration" class="anchor" href="#liveness_configuration">&nbsp;</a>

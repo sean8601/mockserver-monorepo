@@ -77,6 +77,33 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
     </tbody>
 </table>
 
+<h4>Per-expectation match counter (opt-in)</h4>
+
+<p>
+    When <span class="inline_code">perExpectationMetricsEnabled</span> is <span class="inline_code">true</span> (alongside
+    <span class="inline_code">metricsEnabled</span>), MockServer registers an additional counter:
+</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Metric</th><th>Type</th><th>Labels</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="inline_code">mock_server_expectation_matched</span></td>
+            <td>Counter</td>
+            <td><span class="inline_code">expectation_id</span></td>
+            <td>Total matches (and served responses) for each expectation, labelled by the stable expectation id. Appears in scrape output as <span class="inline_code">mock_server_expectation_matched_total{expectation_id="..."}</span>.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    This counter is <strong>off by default</strong>: each active expectation adds one Prometheus label value,
+    so cardinality grows with the number of registered expectations. Enable it only when you need
+    per-expectation visibility. See <a href="/mock_server/configuration_properties.html#button_configuration_per_expectation_metrics">Per-Expectation Match Counters</a> configuration.
+</p>
+
 <h4>Action execution (one per action type)</h4>
 
 <table class="table table-bordered table-striped">
