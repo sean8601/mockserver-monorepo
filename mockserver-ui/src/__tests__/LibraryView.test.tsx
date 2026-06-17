@@ -454,7 +454,7 @@ describe('LibraryView export download', () => {
       { httpRequest: { method: 'GET', path: '/alpha' }, httpResponse: { statusCode: 200 } },
       { httpRequest: { method: 'POST', path: '/beta' }, httpResponse: { statusCode: 201 } },
     ]);
-    const writeText = vi.fn(async () => undefined);
+    const writeText = vi.fn<(text: string) => Promise<undefined>>(async () => undefined);
     const user = userEvent.setup();
     // Override clipboard AFTER userEvent.setup() (which installs its own stub).
     const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
