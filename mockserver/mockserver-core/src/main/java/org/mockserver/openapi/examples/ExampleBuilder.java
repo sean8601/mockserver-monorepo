@@ -124,7 +124,7 @@ public class ExampleBuilder {
 
         Example output = null;
 
-        Object example = property.getExample();
+        Object example = normalizeFlattenedExample(property.getExample(), property);
 
         if (property.get$ref() != null) {
             String ref = property.get$ref();
@@ -393,7 +393,6 @@ public class ExampleBuilder {
         } else if (property instanceof ComposedSchema composedSchema) {
             if (composedSchema.getAllOf() != null) {
                 List<Schema> models = composedSchema.getAllOf();
-                ObjectExample ex = new ObjectExample();
                 List<Example> innerExamples = new ArrayList<>();
                 if (models != null) {
                     for (Schema im : models) {
@@ -403,17 +402,27 @@ public class ExampleBuilder {
                         }
                     }
                 }
-                if (composedSchema.getProperties() != null) {
-                    Map<String, Schema> ownProperties = composedSchema.getProperties();
-                    for (Map.Entry<String, Schema> entry : ownProperties.entrySet()) {
-                        Example propExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
-                        if (propExample != null) {
-                            ex.put(entry.getKey(), propExample);
+                boolean hasOwnProperties = composedSchema.getProperties() != null && !composedSchema.getProperties().isEmpty();
+                boolean anyObjectMember = innerExamples.stream().anyMatch(innerExample -> innerExample instanceof ObjectExample);
+                if (!innerExamples.isEmpty() && !hasOwnProperties && !anyObjectMember) {
+                    // allOf composed entirely of scalar (non-object) subschemas — e.g. allOf: [ $ref to a string ].
+                    // Per JSON-Schema allOf semantics the resolved type is that scalar, so emit the scalar value
+                    // itself rather than wrapping it in an (empty) object or array. See #2357.
+                    output = innerExamples.get(0);
+                } else {
+                    ObjectExample ex = new ObjectExample();
+                    if (composedSchema.getProperties() != null) {
+                        Map<String, Schema> ownProperties = composedSchema.getProperties();
+                        for (Map.Entry<String, Schema> entry : ownProperties.entrySet()) {
+                            Example propExample = fromProperty(entry.getKey(), entry.getValue(), definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
+                            if (propExample != null) {
+                                ex.put(entry.getKey(), propExample);
+                            }
                         }
                     }
+                    mergeTo(ex, innerExamples);
+                    output = ex;
                 }
-                mergeTo(ex, innerExamples);
-                output = ex;
             }
             if (composedSchema.getAnyOf() != null) {
                 List<Schema> models = composedSchema.getAnyOf();
@@ -561,6 +570,31 @@ public class ExampleBuilder {
                 }
             }
         }
+    }
+
+    /**
+     * Undoes the swagger-parser {@code resolveFully}/{@code resolveCombinators} artefact whereby a
+     * scalar schema flattened from {@code allOf: [ $ref to a scalar ]} ends up with its {@code example}
+     * wrapped in a single-element {@link Collection} (a {@code Set} or {@code List}). For a scalar-typed
+     * schema such a collection is never a valid example, so it is unwrapped to the contained value.
+     * Non-scalar schemas (objects, arrays) and multi-element collections are returned unchanged. See #2357.
+     */
+    public static Object normalizeFlattenedExample(Object example, Schema<?> schema) {
+        if (example instanceof Collection<?> collection && collection.size() == 1 && isScalarType(schema)) {
+            return collection.iterator().next();
+        }
+        return example;
+    }
+
+    private static boolean isScalarType(Schema<?> schema) {
+        if (schema == null) {
+            return false;
+        }
+        String type = schema.getType();
+        if (type == null) {
+            type = resolveOas31PrimaryType(schema.getTypes());
+        }
+        return "string".equals(type) || "integer".equals(type) || "number".equals(type) || "boolean".equals(type);
     }
 
     /**

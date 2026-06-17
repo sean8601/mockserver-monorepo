@@ -291,6 +291,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`NullPointerException: value`) and left the asset failing to load. The MIME map now includes `svg` and falls
   back to `application/octet-stream` for any unmapped extension, and the response→Netty mapper now skips any
   header whose value is null rather than throwing while encoding the response (issue #2358).
+- **OpenAPI example generation** no longer wraps a scalar property in a single-element array when its schema
+  is `allOf: [ $ref to a scalar ]` (e.g. a string). Previously a property such as
+  `baz: { allOf: [ $ref to a type:string schema ] }` generated `{ "baz": ["hello"] }` instead of
+  `{ "baz": "hello" }`, which broke generated clients typed against the spec
+  (`MismatchedInputException: Cannot deserialize value of type 'java.lang.String' from Array value`).
+  The `allOf`-flattened example aggregated by the parser is now unwrapped to the scalar value, matching
+  JSON-Schema `allOf` semantics (#2357).
 - JetBrains plugin no longer risks an `AlreadyDisposedException` when a project (or tool window) is closed
   while an extension HTTP request is still in flight — the result is now delivered on the UI thread through a
   single shared, project-disposal-guarded helper.

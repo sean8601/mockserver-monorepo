@@ -297,7 +297,7 @@ public class OpenAPIConverter {
         }
         try {
             if (schema.getExample() != null) {
-                return resolveExampleRefs(schema.getExample(), openAPI);
+                return resolveExampleRefs(ExampleBuilder.normalizeFlattenedExample(schema.getExample(), schema), openAPI);
             }
             if (schema instanceof ComposedSchema composedSchema) {
                 if (composedSchema.getAllOf() != null) {
