@@ -641,7 +641,7 @@ export function buildWasmUploadUrl(baseUrl: string, name: string): string {
  * Upload a compiled `.wasm` custom-rule module to the running server via
  * `PUT /mockserver/wasm/modules?name=<name>`, sending the raw module bytes with a
  * `Content-Type: application/octet-stream` header. Once uploaded the module can be
- * referenced by name in an expectation body matcher (`{ "type": "WASM", "wasm": "<name>" }`).
+ * referenced by name in an expectation body matcher (`{ "type": "WASM", "moduleName": "<name>" }`).
  * Throws (with status + body) on a non-ok response — so the server's
  * "WASM support is disabled" 403 message surfaces verbatim.
  */

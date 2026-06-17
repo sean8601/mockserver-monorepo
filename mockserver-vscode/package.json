@@ -1,7 +1,7 @@
 {
   "name": "mockserver",
   "displayName": "MockServer",
-  "description": "Start, stop, and manage MockServer Docker containers directly from VS Code",
+  "description": "Author and validate expectation files, generate from OpenAPI, record live traffic, inspect requests and drift, open the in-editor dashboard, and manage a local MockServer Docker container — all without leaving VS Code.",
   "version": "7.1.0",
   "publisher": "mockserver",
   "license": "Apache-2.0",
@@ -23,7 +23,14 @@
     "http",
     "api",
     "testing",
-    "docker"
+    "docker",
+    "openapi",
+    "expectations",
+    "dashboard",
+    "proxy",
+    "debugging",
+    "wasm",
+    "drift"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
