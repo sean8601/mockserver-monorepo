@@ -37,6 +37,7 @@ public class JsonSchemaExpectationValidator extends JsonSchemaValidator {
             "dnsResponse",
             "dnsRecord",
             "afterAction",
+            "captureRule",
             "expectationStep",
             "httpChaosProfile",
             "times",

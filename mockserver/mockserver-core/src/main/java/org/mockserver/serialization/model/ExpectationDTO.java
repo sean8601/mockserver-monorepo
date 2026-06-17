@@ -59,6 +59,8 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private String newScenarioState;
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<CrossProtocolScenario> crossProtocolScenarios;
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<CaptureRuleDTO> capture;
 
     public ExpectationDTO(Expectation expectation) {
         if (expectation != null) {
@@ -191,6 +193,10 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             }
             if (expectation.getCrossProtocolScenarios() != null && !expectation.getCrossProtocolScenarios().isEmpty()) {
                 this.crossProtocolScenarios = expectation.getCrossProtocolScenarios();
+            }
+            List<CaptureRule> captureList = expectation.getCapture();
+            if (captureList != null && !captureList.isEmpty()) {
+                this.capture = captureList.stream().map(CaptureRuleDTO::new).collect(Collectors.toList());
             }
         }
     }
@@ -336,7 +342,8 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .withSteps(this.steps != null ? this.steps.stream().map(ExpectationStepDTO::buildObject).collect(Collectors.toList()) : null)
             .thenRespond(this.httpResponses != null ? this.httpResponses.stream().map(HttpResponseDTO::buildObject).collect(Collectors.toList()) : null)
             .withResponseMode(this.responseMode)
-            .withCrossProtocolScenarios(this.crossProtocolScenarios);
+            .withCrossProtocolScenarios(this.crossProtocolScenarios)
+            .withCapture(this.capture != null ? this.capture.stream().map(CaptureRuleDTO::buildObject).collect(Collectors.toList()) : null);
         if (this.crossProtocolScenarios != null) {
             for (CrossProtocolScenario scenario : this.crossProtocolScenarios) {
                 CrossProtocolEventBus.getInstance().register(scenario);
@@ -662,6 +669,16 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     @JsonSetter("crossProtocolScenarios")
     public ExpectationDTO setCrossProtocolScenarios(List<CrossProtocolScenario> crossProtocolScenarios) {
         this.crossProtocolScenarios = crossProtocolScenarios;
+        return this;
+    }
+
+    public List<CaptureRuleDTO> getCapture() {
+        return capture;
+    }
+
+    @JsonSetter("capture")
+    public ExpectationDTO setCapture(List<CaptureRuleDTO> capture) {
+        this.capture = capture;
         return this;
     }
 

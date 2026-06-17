@@ -9,6 +9,7 @@ import org.mockserver.serialization.model.*;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.character.Character.NEW_LINE;
@@ -78,6 +79,39 @@ public class JsonSchemaExpectationValidatorTest {
                     )
             )
             .setTimes(new TimesDTO(Times.exactly(5))).buildObject().toString()), is(""));
+    }
+
+    @Test
+    public void shouldValidateExpectationWithCaptureRules() {
+        // when — a capture block (WS2.2) validates against the schema
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/login\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpResponse\" : {" + NEW_LINE +
+            "    \"body\" : \"ok\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"capture\" : [ {" + NEW_LINE +
+            "    \"source\" : \"jsonPath\"," + NEW_LINE +
+            "    \"expression\" : \"$.userId\"," + NEW_LINE +
+            "    \"into\" : \"user\"" + NEW_LINE +
+            "  } ]" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldRejectCaptureRuleWithUnknownSource() {
+        // when — an unknown capture source is rejected by the schema
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpResponse\" : {" + NEW_LINE +
+            "    \"body\" : \"ok\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"capture\" : [ {" + NEW_LINE +
+            "    \"source\" : \"notARealSource\"," + NEW_LINE +
+            "    \"expression\" : \"$.userId\"," + NEW_LINE +
+            "    \"into\" : \"user\"" + NEW_LINE +
+            "  } ]" + NEW_LINE +
+            "}"), is(not("")));
     }
 
     @Test

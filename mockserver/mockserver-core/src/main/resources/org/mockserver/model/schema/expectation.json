@@ -89,6 +89,12 @@
         { "type": "array", "items": { "$ref": "#/definitions/afterAction" }, "minItems": 1 }
       ]
     },
+    "capture": {
+      "oneOf": [
+        { "$ref": "#/definitions/captureRule" },
+        { "type": "array", "items": { "$ref": "#/definitions/captureRule" }, "minItems": 1 }
+      ]
+    },
     "scenarioName": {
       "type": "string"
     },

@@ -91,9 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field name/value, filename, and part content-type (regex and negation supported, like form parameters), via
   both the Java DSL and the JSON/REST API. OpenAPI operations with `multipart/form-data` request bodies now
   build field matchers from the schema's required properties instead of being matched on path and method only.
-- gRPC descriptor management in the Python and Node clients: `upload_grpc_descriptor` / `uploadGrpcDescriptor`,
-  `retrieve_grpc_services` / `retrieveGrpcServices`, and `clear_grpc_descriptors` / `clearGrpcDescriptors`,
-  bringing them toward parity with the Java client.
+- gRPC descriptor management in the Python, Node, Go, Rust, .NET and Ruby clients (`upload_grpc_descriptor` /
+  `uploadGrpcDescriptor`, `retrieve_grpc_services` / `retrieveGrpcServices`, `clear_grpc_descriptors` /
+  `clearGrpcDescriptors`) — upload a compiled gRPC descriptor set as raw bytes, list registered services, and
+  clear them — bringing every client to parity with the Java client.
 - Dashboard request-log filtering gains regex matching on method/path and named, saved filter presets
   (persisted in the browser) for quickly switching between common filters.
 - Numeric comparison operators (`> 60`, `>= 60`, `< 100`, `<= 30`, `== 5`; not-equal via `!== 5`) for matching
@@ -101,6 +102,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Response templates can read and write scenario state via a `scenario` helper (`scenario.get(name)`,
   `scenario.set(name, state)`, `scenario.matches(name, state)`) in Velocity, JavaScript and Mustache — capture a
   value in one request and use it to drive a later response (stateful "scenario" mocking).
+- Declarative `capture` rules on an expectation extract a value from the matched request (via jsonPath, xpath,
+  header, queryStringParameter, cookie or pathParameter) and store it into scenario state, so a later request's
+  response template can read it — enabling auth→resource→confirm journeys without manual scenario triggers.
+- The mock OIDC provider now supports the full OAuth2 authorization-code flow: a new `/authorize` endpoint issues
+  a single-use code and redirects back with `code` and `state`, and `/token` exchanges it (with PKCE S256/plain
+  support) for tokens — completing the interactive flow alongside the existing client-credentials grant.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the

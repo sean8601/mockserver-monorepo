@@ -529,6 +529,10 @@
                         <!-- WS2.1 scenario-state template tests mutate the CrossProtocolEventBus singleton (live ScenarioManager) -->
                         <exclude>**/VelocityScenarioStateTemplateTest.java</exclude>
                         <exclude>**/JavaScriptScenarioStateTemplateTest.java</exclude>
+                        <!-- WS2.2 capture-rule test mutates the CrossProtocolEventBus singleton (live ScenarioManager) -->
+                        <exclude>**/CaptureProcessorTest.java</exclude>
+                        <!-- WS7.1 OIDC authorization-code test mutates the OidcAuthorizationStore singleton -->
+                        <exclude>**/OidcProviderGeneratorTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/ExampleBuilderRealisticValuesTest.java</exclude>
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
@@ -612,6 +616,8 @@
                                 <include>**/VelocityTemplateEngineTest.java</include>
                                 <include>**/VelocityScenarioStateTemplateTest.java</include>
                                 <include>**/JavaScriptScenarioStateTemplateTest.java</include>
+                                <include>**/CaptureProcessorTest.java</include>
+                                <include>**/OidcProviderGeneratorTest.java</include>
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>

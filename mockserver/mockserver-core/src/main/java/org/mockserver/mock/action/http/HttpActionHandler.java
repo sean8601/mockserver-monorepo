@@ -127,6 +127,10 @@ public class HttpActionHandler {
             }
         };
 
+        // declarative capture (WS2.2): extract request value(s) into scenario state for early-matched
+        // expectations too (header/query/cookie/path sources; body-based sources are typically empty here)
+        org.mockserver.mock.CaptureProcessor.process(expectation.getCapture(), request);
+
         final Action action = expectation.getAction();
         switch (action.getType()) {
             case RESPONSE -> {
@@ -305,6 +309,9 @@ public class HttpActionHandler {
      * action-type switch and secondary-action fan-out live here.
      */
     private void dispatchPrimaryAction(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable expectationPostProcessor) {
+        // declarative capture (WS2.2): extract value(s) from the matched request into scenario
+        // state BEFORE the response is built, so a response template can read them via scenario.get(name)
+        org.mockserver.mock.CaptureProcessor.process(expectation.getCapture(), request);
         // fire cross-protocol scenario transitions when this expectation has them
         fireCrossProtocolEvents(expectation, request);
         final Action action = expectation.getAction();
