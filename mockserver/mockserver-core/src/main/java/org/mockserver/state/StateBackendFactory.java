@@ -50,7 +50,8 @@ public final class StateBackendFactory {
     private static final Map<String, String> BLOB_STORE_REGISTRARS = Map.of(
         "s3", "org.mockserver.blob.s3.S3BlobStoreRegistrar",
         "gcs", "org.mockserver.blob.gcs.GcsBlobStoreRegistrar",
-        "azure", "org.mockserver.blob.azure.AzureBlobStoreRegistrar"
+        "azure", "org.mockserver.blob.azure.AzureBlobStoreRegistrar",
+        "mysql", "org.mockserver.state.mysql.MySqlBlobStoreRegistration"
     );
 
     /**
