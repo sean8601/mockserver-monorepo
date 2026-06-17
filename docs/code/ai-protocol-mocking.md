@@ -372,7 +372,48 @@ gRPC-Web is a variant of gRPC designed for browser clients that cannot use HTTP/
 
 **Content-type discrimination:** `GrpcStatusMapper.isGrpcContentType()` explicitly excludes `application/grpc-*` prefixes (e.g. `application/grpc-web`) so that gRPC-Web requests are not misrouted through the standard gRPC path.
 
-**Connect protocol:** Not supported. Connect uses a fundamentally different framing format (JSON/proto over standard HTTP POST with a JSON trailer envelope).
+**Connect protocol (unary):** Supported as a convenience layer over plain HTTP — see [Connect Protocol (Unary)](#connect-protocol-unary) below. Connect streaming is not supported.
+
+### Connect Protocol (Unary)
+
+Connect (buf.build Connect) **unary** RPCs are, unlike gRPC, ordinary HTTP `POST` requests to `/package.Service/Method` carrying the request message **directly** (JSON or proto) with `Content-Type: application/json` (or `application/proto`) — there is no gRPC length-prefixed framing and no HTTP/2 trailer envelope. Because they are plain HTTP, **MockServer's normal expectation matching already handles them**: a user can mock a Connect unary call with a standard `httpRequest`/`httpResponse` expectation (body matchers, headers, delays, verification, the dashboard all work unchanged). The Connect support is therefore a thin **convenience + correctness** layer, not a new protocol pipeline — no new `Action.Type`, DTO, JSON schema, or Netty handler, and **real gRPC (`application/grpc`) traffic is completely unaffected** because nothing in the gRPC pipeline is touched.
+
+| Class | Module | Package | Purpose |
+|-------|--------|---------|---------|
+| `ConnectError` | core | `org.mockserver.grpc.connect` | The Connect error model `{code, message, details}` plus the canonical Connect error-code ↔ HTTP-status mapping (`Code` enum) |
+| `ConnectResponse` | core | `org.mockserver.grpc.connect` | Static factory returning a plain `HttpResponse`: `success(json)` (HTTP 200 + `application/json`) and `error(ConnectError)` (mapped non-200 + JSON error envelope) |
+| `ConnectUnaryDetector` | core | `org.mockserver.grpc.connect` | Conservative detection of Connect unary requests (POST + `/pkg.Svc/Method` path + JSON/proto, never `application/grpc*`) and optional descriptor-aware request-body validation |
+
+**Connect error code ↔ HTTP status** (Connect codes are the lower-case snake_case forms of the gRPC status names; mapping per the [Connect spec](https://connectrpc.com/docs/protocol#error-codes) / `connectrpc/connect-go` `codeToHTTP`):
+
+| Connect code | HTTP status | Connect code | HTTP status |
+|--------------|-------------|--------------|-------------|
+| `canceled` | 499 | `aborted` | 409 |
+| `unknown` | 500 | `out_of_range` | 400 |
+| `invalid_argument` | 400 | `unimplemented` | 501 |
+| `deadline_exceeded` | 504 | `internal` | 500 |
+| `not_found` | 404 | `unavailable` | 503 |
+| `already_exists` | 409 | `data_loss` | 500 |
+| `permission_denied` | 403 | `unauthenticated` | 401 |
+| `resource_exhausted` | 429 | `failed_precondition` | 400 |
+
+There is no Connect code for gRPC `OK`; a successful unary response is an HTTP 200 with the message body, not an error envelope.
+
+**Usage (Java client):**
+
+```java
+// success: HTTP 200, application/json, body is the response message directly
+mockServerClient
+    .when(request().withMethod("POST").withPath("/pkg.Svc/Method"))
+    .respond(ConnectResponse.success("{\"greeting\":\"Hello World\"}"));
+
+// error: HTTP 404, {"code":"not_found","message":"..."}
+mockServerClient
+    .when(request().withMethod("POST").withPath("/pkg.Svc/Method"))
+    .respond(ConnectResponse.error(ConnectError.Code.NOT_FOUND, "greeting not found"));
+```
+
+**Deferred:** Connect server/bidi streaming (the `application/connect+json` framed stream), the GET-side unary variant, and request/response compression.
 
 ### h2c Detection
 
@@ -619,6 +660,7 @@ All overrides are cleared on `HttpState.reset()`. An empty `service` string sets
 | `HttpRequestTemplateObject` (jsonRpc fields) | `mockserver-core` | `org.mockserver.templates.engine.model` |
 | `GrpcStreamMessage`, `GrpcStreamResponse` | `mockserver-core` | `org.mockserver.model` |
 | `GrpcFrameCodec`, `GrpcJsonMessageConverter`, `GrpcProtoDescriptorStore`, `GrpcProtoFileCompiler`, `GrpcStatusMapper`, `GrpcWebTranslator`, `GrpcException` | `mockserver-core` | `org.mockserver.grpc` |
+| `ConnectError`, `ConnectResponse`, `ConnectUnaryDetector` | `mockserver-core` | `org.mockserver.grpc.connect` |
 | `GrpcHealthRegistry`, `GrpcHealthCheckHandler`, `ServingStatus` | `mockserver-core` | `org.mockserver.grpc` |
 | `GrpcChaosProfile` | `mockserver-core` | `org.mockserver.model` |
 | `GrpcChaosRegistry` | `mockserver-core` | `org.mockserver.mock.action.http` |
@@ -659,6 +701,10 @@ All overrides are cleared on `HttpState.reset()`. An empty `service` string sets
 | `GrpcStreamResponseDTOTest` | core | 3 | Unit |
 | `GrpcIntegrationTest` | netty | 11 | Integration |
 | `GrpcWebHandlerTest` | netty | 12 | Handler |
+| `ConnectErrorTest` | core | 6 | Unit |
+| `ConnectResponseTest` | core | 9 | Unit |
+| `ConnectUnaryDetectorTest` | core | 10 | Unit |
+| `ConnectUnaryIntegrationTest` | netty | 5 | Integration |
 
 ## Client Library Support
 
