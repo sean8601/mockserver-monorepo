@@ -9,7 +9,7 @@ export type FetchLike = (
     init?: {
         method?: string;
         headers?: Record<string, string>;
-        body?: string;
+        body?: string | Uint8Array;
     }
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
@@ -518,6 +518,60 @@ function findExpectationLine(docText: string, expectationId: string): number {
         }
     }
     return -1;
+}
+
+/**
+ * Build the URL for uploading a WASM custom-rule module to the running server:
+ * `PUT /mockserver/wasm/modules?name=<moduleName>`. The module name is URL-encoded
+ * so names with spaces or reserved characters are sent safely.
+ */
+export function buildWasmUploadUrl(baseUrl: string, name: string): string {
+    return `${baseUrl}/mockserver/wasm/modules?name=${encodeURIComponent(name)}`;
+}
+
+/**
+ * Upload a compiled `.wasm` custom-rule module to the running server via
+ * `PUT /mockserver/wasm/modules?name=<name>`, sending the raw module bytes with a
+ * `Content-Type: application/octet-stream` header. Once uploaded the module can be
+ * referenced by name in an expectation body matcher (`{ "type": "WASM", "wasm": "<name>" }`).
+ * Throws (with status + body) on a non-ok response — so the server's
+ * "WASM support is disabled" 403 message surfaces verbatim.
+ */
+export async function uploadWasmModule(
+    baseUrl: string,
+    name: string,
+    bytes: Uint8Array,
+    fetchFn: FetchLike
+): Promise<void> {
+    const res = await fetchFn(buildWasmUploadUrl(baseUrl, name), {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: bytes,
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+}
+
+/**
+ * Retrieve the names of the WASM custom-rule modules currently registered on the
+ * server, as pretty JSON, via `GET /mockserver/wasm/modules`. Throws (with status +
+ * body) on a non-ok response; returns the raw body if it is not parseable JSON.
+ */
+export async function retrieveWasmModules(baseUrl: string, fetchFn: FetchLike): Promise<string> {
+    const res = await fetchFn(`${baseUrl}/mockserver/wasm/modules`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    try {
+        return JSON.stringify(JSON.parse(body), null, 2) + "\n";
+    } catch {
+        return body;
+    }
 }
 
 /**

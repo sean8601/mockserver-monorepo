@@ -80,6 +80,14 @@
       {
         "command": "mockserver.reset",
         "title": "MockServer: Reset (Clear Expectations & Logs)"
+      },
+      {
+        "command": "mockserver.uploadWasm",
+        "title": "MockServer: Upload WASM Module"
+      },
+      {
+        "command": "mockserver.listWasm",
+        "title": "MockServer: List WASM Modules"
       }
     ],
     "snippets": [

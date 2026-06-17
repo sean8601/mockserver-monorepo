@@ -40,6 +40,9 @@ const vscodeStub = {
         openTextDocument(_uri: any) {
             return Promise.resolve({ getText: () => "{}" });
         },
+        fs: {
+            readFile(_uri: any) { return Promise.resolve(new Uint8Array([0, 97, 115, 109])); },
+        },
     },
     commands: {
         registerCommand(id: string, handler: Function): Disposable {
@@ -92,6 +95,8 @@ const vscodeStub = {
         showInformationMessage(_msg: string) {},
         showErrorMessage(_msg: string) {},
         showWarningMessage(_msg: string) {},
+        showOpenDialog(_options?: any) { return Promise.resolve(undefined); },
+        showInputBox(_options?: any) { return Promise.resolve(undefined); },
         createWebviewPanel(_viewType: string, _title: string, _column: any, _options: any) {
             return { webview: { html: "" }, dispose() {} };
         },
@@ -258,6 +263,14 @@ async function runTests(): Promise<void> {
 
     await test("activate registers the mockserver.reset command", () => {
         assert.ok(registeredCommands.has("mockserver.reset"), "reset command not registered");
+    });
+
+    await test("activate registers the mockserver.uploadWasm command", () => {
+        assert.ok(registeredCommands.has("mockserver.uploadWasm"), "uploadWasm command not registered");
+    });
+
+    await test("activate registers the mockserver.listWasm command", () => {
+        assert.ok(registeredCommands.has("mockserver.listWasm"), "listWasm command not registered");
     });
 
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
@@ -644,6 +657,64 @@ async function runTests(): Promise<void> {
         assert.ok(diags[0].message.includes("$.newField"), "message should include field");
         assert.ok(diags[0].message.includes("—"), "absent values should render as an em dash");
         assert.ok(diags[0].message.includes("confidence 0.5"), "message should include confidence");
+    });
+
+    await test("buildWasmUploadUrl builds the modules URL with the encoded name", () => {
+        assert.strictEqual(
+            client.buildWasmUploadUrl("http://localhost:1080", "my rule"),
+            "http://localhost:1080/mockserver/wasm/modules?name=my%20rule"
+        );
+    });
+
+    await test("uploadWasmModule PUTs the raw bytes with octet-stream and the encoded name", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve("") });
+        };
+        const bytes = new Uint8Array([0, 97, 115, 109, 1, 2, 3]);
+        await client.uploadWasmModule("http://localhost:1080", "rule one", bytes, fakeFetch);
+        assert.strictEqual(captured.init.method, "PUT");
+        assert.ok(captured.url.includes("/mockserver/wasm/modules"), `url=${captured.url}`);
+        assert.ok(captured.url.includes("name=rule%20one"), `url should carry the encoded name: ${captured.url}`);
+        assert.strictEqual(
+            captured.init.headers["Content-Type"],
+            "application/octet-stream",
+            "should send octet-stream content type"
+        );
+        assert.strictEqual(captured.init.body, bytes, "should send the exact Uint8Array passed in");
+    });
+
+    await test("uploadWasmModule surfaces the 403 wasm-disabled message verbatim on a non-ok response", async () => {
+        const disabled = "WASM support is disabled; set wasmEnabled=true to enable";
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve(disabled) });
+        await assert.rejects(
+            () => client.uploadWasmModule("http://localhost:1080", "r", new Uint8Array([0]), fakeFetch),
+            new RegExp(`403: ${disabled}`)
+        );
+    });
+
+    await test("retrieveWasmModules GETs /mockserver/wasm/modules and pretty-prints the list", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('["ruleA","ruleB"]') });
+        };
+        const out = await client.retrieveWasmModules("http://localhost:1080", fakeFetch);
+        assert.ok(captured.url.endsWith("/mockserver/wasm/modules"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+        assert.ok(out.includes('"ruleA"'), "expected pretty-printed module names");
+        assert.ok(out.includes('"ruleB"'), "expected both module names");
+    });
+
+    await test("retrieveWasmModules throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve("WASM support is disabled") });
+        await assert.rejects(
+            () => client.retrieveWasmModules("http://localhost:1080", fakeFetch),
+            /403: WASM support is disabled/
+        );
     });
 
     await test("looksLikeOpenApiSpec detects specs and rejects expectations/junk", () => {

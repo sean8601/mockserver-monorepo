@@ -32,6 +32,8 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Show Drift as Diagnostics** | Surfaces drift records as inline diagnostics on the open `*.mockserver.json` file, anchored to the affected expectation |
 | **MockServer: View Request Log** | Opens the log of requests the server has received in a new JSON editor tab |
 | **MockServer: Reset (Clear Expectations & Logs)** | Clears all expectations and the request log on the running server (after a confirmation prompt) |
+| **MockServer: Upload WASM Module** | Uploads a compiled `.wasm` custom-rule module to the running server so it can be referenced by name in an expectation body matcher |
+| **MockServer: List WASM Modules** | Opens the names of the WASM modules registered on the running server in a new JSON editor tab |
 
 ## Live dashboard inside the editor
 
@@ -108,6 +110,20 @@ inline diagnostic on that expectation's line (drift that can't be matched attach
 status-code drift, a removed schema field, or a fully-confident drift shows as an error; a newly added
 schema field shows as a warning; everything else shows as information. Re-run the command to refresh, and
 when there is no drift the diagnostics are cleared.
+
+## Upload a WASM custom-rule module
+
+Run **MockServer: Upload WASM Module** to pick a compiled `.wasm` file and upload it to the running server
+(`PUT /mockserver/wasm/modules?name=<name>`). You are prompted for a name to register the module under
+(defaulting to the file's basename). Once uploaded, reference it from an expectation body matcher:
+
+```json
+{ "httpRequest": { "body": { "type": "WASM", "moduleName": "myRule" } }, "httpResponse": { "statusCode": 200 } }
+```
+
+WASM support must be enabled on the server (`wasmEnabled=true`); if it is disabled the server's
+"WASM support is disabled" message is shown verbatim. **MockServer: List WASM Modules** opens the names of
+the modules currently registered on the server in a new JSON tab. Both use the configured `mockserver.port`.
 
 ## Snippets
 

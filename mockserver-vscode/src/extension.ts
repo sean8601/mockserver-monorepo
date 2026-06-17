@@ -81,6 +81,8 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     const viewRequestLogCmd = vscode.commands.registerCommand("mockserver.viewRequestLog", viewRequestLog);
     const resetCmd = vscode.commands.registerCommand("mockserver.reset", resetServer);
+    const uploadWasmCmd = vscode.commands.registerCommand("mockserver.uploadWasm", uploadWasm);
+    const listWasmCmd = vscode.commands.registerCommand("mockserver.listWasm", listWasm);
 
     driftDiagnostics = vscode.languages.createDiagnosticCollection("mockserver-drift");
 
@@ -111,6 +113,8 @@ export function activate(context: vscode.ExtensionContext): void {
         showDriftDiagnosticsCmd,
         viewRequestLogCmd,
         resetCmd,
+        uploadWasmCmd,
+        listWasmCmd,
         codeLensProvider,
         requestCodeLensProvider,
         contentProvider,
@@ -497,6 +501,62 @@ async function resetServer(): Promise<void> {
         vscode.window.showInformationMessage("MockServer reset.");
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to reset — ${(e as Error).message}`);
+    }
+}
+
+// Upload a compiled .wasm custom-rule module to the running server so it can be
+// referenced by name in an expectation body matcher. Prompts for the file and a
+// module name (defaulting to the file's basename), then PUTs the raw bytes. The
+// server's "WASM support is disabled" 403 message surfaces verbatim on error.
+async function uploadWasm(): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { WebAssembly: ["wasm"] },
+        openLabel: "Upload WASM Module",
+    });
+    if (!picked || picked.length === 0) {
+        return; // user cancelled
+    }
+    const fileUri = picked[0];
+    const defaultName = path.basename(fileUri.fsPath, ".wasm");
+    const name = await vscode.window.showInputBox({
+        prompt: "Name to register the WASM module under",
+        value: defaultName,
+    });
+    if (name === undefined || name.trim().length === 0) {
+        return; // user cancelled or gave an empty name
+    }
+    const moduleName = name.trim();
+    const { port } = getConfig();
+    try {
+        const bytes = await vscode.workspace.fs.readFile(fileUri);
+        await client.uploadWasmModule(client.buildBaseUrl(port), moduleName, bytes, httpFetch);
+        vscode.window.showInformationMessage(
+            `Uploaded WASM module "${moduleName}". Reference it in an expectation body matcher as ` +
+            `{ "type": "WASM", "moduleName": "${moduleName}" }.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to upload WASM module — ${(e as Error).message}`);
+    }
+}
+
+// Open the names of the WASM custom-rule modules registered on the server in a new
+// JSON editor tab (or say so when none are registered).
+async function listWasm(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const modules = await client.retrieveWasmModules(client.buildBaseUrl(port), httpFetch);
+        if (modules.trim() === "" || modules.trim() === "[]") {
+            vscode.window.showInformationMessage("No WASM modules are registered on the server.");
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: modules,
+            language: "json",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to list WASM modules — ${(e as Error).message}`);
     }
 }
 

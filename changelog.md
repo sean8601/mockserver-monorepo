@@ -45,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   right in the `*.mockserver.json` file. Status-code drift, a removed schema field, or a fully-confident
   drift shows as an error; a newly added schema field shows as a warning; everything else as information.
   Re-running refreshes the diagnostics and a clean result clears them.
+- VS Code extension can author WASM custom-rule modules: **MockServer: Upload WASM Module** picks a
+  compiled `.wasm` file and uploads it to the running server (`PUT /mockserver/wasm/modules?name=<name>`,
+  raw bytes) so it can be referenced by name in an expectation body matcher
+  (`{ "type": "WASM", "moduleName": "<name>" }`), and **MockServer: List WASM Modules** opens the registered
+  module names (`GET /mockserver/wasm/modules`) in a new JSON tab. When WASM support is disabled on the
+  server the "WASM support is disabled" message is surfaced verbatim.
 - JetBrains plugin brings the same server-interaction actions to the **Tools > MockServer** menu:
   **Load Expectations Into Running Server** (`PUT /mockserver/expectation`, a single expectation or an array),
   **Save Recorded Expectations** (`PUT /mockserver/retrieve?type=recorded_expectations`, opens the
