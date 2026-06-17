@@ -163,6 +163,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   jsonPath/xpath/header/query/cookie/pathParameter into scenario state).
 - More configuration properties are editable at runtime from the dashboard configuration dialog (matching &
   proxying, logging, and CORS toggles that the server applies live).
+- AMQP 0.9.1 (RabbitMQ) broker mocking in the AsyncAPI module: AsyncAPI specs with `amqp` channel bindings now
+  publish their mock messages to a RabbitMQ broker (exchange/routing-key or queue per the binding), alongside
+  the existing Kafka and MQTT support. Configure the broker with `asyncAmqpUri` (env `MOCKSERVER_ASYNC_AMQP_URI`).
 
 ### Changed
 - JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a

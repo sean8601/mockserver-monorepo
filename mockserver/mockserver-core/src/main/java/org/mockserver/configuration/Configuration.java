@@ -272,6 +272,7 @@ public class Configuration {
     // async messaging defaults
     private String asyncKafkaBootstrapServers;
     private String asyncMqttBrokerUrl;
+    private String asyncAmqpUri;
     private Integer asyncRecordedMessageMaxEntries;
 
 
@@ -3433,6 +3434,24 @@ public class Configuration {
      */
     public Configuration asyncMqttBrokerUrl(String asyncMqttBrokerUrl) {
         this.asyncMqttBrokerUrl = asyncMqttBrokerUrl;
+        return this;
+    }
+
+    public String asyncAmqpUri() {
+        if (asyncAmqpUri == null) {
+            return ConfigurationProperties.asyncAmqpUri();
+        }
+        return asyncAmqpUri;
+    }
+
+    /**
+     * Default AMQP (RabbitMQ) connection URI for async messaging. Used when a
+     * {@code PUT /mockserver/asyncapi} request omits {@code brokerConfig.amqpUri}.
+     *
+     * @param asyncAmqpUri the default AMQP connection URI
+     */
+    public Configuration asyncAmqpUri(String asyncAmqpUri) {
+        this.asyncAmqpUri = asyncAmqpUri;
         return this;
     }
 

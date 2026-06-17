@@ -2,7 +2,9 @@
 
 ## Overview
 
-The `mockserver-async` module provides **AsyncAPI-driven message-broker mocking** for Kafka and MQTT. Given an AsyncAPI 2.x or 3.x specification document, it parses the channels and message definitions, generates schema-validated example payloads, publishes them to a message broker, and can subscribe to channels to record incoming messages for verification.
+The `mockserver-async` module provides **AsyncAPI-driven message-broker mocking** for Kafka, MQTT, and AMQP 0.9.1 (RabbitMQ). Given an AsyncAPI 2.x or 3.x specification document, it parses the channels and message definitions, generates schema-validated example payloads, publishes them to a message broker, and can subscribe to channels to record incoming messages for verification.
+
+> **AMQP scope:** AMQP support is **publish-side** — MockServer publishes the configured/example messages to a RabbitMQ broker, deriving the exchange and routing key from each channel's `bindings.amqp` definition. AMQP consumer/subscriber recording is deferred (Kafka and MQTT support both publish and subscribe).
 
 ## Architecture
 
@@ -14,7 +16,7 @@ flowchart LR
     D --> E["Example payloads\n(schema-aware)"]
     E --> F["AsyncApiMockOrchestrator"]
     F --> G["MessagePublisher"]
-    G --> H["Kafka / MQTT broker"]
+    G --> H["Kafka / MQTT / AMQP broker"]
     H --> I["MessageSubscriber"]
     I --> J["RecordedMessages"]
 ```
@@ -53,6 +55,8 @@ The control-plane uses an **SPI/registry pattern** (Option A from the design spe
 | `MessagePublisher` | `o.m.async.publish` | Interface: `publish(channel, payload)`, `publish(channel, key, payload, headers)`, `publish(channel, payload, options)`, `close()` |
 | `KafkaMessagePublisher` | `o.m.async.publish` | Wraps `KafkaProducer`; supports keys and headers |
 | `MqttMessagePublisher` | `o.m.async.publish` | Wraps Paho `MqttClient`; supports configurable QoS (0/1/2) and binary payloads |
+| `AmqpMessagePublisher` | `o.m.async.publish` | Wraps the RabbitMQ `com.rabbitmq.client.Channel`; derives the exchange + routing key from each channel's `AmqpBinding`, declares the exchange/queue idempotently, and emits headers (e.g. correlation IDs) as AMQP message properties |
+| `AmqpBinding` | `o.m.async.asyncapi` | Immutable model of the AsyncAPI AMQP channel binding (`is`, exchange name/type/durable, queue name/durable, routing key) |
 | `MessageSubscriber` | `o.m.async.subscribe` | Interface: `subscribe(channel)`, `unsubscribe(channel)`, `getRecordedMessages()`, `close()` |
 | `KafkaMessageSubscriber` | `o.m.async.subscribe` | Wraps `KafkaConsumer` with background poll loop; all consumer access confined to the poll thread via a queued-ops pattern; records messages in bounded stores |
 | `MqttMessageSubscriber` | `o.m.async.subscribe` | Wraps Paho `MqttClient` callback; records messages in bounded stores |
@@ -78,6 +82,7 @@ Broker configuration options (`brokerConfig`):
 | `mqttBrokerUrl` | string | null | MQTT broker URL (e.g. `tcp://localhost:1883`) |
 | `mqttClientId` | string | `mockserver-mqtt-pub/sub` | MQTT client ID prefix |
 | `mqttQos` | int | 1 | MQTT QoS level (0, 1, or 2) |
+| `amqpUri` | string | null | AMQP (RabbitMQ) connection URI (e.g. `amqp://guest:guest@localhost:5672/`) |
 | `publishOnLoad` | boolean | true | Publish examples immediately on load |
 | `publishIntervalMillis` | long | 0 | Schedule periodic publishing (0 = disabled) |
 | `consume` | boolean | false | Enable consumer/subscriber for each channel |
@@ -263,6 +268,21 @@ The parser extracts publish-time bindings from the AsyncAPI spec and threads the
 | MQTT retain | `publish.bindings.mqtt.retain` (v2), `channels.<n>.bindings.mqtt.retain` (v3 best-effort) | `MqttMessagePublisher` | Sets `MqttMessage.setRetained()` |
 | Kafka message key | `publish.message.bindings.kafka.key` (v2), `messages.<n>.bindings.kafka.key` (v3) | `KafkaMessagePublisher` | Sets the `ProducerRecord` key |
 
+### AMQP Channel Bindings
+
+For AMQP, the destination is **not** the channel name directly — it is derived from the channel's `bindings.amqp` definition. The parser reads `channels.<name>.bindings.amqp` (channel-level in both v2 and v3) into an `AmqpBinding`, and `AmqpMessagePublisher` resolves it to an (exchange, routing-key) pair:
+
+| `is` value | Exchange | Routing key | Notes |
+|------------|----------|-------------|-------|
+| `routingKey` (default) | `exchange.name` (or the default exchange `""` when absent) | the binding's `routingKey`, else the channel name | Exchange is declared idempotently using `exchange.type` (default `direct`) and `exchange.durable` (default `true`) before the first publish |
+| `queue` | default exchange (`""`) | `queue.name` (or the channel name) | The named queue is declared (durable per `queue.durable`) so the message is not dropped against a fresh broker |
+
+When a channel has **no** `bindings.amqp`, the publisher falls back to the default exchange with the channel name as the routing key — mirroring the topic-name-as-destination convention of the Kafka/MQTT publishers.
+
+**Supported binding fields:** `is`, `exchange.name`, `exchange.type`, `exchange.durable`, `queue.name`, `queue.durable`, and an explicit `routingKey` extension. Correlation-ID/`PublishOptions` headers are emitted as AMQP message properties.
+
+**Deferred (not applied at publish time):** `exchange.autoDelete`, `exchange.vhost`, `queue.exclusive`, `queue.autoDelete`, `queue.vhost`, and operation/message-level AMQP bindings (`cc`, `bcc`, `deliveryMode`, `mandatory`, `replyTo`, `priority`, `timestamp`, `expiration`).
+
 ### Kafka Key Extraction
 
 The Kafka key binding (`bindings.kafka.key`) can be:
@@ -411,8 +431,9 @@ The `mockserver-async` module is wired into the running server:
 |------------|---------|---------|
 | `jackson-databind` | (parent-managed) | JSON parsing and generation |
 | `jackson-dataformat-yaml` | (parent-managed) | YAML parsing |
-| `kafka-clients` | 3.9.0 | Kafka producer and consumer |
+| `kafka-clients` | 3.9.2 | Kafka producer and consumer |
 | `org.eclipse.paho.client.mqttv3` | 1.2.5 | MQTT client (publish and subscribe) |
+| `com.rabbitmq:amqp-client` | 5.28.0 | AMQP 0.9.1 (RabbitMQ) client (publish) |
 | `mockserver-core` | (optional) | SPI interface, JSON Schema validator, shared utilities |
 
 ## Tests
@@ -441,8 +462,11 @@ The `mockserver-async` module is wired into the running server:
 | `KafkaMessagePublisherSecurityTest` | `buildProducerProperties()` with SASL_SSL, null, empty, and partial security |
 | `KafkaMessageSubscriberSecurityTest` | `buildConsumerProperties()` with SASL_SSL, SCRAM, null, empty security |
 | `MqttSecurityOptionsTest` | `MqttSecurityOptions.buildConnectOptions()`: username/password, SSL properties, null/empty security |
+| `AmqpBindingParserTest` | AsyncAPI AMQP `bindings.amqp` parsing (routingKey/queue, exchange/queue fields, defaults, no-binding, explicit routingKey, isolation from Kafka/MQTT) |
+| `AmqpMessagePublisherTest` | AMQP destination derivation and publishing via a mocked RabbitMQ `Channel` (no broker): exchange/queue/routing-key resolution, idempotent declare, header properties, close |
 | `KafkaLiveBrokerIntegrationTest` | Docker-gated (Testcontainers): publish/consume via real Kafka, subscriber recording, orchestrator end-to-end |
 | `MqttLiveBrokerIntegrationTest` | Docker-gated (Testcontainers): publish/receive via real Mosquitto, subscriber recording, orchestrator end-to-end, round-trip |
+| `AmqpLiveBrokerIntegrationTest` | Docker-gated (Testcontainers): publish to a real RabbitMQ broker — queue-bound channel, exchange + routing-key channel, orchestrator end-to-end from a parsed spec |
 
 ## Configuration Properties (Async Defaults)
 
@@ -452,6 +476,7 @@ The following `ConfigurationProperties` provide server-wide defaults for async m
 |-------------|---------|------|---------|-------------|
 | `mockserver.asyncKafkaBootstrapServers` | `MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS` | String | `""` (none) | Default Kafka bootstrap servers; used when `brokerConfig.kafkaBootstrapServers` is absent |
 | `mockserver.asyncMqttBrokerUrl` | `MOCKSERVER_ASYNC_MQTT_BROKER_URL` | String | `""` (none) | Default MQTT broker URL; used when `brokerConfig.mqttBrokerUrl` is absent |
+| `mockserver.asyncAmqpUri` | `MOCKSERVER_ASYNC_AMQP_URI` | String | `""` (none) | Default AMQP (RabbitMQ) connection URI; used when `brokerConfig.amqpUri` is absent |
 | `mockserver.asyncRecordedMessageMaxEntries` | `MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES` | int | `1000` | Maximum recorded messages per channel in subscriber stores |
 
 These properties follow the standard four-form pattern (system property, environment variable, property file, `Configuration` instance setter) used by all other MockServer configuration properties.
@@ -478,5 +503,6 @@ client.verifyAsyncMessage("{\"channel\":\"orders\",\"count\":{\"atLeast\":1}}");
 
 The following items are **not yet implemented**:
 
-- **Advanced AsyncAPI bindings (remaining)**: Kafka topic-config bindings (partitions, replicas) and v3 operation-level MQTT binding navigation are not yet implemented. MQTT qos/retain and Kafka message key bindings are supported (see [AsyncAPI Channel Bindings](#asyncapi-channel-bindings))
+- **Advanced AsyncAPI bindings (remaining)**: Kafka topic-config bindings (partitions, replicas) and v3 operation-level MQTT binding navigation are not yet implemented. MQTT qos/retain, Kafka message key, and AMQP exchange/queue/routing-key bindings are supported (see [AsyncAPI Channel Bindings](#asyncapi-channel-bindings))
+- **AMQP consumer/subscriber recording**: AMQP support is publish-side only. Subscribing to AMQP queues to record incoming messages for verification (as Kafka/MQTT do) is deferred. Operation/message-level AMQP bindings (`cc`, `deliveryMode`, etc.) and queue/exchange lifecycle hints (`autoDelete`, `exclusive`, `vhost`) are also deferred (see [AMQP Channel Bindings](#amqp-channel-bindings))
 - **Cross-protocol correlation linking (F15)**: correlating messages across protocols (e.g. HTTP request to Kafka response) is out of scope; each message's correlation ID is self-contained

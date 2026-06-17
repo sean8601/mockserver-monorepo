@@ -308,6 +308,7 @@ public class ConfigurationProperties {
     // async messaging defaults
     private static final String MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS = "mockserver.asyncKafkaBootstrapServers";
     private static final String MOCKSERVER_ASYNC_MQTT_BROKER_URL = "mockserver.asyncMqttBrokerUrl";
+    private static final String MOCKSERVER_ASYNC_AMQP_URI = "mockserver.asyncAmqpUri";
     private static final String MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES = "mockserver.asyncRecordedMessageMaxEntries";
 
     // properties file
@@ -951,6 +952,20 @@ public class ConfigurationProperties {
 
     public static void asyncMqttBrokerUrl(String url) {
         setProperty(MOCKSERVER_ASYNC_MQTT_BROKER_URL, url);
+    }
+
+    /**
+     * Default AMQP (RabbitMQ) connection URI used when a {@code PUT /mockserver/asyncapi}
+     * request body does not include {@code brokerConfig.amqpUri}
+     * (e.g. {@code amqp://guest:guest@localhost:5672/}).
+     * Empty string means no default (broker must be specified per-request).
+     */
+    public static String asyncAmqpUri() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_AMQP_URI, "MOCKSERVER_ASYNC_AMQP_URI", "");
+    }
+
+    public static void asyncAmqpUri(String uri) {
+        setProperty(MOCKSERVER_ASYNC_AMQP_URI, uri);
     }
 
     /**

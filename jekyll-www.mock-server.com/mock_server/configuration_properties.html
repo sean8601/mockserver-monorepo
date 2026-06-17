@@ -1466,6 +1466,22 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttBrokerUrl="tcp://localhost:1883"</code></pre>
 </div>
 
+<button id="button_configuration_async_amqp_uri" class="accordion title"><strong>Default AMQP (RabbitMQ) URI</strong></button>
+<div class="panel title">
+    <p>Default AMQP (RabbitMQ) connection URI used when a <span class="inline_code">PUT /mockserver/asyncapi</span> request body does not include <span class="inline_code">brokerConfig.amqpUri</span>. When unset (empty string), the broker must be specified per-request. The exchange and routing key for each channel are derived from the channel's <span class="inline_code">bindings.amqp</span> definition.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncAmqpUri(String uri)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncAmqpUri=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_AMQP_URI=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncAmqpUri=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncAmqpUri="amqp://guest:guest@localhost:5672/"</code></pre>
+</div>
+
 <button id="button_configuration_async_recorded_message_max_entries" class="accordion title"><strong>Maximum Recorded Messages Per Channel</strong></button>
 <div class="panel title">
     <p>Maximum number of recorded messages retained per channel in async messaging subscribers. When the cap is reached, the oldest messages are evicted (FIFO). This prevents unbounded memory growth when consuming high-volume topics.</p>
