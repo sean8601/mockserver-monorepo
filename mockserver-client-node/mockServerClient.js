@@ -277,6 +277,43 @@ var mockServerClient;
             };
         });
 
+        var makeBinaryRequest = (runningInNode() ? require('./sendRequest').sendBinaryRequest(tls, caCertPemFilePath) : function (host, port, path, bodyBuffer, contentType) {
+            var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
+
+            return {
+                then: function (sucess, error) {
+                    try {
+                        var xmlhttp = new XMLHttpRequest();
+                        xmlhttp.addEventListener("load", (function (sucess, error) {
+                            return function () {
+                                if (error && this.status >= 400 && this.status < 600) {
+                                    if (this.statusCode === 404) {
+                                        error("404 Not Found");
+                                    } else {
+                                        error(this.responseText);
+                                    }
+                                } else {
+                                    if (sucess) {
+                                        sucess({
+                                            statusCode: this.status,
+                                            body: this.responseText
+                                        });
+                                    }
+                                }
+                            };
+                        })(sucess, error));
+                        xmlhttp.open('PUT', url);
+                        xmlhttp.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+                        xmlhttp.send(bodyBuffer);
+                    } catch (e) {
+                        if (error) {
+                            error(e);
+                        }
+                    }
+                }
+            };
+        });
+
         var cleanedContextPath = (function (contextPath) {
             if (contextPath) {
                 if (!contextPath.endsWith("/")) {
@@ -1624,6 +1661,62 @@ var mockServerClient;
             return result;
         };
 
+        /**
+         * Upload a compiled gRPC proto descriptor set (a FileDescriptorSet, as
+         * produced by `protoc --descriptor_set_out`).  Registered services then
+         * become available for gRPC mocking and can be queried with
+         * retrieveGrpcServices().
+         *
+         * @param descriptorSetBytes the raw bytes of the compiled descriptor
+         *        set, as a Buffer, Uint8Array or ArrayBuffer
+         * @returns a promise that is resolved once the descriptor set is loaded
+         */
+        var uploadGrpcDescriptor = function (descriptorSetBytes) {
+            if (!descriptorSetBytes) {
+                throw new Error("uploadGrpcDescriptor requires the descriptor set bytes");
+            }
+            var buffer;
+            if (typeof Buffer !== 'undefined' && Buffer.isBuffer(descriptorSetBytes)) {
+                buffer = descriptorSetBytes;
+            } else if (typeof Buffer !== 'undefined') {
+                buffer = Buffer.from(descriptorSetBytes);
+            } else {
+                buffer = descriptorSetBytes;
+            }
+            return makeBinaryRequest(host, port, "/mockserver/grpc/descriptors", buffer, "application/octet-stream");
+        };
+
+        /**
+         * Retrieve the gRPC services registered from uploaded descriptor sets.
+         *
+         * @returns a promise resolved with the array of registered services,
+         *          each with its name and methods (inputType, outputType,
+         *          clientStreaming and serverStreaming flags)
+         */
+        var retrieveGrpcServices = function () {
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/grpc/services")
+                        .then(function (response) {
+                            sucess(JSON.parse((response && response.body) || "[]"));
+                        }, function (err) {
+                            if (error) {
+                                error(err);
+                            }
+                        });
+                }
+            };
+        };
+
+        /**
+         * Clear all registered gRPC descriptor sets and services.
+         *
+         * @returns a promise that is resolved once the descriptors are cleared
+         */
+        var clearGrpcDescriptors = function () {
+            return makeRequest(host, port, "/mockserver/grpc/clear");
+        };
+
         /* jshint -W003 */
         var _this = {
             openAPIExpectation: openAPIExpectation,
@@ -1664,7 +1757,10 @@ var mockServerClient;
             addRequestAndResponseBreakpoint: addRequestAndResponseBreakpoint,
             listBreakpointMatchers: listBreakpointMatchers,
             removeBreakpointMatcher: removeBreakpointMatcher,
-            clearBreakpointMatchers: clearBreakpointMatchers
+            clearBreakpointMatchers: clearBreakpointMatchers,
+            uploadGrpcDescriptor: uploadGrpcDescriptor,
+            retrieveGrpcServices: retrieveGrpcServices,
+            clearGrpcDescriptors: clearGrpcDescriptors
         };
         return _this;
     };

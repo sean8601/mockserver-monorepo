@@ -1198,6 +1198,78 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         assert.equal(hosts.length, 0, "all service chaos should have been cleared");
     });
 
+    // ========================================================================
+    // gRPC descriptor management
+    //   PUT /mockserver/grpc/descriptors  (raw FileDescriptorSet bytes)
+    //   PUT /mockserver/grpc/services     (list registered services)
+    //   PUT /mockserver/grpc/clear        (clear descriptors)
+    // ========================================================================
+
+    // A real compiled gRPC FileDescriptorSet (greeting.dsc) describing the
+    // com.example.grpc.GreetingService service with four methods covering all
+    // streaming combinations. Held as base64 so the test is self-contained.
+    var greetingDescriptorSetBase64 =
+        "CvgDCg5ncmVldGluZy5wcm90bxIQY29tLmV4YW1wbGUuZ3JwYyIiCgxIZWxsb1JlcXVlc3QSEgoEbmFt" +
+        "ZRgBIAEoCVIEbmFtZSIrCg1IZWxsb1Jlc3BvbnNlEhoKCGdyZWV0aW5nGAEgASgJUghncmVldGluZzLW" +
+        "AgoPR3JlZXRpbmdTZXJ2aWNlEksKCEdyZWV0aW5nEh4uY29tLmV4YW1wbGUuZ3JwYy5IZWxsb1JlcXVl" +
+        "c3QaHy5jb20uZXhhbXBsZS5ncnBjLkhlbGxvUmVzcG9uc2USUgoNTGlzdEdyZWV0aW5ncxIeLmNvbS5l" +
+        "eGFtcGxlLmdycGMuSGVsbG9SZXF1ZXN0Gh8uY29tLmV4YW1wbGUuZ3JwYy5IZWxsb1Jlc3BvbnNlMAES" +
+        "VQoQQ29sbGVjdEdyZWV0aW5ncxIeLmNvbS5leGFtcGxlLmdycGMuSGVsbG9SZXF1ZXN0Gh8uY29tLmV4" +
+        "YW1wbGUuZ3JwYy5IZWxsb1Jlc3BvbnNlKAESSwoEQ2hhdBIeLmNvbS5leGFtcGxlLmdycGMuSGVsbG9S" +
+        "ZXF1ZXN0Gh8uY29tLmV4YW1wbGUuZ3JwYy5IZWxsb1Jlc3BvbnNlKAEwAUIiChBjb20uZXhhbXBsZS5n" +
+        "cnBjQg5HcmVldGluZ1Byb3Rvc2IGcHJvdG8z";
+
+    it('should upload gRPC descriptor and list registered services', async function () {
+        var descriptorSet = Buffer.from(greetingDescriptorSetBase64, "base64");
+
+        var uploadResponse = await client.uploadGrpcDescriptor(descriptorSet);
+        assert.equal(uploadResponse.statusCode, 201,
+            "uploadGrpcDescriptor should return 201 Created");
+
+        var services = await client.retrieveGrpcServices();
+        assert.ok(Array.isArray(services), "retrieveGrpcServices should return an array");
+
+        var greeting = services.find(function (s) {
+            return s.name === "com.example.grpc.GreetingService";
+        });
+        assert.ok(greeting, "GreetingService should be registered");
+
+        var methodNames = greeting.methods.map(function (m) { return m.name; });
+        assert.ok(methodNames.indexOf("Greeting") !== -1, "Greeting method should be present");
+        assert.ok(methodNames.indexOf("Chat") !== -1, "Chat method should be present");
+
+        var chat = greeting.methods.find(function (m) { return m.name === "Chat"; });
+        assert.equal(chat.clientStreaming, true, "Chat should be client streaming");
+        assert.equal(chat.serverStreaming, true, "Chat should be server streaming");
+    });
+
+    it('should clear gRPC descriptors', async function () {
+        var descriptorSet = Buffer.from(greetingDescriptorSetBase64, "base64");
+        await client.uploadGrpcDescriptor(descriptorSet);
+
+        var before = await client.retrieveGrpcServices();
+        assert.ok(before.length >= 1, "at least one service should be registered before clear");
+
+        await client.clearGrpcDescriptors();
+
+        var after = await client.retrieveGrpcServices();
+        assert.equal(after.length, 0, "all gRPC services should have been cleared");
+    });
+
+    it('should reject uploadGrpcDescriptor without bytes', function () {
+        assert.throws(function () { client.uploadGrpcDescriptor(); },
+            /requires the descriptor set bytes/);
+    });
+
+    it('should reject an invalid gRPC descriptor set', async function () {
+        await assert.rejects(
+            client.uploadGrpcDescriptor(Buffer.from("not a valid descriptor set")),
+            function (err) {
+                return typeof err === "string" && /gRPC descriptor/i.test(err);
+            }
+        );
+    });
+
     it('should verify by expectation id', async function () {
         // Create expectation with known id
         await client.mockAnyResponse({

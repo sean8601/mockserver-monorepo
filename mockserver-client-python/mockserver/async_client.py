@@ -73,16 +73,22 @@ class AsyncMockServerClient:
         self,
         method: str,
         path: str,
-        body: str | None = None,
+        body: str | bytes | None = None,
         query_params: dict[str, str] | None = None,
+        content_type: str = "application/json; charset=utf-8",
     ) -> tuple[int, str]:
         url = f"{self._base_url}{path}"
         if query_params:
             url = f"{url}?{urllib.parse.urlencode(query_params)}"
 
-        data = body.encode("utf-8") if body else None
+        if isinstance(body, bytes):
+            data = body
+        elif body:
+            data = body.encode("utf-8")
+        else:
+            data = None
         req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Content-Type", "application/json; charset=utf-8")
+        req.add_header("Content-Type", content_type)
 
         def _do_request() -> tuple[int, str]:
             try:
@@ -226,6 +232,53 @@ class AsyncMockServerClient:
                 f"Failed to get clock status (status={status}): {response_body}"
             )
         return json.loads(response_body) if response_body else {}
+
+    async def upload_grpc_descriptor(self, descriptor_set_bytes: bytes) -> None:
+        """Upload a compiled protobuf descriptor set so gRPC requests can be matched.
+
+        *descriptor_set_bytes* must be the raw bytes of a
+        ``FileDescriptorSet`` (e.g. the output of
+        ``protoc --descriptor_set_out=... --include_imports``). The bytes are
+        sent verbatim (not base64-encoded) as the request body.
+        """
+        if not descriptor_set_bytes:
+            raise MockServerError("descriptor set bytes must not be empty")
+        status, response_body = await self._request(
+            "PUT",
+            "/mockserver/grpc/descriptors",
+            descriptor_set_bytes,
+            content_type="application/octet-stream",
+        )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to upload gRPC descriptor (status={status}): {response_body}"
+            )
+
+    async def retrieve_grpc_services(self) -> list[dict]:
+        """Retrieve the gRPC services registered from uploaded descriptor sets.
+
+        Returns a list of service dicts, each with a ``name`` and a list of
+        ``methods`` (``name``, ``inputType``, ``outputType``,
+        ``clientStreaming``, ``serverStreaming``).
+        """
+        status, response_body = await self._request(
+            "PUT", "/mockserver/grpc/services"
+        )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to retrieve gRPC services (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else []
+
+    async def clear_grpc_descriptors(self) -> None:
+        """Clear all uploaded gRPC descriptor sets and registered services."""
+        status, response_body = await self._request(
+            "PUT", "/mockserver/grpc/clear"
+        )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to clear gRPC descriptors (status={status}): {response_body}"
+            )
 
     async def set_service_chaos(
         self, host: str, chaos: HttpChaosProfile, ttl_millis: int | None = None

@@ -1,4 +1,4 @@
-import {mockServerClient, ClockStatus, MockServerClient} from '../index';
+import {mockServerClient, ClockStatus, GrpcService, MockServerClient} from '../index';
 import {RequestResponse} from '../mockServerClient';
 import {Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, RequestDefinition} from '../mockServer';
 
@@ -267,4 +267,11 @@ async function test() {
     requestResponse = await client.removeServiceChaos("payments.svc");
     requestResponse = await client.clearServiceChaos();
     let serviceChaos: { services: { [host: string]: HttpChaosProfile } } = await client.serviceChaosStatus();
+
+    requestResponse = await client.uploadGrpcDescriptor(Buffer.from([]));
+    requestResponse = await client.uploadGrpcDescriptor(new Uint8Array([]));
+    let grpcServices: GrpcService[] = await client.retrieveGrpcServices();
+    let firstServiceName: string = grpcServices[0].name;
+    let firstMethodStreaming: boolean = grpcServices[0].methods[0].clientStreaming;
+    requestResponse = await client.clearGrpcDescriptors();
 }

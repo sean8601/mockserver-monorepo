@@ -31,6 +31,19 @@ export interface SuccessFullRequest {
     body: string;
 }
 
+export interface GrpcMethod {
+    name: string;
+    inputType: string;
+    outputType: string;
+    clientStreaming: boolean;
+    serverStreaming: boolean;
+}
+
+export interface GrpcService {
+    name: string;
+    methods: GrpcMethod[];
+}
+
 export type RequestResponse = SuccessFullRequest | string;
 
 export type PathOrRequestDefinition = string | Expectation | RequestDefinition | undefined | null;
@@ -150,6 +163,26 @@ export interface MockServerClient {
      * Clear all registered breakpoint matchers.
      */
     clearBreakpointMatchers(): Promise<RequestResponse>;
+
+    /**
+     * Upload a compiled gRPC proto descriptor set (a FileDescriptorSet, as
+     * produced by `protoc --descriptor_set_out`). Registered services then
+     * become available for gRPC mocking and can be queried with
+     * retrieveGrpcServices().
+     *
+     * @param descriptorSetBytes the raw bytes of the compiled descriptor set
+     */
+    uploadGrpcDescriptor(descriptorSetBytes: Buffer | Uint8Array | ArrayBuffer): Promise<RequestResponse>;
+
+    /**
+     * Retrieve the gRPC services registered from uploaded descriptor sets.
+     */
+    retrieveGrpcServices(): Promise<GrpcService[]>;
+
+    /**
+     * Clear all registered gRPC descriptor sets and services.
+     */
+    clearGrpcDescriptors(): Promise<RequestResponse>;
 }
 
 /**

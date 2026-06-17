@@ -127,6 +127,67 @@
             };
         };
 
+        var sendBinaryRequest = function (tls, caCertPath) {
+            var http = tls ? require('https') : require('http');
+            return function (host, port, path, bodyBuffer, contentType) {
+                var deferred = defer();
+                downloadCACert(tls, caCertPath, function (ca) {
+
+                    var body = Buffer.isBuffer(bodyBuffer) ? bodyBuffer : Buffer.from(bodyBuffer || []);
+                    var options = {
+                        protocol: tls ? 'https:' : 'http:',
+                        method: 'PUT',
+                        host: host,
+                        path: path,
+                        port: port,
+                        ca: ca,
+                        headers: {
+                            'Content-Type': contentType || "application/octet-stream",
+                            'Content-Length': body.length
+                        },
+                    };
+
+                    var req = http.request(options);
+
+                    req.once('response', function (response) {
+                        var data = '';
+
+                        response.on('data', function (chunk) {
+                            data += chunk;
+                        });
+
+                        response.on('end', function () {
+                            if (response.statusCode >= 400 && response.statusCode < 600) {
+                                if (response.statusCode === 404) {
+                                    deferred.reject("404 Not Found");
+                                } else {
+                                    deferred.reject(data);
+                                }
+                            } else {
+                                deferred.resolve({
+                                    statusCode: response.statusCode,
+                                    body: data
+                                });
+                            }
+                        });
+                    });
+
+                    req.once('error', function (error) {
+                        if (error.code && error.code === "ECONNREFUSED") {
+                            deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
+                        } else {
+                            deferred.reject(JSON.stringify(error));
+                        }
+                    });
+
+                    req.write(body);
+                    req.end();
+
+                });
+                return deferred.promise;
+            };
+        };
+
         var sendGetRequest = function (tls, caCertPath) {
             var http = tls ? require('https') : require('http');
             return function (host, port, path) {
@@ -184,7 +245,8 @@
 
         module.exports = {
             sendRequest: sendRequest,
-            sendGetRequest: sendGetRequest
+            sendGetRequest: sendGetRequest,
+            sendBinaryRequest: sendBinaryRequest
         };
     }
 })();

@@ -114,13 +114,17 @@ class MockHandler(BaseHTTPRequestHandler):
     response_status = 200
     response_body = "[]"
     last_request_body = None
+    last_request_bytes = None
+    last_content_type = None
     last_path = None
     last_method = None
 
     def do_PUT(self):
         content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
-        MockHandler.last_request_body = body
+        raw = self.rfile.read(content_length) if content_length > 0 else b""
+        MockHandler.last_request_bytes = raw
+        MockHandler.last_content_type = self.headers.get("Content-Type")
+        MockHandler.last_request_body = raw.decode("utf-8", errors="replace")
         MockHandler.last_path = self.path
         MockHandler.last_method = "PUT"
 
@@ -143,6 +147,8 @@ def mock_server():
     MockHandler.response_status = 200
     MockHandler.response_body = "[]"
     MockHandler.last_request_body = None
+    MockHandler.last_request_bytes = None
+    MockHandler.last_content_type = None
     MockHandler.last_path = None
     MockHandler.last_method = None
     yield port
@@ -473,3 +479,86 @@ class TestClose:
         ws1.close.assert_called_once()
         ws2.close.assert_called_once()
         assert client._websocket_clients == []
+
+
+class TestGrpcDescriptors:
+    @pytest.mark.asyncio
+    async def test_upload_grpc_descriptor_sends_raw_bytes(self, mock_server):
+        MockHandler.response_status = 201
+        MockHandler.response_body = '{"status":"loaded"}'
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        # Arbitrary non-UTF-8 bytes to prove the body is sent verbatim.
+        descriptor = bytes([0x0a, 0x07, 0x74, 0x65, 0x73, 0x74, 0xff, 0x00, 0x80])
+        await client.upload_grpc_descriptor(descriptor)
+        assert MockHandler.last_method == "PUT"
+        assert MockHandler.last_path == "/mockserver/grpc/descriptors"
+        assert MockHandler.last_request_bytes == descriptor
+        assert MockHandler.last_content_type == "application/octet-stream"
+
+    @pytest.mark.asyncio
+    async def test_upload_grpc_descriptor_empty_raises(self, mock_server):
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="must not be empty"):
+            await client.upload_grpc_descriptor(b"")
+
+    @pytest.mark.asyncio
+    async def test_upload_grpc_descriptor_error_raises(self, mock_server):
+        MockHandler.response_status = 400
+        MockHandler.response_body = "descriptor set body is empty"
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="Failed to upload gRPC descriptor"):
+            await client.upload_grpc_descriptor(b"\x01\x02")
+
+    @pytest.mark.asyncio
+    async def test_retrieve_grpc_services(self, mock_server):
+        MockHandler.response_body = json.dumps([
+            {
+                "name": "example.Greeter",
+                "methods": [
+                    {
+                        "name": "SayHello",
+                        "inputType": "example.HelloRequest",
+                        "outputType": "example.HelloReply",
+                        "clientStreaming": False,
+                        "serverStreaming": False,
+                    }
+                ],
+            }
+        ])
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        services = await client.retrieve_grpc_services()
+        assert MockHandler.last_method == "PUT"
+        assert MockHandler.last_path == "/mockserver/grpc/services"
+        assert len(services) == 1
+        assert services[0]["name"] == "example.Greeter"
+        assert services[0]["methods"][0]["name"] == "SayHello"
+
+    @pytest.mark.asyncio
+    async def test_retrieve_grpc_services_empty(self, mock_server):
+        MockHandler.response_body = ""
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        services = await client.retrieve_grpc_services()
+        assert services == []
+
+    @pytest.mark.asyncio
+    async def test_retrieve_grpc_services_error_raises(self, mock_server):
+        MockHandler.response_status = 400
+        MockHandler.response_body = "boom"
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="Failed to retrieve gRPC services"):
+            await client.retrieve_grpc_services()
+
+    @pytest.mark.asyncio
+    async def test_clear_grpc_descriptors(self, mock_server):
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.clear_grpc_descriptors()
+        assert MockHandler.last_method == "PUT"
+        assert MockHandler.last_path == "/mockserver/grpc/clear"
+
+    @pytest.mark.asyncio
+    async def test_clear_grpc_descriptors_error_raises(self, mock_server):
+        MockHandler.response_status = 500
+        MockHandler.response_body = "boom"
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="Failed to clear gRPC descriptors"):
+            await client.clear_grpc_descriptors()

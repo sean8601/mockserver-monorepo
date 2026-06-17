@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field name/value, filename, and part content-type (regex and negation supported, like form parameters), via
   both the Java DSL and the JSON/REST API. OpenAPI operations with `multipart/form-data` request bodies now
   build field matchers from the schema's required properties instead of being matched on path and method only.
+- gRPC descriptor management in the Python and Node clients: `upload_grpc_descriptor` / `uploadGrpcDescriptor`,
+  `retrieve_grpc_services` / `retrieveGrpcServices`, and `clear_grpc_descriptors` / `clearGrpcDescriptors`,
+  bringing them toward parity with the Java client.
+- Dashboard request-log filtering gains regex matching on method/path and named, saved filter presets
+  (persisted in the browser) for quickly switching between common filters.
+- Numeric comparison operators (`> 60`, `>= 60`, `< 100`, `<= 30`, `== 5`; not-equal via `!== 5`) for matching
+  header, cookie, and query-string parameter values, in addition to exact and regex matching.
 
 ### Changed
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the

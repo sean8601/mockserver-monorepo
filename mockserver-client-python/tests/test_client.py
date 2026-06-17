@@ -26,14 +26,18 @@ class SyncMockHandler(BaseHTTPRequestHandler):
     response_status = 200
     response_body = "[]"
     last_request_body = None
+    last_request_bytes = None
+    last_content_type = None
     last_path = None
     last_method = None
     request_count = 0
 
     def do_PUT(self):
         content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
-        SyncMockHandler.last_request_body = body
+        raw = self.rfile.read(content_length) if content_length > 0 else b""
+        SyncMockHandler.last_request_bytes = raw
+        SyncMockHandler.last_content_type = self.headers.get("Content-Type")
+        SyncMockHandler.last_request_body = raw.decode("utf-8", errors="replace")
         SyncMockHandler.last_path = self.path
         SyncMockHandler.last_method = "PUT"
         SyncMockHandler.request_count += 1
@@ -68,6 +72,8 @@ def sync_mock_server():
     SyncMockHandler.response_status = 200
     SyncMockHandler.response_body = "[]"
     SyncMockHandler.last_request_body = None
+    SyncMockHandler.last_request_bytes = None
+    SyncMockHandler.last_content_type = None
     SyncMockHandler.last_path = None
     SyncMockHandler.last_method = None
     SyncMockHandler.request_count = 0
@@ -476,3 +482,48 @@ class TestSyncServiceChaos:
             assert SyncMockHandler.last_path == "/mockserver/serviceChaos"
             assert SyncMockHandler.last_method == "GET"
             assert result["services"]["payments.svc"]["errorStatus"] == 503
+
+
+class TestSyncGrpcDescriptors:
+    def test_upload_grpc_descriptor(self, sync_mock_server):
+        SyncMockHandler.response_status = 201
+        SyncMockHandler.response_body = '{"status":"loaded"}'
+        descriptor = bytes([0x0a, 0x04, 0x74, 0x65, 0x73, 0x74, 0xff, 0x80])
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.upload_grpc_descriptor(descriptor)
+            assert SyncMockHandler.last_method == "PUT"
+            assert SyncMockHandler.last_path == "/mockserver/grpc/descriptors"
+            assert SyncMockHandler.last_request_bytes == descriptor
+            assert SyncMockHandler.last_content_type == "application/octet-stream"
+
+    def test_upload_grpc_descriptor_empty_raises(self, sync_mock_server):
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            with pytest.raises(MockServerError, match="must not be empty"):
+                client.upload_grpc_descriptor(b"")
+
+    def test_retrieve_grpc_services(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps([
+            {
+                "name": "example.Greeter",
+                "methods": [
+                    {
+                        "name": "SayHello",
+                        "inputType": "example.HelloRequest",
+                        "outputType": "example.HelloReply",
+                        "clientStreaming": False,
+                        "serverStreaming": False,
+                    }
+                ],
+            }
+        ])
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            services = client.retrieve_grpc_services()
+            assert SyncMockHandler.last_path == "/mockserver/grpc/services"
+            assert len(services) == 1
+            assert services[0]["name"] == "example.Greeter"
+
+    def test_clear_grpc_descriptors(self, sync_mock_server):
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.clear_grpc_descriptors()
+            assert SyncMockHandler.last_method == "PUT"
+            assert SyncMockHandler.last_path == "/mockserver/grpc/clear"
