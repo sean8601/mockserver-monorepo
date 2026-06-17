@@ -16,9 +16,11 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SettingsIcon from '@mui/icons-material/Settings';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
+import RuleIcon from '@mui/icons-material/Rule';
 import ClockDialog from './ClockDialog';
 import ConfigurationDialog from './ConfigurationDialog';
 import ExplainUnmatchedDialog from './ExplainUnmatchedDialog';
+import MatcherPlaygroundDialog from './MatcherPlaygroundDialog';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -128,6 +130,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [clockOpen, setClockOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
+  const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [oidcOpen, setOidcOpen] = useState(false);
   const [asyncApiOpen, setAsyncApiOpen] = useState(false);
   const [wsdlOpen, setWsdlOpen] = useState(false);
@@ -321,6 +324,11 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
         <Tooltip title="Explain unmatched requests">
           <IconButton size="small" color="inherit" onClick={() => setExplainOpen(true)} aria-label="Explain unmatched requests">
             <TroubleshootIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Matcher test playground — try a request against a candidate expectation">
+          <IconButton size="small" color="inherit" onClick={() => setPlaygroundOpen(true)} aria-label="Matcher test playground">
+            <RuleIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Server configuration">
@@ -533,6 +541,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       <ClockDialog open={clockOpen} onClose={() => setClockOpen(false)} connectionParams={connectionParams} />
       <ConfigurationDialog open={configOpen} onClose={() => setConfigOpen(false)} connectionParams={connectionParams} />
       <ExplainUnmatchedDialog open={explainOpen} onClose={() => setExplainOpen(false)} connectionParams={connectionParams} />
+      <MatcherPlaygroundDialog open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} />
       <OidcDialog open={oidcOpen} onClose={() => setOidcOpen(false)} connectionParams={connectionParams} />
       <AsyncApiDialog open={asyncApiOpen} onClose={() => setAsyncApiOpen(false)} connectionParams={connectionParams} />
       <CrudDialog open={crudOpen} onClose={() => setCrudOpen(false)} connectionParams={connectionParams} />

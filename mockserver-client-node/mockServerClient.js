@@ -203,6 +203,15 @@ var mockServerClient;
             return (typeof require !== 'undefined') && require('browser-or-node').isNode;
         };
 
+        // LLM mocking builder factories (browser-safe): in Node use require,
+        // in the browser fall back to the global set by llm.js.
+        var _llm = (typeof require !== 'undefined') ? require('./llm') : (typeof window !== 'undefined' ? window.mockServerLlm : undefined);
+
+        // MCP (Model Context Protocol) mock builder factory (browser-safe): in
+        // Node use require, in the browser fall back to the global set by
+        // mcpMockBuilder.js.
+        var _mcpMock = (typeof require !== 'undefined') ? require('./mcpMockBuilder').mcpMock : (typeof window !== 'undefined' ? (window.mockServerMcp && window.mockServerMcp.mcpMock) : undefined);
+
         var makeRequest = (runningInNode() ? require('./sendRequest').sendRequest(tls, caCertPemFilePath) : function (host, port, path, jsonBody) {
             var body = (typeof jsonBody === "string" ? jsonBody : JSON.stringify(jsonBody || ""));
             var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
@@ -268,6 +277,43 @@ var mockServerClient;
                         })(sucess, error));
                         xmlhttp.open('GET', url);
                         xmlhttp.send();
+                    } catch (e) {
+                        if (error) {
+                            error(e);
+                        }
+                    }
+                }
+            };
+        });
+
+        var makeBinaryRequest = (runningInNode() ? require('./sendRequest').sendBinaryRequest(tls, caCertPemFilePath) : function (host, port, path, bodyBuffer, contentType) {
+            var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
+
+            return {
+                then: function (sucess, error) {
+                    try {
+                        var xmlhttp = new XMLHttpRequest();
+                        xmlhttp.addEventListener("load", (function (sucess, error) {
+                            return function () {
+                                if (error && this.status >= 400 && this.status < 600) {
+                                    if (this.statusCode === 404) {
+                                        error("404 Not Found");
+                                    } else {
+                                        error(this.responseText);
+                                    }
+                                } else {
+                                    if (sucess) {
+                                        sucess({
+                                            statusCode: this.status,
+                                            body: this.responseText
+                                        });
+                                    }
+                                }
+                            };
+                        })(sucess, error));
+                        xmlhttp.open('PUT', url);
+                        xmlhttp.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+                        xmlhttp.send(bodyBuffer);
                     } catch (e) {
                         if (error) {
                             error(e);
@@ -622,13 +668,13 @@ var mockServerClient;
             if (Array.isArray(expectation)) {
                 for (var i = 0; i < expectation.length; i++) {
                     expectation[i].httpRequest = addDefaultRequestMatcherHeaders(expectation[i].httpRequest);
-                    if (!expectation[i].httpResponseTemplate && !expectation[i].httpResponseClassCallback && !expectation[i].httpResponseObjectCallback && !expectation[i].httpForward && !expectation[i].httpForwardTemplate && !expectation[i].httpForwardClassCallback && !expectation[i].httpForwardObjectCallback && !expectation[i].httpOverrideForwardedRequest && !expectation[i].httpError && !expectation[i].httpSseResponse && !expectation[i].httpWebSocketResponse) {
+                    if (!expectation[i].httpResponseTemplate && !expectation[i].httpResponseClassCallback && !expectation[i].httpResponseObjectCallback && !expectation[i].httpForward && !expectation[i].httpForwardTemplate && !expectation[i].httpForwardClassCallback && !expectation[i].httpForwardObjectCallback && !expectation[i].httpOverrideForwardedRequest && !expectation[i].httpError && !expectation[i].httpSseResponse && !expectation[i].httpWebSocketResponse && !expectation[i].httpLlmResponse) {
                         expectation[i].httpResponse = addDefaultResponseMatcherHeaders(expectation[i].httpResponse);
                     }
                 }
             } else {
                 expectation.httpRequest = addDefaultRequestMatcherHeaders(expectation.httpRequest);
-                if (!expectation.httpResponseTemplate && !expectation.httpResponseClassCallback && !expectation.httpResponseObjectCallback && !expectation.httpForward && !expectation.httpForwardTemplate && !expectation.httpForwardClassCallback && !expectation.httpForwardObjectCallback && !expectation.httpOverrideForwardedRequest && !expectation.httpError && !expectation.httpSseResponse && !expectation.httpWebSocketResponse) {
+                if (!expectation.httpResponseTemplate && !expectation.httpResponseClassCallback && !expectation.httpResponseObjectCallback && !expectation.httpForward && !expectation.httpForwardTemplate && !expectation.httpForwardClassCallback && !expectation.httpForwardObjectCallback && !expectation.httpOverrideForwardedRequest && !expectation.httpError && !expectation.httpSseResponse && !expectation.httpWebSocketResponse && !expectation.httpLlmResponse) {
                     expectation.httpResponse = addDefaultResponseMatcherHeaders(expectation.httpResponse);
                 }
             }
@@ -665,6 +711,32 @@ var mockServerClient;
          * @param expectation the expectation to setup on the MockServer
          */
         var mockAnyResponse = function (expectation) {
+            return makeRequest(host, port, "/mockserver/expectation", addDefaultExpectationHeaders(expectation));
+        };
+        /**
+         * Setup one or more LLM mock expectations. Accepts a single expectation
+         * object, an array of expectations, or an LLM builder (the result of
+         * client.llm.llmMock(...), .conversation(), or .llmFailover()); builders
+         * are built via their .build() method. Equivalent to the Java client's
+         * builder.applyTo(mockServerClient).
+         *
+         *, for example:
+         *
+         *   client.mockWithLLM(
+         *       client.llm.llmMock("/v1/messages")
+         *           .withProvider(client.llm.Provider.ANTHROPIC)
+         *           .withModel("claude-sonnet-4")
+         *           .respondingWith(
+         *               client.llm.completion().withText("Paris.")
+         *           )
+         *   );
+         *
+         * @param expectationOrBuilder an expectation, array of expectations, or LLM builder
+         */
+        var mockWithLLM = function (expectationOrBuilder) {
+            var expectation = (expectationOrBuilder && typeof expectationOrBuilder.build === "function")
+                ? expectationOrBuilder.build()
+                : expectationOrBuilder;
             return makeRequest(host, port, "/mockserver/expectation", addDefaultExpectationHeaders(expectation));
         };
         /**
@@ -1624,10 +1696,97 @@ var mockServerClient;
             return result;
         };
 
+        /**
+         * Upload a compiled gRPC proto descriptor set (a FileDescriptorSet, as
+         * produced by `protoc --descriptor_set_out`).  Registered services then
+         * become available for gRPC mocking and can be queried with
+         * retrieveGrpcServices().
+         *
+         * @param descriptorSetBytes the raw bytes of the compiled descriptor
+         *        set, as a Buffer, Uint8Array or ArrayBuffer
+         * @returns a promise that is resolved once the descriptor set is loaded
+         */
+        var uploadGrpcDescriptor = function (descriptorSetBytes) {
+            if (!descriptorSetBytes) {
+                throw new Error("uploadGrpcDescriptor requires the descriptor set bytes");
+            }
+            var buffer;
+            if (typeof Buffer !== 'undefined' && Buffer.isBuffer(descriptorSetBytes)) {
+                buffer = descriptorSetBytes;
+            } else if (typeof Buffer !== 'undefined') {
+                buffer = Buffer.from(descriptorSetBytes);
+            } else {
+                buffer = descriptorSetBytes;
+            }
+            return makeBinaryRequest(host, port, "/mockserver/grpc/descriptors", buffer, "application/octet-stream");
+        };
+
+        /**
+         * Retrieve the gRPC services registered from uploaded descriptor sets.
+         *
+         * @returns a promise resolved with the array of registered services,
+         *          each with its name and methods (inputType, outputType,
+         *          clientStreaming and serverStreaming flags)
+         */
+        var retrieveGrpcServices = function () {
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/grpc/services")
+                        .then(function (response) {
+                            sucess(JSON.parse((response && response.body) || "[]"));
+                        }, function (err) {
+                            if (error) {
+                                error(err);
+                            }
+                        });
+                }
+            };
+        };
+
+        /**
+         * Clear all registered gRPC descriptor sets and services.
+         *
+         * @returns a promise that is resolved once the descriptors are cleared
+         */
+        var clearGrpcDescriptors = function () {
+            return makeRequest(host, port, "/mockserver/grpc/clear");
+        };
+
+        /**
+         * Start building a mock MCP (Model Context Protocol) server that
+         * speaks JSON-RPC 2.0 over the Streamable HTTP transport.  Returns a
+         * fluent builder; call .applyTo() (with no arguments — this client is
+         * used) to register the generated expectations, or .build() to obtain
+         * the raw expectation array.  Mirrors the Java client McpMockBuilder.
+         *
+         * for example:
+         *
+         *   client.mcpMock("/mcp")
+         *       .withServerName("MyServer")
+         *       .withTool("get_weather")
+         *           .withDescription("Get the weather for a city")
+         *           .respondingWith("sunny")
+         *       .and()
+         *       .applyTo();
+         *
+         * @param path the HTTP path the MCP server is mounted on (default "/mcp")
+         */
+        var mcpMock = function (path) {
+            var builder = _mcpMock(path);
+            var applyTo = builder.applyTo;
+            // Default applyTo() to this client when none is supplied.
+            builder.applyTo = function (client) {
+                return applyTo(client || _this);
+            };
+            return builder;
+        };
+
         /* jshint -W003 */
         var _this = {
             openAPIExpectation: openAPIExpectation,
             mockAnyResponse: mockAnyResponse,
+            mockWithLLM: mockWithLLM,
+            llm: _llm,
             mockWithCallback: mockWithCallback,
             mockWithForwardCallback: mockWithForwardCallback,
             mockWithForwardAndResponseCallback: mockWithForwardAndResponseCallback,
@@ -1664,7 +1823,11 @@ var mockServerClient;
             addRequestAndResponseBreakpoint: addRequestAndResponseBreakpoint,
             listBreakpointMatchers: listBreakpointMatchers,
             removeBreakpointMatcher: removeBreakpointMatcher,
-            clearBreakpointMatchers: clearBreakpointMatchers
+            clearBreakpointMatchers: clearBreakpointMatchers,
+            uploadGrpcDescriptor: uploadGrpcDescriptor,
+            retrieveGrpcServices: retrieveGrpcServices,
+            clearGrpcDescriptors: clearGrpcDescriptors,
+            mcpMock: mcpMock
         };
         return _this;
     };
@@ -1672,6 +1835,8 @@ var mockServerClient;
     if (typeof module !== 'undefined') {
         module.exports = {
             mockServerClient: mockServerClient,
+            llm: require('./llm'),
+            mcpMock: require('./mcpMockBuilder').mcpMock,
             routeBreakpointMessage: _routeBreakpointMessage,
             extractBreakpointHeaders: _extractBreakpointHeaders
         };

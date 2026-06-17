@@ -405,6 +405,7 @@ public class HttpState {
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
+        org.mockserver.oidc.OidcAuthorizationStore.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
         CassetteRegistry.getInstance().reset();
@@ -1552,25 +1553,30 @@ public class HttpState {
                     try {
                         String requestBody = request.getBodyAsJsonOrXmlString();
                         if (requestBody == null || requestBody.trim().isEmpty()) {
-                            throw new IllegalArgumentException("import request body is required — must be a HAR or Postman collection JSON document");
+                            throw new IllegalArgumentException("import request body is required — must be a HAR, Postman collection or Pact contract JSON document");
                         }
                         String formatParam = request.getFirstQueryStringParameter("format");
+                        org.mockserver.imports.ImportRedaction.Options redactionOptions = buildImportRedactionOptions(request);
                         List<Expectation> importedExpectations;
                         if ("har".equalsIgnoreCase(formatParam)) {
-                            importedExpectations = new org.mockserver.imports.HarImporter().importExpectations(requestBody);
+                            importedExpectations = new org.mockserver.imports.HarImporter().importExpectations(requestBody, redactionOptions);
                         } else if ("postman".equalsIgnoreCase(formatParam)) {
-                            importedExpectations = new org.mockserver.imports.PostmanCollectionImporter().importExpectations(requestBody);
+                            importedExpectations = new org.mockserver.imports.PostmanCollectionImporter().importExpectations(requestBody, redactionOptions);
+                        } else if ("pact".equalsIgnoreCase(formatParam)) {
+                            importedExpectations = new org.mockserver.mock.pact.PactImporter().importExpectations(requestBody, redactionOptions);
                         } else if (formatParam != null && !formatParam.isEmpty()) {
-                            throw new IllegalArgumentException("unsupported import format: " + formatParam + " (supported formats: har, postman)");
+                            throw new IllegalArgumentException("unsupported import format: " + formatParam + " (supported formats: har, postman, pact)");
                         } else {
                             // Auto-detect format from JSON structure
                             com.fasterxml.jackson.databind.JsonNode rootNode = ObjectMapperFactory.createObjectMapper().readTree(requestBody);
                             if (!rootNode.path("log").path("entries").isMissingNode()) {
-                                importedExpectations = new org.mockserver.imports.HarImporter().importExpectations(requestBody);
+                                importedExpectations = new org.mockserver.imports.HarImporter().importExpectations(requestBody, redactionOptions);
                             } else if (!rootNode.path("info").isMissingNode() && !rootNode.path("item").isMissingNode()) {
-                                importedExpectations = new org.mockserver.imports.PostmanCollectionImporter().importExpectations(requestBody);
+                                importedExpectations = new org.mockserver.imports.PostmanCollectionImporter().importExpectations(requestBody, redactionOptions);
+                            } else if (!rootNode.path("interactions").isMissingNode() && rootNode.path("interactions").isArray()) {
+                                importedExpectations = new org.mockserver.mock.pact.PactImporter().importExpectations(requestBody, redactionOptions);
                             } else {
-                                throw new IllegalArgumentException("unable to auto-detect import format — use ?format=har or ?format=postman query parameter");
+                                throw new IllegalArgumentException("unable to auto-detect import format — use ?format=har, ?format=postman or ?format=pact query parameter");
                             }
                         }
                         List<Expectation> upsertedExpectations = add(
@@ -1607,6 +1613,45 @@ public class HttpState {
                             e.getMessage(),
                             MediaType.create("text", "plain").toString()
                         );
+                    }
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/pact/import", "/pact/import")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    try {
+                        String requestBody = request.getBodyAsJsonOrXmlString();
+                        if (requestBody == null || requestBody.trim().isEmpty()) {
+                            throw new IllegalArgumentException("Pact import request body is required — must be a Pact v3 contract JSON document");
+                        }
+                        org.mockserver.imports.ImportRedaction.Options redactionOptions = buildImportRedactionOptions(request);
+                        List<Expectation> importedExpectations = new org.mockserver.mock.pact.PactImporter()
+                            .importExpectations(requestBody, redactionOptions);
+                        List<Expectation> upsertedExpectations = add(
+                            importedExpectations.toArray(new Expectation[0])
+                        );
+                        responseWriter.writeResponse(request, response()
+                            .withStatusCode(CREATED.code())
+                            .withBody(getExpectationSerializer().serialize(upsertedExpectations), MediaType.JSON_UTF_8), true);
+                    } catch (IllegalArgumentException iae) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for pact import:{}error:{}")
+                                .setArguments(request, iae.getMessage())
+                                .setThrowable(iae)
+                        );
+                        responseWriter.writeResponse(request, BAD_REQUEST, iae.getMessage(), MediaType.create("text", "plain").toString());
+                    } catch (Exception e) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for pact import:{}error:{}")
+                                .setArguments(request, e.getMessage())
+                                .setThrowable(e)
+                        );
+                        responseWriter.writeResponse(request, BAD_REQUEST, e.getMessage(), MediaType.create("text", "plain").toString());
                     }
                 }
                 canHandle.complete(true);
@@ -3976,6 +4021,43 @@ public class HttpState {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get AsyncAPI status: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
         }
+    }
+
+    /**
+     * Build {@link org.mockserver.imports.ImportRedaction.Options} from the
+     * {@code PUT /mockserver/import} query parameters:
+     * <ul>
+     *     <li>{@code redactSensitiveData} — boolean, defaults to {@code true}; when
+     *     {@code false} the import is kept verbatim (redaction disabled).</li>
+     *     <li>{@code additionalRedactedHeaders} — comma-separated extra header names
+     *     to redact on top of the defaults.</li>
+     *     <li>{@code additionalRedactedBodyFields} — comma-separated extra JSON body
+     *     field names to redact on top of the defaults.</li>
+     * </ul>
+     */
+    private static org.mockserver.imports.ImportRedaction.Options buildImportRedactionOptions(HttpRequest request) {
+        String redactSensitiveData = request.getFirstQueryStringParameter("redactSensitiveData");
+        boolean enabled = !"false".equalsIgnoreCase(redactSensitiveData);
+        org.mockserver.imports.ImportRedaction.Options options = enabled
+            ? org.mockserver.imports.ImportRedaction.Options.enabled()
+            : org.mockserver.imports.ImportRedaction.Options.disabled();
+        options.withAdditionalSensitiveHeaders(splitCommaSeparated(request.getFirstQueryStringParameter("additionalRedactedHeaders")));
+        options.withAdditionalSensitiveBodyFields(splitCommaSeparated(request.getFirstQueryStringParameter("additionalRedactedBodyFields")));
+        return options;
+    }
+
+    private static List<String> splitCommaSeparated(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> result = new ArrayList<>();
+        for (String part : value.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
     }
 
     private HttpResponse handlePactVerify(HttpRequest request) {

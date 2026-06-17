@@ -468,6 +468,13 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         boolean bodyMatches;
         if (httpRequest.getBody().getOptional() != null && httpRequest.getBody().getOptional() && request.getBody() == null) {
             bodyMatches = true;
+        } else if (bodyMatcher instanceof MultipartMatcher) {
+            // multipart/form-data field-level matcher: needs both the raw body bytes and the
+            // Content-Type header (which carries the boundary) to decode the parts
+            bodyMatches = matches(BODY, context, bodyMatcher, new MultipartMatcher.MultipartInput(
+                request.getFirstHeader("Content-Type"),
+                request.getBodyAsRawBytes()
+            ));
         } else if (bodyMatcher instanceof BinaryMatcher) {
             if (request.getOriginalBody() != null) {
                 // the request was compressed: a binary matcher may target either the decompressed body or

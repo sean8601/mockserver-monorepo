@@ -65,8 +65,10 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig` |
 | Blob store | `blobStoreType`, `blobStoreBucket`, `blobStoreRegion`, `blobStoreEndpoint`, `blobStoreKeyPrefix`, `blobStoreAccessKeyId`, `blobStoreSecretAccessKey`, `blobStoreContainer`, `blobStoreConnectionString`, `blobStoreProjectId` |
 | Async messaging | `asyncKafkaBootstrapServers`, `asyncMqttBrokerUrl`, `asyncRecordedMessageMaxEntries` |
+| JSON Schema matching | `jsonSchemaAllowRemoteRefs` (JVM system property only — not in `ConfigurationProperties`; read via `System.getProperty` in `JsonSchemaValidator` at schema-build time) |
 | LLM mocking | `llmProvider`, `llmApiKey`, `llmModel`, `llmBaseUrl`, `llmBackendsConfig`, `llmSemanticMatchingEnabled`, `llmVcrStrict`, `fixtureBodyRedactFields` |
-| LLM metrics & budget | `llmMetricsEnabled`, `llmCostBudgetUsd` |
+| LLM metrics & budget | `llmMetricsEnabled`, `llmCostBudgetUsd`, `perExpectationMetricsEnabled` |
+| Lifecycle | `stopDrainMillis` |
 
 The example file documents the most commonly tuned properties (≈220 lines). For the complete list including newer subsystems, read `ConfigurationProperties.java` or the consumer reference page.
 

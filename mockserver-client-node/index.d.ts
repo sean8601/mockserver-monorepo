@@ -6,7 +6,10 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-export { mockServerClient, ClockStatus, KeysToMultiValues, MockServerClient } from './mockServerClient';
+export { mockServerClient, ClockStatus, GrpcMethod, GrpcService, KeysToMultiValues, MockServerClient } from './mockServerClient';
+export { Llm, LlmMockBuilder, LlmConversationBuilder, LlmFailoverBuilder, TurnBuilder, Completion, ToolUse, Usage, StreamingPhysics, EmbeddingResponse, IsolationSource, Provider, Role } from './llm';
+export { default as llm } from './llm';
+export { mcpMock, McpMockBuilder, McpToolBuilder, McpResourceBuilder, McpPromptBuilder } from './mcpMockBuilder';
 export {
   Expectation,
   ExpectationId,

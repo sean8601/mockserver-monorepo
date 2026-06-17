@@ -83,6 +83,7 @@ _FIELD_MAP = {
     "http_class_callback": "httpClassCallback",
     "http_object_callback": "httpObjectCallback",
     "failure_policy": "failurePolicy",
+    "http_llm_response": "httpLlmResponse",
 }
 
 
@@ -146,6 +147,12 @@ def _deserialize_body(data: Any) -> Body | JsonRpcBody | str | dict | None:
             return JsonRpcBody(
                 method=data.get("method", ""),
                 params_schema=data.get("paramsSchema"),
+                not_body=data.get("not", False),
+                optional=data.get("optional", False),
+            )
+        if data.get("type") == "JSON_PATH":
+            return JsonPathBody(
+                json_path=data.get("jsonPath", ""),
                 not_body=data.get("not", False),
                 optional=data.get("optional", False),
             )
@@ -483,6 +490,23 @@ class JsonRpcBody:
             result["not"] = True
         if self.optional:
             result["optional"] = True
+        return result
+
+
+@dataclass
+class JsonPathBody:
+    json_path: str = ""
+    not_body: bool = False
+    optional: bool = False
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        if self.not_body:
+            result["not"] = True
+        if self.optional:
+            result["optional"] = True
+        result["type"] = "JSON_PATH"
+        result["jsonPath"] = self.json_path
         return result
 
 
@@ -1562,6 +1586,19 @@ class ExpectationStep:
         )
 
 
+def _deserialize_http_llm_response(data: Any) -> Any | None:
+    """Deserialize an ``httpLlmResponse`` action.
+
+    Late-imports ``mockserver.llm`` to avoid a circular import at module load
+    (``mockserver.llm`` imports ``Expectation`` from this module).
+    """
+    if data is None:
+        return None
+    from mockserver.llm import HttpLlmResponse
+
+    return HttpLlmResponse.from_dict(data)
+
+
 @dataclass
 class Expectation:
     id: str | None = None
@@ -1584,6 +1621,9 @@ class Expectation:
     grpc_bidi_response: GrpcBidiResponse | None = None
     binary_response: BinaryResponse | None = None
     dns_response: DnsResponse | None = None
+    # http_llm_response is an mockserver.llm.HttpLlmResponse; typed as Any to
+    # avoid a circular import (mockserver.llm imports Expectation from here).
+    http_llm_response: Any | None = None
     times: Times | None = None
     time_to_live: TimeToLive | None = None
     chaos: HttpChaosProfile | None = None
@@ -1618,6 +1658,7 @@ class Expectation:
             "grpcBidiResponse": self.grpc_bidi_response.to_dict() if self.grpc_bidi_response else None,
             "binaryResponse": self.binary_response.to_dict() if self.binary_response else None,
             "dnsResponse": self.dns_response.to_dict() if self.dns_response else None,
+            "httpLlmResponse": self.http_llm_response.to_dict() if self.http_llm_response else None,
             "times": self.times.to_dict() if self.times else None,
             "timeToLive": self.time_to_live.to_dict() if self.time_to_live else None,
             "chaos": self.chaos.to_dict() if self.chaos else None,
@@ -1662,6 +1703,7 @@ class Expectation:
             grpc_bidi_response=GrpcBidiResponse.from_dict(data.get("grpcBidiResponse")),
             binary_response=BinaryResponse.from_dict(data.get("binaryResponse")),
             dns_response=DnsResponse.from_dict(data.get("dnsResponse")),
+            http_llm_response=_deserialize_http_llm_response(data.get("httpLlmResponse")),
             times=Times.from_dict(data.get("times")),
             time_to_live=TimeToLive.from_dict(data.get("timeToLive")),
             chaos=HttpChaosProfile.from_dict(data.get("chaos")),

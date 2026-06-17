@@ -4,6 +4,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Attribute;
 import org.junit.*;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -238,6 +239,77 @@ public class HttpActionHandlerTest {
         verify(mockNettyHttpClient, never()).sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class));
         verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
         verify(mockResponseWriter).writeResponse(request, response, false);
+    }
+
+    @Test
+    public void shouldFireAfterActionWebhookAfterResponseIsWritten() {
+        // given - an expectation that responds AND fires an outbound webhook after responding
+        HttpRequest webhook = request("/after-webhook");
+        expectation = new Expectation(request)
+            .withAfterActions(AfterAction.afterAction().withHttpRequest(webhook))
+            .thenRespond(response);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        CompletableFuture<HttpResponse> webhookFuture = new CompletableFuture<>();
+        webhookFuture.complete(response("webhook_ok"));
+        when(mockNettyHttpClient.sendRequest(any(HttpRequest.class))).thenReturn(webhookFuture);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then the primary response is returned promptly
+        verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
+        verify(mockResponseWriter).writeResponse(request, response, false);
+        // and the after-action webhook is fired to the configured URL (asynchronously, after the response)
+        verify(mockNettyHttpClient, timeout(5000)).sendRequest(argThat(r -> r != null && "/after-webhook".equals(r.getPath().getValue())));
+        // and the webhook fired strictly after the response was written
+        InOrder inOrder = inOrder(mockResponseWriter, mockNettyHttpClient);
+        inOrder.verify(mockResponseWriter).writeResponse(request, response, false);
+        inOrder.verify(mockNettyHttpClient).sendRequest(any(HttpRequest.class));
+    }
+
+    @Test
+    public void shouldNotFailPrimaryResponseWhenAfterActionWebhookTargetUnreachable() {
+        // given - the webhook target is unreachable (the async send fails)
+        HttpRequest webhook = request("/after-webhook");
+        expectation = new Expectation(request)
+            .withAfterActions(AfterAction.afterAction().withHttpRequest(webhook))
+            .thenRespond(response);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        CompletableFuture<HttpResponse> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(new RuntimeException("webhook target unreachable"));
+        when(mockNettyHttpClient.sendRequest(any(HttpRequest.class))).thenReturn(failedFuture);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then the primary response is still returned (fire-and-forget: the failure does not propagate)
+        verify(mockHttpResponseActionHandler).handle(eq(response), any(HttpRequest.class));
+        verify(mockResponseWriter).writeResponse(request, response, false);
+        // and the webhook was attempted (then its failure swallowed)
+        verify(mockNettyHttpClient, timeout(5000)).sendRequest(any(HttpRequest.class));
+    }
+
+    @Test
+    public void shouldDelayAfterActionWebhookByConfiguredDelay() {
+        // given - an after-action webhook with an explicit delay
+        HttpRequest webhook = request("/after-webhook");
+        expectation = new Expectation(request)
+            .withAfterActions(AfterAction.afterAction().withHttpRequest(webhook).withDelay(milliseconds(300)))
+            .thenRespond(response);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        CompletableFuture<HttpResponse> webhookFuture = new CompletableFuture<>();
+        webhookFuture.complete(response("webhook_ok"));
+        when(mockNettyHttpClient.sendRequest(any(HttpRequest.class))).thenReturn(webhookFuture);
+
+        // when
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        // then the response is written promptly (not delayed by the webhook)
+        verify(mockResponseWriter).writeResponse(request, response, false);
+        // and the webhook is NOT fired immediately (still within the configured delay window)
+        verify(mockNettyHttpClient, after(100).never()).sendRequest(any(HttpRequest.class));
+        // but it does eventually fire once the delay elapses
+        verify(mockNettyHttpClient, timeout(5000)).sendRequest(any(HttpRequest.class));
     }
 
     @Test

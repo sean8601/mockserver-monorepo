@@ -184,6 +184,21 @@ class MockServerClient
     }
 
     /**
+     * Verify that zero interactions (requests) were received by the server.
+     *
+     * Sends {@code {"httpRequest": {}, "times": {"atMost": 0}}} so the server
+     * checks that no request matching the empty (match-everything) matcher was
+     * received — i.e. the server received no requests at all.
+     *
+     * @throws VerificationException If any request was received
+     * @throws MockServerException On communication errors
+     */
+    public function verifyZeroInteractions(): void
+    {
+        $this->verify(HttpRequest::request(), VerificationTimes::atMost(0));
+    }
+
+    /**
      * Verify that a request+response pair was received the expected number of times.
      *
      * Convenience method combining request and response matchers.
@@ -487,6 +502,121 @@ class MockServerClient
         return ['ports' => []];
     }
 
+    // -----------------------------------------------------------------
+    // OpenAPI import
+    // -----------------------------------------------------------------
+
+    /**
+     * Import expectations from an OpenAPI / Swagger specification.
+     *
+     * The spec may be supplied as a URL, a file/classpath path, or inline
+     * (JSON or YAML) via {@see OpenAPIExpectation::openAPI()}.
+     *
+     * @param OpenAPIExpectation $expectation The OpenAPI definition to import
+     * @throws InvalidRequestException If the spec is rejected by the server
+     * @throws MockServerException On communication errors
+     */
+    public function openApiExpectation(OpenAPIExpectation $expectation): void
+    {
+        $body = json_encode($expectation->toArray(), JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/openapi', $body);
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 400 || $status === 406) {
+            throw new InvalidRequestException("Invalid OpenAPI expectation: {$responseBody}");
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Failed to create OpenAPI expectation (HTTP {$status}): {$responseBody}");
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // gRPC descriptor management
+    // -----------------------------------------------------------------
+
+    /**
+     * Upload a compiled protobuf descriptor set so gRPC requests can be matched.
+     *
+     * The bytes must be the raw contents of a {@code FileDescriptorSet} (e.g. the
+     * output of {@code protoc --descriptor_set_out=... --include_imports}). They
+     * are sent verbatim as {@code application/octet-stream} (NOT base64-encoded).
+     *
+     * @param string $descriptorBytes Raw descriptor set bytes (binary string)
+     * @throws \InvalidArgumentException If the descriptor bytes are empty
+     * @throws InvalidRequestException If the descriptor set is rejected
+     * @throws MockServerException On communication errors
+     */
+    public function uploadGrpcDescriptor(string $descriptorBytes): void
+    {
+        if ($descriptorBytes === '') {
+            throw new \InvalidArgumentException('descriptor bytes must not be empty');
+        }
+
+        $response = $this->put(
+            '/mockserver/grpc/descriptors',
+            $descriptorBytes,
+            'application/octet-stream',
+        );
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 400) {
+            throw new InvalidRequestException("Invalid gRPC descriptor: {$responseBody}");
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Failed to upload gRPC descriptor (HTTP {$status}): {$responseBody}");
+        }
+    }
+
+    /**
+     * Retrieve the gRPC services registered from uploaded descriptor sets.
+     *
+     * Each entry has a "name" and a list of "methods", where each method has
+     * "name", "inputType", "outputType", "clientStreaming", "serverStreaming".
+     *
+     * @return array<int, array<string, mixed>> List of service descriptors
+     * @throws MockServerException On communication errors
+     */
+    public function retrieveGrpcServices(): array
+    {
+        $response = $this->put('/mockserver/grpc/services', '');
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status >= 400) {
+            throw new MockServerException("Failed to retrieve gRPC services (HTTP {$status}): {$responseBody}");
+        }
+
+        if ($responseBody !== '') {
+            $parsed = json_decode($responseBody, true);
+            if (is_array($parsed)) {
+                return $parsed;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Clear all uploaded gRPC descriptor sets and registered services.
+     *
+     * @throws MockServerException On communication errors
+     */
+    public function clearGrpcDescriptors(): void
+    {
+        $response = $this->put('/mockserver/grpc/clear', '');
+
+        $status = $response->getStatusCode();
+        if ($status >= 400) {
+            $responseBody = (string) $response->getBody();
+            throw new MockServerException("Failed to clear gRPC descriptors (HTTP {$status}): {$responseBody}");
+        }
+    }
+
     /**
      * Check if MockServer has started (polls with retries).
      *
@@ -562,16 +692,26 @@ class MockServerClient
      * Send a PUT request to MockServer.
      *
      * @param string $path Request path (including query string if any)
-     * @param string $body JSON body
+     * @param string $body Request body (JSON by default, or raw bytes)
+     * @param string|null $contentType Override the request Content-Type (e.g. application/octet-stream)
      * @return \Psr\Http\Message\ResponseInterface
      * @throws ConnectionException
      */
-    private function put(string $path, string $body): \Psr\Http\Message\ResponseInterface
-    {
+    private function put(
+        string $path,
+        string $body,
+        ?string $contentType = null,
+    ): \Psr\Http\Message\ResponseInterface {
+        $options = [
+            RequestOptions::BODY => $body,
+        ];
+        if ($contentType !== null) {
+            // Per-request Content-Type override (replaces the client default).
+            $options[RequestOptions::HEADERS] = ['Content-Type' => $contentType];
+        }
+
         try {
-            return $this->httpClient->request('PUT', $path, [
-                RequestOptions::BODY => $body,
-            ]);
+            return $this->httpClient->request('PUT', $path, $options);
         } catch (ConnectException $e) {
             throw new ConnectionException(
                 "Failed to connect to MockServer at {$this->baseUri}: {$e->getMessage()}",

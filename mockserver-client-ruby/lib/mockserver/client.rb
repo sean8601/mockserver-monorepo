@@ -260,6 +260,65 @@ module MockServer
       response_body && !response_body.empty? ? JSON.parse(response_body) : {}
     end
 
+    # -------------------------------------------------------------------
+    # gRPC descriptor management
+    # -------------------------------------------------------------------
+
+    # Upload a compiled protobuf descriptor set so gRPC requests can be matched.
+    #
+    # +descriptor_bytes+ must be the raw bytes of a +FileDescriptorSet+ (e.g. the
+    # output of +protoc --descriptor_set_out=... --include_imports+). The bytes are
+    # sent verbatim as +application/octet-stream+ (NOT base64-encoded).
+    #
+    # @param descriptor_bytes [String] raw descriptor set bytes (binary string)
+    # @return [nil]
+    def upload_grpc_descriptor(descriptor_bytes)
+      if descriptor_bytes.nil? || descriptor_bytes.empty?
+        raise ArgumentError, 'descriptor bytes must not be empty'
+      end
+
+      status, response_body = request(
+        'PUT', '/mockserver/grpc/descriptors', descriptor_bytes,
+        content_type: 'application/octet-stream'
+      )
+      if status >= 400
+        raise Error, "Failed to upload gRPC descriptor (status=#{status}): #{response_body}"
+      end
+
+      nil
+    end
+
+    # Retrieve the gRPC services registered from uploaded descriptor sets.
+    #
+    # Returns an array of service hashes, each with a +"name"+ and a list of
+    # +"methods"+ (+"name"+, +"inputType"+, +"outputType"+, +"clientStreaming"+,
+    # +"serverStreaming"+).
+    #
+    # @return [Array<Hash>]
+    def retrieve_grpc_services
+      status, response_body = request('PUT', '/mockserver/grpc/services')
+      if status >= 400
+        raise Error, "Failed to retrieve gRPC services (status=#{status}): #{response_body}"
+      end
+
+      if response_body && !response_body.empty?
+        parsed = JSON.parse(response_body)
+        return parsed if parsed.is_a?(Array)
+      end
+      []
+    end
+
+    # Clear all uploaded gRPC descriptor sets and registered services.
+    # @return [nil]
+    def clear_grpc_descriptors
+      status, response_body = request('PUT', '/mockserver/grpc/clear')
+      if status >= 400
+        raise Error, "Failed to clear gRPC descriptors (status=#{status}): #{response_body}"
+      end
+
+      nil
+    end
+
     # Verify that a request (and optionally a response) was received.
     # @param request [HttpRequest, nil]
     # @param times [VerificationTimes, nil]
@@ -700,7 +759,8 @@ module MockServer
 
     # Perform an HTTP request with optional query parameters.
     # @api private
-    def do_request(method, path, body = nil, query_params = nil)
+    def do_request(method, path, body = nil, query_params = nil,
+                   content_type: 'application/json; charset=utf-8')
       url = "#{@base_url}#{path}"
       if query_params && !query_params.empty?
         url = "#{url}?#{URI.encode_www_form(query_params)}"
@@ -709,14 +769,15 @@ module MockServer
       uri = URI.parse(url)
       http = build_http(uri)
 
-      req = build_request(method, uri, body)
+      req = build_request(method, uri, body, content_type)
       execute_request(http, req)
     end
 
     # Perform an HTTP request (no query params).
     # @api private
-    def request(method, path, body = nil)
-      do_request(method, path, body, nil)
+    def request(method, path, body = nil,
+                content_type: 'application/json; charset=utf-8')
+      do_request(method, path, body, nil, content_type: content_type)
     end
 
     # @api private
@@ -741,7 +802,7 @@ module MockServer
     end
 
     # @api private
-    def build_request(method, uri, body)
+    def build_request(method, uri, body, content_type = 'application/json; charset=utf-8')
       request_path = uri.request_uri
       case method.upcase
       when 'PUT'
@@ -755,7 +816,7 @@ module MockServer
       else
         req = Net::HTTP::Put.new(request_path)
       end
-      req['Content-Type'] = 'application/json; charset=utf-8'
+      req['Content-Type'] = content_type
       req.body = body if body
       req
     end

@@ -9,6 +9,8 @@
  */
 
 import {Expectation, ExpectationId, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, KeyToMultiValue, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
+import {Llm, LlmConversationBuilder, LlmFailoverBuilder, LlmMockBuilder} from './llm';
+import {McpMockBuilder} from './mcpMockBuilder';
 
 export type Host = string;
 export type Port = number;
@@ -31,6 +33,19 @@ export interface SuccessFullRequest {
     body: string;
 }
 
+export interface GrpcMethod {
+    name: string;
+    inputType: string;
+    outputType: string;
+    clientStreaming: boolean;
+    serverStreaming: boolean;
+}
+
+export interface GrpcService {
+    name: string;
+    methods: GrpcMethod[];
+}
+
 export type RequestResponse = SuccessFullRequest | string;
 
 export type PathOrRequestDefinition = string | Expectation | RequestDefinition | undefined | null;
@@ -39,6 +54,22 @@ export interface MockServerClient {
     openAPIExpectation(expectation: OpenAPIExpectation): Promise<RequestResponse>;
 
     mockAnyResponse(expectation: Expectation | Expectation[]): Promise<RequestResponse>;
+
+    /**
+     * LLM mocking builder factories (mirrors the Java client's Llm helpers).
+     * Use to build completion/chat, tool-use, streaming, embedding, multi-turn
+     * conversation, and provider-failover mocks, then pass the builder (or the
+     * built expectation) to mockWithLLM().
+     */
+    llm: Llm;
+
+    /**
+     * Register one or more LLM mock expectations. Accepts a single expectation,
+     * an array of expectations, or an LLM builder (the result of
+     * client.llm.llmMock(...), .conversation(), or .llmFailover()) — builders are
+     * built via their build() method.
+     */
+    mockWithLLM(expectationOrBuilder: Expectation | Expectation[] | LlmMockBuilder | LlmConversationBuilder | LlmFailoverBuilder): Promise<RequestResponse>;
 
     mockWithCallback(requestMatcher: RequestDefinition, requestHandler: (request: HttpRequest) => HttpResponse, times?: Times | number, priority?: number, timeToLive?: TimeToLive, id?: string): Promise<RequestResponse>;
 
@@ -150,6 +181,36 @@ export interface MockServerClient {
      * Clear all registered breakpoint matchers.
      */
     clearBreakpointMatchers(): Promise<RequestResponse>;
+
+    /**
+     * Upload a compiled gRPC proto descriptor set (a FileDescriptorSet, as
+     * produced by `protoc --descriptor_set_out`). Registered services then
+     * become available for gRPC mocking and can be queried with
+     * retrieveGrpcServices().
+     *
+     * @param descriptorSetBytes the raw bytes of the compiled descriptor set
+     */
+    uploadGrpcDescriptor(descriptorSetBytes: Buffer | Uint8Array | ArrayBuffer): Promise<RequestResponse>;
+
+    /**
+     * Retrieve the gRPC services registered from uploaded descriptor sets.
+     */
+    retrieveGrpcServices(): Promise<GrpcService[]>;
+
+    /**
+     * Clear all registered gRPC descriptor sets and services.
+     */
+    clearGrpcDescriptors(): Promise<RequestResponse>;
+
+    /**
+     * Start building a mock MCP (Model Context Protocol) server that speaks
+     * JSON-RPC 2.0 over the Streamable HTTP transport. Returns a fluent
+     * builder; call .applyTo() (no argument — this client is used) to register
+     * the generated expectations, or .build() for the raw expectation array.
+     *
+     * @param path the HTTP path the MCP server is mounted on (default "/mcp")
+     */
+    mcpMock(path?: string): McpMockBuilder;
 }
 
 /**

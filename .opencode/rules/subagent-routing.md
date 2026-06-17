@@ -25,6 +25,15 @@ When users ask conversationally (not via slash commands), route as follows:
 | `pipeline-investigation` | `pipeline-investigator` | "investigate this build", "why is CI failing" |
 | `aws-investigation` | `debugger` | "check build agents", "debug ASG scaling" |
 
+## Concurrency Cap
+
+When fanning out conversational or command-routed work to subagents, respect the
+hard caps in [[operating-model]] (Parallelism Limits): **≤10 active subagents and
+≤10-way parallelism at any one time**, with a lower effective limit when
+warranted (e.g. complexity, cost, contention, model availability — see
+[[operating-model]] for the full list). Queue or defer excess work rather than
+exceed a cap.
+
 ## Implementation Notes
 
 - Slash commands remain authoritative for deterministic routing.

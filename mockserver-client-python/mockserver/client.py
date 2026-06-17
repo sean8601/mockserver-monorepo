@@ -146,6 +146,24 @@ class MockServerClient:
         """Query the current clock status."""
         return self._run(self._async_client.clock_status())
 
+    def upload_grpc_descriptor(self, descriptor_set_bytes: bytes) -> None:
+        """Upload a compiled protobuf descriptor set so gRPC requests can be matched.
+
+        *descriptor_set_bytes* must be the raw bytes of a ``FileDescriptorSet``
+        (e.g. the output of ``protoc --descriptor_set_out=... --include_imports``).
+        """
+        return self._run(
+            self._async_client.upload_grpc_descriptor(descriptor_set_bytes)
+        )
+
+    def retrieve_grpc_services(self) -> list[dict]:
+        """Retrieve the gRPC services registered from uploaded descriptor sets."""
+        return self._run(self._async_client.retrieve_grpc_services())
+
+    def clear_grpc_descriptors(self) -> None:
+        """Clear all uploaded gRPC descriptor sets and registered services."""
+        return self._run(self._async_client.clear_grpc_descriptors())
+
     def set_service_chaos(
         self, host: str, chaos: HttpChaosProfile, ttl_millis: int | None = None
     ) -> dict:

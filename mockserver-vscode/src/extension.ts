@@ -1,21 +1,171 @@
 import * as vscode from "vscode";
-import { execSync, exec } from "child_process";
-
-const MOCKSERVER_VERSION = "7.0.0";
-const CONTAINER_NAME = "mockserver-vscode";
-const DEFAULT_PORT = 1080;
-const DOCKER_IMAGE = `mockserver/mockserver:${MOCKSERVER_VERSION}`;
+import * as path from "path";
+import { execFileSync, execFile } from "child_process";
+import {
+    ExpectationCodeLensProvider,
+    EXPECTATION_FILE_SELECTOR,
+    ScratchRequestCodeLensProvider,
+    REQUEST_FILE_SELECTOR,
+} from "./codeLens";
+import * as client from "./mockServerClient";
 
 let outputChannel: vscode.OutputChannel;
+let extensionVersion = "latest";
+let extensionUri: vscode.Uri | undefined;
+
+// Collection backing the inline drift diagnostics shown on expectation files.
+// Created in activate() so it shares the extension lifecycle.
+let driftDiagnostics: vscode.DiagnosticCollection;
+
+// Status-bar entry point. Shows the configured port and, on click, a quick-pick
+// of the most useful actions. No live health polling — the label just reflects
+// the configured port (read fresh when refreshed), not a probed server state.
+let statusBarItem: vscode.StatusBarItem;
+
+// Adapter from the global fetch to the small FetchLike used by mockServerClient.
+const httpFetch: client.FetchLike = async (url, init) => {
+    const res = await fetch(url, init);
+    return { ok: res.ok, status: res.status, text: () => res.text() };
+};
+
+// Backing store for the read-only "live expectations" documents shown in the
+// diff view, exposed under the `mockserver-live` URI scheme.
+const LIVE_SCHEME = "mockserver-live";
+const liveContent = new Map<string, string>();
+const liveContentChanged = new vscode.EventEmitter<vscode.Uri>();
+const liveContentProvider: vscode.TextDocumentContentProvider = {
+    onDidChange: liveContentChanged.event,
+    provideTextDocumentContent(uri: vscode.Uri): string {
+        return liveContent.get(uri.toString()) ?? "";
+    },
+};
+
+interface MockServerConfig {
+    dockerImage: string;
+    containerName: string;
+    port: number;
+}
+
+// Reads settings fresh on each use so changes apply without reloading the window.
+// The Docker image tag defaults to the extension's OWN version, so it stays in
+// lockstep with the release and never drifts from a hardcoded constant.
+function getConfig(): MockServerConfig {
+    const cfg = vscode.workspace.getConfiguration("mockserver");
+    const configuredImage = (cfg.get<string>("dockerImage") ?? "").trim();
+    const configuredPort = cfg.get<number>("port");
+    const validPort =
+        typeof configuredPort === "number" && configuredPort >= 1 && configuredPort <= 65535;
+    return {
+        dockerImage: configuredImage || `mockserver/mockserver:${extensionVersion}`,
+        containerName: cfg.get<string>("containerName") || "mockserver-vscode",
+        port: validPort ? configuredPort : 1080,
+    };
+}
+
+// Build the status-bar item: a server glyph + the configured port, clickable to
+// open the quick-pick of common actions. Kept deliberately simple (no polling).
+function createStatusBarItem(): vscode.StatusBarItem {
+    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    item.text = `$(server) MockServer :${getConfig().port}`;
+    item.tooltip = "MockServer — click for actions";
+    item.command = "mockserver.statusBarMenu";
+    return item;
+}
+
+// Quick-pick of the most useful actions, invoked from the status-bar click.
+// Each pick runs an existing command id — no new behaviour, just discoverability.
+async function showStatusBarMenu(): Promise<void> {
+    const { port } = getConfig();
+    const actions: Array<{ label: string; command: string }> = [
+        { label: "$(dashboard) Open Dashboard", command: "mockserver.openDashboard" },
+        { label: "$(play) Start (Docker)", command: "mockserver.start" },
+        { label: "$(debug-stop) Stop", command: "mockserver.stop" },
+        { label: "$(list-unordered) View Request Log", command: "mockserver.viewRequestLog" },
+    ];
+    const pick = await vscode.window.showQuickPick(actions, {
+        placeHolder: `MockServer on port ${port}`,
+    });
+    if (pick) {
+        await vscode.commands.executeCommand(pick.command);
+    }
+}
 
 export function activate(context: vscode.ExtensionContext): void {
     outputChannel = vscode.window.createOutputChannel("MockServer");
+    extensionVersion = (context.extension.packageJSON as { version?: string }).version ?? "latest";
+    extensionUri = context.extensionUri;
 
     const startCmd = vscode.commands.registerCommand("mockserver.start", startMockServer);
     const stopCmd = vscode.commands.registerCommand("mockserver.stop", stopMockServer);
     const dashboardCmd = vscode.commands.registerCommand("mockserver.openDashboard", openDashboard);
+    const dashboardInEditorCmd = vscode.commands.registerCommand(
+        "mockserver.openDashboardInEditor",
+        openDashboardInEditor
+    );
+    const loadCmd = vscode.commands.registerCommand("mockserver.loadExpectations", loadExpectations);
+    const diffCmd = vscode.commands.registerCommand("mockserver.diffAgainstLive", diffAgainstLive);
+    const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
+    const openApiCmd = vscode.commands.registerCommand("mockserver.generateFromOpenApi", generateFromOpenApi);
+    const sendRequestCmd = vscode.commands.registerCommand("mockserver.sendRequest", sendRequest);
+    const showDriftCmd = vscode.commands.registerCommand("mockserver.showDrift", showDrift);
+    const showDriftDiagnosticsCmd = vscode.commands.registerCommand(
+        "mockserver.showDriftDiagnostics",
+        showDriftDiagnostics
+    );
+    const viewRequestLogCmd = vscode.commands.registerCommand("mockserver.viewRequestLog", viewRequestLog);
+    const findByTraceCmd = vscode.commands.registerCommand("mockserver.findByTrace", findByTrace);
+    const resetCmd = vscode.commands.registerCommand("mockserver.reset", resetServer);
+    const uploadWasmCmd = vscode.commands.registerCommand("mockserver.uploadWasm", uploadWasm);
+    const listWasmCmd = vscode.commands.registerCommand("mockserver.listWasm", listWasm);
+    const statusBarMenuCmd = vscode.commands.registerCommand(
+        "mockserver.statusBarMenu",
+        showStatusBarMenu
+    );
 
-    context.subscriptions.push(startCmd, stopCmd, dashboardCmd, outputChannel);
+    statusBarItem = createStatusBarItem();
+    statusBarItem.show();
+
+    driftDiagnostics = vscode.languages.createDiagnosticCollection("mockserver-drift");
+
+    const codeLensProvider = vscode.languages.registerCodeLensProvider(
+        EXPECTATION_FILE_SELECTOR,
+        new ExpectationCodeLensProvider()
+    );
+    const requestCodeLensProvider = vscode.languages.registerCodeLensProvider(
+        REQUEST_FILE_SELECTOR,
+        new ScratchRequestCodeLensProvider()
+    );
+    const contentProvider = vscode.workspace.registerTextDocumentContentProvider(
+        LIVE_SCHEME,
+        liveContentProvider
+    );
+
+    context.subscriptions.push(
+        startCmd,
+        stopCmd,
+        dashboardCmd,
+        dashboardInEditorCmd,
+        loadCmd,
+        diffCmd,
+        recordCmd,
+        openApiCmd,
+        sendRequestCmd,
+        showDriftCmd,
+        showDriftDiagnosticsCmd,
+        viewRequestLogCmd,
+        findByTraceCmd,
+        resetCmd,
+        uploadWasmCmd,
+        listWasmCmd,
+        statusBarMenuCmd,
+        statusBarItem,
+        codeLensProvider,
+        requestCodeLensProvider,
+        contentProvider,
+        liveContentChanged,
+        driftDiagnostics,
+        outputChannel
+    );
 }
 
 export function deactivate(): void {
@@ -23,15 +173,17 @@ export function deactivate(): void {
 }
 
 async function startMockServer(): Promise<void> {
-    const port = DEFAULT_PORT;
-    const dockerCmd = `docker run -d --rm --name ${CONTAINER_NAME} -p ${port}:1080 ${DOCKER_IMAGE}`;
+    const { dockerImage, containerName, port } = getConfig();
+    // Pass arguments as an array (no shell) so a container name or image from
+    // settings cannot be interpreted as a shell command.
+    const runArgs = ["run", "-d", "--rm", "--name", containerName, "-p", `${port}:1080`, dockerImage];
 
-    outputChannel.appendLine(`Starting MockServer (${DOCKER_IMAGE}) on port ${port}...`);
+    outputChannel.appendLine(`Starting MockServer (${dockerImage}) on port ${port}...`);
     outputChannel.show(true);
 
     try {
         // Check if Docker is available
-        execSync("docker info", { stdio: "pipe" });
+        execFileSync("docker", ["info"], { stdio: "pipe" });
     } catch {
         vscode.window.showErrorMessage(
             "Docker is not running. Please start Docker Desktop and try again."
@@ -41,11 +193,12 @@ async function startMockServer(): Promise<void> {
 
     // Check if container is already running
     try {
-        const running = execSync(
-            `docker ps --filter name=${CONTAINER_NAME} --format "{{.Names}}"`,
+        const running = execFileSync(
+            "docker",
+            ["ps", "--filter", `name=${containerName}`, "--format", "{{.Names}}"],
             { encoding: "utf-8" }
         ).trim();
-        if (running === CONTAINER_NAME) {
+        if (running === containerName) {
             vscode.window.showInformationMessage(
                 `MockServer is already running on port ${port}.`
             );
@@ -55,7 +208,7 @@ async function startMockServer(): Promise<void> {
         // Ignore — proceed with start
     }
 
-    exec(dockerCmd, (error, stdout, stderr) => {
+    execFile("docker", runArgs, (error, stdout, stderr) => {
         if (error) {
             const msg = stderr || error.message;
             outputChannel.appendLine(`Error: ${msg}`);
@@ -71,10 +224,11 @@ async function startMockServer(): Promise<void> {
 }
 
 async function stopMockServer(): Promise<void> {
+    const { containerName } = getConfig();
     outputChannel.appendLine("Stopping MockServer...");
     outputChannel.show(true);
 
-    exec(`docker stop ${CONTAINER_NAME}`, (error, _stdout, stderr) => {
+    execFile("docker", ["stop", containerName], (error, _stdout, stderr) => {
         if (error) {
             if (stderr.includes("No such container") || stderr.includes("not found")) {
                 vscode.window.showWarningMessage("MockServer container is not running.");
@@ -90,9 +244,424 @@ async function stopMockServer(): Promise<void> {
 }
 
 async function openDashboard(): Promise<void> {
-    const url = `http://localhost:${DEFAULT_PORT}/mockserver/dashboard`;
+    const { port } = getConfig();
+    const url = `http://localhost:${port}/mockserver/dashboard`;
     const opened = await vscode.env.openExternal(vscode.Uri.parse(url));
     if (!opened) {
         vscode.window.showErrorMessage(`Failed to open dashboard at ${url}`);
     }
+}
+
+// Open the live dashboard inside a VS Code editor tab, in a webview that frames
+// the running server's dashboard. Keeps the external-browser command available;
+// this is the in-editor alternative for users who prefer to stay in VS Code.
+let dashboardPanel: vscode.WebviewPanel | undefined;
+
+async function openDashboardInEditor(): Promise<void> {
+    const { port } = getConfig();
+    const url = `${client.buildBaseUrl(port)}/mockserver/dashboard`;
+    // Reuse a single panel: reveal the existing one rather than stacking duplicates.
+    if (dashboardPanel) {
+        dashboardPanel.reveal(vscode.ViewColumn.Active);
+        dashboardPanel.webview.html = client.buildDashboardWebviewHtml(url);
+        return;
+    }
+    dashboardPanel = vscode.window.createWebviewPanel(
+        "mockserverDashboard",
+        "MockServer Dashboard",
+        vscode.ViewColumn.Active,
+        // retainContextWhenHidden keeps the framed dashboard alive when the tab is
+        // hidden, so switching away and back doesn't reload the iframe or lose state.
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+    // Show the MockServer "M" icon on the tab instead of the default webview icon.
+    if (extensionUri) {
+        dashboardPanel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "mockserver.svg");
+    }
+    dashboardPanel.onDidDispose(() => {
+        dashboardPanel = undefined;
+    });
+    dashboardPanel.webview.html = client.buildDashboardWebviewHtml(url);
+}
+
+// Resolve the expectation file a CodeLens/command should act on: the explicit
+// URI passed by the CodeLens, else the active editor's document.
+function resolveTargetUri(uri?: vscode.Uri): vscode.Uri | undefined {
+    return uri ?? vscode.window.activeTextEditor?.document.uri;
+}
+
+async function loadExpectations(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("No expectation file is open.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const text = doc.getText();
+        if (client.looksLikeOpenApiSpec(text)) {
+            vscode.window.showWarningMessage(
+                "MockServer: this looks like an OpenAPI/Swagger spec, not an expectation. " +
+                "Use \"Generate Expectations From OpenAPI Spec\" instead."
+            );
+            return;
+        }
+        const count = await client.loadExpectations(client.buildBaseUrl(port), text, httpFetch);
+        vscode.window.showInformationMessage(
+            `Loaded ${count} expectation(s) into MockServer on port ${port}.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to load expectations — ${(e as Error).message}`);
+    }
+}
+
+async function diffAgainstLive(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("No expectation file is open.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const live = await client.retrieveActiveExpectations(client.buildBaseUrl(port), httpFetch);
+        const liveUri = vscode.Uri.parse(`${LIVE_SCHEME}:/active-expectations.json`);
+        liveContent.set(liveUri.toString(), live);
+        liveContentChanged.fire(liveUri);
+        await vscode.commands.executeCommand(
+            "vscode.diff",
+            liveUri,
+            target,
+            `MockServer live ↔ ${path.basename(target.fsPath)}`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to diff against live — ${(e as Error).message}`);
+    }
+}
+
+async function saveRecordedExpectations(): Promise<void> {
+    const pick = await vscode.window.showQuickPick(
+        [
+            { label: "JSON", description: "Expectation JSON (loadable as *.mockserver.json)", format: "json" as const },
+            { label: "Java", description: "MockServerClient Java DSL", format: "java" as const },
+        ],
+        { placeHolder: "Format for recorded expectations" }
+    );
+    if (!pick) {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        const recorded = await client.retrieveRecordedExpectations(
+            client.buildBaseUrl(port),
+            pick.format,
+            httpFetch
+        );
+        if (recorded.empty) {
+            vscode.window.showInformationMessage(
+                "MockServer has not recorded any expectations yet. Recorded expectations are generated " +
+                "from traffic the server proxies or forwards to a real upstream."
+            );
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: recorded.content,
+            language: pick.format === "java" ? "java" : "json",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve recorded expectations — ${(e as Error).message}`);
+    }
+}
+
+async function generateFromOpenApi(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("Open an OpenAPI/Swagger spec file first.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const text = doc.getText();
+        if (!client.looksLikeOpenApiSpec(text)) {
+            vscode.window.showWarningMessage(
+                "MockServer: the active editor doesn't look like an OpenAPI/Swagger spec (no top-level " +
+                "\"openapi\" or \"swagger\" field). Open your spec file and run this again."
+            );
+            return;
+        }
+        const generated = await client.generateExpectationsFromOpenApi(
+            client.buildBaseUrl(port),
+            text,
+            httpFetch
+        );
+        if (generated.trim() === "[]") {
+            vscode.window.showInformationMessage(
+                "The OpenAPI spec produced no expectations (no operations matched)."
+            );
+            return;
+        }
+        const out = await vscode.workspace.openTextDocument({ content: generated, language: "json" });
+        await vscode.window.showTextDocument(out);
+        vscode.window.showInformationMessage(
+            "Generated MockServer expectations from the OpenAPI spec. Save as a *.mockserver.json file to keep them."
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to generate from OpenAPI — ${(e as Error).message}`);
+    }
+}
+
+async function sendRequest(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("Open a *.mockserver-request.json file first.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const spec = client.parseRequestSpec(doc.getText());
+        const response = await client.sendScratchRequest(
+            client.buildBaseUrl(port),
+            spec,
+            httpFetch
+        );
+        const out = await vscode.workspace.openTextDocument({
+            content: formatScratchResponse(response),
+            language: "text",
+        });
+        await vscode.window.showTextDocument(out);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to send request — ${(e as Error).message}`);
+    }
+}
+
+async function showDrift(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const drift = await client.retrieveDrift(client.buildBaseUrl(port), httpFetch);
+        if (drift.empty) {
+            vscode.window.showInformationMessage(
+                "No drift detected. Drift is recorded when MockServer proxies traffic to a real " +
+                "upstream and a matching stub expectation differs from the real response."
+            );
+            return;
+        }
+        const out = await vscode.workspace.openTextDocument({
+            content: drift.report,
+            language: "text",
+        });
+        await vscode.window.showTextDocument(out);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve drift report — ${(e as Error).message}`);
+    }
+}
+
+// Map the pure DriftDiagnostic severity strings to the vscode enum.
+function toDiagnosticSeverity(
+    severity: "error" | "warning" | "info"
+): vscode.DiagnosticSeverity {
+    switch (severity) {
+        case "error":
+            return vscode.DiagnosticSeverity.Error;
+        case "warning":
+            return vscode.DiagnosticSeverity.Warning;
+        default:
+            return vscode.DiagnosticSeverity.Information;
+    }
+}
+
+// Surface the server's drift records as inline diagnostics on the open
+// expectation file: each drift attaches to the line of its matching expectation
+// (by id), so a developer sees "the real upstream differs from this stub" right
+// in the *.mockserver.json file. Re-running refreshes; no drift clears them.
+async function showDriftDiagnostics(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("No expectation file is open.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const records = await client.retrieveDriftRecords(client.buildBaseUrl(port), httpFetch);
+        if (records.length === 0) {
+            driftDiagnostics.delete(target);
+            vscode.window.showInformationMessage(
+                "No drift detected. Drift is recorded when MockServer proxies traffic to a real " +
+                "upstream and a matching stub expectation differs from the real response."
+            );
+            return;
+        }
+        const mapped = client.mapDriftToDiagnostics(records, doc.getText());
+        const diagnostics = mapped.map((d) => {
+            const lineLength = doc.lineAt(d.line).text.length;
+            const range = new vscode.Range(d.line, 0, d.line, lineLength);
+            return new vscode.Diagnostic(range, d.message, toDiagnosticSeverity(d.severity));
+        });
+        driftDiagnostics.set(target, diagnostics);
+        vscode.window.showInformationMessage(
+            `${diagnostics.length} drift record(s) shown as diagnostics.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve drift — ${(e as Error).message}`);
+    }
+}
+
+// Open the server's received-request log in a new JSON editor tab. When the
+// server has not recorded any requests yet, say so rather than opening an empty
+// tab.
+async function viewRequestLog(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const log = await client.retrieveRequestLog(client.buildBaseUrl(port), httpFetch);
+        if (log.empty) {
+            vscode.window.showInformationMessage("No requests recorded yet.");
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: log.content,
+            language: "json",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve request log — ${(e as Error).message}`);
+    }
+}
+
+// Distributed-trace correlation: prompt for a W3C trace id (or a full traceparent),
+// fetch the server's received-request log, and open the subset of requests that
+// belong to that trace — every hop one trace produced — in a new JSON editor tab.
+async function findByTrace(): Promise<void> {
+    const input = await vscode.window.showInputBox({
+        prompt: "Trace id (32 hex) or full traceparent",
+        placeHolder: "4bf92f3577b34da6a3ce929d0e0e4736",
+        validateInput: (value) => {
+            if (value.trim().length === 0) {
+                return "Enter a trace id or traceparent.";
+            }
+            return client.extractTraceId(value) === null
+                ? "Enter a 32-hex trace id or a full W3C traceparent."
+                : undefined;
+        },
+    });
+    if (input === undefined) {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        const log = await client.retrieveRequestLog(client.buildBaseUrl(port), httpFetch);
+        const { traceId, matches } = client.filterRequestsByTrace(log.content, input);
+        if (traceId === null) {
+            vscode.window.showWarningMessage(
+                "Enter a 32-hex trace id or a full W3C traceparent."
+            );
+            return;
+        }
+        if (matches.length === 0) {
+            vscode.window.showInformationMessage(`No requests found for trace ${traceId}.`);
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: JSON.stringify(matches, null, 2) + "\n",
+            language: "json",
+        });
+        await vscode.window.showTextDocument(doc);
+        vscode.window.showInformationMessage(
+            `${matches.length} request(s) found for trace ${traceId}.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to find requests by trace — ${(e as Error).message}`);
+    }
+}
+
+// Reset the running server (clear all expectations and the request log) after a
+// modal confirmation, so a stray Command Palette pick can't wipe state silently.
+async function resetServer(): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+        "Reset MockServer? This clears all expectations and logs.",
+        { modal: true },
+        "Reset"
+    );
+    if (choice !== "Reset") {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        await client.resetServer(client.buildBaseUrl(port), httpFetch);
+        vscode.window.showInformationMessage("MockServer reset.");
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to reset — ${(e as Error).message}`);
+    }
+}
+
+// Upload a compiled .wasm custom-rule module to the running server so it can be
+// referenced by name in an expectation body matcher. Prompts for the file and a
+// module name (defaulting to the file's basename), then PUTs the raw bytes. The
+// server's "WASM support is disabled" 403 message surfaces verbatim on error.
+async function uploadWasm(): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { WebAssembly: ["wasm"] },
+        openLabel: "Upload WASM Module",
+    });
+    if (!picked || picked.length === 0) {
+        return; // user cancelled
+    }
+    const fileUri = picked[0];
+    const defaultName = path.basename(fileUri.fsPath, ".wasm");
+    const name = await vscode.window.showInputBox({
+        prompt: "Name to register the WASM module under",
+        value: defaultName,
+        validateInput: (value) =>
+            value.trim().length === 0 ? "Enter a non-empty module name." : undefined,
+    });
+    if (name === undefined || name.trim().length === 0) {
+        return; // user cancelled or gave an empty name
+    }
+    const moduleName = name.trim();
+    const { port } = getConfig();
+    try {
+        const bytes = await vscode.workspace.fs.readFile(fileUri);
+        await client.uploadWasmModule(client.buildBaseUrl(port), moduleName, bytes, httpFetch);
+        vscode.window.showInformationMessage(
+            `Uploaded WASM module "${moduleName}". Reference it in an expectation body matcher as ` +
+            `{ "type": "WASM", "moduleName": "${moduleName}" }.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to upload WASM module — ${(e as Error).message}`);
+    }
+}
+
+// Open the names of the WASM custom-rule modules registered on the server in a new
+// JSON editor tab (or say so when none are registered).
+async function listWasm(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const modules = await client.retrieveWasmModules(client.buildBaseUrl(port), httpFetch);
+        if (modules.trim() === "" || modules.trim() === "[]") {
+            vscode.window.showInformationMessage("No WASM modules are registered on the server.");
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: modules,
+            language: "json",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to list WASM modules — ${(e as Error).message}`);
+    }
+}
+
+// Render a scratch response as a small text summary: `HTTP <status>` then the
+// body, pretty-printed when it parses as JSON.
+function formatScratchResponse(response: client.ScratchResponse): string {
+    let body = response.body;
+    try {
+        body = JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+        // not JSON — show the body verbatim
+    }
+    return `HTTP ${response.status}\n\n${body}`;
 }

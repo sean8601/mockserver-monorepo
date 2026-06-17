@@ -65,6 +65,41 @@ sitemap:
 
 <p><strong>Insomnia is not a supported import format</strong> &mdash; there is no <span class="inline_code">insomnia</span> format value, and the only recognised formats are <span class="inline_code">har</span> and <span class="inline_code">postman</span>. Importing an Insomnia export returns <span class="inline_code">400 Bad Request</span> (auto-detection fails, and no <span class="inline_code">?format=</span> value accepts it). Export from Insomnia as HAR, or convert to a Postman collection, then import that instead.</p>
 
+<a id="import_redaction" class="anchor" href="#import_redaction">&nbsp;</a>
+
+<h2>Sensitive Data Redaction</h2>
+
+<p>MockServer automatically redacts sensitive values from imported files before creating expectations, so that credentials captured in recorded traffic are not stored in your mock configuration.</p>
+
+<p><strong>Headers redacted by default:</strong> <span class="inline_code">Authorization</span>, <span class="inline_code">X-Api-Key</span>, <span class="inline_code">X-Auth-Token</span>, <span class="inline_code">Cookie</span>, <span class="inline_code">Set-Cookie</span>, <span class="inline_code">Proxy-Authorization</span>, and similar credential-bearing headers. The header name is preserved in the generated expectation but the value is replaced with a placeholder so the mock does not depend on a specific secret.</p>
+
+<p><strong>JSON body fields redacted by default:</strong> common secret field names such as <span class="inline_code">password</span>, <span class="inline_code">secret</span>, <span class="inline_code">token</span>, <span class="inline_code">api_key</span>, <span class="inline_code">apiKey</span>, <span class="inline_code">access_token</span>, and <span class="inline_code">refresh_token</span> are replaced with a placeholder value in request and response bodies.</p>
+
+<p>If you need to disable redaction (for example when importing a file that contains only test credentials and you want exact value matching), or to extend the set of redacted fields for your organisation, pass import options in the query string:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Query parameter</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="inline_code">redactSensitiveData=false</span></td>
+            <td>Disable all redaction; imported values are stored as-is</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">additionalRedactedHeaders=X-My-Secret,X-Internal-Key</span></td>
+            <td>Comma-separated list of extra header names to redact, in addition to the defaults</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">additionalRedactedBodyFields=clientSecret,privateKey</span></td>
+            <td>Comma-separated list of extra JSON body field names to redact, in addition to the defaults</td>
+        </tr>
+    </tbody>
+</table>
+
 <a id="import_har" class="anchor" href="#import_har">&nbsp;</a>
 
 <h2>Importing from HAR</h2>

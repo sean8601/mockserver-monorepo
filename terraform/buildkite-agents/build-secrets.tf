@@ -271,6 +271,14 @@ data "aws_secretsmanager_secret" "jetbrains" {
   name = "mockserver-release/jetbrains"
 }
 
+# Postman API key (mockserver-build/postman-api-key, key: api_key) is created out
+# of band and read by scripts/release/components/postman-collection.sh (release
+# queue) to publish the generated Postman collection to the public workspace.
+# Referenced as a data source purely for its ARN in the IAM grant below.
+data "aws_secretsmanager_secret" "postman_api_key" {
+  name = "mockserver-build/postman-api-key"
+}
+
 # Release-only secrets.
 resource "aws_iam_policy" "read_release_secrets" {
   name        = "buildkite-read-release-secrets"
@@ -297,6 +305,7 @@ resource "aws_iam_policy" "read_release_secrets" {
           data.aws_secretsmanager_secret.vsce.arn,
           data.aws_secretsmanager_secret.ovsx.arn,
           data.aws_secretsmanager_secret.jetbrains.arn,
+          data.aws_secretsmanager_secret.postman_api_key.arn,
         ]
       },
       {

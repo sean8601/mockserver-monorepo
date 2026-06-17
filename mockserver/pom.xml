@@ -4,7 +4,7 @@
 
     <groupId>org.mock-server</groupId>
     <artifactId>mockserver</artifactId>
-    <version>7.1.0</version>
+    <version>7.1.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>MockServer</name>
@@ -774,7 +774,11 @@
                 <version>${jackson.version}</version>
             </dependency>
             <dependency>
-                <!-- Conflicting versions in velocity-tools-generic and commons-digester3 -->
+                <!-- Source-of-truth version for commons-beanutils. velocity-tools-generic and
+                     commons-digester3 declare vulnerable 1.9.4/1.8.3 (GHSA-wxr5-93ph-8wr9); mockserver-core
+                     excludes those edges and declares commons-beanutils directly so this fixed version is
+                     used by the build AND propagated to downstream consumers (dependencyManagement is not
+                     transitive). -->
                 <groupId>commons-beanutils</groupId>
                 <artifactId>commons-beanutils</artifactId>
                 <version>1.11.0</version>
@@ -925,7 +929,7 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.10.0</version>
+                        <version>0.11.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central-portal</publishingServerId>

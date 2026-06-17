@@ -639,4 +639,27 @@ public class ExpectationDTOTest {
         assertThat(rebuilt.getScenarioState(), is("Started"));
         assertThat(rebuilt.getNewScenarioState(), is("Step2"));
     }
+
+    @Test
+    public void shouldRoundTripCaptureRules() {
+        Expectation original = new Expectation(request(), Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(new HttpResponse().withBody("response"))
+            .withCapture(
+                CaptureRule.capture(CaptureRule.Source.jsonPath, "$.userId", "user"),
+                CaptureRule.capture(CaptureRule.Source.header, "X-Tenant", "tenant")
+            );
+
+        ExpectationDTO dto = new ExpectationDTO(original);
+        assertThat(dto.getCapture().size(), is(2));
+        assertThat(dto.getCapture().get(0).getSource(), is(CaptureRule.Source.jsonPath));
+        assertThat(dto.getCapture().get(0).getExpression(), is("$.userId"));
+        assertThat(dto.getCapture().get(0).getInto(), is("user"));
+
+        Expectation rebuilt = dto.buildObject();
+        assertThat(rebuilt.getCapture().size(), is(2));
+        assertThat(rebuilt.getCapture().get(1).getSource(), is(CaptureRule.Source.header));
+        assertThat(rebuilt.getCapture().get(1).getExpression(), is("X-Tenant"));
+        assertThat(rebuilt.getCapture().get(1).getInto(), is("tenant"));
+        assertThat(rebuilt, is(original));
+    }
 }

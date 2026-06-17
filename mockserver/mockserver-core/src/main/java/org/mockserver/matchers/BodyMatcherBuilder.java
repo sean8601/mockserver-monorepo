@@ -34,6 +34,10 @@ public class BodyMatcherBuilder {
                     ParameterBody parameterBody = (ParameterBody) body;
                     bodyMatcher = new ParameterStringMatcher(configuration, mockServerLogger, parameterBody.getValue(), controlPlaneMatcher);
                     break;
+                case MULTIPART:
+                    MultipartBody multipartBody = (MultipartBody) body;
+                    bodyMatcher = new MultipartMatcher(mockServerLogger, multipartBody, controlPlaneMatcher);
+                    break;
                 case XPATH:
                     XPathBody xPathBody = (XPathBody) body;
                     bodyMatcher = new XPathMatcher(mockServerLogger, xPathBody.getValue(), xPathBody.getNamespacePrefixes());

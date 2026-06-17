@@ -61,6 +61,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD = "mockserver.chaosAutoHaltErrorThreshold";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS = "mockserver.chaosAutoHaltWindowMillis";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
+    private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
     private static final String MOCKSERVER_BREAKPOINT_MAX_HELD = "mockserver.breakpointMaxHeld";
     private static final String MOCKSERVER_LOG_LEVEL_OVERRIDES = "mockserver.logLevelOverrides";
@@ -119,6 +120,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_OTEL_GENERATE_TRACE_ID = "mockserver.otelGenerateTraceId";
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
     private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
+    private static final String MOCKSERVER_PER_EXPECTATION_METRICS = "mockserver.perExpectationMetrics";
     private static final String MOCKSERVER_LLM_COST_BUDGET_USD = "mockserver.llmCostBudgetUsd";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
@@ -608,6 +610,24 @@ public class ConfigurationProperties {
      */
     public static void mcpEnabled(boolean enable) {
         setProperty(MOCKSERVER_MCP_ENABLED, "" + enable);
+    }
+
+    public static long stopDrainMillis() {
+        return Math.max(0L, readLongProperty(MOCKSERVER_STOP_DRAIN_MILLIS, "MOCKSERVER_STOP_DRAIN_MILLIS", 15_000L));
+    }
+
+    /**
+     * Maximum time in milliseconds to wait for in-flight requests to complete when the server is
+     * stopped (graceful shutdown connection drain). On stop, the server stops accepting new
+     * connections and then waits up to this timeout for any requests still being processed to
+     * finish before shutting down the event loops. If the timeout elapses a warning is logged with
+     * the number of remaining in-flight requests and shutdown proceeds anyway. Default is 15000
+     * (15 seconds). Set to 0 to disable draining (stop immediately, the pre-7.2 behaviour).
+     *
+     * @param millis drain timeout in milliseconds, 0 to disable draining
+     */
+    public static void stopDrainMillis(long millis) {
+        setProperty(MOCKSERVER_STOP_DRAIN_MILLIS, "" + millis);
     }
 
     public static long breakpointTimeoutMillis() {
@@ -1768,6 +1788,27 @@ public class ConfigurationProperties {
      */
     public static void llmMetricsEnabled(boolean enabled) {
         setProperty(MOCKSERVER_LLM_METRICS_ENABLED, "" + enabled);
+    }
+
+    public static boolean perExpectationMetricsEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_PER_EXPECTATION_METRICS, "MOCKSERVER_PER_EXPECTATION_METRICS", "" + false));
+    }
+
+    /**
+     * Enable the opt-in per-expectation Prometheus match counter
+     * ({@code mock_server_expectation_matched}), labeled by the stable expectation id.
+     * When enabled, MockServer registers one Prometheus time series per distinct
+     * matched expectation id and increments it on every match. OFF by default because
+     * per-expectation labels can explode Prometheus cardinality on large or churning
+     * expectation sets; using the stable expectation id (not the request path) bounds
+     * cardinality to the number of expectations. See docs/code/metrics.md.
+     * <p>
+     * Default is false (off) so the default scrape output is byte-for-byte unchanged.
+     *
+     * @param enabled enable per-expectation metrics
+     */
+    public static void perExpectationMetricsEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_PER_EXPECTATION_METRICS, "" + enabled);
     }
 
     /**

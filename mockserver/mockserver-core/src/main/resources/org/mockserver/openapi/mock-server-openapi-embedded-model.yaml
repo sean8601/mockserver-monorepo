@@ -964,6 +964,23 @@ components:
             parameters:
               $ref: "#/components/schemas/KeyToMultiValue"
         - type: object
+          description: "multipart form-data body matcher"
+          additionalProperties: false
+          properties:
+            not:
+              type: boolean
+            optional:
+              type: boolean
+            type:
+              enum:
+                - MULTIPART
+            fields:
+              $ref: "#/components/schemas/KeyToMultiValue"
+            filenames:
+              $ref: "#/components/schemas/KeyToMultiValue"
+            partContentTypes:
+              $ref: "#/components/schemas/KeyToMultiValue"
+        - type: object
           description: "regex body matcher"
           additionalProperties: false
           properties:

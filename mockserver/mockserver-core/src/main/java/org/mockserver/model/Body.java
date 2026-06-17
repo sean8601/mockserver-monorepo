@@ -70,6 +70,7 @@ public abstract class Body<T> extends Not {
         LOG_EVENT,
         FILE,
         WASM,
+        MULTIPART,
     }
 
     @Override

@@ -110,11 +110,36 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         return new HashSet<>();
     }
 
+    /**
+     * Complete the WS7.2 in-flight token for control-plane branches that write their response
+     * directly via {@code ctx.writeAndFlush(...)} / a handler render method rather than through
+     * {@link NettyResponseWriter}, which is where the token is normally completed. Without this the
+     * token only decrements when the channel closes, so on a keep-alive connection the graceful
+     * shutdown drain would wait the full {@code stopDrainMillis}. Null-safe and idempotent with the
+     * channel {@code closeFuture} safety net (the token's {@link InFlightRequest#complete()} guard).
+     */
+    private static void completeInFlight(InFlightRequest inFlightRequest) {
+        if (inFlightRequest != null) {
+            inFlightRequest.complete();
+        }
+    }
+
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final HttpRequest request) {
 
         if (configuration.metricsEnabled()) {
             metrics.increment(REQUESTS_RECEIVED_COUNT);
+        }
+
+        // Mark this exchange as in-flight for WS7.2 graceful-shutdown drain. The matching
+        // decrement is driven by the InFlightRequest token: NettyResponseWriter.sendResponse(...)
+        // completes it on the normal/forward/proxy/error/breakpoint response paths, and a
+        // channel-close listener completes it for requests that never produce a response
+        // (connection drop or pipeline-killing exception). The token's guard makes the
+        // decrement fire exactly once across all of those, so the counter can never leak.
+        final InFlightRequest inFlightRequest = InFlightRequest.started(server);
+        if (inFlightRequest != null) {
+            ctx.channel().closeFuture().addListener(future -> inFlightRequest.complete());
         }
 
         // Ensure the per-server WebSocketClientRegistry is available as a channel attribute
@@ -124,7 +149,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
             ctx.channel().attr(org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WS_REGISTRY_KEY)
                 .set(httpState.getWebSocketClientRegistry());
         }
-        ResponseWriter responseWriter = new NettyResponseWriter(configuration, mockServerLogger, ctx, httpState.getScheduler());
+        ResponseWriter responseWriter = new NettyResponseWriter(configuration, mockServerLogger, ctx, httpState.getScheduler(), inFlightRequest);
         try {
             configuration.addSubjectAlternativeName(request.getFirstHeader(HOST.toString()));
 
@@ -149,10 +174,20 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                                 throw e;
                             }
                         }
+                    } else {
+                        // null-body path writes no response via responseWriter, so complete the
+                        // in-flight token explicitly to avoid stalling a keep-alive drain.
+                        completeInFlight(inFlightRequest);
                     }
 
                 } else if (request.matches("PUT", PATH_PREFIX + "/stop", "/stop")) {
 
+                    // Control-plane direct-writes bypass NettyResponseWriter.sendResponse, so the
+                    // in-flight token is not completed by the response funnel here. Complete it
+                    // explicitly (idempotent with the closeFuture safety net via the AtomicBoolean
+                    // guard) so the drain triggered by this very /stop does not wait the full
+                    // stopDrainMillis on a keep-alive connection whose token would otherwise linger.
+                    completeInFlight(inFlightRequest);
                     ctx.writeAndFlush(response().withStatusCode(OK.code()));
                     new Scheduler.SchedulerThreadFactory("MockServer Stop").newThread(() -> server.stop()).start();
 
@@ -205,6 +240,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
                 } else if (request.getMethod().getValue().equals("GET") && request.getPath().getValue().startsWith(PATH_PREFIX + "/dashboard")) {
 
+                    // Direct ctx write inside the handler bypasses NettyResponseWriter, so complete
+                    // the in-flight token explicitly to keep the graceful-shutdown drain unblocked.
+                    completeInFlight(inFlightRequest);
                     dashboardHandler.renderDashboard(ctx, request);
 
                 } else if (request.getMethod().getValue().equals("GET") && request.getPath().getValue().equals(PATH_PREFIX + "/openapi.yaml")) {
@@ -220,6 +258,8 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                             return;
                         }
                     }
+                    // Direct ctx write bypasses NettyResponseWriter — complete the in-flight token.
+                    completeInFlight(inFlightRequest);
                     openAPISpecHandler.renderOpenAPISpec(ctx, request);
 
                 } else if (request.getMethod().getValue().equals("GET") && request.getPath().getValue().matches(PATH_PREFIX + "/metrics")) {
@@ -228,6 +268,8 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     // above). MetricsHandler serves the metrics when enabled and a CORS-decorated
                     // 404 when disabled, so a cross-origin dashboard reads the disabled state
                     // cleanly instead of the request falling through to mock matching.
+                    // Direct ctx write bypasses NettyResponseWriter — complete the in-flight token.
+                    completeInFlight(inFlightRequest);
                     metricsHandler.renderMetrics(ctx, request);
 
                 } else if (request.getMethod().getValue().equals("CONNECT")) {

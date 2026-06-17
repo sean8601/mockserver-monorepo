@@ -51,13 +51,13 @@ describe('OnboardingPanel', () => {
     expect(screen.getByText('Welcome to MockServer')).toBeInTheDocument();
   });
 
-  it('renders the five key-feature cards', () => {
+  it('renders the five key features (tile layout + narrow bulleted list)', () => {
     renderPanel();
-    expect(screen.getByText('Breakpoints')).toBeInTheDocument();
-    expect(screen.getByText('Debugging Proxy')).toBeInTheDocument();
-    expect(screen.getByText('LLM / AI Debugging')).toBeInTheDocument();
-    expect(screen.getByText('Mocking')).toBeInTheDocument();
-    expect(screen.getByText('Chaos Testing')).toBeInTheDocument();
+    // Each feature appears in both the wide-screen tiles and the narrow-screen
+    // bulleted list (one is CSS-hidden per viewport), so each is present >= once.
+    for (const title of ['Breakpoints', 'Debugging Proxy', 'LLM / AI Debugging', 'Mocking', 'Chaos Testing']) {
+      expect(screen.getAllByText(title).length).toBeGreaterThan(0);
+    }
   });
 
   it('no longer claims that no expectations or traffic are recorded', () => {

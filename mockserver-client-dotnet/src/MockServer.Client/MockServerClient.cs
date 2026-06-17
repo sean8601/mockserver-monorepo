@@ -115,6 +115,40 @@ public sealed class MockServerClient : IDisposable
     }
 
     /// <summary>
+    /// Register expectations from an OpenAPI v3 specification.
+    /// </summary>
+    /// <param name="expectation">The OpenAPI spec (URL/classpath/inline payload) and optional operation-to-response map.</param>
+    public void OpenApiExpectation(OpenApiExpectation expectation)
+        => OpenApiExpectationAsync(expectation).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Register expectations from an OpenAPI v3 specification (async).
+    /// </summary>
+    public async Task OpenApiExpectationAsync(OpenApiExpectation expectation)
+    {
+        if (expectation == null) throw new ArgumentNullException(nameof(expectation));
+        var json = JsonSerializer.Serialize(expectation, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/openapi", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid OpenAPI expectation: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to create OpenAPI expectation (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Register expectations from an OpenAPI v3 spec given by URL, classpath, or inline payload.
+    /// </summary>
+    public void OpenApiExpectation(string specUrlOrPayload)
+        => OpenApiExpectation(Models.OpenApiExpectation.Of(specUrlOrPayload));
+
+    /// <summary>
+    /// Register expectations from an OpenAPI v3 spec given by URL, classpath, or inline payload (async).
+    /// </summary>
+    public Task OpenApiExpectationAsync(string specUrlOrPayload)
+        => OpenApiExpectationAsync(Models.OpenApiExpectation.Of(specUrlOrPayload));
+
+    /// <summary>
     /// Verify that a request has been received a specific number of times.
     /// </summary>
     /// <exception cref="VerificationException">If the verification fails (HTTP 406).</exception>
@@ -162,6 +196,19 @@ public sealed class MockServerClient : IDisposable
         if (statusCode >= 400)
             throw new MockServerClientException($"Failed to verify (HTTP {statusCode}): {body}");
     }
+
+    /// <summary>
+    /// Verify that MockServer received no requests at all.
+    /// </summary>
+    /// <exception cref="VerificationException">If any request was received (HTTP 406).</exception>
+    public void VerifyZeroInteractions()
+        => VerifyZeroInteractionsAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Verify that MockServer received no requests at all (async).
+    /// </summary>
+    public Task VerifyZeroInteractionsAsync()
+        => VerifyAsync(HttpRequest.Request().Build(), VerificationTimes.AtMostTimes(0));
 
     /// <summary>
     /// Verify that requests were received in a specific sequence.
@@ -624,6 +671,77 @@ public sealed class MockServerClient : IDisposable
     }
 
     // -------------------------------------------------------------------
+    // gRPC descriptor management
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Upload a compiled protobuf descriptor set so gRPC requests can be matched.
+    /// </summary>
+    /// <param name="descriptor">
+    /// The raw bytes of a <c>FileDescriptorSet</c> (e.g. the output of
+    /// <c>protoc --descriptor_set_out=... --include_imports</c>). The bytes are
+    /// sent verbatim as <c>application/octet-stream</c> — not base64-encoded.
+    /// </param>
+    public void UploadGrpcDescriptor(byte[] descriptor)
+        => UploadGrpcDescriptorAsync(descriptor).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Upload a compiled protobuf descriptor set (async). See <see cref="UploadGrpcDescriptor"/>.
+    /// </summary>
+    public async Task UploadGrpcDescriptorAsync(byte[] descriptor)
+    {
+        if (descriptor == null) throw new ArgumentNullException(nameof(descriptor));
+        if (descriptor.Length == 0)
+            throw new ArgumentException("Descriptor set bytes must not be empty", nameof(descriptor));
+
+        var (statusCode, body) = await PutBytesAsync("/mockserver/grpc/descriptors", descriptor).ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to upload gRPC descriptor (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Retrieve the gRPC services registered from uploaded descriptor sets.
+    /// </summary>
+    public GrpcService[] RetrieveGrpcServices()
+        => RetrieveGrpcServicesAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Retrieve the gRPC services registered from uploaded descriptor sets (async).
+    /// </summary>
+    public async Task<GrpcService[]> RetrieveGrpcServicesAsync()
+    {
+        var (statusCode, body) = await PutAsync("/mockserver/grpc/services", "").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to retrieve gRPC services (HTTP {statusCode}): {body}");
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<GrpcService[]>(body, JsonOptions);
+            if (result != null) return result;
+        }
+        return Array.Empty<GrpcService>();
+    }
+
+    /// <summary>
+    /// Clear all uploaded gRPC descriptor sets and registered services.
+    /// </summary>
+    public void ClearGrpcDescriptors()
+        => ClearGrpcDescriptorsAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Clear all uploaded gRPC descriptor sets and registered services (async).
+    /// </summary>
+    public async Task ClearGrpcDescriptorsAsync()
+    {
+        var (statusCode, body) = await PutAsync("/mockserver/grpc/clear", "").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to clear gRPC descriptors (HTTP {statusCode}): {body}");
+    }
+
+    // -------------------------------------------------------------------
     // Internal: called by ForwardChainExpectation
     // -------------------------------------------------------------------
 
@@ -641,6 +759,16 @@ public sealed class MockServerClient : IDisposable
     {
         var url = _baseUrl + path;
         using var content = new StringContent(jsonBody ?? "", Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PutAsync(url, content).ConfigureAwait(false);
+        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return ((int)response.StatusCode, responseBody);
+    }
+
+    private async Task<(int StatusCode, string Body)> PutBytesAsync(string path, byte[] bytes)
+    {
+        var url = _baseUrl + path;
+        using var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
         using var response = await _httpClient.PutAsync(url, content).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         return ((int)response.StatusCode, responseBody);

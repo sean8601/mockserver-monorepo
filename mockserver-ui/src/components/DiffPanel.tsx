@@ -16,6 +16,10 @@ interface DiffPanelProps {
   result: DiffResult | null;
   loading: boolean;
   error: string | null;
+  /** Heading shown above the diff table. Defaults to "Request Diff". */
+  title?: string;
+  /** Message shown when {@link DiffResult.identical} is true. */
+  identicalMessage?: string;
 }
 
 function diffTypeColor(diffType: string): 'success' | 'error' | 'warning' | 'default' {
@@ -31,12 +35,18 @@ function diffTypeColor(diffType: string): 'success' | 'error' | 'warning' | 'def
   }
 }
 
-export default function DiffPanel({ result, loading, error }: DiffPanelProps) {
+export default function DiffPanel({
+  result,
+  loading,
+  error,
+  title = 'Request Diff',
+  identicalMessage = 'The two requests are identical.',
+}: DiffPanelProps) {
   return (
     <Paper variant="outlined" sx={{ p: 1.25, mt: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Request Diff
+          {title}
         </Typography>
         {result && (
           <Chip
@@ -113,7 +123,7 @@ export default function DiffPanel({ result, loading, error }: DiffPanelProps) {
 
       {result && result.identical && (
         <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1 }}>
-          The two requests are identical.
+          {identicalMessage}
         </Typography>
       )}
     </Paper>

@@ -383,7 +383,10 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
                 <Tooltip title={summary} disableHoverListener={!summary}>
                   <Box
                     component="span"
-                    sx={{ fontFamily: 'monospace', color: 'text.secondary', ml: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    // Hidden on narrow viewports (mobile and the IDE-embedded
+                    // dashboard) where it wraps one word per line and looks broken;
+                    // the full message is still available by expanding the row.
+                    sx={{ fontFamily: 'monospace', color: 'text.secondary', ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: { xs: 'none', md: 'inline-block' } }}
                   >
                     {summary}
                   </Box>

@@ -17,18 +17,72 @@ interface Subscription {
 
 interface FakeContext {
     subscriptions: Disposable[];
+    extension: { packageJSON: { version: string } };
 }
 
 const registeredCommands: Map<string, Function> = new Map();
 const outputLines: string[] = [];
+const configValues: Record<string, unknown> = {};
 
 // Build a minimal vscode stub
 const vscodeStub = {
+    workspace: {
+        getConfiguration(_section?: string) {
+            return {
+                get<T>(key: string): T | undefined {
+                    return configValues[key] as T | undefined;
+                },
+            };
+        },
+        registerTextDocumentContentProvider(_scheme: string, _provider: any): Disposable {
+            return { dispose() {} };
+        },
+        openTextDocument(_uri: any) {
+            return Promise.resolve({ getText: () => "{}" });
+        },
+        fs: {
+            readFile(_uri: any) { return Promise.resolve(new Uint8Array([0, 97, 115, 109])); },
+        },
+    },
     commands: {
         registerCommand(id: string, handler: Function): Disposable {
             registeredCommands.set(id, handler);
             return { dispose() { registeredCommands.delete(id); } };
         },
+        executeCommand(_id: string, ..._args: any[]) { return Promise.resolve(undefined); },
+    },
+    languages: {
+        registerCodeLensProvider(_selector: any, _provider: any): Disposable {
+            return { dispose() {} };
+        },
+        createDiagnosticCollection(_name?: string) {
+            return {
+                set(_uri: any, _diags?: any) {},
+                delete(_uri: any) {},
+                clear() {},
+                dispose() {},
+            };
+        },
+    },
+    DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+    Diagnostic: class {
+        constructor(public range: any, public message: string, public severity?: number) {}
+    },
+    EventEmitter: class {
+        event = (_listener?: any): Disposable => ({ dispose() {} });
+        fire(_e?: any): void {}
+        dispose(): void {}
+    },
+    Range: class {
+        constructor(
+            public startLine: number,
+            public startCharacter: number,
+            public endLine: number,
+            public endCharacter: number
+        ) {}
+    },
+    CodeLens: class {
+        constructor(public range: any, public command?: any) {}
     },
     window: {
         createOutputChannel(_name: string) {
@@ -41,7 +95,25 @@ const vscodeStub = {
         showInformationMessage(_msg: string) {},
         showErrorMessage(_msg: string) {},
         showWarningMessage(_msg: string) {},
+        showOpenDialog(_options?: any) { return Promise.resolve(undefined); },
+        showInputBox(_options?: any) { return Promise.resolve(undefined); },
+        showQuickPick(_items?: any, _options?: any) { return Promise.resolve(undefined); },
+        createWebviewPanel(_viewType: string, _title: string, _column: any, _options: any) {
+            return { webview: { html: "" }, dispose() {} };
+        },
+        createStatusBarItem(_alignment?: any, _priority?: number) {
+            return {
+                text: "",
+                tooltip: "",
+                command: "",
+                show() {},
+                hide() {},
+                dispose() {},
+            };
+        },
     },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    ViewColumn: { Active: -1 },
     env: {
         openExternal(_uri: any) { return Promise.resolve(true); },
     },
@@ -65,15 +137,15 @@ Module.prototype.require = function (id: string) {
 delete require.cache[require.resolve("../extension")];
 const extension = require("../extension");
 
-function runTests(): void {
+async function runTests(): Promise<void> {
     console.log("Running MockServer VS Code extension tests...\n");
 
     let passed = 0;
     let failed = 0;
 
-    function test(name: string, fn: () => void): void {
+    async function test(name: string, fn: () => void | Promise<void>): Promise<void> {
         try {
-            fn();
+            await fn();
             console.log(`  PASS: ${name}`);
             passed++;
         } catch (e: any) {
@@ -85,31 +157,34 @@ function runTests(): void {
 
     // Setup: activate the extension
     registeredCommands.clear();
-    const fakeContext: FakeContext = { subscriptions: [] };
+    const fakeContext: FakeContext = {
+        subscriptions: [],
+        extension: { packageJSON: { version: "9.9.9" } },
+    };
     extension.activate(fakeContext);
 
-    test("activate registers mockserver.start command", () => {
+    await test("activate registers mockserver.start command", () => {
         assert.ok(
             registeredCommands.has("mockserver.start"),
             "mockserver.start command not registered"
         );
     });
 
-    test("activate registers mockserver.stop command", () => {
+    await test("activate registers mockserver.stop command", () => {
         assert.ok(
             registeredCommands.has("mockserver.stop"),
             "mockserver.stop command not registered"
         );
     });
 
-    test("activate registers mockserver.openDashboard command", () => {
+    await test("activate registers mockserver.openDashboard command", () => {
         assert.ok(
             registeredCommands.has("mockserver.openDashboard"),
             "mockserver.openDashboard command not registered"
         );
     });
 
-    test("activate adds disposables to subscriptions", () => {
+    await test("activate adds disposables to subscriptions", () => {
         // 3 commands + 1 output channel = 4
         assert.ok(
             fakeContext.subscriptions.length >= 3,
@@ -117,14 +192,711 @@ function runTests(): void {
         );
     });
 
-    test("deactivate does not throw", () => {
+    await test("deactivate does not throw", () => {
         assert.doesNotThrow(() => extension.deactivate());
     });
 
-    test("registered command handlers are functions", () => {
+    await test("registered command handlers are functions", () => {
         for (const [id, handler] of registeredCommands) {
             assert.strictEqual(typeof handler, "function", `Handler for ${id} is not a function`);
         }
+    });
+
+    await test("openDashboard uses the configured port (default 1080)", async () => {
+        let openedUrl = "";
+        vscodeStub.env.openExternal = (uri: any) => {
+            openedUrl = uri.toString();
+            return Promise.resolve(true);
+        };
+        await registeredCommands.get("mockserver.openDashboard")!();
+        assert.ok(
+            openedUrl.includes("http://localhost:1080/mockserver/dashboard"),
+            `unexpected dashboard URL: ${openedUrl}`
+        );
+    });
+
+    await test("openDashboard honours a configured custom port", async () => {
+        configValues["port"] = 2080;
+        let openedUrl = "";
+        vscodeStub.env.openExternal = (uri: any) => {
+            openedUrl = uri.toString();
+            return Promise.resolve(true);
+        };
+        await registeredCommands.get("mockserver.openDashboard")!();
+        delete configValues["port"];
+        assert.ok(openedUrl.includes(":2080/"), `port not honoured: ${openedUrl}`);
+    });
+
+    await test("activate registers mockserver.statusBarMenu command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.statusBarMenu"),
+            "mockserver.statusBarMenu command not registered"
+        );
+    });
+
+    await test("status-bar menu runs the selected action command", async () => {
+        const originalQuickPick = vscodeStub.window.showQuickPick;
+        const originalExecute = vscodeStub.commands.executeCommand;
+        let executed = "";
+        vscodeStub.window.showQuickPick = (items: any) => {
+            // simulate picking the first action (Open Dashboard)
+            return Promise.resolve(items[0]);
+        };
+        vscodeStub.commands.executeCommand = (id: string) => {
+            executed = id;
+            return Promise.resolve(undefined);
+        };
+        await registeredCommands.get("mockserver.statusBarMenu")!();
+        vscodeStub.window.showQuickPick = originalQuickPick;
+        vscodeStub.commands.executeCommand = originalExecute;
+        assert.strictEqual(
+            executed,
+            "mockserver.openDashboard",
+            `status-bar menu did not invoke the picked command (got ${executed})`
+        );
+    });
+
+    await test("bundled expectation schema is present and well-formed", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const schemaPath = path.resolve(__dirname, "../../schemas/mockserver-expectation.schema.json");
+        assert.ok(fs.existsSync(schemaPath), `schema not found at ${schemaPath}`);
+        const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+        assert.ok(schema.definitions && schema.definitions.expectation, "missing expectation definition");
+        assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
+    });
+
+    await test("package.json activationEvents include onStartupFinished (passive surfaces light up on startup)", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const pkgPath = path.resolve(__dirname, "../../package.json");
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        assert.ok(Array.isArray(pkg.activationEvents), "activationEvents should be an array");
+        assert.ok(
+            pkg.activationEvents.includes("onStartupFinished"),
+            "activationEvents should include onStartupFinished so the status bar and CodeLens appear on a fresh window"
+        );
+    });
+
+    await test("activate registers mockserver.openDashboardInEditor command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.openDashboardInEditor"),
+            "mockserver.openDashboardInEditor command not registered"
+        );
+    });
+
+    await test("activate registers the load + diff + record + openapi commands", () => {
+        assert.ok(registeredCommands.has("mockserver.loadExpectations"), "load command not registered");
+        assert.ok(registeredCommands.has("mockserver.diffAgainstLive"), "diff command not registered");
+        assert.ok(registeredCommands.has("mockserver.saveRecorded"), "record command not registered");
+        assert.ok(registeredCommands.has("mockserver.generateFromOpenApi"), "openapi command not registered");
+    });
+
+    await test("activate registers the mockserver.sendRequest command", () => {
+        assert.ok(registeredCommands.has("mockserver.sendRequest"), "sendRequest command not registered");
+    });
+
+    await test("activate registers the mockserver.showDrift command", () => {
+        assert.ok(registeredCommands.has("mockserver.showDrift"), "showDrift command not registered");
+    });
+
+    await test("activate registers the mockserver.showDriftDiagnostics command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.showDriftDiagnostics"),
+            "showDriftDiagnostics command not registered"
+        );
+    });
+
+    await test("activate registers the mockserver.viewRequestLog command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.viewRequestLog"),
+            "viewRequestLog command not registered"
+        );
+    });
+
+    await test("activate registers the mockserver.findByTrace command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.findByTrace"),
+            "findByTrace command not registered"
+        );
+    });
+
+    await test("activate registers the mockserver.reset command", () => {
+        assert.ok(registeredCommands.has("mockserver.reset"), "reset command not registered");
+    });
+
+    await test("activate registers the mockserver.uploadWasm command", () => {
+        assert.ok(registeredCommands.has("mockserver.uploadWasm"), "uploadWasm command not registered");
+    });
+
+    await test("activate registers the mockserver.listWasm command", () => {
+        assert.ok(registeredCommands.has("mockserver.listWasm"), "listWasm command not registered");
+    });
+
+    // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
+    const client = require("../mockServerClient");
+
+    await test("buildBaseUrl builds a localhost URL", () => {
+        assert.strictEqual(client.buildBaseUrl(1080), "http://localhost:1080");
+    });
+
+    await test("buildDashboardWebviewHtml embeds the URL in an iframe and allows framing localhost", () => {
+        const url = "http://localhost:1080/mockserver/dashboard";
+        const html = client.buildDashboardWebviewHtml(url) as string;
+        assert.ok(html.includes(`<iframe src="${url}"`), "iframe src should be the dashboard URL");
+        assert.ok(
+            /Content-Security-Policy[^>]*frame-src[^>]*http:\/\/localhost:\*/.test(html),
+            "CSP should allow frame-src http://localhost:*"
+        );
+    });
+
+    await test("parseExpectations accepts a single object and an array", () => {
+        assert.deepStrictEqual(client.parseExpectations('{"httpRequest":{}}'), [{ httpRequest: {} }]);
+        assert.strictEqual(client.parseExpectations('[{"a":1},{"b":2}]').length, 2);
+    });
+
+    await test("parseExpectations rejects empty array, invalid JSON, and non-objects", () => {
+        assert.throws(() => client.parseExpectations("[]"), /empty array/);
+        assert.throws(() => client.parseExpectations("{not json"), /Not valid JSON/);
+        assert.throws(() => client.parseExpectations("42"), /Expected an expectation/);
+    });
+
+    await test("parseExpectations accepts JSONC (comments + trailing comma) without corrupting URLs", () => {
+        const jsonc = `{
+            // a forward to an http URL — the // inside the string must survive
+            "httpRequest": { "path": "/x" },
+            "httpForward": { "host": "http://example.com", "port": 80 },
+        }`;
+        const result = client.parseExpectations(jsonc) as any[];
+        assert.strictEqual(result.length, 1);
+        assert.strictEqual(result[0].httpForward.host, "http://example.com");
+    });
+
+    await test("loadExpectations PUTs an array and returns the count", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve("") });
+        };
+        const count = await client.loadExpectations("http://localhost:1080", '[{"a":1},{"b":2}]', fakeFetch);
+        assert.strictEqual(count, 2);
+        assert.strictEqual(captured.url, "http://localhost:1080/mockserver/expectation");
+        assert.strictEqual(captured.init.method, "PUT");
+        assert.ok(Array.isArray(JSON.parse(captured.init.body)), "body should be a JSON array");
+    });
+
+    await test("loadExpectations throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve("bad matcher") });
+        await assert.rejects(
+            () => client.loadExpectations("http://localhost:1080", '{"httpResponse":{}}', fakeFetch),
+            /400: bad matcher/
+        );
+    });
+
+    await test("retrieveActiveExpectations pretty-prints the server JSON", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"id":"x"}]') });
+        const out = await client.retrieveActiveExpectations("http://localhost:1080", fakeFetch);
+        assert.ok(out.includes('"id": "x"'), "expected pretty-printed JSON");
+    });
+
+    await test("retrieveRequestLog flags the empty log and GETs the requests type", async () => {
+        let url = "";
+        const emptyFetch = (u: string) => {
+            url = u;
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("[]") });
+        };
+        const empty = await client.retrieveRequestLog("http://localhost:1080", emptyFetch);
+        assert.strictEqual(empty.empty, true);
+        assert.ok(url.includes("/mockserver/retrieve"), `url should hit /mockserver/retrieve: ${url}`);
+        assert.ok(url.includes("type=requests"), `url should use type=requests: ${url}`);
+    });
+
+    await test("retrieveRequestLog pretty-prints a 2-record log and flags non-empty", async () => {
+        const payload = '[{"method":"GET","path":"/a"},{"method":"POST","path":"/b"}]';
+        const dataFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(payload) });
+        const data = await client.retrieveRequestLog("http://localhost:1080", dataFetch);
+        assert.strictEqual(data.empty, false);
+        assert.ok(data.content.includes('"path": "/a"'), "expected pretty-printed JSON");
+        assert.ok(data.content.includes('"path": "/b"'), "expected both records");
+    });
+
+    await test("retrieveRequestLog throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve("bad type") });
+        await assert.rejects(
+            () => client.retrieveRequestLog("http://localhost:1080", fakeFetch),
+            /400: bad type/
+        );
+    });
+
+    await test("extractTraceId pulls the trace id from a full traceparent", () => {
+        assert.strictEqual(
+            client.extractTraceId("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("extractTraceId returns a bare 32-hex id as-is", () => {
+        assert.strictEqual(
+            client.extractTraceId("4bf92f3577b34da6a3ce929d0e0e4736"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("extractTraceId lowercases an uppercase trace id and traceparent", () => {
+        assert.strictEqual(
+            client.extractTraceId("4BF92F3577B34DA6A3CE929D0E0E4736"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+        assert.strictEqual(
+            client.extractTraceId("00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("extractTraceId returns null for junk", () => {
+        assert.strictEqual(client.extractTraceId("not-a-trace"), null);
+        assert.strictEqual(client.extractTraceId("4bf92f35"), null); // too short
+        assert.strictEqual(client.extractTraceId(""), null);
+    });
+
+    await test("requestMatchesTrace matches a traceparent header in the array form", () => {
+        const request = {
+            method: "GET",
+            path: "/a",
+            headers: [
+                { name: "Host", values: ["localhost"] },
+                { name: "traceparent", values: ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"] },
+            ],
+        };
+        assert.strictEqual(client.requestMatchesTrace(request, "4bf92f3577b34da6a3ce929d0e0e4736"), true);
+    });
+
+    await test("requestMatchesTrace matches a traceparent header in the object-map form (the real server shape)", () => {
+        // retrieve?type=requests serializes headers as { name: [values] }, not an array.
+        const request = {
+            path: "/a",
+            headers: {
+                Host: ["localhost"],
+                traceparent: ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"],
+            },
+        };
+        assert.strictEqual(client.requestMatchesTrace(request, "4bf92f3577b34da6a3ce929d0e0e4736"), true);
+    });
+
+    await test("requestMatchesTrace is false for a different trace id", () => {
+        const request = {
+            headers: [
+                { name: "traceparent", values: ["00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-00f067aa0ba902b7-01"] },
+            ],
+        };
+        assert.strictEqual(client.requestMatchesTrace(request, "4bf92f3577b34da6a3ce929d0e0e4736"), false);
+    });
+
+    await test("requestMatchesTrace is false when the request has no headers", () => {
+        assert.strictEqual(client.requestMatchesTrace({ method: "GET", path: "/a" }, "4bf92f3577b34da6a3ce929d0e0e4736"), false);
+        assert.strictEqual(client.requestMatchesTrace(null, "4bf92f3577b34da6a3ce929d0e0e4736"), false);
+    });
+
+    await test("filterRequestsByTrace returns the matching subset of a request log", () => {
+        const log = JSON.stringify([
+            {
+                method: "GET",
+                path: "/a",
+                headers: [{ name: "traceparent", values: ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"] }],
+            },
+            {
+                method: "POST",
+                path: "/b",
+                headers: [{ name: "traceparent", values: ["00-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-00f067aa0ba902b7-01"] }],
+            },
+        ]);
+        const result = client.filterRequestsByTrace(log, "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert.strictEqual(result.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert.strictEqual(result.matches.length, 1);
+        assert.strictEqual(result.matches[0].path, "/a");
+    });
+
+    await test("filterRequestsByTrace returns a null trace id for junk input", () => {
+        const result = client.filterRequestsByTrace("[]", "not-a-trace");
+        assert.strictEqual(result.traceId, null);
+        assert.deepStrictEqual(result.matches, []);
+    });
+
+    await test("resetServer PUTs /mockserver/reset", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
+        };
+        await client.resetServer("http://localhost:1080", fakeFetch);
+        assert.ok(captured.url.includes("/mockserver/reset"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "PUT");
+    });
+
+    await test("resetServer throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve("boom") });
+        await assert.rejects(
+            () => client.resetServer("http://localhost:1080", fakeFetch),
+            /500: boom/
+        );
+    });
+
+    await test("retrieveRecordedExpectations (json) flags empty and pretty-prints", async () => {
+        const emptyFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("[]") });
+        const empty = await client.retrieveRecordedExpectations("http://localhost:1080", "json", emptyFetch);
+        assert.strictEqual(empty.empty, true);
+
+        const dataFetch = (url: string) => {
+            assert.ok(url.includes("type=recorded_expectations&format=json"), `url=${url}`);
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"id":"r"}]') });
+        };
+        const data = await client.retrieveRecordedExpectations("http://localhost:1080", "json", dataFetch);
+        assert.strictEqual(data.empty, false);
+        assert.ok(data.content.includes('"id": "r"'), "expected pretty-printed JSON");
+    });
+
+    await test("retrieveRecordedExpectations (java) returns the DSL verbatim and flags empty", async () => {
+        const dsl = "new MockServerClient(...).when(request()...)";
+        const javaFetch = (url: string) => {
+            assert.ok(url.includes("format=java"), `url=${url}`);
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(dsl) });
+        };
+        const out = await client.retrieveRecordedExpectations("http://localhost:1080", "java", javaFetch);
+        assert.strictEqual(out.content, dsl);
+        assert.strictEqual(out.empty, false);
+
+        const emptyJava = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("   ") });
+        const empty = await client.retrieveRecordedExpectations("http://localhost:1080", "java", emptyJava);
+        assert.strictEqual(empty.empty, true);
+    });
+
+    await test("generateExpectationsFromOpenApi sends a JSON spec as an object", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve('[{"id":"op"}]') });
+        };
+        const out = await client.generateExpectationsFromOpenApi(
+            "http://localhost:1080",
+            '{"openapi":"3.0.0","paths":{}}',
+            fakeFetch
+        );
+        assert.ok(captured.url.endsWith("/mockserver/openapi"), `url=${captured.url}`);
+        const sent = JSON.parse(captured.init.body);
+        assert.strictEqual(typeof sent.specUrlOrPayload, "object", "JSON spec should be sent as an object");
+        assert.ok(out.includes('"id": "op"'), "expected pretty-printed expectations");
+    });
+
+    await test("generateExpectationsFromOpenApi sends a YAML spec as a string", async () => {
+        let body: any = {};
+        const fakeFetch = (_url: string, init: any) => {
+            body = JSON.parse(init.body);
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve("[]") });
+        };
+        await client.generateExpectationsFromOpenApi("http://localhost:1080", "openapi: 3.0.0\npaths: {}", fakeFetch);
+        assert.strictEqual(typeof body.specUrlOrPayload, "string", "YAML spec should be sent as a string");
+    });
+
+    await test("generateExpectationsFromOpenApi throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve("invalid spec") });
+        await assert.rejects(
+            () => client.generateExpectationsFromOpenApi("http://localhost:1080", "{}", fakeFetch),
+            /400: invalid spec/
+        );
+    });
+
+    await test("parseRequestSpec accepts a valid spec with headers and body", () => {
+        const spec = client.parseRequestSpec(
+            '{"method":"POST","path":"/api/x","headers":{"Accept":"application/json"},"body":"hi"}'
+        );
+        assert.strictEqual(spec.method, "POST");
+        assert.strictEqual(spec.path, "/api/x");
+        assert.deepStrictEqual(spec.headers, { Accept: "application/json" });
+        assert.strictEqual(spec.body, "hi");
+    });
+
+    await test("parseRequestSpec rejects a missing method", () => {
+        assert.throws(() => client.parseRequestSpec('{"path":"/api/x"}'), /missing a "method"/);
+    });
+
+    await test("parseRequestSpec rejects a missing path", () => {
+        assert.throws(() => client.parseRequestSpec('{"method":"GET"}'), /missing a "path"/);
+    });
+
+    await test("parseRequestSpec rejects invalid JSON", () => {
+        assert.throws(() => client.parseRequestSpec("{not json"), /Not valid JSON/);
+    });
+
+    await test("sendScratchRequest passes url, method, headers, body to fetch and returns status+body", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"ok":true}') });
+        };
+        const spec = {
+            method: "POST",
+            path: "/api/x",
+            headers: { Accept: "application/json" },
+            body: "payload",
+        };
+        const response = await client.sendScratchRequest("http://localhost:1080", spec, fakeFetch);
+        assert.strictEqual(captured.url, "http://localhost:1080/api/x");
+        assert.strictEqual(captured.init.method, "POST");
+        assert.deepStrictEqual(captured.init.headers, { Accept: "application/json" });
+        assert.strictEqual(captured.init.body, "payload");
+        assert.strictEqual(response.status, 200);
+        assert.strictEqual(response.body, '{"ok":true}');
+    });
+
+    await test("retrieveDrift flags the empty state (count 0, no drifts)", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
+        const out = await client.retrieveDrift("http://localhost:1080", fakeFetch);
+        assert.strictEqual(out.empty, true);
+        assert.strictEqual(out.count, 0);
+    });
+
+    await test("retrieveDrift summarises records and GETs /mockserver/drift", async () => {
+        let captured: any = {};
+        const payload = {
+            count: 2,
+            drifts: [
+                {
+                    expectationId: "exp-1",
+                    driftType: "HEADER_CHANGED",
+                    field: "$.status",
+                    expectedValue: "active",
+                    actualValue: "archived",
+                    confidence: 0.9,
+                    epochTimeMs: 1,
+                },
+                {
+                    expectationId: "exp-2",
+                    driftType: "FIELD_ADDED",
+                    field: "$.newField",
+                    confidence: 0.5,
+                    epochTimeMs: 2,
+                },
+            ],
+        };
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(payload)) });
+        };
+        const out = await client.retrieveDrift("http://localhost:1080", fakeFetch);
+        assert.strictEqual(out.empty, false);
+        assert.strictEqual(out.count, 2);
+        assert.ok(captured.url.includes("/mockserver/drift"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+        assert.ok(out.report.includes("HEADER_CHANGED"), "report should include the driftType");
+        assert.ok(out.report.includes("$.status"), "report should include the field");
+        assert.ok(out.report.includes("FIELD_ADDED"), "report should include the second driftType");
+        assert.ok(out.report.includes("— "), "missing value should render as an em dash");
+    });
+
+    await test("retrieveDrift passes the limit as a query param when provided", async () => {
+        let url = "";
+        const fakeFetch = (u: string) => {
+            url = u;
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
+        };
+        await client.retrieveDrift("http://localhost:1080", fakeFetch, 10);
+        assert.ok(url.includes("/mockserver/drift?limit=10"), `url=${url}`);
+    });
+
+    await test("retrieveDrift throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("drift not enabled") });
+        await assert.rejects(
+            () => client.retrieveDrift("http://localhost:1080", fakeFetch),
+            /404: drift not enabled/
+        );
+    });
+
+    await test("retrieveDriftRecords returns the parsed drifts array and GETs /mockserver/drift", async () => {
+        let captured: any = {};
+        const payload = {
+            count: 2,
+            drifts: [
+                { expectationId: "exp-1", driftType: "STATUS", field: "$.status", confidence: 1.0, epochTimeMs: 1 },
+                { expectationId: "exp-2", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", confidence: 0.5, epochTimeMs: 2 },
+            ],
+        };
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(payload)) });
+        };
+        const records = await client.retrieveDriftRecords("http://localhost:1080", fakeFetch);
+        assert.strictEqual(records.length, 2);
+        assert.strictEqual(records[0].expectationId, "exp-1");
+        assert.ok(captured.url.includes("/mockserver/drift"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+    });
+
+    await test("retrieveDriftRecords returns [] when the server reports no drift", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
+        const records = await client.retrieveDriftRecords("http://localhost:1080", fakeFetch);
+        assert.deepStrictEqual(records, []);
+    });
+
+    await test("retrieveDriftRecords returns [] on a non-JSON body", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("not json") });
+        const records = await client.retrieveDriftRecords("http://localhost:1080", fakeFetch);
+        assert.deepStrictEqual(records, []);
+    });
+
+    await test("retrieveDriftRecords throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("drift not enabled") });
+        await assert.rejects(
+            () => client.retrieveDriftRecords("http://localhost:1080", fakeFetch),
+            /404: drift not enabled/
+        );
+    });
+
+    await test("mapDriftToDiagnostics anchors a record to the line of its matching expectation id", () => {
+        const docText = [
+            "[",
+            "  {",
+            '    "id": "exp-1",',
+            '    "httpRequest": { "path": "/a" }',
+            "  }",
+            "]",
+        ].join("\n");
+        const records = [
+            { expectationId: "exp-1", driftType: "HEADER_CHANGED", field: "$.x", confidence: 0.8, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, docText);
+        assert.strictEqual(diags.length, 1);
+        assert.strictEqual(diags[0].line, 2, "should anchor to the line containing the matching id");
+    });
+
+    await test("mapDriftToDiagnostics falls back to line 0 when no expectation id matches", () => {
+        const docText = '[{"id":"other"}]';
+        const records = [
+            { expectationId: "missing", driftType: "HEADER_CHANGED", field: "$.x", confidence: 0.8, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, docText);
+        assert.strictEqual(diags[0].line, 0, "no match should fall back to line 0");
+    });
+
+    await test("mapDriftToDiagnostics maps STATUS drift to error and SCHEMA_FIELD_ADDED to warning", () => {
+        const records = [
+            { expectationId: "a", driftType: "STATUS", field: "$.status", confidence: 0.2, epochTimeMs: 1 },
+            { expectationId: "b", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", confidence: 0.2, epochTimeMs: 2 },
+            { expectationId: "c", driftType: "HEADER_CHANGED", field: "$.x", confidence: 0.2, epochTimeMs: 3 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, "{}");
+        assert.strictEqual(diags[0].severity, "error", "STATUS drift should be error");
+        assert.strictEqual(diags[1].severity, "warning", "SCHEMA_FIELD_ADDED should be warning");
+        assert.strictEqual(diags[2].severity, "info", "value change should be info");
+    });
+
+    await test("mapDriftToDiagnostics message includes the driftType and field, and — for absent values", () => {
+        const records = [
+            { expectationId: "a", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", confidence: 0.5, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, "{}");
+        assert.ok(diags[0].message.includes("SCHEMA_FIELD_ADDED"), "message should include driftType");
+        assert.ok(diags[0].message.includes("$.newField"), "message should include field");
+        assert.ok(diags[0].message.includes("—"), "absent values should render as an em dash");
+        assert.ok(diags[0].message.includes("confidence 0.5"), "message should include confidence");
+    });
+
+    await test("buildWasmUploadUrl builds the modules URL with the encoded name", () => {
+        assert.strictEqual(
+            client.buildWasmUploadUrl("http://localhost:1080", "my rule"),
+            "http://localhost:1080/mockserver/wasm/modules?name=my%20rule"
+        );
+    });
+
+    await test("uploadWasmModule PUTs the raw bytes with octet-stream and the encoded name", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve("") });
+        };
+        const bytes = new Uint8Array([0, 97, 115, 109, 1, 2, 3]);
+        await client.uploadWasmModule("http://localhost:1080", "rule one", bytes, fakeFetch);
+        assert.strictEqual(captured.init.method, "PUT");
+        assert.ok(captured.url.includes("/mockserver/wasm/modules"), `url=${captured.url}`);
+        assert.ok(captured.url.includes("name=rule%20one"), `url should carry the encoded name: ${captured.url}`);
+        assert.strictEqual(
+            captured.init.headers["Content-Type"],
+            "application/octet-stream",
+            "should send octet-stream content type"
+        );
+        assert.strictEqual(captured.init.body, bytes, "should send the exact Uint8Array passed in");
+    });
+
+    await test("uploadWasmModule surfaces the 403 wasm-disabled message verbatim on a non-ok response", async () => {
+        const disabled = "WASM support is disabled; set wasmEnabled=true to enable";
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve(disabled) });
+        await assert.rejects(
+            () => client.uploadWasmModule("http://localhost:1080", "r", new Uint8Array([0]), fakeFetch),
+            new RegExp(`403: ${disabled}`)
+        );
+    });
+
+    await test("retrieveWasmModules GETs /mockserver/wasm/modules and pretty-prints the list", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('["ruleA","ruleB"]') });
+        };
+        const out = await client.retrieveWasmModules("http://localhost:1080", fakeFetch);
+        assert.ok(captured.url.endsWith("/mockserver/wasm/modules"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+        assert.ok(out.includes('"ruleA"'), "expected pretty-printed module names");
+        assert.ok(out.includes('"ruleB"'), "expected both module names");
+    });
+
+    await test("retrieveWasmModules throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve("WASM support is disabled") });
+        await assert.rejects(
+            () => client.retrieveWasmModules("http://localhost:1080", fakeFetch),
+            /403: WASM support is disabled/
+        );
+    });
+
+    await test("looksLikeOpenApiSpec detects specs and rejects expectations/junk", () => {
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"openapi":"3.0.0","paths":{}}'), true);
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"swagger":"2.0","paths":{}}'), true);
+        assert.strictEqual(client.looksLikeOpenApiSpec("openapi: 3.0.0\npaths: {}"), true);
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"httpRequest":{},"httpResponse":{}}'), false);
+        assert.strictEqual(client.looksLikeOpenApiSpec('[{"httpResponse":{}}]'), false);
+        assert.strictEqual(client.looksLikeOpenApiSpec('{"note":"openapi is great"}'), false);
+        assert.strictEqual(client.looksLikeOpenApiSpec("just text"), false);
+    });
+
+    // --- CodeLens providers ---
+    const { ExpectationCodeLensProvider, ScratchRequestCodeLensProvider } = require("../codeLens");
+
+    await test("CodeLens provider offers load + diff lenses", () => {
+        const provider = new ExpectationCodeLensProvider();
+        const lenses = provider.provideCodeLenses({ uri: { toString: () => "file:///x.mockserver.json" } });
+        assert.strictEqual(lenses.length, 2);
+        assert.strictEqual(lenses[0].command.command, "mockserver.loadExpectations");
+        assert.strictEqual(lenses[1].command.command, "mockserver.diffAgainstLive");
+    });
+
+    await test("scratch-request CodeLens provider offers a send lens", () => {
+        const provider = new ScratchRequestCodeLensProvider();
+        const lenses = provider.provideCodeLenses({ uri: { toString: () => "file:///x.mockserver-request.json" } });
+        assert.strictEqual(lenses.length, 1);
+        assert.strictEqual(lenses[0].command.command, "mockserver.sendRequest");
     });
 
     console.log(`\nResults: ${passed} passed, ${failed} failed, ${passed + failed} total`);
@@ -133,4 +905,7 @@ function runTests(): void {
     }
 }
 
-runTests();
+runTests().catch((e) => {
+    console.error(e);
+    process.exit(1);
+});

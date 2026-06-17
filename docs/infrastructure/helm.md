@@ -28,8 +28,8 @@ initializerJson.json"]
 
 | Chart | Path | Version | Purpose |
 |-------|------|---------|---------|
-| `mockserver` | `helm/mockserver/` | 7.0.0 | Main deployment chart (includes optional ConfigMap) |
-| `mockserver-config` | `helm/mockserver-config/` | 7.0.0 | Example external ConfigMap chart (for reference) |
+| `mockserver` | `helm/mockserver/` | 7.1.0 | Main deployment chart (includes optional ConfigMap) |
+| `mockserver-config` | `helm/mockserver-config/` | 7.1.0 | Example external ConfigMap chart (for reference) |
 
 ## mockserver Chart
 
@@ -267,7 +267,7 @@ docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook
 helm install mockserver oci://ghcr.io/mock-server/charts/mockserver
 
 # Pin a version
-helm install mockserver oci://ghcr.io/mock-server/charts/mockserver --version 7.0.0
+helm install mockserver oci://ghcr.io/mock-server/charts/mockserver --version 7.1.0
 
 # --- Option B: Legacy HTTP repo ------------------------------------------
 helm repo add mockserver https://www.mock-server.com
@@ -415,7 +415,7 @@ cosign verify --key https://www.mock-server.com/mockserver-cosign.pub ghcr.io/mo
 
 > **IAM note:** signing is gated by `aws secretsmanager describe-secret mockserver-release/cosign-key`,
 > so the release-queue role needs **`secretsmanager:DescribeSecret`** on that secret (not just
-> `GetSecretValue`) or the probe fails and signing is silently skipped — the cause of the 7.0.0 chart
+> `GetSecretValue`) or the probe fails and signing is silently skipped — the cause of the 7.1.0 chart
 > publishing unsigned until the grant was added to `read_release_secrets`.
 
 To enable signing:

@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.file.FilePath;
 import org.mockserver.file.FileReader;
+import org.mockserver.fixture.FixtureRedactor;
 import org.mockserver.log.MockServerEventLog;
 import org.mockserver.time.EpochService;
 import org.mockserver.time.GlobalFixedTime;
@@ -3274,7 +3275,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(6));
+        assertThat(returnedExpectations.length, is(7));
 
         // Verify the discovery endpoint is now matchable
         HttpResponse discoveryResponse = httpState.firstMatchingExpectation(
@@ -3305,7 +3306,10 @@ public class HttpStateTest {
             request("/custom/token").withMethod("POST")
         );
         assertThat(tokenMatch, is(notNullValue()));
-        assertThat(tokenMatch.getHttpResponse().getBodyAsString(), containsString("access_token"));
+        // /token is now served by the OidcTokenCallback class callback (authorization-code flow),
+        // so it has no static httpResponse — assert the callback wiring instead of a response body.
+        assertThat(tokenMatch.getHttpResponseClassCallback(), is(notNullValue()));
+        assertThat(tokenMatch.getHttpResponseClassCallback().getCallbackClass(), containsString("OidcTokenCallback"));
     }
 
     @Test
@@ -3325,7 +3329,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(6));
+        assertThat(returnedExpectations.length, is(7));
     }
 
     @Test
@@ -3487,6 +3491,105 @@ public class HttpStateTest {
         assertThat(handle, is(true));
         assertThat(responseWriter.response.getStatusCode(), is(400));
         assertThat(responseWriter.response.getBodyAsString(), containsString("unable to auto-detect"));
+    }
+
+    private static final String PACT_V3_CONTRACT = "{" +
+        "\"consumer\":{\"name\":\"c\"},\"provider\":{\"name\":\"p\"}," +
+        "\"interactions\":[{" +
+        "  \"description\":\"get health\"," +
+        "  \"request\":{\"method\":\"GET\",\"path\":\"/health\"}," +
+        "  \"response\":{\"status\":200,\"body\":{\"status\":\"up\"}}" +
+        "}]," +
+        "\"metadata\":{\"pactSpecification\":{\"version\":\"3.0.0\"}}}";
+
+    @Test
+    public void shouldHandleImportPactWithFormatQueryParam() {
+        // given
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "pact")
+            .withBody(PACT_V3_CONTRACT);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+
+        // the imported expectation is now matchable
+        Expectation match = httpState.firstMatchingExpectation(
+            request("/health").withMethod("GET")
+        );
+        assertThat(match, is(notNullValue()));
+        assertThat(match.getHttpResponse().getStatusCode(), is(200));
+    }
+
+    @Test
+    public void shouldHandleImportPactAutoDetected() {
+        // given — no format param; top-level "interactions" array triggers Pact auto-detect
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withBody(PACT_V3_CONTRACT);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+    }
+
+    @Test
+    public void shouldHandlePactImportDedicatedRoute() {
+        // given
+        HttpRequest importRequest = request("/mockserver/pact/import")
+            .withMethod("PUT")
+            .withBody(PACT_V3_CONTRACT);
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
+            responseWriter.response.getBodyAsString(), true
+        );
+        assertThat(returnedExpectations.length, is(1));
+
+        // the imported expectation is now matchable
+        Expectation match = httpState.firstMatchingExpectation(
+            request("/health").withMethod("GET")
+        );
+        assertThat(match, is(notNullValue()));
+    }
+
+    @Test
+    public void shouldHandlePactImportEmptyBody() {
+        // given
+        HttpRequest importRequest = request("/mockserver/pact/import")
+            .withMethod("PUT")
+            .withBody("");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
     }
 
     // ---- Pact Verify Endpoint Tests ----
@@ -3822,6 +3925,87 @@ public class HttpStateTest {
         assertThat(responseBody, containsString("line1"));
         assertThat(responseBody, containsString("line2"));
         assertThat(responseBody, containsString("quoted"));
+    }
+
+    // a HAR with one entry whose JSON request body contains a default-sensitive field
+    // (password) plus a non-default field (foo); used to exercise import redaction over
+    // the REST endpoint (the importer filters volatile headers independently of
+    // redaction, so the stable signal is the JSON body fields)
+    private static final String IMPORT_REDACTION_HAR =
+        "{" +
+            "\"log\":{\"entries\":[{" +
+            "\"request\":{" +
+            "\"method\":\"POST\"," +
+            "\"url\":\"http://example.com/login\"," +
+            "\"postData\":{\"mimeType\":\"application/json\",\"text\":\"{\\\"password\\\":\\\"hunter2\\\",\\\"foo\\\":\\\"bar\\\"}\"}" +
+            "}," +
+            "\"response\":{\"status\":200}" +
+            "}]}}";
+
+    @Test
+    public void shouldImportWithRedactionEnabledByDefault() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withBody(IMPORT_REDACTION_HAR);
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then — the default-sensitive body field is redacted
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, not(containsString("hunter2")));
+        assertThat(body, containsString(FixtureRedactor.REDACTED_PLACEHOLDER));
+        // foo is not a default-sensitive field, so it is kept verbatim
+        assertThat(body, containsString("bar"));
+    }
+
+    @Test
+    public void shouldImportVerbatimWhenRedactSensitiveDataIsFalse() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withQueryStringParameter("redactSensitiveData", "false")
+            .withBody(IMPORT_REDACTION_HAR);
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then — nothing is redacted; the real secret is kept verbatim
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("hunter2"));
+        assertThat(body, containsString("bar"));
+        assertThat(body, not(containsString(FixtureRedactor.REDACTED_PLACEHOLDER)));
+    }
+
+    @Test
+    public void shouldRedactAdditionalBodyFieldsWhenRequested() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withQueryStringParameter("additionalRedactedBodyFields", "foo")
+            .withBody(IMPORT_REDACTION_HAR);
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then — the extra "foo" field is redacted in addition to the defaults
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, not(containsString("\"bar\"")));
+        assertThat(body, not(containsString("hunter2")));
+        assertThat(body, containsString(FixtureRedactor.REDACTED_PLACEHOLDER));
     }
 
 }

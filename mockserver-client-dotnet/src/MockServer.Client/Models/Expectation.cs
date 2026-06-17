@@ -39,6 +39,26 @@ public sealed class Expectation
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpError? HttpError { get; set; }
 
+    [JsonPropertyName("httpSseResponse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpSseResponse? HttpSseResponse { get; set; }
+
+    [JsonPropertyName("httpWebSocketResponse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpWebSocketResponse? HttpWebSocketResponse { get; set; }
+
+    [JsonPropertyName("grpcStreamResponse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GrpcStreamResponse? GrpcStreamResponse { get; set; }
+
+    [JsonPropertyName("binaryResponse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BinaryResponse? BinaryResponse { get; set; }
+
+    [JsonPropertyName("dnsResponse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DnsResponse? DnsResponse { get; set; }
+
     [JsonPropertyName("times")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Times? Times { get; set; }

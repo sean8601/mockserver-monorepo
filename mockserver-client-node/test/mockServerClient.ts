@@ -1,4 +1,4 @@
-import {mockServerClient, ClockStatus, MockServerClient} from '../index';
+import {mockServerClient, ClockStatus, GrpcService, MockServerClient, llm as llmFactory, mcpMock} from '../index';
 import {RequestResponse} from '../mockServerClient';
 import {Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, RequestDefinition} from '../mockServer';
 
@@ -267,4 +267,75 @@ async function test() {
     requestResponse = await client.removeServiceChaos("payments.svc");
     requestResponse = await client.clearServiceChaos();
     let serviceChaos: { services: { [host: string]: HttpChaosProfile } } = await client.serviceChaosStatus();
+
+    // LLM mocking builders (type-checking only)
+    requestResponse = await client.mockWithLLM(
+        client.llm.llmMock('/v1/messages')
+            .withProvider(client.llm.Provider.ANTHROPIC)
+            .withModel('claude-sonnet-4')
+            .respondingWith(
+                client.llm.completion()
+                    .withText('Paris.')
+                    .withStopReason('end_turn')
+                    .withUsage(client.llm.usage().withInputTokens(10).withOutputTokens(2))
+            )
+    );
+    // also reachable as a standalone factory import
+    const standaloneCompletion = llmFactory.completion().withText('via factory import');
+    requestResponse = await client.mockWithLLM(
+        client.llm.conversation()
+            .withPath('/v1/messages')
+            .withProvider(client.llm.Provider.OPENAI)
+            .isolateBy(client.llm.header('x-session-id'))
+            .turn().whenTurnIndex(0).respondingWith(
+                client.llm.completion().withToolCall(client.llm.toolUse('search').withArguments({}))
+            )
+            .andThen()
+            .turn().whenContainsToolResultFor('search').respondingWith(standaloneCompletion)
+            .andThen()
+    );
+    requestResponse = await client.mockWithLLM(
+        client.llm.llmFailover()
+            .withPath('/v1/chat/completions')
+            .withProvider(client.llm.Provider.OPENAI)
+            .withModel('gpt-4o')
+            .failWith(503, 2)
+            .failWith(429)
+            .thenRespondWith(
+                client.llm.completion()
+                    .streaming()
+                    .withStreamingPhysics(client.llm.tokensPerSecond(50).withJitter(0.2))
+            )
+    );
+
+    requestResponse = await client.uploadGrpcDescriptor(Buffer.from([]));
+    requestResponse = await client.uploadGrpcDescriptor(new Uint8Array([]));
+    let grpcServices: GrpcService[] = await client.retrieveGrpcServices();
+    let firstServiceName: string = grpcServices[0].name;
+    let firstMethodStreaming: boolean = grpcServices[0].methods[0].clientStreaming;
+    requestResponse = await client.clearGrpcDescriptors();
+
+    // MCP (Model Context Protocol) mock builder
+    const mcpExpectations: Expectation[] = client.mcpMock('/mcp')
+        .withServerName('MyServer')
+        .withServerVersion('2.0.0')
+        .withProtocolVersion('2025-03-26')
+        .withTool('get_weather')
+        .withDescription('Get the weather for a city')
+        .withInputSchema('{"type":"object","properties":{"city":{"type":"string"}}}')
+        .respondingWith('sunny')
+        .and()
+        .withResource('file:///config.json')
+        .withName('config')
+        .withMimeType('application/json')
+        .withContent('{"debug":true}')
+        .and()
+        .withPrompt('greet')
+        .withDescription('A greeting prompt')
+        .withArgument('name', 'who to greet', true)
+        .respondingWith('user', 'Hello {{name}}')
+        .and()
+        .build();
+    requestResponse = await client.mcpMock('/mcp').withToolsCapability().applyTo();
+    requestResponse = await mcpMock('/other-mcp').withResourcesCapability().applyTo(client);
 }

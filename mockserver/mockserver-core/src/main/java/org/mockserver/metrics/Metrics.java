@@ -59,6 +59,14 @@ public class Metrics {
     private static volatile Counter llmCostUsdTotal;
     // Counter for LLM cost-budget circuit-breaker trips. Null until metrics are enabled.
     private static volatile Counter llmCostBudgetTrippedTotal;
+    // Opt-in per-expectation match counter, labeled by the stable expectation id.
+    // Null unless metrics are enabled AND configuration.perExpectationMetricsEnabled()
+    // is true. OFF by default because per-expectation labels can explode
+    // Prometheus cardinality: one time series per distinct expectation id. Using the
+    // stable expectation id (not the request path) bounds cardinality to the number of
+    // expectations, but operators with very large or churning expectation sets should
+    // leave this off. See docs/code/metrics.md.
+    private static volatile Counter expectationMatchedTotal;
     // Supplier of active expectations, set by HttpState at startup so the
     // expectations-by-type GaugeWithCallback can read live state at scrape time
     // without a core->netty dependency.
@@ -131,6 +139,15 @@ public class Metrics {
                         .name("mock_server_llm_cost_budget_tripped")
                         .help("Total number of times the LLM cost-budget circuit-breaker tripped")
                         .register();
+                    if (Boolean.TRUE.equals(configuration.perExpectationMetricsEnabled())) {
+                        // Opt-in: registered only when perExpectationMetricsEnabled is true so
+                        // the default scrape is byte-for-byte identical to today (no new series).
+                        expectationMatchedTotal = Counter.builder()
+                            .name("mock_server_expectation_matched")
+                            .help("Total expectation matches (matched and responded) labeled by stable expectation id")
+                            .labelNames("expectation_id")
+                            .register();
+                    }
                     // Callback gauge, labeled by action_type: read active expectations at
                     // scrape time and group by action type, so no imperative tracking is needed.
                     GaugeWithCallback.builder()
@@ -214,6 +231,7 @@ public class Metrics {
             llmOutputTokensTotal = null;
             llmCostUsdTotal = null;
             llmCostBudgetTrippedTotal = null;
+            expectationMatchedTotal = null;
             otelRequestDurationHistogram = null;
             activeExpectationsSupplier.set(null);
             metrics.clear();
@@ -560,6 +578,48 @@ public class Metrics {
     public static long getLlmCostBudgetTrippedCount() {
         Counter counter = llmCostBudgetTrippedTotal;
         return counter != null ? (long) counter.get() : 0L;
+    }
+
+    /**
+     * Increment the per-expectation match counter for the given stable expectation id.
+     * <p>
+     * No-op unless per-expectation metrics are enabled
+     * ({@link Configuration#perExpectationMetricsEnabled()}) AND metrics are enabled
+     * (the counter is null otherwise), or when
+     * {@code expectationId} is null. Labeled by the stable expectation id (not the
+     * request path) so cardinality is bounded by the number of distinct expectations.
+     *
+     * @param expectationId the stable id of the matched expectation
+     */
+    public static void incrementExpectationMatched(String expectationId) {
+        Counter counter = expectationMatchedTotal;
+        if (counter != null && expectationId != null) {
+            counter.labelValues(expectationId).inc();
+        }
+    }
+
+    /**
+     * Return the current per-expectation match count for the given expectation id,
+     * or 0 if the per-expectation counter is not registered.
+     */
+    public static long getExpectationMatchedCount(String expectationId) {
+        Counter counter = expectationMatchedTotal;
+        if (counter == null || expectationId == null) {
+            return 0L;
+        }
+        try {
+            return (long) counter.labelValues(expectationId).get();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Return true if the per-expectation match counter is registered (i.e. both
+     * metricsEnabled and perExpectationMetricsEnabled are on).
+     */
+    public static boolean isPerExpectationMetricsActive() {
+        return expectationMatchedTotal != null;
     }
 
     /**

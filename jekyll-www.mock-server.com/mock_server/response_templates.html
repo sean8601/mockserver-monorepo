@@ -39,6 +39,8 @@ lastmod: 2019-11-10T08:00:00+01:00
             <li><a href="#json_helper">JSON Transform Helper</a> &mdash; merge, sort, extract fields, add/remove elements, pretty-print</li>
             <li><a href="#dates_helper">Date Helper</a> &mdash; date formatting, arithmetic, and epoch conversion</li>
             <li><a href="#math_helper">Calc Helper</a> &mdash; random numbers, rounding, min/max, abs, ceil/floor, number formatting</li>
+            <li><a href="#crypto_helper">Crypto Helper</a> &mdash; MD5, SHA-1, SHA-256, SHA-512 digests and HMAC-SHA-256 signatures, all as lowercase hex</li>
+            <li><a href="#regex_helper">Regex Helper</a> &mdash; test patterns, capture groups, and replace substrings using Java regex</li>
         </ul>
     </li>
     <li><a href="#response_template_security"><strong>Security Considerations</strong></a> &mdash; restrict the Java classes templates can reach via <code class="inline code">velocityDisallowClassLoading</code> and <code class="inline code">javascriptDisallowedClasses</code></li>
@@ -911,6 +913,52 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
 </ul>
 
 <p>The full list of available providers (name, address, internet, company, finance, medical, etc.) is documented in the <a target="_blank" href="https://www.datafaker.net/documentation/providers/" rel="noopener noreferrer">DataFaker providers reference</a>.</p>
+
+<a id="crypto_helper" class="anchor" href="#crypto_helper">&nbsp;</a>
+
+<h3>Crypto Helper (<code>crypto</code>)</h3>
+
+<p>Computes cryptographic digests and HMAC signatures. All methods return lowercase hex strings. Use this to generate request signatures, verify webhook payloads, or add content-hashing headers in templated responses.</p>
+
+<table class="table">
+    <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
+    <tbody>
+        <tr><td><code>crypto.md5(s)</code></td><td>MD5 digest of a string</td><td><code>crypto.md5("hello")</code> &rarr; <code>"5d41402abc4b2a76b9719d911017c592"</code></td></tr>
+        <tr><td><code>crypto.sha1(s)</code></td><td>SHA-1 digest</td><td><code>crypto.sha1("hello")</code> &rarr; <code>"aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"</code></td></tr>
+        <tr><td><code>crypto.sha256(s)</code></td><td>SHA-256 digest</td><td><code>crypto.sha256("hello")</code> &rarr; <code>"2cf24dba5fb0a30e26e83b2ac5b9e29e..."</code></td></tr>
+        <tr><td><code>crypto.sha512(s)</code></td><td>SHA-512 digest</td><td><code>crypto.sha512("hello")</code> &rarr; <code>"9b71d224bd62f3785d96d46ad3ea3d..."</code></td></tr>
+        <tr><td><code>crypto.hmacSha256(key, data)</code></td><td>HMAC-SHA-256 of <code>data</code> using <code>key</code></td><td><code>crypto.hmacSha256("secret", "payload")</code> &rarr; lowercase hex</td></tr>
+    </tbody>
+</table>
+
+<p>Usage examples:</p>
+<ul>
+    <li><strong>Velocity:</strong> <code class="inline code">$crypto.sha256($!request.body)</code> (hash the request body into a response field)</li>
+    <li><strong>Mustache:</strong> <code class="inline code">&lbrace;&lbrace; crypto.sha256 &rbrace;&rbrace;</code> is not directly callable with arguments in Mustache &mdash; use Velocity or JavaScript when you need to pass a value to a crypto method</li>
+    <li><strong>JavaScript:</strong> <code class="inline code">crypto.hmacSha256("my-secret", request.body)</code></li>
+</ul>
+
+<a id="regex_helper" class="anchor" href="#regex_helper">&nbsp;</a>
+
+<h3>Regex Helper (<code>regex</code>)</h3>
+
+<p>Applies Java regular expressions to strings inside a template. Use this to extract captured groups from request data or rewrite parts of a value before including it in the response.</p>
+
+<table class="table">
+    <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
+    <tbody>
+        <tr><td><code>regex.matches(input, pattern)</code></td><td>Returns <code>true</code> if the pattern matches anywhere in the input</td><td><code>regex.matches("hello world", "\\bworld\\b")</code> &rarr; <code>true</code></td></tr>
+        <tr><td><code>regex.replaceAll(input, pattern, replacement)</code></td><td>Replaces all matches of the pattern with the replacement string; supports <code>$1</code> back-references</td><td><code>regex.replaceAll("foo123bar", "[0-9]+", "NUM")</code> &rarr; <code>"fooNUMbar"</code></td></tr>
+        <tr><td><code>regex.group(input, pattern, groupIndex)</code></td><td>Returns the captured group at <code>groupIndex</code> (1-based) from the first match, or <code>""</code> if there is no match</td><td><code>regex.group("user-42", "user-([0-9]+)", 1)</code> &rarr; <code>"42"</code></td></tr>
+    </tbody>
+</table>
+
+<p>Usage examples:</p>
+<ul>
+    <li><strong>Velocity:</strong> <code class="inline code">$regex.group($!request.path, "/orders/([^/]+)", 1)</code> (extract the order ID from the path)</li>
+    <li><strong>JavaScript:</strong> <code class="inline code">regex.replaceAll(request.headers["Authorization"][0], "^Bearer ", "")</code> (strip the Bearer prefix from a token)</li>
+    <li><strong>Mustache:</strong> regex helper methods require arguments and cannot be invoked from Mustache &mdash; use Velocity or JavaScript instead</li>
+</ul>
 
 <a id="mustache_templates" class="anchor" href="#mustache_templates">&nbsp;</a>
 

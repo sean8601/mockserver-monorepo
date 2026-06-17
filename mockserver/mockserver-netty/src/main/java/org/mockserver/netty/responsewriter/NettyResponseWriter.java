@@ -40,12 +40,22 @@ public class NettyResponseWriter extends ResponseWriter {
     // disabled so sendResponse() adds nothing to the hot path. A new
     // NettyResponseWriter is created per request, so this is race-free.
     private final long startNanos;
+    // WS7.2 graceful-shutdown in-flight token for this exchange; may be null (e.g. when no
+    // LifeCycle is available). Completed exactly once when the response is dispatched here,
+    // releasing this request from the drain counter. The token's own guard makes this safe even
+    // when the channel-close safety net also fires.
+    private final org.mockserver.netty.InFlightRequest inFlightRequest;
 
     public NettyResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, ChannelHandlerContext ctx, Scheduler scheduler) {
+        this(configuration, mockServerLogger, ctx, scheduler, null);
+    }
+
+    public NettyResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, ChannelHandlerContext ctx, Scheduler scheduler, org.mockserver.netty.InFlightRequest inFlightRequest) {
         super(configuration, mockServerLogger);
         this.ctx = ctx;
         this.scheduler = scheduler;
         this.startNanos = configuration.metricsEnabled() ? System.nanoTime() : -1L;
+        this.inFlightRequest = inFlightRequest;
     }
 
     @Override
@@ -54,6 +64,15 @@ public class NettyResponseWriter extends ResponseWriter {
             double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
             Metrics.observeRequestDurationSeconds(durationSeconds);
             Metrics.observeRequestDurationByMethodSeconds(durationSeconds, request != null ? request.getMethod("") : null);
+        }
+        // Release this exchange from the graceful-shutdown drain counter now that its response is
+        // being dispatched. This is the single funnel for every data-plane response (normal,
+        // streaming, chunked, forward/proxy, error, breakpoint-modified), so it covers all of them
+        // with one decrement. The token guards against double-completion if the channel-close net
+        // also fires. Done here (response hand-off) rather than per-write-future to keep it off the
+        // many divergent async write sub-paths; the close-future net backstops dropped exchanges.
+        if (inFlightRequest != null) {
+            inFlightRequest.complete();
         }
         if (response.getStreamingBody() != null) {
             writeStreamingResponse(ctx, request, response);

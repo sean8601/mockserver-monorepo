@@ -10,14 +10,24 @@ import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutlined';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import SaveIcon from '@mui/icons-material/Save';
 import type { KeyToMultiValue, KeyToValue, RequestFilter } from '../types';
 import { useDashboardStore } from '../store';
 import { ACTION_TYPES, LLM_PROVIDERS, PROVIDER_DISPLAY } from '../lib/clientFilters';
+import {
+  deletePreset,
+  loadPresets,
+  savePresets,
+  upsertPreset,
+  validateRegex,
+  type FilterPreset,
+} from '../lib/filterPresets';
 
 const HTTP_METHODS = ['', 'CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'];
 
@@ -219,9 +229,21 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
   const [path, setPath] = useState('');
   const [secure, setSecure] = useState(false);
   const [keepAlive, setKeepAlive] = useState(false);
+  const [regex, setRegex] = useState(false);
   const [headers, setHeaders] = useState<KeyToMultiValue[]>([{ name: '', values: [''] }]);
   const [queryParams, setQueryParams] = useState<KeyToMultiValue[]>([{ name: '', values: [''] }]);
   const [cookies, setCookies] = useState<KeyToValue[]>([{ name: '', value: '' }]);
+
+  // Saved filter presets (persisted to localStorage, like the theme).
+  const [presets, setPresets] = useState<FilterPreset[]>(() => loadPresets());
+  const [presetName, setPresetName] = useState('');
+
+  // Validate the path as a regex only when regex mode is on; surfaces a subtle
+  // error state instead of crashing or silently shipping a broken pattern.
+  const pathRegexError = useMemo(
+    () => (regex ? validateRegex(path).error : undefined),
+    [regex, path],
+  );
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -234,7 +256,9 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
       }
       const filter: RequestFilter = {};
       if (method) filter.method = method;
-      if (path) filter.path = path;
+      // In regex mode an invalid pattern is held back rather than shipped to the
+      // server (it would match nothing or error); the field shows the error.
+      if (path && !(regex && validateRegex(path).error)) filter.path = path;
       if (keepAlive) filter.keepAlive = true;
       if (secure) filter.secure = true;
 
@@ -253,7 +277,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
 
       onFilterChange(filter);
     }, 300);
-  }, [filterEnabled, method, path, secure, keepAlive, headers, queryParams, cookies, onFilterChange]);
+  }, [filterEnabled, method, path, secure, keepAlive, regex, headers, queryParams, cookies, onFilterChange]);
 
   useEffect(() => {
     emitFilter();
@@ -263,6 +287,57 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
   }, [emitFilter]);
 
   const disabled = !filterEnabled;
+
+  const persist = useCallback((next: FilterPreset[]) => {
+    setPresets(next);
+    savePresets(next);
+  }, []);
+
+  const handleSavePreset = useCallback(() => {
+    const name = presetName.trim();
+    if (!name) return;
+    const preset: FilterPreset = {
+      name,
+      method,
+      path,
+      secure,
+      keepAlive,
+      regex,
+      headers,
+      queryStringParameters: queryParams,
+      cookies,
+      actionTypeFilter,
+      llmProviderFilter,
+    };
+    persist(upsertPreset(presets, preset));
+    setPresetName('');
+  }, [
+    presetName, method, path, secure, keepAlive, regex, headers, queryParams, cookies,
+    actionTypeFilter, llmProviderFilter, presets, persist,
+  ]);
+
+  const applyPreset = useCallback((preset: FilterPreset) => {
+    setMethod(preset.method);
+    setPath(preset.path);
+    setSecure(preset.secure);
+    setKeepAlive(preset.keepAlive);
+    setRegex(preset.regex);
+    setHeaders(preset.headers && preset.headers.length > 0 ? preset.headers : [{ name: '', values: [''] }]);
+    setQueryParams(
+      preset.queryStringParameters && preset.queryStringParameters.length > 0
+        ? preset.queryStringParameters
+        : [{ name: '', values: [''] }],
+    );
+    setCookies(preset.cookies && preset.cookies.length > 0 ? preset.cookies : [{ name: '', value: '' }]);
+    setActionTypeFilter(preset.actionTypeFilter);
+    setLlmProviderFilter(preset.llmProviderFilter);
+    // Applying a preset is only meaningful with filtering on.
+    setFilterEnabled(true);
+  }, [setActionTypeFilter, setLlmProviderFilter, setFilterEnabled]);
+
+  const handleDeletePreset = useCallback((name: string) => {
+    persist(deletePreset(presets, name));
+  }, [presets, persist]);
 
   return (
     <Card variant="outlined" sx={{ mx: 1, mt: 1, flexShrink: 0 }}>
@@ -317,11 +392,24 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
               </TextField>
               <TextField
                 size="small"
-                label="Path"
+                label={regex ? 'Path (regex)' : 'Path'}
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 disabled={disabled}
+                error={Boolean(pathRegexError)}
+                helperText={pathRegexError}
                 sx={{ width: 200 }}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={regex}
+                    onChange={(e) => setRegex(e.target.checked)}
+                    disabled={disabled}
+                  />
+                }
+                label="Regex"
               />
               <FormControlLabel
                 control={
@@ -370,6 +458,55 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
             <MultiValueField label="Headers" items={headers} onChange={setHeaders} disabled={disabled} />
             <SingleValueField label="Cookies" items={cookies} onChange={setCookies} disabled={disabled} />
             <MultiValueField label="Query Parameters" items={queryParams} onChange={setQueryParams} disabled={disabled} />
+          </Box>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="caption" color="primary" sx={{ mb: 0.5, display: 'block' }}>
+              Saved Presets
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+              <TextField
+                size="small"
+                label="Preset name"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSavePreset();
+                  }
+                }}
+                sx={{ width: 200 }}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SaveIcon fontSize="small" />}
+                disabled={!presetName.trim()}
+                onClick={handleSavePreset}
+              >
+                Save
+              </Button>
+            </Box>
+            {presets.length === 0 ? (
+              <Typography variant="caption" color="text.secondary">
+                No saved presets. Configure a filter and save it to re-apply later.
+              </Typography>
+            ) : (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {presets.map((preset) => (
+                  <Chip
+                    key={preset.name}
+                    label={preset.name}
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    onClick={() => applyPreset(preset)}
+                    onDelete={() => handleDeletePreset(preset.name)}
+                    sx={{ height: 24, fontSize: '0.7rem' }}
+                  />
+                ))}
+              </Box>
+            )}
           </Box>
         </CardContent>
       </Collapse>

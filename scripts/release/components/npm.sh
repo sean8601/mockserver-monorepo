@@ -145,6 +145,11 @@ NPMRC
   log_info "[$pkg] $npm_name@$RELEASE_VERSION is live on npm"
 }
 
+# The in-container `npm i` in publish_one writes a root-owned node_modules into
+# each package's bind-mounted workspace dir that the next job's git checkout
+# cannot clean (see clean_workspace_node_modules). Remove both on every exit path.
+trap 'clean_workspace_node_modules mockserver-node mockserver-client-node' EXIT
+
 publish_one mockserver-node
 publish_one mockserver-client-node
 

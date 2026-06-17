@@ -107,6 +107,96 @@ public sealed class ForwardChainExpectation
     }
 
     /// <summary>
+    /// Complete the expectation with a Server-Sent Events (SSE) response action.
+    /// </summary>
+    public List<Expectation> RespondWithSse(HttpSseResponse sseResponse)
+    {
+        _expectation.HttpSseResponse = sseResponse;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a Server-Sent Events (SSE) response action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithSseAsync(HttpSseResponse sseResponse)
+    {
+        _expectation.HttpSseResponse = sseResponse;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a WebSocket response action.
+    /// </summary>
+    public List<Expectation> RespondWithWebSocket(HttpWebSocketResponse webSocketResponse)
+    {
+        _expectation.HttpWebSocketResponse = webSocketResponse;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a WebSocket response action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithWebSocketAsync(HttpWebSocketResponse webSocketResponse)
+    {
+        _expectation.HttpWebSocketResponse = webSocketResponse;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a server-streaming gRPC response action.
+    /// </summary>
+    public List<Expectation> RespondWithGrpcStream(GrpcStreamResponse grpcStreamResponse)
+    {
+        _expectation.GrpcStreamResponse = grpcStreamResponse;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a server-streaming gRPC response action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithGrpcStreamAsync(GrpcStreamResponse grpcStreamResponse)
+    {
+        _expectation.GrpcStreamResponse = grpcStreamResponse;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a raw binary response action.
+    /// </summary>
+    public List<Expectation> RespondWithBinary(BinaryResponse binaryResponse)
+    {
+        _expectation.BinaryResponse = binaryResponse;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a raw binary response action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithBinaryAsync(BinaryResponse binaryResponse)
+    {
+        _expectation.BinaryResponse = binaryResponse;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a DNS response action.
+    /// </summary>
+    public List<Expectation> RespondWithDns(DnsResponse dnsResponse)
+    {
+        _expectation.DnsResponse = dnsResponse;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a DNS response action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithDnsAsync(DnsResponse dnsResponse)
+    {
+        _expectation.DnsResponse = dnsResponse;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
     /// Complete the expectation with an error action (drops/corrupts the connection).
     /// </summary>
     public List<Expectation> Error(HttpError error)
