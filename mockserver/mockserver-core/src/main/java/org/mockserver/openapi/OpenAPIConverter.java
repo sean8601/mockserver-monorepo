@@ -60,12 +60,17 @@ public class OpenAPIConverter {
         // Track how many times each operationId appears so we can disambiguate
         // when the same operationId maps to multiple expectations (e.g. multiple response codes)
         Map<String, Integer> operationIdCounts = new HashMap<>();
-        // Collect all operations from both paths and webhooks (OAS 3.1)
-        java.util.stream.Stream<io.swagger.v3.oas.models.Operation> pathOperations = openAPI
-            .getPaths()
-            .values()
-            .stream()
-            .flatMap(pathItem -> pathItem.readOperations().stream());
+        // Collect all operations from both paths and webhooks (OAS 3.1).
+        // A valid OAS 3.1 document may omit paths entirely (webhooks-only or components-only),
+        // so getPaths() can be null — treat it as an empty stream rather than NPE-ing.
+        java.util.stream.Stream<io.swagger.v3.oas.models.Operation> pathOperations = java.util.stream.Stream.empty();
+        if (openAPI.getPaths() != null) {
+            pathOperations = openAPI
+                .getPaths()
+                .values()
+                .stream()
+                .flatMap(pathItem -> pathItem.readOperations().stream());
+        }
         java.util.stream.Stream<io.swagger.v3.oas.models.Operation> webhookOperations = java.util.stream.Stream.empty();
         if (openAPI.getWebhooks() != null) {
             webhookOperations = openAPI.getWebhooks()

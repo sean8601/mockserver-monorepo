@@ -111,7 +111,7 @@ public final class OpenApiSyncPlanner {
 
     /**
      * Derives a stable spec key by hashing the spec payload/URL source identity.
-     * Returns a short (8-char) hex hash suitable for use as a namespace token.
+     * Returns a short 16-character hex hash suitable for use as a namespace token.
      *
      * <p>The same input always yields the same hash (so re-importing the same
      * source re-targets the same namespace); different inputs yield different

@@ -372,6 +372,42 @@ public class OpenAPIResponseValidatorTest {
         assertThat(errors, is(empty()));
     }
 
+    private final String lowercaseRangeSpec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_status_code_range_lowercase.yaml");
+
+    @Test
+    public void shouldMatchStatusCodeAgainstLowercaseRangeBucketKey() {
+        // given - operation defines only the lowercase "2xx" range bucket; the validator must
+        // match it case-insensitively so the generator and validator agree
+        HttpResponse response = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("\"ok\"");
+
+        // when
+        List<String> errors = OpenAPIResponseValidator.validate(lowercaseRangeSpec, "lowercaseRangeOnly", response, mockServerLogger);
+
+        // then - 200 matches "2xx", no false "status code not defined" error
+        assertThat(errors, is(empty()));
+    }
+
+    private final String webhooksOnlySpec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_31_webhooks_only.yaml");
+
+    @Test
+    public void shouldValidateWebhooksOnlySpecWithoutNpe() {
+        // given - a valid OAS 3.1 spec with webhooks and NO paths; getPaths() returns null and must
+        // not NPE or produce a misleading "null" validation error
+        HttpResponse response = response()
+            .withStatusCode(200)
+            .withHeader("content-type", "application/json")
+            .withBody("{\"id\": 7, \"name\": \"Rex\"}");
+
+        // when - the webhook operation is reachable for validation
+        List<String> errors = OpenAPIResponseValidator.validate(webhooksOnlySpec, "onNewPet", response, mockServerLogger);
+
+        // then - no NPE, no misleading error; the webhook response validates cleanly
+        assertThat(errors, is(empty()));
+    }
+
     @Test
     public void shouldUseExactStatusCodeSchemaNotRangeBucketForValidation() {
         // given - a body that is valid only for the "2XX" range schema (requires "range")

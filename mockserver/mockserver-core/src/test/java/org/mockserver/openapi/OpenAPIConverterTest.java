@@ -60,6 +60,24 @@ public class OpenAPIConverterTest {
     }
 
     @Test
+    public void shouldBuildExpectationsForWebhooksOnlySpecWithoutNpe() {
+        // given - a valid OAS 3.1 spec that omits paths entirely and declares only webhooks;
+        // openAPI.getPaths() returns null and must not NPE (the NPE previously escaped the
+        // control-plane PUT /mockserver/openapi handler as a server error)
+        String specUrlOrPayload = "org/mockserver/openapi/openapi_31_webhooks_only.yaml";
+
+        // when
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(
+            specUrlOrPayload,
+            null
+        );
+
+        // then - the single webhook operation is generated as an expectation, no exception thrown
+        assertThat(actualExpectations, hasSize(1));
+        assertThat(((OpenAPIDefinition) actualExpectations.get(0).getHttpRequest()).getOperationId(), is("onNewPet"));
+    }
+
+    @Test
     public void shouldHandleAddOpenAPIJsonWithCircularReferences() {
         // given
         String specUrlOrPayload = "org/mockserver/openapi/openapi_circular_reference_example.json";

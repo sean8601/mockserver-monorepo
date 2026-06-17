@@ -29,12 +29,17 @@ public class OpenAPIResponseValidator {
         List<String> errors = new ArrayList<>();
         try {
             OpenAPI openAPI = buildOpenAPI(specUrlOrPayload, logger);
-            // Search paths first, then webhooks (OAS 3.1)
-            java.util.stream.Stream<Pair<String, Operation>> pathOps = openAPI
-                .getPaths()
-                .values()
-                .stream()
-                .flatMap(pathItem -> mapOperations(pathItem).stream());
+            // Search paths first, then webhooks (OAS 3.1). A valid OAS 3.1 document may omit paths
+            // entirely (webhooks-only / components-only), so getPaths() can be null — treat it as an
+            // empty stream rather than NPE-ing.
+            java.util.stream.Stream<Pair<String, Operation>> pathOps = java.util.stream.Stream.empty();
+            if (openAPI.getPaths() != null) {
+                pathOps = openAPI
+                    .getPaths()
+                    .values()
+                    .stream()
+                    .flatMap(pathItem -> mapOperations(pathItem).stream());
+            }
             java.util.stream.Stream<Pair<String, Operation>> webhookOps = java.util.stream.Stream.empty();
             if (openAPI.getWebhooks() != null) {
                 webhookOps = openAPI.getWebhooks()
@@ -59,8 +64,12 @@ public class OpenAPIResponseValidator {
                 // exact three-digit match wins
                 apiResponse = operation.getResponses().get(statusCode);
                 if (apiResponse == null) {
-                    // then the range bucket (e.g. "2XX" for "200"); swagger-parser stores range keys literally
-                    apiResponse = operation.getResponses().get(Character.toUpperCase(statusCode.charAt(0)) + "XX");
+                    // then the range bucket (e.g. "2XX" for "200"). swagger-parser stores range keys
+                    // verbatim, and the generator (OpenAPIConverter.parseResponseStatusCode) also
+                    // accepts lowercase "2xx", so match the bucket key case-insensitively to keep the
+                    // generator and validator in agreement.
+                    String rangeBucket = (Character.toUpperCase(statusCode.charAt(0)) + "XX");
+                    apiResponse = findResponseIgnoreCase(operation.getResponses(), rangeBucket);
                 }
                 if (apiResponse == null) {
                     // finally fall back to the "default" response
@@ -79,6 +88,20 @@ public class OpenAPIResponseValidator {
             errors.add("OpenAPI response validation error: " + throwable.getMessage());
         }
         return errors;
+    }
+
+    /**
+     * Looks up a response by key ignoring case. Used for the range-bucket lookup (e.g. {@code "2XX"})
+     * so a spec authored with a lowercase range key such as {@code "2xx"} — which the generator
+     * accepts — still matches here.
+     */
+    private static ApiResponse findResponseIgnoreCase(io.swagger.v3.oas.models.responses.ApiResponses responses, String bucket) {
+        for (Map.Entry<String, ApiResponse> entry : responses.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(bucket)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")
