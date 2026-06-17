@@ -19,6 +19,10 @@ dependencies {
         // Bundled JSON plugin — provides the JsonSchemaProviderFactory API used to
         // associate the expectation schema with *.mockserver.json files.
         bundledPlugin("com.intellij.modules.json")
+        // IntelliJ Platform test fixtures — provides BasePlatformTestCase, used by
+        // MockServerSchemaWiringTest to assert, in a real headless IDE, that the
+        // JSON-schema provider factory is wired up under the correct extension point.
+        testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
     }
     // Gson for building/parsing the small JSON payloads exchanged with the running
     // MockServer (OpenAPI spec wrapping, pretty-printing). Declared explicitly so
