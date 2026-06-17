@@ -1,13 +1,13 @@
 ---
 title: MockServer
-description: Open-source HTTP, HTTPS and gRPC mock server, recording proxy, and MCP server for AI assistants. Mock any API, record and replay traffic, inject chaos, set interactive breakpoints, and generate from OpenAPI.
+description: Open-source HTTP/1.1, HTTP/2, HTTP/3, HTTPS and gRPC mock server, recording proxy, and MCP server for AI assistants. Mock any API, record and replay traffic, inject chaos, set interactive breakpoints, and generate from OpenAPI.
 layout: default
 ---
 
 <div class="header">
 	<h1>MockServer</h1>
 
-	<h2 itemprop="headline">Mock any HTTP, HTTPS or gRPC service. Record and replay traffic, inject chaos, and debug live — with a built-in MCP server for AI assistants.</h2>
+	<h2 itemprop="headline">Mock any HTTP/1.1, HTTP/2, HTTP/3, HTTPS or gRPC service. Record and replay traffic, inject chaos, and debug live — with a built-in MCP server for AI assistants.</h2>
 </div>
 
 <a target="_blank" rel="noopener noreferrer" href="https://github.com/mock-server/mockserver-monorepo"><img style="position: absolute; top: 0; right: 0; border: 0;" width="149" height="149" src="images/forkme_right_red.png" alt="Fork MockServer on GitHub"></a>
@@ -63,7 +63,7 @@ layout: default
 	<li>mock <a href="/mock_server/grpc_mocking.html">gRPC</a> services, <a href="/mock_server/asyncapi_messaging.html">AsyncAPI message brokers</a> (Kafka, MQTT, AMQP), <a href="/mock_server/mocking_oauth2.html">OAuth2 / OIDC</a> providers, and AI protocols (<a href="/mock_server/ai_protocol_mocking.html">MCP, A2A, SSE, WebSocket</a>)</li>
 	<li>generate mocks and validate traffic directly from an <a href="/mock_server/using_openapi.html">OpenAPI / Swagger specification</a></li>
 	<li>bootstrap mocks by <a href="/mock_server/importing_expectations.html">importing recorded traffic from a browser HAR or a Postman collection</a></li>
-	<li>serve everything on one port over HTTP, HTTPS / TLS, SOCKS and experimental <a href="/mock_server/http3.html">HTTP/3 (QUIC)</a></li>
+	<li>serve HTTP/1.1, HTTP/2 (h2 and h2c) and HTTPS / TLS on one port — auto-detected from each connection — plus SOCKS; experimental <a href="/mock_server/http3.html">HTTP/3 (QUIC)</a> runs on its own separate UDP port</li>
 </ul>
 
 <p>And it is built to inspect, operate and scale:</p>

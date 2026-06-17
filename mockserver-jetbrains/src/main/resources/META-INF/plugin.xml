@@ -6,7 +6,7 @@
     <description><![CDATA[
     <p><b>Author, record, and debug HTTP/HTTPS mocks for <a href="https://www.mock-server.com">MockServer</a> without leaving your IDE.</b></p>
 
-    <p><b>MockServer</b> lets you mock any system you integrate with over HTTP or HTTPS — services, REST or RPC APIs, and more — so you can build and test against simulated dependencies instead of real ones. This plugin brings the full MockServer toolset into IntelliJ IDEA and every other JetBrains IDE.</p>
+    <p><b>MockServer</b> lets you mock any system you integrate with over HTTP/1.1, HTTP/2, HTTP/3 (QUIC), HTTPS, or gRPC — services, REST or RPC APIs, and more — so you can build and test against simulated dependencies instead of real ones. This plugin brings the full MockServer toolset into IntelliJ IDEA and every other JetBrains IDE.</p>
 
     <p><b>Highlights</b></p>
     <ul>
