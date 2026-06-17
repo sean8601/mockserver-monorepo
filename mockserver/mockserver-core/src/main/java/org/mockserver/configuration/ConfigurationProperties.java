@@ -121,6 +121,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
     private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
     private static final String MOCKSERVER_PER_EXPECTATION_METRICS = "mockserver.perExpectationMetrics";
+    private static final String MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS = "mockserver.deduplicateRecordedExpectations";
     private static final String MOCKSERVER_LLM_COST_BUDGET_USD = "mockserver.llmCostBudgetUsd";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
@@ -1809,6 +1810,26 @@ public class ConfigurationProperties {
      */
     public static void perExpectationMetricsEnabled(boolean enabled) {
         setProperty(MOCKSERVER_PER_EXPECTATION_METRICS, "" + enabled);
+    }
+
+    public static boolean deduplicateRecordedExpectations() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS, "MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS", "" + false));
+    }
+
+    /**
+     * Enable opt-in post-processing of retrieved recorded (proxy SPY/CAPTURE) expectations
+     * that deduplicates structurally-identical recorded request/response pairs and
+     * templatizes variable id path segments (so that recorded calls to {@code /users/1},
+     * {@code /users/2}, {@code /users/3} collapse into a single {@code /users/{id}}
+     * expectation). The post-processor is conservative: it never merges differing
+     * responses, never over-widens a single recorded id, and preserves order.
+     * <p>
+     * Default is false (off) so retrieved recorded expectations are byte-for-byte unchanged.
+     *
+     * @param enable enable deduplication and templatization of recorded expectations
+     */
+    public static void deduplicateRecordedExpectations(boolean enable) {
+        setProperty(MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS, "" + enable);
     }
 
     /**

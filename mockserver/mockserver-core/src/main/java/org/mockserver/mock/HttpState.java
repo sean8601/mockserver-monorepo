@@ -28,6 +28,7 @@ import org.mockserver.model.*;
 import org.mockserver.openapi.OpenAPIConverter;
 import org.mockserver.openapi.OpenApiSyncPlanner;
 import org.mockserver.persistence.ExpectationFileSystemPersistence;
+import org.mockserver.persistence.RecordedExpectationPostProcessor;
 import org.mockserver.proxyconfiguration.InetAddressValidator;
 import org.mockserver.persistence.ExpectationFileWatcher;
 import org.mockserver.responsewriter.ResponseWriter;
@@ -1158,7 +1159,8 @@ public class HttpState {
                                 mockServerLog
                                     .retrieveRecordedExpectations(
                                         requestDefinition,
-                                        requests -> {
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
                                             response.withBody(
                                                 getExpectationToJavaSerializer().serialize(requests),
                                                 MediaType.create("application", "java").withCharset(UTF_8)
@@ -1172,7 +1174,8 @@ public class HttpState {
                                 mockServerLog
                                     .retrieveRecordedExpectations(
                                         requestDefinition,
-                                        requests -> {
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
                                             response.withBody(
                                                 getExpectationSerializerThatSerializesBodyDefault().serialize(requests),
                                                 MediaType.JSON_UTF_8
@@ -1197,7 +1200,8 @@ public class HttpState {
                                     );
                                 break;
                             case OPENAPI:
-                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, rawExpectations -> {
+                                    List<Expectation> expectations = postProcessRecordedExpectations(rawExpectations);
                                     response.withBody(
                                         getExpectationExportSerializer().serializeAsOpenApi(expectations),
                                         MediaType.JSON_UTF_8
@@ -1207,7 +1211,8 @@ public class HttpState {
                                 });
                                 break;
                             case POSTMAN:
-                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, rawExpectations -> {
+                                    List<Expectation> expectations = postProcessRecordedExpectations(rawExpectations);
                                     response.withBody(
                                         getExpectationExportSerializer().serializeAsPostmanCollection(expectations),
                                         MediaType.JSON_UTF_8
@@ -1217,7 +1222,8 @@ public class HttpState {
                                 });
                                 break;
                             case BRUNO:
-                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, rawExpectations -> {
+                                    List<Expectation> expectations = postProcessRecordedExpectations(rawExpectations);
                                     response
                                         .withBody(getExpectationExportSerializer().serializeAsBrunoCollection(expectations))
                                         .withHeader(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE.toString(), "application/zip")
@@ -1227,7 +1233,8 @@ public class HttpState {
                                 });
                                 break;
                             case HAR:
-                                mockServerLog.retrieveRecordedExpectations(requestDefinition, expectations -> {
+                                mockServerLog.retrieveRecordedExpectations(requestDefinition, rawExpectations -> {
+                                    List<Expectation> expectations = postProcessRecordedExpectations(rawExpectations);
                                     response.withBody(
                                         getHarConverter().serialize(expectationsToLogEvents(expectations)),
                                         MediaType.JSON_UTF_8
@@ -3935,6 +3942,31 @@ public class HttpState {
             this.expectationExportSerializer = new org.mockserver.serialization.ExpectationExportSerializer(mockServerLogger);
         }
         return expectationExportSerializer;
+    }
+
+    /**
+     * Apply the opt-in recorded-expectation post-processor (deduplicate +
+     * templatize) to a retrieved list of recorded expectations when
+     * {@code configuration.deduplicateRecordedExpectations()} is enabled. When the
+     * flag is off (the default) the input list is returned unchanged, so the
+     * retrieved output is byte-for-byte identical to historical behaviour.
+     *
+     * @param expectations the recorded expectations as retrieved from the event log
+     * @return the post-processed list when the flag is on, otherwise the input list
+     */
+    private List<Expectation> postProcessRecordedExpectations(List<Expectation> expectations) {
+        if (!Boolean.TRUE.equals(configuration.deduplicateRecordedExpectations())) {
+            return expectations;
+        }
+        int inputCount = expectations == null ? 0 : expectations.size();
+        List<Expectation> processed = RecordedExpectationPostProcessor.deduplicateAndTemplatize(expectations);
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setType(LogEntry.LogMessageType.INFO)
+                .setLogLevel(Level.INFO)
+                .setMessageFormat("deduplicated and templatized recorded expectations from " + inputCount + " to " + processed.size())
+        );
+        return processed;
     }
 
     /**

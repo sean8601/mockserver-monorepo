@@ -45,6 +45,7 @@ public class Configuration {
     private Long chaosAutoHaltWindowMillis;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
+    private Boolean deduplicateRecordedExpectations;
     private Double llmCostBudgetUsd;
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
@@ -428,6 +429,23 @@ public class Configuration {
      */
     public Configuration perExpectationMetricsEnabled(Boolean perExpectationMetricsEnabled) {
         this.perExpectationMetricsEnabled = perExpectationMetricsEnabled;
+        return this;
+    }
+
+    public Boolean deduplicateRecordedExpectations() {
+        if (deduplicateRecordedExpectations == null) {
+            return ConfigurationProperties.deduplicateRecordedExpectations();
+        }
+        return deduplicateRecordedExpectations;
+    }
+
+    /**
+     * Enable opt-in deduplication and templatization of retrieved recorded expectations.
+     *
+     * @param deduplicateRecordedExpectations enable deduplication of recorded expectations
+     */
+    public Configuration deduplicateRecordedExpectations(Boolean deduplicateRecordedExpectations) {
+        this.deduplicateRecordedExpectations = deduplicateRecordedExpectations;
         return this;
     }
 
