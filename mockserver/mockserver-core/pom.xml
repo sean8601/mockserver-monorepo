@@ -540,6 +540,11 @@
                         <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
                         <exclude>**/LlmCostBudgetMonitorTest.java</exclude>
                         <exclude>**/LlmMetricsTest.java</exclude>
+                        <!-- WS7.6: mutates the mockserver.perExpectationMetrics system property + static Metrics / default PrometheusRegistry -->
+                        <exclude>**/PerExpectationMetricsTest.java</exclude>
+                        <!-- WS3.3: mutate global ConfigurationProperties.generateRealisticExampleValues -->
+                        <exclude>**/GenerationOptionsTest.java</exclude>
+                        <exclude>**/OpenAPIConverterGenerationOptionsTest.java</exclude>
                         <!-- Mutate global ConfigurationProperties.llmProvider/llmApiKey/llmModel/llmBaseUrl/llmBackendsConfig -->
                         <exclude>**/LlmBackendResolverTest.java</exclude>
                         <exclude>**/LlmProviderSnifferTest.java</exclude>
@@ -575,6 +580,7 @@
                         <exclude>**/JsonStringMatcherTest.java</exclude>
                         <exclude>**/RegexStringMatcherTest.java</exclude>
                         <exclude>**/InetAddressValidatorTest.java</exclude>
+                        <exclude>**/JsonSchemaValidatorRemoteRefTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -623,6 +629,9 @@
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
                                 <include>**/LlmCostBudgetMonitorTest.java</include>
                                 <include>**/LlmMetricsTest.java</include>
+                                <include>**/PerExpectationMetricsTest.java</include>
+                                <include>**/GenerationOptionsTest.java</include>
+                                <include>**/OpenAPIConverterGenerationOptionsTest.java</include>
                                 <include>**/LlmBackendResolverTest.java</include>
                                 <include>**/LlmProviderSnifferTest.java</include>
                                 <include>**/ForwardPathGenAiSpansTest.java</include>
@@ -654,6 +663,7 @@
                                 <include>**/JsonStringMatcherTest.java</include>
                                 <include>**/RegexStringMatcherTest.java</include>
                                 <include>**/InetAddressValidatorTest.java</include>
+                                <include>**/JsonSchemaValidatorRemoteRefTest.java</include>
                             </includes>
                         </configuration>
                     </execution>
