@@ -199,6 +199,49 @@ public class HttpRequestPropertiesMatcherTest {
         assertThat(updateForControlPlane(new HttpRequest().withSecure(false)).matches(null, new HttpRequest().withSecure(null)), is(false));
     }
 
+    // PROTOCOL
+
+    @Test
+    public void shouldMatchProtocol() {
+        // exact protocol matches
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_1_1)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_1_1)), is(true));
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_2)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(true));
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_3)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(true));
+        // null expectation protocol matches any request protocol (regression: protocol optional)
+        assertThat(update(new HttpRequest().withProtocol(null)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_1_1)), is(true));
+        assertThat(update(new HttpRequest().withProtocol(null)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(true));
+        assertThat(update(new HttpRequest().withProtocol(null)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(true));
+        assertThat(update(new HttpRequest()).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(true));
+        assertThat(update(new HttpRequest()).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(true));
+        // both null still matches
+        assertThat(update(new HttpRequest().withProtocol(null)).matches(null, new HttpRequest().withProtocol(null)), is(true));
+    }
+
+    @Test
+    public void shouldNotMatchProtocol() {
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_2)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_1_1)), is(false));
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_1_1)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(false));
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_3)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(false));
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_2)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(false));
+        // expectation specifies protocol, request has none -> no match
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_2)).matches(null, new HttpRequest().withProtocol(null)), is(false));
+        assertThat(update(new HttpRequest().withProtocol(Protocol.HTTP_3)).matches(null, new HttpRequest().withProtocol(null)), is(false));
+    }
+
+    @Test
+    public void shouldMatchProtocolForControlPlane() {
+        assertThat(updateForControlPlane(new HttpRequest().withProtocol(Protocol.HTTP_2)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(true));
+        assertThat(updateForControlPlane(new HttpRequest().withProtocol(Protocol.HTTP_3)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(true));
+        assertThat(updateForControlPlane(new HttpRequest().withProtocol(null)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(true));
+        assertThat(updateForControlPlane(new HttpRequest()).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_2)), is(true));
+    }
+
+    @Test
+    public void shouldNotMatchProtocolForControlPlane() {
+        assertThat(updateForControlPlane(new HttpRequest().withProtocol(Protocol.HTTP_2)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_3)), is(false));
+        assertThat(updateForControlPlane(new HttpRequest().withProtocol(Protocol.HTTP_3)).matches(null, new HttpRequest().withProtocol(Protocol.HTTP_1_1)), is(false));
+    }
+
     // METHOD
 
     @Test

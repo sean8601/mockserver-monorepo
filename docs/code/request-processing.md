@@ -359,6 +359,31 @@ sequenceDiagram
     RM-->>AH: null (no match)
 ```
 
+### Protocol Matching and Verification
+
+`HttpRequestPropertiesMatcher` matches on the **negotiated protocol** a request arrived over, exposed
+as the `org.mockserver.model.Protocol` enum (`HTTP_1_1`, `HTTP_2`, `HTTP_3` — `HTTP_3` is experimental).
+An expectation built with `request().withProtocol(Protocol.HTTP_2)` only matches requests negotiated
+over HTTP/2; the same field on a `verify(...)` request asserts how a recorded request arrived. Protocol
+is **optional**: a `null` expectation protocol matches a request regardless of the request's protocol
+(`protocolMatcher` is built from `null` and the `ExactStringMatcher` treats that as match-any), so
+existing expectations that do not specify a protocol are unaffected.
+
+How the request's protocol is tagged (server-trusted, not client-supplied):
+
+| Arrival path | Tagged as | Where |
+|--------------|-----------|-------|
+| HTTP/1.1 (TCP) | `HTTP_1_1` (or `null` for mocking) | `FullHttpRequestToMockServerHttpRequest` |
+| HTTP/2 via ALPN (`h2`) | `HTTP_2` | ALPN negotiation in `PortUnificationHandler` |
+| HTTP/2 cleartext (`h2c`) | `HTTP_2` | `PortUnificationHandler` sets a trusted negotiated-protocol channel attribute (the `Upgrade` header alone is not trusted) |
+| HTTP/3 over QUIC (`h3`) | `HTTP_3` | `Http3RequestBridge.toHttpRequest` — the `h3` ALPN identifier is always trusted, so there is no header-spoofing concern |
+
+The `protocol` field round-trips through `HttpRequestDTO`, the request serializers
+(`HttpRequestSerializer` / `HttpRequestDTOSerializer`), `RequestDefinitionDTODeserializer`, the request
+JSON Schema (`protocol.json`), and the embedded OpenAPI model — and through the **pretty-printed
+retrieval DTO** (`HttpRequestPrettyPrintedDTO`), so a request retrieved via
+`retrieveRecordedRequests(...)` carries the protocol it arrived over for HTTP/2 and HTTP/3 alike.
+
 ### Post-Processing
 
 After a match, `postProcess()`:

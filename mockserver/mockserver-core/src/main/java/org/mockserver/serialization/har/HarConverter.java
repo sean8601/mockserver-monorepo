@@ -227,6 +227,8 @@ public class HarConverter {
             return "HTTP/1.1";
         }
         switch (protocol) {
+            case HTTP_3:
+                return "HTTP/3";
             case HTTP_2:
                 return "HTTP/2";
             case HTTP_1_1:

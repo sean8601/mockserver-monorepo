@@ -11,6 +11,7 @@ import io.netty.handler.codec.http3.Http3HeadersFrame;
 import org.mockserver.model.Header;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.Protocol;
 
 import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
@@ -67,7 +68,11 @@ public final class Http3RequestBridge {
         HttpRequest request = HttpRequest.request()
             .withMethod(method != null ? method : "GET")
             .withPath(requestPath)
-            .withSecure(true); // HTTP/3 is always over TLS
+            .withSecure(true) // HTTP/3 is always over TLS
+            // the HTTP/3 ALPN identifier is always "h3", so the negotiated protocol is
+            // server-trusted and cannot be spoofed by a header (unlike the h2c upgrade);
+            // tag the request so it can be matched on / verified by protocol
+            .withProtocol(Protocol.HTTP_3);
 
         if (!queryString.isEmpty()) {
             request.withQueryStringParameters(parseQueryString(queryString));

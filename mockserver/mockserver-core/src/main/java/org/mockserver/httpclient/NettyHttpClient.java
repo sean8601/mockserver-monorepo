@@ -91,6 +91,14 @@ public class NettyHttpClient {
             } else if (remoteAddress == null) {
                 remoteAddress = httpRequest.socketAddressFromHostHeader();
             }
+            if (Protocol.HTTP_3.equals(httpRequest.getProtocol())) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setMessageFormat("HTTP3 (QUIC) cannot be forwarded over a TCP connection so protocol will be negotiated by ALPN (HTTP1 or HTTP2)")
+                );
+                httpRequest.withProtocol(null);
+            }
             if (Protocol.HTTP_2.equals(httpRequest.getProtocol()) && !Boolean.TRUE.equals(httpRequest.isSecure())) {
                 mockServerLogger.logEvent(
                     new LogEntry()

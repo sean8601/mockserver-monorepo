@@ -242,6 +242,32 @@ public class HarConverterTest {
     }
 
     @Test
+    public void shouldHandleHttp3Protocol() throws Exception {
+        // given
+        LogEventRequestAndResponse entry = new LogEventRequestAndResponse()
+            .withTimestamp("2026-01-15T10:30:00.000Z")
+            .withHttpRequest(
+                request("/api/test")
+                    .withMethod("GET")
+                    .withHeader("host", "example.com")
+                    .withProtocol(Protocol.HTTP_3)
+            )
+            .withHttpResponse(
+                response()
+                    .withStatusCode(200)
+                    .withReasonPhrase("OK")
+            );
+
+        // when
+        String har = harConverter.serialize(Collections.singletonList(entry));
+
+        // then
+        JsonNode root = objectMapper.readTree(har);
+        JsonNode harEntry = root.get("log").get("entries").get(0);
+        assertThat(harEntry.get("request").get("httpVersion").asText(), is("HTTP/3"));
+    }
+
+    @Test
     public void shouldHandleEmptyEntries() throws Exception {
         // when
         String har = harConverter.serialize(Collections.emptyList());

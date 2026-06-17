@@ -397,6 +397,36 @@ $client-&gt;when(
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
+<button id="button_match_request_by_protocol" class="accordion">match request by protocol</button>
+<div class="panel">
+    <p>Match (and verify) on the protocol a request actually arrived over. Supported values are <span class="inline_code">HTTP_1_1</span>, <span class="inline_code">HTTP_2</span> and <span class="inline_code">HTTP_3</span> (HTTP/3 is experimental). The protocol is determined by MockServer from the negotiated connection (ALPN for HTTP/2 and HTTP/3), so it cannot be spoofed by a request header. The protocol is optional: an expectation that does not specify a protocol matches a request regardless of which protocol it arrived over.</p>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+<pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withPath("/some/path")
+            .withProtocol(Protocol.HTTP_2)
+    )
+    .respond(
+        response()
+            .withBody("some_response_body")
+    );</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+  "httpRequest" : {
+    "path" : "/some/path",
+    "protocol" : "HTTP_2"
+  },
+  "httpResponse" : {
+    "body" : "some_response_body"
+  }
+}'</code></pre>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+</div>
 <button id="button_match_request_by_path_exactly_twice" class="accordion">match request by path exactly twice</button>
 <div class="panel">
     <button class="accordion inner">Java</button>

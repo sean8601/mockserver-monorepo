@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Match and verify by negotiated protocol** (HTTP/1.1, HTTP/2, HTTP/3): expectations can now match,
+  and recorded requests can be verified, on the protocol a request actually arrived over. Use
+  `request().withProtocol("HTTP_2")` (or `Protocol.HTTP_3`, etc.) on an expectation to only match
+  requests negotiated over that protocol, and the same on `verify(...)` to assert how a recorded
+  request arrived. The `protocol` enum gains a new `HTTP_3` value (experimental) alongside the
+  existing `HTTP_1_1` and `HTTP_2`; requests arriving over QUIC/HTTP-3 are now tagged
+  `protocol = HTTP_3` (the `h3` ALPN identifier is server-trusted, so the value cannot be spoofed by
+  a header). The protocol now also round-trips through retrieved/recorded requests — previously the
+  pretty-printed retrieval format omitted it — so `retrieveRecordedRequests(...)` carries the protocol
+  for both HTTP/2 and HTTP/3. Fully backward compatible: protocol is optional and an expectation that
+  does not specify a protocol still matches a request regardless of the protocol it arrived over.
 - **Stream-level error injection** (HTTP/2 / HTTP/3): the `httpError` action gained
   `withStreamError(long)` (plus a `withStreamError(StreamErrorCode)` enum overload and a
   `withStreamErrorCodeName("REFUSED_STREAM")` convenience), serialised in JSON as a `streamError`
