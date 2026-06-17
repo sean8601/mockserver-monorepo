@@ -327,6 +327,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (previously emitted `0`/a random value); `application/xml` responses are now serialised as XML
     (the XML serializer was dead code and XML was emitted as JSON); and minor precision/locale fixes
     (double sample value, UTC date formatting, large-integer examples preserved).
+  - **Second-round fixes (re-review of the above).** A valid OAS 3.1 **webhooks-only** spec (no `paths:`)
+    no longer throws (it previously NPE'd the `PUT /mockserver/openapi` import and the validators);
+    **namespaced XML** response bodies are now well-formed (the newly-wired XML serializer was not
+    declaring `xmlns` declarations, so namespaced schemas produced an empty/malformed body); the
+    expectations→OpenAPI **export** is schema-valid for more inputs (path templates without a matching
+    parameter get a synthetic one, non-OpenAPI HTTP methods like `CONNECT` are skipped, duplicate
+    `operationId`s are de-duplicated); request/traffic validation now prefers the most specific
+    (concrete-over-templated) path and matches range status keys case-insensitively; and
+    `OpenApiTrafficValidator` isolates per-request failures instead of aborting the whole batch.
 - **CPU no longer climbs as the request/event log fills when using `/retrieve` and `clear` under sustained load (issue #2359, a follow-up to #2329).** The #2329 fix made log *insertion* O(1); this fixes the remaining cost on the *read* paths. `retrieveLogEntries` (used by every `/retrieve`) and `retrieveLogEntriesInReverseForUI` ran the expensive request matcher — which clones the request and runs full field-by-field matching — on **every** entry in the log *before* the cheap type/not-deleted filter, so the matcher was evaluated against deleted tombstones and wrong-type entries that were then discarded. As the log fills toward `maxLogEntries` (and clearing *expectations* does not clear the *log*, while `clear` at the default `INFO` level only marks entries deleted rather than removing them), this made each `/retrieve` cost grow with total log size and stay high. The filters are now ordered cheap-predicate-first (matching the existing expectation-id retrieve path), so the matcher only runs for entries that can actually be returned. Additionally, `clear` now skips entries already marked deleted, so a `clear` issued every test cycle no longer re-matches the whole accumulated log of tombstones. No behaviour change — same retrieved results and same clear semantics. Tip for high-throughput users (unchanged from #2329): also clear the log (`PUT /mockserver/clear?type=LOG` or `?type=ALL`, or `PUT /mockserver/reset`), not just expectations, or lower `maxLogEntries`.
 - Dashboard `favicon.svg` (and any future SVG asset) is now served with a valid `Content-Type: image/svg+xml`
   instead of a null header value. The `svg` extension was missing from the dashboard's MIME-type map, so the
