@@ -273,11 +273,21 @@ public class OpenAPIConverter {
                                                 response.withBody(stringExample.getValue());
                                             }
                                         } else if (generatedExample != null) {
-                                            String serialise = serialise(generatedExample);
-                                            if (isJsonContentType(contentType.getKey())) {
-                                                response.withBody(json(serialise));
+                                            if (isXmlContentType(contentType.getKey())) {
+                                                // an application/xml (or text/xml, or +xml) body must be serialised
+                                                // as XML using the namespace/prefix/wrapped/attribute metadata that
+                                                // ExampleBuilder populated, not as JSON
+                                                String xml = new org.mockserver.openapi.examples.XmlExampleSerializer().serialize(generatedExample);
+                                                if (xml != null) {
+                                                    response.withBody(xml);
+                                                }
                                             } else {
-                                                response.withBody(serialise);
+                                                String serialise = serialise(generatedExample);
+                                                if (isJsonContentType(contentType.getKey())) {
+                                                    response.withBody(json(serialise));
+                                                } else {
+                                                    response.withBody(serialise);
+                                                }
                                             }
                                         }
                                     }
@@ -434,6 +444,15 @@ public class OpenAPIConverter {
 
     public static boolean isJsonContentType(String contentType) {
         return org.mockserver.model.MediaType.parse(contentType).isJson();
+    }
+
+    /**
+     * True for {@code application/xml}, {@code text/xml}, and any {@code +xml} structured-suffix
+     * media type (e.g. {@code application/atom+xml}). Used to route a generated example through the
+     * {@link org.mockserver.openapi.examples.XmlExampleSerializer} rather than the JSON serializer.
+     */
+    public static boolean isXmlContentType(String contentType) {
+        return org.mockserver.model.MediaType.parse(contentType).isXml();
     }
 
     private void warnExampleNameNotFound(String exampleName, Map<String, Example> availableExamples) {

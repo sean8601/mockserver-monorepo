@@ -26,6 +26,7 @@ import org.mockserver.openapi.examples.models.*;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.OffsetDateTime;
@@ -49,7 +50,7 @@ public class ExampleBuilder {
     public static final int SAMPLE_LONG_PROPERTY_VALUE = 0;
     public static final int SAMPLE_BASE_INTEGER_PROPERTY_VALUE = 0;
     public static final float SAMPLE_FLOAT_PROPERTY_VALUE = 1.1f;
-    public static final double SAMPLE_DOUBLE_PROPERTY_VALUE = 1.1f;
+    public static final double SAMPLE_DOUBLE_PROPERTY_VALUE = 1.1;
     public static final boolean SAMPLE_BOOLEAN_PROPERTY_VALUE = true;
     public static final String SAMPLE_BYTE_PROPERTY_VALUE = "c29tZV9ieXRlX3ZhbHVl";
     public static final String SAMPLE_DATE_PROPERTY_VALUE = "2018-11-13";
@@ -243,7 +244,18 @@ public class ExampleBuilder {
                             output = new LongExample(Long.parseLong(example.toString()));
                         }
                     } else {
-                        output = new IntegerExample(Integer.parseInt(example.toString()));
+                        // no format: an author example may exceed the int range (e.g. 3000000000) — fall
+                        // back to Long, then BigInteger, so a valid author example is preserved rather
+                        // than silently swallowed and replaced by a generated/sample value
+                        try {
+                            output = new IntegerExample(Integer.parseInt(example.toString()));
+                        } catch (NumberFormatException tooLargeForInt) {
+                            try {
+                                output = new LongExample(Long.parseLong(example.toString()));
+                            } catch (NumberFormatException tooLargeForLong) {
+                                output = new BigIntegerExample(new BigInteger(example.toString()));
+                            }
+                        }
                     }
                 } catch (NumberFormatException ignored) {
                 }
@@ -265,7 +277,9 @@ public class ExampleBuilder {
                         output = new LongExample(defaultValue == null ? (generator != null ? generator.longValue(property.getMinimum(), property.getMaximum()) : SAMPLE_LONG_PROPERTY_VALUE) : defaultValue.longValue());
                     }
                 } else {
-                    output = new IntegerExample(generator != null ? generator.integer(property.getMinimum(), property.getMaximum()) : SAMPLE_BASE_INTEGER_PROPERTY_VALUE);
+                    // no format: honour an explicit default/enum value before falling back to the
+                    // generator/sample (mirrors the int32/int64 branches and generateExampleForType)
+                    output = new IntegerExample(defaultValue == null ? (generator != null ? generator.integer(property.getMinimum(), property.getMaximum()) : SAMPLE_BASE_INTEGER_PROPERTY_VALUE) : defaultValue.intValue());
                 }
             }
         } else if (property instanceof NumberSchema numberSchema) {
@@ -302,7 +316,9 @@ public class ExampleBuilder {
                         output = new FloatExample(defaultValue == null ? (generator != null ? generator.floatValue(property.getMinimum(), property.getMaximum()) : SAMPLE_FLOAT_PROPERTY_VALUE) : defaultValue.floatValue());
                     }
                 } else {
-                    output = new DecimalExample(generator != null ? generator.decimal(property.getMinimum(), property.getMaximum()) : new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE));
+                    // no format: honour an explicit default/enum value before falling back to the
+                    // generator/sample (mirrors the float/double branches and generateExampleForType)
+                    output = new DecimalExample(defaultValue == null ? (generator != null ? generator.decimal(property.getMinimum(), property.getMaximum()) : new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE)) : defaultValue);
                 }
             }
 
@@ -315,6 +331,7 @@ public class ExampleBuilder {
             }
         } else if (property instanceof DateSchema dateSchema) {
             DateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+            format.setTimeZone(TimeZone.getTimeZone("UTC"));
             if (example != null) {
                 String exampleAsString = format.format(example);
                 output = new StringExample(exampleAsString);

@@ -16,6 +16,8 @@
 
 package org.mockserver.openapi.examples;
 
+import org.mockserver.log.model.LogEntry;
+import org.mockserver.logging.MockServerLogger;
 import org.mockserver.openapi.examples.models.ArrayExample;
 import org.mockserver.openapi.examples.models.Example;
 import org.mockserver.openapi.examples.models.ObjectExample;
@@ -24,11 +26,16 @@ import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+
+import static org.slf4j.event.Level.WARN;
 
 /**
  * See: https://github.com/swagger-api/swagger-inflector
  */
 public class XmlExampleSerializer {
+    private static final MockServerLogger MOCK_SERVER_LOGGER = new MockServerLogger(XmlExampleSerializer.class);
+
     int depth = 0;
 
     public String serialize(Example o) {
@@ -37,14 +44,20 @@ public class XmlExampleSerializer {
             XMLOutputFactory f = XMLOutputFactory.newFactory();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-            writer = f.createXMLStreamWriter(out);
+            writer = f.createXMLStreamWriter(out, StandardCharsets.UTF_8.name());
 
             writer.writeStartDocument("UTF-8", "1.1");
             writeTo(writer, o);
             writer.close();
-            return out.toString();
+            return out.toString(StandardCharsets.UTF_8);
         } catch (XMLStreamException e) {
-            e.printStackTrace();
+            MOCK_SERVER_LOGGER.logEvent(
+                new LogEntry()
+                    .setLogLevel(WARN)
+                    .setMessageFormat("exception while serialising example to XML - {}")
+                    .setArguments(e.getMessage())
+                    .setThrowable(e)
+            );
             return null;
         }
     }
