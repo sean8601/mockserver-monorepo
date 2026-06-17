@@ -194,26 +194,39 @@ public class XmlExampleSerializer {
             return value;
         }
         StringBuilder builder = null;
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (isLegalXmlChar(c)) {
+        // iterate by code point, not char, so that supplementary-plane characters (emoji, CJK Ext-B,
+        // etc.) — which are legal XML 1.0 chars encoded as a surrogate pair — are preserved, not stripped.
+        int i = 0;
+        while (i < value.length()) {
+            int codePoint = value.codePointAt(i);
+            if (isLegalXmlChar(codePoint)) {
                 if (builder != null) {
-                    builder.append(c);
+                    builder.appendCodePoint(codePoint);
                 }
-            } else {
-                if (builder == null) {
-                    builder = new StringBuilder(value.length());
-                    builder.append(value, 0, i);
-                }
+            } else if (builder == null) {
+                builder = new StringBuilder(value.length());
+                builder.append(value, 0, i);
             }
+            i += Character.charCount(codePoint);
         }
-        return builder == null ? value : builder.toString();
+        if (builder == null) {
+            return value;
+        }
+        MOCK_SERVER_LOGGER.logEvent(
+            new LogEntry()
+                .setLogLevel(WARN)
+                .setMessageFormat("stripped XML-illegal character(s) from an example value when serialising XML")
+        );
+        return builder.toString();
     }
 
-    private static boolean isLegalXmlChar(char c) {
-        return c == 0x9 || c == 0xA || c == 0xD
-            || (c >= 0x20 && c <= 0xD7FF)
-            || (c >= 0xE000 && c <= 0xFFFD);
+    private static boolean isLegalXmlChar(int codePoint) {
+        // XML 1.0 Char production: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+        // (lone surrogates 0xD800-0xDFFF are excluded; a valid surrogate pair forms a code point >= 0x10000)
+        return codePoint == 0x9 || codePoint == 0xA || codePoint == 0xD
+            || (codePoint >= 0x20 && codePoint <= 0xD7FF)
+            || (codePoint >= 0xE000 && codePoint <= 0xFFFD)
+            || (codePoint >= 0x10000 && codePoint <= 0x10FFFF);
     }
 
     /**
@@ -266,7 +279,10 @@ public class XmlExampleSerializer {
     }
 
     private static boolean isXmlNameStartChar(char c) {
-        return c == ':' || c == '_'
+        // ':' is intentionally NOT treated as a valid name char here: this serializer manages namespace
+        // prefixes itself, so a colon in an element/attribute name would emit an unbound prefix. Treating
+        // it as illegal makes sanitiseXmlName replace it with '_', keeping the output well-formed.
+        return c == '_'
             || (c >= 'A' && c <= 'Z')
             || (c >= 'a' && c <= 'z')
             || (c >= 0xC0 && c <= 0xD6)

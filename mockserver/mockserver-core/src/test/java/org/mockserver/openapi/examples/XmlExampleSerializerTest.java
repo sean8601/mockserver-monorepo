@@ -417,6 +417,37 @@ public class XmlExampleSerializerTest {
             root.getLocalName().matches("[A-Za-z_:][\\w.:_-]*"), is(true));
     }
 
+    @Test
+    public void shouldPreserveSupplementaryPlaneCharacterInValue() throws Exception {
+        // a supplementary-plane code point (emoji U+1F600) is a legal XML 1.0 char encoded as a surrogate
+        // pair — it must NOT be stripped (regression: char-wise stripping deleted both surrogate halves).
+        String value = "Hi😀End"; // "Hi😀End"
+        ObjectExample record = new ObjectExample();
+        record.setName("Record");
+        record.put("greeting", new StringExample(value));
+
+        String xml = new XmlExampleSerializer().serialize(record);
+        Document document = parseNamespaceAware(xml);
+
+        assertThat("supplementary-plane character must round-trip intact",
+            document.getDocumentElement().getTextContent(), is(value));
+    }
+
+    @Test
+    public void shouldSanitiseColonInNameToWellFormedOutput() throws Exception {
+        // a ':' in the element name would emit an unbound prefix; it must be sanitised so the document
+        // parses namespace-aware without an "unbound prefix" error.
+        ObjectExample record = new ObjectExample();
+        record.setName("ns:Element");
+        record.put("title", new StringExample("Moby Dick"));
+
+        String xml = new XmlExampleSerializer().serialize(record);
+        Document document = parseNamespaceAware(xml);
+
+        assertThat("colon must be sanitised out of the element name",
+            document.getDocumentElement().getLocalName().contains(":"), is(false));
+    }
+
     private int countXmlnsDeclarations(String xml, String declaration) {
         int count = 0;
         int index = 0;

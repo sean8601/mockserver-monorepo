@@ -329,8 +329,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (double sample value, UTC date formatting, large-integer examples preserved).
   - **Second-round fixes (re-review of the above).** A valid OAS 3.1 **webhooks-only** spec (no `paths:`)
     no longer throws (it previously NPE'd the `PUT /mockserver/openapi` import and the validators);
-    **namespaced XML** response bodies are now well-formed (the newly-wired XML serializer was not
-    declaring `xmlns` declarations, so namespaced schemas produced an empty/malformed body); the
+    **namespaced XML** response bodies are now well-formed and correctly namespaced (the wired XML
+    serializer previously produced empty/malformed bodies for namespaced schemas, then briefly bound
+    shadowed descendants to the wrong namespace; it now declares namespaces per element so scoping is
+    correct, and preserves supplementary-plane characters in values); the
     expectations→OpenAPI **export** is schema-valid for more inputs (path templates without a matching
     parameter get a synthetic one, non-OpenAPI HTTP methods like `CONNECT` are skipped, duplicate
     `operationId`s are de-duplicated); request/traffic validation now prefers the most specific
