@@ -15,6 +15,10 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.icons.AllIcons
+import org.cef.browser.CefBrowser
+import org.cef.browser.CefFrame
+import org.cef.handler.CefLoadHandler
+import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.BorderLayout
 import java.awt.FlowLayout
 import javax.swing.BorderFactory
@@ -52,6 +56,29 @@ class MockServerDashboardToolWindowFactory : ToolWindowFactory {
         // Release the native Chromium process when the tool window is disposed.
         Disposer.register(toolWindow.disposable, browser)
 
+        // When MockServer is not running, the embedded Chromium would otherwise show a
+        // raw ERR_CONNECTION_REFUSED page. Replace any load failure for the dashboard
+        // URL with a friendly panel explaining how to start the server. errorCode 0 is
+        // ERR_NONE (a normal load) and -3 is ERR_ABORTED (e.g. a reload superseding an
+        // in-flight load) — neither should trigger the friendly page.
+        browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
+            override fun onLoadError(
+                cefBrowser: CefBrowser?,
+                frame: CefFrame?,
+                errorCode: CefLoadHandler.ErrorCode?,
+                errorText: String?,
+                failedUrl: String?
+            ) {
+                if (frame?.isMain != true) return
+                if (errorCode == CefLoadHandler.ErrorCode.ERR_NONE ||
+                    errorCode == CefLoadHandler.ErrorCode.ERR_ABORTED
+                ) {
+                    return
+                }
+                browser.loadHTML(unreachableHtml(dashboardUrl), failedUrl ?: dashboardUrl)
+            }
+        }, browser.cefBrowser)
+
         val panel = JPanel(BorderLayout())
 
         val actionGroup = DefaultActionGroup().apply {
@@ -76,6 +103,34 @@ class MockServerDashboardToolWindowFactory : ToolWindowFactory {
         panel.add(toolbar.component, BorderLayout.NORTH)
         panel.add(browser.component, BorderLayout.CENTER)
         return panel
+    }
+
+    /**
+     * Friendly in-browser HTML shown when the dashboard URL cannot be reached
+     * (typically because no MockServer is running on the configured port). The
+     * page is themed for a dark IDE and tells the user how to recover. The "Retry"
+     * link simply re-navigates to the dashboard URL, so it works again the moment a
+     * server is started.
+     */
+    private fun unreachableHtml(dashboardUrl: String): String {
+        val port = MockServerSettings.getInstance().effectivePort()
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>MockServer</title></head>
+            <body style="font-family: -apple-system, Segoe UI, sans-serif; background:#2b2b2b; color:#bbbbbb; margin:0; padding:48px; text-align:center;">
+              <div style="max-width:520px; margin:0 auto;">
+                <h2 style="color:#00bcd4; font-weight:600;">No MockServer running</h2>
+                <p>Nothing is responding at <code style="color:#dddddd;">localhost:$port</code>.</p>
+                <p>Start MockServer from the <b>MockServer</b> tool window (Start (Docker)),
+                   or check the port under <b>Settings &gt; Tools &gt; MockServer</b>.</p>
+                <p style="margin-top:32px;">
+                  <a href="$dashboardUrl" style="color:#00bcd4;">Retry</a>
+                </p>
+              </div>
+            </body>
+            </html>
+        """.trimIndent()
     }
 
     private fun createUnsupportedPanel(dashboardUrl: String): JPanel {

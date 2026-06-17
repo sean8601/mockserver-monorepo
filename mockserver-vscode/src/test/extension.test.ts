@@ -97,10 +97,22 @@ const vscodeStub = {
         showWarningMessage(_msg: string) {},
         showOpenDialog(_options?: any) { return Promise.resolve(undefined); },
         showInputBox(_options?: any) { return Promise.resolve(undefined); },
+        showQuickPick(_items?: any, _options?: any) { return Promise.resolve(undefined); },
         createWebviewPanel(_viewType: string, _title: string, _column: any, _options: any) {
             return { webview: { html: "" }, dispose() {} };
         },
+        createStatusBarItem(_alignment?: any, _priority?: number) {
+            return {
+                text: "",
+                tooltip: "",
+                command: "",
+                show() {},
+                hide() {},
+                dispose() {},
+            };
+        },
     },
+    StatusBarAlignment: { Left: 1, Right: 2 },
     ViewColumn: { Active: -1 },
     env: {
         openExternal(_uri: any) { return Promise.resolve(true); },
@@ -213,6 +225,35 @@ async function runTests(): Promise<void> {
         await registeredCommands.get("mockserver.openDashboard")!();
         delete configValues["port"];
         assert.ok(openedUrl.includes(":2080/"), `port not honoured: ${openedUrl}`);
+    });
+
+    await test("activate registers mockserver.statusBarMenu command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.statusBarMenu"),
+            "mockserver.statusBarMenu command not registered"
+        );
+    });
+
+    await test("status-bar menu runs the selected action command", async () => {
+        const originalQuickPick = vscodeStub.window.showQuickPick;
+        const originalExecute = vscodeStub.commands.executeCommand;
+        let executed = "";
+        vscodeStub.window.showQuickPick = (items: any) => {
+            // simulate picking the first action (Open Dashboard)
+            return Promise.resolve(items[0]);
+        };
+        vscodeStub.commands.executeCommand = (id: string) => {
+            executed = id;
+            return Promise.resolve(undefined);
+        };
+        await registeredCommands.get("mockserver.statusBarMenu")!();
+        vscodeStub.window.showQuickPick = originalQuickPick;
+        vscodeStub.commands.executeCommand = originalExecute;
+        assert.strictEqual(
+            executed,
+            "mockserver.openDashboard",
+            `status-bar menu did not invoke the picked command (got ${executed})`
+        );
     });
 
     await test("bundled expectation schema is present and well-formed", () => {

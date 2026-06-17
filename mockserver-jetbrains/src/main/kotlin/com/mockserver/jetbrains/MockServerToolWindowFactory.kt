@@ -1,5 +1,6 @@
 package com.mockserver.jetbrains
 
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -16,8 +17,10 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.util.ui.JBUI
 import java.awt.Component
 import java.awt.FlowLayout
+import java.awt.Font
 import javax.swing.BorderFactory
 import javax.swing.BoxLayout
+import javax.swing.Icon
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -25,8 +28,9 @@ import javax.swing.JPanel
 /**
  * Bottom "MockServer" tool window — a launcher that surfaces every MockServer
  * action as a button so users don't have to hunt through the Tools > MockServer
- * menu. Server controls (open dashboard, start, reset) and the editor-file
- * actions (load/save/generate/send/drift) are grouped into labelled rows.
+ * menu. A status line at the top shows the configured target; the buttons are
+ * grouped under bold Server / Editor actions / WASM headers that mirror the
+ * Tools > MockServer menu sections.
  *
  * The editor-dependent actions are the registered [com.intellij.openapi.actionSystem.AnAction]
  * instances themselves (looked up by id via [ActionManager]) — firing them here is
@@ -46,38 +50,50 @@ class MockServerToolWindowFactory : ToolWindowFactory {
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
         panel.border = JBUI.Borders.empty(8)
 
-        panel.add(JBLabel("Server"))
+        val port = MockServerSettings.getInstance().effectivePort()
+        panel.add(JBLabel("MockServer · localhost:$port", AllIcons.General.Web, JBLabel.LEFT).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        })
+        panel.add(sectionGap())
+
+        panel.add(sectionHeader("Server"))
         panel.add(row().apply {
-            add(button("Open Dashboard in IDE") {
+            add(button("Open Dashboard in IDE", AllIcons.Toolwindows.WebToolWindow) {
                 ToolWindowManager.getInstance(project).getToolWindow("MockServerDashboard")?.activate(null)
             })
-            add(button("Open Dashboard (Browser)") {
+            add(button("Open Dashboard (Browser)", AllIcons.General.Web) {
                 com.intellij.ide.BrowserUtil.browse(MockServerSettings.getInstance().dashboardUrl())
             })
-            add(actionButton("Start (Docker)", "MockServer.StartDocker", project))
-            add(actionButton("Reset", "MockServer.Reset", project))
+            add(actionButton("Start (Docker)", "MockServer.StartDocker", project, AllIcons.Actions.Execute))
+            add(actionButton("Reset", "MockServer.Reset", project, AllIcons.Actions.GC))
         })
 
         panel.add(sectionGap())
-        panel.add(JBLabel("Editor actions (use the active file)"))
+        panel.add(sectionHeader("Editor actions (use the active file)"))
         panel.add(row().apply {
-            add(actionButton("Load Expectations", "MockServer.LoadExpectations", project))
-            add(actionButton("Save Recorded", "MockServer.SaveRecordedExpectations", project))
-            add(actionButton("Generate From OpenAPI", "MockServer.GenerateFromOpenApi", project))
-            add(actionButton("Send Test Request", "MockServer.SendRequest", project))
-            add(actionButton("Show Drift Report", "MockServer.ShowDriftReport", project))
-            add(actionButton("Find Requests by Trace", "MockServer.FindByTrace", project))
+            add(actionButton("Load Expectations", "MockServer.LoadExpectations", project, AllIcons.Actions.Upload))
+            add(actionButton("Save Recorded", "MockServer.SaveRecordedExpectations", project, AllIcons.Actions.Download))
+            add(actionButton("Generate From OpenAPI", "MockServer.GenerateFromOpenApi", project, AllIcons.Actions.Compile))
+            add(actionButton("Send Test Request", "MockServer.SendRequest", project, AllIcons.Actions.Lightning))
+            add(actionButton("Show Drift Report", "MockServer.ShowDriftReport", project, AllIcons.Actions.Diff))
+            add(actionButton("Find Requests by Trace", "MockServer.FindByTrace", project, AllIcons.Actions.Find))
         })
 
         panel.add(sectionGap())
-        panel.add(JBLabel("WASM"))
+        panel.add(sectionHeader("WASM"))
         panel.add(row().apply {
-            add(actionButton("Upload WASM Module", "MockServer.UploadWasm", project))
-            add(actionButton("List WASM Modules", "MockServer.ListWasm", project))
+            add(actionButton("Upload WASM Module", "MockServer.UploadWasm", project, AllIcons.Actions.Upload))
+            add(actionButton("List WASM Modules", "MockServer.ListWasm", project, AllIcons.Actions.ListFiles))
         })
 
         return panel
     }
+
+    private fun sectionHeader(text: String): JComponent =
+        JBLabel(text).apply {
+            font = font.deriveFont(Font.BOLD)
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
 
     private fun row(): JPanel {
         val flow = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(4)))
@@ -92,8 +108,9 @@ class MockServerToolWindowFactory : ToolWindowFactory {
             isOpaque = false
         }
 
-    private fun button(text: String, onClick: () -> Unit): JButton {
+    private fun button(text: String, icon: Icon?, onClick: () -> Unit): JButton {
         val b = JButton(text)
+        if (icon != null) b.icon = icon
         b.addActionListener { onClick() }
         return b
     }
@@ -105,9 +122,16 @@ class MockServerToolWindowFactory : ToolWindowFactory {
      * editor-dependent actions (Load/Save/Generate/SendRequest) resolve `e.project`
      * and `e.getData(CommonDataKeys.EDITOR)` exactly as they do from the menu — the
      * action's own validation handles the "no editor open" case.
+     *
+     * Note: this uses the data-context overload of [ActionUtil.invokeAction], which
+     * is deprecated on IntelliJ Platform 243. The non-deprecated replacement requires
+     * `ActionUiKind` (added in a later platform), so the migration is deferred until
+     * the plugin's minimum platform is raised — see A5 in the UX-polish review.
      */
-    private fun actionButton(text: String, actionId: String, project: Project): JButton {
+    @Suppress("DEPRECATION")
+    private fun actionButton(text: String, actionId: String, project: Project, icon: Icon?): JButton {
         val b = JButton(text)
+        if (icon != null) b.icon = icon
         b.addActionListener {
             val action = ActionManager.getInstance().getAction(actionId) ?: return@addActionListener
             val editor = FileEditorManager.getInstance(project).selectedTextEditor

@@ -4,7 +4,6 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 
@@ -48,23 +47,19 @@ class GenerateFromOpenApiAction : AnAction() {
                         MockServerRestClient.buildGenerateFromOpenApiRequest(baseUrl, specText)
                     )
                     if (!result.ok) {
-                        runOnEdt { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
                         return
                     }
                     if (MockServerRestClient.isEmptyExpectationsBody(result.body)) {
-                        runOnEdt { MockServerNotifier.notify(project, "MockServer generated no expectations from the spec.", NotificationType.INFORMATION) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "MockServer generated no expectations from the spec.", NotificationType.INFORMATION) }
                         return
                     }
                     val pretty = MockServerRestClient.prettyPrintJson(result.body)
-                    runOnEdt { MockServerEditors.openJsonInEditor(project, "openapi-expectations.mockserver.json", pretty) }
+                    runOnEdt(project) { MockServerEditors.openJsonInEditor(project, "openapi-expectations.mockserver.json", pretty) }
                 } catch (ex: Exception) {
-                    runOnEdt { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
+                    runOnEdt(project) { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
                 }
             }
         }.queue()
-    }
-
-    private fun runOnEdt(block: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater(block)
     }
 }

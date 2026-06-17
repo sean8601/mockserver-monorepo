@@ -3,7 +3,6 @@ package com.mockserver.jetbrains
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.progress.ProgressIndicator
@@ -59,7 +58,7 @@ class UploadWasmModuleAction : AnAction() {
                         MockServerRestClient.buildWasmUploadRequest(baseUrl, name, bytes)
                     )
                     if (result.ok) {
-                        runOnEdt {
+                        runOnEdt(project) {
                             MockServerNotifier.notify(
                                 project,
                                 "Uploaded WASM module \"$name\". Reference it in an expectation body matcher as { \"type\": \"WASM\", \"moduleName\": \"$name\" }.",
@@ -67,16 +66,12 @@ class UploadWasmModuleAction : AnAction() {
                             )
                         }
                     } else {
-                        runOnEdt { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
                     }
                 } catch (ex: Exception) {
-                    runOnEdt { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
+                    runOnEdt(project) { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
                 }
             }
         }.queue()
-    }
-
-    private fun runOnEdt(block: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater(block)
     }
 }

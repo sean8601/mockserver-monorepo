@@ -3,7 +3,6 @@ package com.mockserver.jetbrains
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 
@@ -29,12 +28,12 @@ class ShowDriftReportAction : AnAction() {
                         MockServerRestClient.buildRetrieveDriftRequest(baseUrl)
                     )
                     if (!result.ok) {
-                        runOnEdt { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
                         return
                     }
                     val report = MockServerRestClient.formatDriftReport(result.body)
                     if (report.empty) {
-                        runOnEdt {
+                        runOnEdt(project) {
                             MockServerNotifier.notify(
                                 project,
                                 "No drift detected. Drift is recorded when MockServer proxies traffic to a real upstream and a matching stub differs.",
@@ -43,15 +42,11 @@ class ShowDriftReportAction : AnAction() {
                         }
                         return
                     }
-                    runOnEdt { MockServerEditors.openTextInEditor(project, "mockserver-drift.txt", report.report) }
+                    runOnEdt(project) { MockServerEditors.openTextInEditor(project, "mockserver-drift.txt", report.report) }
                 } catch (ex: Exception) {
-                    runOnEdt { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
+                    runOnEdt(project) { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
                 }
             }
         }.queue()
-    }
-
-    private fun runOnEdt(block: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater(block)
     }
 }

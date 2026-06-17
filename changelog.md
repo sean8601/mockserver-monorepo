@@ -158,8 +158,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a clear warning instead of a raw server error: **Generate From OpenAPI Spec** warns when the file is not an
   OpenAPI/Swagger spec, and **Load Expectations** warns when the file is not valid JSON or is actually an
   OpenAPI spec (redirecting to the Generate action).
+- Both editor extensions now ship a proper marketplace icon (the MockServer "M" mark) instead of the generic
+  placeholder — a 128×128 icon for the VS Code Marketplace / Open VSX and a `pluginIcon.svg` (light/dark) for
+  the JetBrains Marketplace.
+- VS Code extension is more discoverable: a **status-bar item** (`MockServer :<port>`) opens a quick menu
+  (Open Dashboard, Start, Stop, View Request Log), and the file-scoped commands now appear in the editor
+  title bar and right-click menu only on the files they apply to (`*.mockserver.json(c)` and
+  `*.mockserver-request.json`), keeping the command palette uncluttered. The in-editor dashboard now retains
+  its state when its tab is hidden, and the trace-id and WASM-module-name prompts validate input inline.
+  Expectation snippets now also fire in `.jsonc`-typed files.
+- JetBrains plugin actions now carry icons and are grouped (Server / Editor / WASM) in the **Tools >
+  MockServer** menu and tool window; the **MockServer** tool window shows the configured `localhost:<port>`
+  target with bold section headers, and the in-IDE dashboard shows a friendly "no MockServer running" panel
+  (with a retry link) instead of a raw browser connection error when the server is unreachable.
 
 ### Fixed
+- JetBrains plugin no longer risks an `AlreadyDisposedException` when a project (or tool window) is closed
+  while an extension HTTP request is still in flight — the result is now delivered on the UI thread through a
+  single shared, project-disposal-guarded helper.
 - Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
   Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
   `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.

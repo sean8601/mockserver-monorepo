@@ -3,7 +3,6 @@ package com.mockserver.jetbrains
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.ui.Messages
@@ -53,12 +52,12 @@ class FindRequestsByTraceAction : AnAction() {
                         MockServerRestClient.buildRetrieveRequestsRequest(baseUrl)
                     )
                     if (!result.ok) {
-                        runOnEdt { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
                         return
                     }
                     val filtered = MockServerRestClient.filterRequestsByTrace(result.body, input)
                     if (filtered.matchesJson.trim() == "[]") {
-                        runOnEdt {
+                        runOnEdt(project) {
                             MockServerNotifier.notify(
                                 project,
                                 "No requests found for trace $traceId.",
@@ -68,15 +67,11 @@ class FindRequestsByTraceAction : AnAction() {
                         return
                     }
                     val shortId = traceId.take(8)
-                    runOnEdt { MockServerEditors.openJsonInEditor(project, "trace-$shortId.json", filtered.matchesJson) }
+                    runOnEdt(project) { MockServerEditors.openJsonInEditor(project, "trace-$shortId.json", filtered.matchesJson) }
                 } catch (ex: Exception) {
-                    runOnEdt { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
+                    runOnEdt(project) { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
                 }
             }
         }.queue()
-    }
-
-    private fun runOnEdt(block: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater(block)
     }
 }

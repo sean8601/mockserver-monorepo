@@ -45,7 +45,7 @@
 
     <change-notes><![CDATA[
     <ul>
-      <li><b>7.1.0</b> — Full IDE integration: expectation-file validation with JSON Schema completion; Start MockServer via Docker; Open MockServer Dashboard in IDE (JCEF-embedded) or browser; Load Expectations, Save Recorded Expectations, Generate From OpenAPI Spec, Send Test Request; Show Drift Report; Find Requests by Trace (W3C traceparent); Upload and List WASM custom-rule modules; Reset; dockable MockServer tool window with one-click buttons; Settings (image, container, port).</li>
+      <li><b>7.1.0</b> — Full IDE integration: expectation-file validation with JSON Schema completion; Start MockServer via Docker; Open MockServer Dashboard in IDE (JCEF-embedded) or browser; Load Expectations, Save Recorded Expectations, Generate From OpenAPI Spec, Send Test Request; Show Drift Report; Find Requests by Trace (W3C traceparent); Upload and List WASM custom-rule modules; Reset; dockable MockServer tool window with one-click buttons; Settings (image, container, port). UX polish: a MockServer marketplace icon, per-action icons and Server / Editor / WASM grouping in the Tools menu, a status line and bold section headers in the tool window, and a friendly "no server running" panel in the embedded dashboard when MockServer is unreachable.</li>
     </ul>
     ]]></change-notes>
 
@@ -55,54 +55,69 @@
     <actions>
         <group id="MockServer.ActionGroup" text="MockServer" description="MockServer actions" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <separator text="Server"/>
             <action id="MockServer.OpenDashboard"
                     class="com.mockserver.jetbrains.OpenDashboardAction"
                     text="Open MockServer Dashboard"
-                    description="Opens the MockServer dashboard in your default browser"/>
+                    description="Opens the MockServer dashboard in your default browser"
+                    icon="AllIcons.General.Web"/>
             <action id="MockServer.OpenDashboardInIde"
                     class="com.mockserver.jetbrains.OpenDashboardInIdeAction"
                     text="Open MockServer Dashboard in IDE"
-                    description="Shows the live MockServer dashboard inside the IDE using the bundled Chromium engine"/>
+                    description="Shows the live MockServer dashboard inside the IDE using the bundled Chromium engine"
+                    icon="AllIcons.Toolwindows.WebToolWindow"/>
             <action id="MockServer.StartDocker"
                     class="com.mockserver.jetbrains.StartDockerAction"
                     text="Start MockServer (Docker)"
-                    description="Starts a MockServer container via Docker"/>
-            <action id="MockServer.LoadExpectations"
-                    class="com.mockserver.jetbrains.LoadExpectationsAction"
-                    text="Load Expectations Into Running Server"
-                    description="Sends the active editor file to PUT /mockserver/expectation on the running MockServer"/>
-            <action id="MockServer.SaveRecordedExpectations"
-                    class="com.mockserver.jetbrains.SaveRecordedExpectationsAction"
-                    text="Save Recorded Expectations"
-                    description="Retrieves expectations recorded from proxied traffic and opens them in a new JSON tab"/>
-            <action id="MockServer.GenerateFromOpenApi"
-                    class="com.mockserver.jetbrains.GenerateFromOpenApiAction"
-                    text="Generate Expectations From OpenAPI Spec"
-                    description="Sends the active editor's OpenAPI/Swagger spec to MockServer and opens the generated expectations"/>
-            <action id="MockServer.SendRequest"
-                    class="com.mockserver.jetbrains.SendRequestAction"
-                    text="Send Test Request"
-                    description="Sends the active editor's ad-hoc HTTP request to the running MockServer and opens the response"/>
-            <action id="MockServer.ShowDriftReport"
-                    class="com.mockserver.jetbrains.ShowDriftReportAction"
-                    text="Show Drift Report"
-                    description="Fetches MockServer's mock-drift records and opens a readable text report in a new tab"/>
-            <action id="MockServer.FindByTrace"
-                    class="com.mockserver.jetbrains.FindRequestsByTraceAction"
-                    text="Find Requests by Trace"
-                    description="Finds every received request belonging to a W3C trace id (or traceparent) and opens them in a new JSON tab"/>
-            <action id="MockServer.UploadWasm"
-                    class="com.mockserver.jetbrains.UploadWasmModuleAction"
-                    text="Upload WASM Module"
-                    description="Uploads a compiled .wasm custom-rule module to the running MockServer (PUT /mockserver/wasm/modules)"/>
-            <action id="MockServer.ListWasm"
-                    class="com.mockserver.jetbrains.ListWasmModulesAction"
-                    text="List WASM Modules"
-                    description="Lists the WASM custom-rule modules registered on the running MockServer (GET /mockserver/wasm/modules)"/>
+                    description="Starts a MockServer container via Docker"
+                    icon="AllIcons.Actions.Execute"/>
             <action id="MockServer.Reset"
                     class="com.mockserver.jetbrains.ResetAction"
                     text="Reset MockServer"
-                    description="Clears all expectations and logs on the running MockServer (PUT /mockserver/reset)"/>
+                    description="Clears all expectations and logs on the running MockServer (PUT /mockserver/reset)"
+                    icon="AllIcons.Actions.GC"/>
+            <separator text="Editor actions"/>
+            <action id="MockServer.LoadExpectations"
+                    class="com.mockserver.jetbrains.LoadExpectationsAction"
+                    text="Load Expectations Into Running Server"
+                    description="Sends the active editor file to PUT /mockserver/expectation on the running MockServer"
+                    icon="AllIcons.Actions.Upload"/>
+            <action id="MockServer.SaveRecordedExpectations"
+                    class="com.mockserver.jetbrains.SaveRecordedExpectationsAction"
+                    text="Save Recorded Expectations"
+                    description="Retrieves expectations recorded from proxied traffic and opens them in a new JSON tab"
+                    icon="AllIcons.Actions.Download"/>
+            <action id="MockServer.GenerateFromOpenApi"
+                    class="com.mockserver.jetbrains.GenerateFromOpenApiAction"
+                    text="Generate Expectations From OpenAPI Spec"
+                    description="Sends the active editor's OpenAPI/Swagger spec to MockServer and opens the generated expectations"
+                    icon="AllIcons.Actions.Compile"/>
+            <action id="MockServer.SendRequest"
+                    class="com.mockserver.jetbrains.SendRequestAction"
+                    text="Send Test Request"
+                    description="Sends the active editor's ad-hoc HTTP request to the running MockServer and opens the response"
+                    icon="AllIcons.Actions.Lightning"/>
+            <action id="MockServer.ShowDriftReport"
+                    class="com.mockserver.jetbrains.ShowDriftReportAction"
+                    text="Show Drift Report"
+                    description="Fetches MockServer's mock-drift records and opens a readable text report in a new tab"
+                    icon="AllIcons.Actions.Diff"/>
+            <action id="MockServer.FindByTrace"
+                    class="com.mockserver.jetbrains.FindRequestsByTraceAction"
+                    text="Find Requests by Trace"
+                    description="Finds every received request belonging to a W3C trace id (or traceparent) and opens them in a new JSON tab"
+                    icon="AllIcons.Actions.Find"/>
+            <separator text="WASM"/>
+            <action id="MockServer.UploadWasm"
+                    class="com.mockserver.jetbrains.UploadWasmModuleAction"
+                    text="Upload WASM Module"
+                    description="Uploads a compiled .wasm custom-rule module to the running MockServer (PUT /mockserver/wasm/modules)"
+                    icon="AllIcons.Actions.Upload"/>
+            <action id="MockServer.ListWasm"
+                    class="com.mockserver.jetbrains.ListWasmModulesAction"
+                    text="List WASM Modules"
+                    description="Lists the WASM custom-rule modules registered on the running MockServer (GET /mockserver/wasm/modules)"
+                    icon="AllIcons.Actions.ListFiles"/>
         </group>
     </actions>
 
@@ -111,7 +126,7 @@
                     factoryClass="com.mockserver.jetbrains.MockServerToolWindowFactory"
                     anchor="bottom"
                     secondary="true"
-                    icon="AllIcons.Nodes.Plugin"/>
+                    icon="/icons/mockserver.svg"/>
         <toolWindow id="MockServerDashboard"
                     factoryClass="com.mockserver.jetbrains.MockServerDashboardToolWindowFactory"
                     anchor="right"

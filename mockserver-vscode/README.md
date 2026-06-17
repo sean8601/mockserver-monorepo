@@ -11,10 +11,14 @@ inside the editor. Docker start/stop is included for local development.
 
 1. Run **MockServer: Start (Docker)** from the Command Palette to launch a local server
 2. Create `login.mockserver.json` — the editor validates the schema as you type
-3. Click **Load into running MockServer** (the CodeLens at the top of the file) to push it live
+3. Click **Load into running MockServer** (the CodeLens at the top of the file, or the editor
+   title-bar / right-click menu) to push it live
 4. Click **Diff against live** to compare your file to what the server has loaded
 5. Run **MockServer: Open Dashboard (in editor)** to watch requests arrive in a VS Code tab
 6. Run **MockServer: Stop** when done
+
+A **MockServer :&lt;port&gt;** entry sits in the status bar — click it any time for a quick menu of
+the most common actions (Open Dashboard, Start, Stop, View Request Log).
 
 ## Prerequisites
 
@@ -47,9 +51,12 @@ At the top of every expectation file two CodeLens actions appear:
 | **Load into running MockServer** | Sends the file's expectation(s) to `PUT /mockserver/expectation` on the configured port |
 | **Diff against live** | Fetches the server's active expectations and opens a side-by-side diff against your file |
 
-Both are also available as Command Palette commands.
+Both are also available as Command Palette commands. The same file-scoped actions appear in the
+editor **title bar** and the **right-click (editor context) menu** whenever a `*.mockserver.json`,
+`*.mockserver.jsonc`, or `*.mockserver-request.json` file is open, and are hidden from the Command
+Palette when no matching file is active.
 
-**Snippets** — in any `.json` file, type a prefix and press Tab:
+**Snippets** — in any `.json` or `.jsonc` file, type a prefix and press Tab:
 
 | Prefix | Inserts |
 |--------|---------|
@@ -147,9 +154,9 @@ All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift
 
 | File pattern | Purpose |
 |--------------|---------|
-| `*.mockserver.json` | Expectation file — JSON schema validation, CodeLens (Load + Diff), snippet support |
+| `*.mockserver.json` | Expectation file — JSON schema validation, CodeLens (Load + Diff), title-bar & right-click menus, snippet support |
 | `*.mockserver.jsonc` | Same as above, but allows comments and trailing commas |
-| `*.mockserver-request.json` | Scratch request file — CodeLens (**Send to MockServer**), used by **MockServer: Send Test Request** |
+| `*.mockserver-request.json` | Scratch request file — CodeLens (**Send to MockServer**), title-bar & right-click menu, used by **MockServer: Send Test Request** |
 
 **Scratch request file format** (`*.mockserver-request.json`):
 

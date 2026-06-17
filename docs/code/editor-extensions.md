@@ -12,6 +12,7 @@ Key facts:
 - JetBrains: Kotlin, targets `platformType=IC` (IntelliJ Community) since build `243` (2024.3).
 - Shared artifact: a generated `mockserver-expectation.schema.json` (draft-07, self-contained), one copy bundled in each extension.
 - Docker image tag defaults to the extension's own version at runtime — never a hardcoded constant.
+- Marketplace branding: VS Code ships `media/icon.png` (128×128, generated from `media/icon.svg`); JetBrains ships `META-INF/pluginIcon.svg` (+ `pluginIcon_dark.svg`). Both are the teal "M" mark on a dark slate (`#1e1e1e`) rounded square.
 
 ## Architecture Overview
 
@@ -83,11 +84,19 @@ Notes:
 | `src/mockServerClient.ts` | REST client; free of the `vscode` API so it is unit-testable. Takes an injectable `FetchLike` so tests run without a live server |
 | `src/codeLens.ts` | `ExpectationCodeLensProvider` (top of `*.mockserver.json(c)`) + `ScratchRequestCodeLensProvider` (top of `*.mockserver-request.json`) |
 | `schemas/mockserver-expectation.schema.json` | Generated schema, wired via `contributes.jsonValidation` to `*.mockserver.json` and `*.mockserver.jsonc` |
-| `snippets/expectation.json` | Code snippets for JSON expectations |
+| `snippets/expectation.json` | Code snippets, contributed for both `json` and `jsonc` languages |
+| `media/icon.png` / `media/icon.svg` | Marketplace icon (PNG, wired via `package.json` `icon`) and its SVG source |
+| `media/mockserver.svg` | Icon for the in-editor dashboard webview tab |
+
+### Discoverability surfaces
+
+Beyond the command palette, the extension exposes its commands through:
+- A **status-bar item** (`$(server) MockServer :<port>`) whose click runs `mockserver.statusBarMenu` — an internal command (registered but deliberately **not** in `contributes.commands`, so the palette count stays at the documented 16) that shows a quick pick of Open Dashboard / Start / Stop / View Request Log.
+- **`contributes.menus`**: file-scoped commands appear in the editor title bar and right-click menu gated by `when` clauses on `resourceFilename` (`*.mockserver.json(c)` → Load / Diff / drift; `*.mockserver-request.json` → Send Test Request), and the same `when` clauses hide those file-scoped commands from the palette when no matching editor is active.
 
 ### In-editor dashboard
 
-`mockserver.openDashboardInEditor` creates a `WebviewPanel` that renders a full-bleed `<iframe>` pointing at `http://localhost:<port>/mockserver/dashboard`. The Content-Security-Policy allows `frame-src http://localhost:*` so the iframe loads. The panel is a singleton — re-focusing it replaces the HTML rather than opening a second tab. The icon path is `media/mockserver.svg`.
+`mockserver.openDashboardInEditor` creates a `WebviewPanel` that renders a full-bleed `<iframe>` pointing at `http://localhost:<port>/mockserver/dashboard`. The Content-Security-Policy allows `frame-src http://localhost:*` so the iframe loads. The panel is a singleton — re-focusing it replaces the HTML rather than opening a second tab. `retainContextWhenHidden: true` keeps the dashboard state when the tab is hidden. The icon path is `media/mockserver.svg`.
 
 ### JSONC support
 
@@ -119,20 +128,22 @@ Read fresh on every use from `vscode.workspace.getConfiguration("mockserver")`:
 |------|------|
 | `MockServerRestClient.kt` | REST client using `java.net.http.HttpClient` (JDK 11+). Free of IntelliJ platform APIs: pure request builders (`build*Request`) plus a thin `send()` wrapper. Must never run on the EDT |
 | `MockServerSchemaProviderFactory.kt` | Implements `JsonSchemaProviderFactory`; associates the bundled schema with `*.mockserver.json` / `*.mockserver.jsonc` files via `SchemaType.embeddedSchema` |
-| `MockServerToolWindowFactory.kt` | Bottom tool window ("MockServer"): every action as a button, invoking registered actions via `ActionManager.getAction(id)` + `ActionUtil.invokeAction(...)` with a `SimpleDataContext` carrying the project and selected editor |
-| `MockServerDashboardToolWindowFactory.kt` | Right-side tool window ("MockServerDashboard"): embeds `JBCefBrowser` when JCEF (`JBCefApp.isSupported()`) is available; degrades to a fallback panel with an external-browser button when not |
+| `MockServerToolWindowFactory.kt` | Bottom tool window ("MockServer"): a `localhost:<port>` status line, bold section headers, and every action as an icon button, invoking registered actions via `ActionManager.getAction(id)` + `ActionUtil.invokeAction(...)` with a `SimpleDataContext` carrying the project and selected editor |
+| `MockServerDashboardToolWindowFactory.kt` | Right-side tool window ("MockServerDashboard"): embeds `JBCefBrowser` when JCEF (`JBCefApp.isSupported()`) is available; degrades to a fallback panel with an external-browser button when not. A `CefLoadHandler.onLoadError` swaps in a friendly "no MockServer running" panel (with a retry link) on a real load failure |
+| `MockServerEdt.kt` | Shared `runOnEdt(project, block)` helper — posts UI work back to the EDT via `invokeLater(block, defaultModalityState) { project.isDisposed }`, so a result delivered after the project/tool-window closes is dropped instead of throwing `AlreadyDisposedException`. Every background action uses this single helper |
 | `MockServerSettings.kt` | Application-level service (`@Service(APP)`, persisted to `mockserver.xml`). Exposes `effectiveImage()`, `effectivePort()`, `effectiveContainerName()`, `dashboardUrl()` |
 | `MockServerConfigurable.kt` | Settings UI under `Settings \| Tools \| MockServer` |
 | `LoadExpectationsAction.kt` | Representative action: reads the active editor document, validates it, runs `Task.Backgroundable` for the HTTP call, posts result notification on EDT via `invokeLater` |
-| `src/main/resources/META-INF/plugin.xml` | Action group under `ToolsMenu`, two tool window registrations, schema provider extension point |
+| `src/main/resources/META-INF/plugin.xml` | Action group under `ToolsMenu` — actions carry `AllIcons` icons and are grouped with `<separator>`s (Server / Editor / WASM); two tool window registrations; schema provider extension point |
+| `src/main/resources/META-INF/pluginIcon.svg` / `pluginIcon_dark.svg` | Marketplace plugin icon (rendered directly from SVG by JetBrains) |
 
 ### EDT discipline
 
-All `MockServerRestClient.send(...)` calls **block** on the network and must run on a background thread. Actions use `Task.Backgroundable` (which shows a cancellable progress indicator) and marshal UI work back with `ApplicationManager.getApplication().invokeLater(...)`. The tool window buttons invoke actions via `ActionUtil.invokeAction(...)`, which handles threading internally.
+All `MockServerRestClient.send(...)` calls **block** on the network and must run on a background thread. Actions use `Task.Backgroundable` (which shows a cancellable progress indicator) and marshal UI work back through the shared `runOnEdt(project) { ... }` helper in `MockServerEdt.kt`, which wraps `invokeLater` with a `project.isDisposed` expiry condition (so a late result after the project closes is dropped, not thrown). The tool window buttons invoke actions via `ActionUtil.invokeAction(...)`, which handles threading internally.
 
 ### JCEF dashboard
 
-The dashboard tool window uses `JBCefBrowser(dashboardUrl)`. The browser's native Chromium process is registered with `Disposer.register(toolWindow.disposable, browser)` so it is released when the tool window closes. The `JBCefApp.isSupported()` guard means the embedded dashboard works only with the JetBrains-bundled JRE; remote/headless environments fall back gracefully.
+The dashboard tool window uses `JBCefBrowser(dashboardUrl)`. The browser's native Chromium process is registered with `Disposer.register(toolWindow.disposable, browser)` so it is released when the tool window closes. The `JBCefApp.isSupported()` guard means the embedded dashboard works only with the JetBrains-bundled JRE; remote/headless environments fall back gracefully. A `CefLoadHandler.onLoadError` (ignoring `ERR_NONE`/`ERR_ABORTED`) replaces the page with a dark-themed "No MockServer running on localhost:&lt;port&gt;" panel and a retry link when the server is unreachable, instead of showing a raw Chromium `ERR_CONNECTION_REFUSED` page.
 
 ### Settings
 
@@ -223,7 +234,7 @@ The script starts a `mockserver-try` Docker container (unless `--no-server`), cr
 |--------|--------|
 | `Icon?` gitignore rule | The repo `.gitignore` has a rule that matches `Icon?` (macOS resource-fork files); `mockserver-jetbrains/src/main/resources/icons/` contains `mockserver.svg` and `mockserver_dark.svg`. If these files appear missing after a fresh clone on macOS, force-add them: `git add -f mockserver-jetbrains/src/main/resources/icons/` |
 | `.vscodeignore` must not exclude `node_modules` | `jsonc-parser` is a runtime (production) dependency shipped in the `.vsix`. A blanket `node_modules/**` ignore would drop it and break the extension at runtime with "Cannot find module". `vsce` prunes dev dependencies automatically — only production deps need to ship |
-| WASM body matcher field name is `moduleName` | The expectation JSON body matcher for a WASM custom rule uses `{ "type": "WASM", "moduleName": "<name>" }`. The `mockServerClient.ts` JSDoc comment at line 644 incorrectly states `"wasm": "<name>"` — the `WasmBodyDTO` field and both the server deserializers use `moduleName`. `extension.ts` (line 576) is correct |
-| JetBrains tool-window buttons use `ActionUtil.invokeAction` | Buttons in `MockServerToolWindowFactory` look up the registered `AnAction` by id via `ActionManager.getInstance().getAction(actionId)` and fire it with `ActionUtil.invokeAction(action, dataContext, ...)`. This reuses each action's own validation, notifications, and threading — do not call the action's REST logic directly from the button handler |
+| WASM body matcher field name is `moduleName` | The expectation JSON body matcher for a WASM custom rule uses `{ "type": "WASM", "moduleName": "<name>" }` — the `WasmBodyDTO` field and both server deserializers use `moduleName`, NOT `wasm`/`wasmBody`. Both extensions' upload UI and docs reflect this; keep any new copy in step |
+| JetBrains tool-window buttons use `ActionUtil.invokeAction` | Buttons in `MockServerToolWindowFactory` look up the registered `AnAction` by id via `ActionManager.getInstance().getAction(actionId)` and fire it with `ActionUtil.invokeAction(action, dataContext, ...)`. This reuses each action's own validation, notifications, and threading — do not call the action's REST logic directly from the button handler. The 5-arg data-context overload is `@Suppress("DEPRECATION")`-annotated: on platform `243` every non-deprecated replacement requires `ActionUiKind` (a later-platform API), so the migration is deferred until the minimum platform is raised |
 | Schema must be regenerated after `mockserver-core` changes | The committed schema in both extensions is a snapshot. After any change to `mockserver-core/.../schema/*.json` or to `JsonSchemaExpectationValidator`'s reference list, run `node scripts/generate-editor-expectation-schema.mjs` and commit the updated files in both extensions |
 | JetBrains `soft_fail` in CI | The JetBrains test step has `soft_fail: true` in `pipeline-editors.yml`. A failing JetBrains step does not block the build — check Buildkite manually if JetBrains tests become relevant to a change |

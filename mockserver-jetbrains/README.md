@@ -27,7 +27,7 @@ flowchart LR
 
 ## Actions
 
-All actions are available from **Tools > MockServer** and as buttons in the **MockServer** tool window at the bottom of the IDE.
+All actions are available from **Tools > MockServer** and as buttons in the **MockServer** tool window at the bottom of the IDE. In the Tools menu they carry semantic icons and are split by `Server`, `Editor actions`, and `WASM` separators so the set is easy to scan.
 
 ### Server controls
 
@@ -58,11 +58,13 @@ All actions are available from **Tools > MockServer** and as buttons in the **Mo
 
 ## Tool window layout
 
-The dockable **MockServer** tool window (bottom bar, plugin icon) groups buttons into three rows matching the action categories above:
+The dockable **MockServer** tool window (bottom bar, MockServer icon) opens with a status line — `MockServer · localhost:<port>` showing the configured target — and groups icon buttons under bold section headers matching the action categories above:
 
 - **Server** — Open Dashboard in IDE, Open Dashboard (Browser), Start (Docker), Reset
 - **Editor actions (use the active file)** — Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report, Find Requests by Trace
 - **WASM** — Upload WASM Module, List WASM Modules
+
+When the embedded dashboard tool window cannot reach a running server it shows a friendly "No MockServer running" panel (with a Retry link) instead of a raw browser connection error.
 
 ## File conventions
 

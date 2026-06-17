@@ -3,7 +3,6 @@ package com.mockserver.jetbrains
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 
@@ -29,23 +28,19 @@ class ListWasmModulesAction : AnAction() {
                         MockServerRestClient.buildListWasmRequest(baseUrl)
                     )
                     if (!result.ok) {
-                        runOnEdt { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "MockServer returned ${result.status}: ${result.body}", NotificationType.ERROR) }
                         return
                     }
                     if (MockServerRestClient.isEmptyExpectationsBody(result.body)) {
-                        runOnEdt { MockServerNotifier.notify(project, "No WASM modules are registered on MockServer.", NotificationType.INFORMATION) }
+                        runOnEdt(project) { MockServerNotifier.notify(project, "No WASM modules are registered on MockServer.", NotificationType.INFORMATION) }
                         return
                     }
                     val pretty = MockServerRestClient.prettyPrintJson(result.body)
-                    runOnEdt { MockServerEditors.openTextInEditor(project, "wasm-modules.mockserver.json", pretty) }
+                    runOnEdt(project) { MockServerEditors.openTextInEditor(project, "wasm-modules.mockserver.json", pretty) }
                 } catch (ex: Exception) {
-                    runOnEdt { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
+                    runOnEdt(project) { MockServerNotifier.notify(project, "Failed to reach MockServer at $baseUrl: ${ex.message}", NotificationType.ERROR) }
                 }
             }
         }.queue()
-    }
-
-    private fun runOnEdt(block: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater(block)
     }
 }

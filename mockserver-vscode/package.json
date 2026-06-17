@@ -5,6 +5,11 @@
   "version": "7.1.0",
   "publisher": "mockserver",
   "license": "Apache-2.0",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/mock-server/mockserver.git",
@@ -105,8 +110,76 @@
       {
         "language": "json",
         "path": "./snippets/expectation.json"
+      },
+      {
+        "language": "jsonc",
+        "path": "./snippets/expectation.json"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "mockserver.loadExpectations",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
+        },
+        {
+          "command": "mockserver.diffAgainstLive",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
+        },
+        {
+          "command": "mockserver.showDriftDiagnostics",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
+        },
+        {
+          "command": "mockserver.sendRequest",
+          "when": "resourceFilename =~ /\\.mockserver-request\\.json$/"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "mockserver.loadExpectations",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mockserver.diffAgainstLive",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mockserver.sendRequest",
+          "when": "resourceFilename =~ /\\.mockserver-request\\.json$/",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mockserver.loadExpectations",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "mockserver@1"
+        },
+        {
+          "command": "mockserver.diffAgainstLive",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "mockserver@2"
+        },
+        {
+          "command": "mockserver.showDrift",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "mockserver@3"
+        },
+        {
+          "command": "mockserver.showDriftDiagnostics",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "mockserver@4"
+        },
+        {
+          "command": "mockserver.sendRequest",
+          "when": "resourceFilename =~ /\\.mockserver-request\\.json$/",
+          "group": "mockserver@1"
+        }
+      ]
+    },
     "jsonValidation": [
       {
         "fileMatch": [

@@ -17,6 +17,11 @@ let extensionUri: vscode.Uri | undefined;
 // Created in activate() so it shares the extension lifecycle.
 let driftDiagnostics: vscode.DiagnosticCollection;
 
+// Status-bar entry point. Shows the configured port and, on click, a quick-pick
+// of the most useful actions. No live health polling — the label just reflects
+// the configured port (read fresh when refreshed), not a probed server state.
+let statusBarItem: vscode.StatusBarItem;
+
 // Adapter from the global fetch to the small FetchLike used by mockServerClient.
 const httpFetch: client.FetchLike = async (url, init) => {
     const res = await fetch(url, init);
@@ -57,6 +62,34 @@ function getConfig(): MockServerConfig {
     };
 }
 
+// Build the status-bar item: a server glyph + the configured port, clickable to
+// open the quick-pick of common actions. Kept deliberately simple (no polling).
+function createStatusBarItem(): vscode.StatusBarItem {
+    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    item.text = `$(server) MockServer :${getConfig().port}`;
+    item.tooltip = "MockServer — click for actions";
+    item.command = "mockserver.statusBarMenu";
+    return item;
+}
+
+// Quick-pick of the most useful actions, invoked from the status-bar click.
+// Each pick runs an existing command id — no new behaviour, just discoverability.
+async function showStatusBarMenu(): Promise<void> {
+    const { port } = getConfig();
+    const actions: Array<{ label: string; command: string }> = [
+        { label: "$(dashboard) Open Dashboard", command: "mockserver.openDashboard" },
+        { label: "$(play) Start (Docker)", command: "mockserver.start" },
+        { label: "$(debug-stop) Stop", command: "mockserver.stop" },
+        { label: "$(list-unordered) View Request Log", command: "mockserver.viewRequestLog" },
+    ];
+    const pick = await vscode.window.showQuickPick(actions, {
+        placeHolder: `MockServer on port ${port}`,
+    });
+    if (pick) {
+        await vscode.commands.executeCommand(pick.command);
+    }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
     outputChannel = vscode.window.createOutputChannel("MockServer");
     extensionVersion = (context.extension.packageJSON as { version?: string }).version ?? "latest";
@@ -84,6 +117,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const resetCmd = vscode.commands.registerCommand("mockserver.reset", resetServer);
     const uploadWasmCmd = vscode.commands.registerCommand("mockserver.uploadWasm", uploadWasm);
     const listWasmCmd = vscode.commands.registerCommand("mockserver.listWasm", listWasm);
+    const statusBarMenuCmd = vscode.commands.registerCommand(
+        "mockserver.statusBarMenu",
+        showStatusBarMenu
+    );
+
+    statusBarItem = createStatusBarItem();
+    statusBarItem.show();
 
     driftDiagnostics = vscode.languages.createDiagnosticCollection("mockserver-drift");
 
@@ -117,6 +157,8 @@ export function activate(context: vscode.ExtensionContext): void {
         resetCmd,
         uploadWasmCmd,
         listWasmCmd,
+        statusBarMenuCmd,
+        statusBarItem,
         codeLensProvider,
         requestCodeLensProvider,
         contentProvider,
@@ -228,7 +270,9 @@ async function openDashboardInEditor(): Promise<void> {
         "mockserverDashboard",
         "MockServer Dashboard",
         vscode.ViewColumn.Active,
-        { enableScripts: true }
+        // retainContextWhenHidden keeps the framed dashboard alive when the tab is
+        // hidden, so switching away and back doesn't reload the iframe or lose state.
+        { enableScripts: true, retainContextWhenHidden: true }
     );
     // Show the MockServer "M" icon on the tab instead of the default webview icon.
     if (extensionUri) {
@@ -493,6 +537,14 @@ async function findByTrace(): Promise<void> {
     const input = await vscode.window.showInputBox({
         prompt: "Trace id (32 hex) or full traceparent",
         placeHolder: "4bf92f3577b34da6a3ce929d0e0e4736",
+        validateInput: (value) => {
+            if (value.trim().length === 0) {
+                return "Enter a trace id or traceparent.";
+            }
+            return client.extractTraceId(value) === null
+                ? "Enter a 32-hex trace id or a full W3C traceparent."
+                : undefined;
+        },
     });
     if (input === undefined) {
         return; // user cancelled
@@ -562,6 +614,8 @@ async function uploadWasm(): Promise<void> {
     const name = await vscode.window.showInputBox({
         prompt: "Name to register the WASM module under",
         value: defaultName,
+        validateInput: (value) =>
+            value.trim().length === 0 ? "Enter a non-empty module name." : undefined,
     });
     if (name === undefined || name.trim().length === 0) {
         return; // user cancelled or gave an empty name
