@@ -72,6 +72,14 @@
       {
         "command": "mockserver.showDriftDiagnostics",
         "title": "MockServer: Show Drift as Diagnostics"
+      },
+      {
+        "command": "mockserver.viewRequestLog",
+        "title": "MockServer: View Request Log"
+      },
+      {
+        "command": "mockserver.reset",
+        "title": "MockServer: Reset (Clear Expectations & Logs)"
       }
     ],
     "snippets": [

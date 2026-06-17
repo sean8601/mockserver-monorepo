@@ -30,6 +30,8 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Send Test Request** | Fires the request described by the active `*.mockserver-request.json` file at the running server and shows the response |
 | **MockServer: Show Drift Report** | Shows the latest mock-drift records (how real upstream responses differ from your stub expectations) in a readable text tab |
 | **MockServer: Show Drift as Diagnostics** | Surfaces drift records as inline diagnostics on the open `*.mockserver.json` file, anchored to the affected expectation |
+| **MockServer: View Request Log** | Opens the log of requests the server has received in a new JSON editor tab |
+| **MockServer: Reset (Clear Expectations & Logs)** | Clears all expectations and the request log on the running server (after a confirmation prompt) |
 
 ## Live dashboard inside the editor
 

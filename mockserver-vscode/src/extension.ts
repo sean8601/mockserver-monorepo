@@ -79,6 +79,8 @@ export function activate(context: vscode.ExtensionContext): void {
         "mockserver.showDriftDiagnostics",
         showDriftDiagnostics
     );
+    const viewRequestLogCmd = vscode.commands.registerCommand("mockserver.viewRequestLog", viewRequestLog);
+    const resetCmd = vscode.commands.registerCommand("mockserver.reset", resetServer);
 
     driftDiagnostics = vscode.languages.createDiagnosticCollection("mockserver-drift");
 
@@ -107,6 +109,8 @@ export function activate(context: vscode.ExtensionContext): void {
         sendRequestCmd,
         showDriftCmd,
         showDriftDiagnosticsCmd,
+        viewRequestLogCmd,
+        resetCmd,
         codeLensProvider,
         requestCodeLensProvider,
         contentProvider,
@@ -452,6 +456,47 @@ async function showDriftDiagnostics(uri?: vscode.Uri): Promise<void> {
         );
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to retrieve drift — ${(e as Error).message}`);
+    }
+}
+
+// Open the server's received-request log in a new JSON editor tab. When the
+// server has not recorded any requests yet, say so rather than opening an empty
+// tab.
+async function viewRequestLog(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const log = await client.retrieveRequestLog(client.buildBaseUrl(port), httpFetch);
+        if (log.empty) {
+            vscode.window.showInformationMessage("No requests recorded yet.");
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: log.content,
+            language: "json",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to retrieve request log — ${(e as Error).message}`);
+    }
+}
+
+// Reset the running server (clear all expectations and the request log) after a
+// modal confirmation, so a stray Command Palette pick can't wipe state silently.
+async function resetServer(): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+        "Reset MockServer? This clears all expectations and logs.",
+        { modal: true },
+        "Reset"
+    );
+    if (choice !== "Reset") {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        await client.resetServer(client.buildBaseUrl(port), httpFetch);
+        vscode.window.showInformationMessage("MockServer reset.");
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to reset — ${(e as Error).message}`);
     }
 }
 

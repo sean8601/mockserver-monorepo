@@ -249,6 +249,17 @@ async function runTests(): Promise<void> {
         );
     });
 
+    await test("activate registers the mockserver.viewRequestLog command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.viewRequestLog"),
+            "viewRequestLog command not registered"
+        );
+    });
+
+    await test("activate registers the mockserver.reset command", () => {
+        assert.ok(registeredCommands.has("mockserver.reset"), "reset command not registered");
+    });
+
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---
     const client = require("../mockServerClient");
 
@@ -315,6 +326,57 @@ async function runTests(): Promise<void> {
             Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"id":"x"}]') });
         const out = await client.retrieveActiveExpectations("http://localhost:1080", fakeFetch);
         assert.ok(out.includes('"id": "x"'), "expected pretty-printed JSON");
+    });
+
+    await test("retrieveRequestLog flags the empty log and GETs the requests type", async () => {
+        let url = "";
+        const emptyFetch = (u: string) => {
+            url = u;
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("[]") });
+        };
+        const empty = await client.retrieveRequestLog("http://localhost:1080", emptyFetch);
+        assert.strictEqual(empty.empty, true);
+        assert.ok(url.includes("/mockserver/retrieve"), `url should hit /mockserver/retrieve: ${url}`);
+        assert.ok(url.includes("type=requests"), `url should use type=requests: ${url}`);
+    });
+
+    await test("retrieveRequestLog pretty-prints a 2-record log and flags non-empty", async () => {
+        const payload = '[{"method":"GET","path":"/a"},{"method":"POST","path":"/b"}]';
+        const dataFetch = () =>
+            Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(payload) });
+        const data = await client.retrieveRequestLog("http://localhost:1080", dataFetch);
+        assert.strictEqual(data.empty, false);
+        assert.ok(data.content.includes('"path": "/a"'), "expected pretty-printed JSON");
+        assert.ok(data.content.includes('"path": "/b"'), "expected both records");
+    });
+
+    await test("retrieveRequestLog throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve("bad type") });
+        await assert.rejects(
+            () => client.retrieveRequestLog("http://localhost:1080", fakeFetch),
+            /400: bad type/
+        );
+    });
+
+    await test("resetServer PUTs /mockserver/reset", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
+        };
+        await client.resetServer("http://localhost:1080", fakeFetch);
+        assert.ok(captured.url.includes("/mockserver/reset"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "PUT");
+    });
+
+    await test("resetServer throws with status on a non-ok response", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve("boom") });
+        await assert.rejects(
+            () => client.resetServer("http://localhost:1080", fakeFetch),
+            /500: boom/
+        );
     });
 
     await test("retrieveRecordedExpectations (json) flags empty and pretty-prints", async () => {

@@ -71,6 +71,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JetBrains plugin adds **Reset MockServer** (menu and tool window): clears all expectations and recorded
   logs on the running server (`PUT /mockserver/reset`) after a confirmation prompt; the HTTP call runs off
   the UI thread.
+- VS Code extension adds two quick utility commands: **MockServer: View Request Log** opens the log of
+  requests the server has received (`PUT /mockserver/retrieve?type=requests`) in a new JSON tab (saying so
+  rather than opening an empty tab when no requests have been recorded), and **MockServer: Reset (Clear
+  Expectations & Logs)** clears all expectations and the request log (`PUT /mockserver/reset`) after a modal
+  confirmation.
 - Go client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
   `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
 - Rust client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, `openapi()` import, and

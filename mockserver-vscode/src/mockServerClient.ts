@@ -254,6 +254,50 @@ export async function generateExpectationsFromOpenApi(
     }
 }
 
+export interface RequestLog {
+    /** The received request log, pretty-printed as JSON. */
+    content: string;
+    /** True when the server has not recorded any requests yet (`[]` or blank). */
+    empty: boolean;
+}
+
+/**
+ * Retrieve the log of requests the server has received, as pretty JSON, via
+ * `PUT /mockserver/retrieve?type=requests&format=json`. Returns the content plus
+ * whether it is empty (no requests recorded yet — `[]` or a blank body).
+ */
+export async function retrieveRequestLog(
+    baseUrl: string,
+    fetchFn: FetchLike
+): Promise<RequestLog> {
+    const res = await fetchFn(
+        `${baseUrl}/mockserver/retrieve?type=requests&format=json`,
+        { method: "PUT", headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    try {
+        const parsed = JSON.parse(body);
+        const empty = Array.isArray(parsed) && parsed.length === 0;
+        return { content: JSON.stringify(parsed, null, 2) + "\n", empty };
+    } catch {
+        return { content: body, empty: body.trim().length === 0 };
+    }
+}
+
+/**
+ * Reset the running server via `PUT /mockserver/reset`, clearing all expectations
+ * and the recorded request log. Throws (with status + body) on a non-ok response.
+ */
+export async function resetServer(baseUrl: string, fetchFn: FetchLike): Promise<void> {
+    const res = await fetchFn(`${baseUrl}/mockserver/reset`, { method: "PUT" });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+}
+
 export type RecordedFormat = "json" | "java";
 
 export interface RecordedExpectations {
