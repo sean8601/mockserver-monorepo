@@ -3,18 +3,279 @@
   "$id": "https://www.mock-server.com/schema/mockserver-expectation.schema.json",
   "title": "MockServer expectation(s)",
   "description": "A MockServer expectation, or an array of expectations (initialization JSON). Generated from mockserver-core — do not hand-edit.",
-  "oneOf": [
-    {
-      "$ref": "#/definitions/expectation"
+  "type": [
+    "object",
+    "array"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
     },
-    {
+    "priority": {
+      "type": "integer"
+    },
+    "percentage": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "chaos": {
+      "$ref": "#/definitions/httpChaosProfile"
+    },
+    "httpRequest": {
+      "$ref": "#/definitions/requestDefinition"
+    },
+    "httpResponse": {
+      "$ref": "#/definitions/httpResponse"
+    },
+    "httpResponseTemplate": {
+      "$ref": "#/definitions/httpTemplate"
+    },
+    "httpResponseClassCallback": {
+      "$ref": "#/definitions/httpClassCallback"
+    },
+    "httpResponseObjectCallback": {
+      "$ref": "#/definitions/httpObjectCallback"
+    },
+    "httpForward": {
+      "$ref": "#/definitions/httpForward"
+    },
+    "httpForwardTemplate": {
+      "$ref": "#/definitions/httpTemplate"
+    },
+    "httpForwardClassCallback": {
+      "$ref": "#/definitions/httpClassCallback"
+    },
+    "httpForwardObjectCallback": {
+      "$ref": "#/definitions/httpObjectCallback"
+    },
+    "httpOverrideForwardedRequest": {
+      "$ref": "#/definitions/httpOverrideForwardedRequest"
+    },
+    "httpForwardValidateAction": {
+      "$ref": "#/definitions/httpForwardValidateAction"
+    },
+    "httpForwardWithFallback": {
+      "$ref": "#/definitions/httpForwardWithFallback"
+    },
+    "httpError": {
+      "$ref": "#/definitions/httpError"
+    },
+    "httpSseResponse": {
+      "$ref": "#/definitions/httpSseResponse"
+    },
+    "httpLlmResponse": {
+      "$ref": "#/definitions/httpLlmResponse"
+    },
+    "httpWebSocketResponse": {
+      "$ref": "#/definitions/httpWebSocketResponse"
+    },
+    "grpcStreamResponse": {
+      "$ref": "#/definitions/grpcStreamResponse"
+    },
+    "grpcBidiResponse": {
+      "$ref": "#/definitions/grpcBidiResponse"
+    },
+    "binaryResponse": {
+      "$ref": "#/definitions/binaryResponse"
+    },
+    "dnsResponse": {
+      "$ref": "#/definitions/dnsResponse"
+    },
+    "beforeActions": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/afterAction"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/afterAction"
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "afterActions": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/afterAction"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/afterAction"
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "capture": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/captureRule"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/captureRule"
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "scenarioName": {
+      "type": "string"
+    },
+    "scenarioState": {
+      "type": "string"
+    },
+    "newScenarioState": {
+      "type": "string"
+    },
+    "httpResponses": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/expectation"
+        "$ref": "#/definitions/httpResponse"
       },
       "minItems": 1
+    },
+    "responseMode": {
+      "enum": [
+        "SEQUENTIAL",
+        "RANDOM"
+      ]
+    },
+    "times": {
+      "$ref": "#/definitions/times"
+    },
+    "timeToLive": {
+      "$ref": "#/definitions/timeToLive"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/expectationStep"
+      },
+      "minItems": 1
+    },
+    "timestamp": {
+      "description": "added to allow request and response log output to be used to create expectations",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "httpResponse"
+      ]
+    },
+    {
+      "required": [
+        "httpResponseTemplate"
+      ]
+    },
+    {
+      "required": [
+        "httpResponseObjectCallback"
+      ]
+    },
+    {
+      "required": [
+        "httpResponseClassCallback"
+      ]
+    },
+    {
+      "required": [
+        "httpForward"
+      ]
+    },
+    {
+      "required": [
+        "httpForwardTemplate"
+      ]
+    },
+    {
+      "required": [
+        "httpForwardObjectCallback"
+      ]
+    },
+    {
+      "required": [
+        "httpForwardClassCallback"
+      ]
+    },
+    {
+      "required": [
+        "httpOverrideForwardedRequest"
+      ]
+    },
+    {
+      "required": [
+        "httpForwardValidateAction"
+      ]
+    },
+    {
+      "required": [
+        "httpForwardWithFallback"
+      ]
+    },
+    {
+      "required": [
+        "httpError"
+      ]
+    },
+    {
+      "required": [
+        "httpSseResponse"
+      ]
+    },
+    {
+      "required": [
+        "httpLlmResponse"
+      ]
+    },
+    {
+      "required": [
+        "httpWebSocketResponse"
+      ]
+    },
+    {
+      "required": [
+        "grpcStreamResponse"
+      ]
+    },
+    {
+      "required": [
+        "grpcBidiResponse"
+      ]
+    },
+    {
+      "required": [
+        "binaryResponse"
+      ]
+    },
+    {
+      "required": [
+        "dnsResponse"
+      ]
+    },
+    {
+      "required": [
+        "httpResponses"
+      ]
+    },
+    {
+      "required": [
+        "steps"
+      ]
     }
   ],
+  "items": {
+    "$ref": "#/definitions/expectation"
+  },
+  "minItems": 1,
   "definitions": {
     "requestDefinition": {
       "title": "request definition",
@@ -1230,6 +1491,34 @@
         }
       ]
     },
+    "captureRule": {
+      "title": "captureRule",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "jsonPath",
+            "xpath",
+            "header",
+            "queryStringParameter",
+            "cookie",
+            "pathParameter"
+          ]
+        },
+        "expression": {
+          "type": "string"
+        },
+        "into": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "expression",
+        "into"
+      ]
+    },
     "expectationStep": {
       "title": "expectationStep",
       "type": "object",
@@ -1635,6 +1924,32 @@
               ]
             },
             "parameters": {
+              "$ref": "#/definitions/keyToMultiValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "type": "boolean"
+            },
+            "optional": {
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "MULTIPART"
+              ]
+            },
+            "fields": {
+              "$ref": "#/definitions/keyToMultiValue"
+            },
+            "filenames": {
+              "$ref": "#/definitions/keyToMultiValue"
+            },
+            "partContentTypes": {
               "$ref": "#/definitions/keyToMultiValue"
             }
           }
@@ -2331,6 +2646,20 @@
               "type": "array",
               "items": {
                 "$ref": "#/definitions/afterAction"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "capture": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/captureRule"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/captureRule"
               },
               "minItems": 1
             }

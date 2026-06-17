@@ -263,7 +263,19 @@ async function runTests(): Promise<void> {
         assert.ok(fs.existsSync(schemaPath), `schema not found at ${schemaPath}`);
         const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
         assert.ok(schema.definitions && schema.definitions.expectation, "missing expectation definition");
-        assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
+        // The root must be a concrete object/array union with inline properties (NOT a
+        // root `oneOf`), so IntelliJ — which cannot navigate a root `oneOf` reached via
+        // `$ref` — provides completion and validation. See generate-editor-expectation-schema.mjs.
+        assert.ok(!schema.oneOf, "schema root must not be a bare oneOf (breaks IntelliJ completion/validation)");
+        assert.ok(
+            Array.isArray(schema.type) && schema.type.includes("object") && schema.type.includes("array"),
+            "schema root should accept one expectation (object) or an array of them"
+        );
+        assert.ok(
+            schema.properties && Object.keys(schema.properties).length > 0,
+            "schema root should inline the expectation properties for IDE completion"
+        );
+        assert.ok(schema.items, "schema root should validate array elements via items");
     });
 
     await test("package.json activationEvents include onStartupFinished (passive surfaces light up on startup)", () => {

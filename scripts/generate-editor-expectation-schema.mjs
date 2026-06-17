@@ -55,6 +55,7 @@ const REFERENCE_FILES = [
   "dnsResponse",
   "dnsRecord",
   "afterAction",
+  "captureRule",
   "expectationStep",
   "httpChaosProfile",
   "times",
@@ -131,14 +132,22 @@ const bundled = {
   description:
     "A MockServer expectation, or an array of expectations (initialization JSON). " +
     "Generated from mockserver-core — do not hand-edit.",
-  oneOf: [
-    { $ref: "#/definitions/expectation" },
-    {
-      type: "array",
-      items: { $ref: "#/definitions/expectation" },
-      minItems: 1,
-    },
-  ],
+  // Accept a single expectation (object) or an array of them (initialization JSON).
+  // The object form is inlined here (type/properties/additionalProperties/anyOf)
+  // rather than expressed as a root `oneOf` of `$ref`s on purpose: IntelliJ's
+  // JSON-schema engine cannot offer completion or validation through a root
+  // `oneOf` reached only via `$ref` (it has no concrete branch to suggest
+  // properties from), whereas a concrete object root works. VS Code handles both.
+  // The object-only keywords (`properties`/`additionalProperties`/`anyOf`) apply
+  // only to the object form and `items`/`minItems` only to the array form, so the
+  // two forms never interfere; the `anyOf` "must specify an action" branches are
+  // all `required`-based, which non-object (array) instances satisfy vacuously.
+  type: ["object", "array"],
+  properties: expectation.properties,
+  additionalProperties: false,
+  anyOf: expectation.anyOf,
+  items: { $ref: "#/definitions/expectation" },
+  minItems: 1,
   definitions,
 };
 
@@ -169,6 +178,23 @@ const missing = [...refs].filter((name) => !(name in definitions));
 if (missing.length > 0) {
   console.error(
     `Unresolved schema references (add the source file to REFERENCE_FILES): ${missing.join(", ")}`
+  );
+  process.exit(1);
+}
+
+// Self-check: the root must stay IntelliJ-navigable — a concrete object root with
+// an inline `properties` map, NOT a bare `oneOf`/`$ref`. IntelliJ gives no
+// completion or validation through a root `oneOf` reached only via `$ref`, so a
+// regression to that shape must fail the build rather than ship silently.
+if (
+  bundled.oneOf ||
+  !Array.isArray(bundled.type) ||
+  !bundled.type.includes("object") ||
+  !bundled.properties ||
+  Object.keys(bundled.properties).length === 0
+) {
+  console.error(
+    "Root schema is not IntelliJ-navigable: expected a concrete object root with inline `properties` (no root `oneOf`)."
   );
   process.exit(1);
 }

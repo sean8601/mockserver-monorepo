@@ -229,6 +229,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JetBrains plugin **Start (Docker)** now checks the Docker daemon is reachable before launching and reports a
   clear "Docker is not running" error instead of showing a success notification while nothing actually
   started; the Docker check and launch run off the UI thread.
+- JetBrains plugin now provides JSON Schema **completion and validation** for `*.mockserver.json(c)` expectation
+  files. The bundled schema's root was a `oneOf` (single expectation or array), which IntelliJ's JSON engine
+  could not navigate — so no autocompletion or error highlighting appeared; the root is now a concrete
+  object/array union with inline properties, which IntelliJ handles (VS Code already worked). The schema was
+  also regenerated against the current `mockserver-core`, picking up the previously-missing `capture` rule.
 - Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
   Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
   `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.
