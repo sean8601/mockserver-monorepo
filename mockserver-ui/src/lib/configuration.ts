@@ -64,13 +64,10 @@ export interface EditablePropertyDescriptor {
  */
 export const EDITABLE_PROPERTIES: readonly EditablePropertyDescriptor[] = [
   // Developer / data
-  {
-    key: 'devMode',
-    label: 'Developer mode',
-    type: 'boolean',
-    help: 'Reduce memory use on laptops and test suites: caps log entries and expectations to 1,000 each (only for values you have not set explicitly).',
-    group: 'Developer / data',
-  },
+  // NOTE: devMode is intentionally NOT runtime-editable — its only effect is supplying the
+  // startup defaults for maxLogEntries/maxExpectations, which size the log ring buffer and
+  // expectation store at construction time and are never resized at runtime. Changing it on a
+  // running server would mislead (no effect), so it stays in the read-only table.
   {
     key: 'generateRealisticExampleValues',
     label: 'Realistic example values',

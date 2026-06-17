@@ -87,7 +87,7 @@ describe('ConfigurationDialog', () => {
     }
 
     // Verify that devMode renders as an unchecked switch
-    const devModeLabel = screen.getByText('Developer mode');
+    const devModeLabel = screen.getByText('Matchers fail fast');
     const formControl = devModeLabel.closest('label')!;
     const switchInput = within(formControl).getByRole('switch') as HTMLInputElement;
     expect(switchInput.checked).toBe(false);
@@ -99,10 +99,10 @@ describe('ConfigurationDialog', () => {
     renderDialog();
 
     await waitFor(() => {
-      expect(screen.getByText('Developer mode')).toBeInTheDocument();
+      expect(screen.getByText('Matchers fail fast')).toBeInTheDocument();
     });
 
-    const devModeLabel = screen.getByText('Developer mode');
+    const devModeLabel = screen.getByText('Matchers fail fast');
     const formControl = devModeLabel.closest('label')!;
     const switchInput = within(formControl).getByRole('switch');
     await user.click(switchInput);
@@ -113,7 +113,7 @@ describe('ConfigurationDialog', () => {
     );
     expect(putCalls.length).toBeGreaterThanOrEqual(1);
     const body = JSON.parse((putCalls[0]![1] as RequestInit).body as string);
-    expect(body).toEqual({ devMode: true });
+    expect(body).toEqual({ matchersFailFast: true });
   });
 
   it('renders validateProxyOpenAPISpec as a text field with the current value', async () => {
@@ -319,11 +319,11 @@ describe('ConfigurationDialog', () => {
     expect(screen.getByText('maxLogEntries')).toBeInTheDocument();
     expect(screen.getByText('1000')).toBeInTheDocument();
 
-    // devMode IS editable — should NOT appear as a read-only row
+    // devMode is now read-only (startup-only) — it SHOULD appear in the read-only table
     const readOnlyTable = screen.getByText('All other settings (read-only)').parentElement!;
     const tableEl = readOnlyTable.querySelector('table')!;
     const cellTexts = Array.from(tableEl.querySelectorAll('td')).map((td) => td.textContent);
-    expect(cellTexts).not.toContain('devMode');
+    expect(cellTexts).toContain('devMode');
     expect(cellTexts).not.toContain('logLevel');
     expect(cellTexts).not.toContain('validateProxyOpenAPISpec');
   });
@@ -342,10 +342,10 @@ describe('ConfigurationDialog', () => {
     renderDialog();
 
     await waitFor(() => {
-      expect(screen.getByText('Developer mode')).toBeInTheDocument();
+      expect(screen.getByText('Matchers fail fast')).toBeInTheDocument();
     });
 
-    const devModeLabel = screen.getByText('Developer mode');
+    const devModeLabel = screen.getByText('Matchers fail fast');
     const formControl = devModeLabel.closest('label')!;
     const switchInput = within(formControl).getByRole('switch');
     await user.click(switchInput);
