@@ -80,10 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in IDE** (and a dedicated right-hand tool window), embedding it with the bundled JCEF (Chromium) engine and
   Reload / Open-in-Browser controls. When JCEF is unavailable in the IDE or runtime it falls back gracefully
   to opening the external browser.
-- VS Code extension can show the live dashboard inside the editor: **MockServer: Open Dashboard
-  (in editor)** opens the running server's dashboard in a VS Code editor tab (a webview that frames
-  `http://localhost:<port>/mockserver/dashboard`) on the configured port, alongside the existing
-  external-browser **MockServer: Open Dashboard** command.
+- VS Code extension can show the live dashboard inside VS Code: **MockServer: Open Dashboard** reveals the
+  running server's dashboard docked in the bottom panel (a webview that frames
+  `http://localhost:<port>/mockserver/dashboard`) on the configured port, alongside an external-browser option.
 - VS Code extension can send an ad-hoc test request without leaving the editor: name a file
   `*.mockserver-request.json` (`{ "method", "path", "headers"?, "body"? }`) and the **MockServer: Send
   Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the
@@ -210,12 +209,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Both editor extensions now ship a proper marketplace icon (the MockServer "M" mark) instead of the generic
   placeholder — a 128×128 icon for the VS Code Marketplace / Open VSX and a `pluginIcon.svg` (light/dark) for
   the JetBrains Marketplace.
-- VS Code extension is more discoverable: a **status-bar item** (`MockServer :<port>`) opens a quick menu
-  (Open Dashboard, Start, Stop, View Request Log), and the file-scoped commands now appear in the editor
+- VS Code extension gains a **MockServer side panel** (an Activity Bar view) with grouped one-click actions —
+  Server, Author, Inspect, and WASM — plus a status line showing the configured `localhost:<port>`, mirroring
+  the JetBrains tool window so the features are discoverable without the command palette. The live dashboard
+  now opens **docked in the bottom panel** (its own "MockServer Dashboard" view, full width, not mixed in with
+  your editor tabs) instead of as an editor tab.
+- VS Code extension is also more discoverable elsewhere: a **status-bar item** (`MockServer :<port>`) opens a
+  quick menu (Open Dashboard, Start, Stop, View Request Log), and the file-scoped commands appear in the editor
   title bar and right-click menu only on the files they apply to (`*.mockserver.json(c)` and
-  `*.mockserver-request.json`), keeping the command palette uncluttered. The in-editor dashboard now retains
-  its state when its tab is hidden, and the trace-id and WASM-module-name prompts validate input inline.
-  Expectation snippets now also fire in `.jsonc`-typed files.
+  `*.mockserver-request.json`), keeping the command palette uncluttered. The trace-id and WASM-module-name
+  prompts validate input inline, and expectation snippets now also fire in `.jsonc`-typed files.
 - JetBrains plugin actions now carry icons and are grouped (Server / Editor / WASM) in the **Tools >
   MockServer** menu and tool window; the **MockServer** tool window shows the configured `localhost:<port>`
   target with bold section headers, and the in-IDE dashboard shows a friendly "no MockServer running" panel

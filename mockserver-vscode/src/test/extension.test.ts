@@ -111,8 +111,25 @@ const vscodeStub = {
                 dispose() {},
             };
         },
+        registerTreeDataProvider(_viewId: string, _provider: any): Disposable {
+            return { dispose() {} };
+        },
+        registerWebviewViewProvider(_viewId: string, _provider: any, _options?: any): Disposable {
+            return { dispose() {} };
+        },
     },
     StatusBarAlignment: { Left: 1, Right: 2 },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    TreeItem: class {
+        iconPath: any;
+        tooltip: any;
+        command: any;
+        contextValue: any;
+        constructor(public label: string, public collapsibleState?: number) {}
+    },
+    ThemeIcon: class {
+        constructor(public id: string) {}
+    },
     ViewColumn: { Active: -1 },
     env: {
         openExternal(_uri: any) { return Promise.resolve(true); },
@@ -239,7 +256,7 @@ async function runTests(): Promise<void> {
         const originalExecute = vscodeStub.commands.executeCommand;
         let executed = "";
         vscodeStub.window.showQuickPick = (items: any) => {
-            // simulate picking the first action (Open Dashboard)
+            // simulate picking the first action (Open Dashboard — the docked dashboard)
             return Promise.resolve(items[0]);
         };
         vscodeStub.commands.executeCommand = (id: string) => {
@@ -251,7 +268,7 @@ async function runTests(): Promise<void> {
         vscodeStub.commands.executeCommand = originalExecute;
         assert.strictEqual(
             executed,
-            "mockserver.openDashboard",
+            "mockserver.openDashboardInEditor",
             `status-bar menu did not invoke the picked command (got ${executed})`
         );
     });
@@ -343,6 +360,131 @@ async function runTests(): Promise<void> {
 
     await test("activate registers the mockserver.listWasm command", () => {
         assert.ok(registeredCommands.has("mockserver.listWasm"), "listWasm command not registered");
+    });
+
+    await test("activate registers the mockserver.refreshView command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.refreshView"),
+            "refreshView command not registered"
+        );
+    });
+
+    await test("openDashboardInEditor focuses the docked dashboard panel view (no editor tab)", async () => {
+        const originalExecute = vscodeStub.commands.executeCommand;
+        let focused = "";
+        let createdPanel = false;
+        const originalCreatePanel = vscodeStub.window.createWebviewPanel;
+        vscodeStub.window.createWebviewPanel = (...args: any[]) => {
+            createdPanel = true;
+            return originalCreatePanel.apply(vscodeStub.window, args as any);
+        };
+        vscodeStub.commands.executeCommand = (id: string) => {
+            focused = id;
+            return Promise.resolve(undefined);
+        };
+        await registeredCommands.get("mockserver.openDashboardInEditor")!();
+        vscodeStub.commands.executeCommand = originalExecute;
+        vscodeStub.window.createWebviewPanel = originalCreatePanel;
+        assert.strictEqual(
+            focused,
+            "mockserver.dashboard.focus",
+            `expected the docked dashboard focus command (got ${focused})`
+        );
+        assert.ok(!createdPanel, "openDashboardInEditor must NOT create an editor-tab webview panel");
+    });
+
+    // --- Activity Bar actions tree provider ---
+    const { MockServerActionsProvider, ACTION_GROUPS } = require("../actionsView");
+
+    await test("actions tree yields a status leaf then the four groups at the root", () => {
+        const provider = new MockServerActionsProvider(() => 1080);
+        const roots = provider.getChildren();
+        assert.strictEqual(roots[0].kind, "status", "first root node should be the status leaf");
+        const groupLabels = roots
+            .filter((n: any) => n.kind === "group")
+            .map((n: any) => n.group.label);
+        assert.deepStrictEqual(
+            groupLabels,
+            ["Server", "Author", "Inspect", "WASM"],
+            `unexpected group labels: ${groupLabels.join(", ")}`
+        );
+    });
+
+    await test("actions status leaf shows the configured port and reveals the docked dashboard", () => {
+        const provider = new MockServerActionsProvider(() => 2080);
+        const item = provider.getTreeItem({ kind: "status" });
+        assert.ok(
+            String(item.label).includes("localhost:2080"),
+            `status label should include the configured port: ${item.label}`
+        );
+        assert.strictEqual(
+            item.command.command,
+            "mockserver.openDashboardInEditor",
+            "status item should reveal the docked dashboard"
+        );
+    });
+
+    await test("every actions-tree leaf command is a registered command", () => {
+        const provider = new MockServerActionsProvider(() => 1080);
+        for (const group of ACTION_GROUPS) {
+            for (const child of provider.getChildren({ kind: "group", group })) {
+                const id = child.leaf.command;
+                assert.ok(
+                    registeredCommands.has(id),
+                    `tree leaf "${child.leaf.label}" points at unregistered command ${id}`
+                );
+                const treeItem = provider.getTreeItem(child);
+                assert.strictEqual(treeItem.command.command, id, "leaf tree item command mismatch");
+            }
+        }
+    });
+
+    await test("package.json contributes the two viewsContainers and two views", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const pkgPath = path.resolve(__dirname, "../../package.json");
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        const containers = pkg.contributes.viewsContainers;
+        assert.ok(
+            containers.activitybar.some((c: any) => c.id === "mockserver"),
+            "missing activitybar viewsContainer id 'mockserver'"
+        );
+        assert.ok(
+            containers.panel.some((c: any) => c.id === "mockserverDashboard"),
+            "missing panel viewsContainer id 'mockserverDashboard'"
+        );
+        const views = pkg.contributes.views;
+        assert.ok(
+            views.mockserver.some((v: any) => v.id === "mockserver.actions"),
+            "missing view id 'mockserver.actions'"
+        );
+        const dashboardView = views.mockserverDashboard.find(
+            (v: any) => v.id === "mockserver.dashboard"
+        );
+        assert.ok(dashboardView, "missing view id 'mockserver.dashboard'");
+        assert.strictEqual(
+            dashboardView.type,
+            "webview",
+            "the docked dashboard view must be a webview"
+        );
+    });
+
+    await test("every package.json view/title menu command exists in contributes.commands", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const pkgPath = path.resolve(__dirname, "../../package.json");
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        const declared = new Set(pkg.contributes.commands.map((c: any) => c.command));
+        const titleMenus = pkg.contributes.menus["view/title"];
+        assert.ok(Array.isArray(titleMenus) && titleMenus.length > 0, "view/title menus missing");
+        for (const m of titleMenus) {
+            assert.strictEqual(
+                m.when,
+                "view == mockserver.actions",
+                `view/title item ${m.command} has unexpected when: ${m.when}`
+            );
+            assert.ok(declared.has(m.command), `view/title command ${m.command} not declared`);
+        }
     });
 
     // --- mockServerClient (pure REST helpers, exercised with a fake fetch) ---

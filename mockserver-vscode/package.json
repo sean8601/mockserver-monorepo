@@ -47,7 +47,8 @@
     "commands": [
       {
         "command": "mockserver.start",
-        "title": "MockServer: Start (Docker)"
+        "title": "MockServer: Start (Docker)",
+        "icon": "$(play)"
       },
       {
         "command": "mockserver.stop",
@@ -55,11 +56,17 @@
       },
       {
         "command": "mockserver.openDashboard",
-        "title": "MockServer: Open Dashboard"
+        "title": "MockServer: Open Dashboard in Browser"
       },
       {
         "command": "mockserver.openDashboardInEditor",
-        "title": "MockServer: Open Dashboard (in editor)"
+        "title": "MockServer: Open Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "mockserver.refreshView",
+        "title": "MockServer: Refresh Panel",
+        "icon": "$(refresh)"
       },
       {
         "command": "mockserver.loadExpectations",
@@ -99,7 +106,8 @@
       },
       {
         "command": "mockserver.reset",
-        "title": "MockServer: Reset (Clear Expectations & Logs)"
+        "title": "MockServer: Reset (Clear Expectations & Logs)",
+        "icon": "$(clear-all)"
       },
       {
         "command": "mockserver.uploadWasm",
@@ -110,6 +118,37 @@
         "title": "MockServer: List WASM Modules"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mockserver",
+          "title": "MockServer",
+          "icon": "media/activitybar.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "mockserverDashboard",
+          "title": "MockServer Dashboard",
+          "icon": "media/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "mockserver": [
+        {
+          "id": "mockserver.actions",
+          "name": "Actions"
+        }
+      ],
+      "mockserverDashboard": [
+        {
+          "id": "mockserver.dashboard",
+          "name": "Dashboard",
+          "type": "webview"
+        }
+      ]
+    },
     "snippets": [
       {
         "language": "json",
@@ -121,7 +160,33 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "mockserver.start",
+          "when": "view == mockserver.actions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mockserver.openDashboardInEditor",
+          "when": "view == mockserver.actions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mockserver.reset",
+          "when": "view == mockserver.actions",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mockserver.refreshView",
+          "when": "view == mockserver.actions",
+          "group": "navigation@4"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "mockserver.refreshView",
+          "when": "false"
+        },
         {
           "command": "mockserver.loadExpectations",
           "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"

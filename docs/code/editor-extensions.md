@@ -58,7 +58,7 @@ schemas change. It is not auto-regenerated in CI.
 | Upload WASM module | `mockserver.uploadWasm` | `MockServer.UploadWasm` | `PUT /mockserver/wasm/modules?name=<name>` |
 | List WASM modules | `mockserver.listWasm` | `MockServer.ListWasm` | `GET /mockserver/wasm/modules` |
 | Open dashboard (browser) | `mockserver.openDashboard` | `MockServer.OpenDashboard` | browser → `/mockserver/dashboard` |
-| Open dashboard (in-editor) | `mockserver.openDashboardInEditor` | `MockServer.OpenDashboardInIde` | webview/JCEF → `/mockserver/dashboard` |
+| Open dashboard (docked in-IDE) | `mockserver.openDashboardInEditor` (reveals the docked Panel webview) | `MockServer.OpenDashboardInIde` | webview/JCEF → `/mockserver/dashboard` |
 | Start Docker container | `mockserver.start` | `MockServer.StartDocker` | `docker run` subprocess |
 | Stop Docker container | `mockserver.stop` | — (VS Code only) | `docker stop` subprocess |
 | Settings (port, image, container name) | `mockserver.*` workspace config | `Settings \| Tools \| MockServer` | — |
@@ -83,23 +83,26 @@ Notes:
 
 | File | Role |
 |------|------|
-| `src/extension.ts` | Activation, command handlers, Docker subprocess calls, webview panel management |
+| `src/extension.ts` | Activation, command handlers, Docker subprocess calls, status bar, and view registration (Actions tree + docked dashboard reveal via `mockserver.dashboard.focus`) |
 | `src/mockServerClient.ts` | REST client; free of the `vscode` API so it is unit-testable. Takes an injectable `FetchLike` so tests run without a live server |
 | `src/codeLens.ts` | `ExpectationCodeLensProvider` (top of `*.mockserver.json(c)`) + `ScratchRequestCodeLensProvider` (top of `*.mockserver-request.json`) |
+| `src/actionsView.ts` | `MockServerActionsProvider` (`TreeDataProvider`) backing the Activity Bar **Actions** view — a status leaf (`MockServer · localhost:<port>`) plus grouped action leaves (Server / Author / Inspect / WASM), each running an existing command. Takes an injected `getPort` so refresh re-reads the port |
+| `src/dashboardView.ts` | `MockServerDashboardViewProvider` (`WebviewViewProvider`) backing the docked Panel **Dashboard** view; reuses `client.buildDashboardWebviewHtml(...)` |
 | `schemas/mockserver-expectation.schema.json` | Generated schema, wired via `contributes.jsonValidation` to `*.mockserver.json` and `*.mockserver.jsonc` |
 | `snippets/expectation.json` | Code snippets, contributed for both `json` and `jsonc` languages |
 | `media/icon.png` / `media/icon.svg` | Marketplace icon (PNG, wired via `package.json` `icon`) and its SVG source |
-| `media/mockserver.svg` | Icon for the in-editor dashboard webview tab |
+| `media/activitybar.svg` | Monochrome (`currentColor`) M glyph for the Activity Bar / Panel view containers — the themed `mockserver.svg` can't recolor in those slots |
 
-### Discoverability surfaces
+### Discoverability surfaces (IntelliJ-style)
 
 Beyond the command palette, the extension exposes its commands through:
-- A **status-bar item** (`$(server) MockServer :<port>`) whose click runs `mockserver.statusBarMenu` — an internal command (registered but deliberately **not** in `contributes.commands`, so the palette count stays at the documented 16) that shows a quick pick of Open Dashboard / Start / Stop / View Request Log.
+- A **MockServer Activity Bar view container** (`viewsContainers.activitybar` id `mockserver`, icon `media/activitybar.svg`) holding the `mockserver.actions` **TreeView** — a status leaf (`MockServer · localhost:<port>`, click reveals the docked dashboard) and collapsible groups **Server / Author / Inspect / WASM** whose leaves each run an existing command. This is the idiomatic VS Code analogue of the JetBrains tool-window buttons. `view/title` icon buttons (Start, Open Dashboard, Reset, Refresh) sit on the view's title bar; `mockserver.refreshView` fires the tree's change event to re-read the port.
+- A **status-bar item** (`$(server) MockServer :<port>`) whose click runs `mockserver.statusBarMenu` — an internal command (registered but deliberately **not** in `contributes.commands`) showing a quick pick of Open Dashboard / Start / Stop / View Request Log.
 - **`contributes.menus`**: file-scoped commands appear in the editor title bar and right-click menu gated by `when` clauses on `resourceFilename` (`*.mockserver.json(c)` → Load / Diff / drift; `*.mockserver-request.json` → Send Test Request), and the same `when` clauses hide those file-scoped commands from the palette when no matching editor is active.
 
-### In-editor dashboard
+### Docked dashboard
 
-`mockserver.openDashboardInEditor` creates a `WebviewPanel` that renders a full-bleed `<iframe>` pointing at `http://localhost:<port>/mockserver/dashboard`. The Content-Security-Policy allows `frame-src http://localhost:*` so the iframe loads. The panel is a singleton — re-focusing it replaces the HTML rather than opening a second tab. `retainContextWhenHidden: true` keeps the dashboard state when the tab is hidden. The icon path is `media/mockserver.svg`.
+The live dashboard is a **`WebviewView` docked in the bottom Panel** (`viewsContainers.panel` id `mockserverDashboard` → view `mockserver.dashboard`, `"type": "webview"`), so it gets full editor width and is not mixed in with editor tabs — the analogue of the JetBrains JCEF dashboard tool window. `MockServerDashboardViewProvider.resolveWebviewView` sets `enableScripts` and the html from `client.buildDashboardWebviewHtml(...)` (a full-bleed `<iframe>` at `http://localhost:<port>/mockserver/dashboard`; the CSP allows `frame-src http://localhost:*`/127.0.0.1), registered with `retainContextWhenHidden: true`. `mockserver.openDashboardInEditor` (title "MockServer: Open Dashboard") now **reveals** this docked view via `mockserver.dashboard.focus` rather than opening an editor tab; `mockserver.openDashboard` still opens the external browser.
 
 ### JSONC support
 

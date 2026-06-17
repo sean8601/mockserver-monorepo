@@ -91,12 +91,12 @@ sitemap:
         <td>Stops the running MockServer Docker container</td>
     </tr>
     <tr>
-        <td><strong>MockServer: Open Dashboard</strong></td>
+        <td><strong>MockServer: Open Dashboard in Browser</strong></td>
         <td>Opens the MockServer Dashboard at <span class="inline_code">http://localhost:1080/mockserver/dashboard</span> in your browser</td>
     </tr>
     <tr>
-        <td><strong>MockServer: Open Dashboard in Editor</strong></td>
-        <td>Embeds the live MockServer Dashboard as a VS Code webview panel — no browser switch needed</td>
+        <td><strong>MockServer: Open Dashboard</strong></td>
+        <td>Reveals the live MockServer Dashboard docked in the bottom panel (its own "MockServer Dashboard" view) — no browser switch, and kept separate from your editor tabs</td>
     </tr>
     <tr>
         <td><strong>MockServer: Load Expectations Into Running Server</strong></td>
@@ -194,7 +194,7 @@ sitemap:
     <li>Run <strong>MockServer: Start (Docker)</strong> from the Command Palette, or point the extension at an already-running instance via Settings</li>
     <li>Create a file named <span class="inline_code">expectations.mockserver.json</span> — schema validation and auto-completion activate automatically</li>
     <li>Run <strong>MockServer: Load Expectations</strong> (or click the CodeLens button) to send expectations to the server</li>
-    <li>Run <strong>MockServer: Open Dashboard in Editor</strong> to inspect recorded requests and active expectations without leaving VS Code</li>
+    <li>Open the <strong>MockServer</strong> side panel (the MockServer icon in the Activity Bar) for one-click access to every action — Server, Author, Inspect, and WASM — or run <strong>MockServer: Open Dashboard</strong> to inspect recorded requests and active expectations in the docked dashboard, without leaving VS Code</li>
     <li>Run <strong>MockServer: Show Drift Report</strong> to spot where real upstream responses have drifted from your stubbed expectations</li>
 </ol>
 

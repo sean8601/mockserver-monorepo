@@ -42,15 +42,18 @@ proxied yet, the command tells you instead of opening an empty file — no guess
 
 <!-- TODO(media): record-to-code.gif here -->
 
-### Live MockServer dashboard inside the editor
+### MockServer side panel + docked dashboard
 
-*Open the real MockServer dashboard in a VS Code webview tab and watch requests land without switching apps.*
+*A MockServer view in the Activity Bar puts every action one click away, and the live dashboard docks in the bottom panel — all inside VS Code, none of it mixed in with your editor tabs.*
 
-Run **Open Dashboard (in editor)** to view the dashboard in a webview tab — active expectations,
-the request log, and live traffic, all inside VS Code. Re-running the command reveals the existing
-panel instead of opening a duplicate. Prefer your browser? **Open Dashboard** opens the same URL there.
+Click the **MockServer** icon in the Activity Bar for a panel of grouped, one-click actions — **Server**
+(start / dashboard / reset), **Author** (load / record / generate from OpenAPI), **Inspect** (send request /
+request log / drift / trace), and **WASM** — with a status line showing the configured `localhost:<port>`.
+Run **Open Dashboard** to reveal the real MockServer dashboard **docked in the bottom panel** (its own
+"MockServer Dashboard" view — active expectations, the request log, and live traffic, full width and separate
+from your code tabs). Prefer your browser? **Open Dashboard in Browser** opens the same URL there.
 
-<!-- TODO(media): dashboard-in-editor.gif here -->
+<!-- TODO(media): dashboard-docked.gif here -->
 
 ---
 
@@ -62,9 +65,11 @@ panel instead of opening a duplicate. Prefer your browser? **Open Dashboard** op
    / `mockserver.containerName` if relevant).
 3. **Load it:** click the **Load into running MockServer** CodeLens at the top of the file (also in the
    editor title bar and right-click menu) to push your expectation(s) to the server.
-4. **Watch it:** run **MockServer: Open Dashboard (in editor)** and send a request to see it arrive.
+4. **Watch it:** run **MockServer: Open Dashboard** (or click the status item in the MockServer side panel)
+   and send a request to see it arrive in the docked dashboard.
 
-A **MockServer :&lt;port&gt;** entry sits in the status bar — click it any time for a quick menu of the
+Open the **MockServer** view in the Activity Bar for one-click access to every action, and a
+**MockServer :&lt;port&gt;** entry sits in the status bar — click it any time for a quick menu of the
 most common actions (Open Dashboard, Start, Stop, View Request Log).
 
 ### Prerequisites
@@ -127,8 +132,8 @@ is active.
 
 | Command | What it does |
 |---------|-------------|
-| **Open Dashboard** | Opens `http://localhost:<port>/mockserver/dashboard` in the system browser. |
-| **Open Dashboard (in editor)** | Opens the same URL in a VS Code webview tab. Re-running the command reveals the existing panel rather than creating a duplicate. |
+| **Open Dashboard** | Reveals the dashboard docked in the bottom panel (the "MockServer Dashboard" view) — `http://localhost:<port>/mockserver/dashboard` in a webview, kept separate from your editor tabs. |
+| **Open Dashboard in Browser** | Opens the same URL in the system browser. |
 
 ### WASM custom rules
 
@@ -170,8 +175,8 @@ All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift
 |---------|-----------------|
 | `mockserver.start` | MockServer: Start (Docker) |
 | `mockserver.stop` | MockServer: Stop |
-| `mockserver.openDashboard` | MockServer: Open Dashboard |
-| `mockserver.openDashboardInEditor` | MockServer: Open Dashboard (in editor) |
+| `mockserver.openDashboard` | MockServer: Open Dashboard in Browser |
+| `mockserver.openDashboardInEditor` | MockServer: Open Dashboard |
 | `mockserver.loadExpectations` | MockServer: Load Expectations Into Running Server |
 | `mockserver.diffAgainstLive` | MockServer: Diff Expectations Against Live Server |
 | `mockserver.saveRecorded` | MockServer: Save Recorded Expectations (JSON or Java) |

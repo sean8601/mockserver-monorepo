@@ -8,10 +8,11 @@ import {
     REQUEST_FILE_SELECTOR,
 } from "./codeLens";
 import * as client from "./mockServerClient";
+import { MockServerActionsProvider } from "./actionsView";
+import { MockServerDashboardViewProvider } from "./dashboardView";
 
 let outputChannel: vscode.OutputChannel;
 let extensionVersion = "latest";
-let extensionUri: vscode.Uri | undefined;
 
 // Collection backing the inline drift diagnostics shown on expectation files.
 // Created in activate() so it shares the extension lifecycle.
@@ -77,7 +78,8 @@ function createStatusBarItem(): vscode.StatusBarItem {
 async function showStatusBarMenu(): Promise<void> {
     const { port } = getConfig();
     const actions: Array<{ label: string; command: string }> = [
-        { label: "$(dashboard) Open Dashboard", command: "mockserver.openDashboard" },
+        { label: "$(dashboard) Open Dashboard", command: "mockserver.openDashboardInEditor" },
+        { label: "$(globe) Open Dashboard in Browser", command: "mockserver.openDashboard" },
         { label: "$(play) Start (Docker)", command: "mockserver.start" },
         { label: "$(debug-stop) Stop", command: "mockserver.stop" },
         { label: "$(list-unordered) View Request Log", command: "mockserver.viewRequestLog" },
@@ -93,7 +95,6 @@ async function showStatusBarMenu(): Promise<void> {
 export function activate(context: vscode.ExtensionContext): void {
     outputChannel = vscode.window.createOutputChannel("MockServer");
     extensionVersion = (context.extension.packageJSON as { version?: string }).version ?? "latest";
-    extensionUri = context.extensionUri;
 
     const startCmd = vscode.commands.registerCommand("mockserver.start", startMockServer);
     const stopCmd = vscode.commands.registerCommand("mockserver.stop", stopMockServer);
@@ -120,6 +121,27 @@ export function activate(context: vscode.ExtensionContext): void {
     const statusBarMenuCmd = vscode.commands.registerCommand(
         "mockserver.statusBarMenu",
         showStatusBarMenu
+    );
+
+    // Activity Bar "Actions" tree (the grouped buttons). The provider reads the
+    // configured port fresh for its status item; refreshView re-fires its change
+    // event so the status item re-reads the port after a settings change.
+    const actionsProvider = new MockServerActionsProvider(() => getConfig().port);
+    const actionsView = vscode.window.registerTreeDataProvider(
+        "mockserver.actions",
+        actionsProvider
+    );
+    const refreshViewCmd = vscode.commands.registerCommand("mockserver.refreshView", () =>
+        actionsProvider.refresh()
+    );
+
+    // Docked dashboard in the bottom Panel (NOT an editor tab). retainContextWhenHidden
+    // keeps the framed dashboard alive when the panel is hidden.
+    const dashboardProvider = new MockServerDashboardViewProvider(() => getConfig().port);
+    const dashboardView = vscode.window.registerWebviewViewProvider(
+        MockServerDashboardViewProvider.viewType,
+        dashboardProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
     );
 
     statusBarItem = createStatusBarItem();
@@ -158,6 +180,9 @@ export function activate(context: vscode.ExtensionContext): void {
         uploadWasmCmd,
         listWasmCmd,
         statusBarMenuCmd,
+        refreshViewCmd,
+        actionsView,
+        dashboardView,
         statusBarItem,
         codeLensProvider,
         requestCodeLensProvider,
@@ -252,36 +277,13 @@ async function openDashboard(): Promise<void> {
     }
 }
 
-// Open the live dashboard inside a VS Code editor tab, in a webview that frames
-// the running server's dashboard. Keeps the external-browser command available;
-// this is the in-editor alternative for users who prefer to stay in VS Code.
-let dashboardPanel: vscode.WebviewPanel | undefined;
-
+// Reveal the docked dashboard: focus the `mockserver.dashboard` WebviewView in
+// the bottom Panel (NOT an editor tab). VS Code auto-generates a `<viewId>.focus`
+// command for every contributed view; executing it shows and focuses the panel
+// view, resolving its WebviewViewProvider on first reveal. Keeps the
+// external-browser command (`mockserver.openDashboard`) available separately.
 async function openDashboardInEditor(): Promise<void> {
-    const { port } = getConfig();
-    const url = `${client.buildBaseUrl(port)}/mockserver/dashboard`;
-    // Reuse a single panel: reveal the existing one rather than stacking duplicates.
-    if (dashboardPanel) {
-        dashboardPanel.reveal(vscode.ViewColumn.Active);
-        dashboardPanel.webview.html = client.buildDashboardWebviewHtml(url);
-        return;
-    }
-    dashboardPanel = vscode.window.createWebviewPanel(
-        "mockserverDashboard",
-        "MockServer Dashboard",
-        vscode.ViewColumn.Active,
-        // retainContextWhenHidden keeps the framed dashboard alive when the tab is
-        // hidden, so switching away and back doesn't reload the iframe or lose state.
-        { enableScripts: true, retainContextWhenHidden: true }
-    );
-    // Show the MockServer "M" icon on the tab instead of the default webview icon.
-    if (extensionUri) {
-        dashboardPanel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "mockserver.svg");
-    }
-    dashboardPanel.onDidDispose(() => {
-        dashboardPanel = undefined;
-    });
-    dashboardPanel.webview.html = client.buildDashboardWebviewHtml(url);
+    await vscode.commands.executeCommand("mockserver.dashboard.focus");
 }
 
 // Resolve the expectation file a CodeLens/command should act on: the explicit
