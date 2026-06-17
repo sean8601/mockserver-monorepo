@@ -144,6 +144,33 @@ public class MockServerHttpResponseToFullHttpResponseTest {
         }
     }
 
+    @Test
+    public void shouldNotFailEncodingWhenHeaderValueIsNull() {
+        // given - a response carrying a header whose value is null (issue #2358: the dashboard
+        // served favicon.svg with a Content-Type built from an unmapped MIME lookup that returned
+        // null, which crashed Netty's header encoder with "NullPointerException: value")
+        HttpResponse httpResponse = response()
+            .withStatusCode(200)
+            .withHeader("Content-Type", (String) null)
+            .withHeader("headerName", "headerValue")
+            .withBody("some body");
+
+        // when
+        List<DefaultHttpObject> result = mapper.mapMockServerResponseToNettyResponse(httpResponse);
+
+        // then - encoding succeeds (no NPE) and the response is genuinely usable
+        DefaultFullHttpResponse fullResponse = (DefaultFullHttpResponse) result.get(0);
+        try {
+            assertThat(fullResponse.status().code(), equalTo(200));
+            // the null-valued header is omitted rather than written to the wire
+            assertThat(fullResponse.headers().contains("Content-Type"), is(false));
+            // other headers are unaffected
+            assertThat(fullResponse.headers().get("headerName"), equalTo("headerValue"));
+        } finally {
+            fullResponse.release();
+        }
+    }
+
     // --- body ---
 
     @Test
@@ -444,6 +471,34 @@ public class MockServerHttpResponseToFullHttpResponseTest {
             LastHttpContent last = (LastHttpContent) result.get(2);
             assertThat(last.trailingHeaders().get("x-checksum"), equalTo("abc123"));
             assertThat(last.trailingHeaders().get("x-signature"), equalTo("deadbeef"));
+        } finally {
+            for (DefaultHttpObject object : result) {
+                if (object instanceof ReferenceCounted) {
+                    ((ReferenceCounted) object).release();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void shouldNotFailEncodingWhenTrailerValueIsNull() {
+        // given - a response with a trailer whose value is null (same null-header hazard as
+        // issue #2358, on the trailing-header path)
+        HttpResponse httpResponse = response()
+            .withStatusCode(200)
+            .withBody("body")
+            .withTrailer("x-null", (String) null)
+            .withTrailer("x-checksum", "abc123");
+
+        // when
+        List<DefaultHttpObject> result = mapper.mapMockServerResponseToNettyResponse(httpResponse);
+
+        // then - encoding succeeds (no NPE); the null-valued trailer is omitted, others survive
+        try {
+            assertThat(result, hasSize(3));
+            LastHttpContent last = (LastHttpContent) result.get(2);
+            assertThat(last.trailingHeaders().contains("x-null"), is(false));
+            assertThat(last.trailingHeaders().get("x-checksum"), equalTo("abc123"));
         } finally {
             for (DefaultHttpObject object : result) {
                 if (object instanceof ReferenceCounted) {

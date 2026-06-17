@@ -285,6 +285,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually renders, not the repo README).
 
 ### Fixed
+- Dashboard `favicon.svg` (and any future SVG asset) is now served with a valid `Content-Type: image/svg+xml`
+  instead of a null header value. The `svg` extension was missing from the dashboard's MIME-type map, so the
+  asset response carried a `Content-Type` header with a `null` value, which crashed Netty's header encoder
+  (`NullPointerException: value`) and left the asset failing to load. The MIME map now includes `svg` and falls
+  back to `application/octet-stream` for any unmapped extension, and the response→Netty mapper now skips any
+  header whose value is null rather than throwing while encoding the response (issue #2358).
 - JetBrains plugin no longer risks an `AlreadyDisposedException` when a project (or tool window) is closed
   while an extension HTTP request is still in flight — the result is now delivered on the UI thread through a
   single shared, project-disposal-guarded helper.

@@ -7,8 +7,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockserver.model.HttpResponse;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH;
+import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
@@ -51,6 +53,28 @@ public class DashboardHandlerTest {
         // invariant that was violated on non-UTF-8 platforms before the #2347 fix.
         long declaredContentLength = Long.parseLong(response.getFirstHeader(CONTENT_LENGTH.toString()));
         assertThat(declaredContentLength, is((long) utf8ByteLength));
+    }
+
+    /**
+     * Regression test for issue #2358: the dashboard references {@code favicon.svg}, but the
+     * {@code svg} extension had no entry in the MIME map, so {@code MIME_MAP.get("svg")} returned
+     * null and the served response carried a {@code Content-Type} header with a null value. That
+     * null value crashed Netty's header encoder ("NullPointerException: value") when the response
+     * was written, so the asset failed to load. The Content-Type must now be a valid, non-null
+     * {@code image/svg+xml}.
+     */
+    @Test
+    public void servesSvgAssetWithNonNullSvgContentType() throws Exception {
+        // given - an SVG dashboard asset (matches the real favicon.svg)
+        HttpResponse response = renderDashboardResource("/favicon-fixture.svg");
+
+        // then - the asset was found and served
+        assertThat(response.getBodyAsString(), is(notNullValue()));
+
+        // and - the Content-Type is a valid, non-null SVG media type (it was null before the fix)
+        String contentType = response.getFirstHeader(CONTENT_TYPE.toString());
+        assertThat(contentType, is(notNullValue()));
+        assertThat(contentType, equalTo("image/svg+xml"));
     }
 
     private HttpResponse renderDashboardResource(String resourceSuffix) throws Exception {

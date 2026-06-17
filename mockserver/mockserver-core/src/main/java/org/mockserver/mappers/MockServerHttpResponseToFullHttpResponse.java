@@ -193,11 +193,17 @@ public class MockServerHttpResponseToFullHttpResponse {
             httpResponse
                 .getTrailerMultimap()
                 .entries()
-                .forEach(entry ->
-                    lastHttpContent
-                        .trailingHeaders()
-                        .add(sanitizeHeaderValue(entry.getKey().getValue()), sanitizeHeaderValue(entry.getValue().getValue()))
-                );
+                .forEach(entry -> {
+                    // Skip a null trailer value for the same reason as setHeaders: Netty's encoder
+                    // rejects a null value with a NullPointerException, which would fail the
+                    // response (issue #2358).
+                    String value = sanitizeHeaderValue(entry.getValue().getValue());
+                    if (value != null) {
+                        lastHttpContent
+                            .trailingHeaders()
+                            .add(sanitizeHeaderValue(entry.getKey().getValue()), value);
+                    }
+                });
         }
     }
 
@@ -228,11 +234,17 @@ public class MockServerHttpResponseToFullHttpResponse {
             httpResponse
                 .getHeaderMultimap()
                 .entries()
-                .forEach(entry ->
-                    response
-                        .headers()
-                        .add(sanitizeHeaderValue(entry.getKey().getValue()), sanitizeHeaderValue(entry.getValue().getValue()))
-                );
+                .forEach(entry -> {
+                    // Netty's header encoder rejects a null value with a NullPointerException,
+                    // which would fail the whole response. A header with no value carries no
+                    // information, so skip it rather than crash the encode (issue #2358).
+                    String value = sanitizeHeaderValue(entry.getValue().getValue());
+                    if (value != null) {
+                        response
+                            .headers()
+                            .add(sanitizeHeaderValue(entry.getKey().getValue()), value);
+                    }
+                });
         }
 
         // Content-Type
