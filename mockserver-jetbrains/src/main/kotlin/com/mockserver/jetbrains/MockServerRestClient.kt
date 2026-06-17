@@ -59,6 +59,16 @@ object MockServerRestClient {
             .build()
 
     /**
+     * `PUT /mockserver/reset` — clear all expectations and recorded logs from the
+     * running MockServer. The endpoint takes no body.
+     */
+    fun buildResetRequest(baseUrl: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/reset"))
+            .PUT(HttpRequest.BodyPublishers.noBody())
+            .build()
+
+    /**
      * `PUT /mockserver/retrieve?type=recorded_expectations&format=<format>` —
      * retrieve expectations generated from recorded (proxied/forwarded) traffic.
      */

@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`{ "method", "path", "headers"?, "body"? }`), fires it at the running server on the configured port,
   and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab.
   The HTTP call runs off the UI thread.
+- JetBrains plugin bottom **MockServer** tool window is now a one-click launcher for the full action set
+  (previously only Open Dashboard + Start Docker): buttons are grouped into *Server* (Open Dashboard in IDE,
+  Open Dashboard in Browser, Start (Docker), Reset) and *Editor actions* (Load Expectations, Save Recorded,
+  Generate From OpenAPI, Send Test Request, Show Drift Report), so everything is reachable without opening
+  the **Tools > MockServer** menu. The editor actions reuse the registered actions verbatim.
+- JetBrains plugin adds **Reset MockServer** (menu and tool window): clears all expectations and recorded
+  logs on the running server (`PUT /mockserver/reset`) after a confirmation prompt; the HTTP call runs off
+  the UI thread.
 - Go client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
   `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
 - Rust client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, `openapi()` import, and

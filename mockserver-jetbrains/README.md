@@ -25,7 +25,12 @@ MockServer integration for IntelliJ-based IDEs: expectation-file validation, plu
 - **Show Drift Report** — fetches MockServer's mock-drift records (`GET /mockserver/drift`) — how real
   upstream responses have drifted from your stub expectations — and opens a readable text report in a new
   tab (one line per drift: type, field, expected vs actual value, confidence, and the affected expectation)
-- **Tool Window** — bottom panel with quick-access buttons for the above actions
+- **Reset MockServer** — clears all expectations and recorded logs on the running server
+  (`PUT /mockserver/reset`); asks for confirmation first
+- **Tool Window** — bottom panel that surfaces every action as a one-click button, grouped into
+  *Server* (Open Dashboard in IDE, Open Dashboard in Browser, Start (Docker), Reset) and *Editor actions*
+  (Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report), so the
+  full action set is reachable without opening the **Tools > MockServer** menu
 - **Settings** — configure the Docker image, container name, and port under **Settings | Tools | MockServer**
 
 ## Requirements

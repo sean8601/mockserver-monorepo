@@ -56,6 +56,16 @@ class MockServerRestClientTest {
         assertEquals(text, bodyOf(req))
     }
 
+    // --- reset ----------------------------------------------------------
+
+    @Test
+    fun `reset PUTs to the reset endpoint with no body`() {
+        val req = MockServerRestClient.buildResetRequest("http://localhost:1080")
+        assertEquals("PUT", req.method())
+        assertEquals("http://localhost:1080/mockserver/reset", req.uri().toString())
+        assertEquals(0L, req.bodyPublisher().orElseThrow().contentLength())
+    }
+
     // --- retrieve recorded ----------------------------------------------
 
     @Test

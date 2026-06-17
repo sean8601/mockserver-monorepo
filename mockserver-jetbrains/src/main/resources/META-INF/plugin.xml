@@ -12,7 +12,8 @@
       <li><b>Start MockServer (Docker)</b> — launches the official <code>mockserver/mockserver</code> container (default port <code>1080</code>) with a single click.</li>
       <li><b>Open MockServer Dashboard</b> — opens the live dashboard in your browser to watch requests as they arrive, inspect why a request did or didn't match, and review active expectations.</li>
       <li><b>Open MockServer Dashboard in IDE</b> — embeds the live dashboard inside the IDE in a dedicated tool window using the bundled JCEF (Chromium) engine, with Reload and Open-in-Browser controls. Falls back to the external browser when JCEF is unavailable.</li>
-      <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar giving one-click access to the same actions, always within reach.</li>
+      <li><b>Reset MockServer</b> — clears all expectations and recorded logs on the running server with a single confirmed click.</li>
+      <li><b>MockServer tool window</b> — a dockable panel in the bottom tool-window bar that surfaces every action as a one-click button, grouped into server controls and editor actions, so the full action set is always within reach without opening the Tools menu.</li>
       <li><b>Settings</b> — configure the Docker image, container name, and port under <b>Settings | Tools | MockServer</b>.</li>
     </ul>
 
@@ -71,6 +72,10 @@
                     class="com.mockserver.jetbrains.ShowDriftReportAction"
                     text="Show Drift Report"
                     description="Fetches MockServer's mock-drift records and opens a readable text report in a new tab"/>
+            <action id="MockServer.Reset"
+                    class="com.mockserver.jetbrains.ResetAction"
+                    text="Reset MockServer"
+                    description="Clears all expectations and logs on the running MockServer (PUT /mockserver/reset)"/>
         </group>
     </actions>
 
