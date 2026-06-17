@@ -78,6 +78,10 @@
         "title": "MockServer: View Request Log"
       },
       {
+        "command": "mockserver.findByTrace",
+        "title": "MockServer: Find Requests by Trace"
+      },
+      {
         "command": "mockserver.reset",
         "title": "MockServer: Reset (Clear Expectations & Logs)"
       },

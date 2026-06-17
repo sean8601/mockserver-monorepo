@@ -80,6 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
         showDriftDiagnostics
     );
     const viewRequestLogCmd = vscode.commands.registerCommand("mockserver.viewRequestLog", viewRequestLog);
+    const findByTraceCmd = vscode.commands.registerCommand("mockserver.findByTrace", findByTrace);
     const resetCmd = vscode.commands.registerCommand("mockserver.reset", resetServer);
     const uploadWasmCmd = vscode.commands.registerCommand("mockserver.uploadWasm", uploadWasm);
     const listWasmCmd = vscode.commands.registerCommand("mockserver.listWasm", listWasm);
@@ -112,6 +113,7 @@ export function activate(context: vscode.ExtensionContext): void {
         showDriftCmd,
         showDriftDiagnosticsCmd,
         viewRequestLogCmd,
+        findByTraceCmd,
         resetCmd,
         uploadWasmCmd,
         listWasmCmd,
@@ -481,6 +483,44 @@ async function viewRequestLog(): Promise<void> {
         await vscode.window.showTextDocument(doc);
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to retrieve request log — ${(e as Error).message}`);
+    }
+}
+
+// Distributed-trace correlation: prompt for a W3C trace id (or a full traceparent),
+// fetch the server's received-request log, and open the subset of requests that
+// belong to that trace — every hop one trace produced — in a new JSON editor tab.
+async function findByTrace(): Promise<void> {
+    const input = await vscode.window.showInputBox({
+        prompt: "Trace id (32 hex) or full traceparent",
+        placeHolder: "4bf92f3577b34da6a3ce929d0e0e4736",
+    });
+    if (input === undefined) {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        const log = await client.retrieveRequestLog(client.buildBaseUrl(port), httpFetch);
+        const { traceId, matches } = client.filterRequestsByTrace(log.content, input);
+        if (traceId === null) {
+            vscode.window.showWarningMessage(
+                "Enter a 32-hex trace id or a full W3C traceparent."
+            );
+            return;
+        }
+        if (matches.length === 0) {
+            vscode.window.showInformationMessage(`No requests found for trace ${traceId}.`);
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument({
+            content: JSON.stringify(matches, null, 2) + "\n",
+            language: "json",
+        });
+        await vscode.window.showTextDocument(doc);
+        vscode.window.showInformationMessage(
+            `${matches.length} request(s) found for trace ${traceId}.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to find requests by trace — ${(e as Error).message}`);
     }
 }
 

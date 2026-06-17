@@ -261,6 +261,13 @@ async function runTests(): Promise<void> {
         );
     });
 
+    await test("activate registers the mockserver.findByTrace command", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.findByTrace"),
+            "findByTrace command not registered"
+        );
+    });
+
     await test("activate registers the mockserver.reset command", () => {
         assert.ok(registeredCommands.has("mockserver.reset"), "reset command not registered");
     });
@@ -370,6 +377,100 @@ async function runTests(): Promise<void> {
             () => client.retrieveRequestLog("http://localhost:1080", fakeFetch),
             /400: bad type/
         );
+    });
+
+    await test("extractTraceId pulls the trace id from a full traceparent", () => {
+        assert.strictEqual(
+            client.extractTraceId("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("extractTraceId returns a bare 32-hex id as-is", () => {
+        assert.strictEqual(
+            client.extractTraceId("4bf92f3577b34da6a3ce929d0e0e4736"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("extractTraceId lowercases an uppercase trace id and traceparent", () => {
+        assert.strictEqual(
+            client.extractTraceId("4BF92F3577B34DA6A3CE929D0E0E4736"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+        assert.strictEqual(
+            client.extractTraceId("00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01"),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("extractTraceId returns null for junk", () => {
+        assert.strictEqual(client.extractTraceId("not-a-trace"), null);
+        assert.strictEqual(client.extractTraceId("4bf92f35"), null); // too short
+        assert.strictEqual(client.extractTraceId(""), null);
+    });
+
+    await test("requestMatchesTrace matches a traceparent header in the array form", () => {
+        const request = {
+            method: "GET",
+            path: "/a",
+            headers: [
+                { name: "Host", values: ["localhost"] },
+                { name: "traceparent", values: ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"] },
+            ],
+        };
+        assert.strictEqual(client.requestMatchesTrace(request, "4bf92f3577b34da6a3ce929d0e0e4736"), true);
+    });
+
+    await test("requestMatchesTrace matches a traceparent header in the object-map form (the real server shape)", () => {
+        // retrieve?type=requests serializes headers as { name: [values] }, not an array.
+        const request = {
+            path: "/a",
+            headers: {
+                Host: ["localhost"],
+                traceparent: ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"],
+            },
+        };
+        assert.strictEqual(client.requestMatchesTrace(request, "4bf92f3577b34da6a3ce929d0e0e4736"), true);
+    });
+
+    await test("requestMatchesTrace is false for a different trace id", () => {
+        const request = {
+            headers: [
+                { name: "traceparent", values: ["00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-00f067aa0ba902b7-01"] },
+            ],
+        };
+        assert.strictEqual(client.requestMatchesTrace(request, "4bf92f3577b34da6a3ce929d0e0e4736"), false);
+    });
+
+    await test("requestMatchesTrace is false when the request has no headers", () => {
+        assert.strictEqual(client.requestMatchesTrace({ method: "GET", path: "/a" }, "4bf92f3577b34da6a3ce929d0e0e4736"), false);
+        assert.strictEqual(client.requestMatchesTrace(null, "4bf92f3577b34da6a3ce929d0e0e4736"), false);
+    });
+
+    await test("filterRequestsByTrace returns the matching subset of a request log", () => {
+        const log = JSON.stringify([
+            {
+                method: "GET",
+                path: "/a",
+                headers: [{ name: "traceparent", values: ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"] }],
+            },
+            {
+                method: "POST",
+                path: "/b",
+                headers: [{ name: "traceparent", values: ["00-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-00f067aa0ba902b7-01"] }],
+            },
+        ]);
+        const result = client.filterRequestsByTrace(log, "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert.strictEqual(result.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert.strictEqual(result.matches.length, 1);
+        assert.strictEqual(result.matches[0].path, "/a");
+    });
+
+    await test("filterRequestsByTrace returns a null trace id for junk input", () => {
+        const result = client.filterRequestsByTrace("[]", "not-a-trace");
+        assert.strictEqual(result.traceId, null);
+        assert.deepStrictEqual(result.matches, []);
     });
 
     await test("resetServer PUTs /mockserver/reset", async () => {

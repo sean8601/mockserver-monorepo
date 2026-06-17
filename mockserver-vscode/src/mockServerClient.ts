@@ -471,6 +471,114 @@ export async function retrieveDriftRecords(
     return parsed.drifts as DriftRecord[];
 }
 
+// A W3C `traceparent` header value: `version-traceId-parentId-flags`, e.g.
+// `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`. The capture group is
+// the 32-hex trace id. Case-insensitive: the spec lowercases hex, but be lenient.
+const TRACEPARENT_RE = /^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/i;
+// A bare 32-hex trace id on its own.
+const TRACE_ID_RE = /^[0-9a-f]{32}$/i;
+
+/**
+ * Extract the 32-hex W3C trace id (lowercased) from `input`. Accepts either a
+ * full `traceparent` header value (`version-traceId-parentId-flags`) — in which
+ * case the trace-id component is returned — or a bare 32-hex trace id, returned
+ * as-is (lowercased). Returns `null` for anything else. Pure and `vscode`-free.
+ */
+export function extractTraceId(input: string): string | null {
+    const trimmed = input.trim();
+    const full = TRACEPARENT_RE.exec(trimmed);
+    if (full) {
+        return full[1].toLowerCase();
+    }
+    if (TRACE_ID_RE.test(trimmed)) {
+        return trimmed.toLowerCase();
+    }
+    return null;
+}
+
+/**
+ * Pull the `traceparent` header value(s) from a recorded request object. Handles
+ * both header shapes MockServer may emit:
+ * - the array form `[{ "name": "traceparent", "values": ["00-..."] }]` (primary), and
+ * - the object-map form `{ "traceparent": ["00-..."] }` or `{ "traceparent": "00-..." }`.
+ * Header-name matching is case-insensitive. Returns an empty array when no headers
+ * (or no traceparent header) are present, or the request is not an object.
+ */
+function traceparentValues(request: unknown): string[] {
+    if (!request || typeof request !== "object") {
+        return [];
+    }
+    const headers = (request as Record<string, unknown>).headers;
+    const values: string[] = [];
+    const collect = (raw: unknown): void => {
+        if (typeof raw === "string") {
+            values.push(raw);
+        } else if (Array.isArray(raw)) {
+            for (const v of raw) {
+                if (typeof v === "string") {
+                    values.push(v);
+                }
+            }
+        }
+    };
+    if (Array.isArray(headers)) {
+        for (const entry of headers) {
+            if (entry && typeof entry === "object") {
+                const name = (entry as Record<string, unknown>).name;
+                if (typeof name === "string" && name.toLowerCase() === "traceparent") {
+                    collect((entry as Record<string, unknown>).values);
+                }
+            }
+        }
+    } else if (headers && typeof headers === "object") {
+        for (const [name, raw] of Object.entries(headers as Record<string, unknown>)) {
+            if (name.toLowerCase() === "traceparent") {
+                collect(raw);
+            }
+        }
+    }
+    return values;
+}
+
+/**
+ * True when `request` carries a `traceparent` header (case-insensitive name) whose
+ * value, parsed as a W3C `traceparent`, has the given `traceId` (case-insensitive).
+ * Defensive: missing/non-array headers and malformed values are simply skipped.
+ */
+export function requestMatchesTrace(request: unknown, traceId: string): boolean {
+    const wanted = traceId.toLowerCase();
+    return traceparentValues(request).some((value) => extractTraceId(value) === wanted);
+}
+
+/**
+ * Filter a request-log JSON array (the body of
+ * `PUT /mockserver/retrieve?type=requests&format=json`) down to the requests that
+ * belong to one distributed trace. `input` may be a bare 32-hex trace id or a full
+ * `traceparent` value. Returns the resolved `traceId` (lowercased, or `null` when
+ * `input` is neither a trace id nor a traceparent) and the matching requests
+ * (empty when the trace id is unresolvable or the JSON is not an array). Pure and
+ * `vscode`-free so it can be unit-tested directly.
+ */
+export function filterRequestsByTrace(
+    requestsJsonText: string,
+    input: string
+): { traceId: string | null; matches: unknown[] } {
+    const traceId = extractTraceId(input);
+    if (traceId === null) {
+        return { traceId: null, matches: [] };
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(requestsJsonText);
+    } catch {
+        return { traceId, matches: [] };
+    }
+    if (!Array.isArray(parsed)) {
+        return { traceId, matches: [] };
+    }
+    return { traceId, matches: parsed.filter((req) => requestMatchesTrace(req, traceId)) };
+}
+
 /** A drift mapped to a position in an open expectation file, ready to surface as a diagnostic. */
 export interface DriftDiagnostic {
     /** Zero-based line in the document the diagnostic attaches to (0 when no match found). */

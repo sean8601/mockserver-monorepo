@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- VS Code extension adds **MockServer: Find Requests by Trace** — enter a W3C trace id (32 hex) or a full
+  `traceparent` header value and the extension opens every request the server received that belongs to that
+  distributed trace, so you can see every hop of one trace in a new JSON editor tab.
 - VS Code and JetBrains extensions now validate MockServer expectation files. Name a file `*.mockserver.json`
   (or `*.mockserver.jsonc`) and the editor gives inline schema validation, autocompletion, and hover
   documentation for expectations — driven by the same schema MockServer itself validates against, generated

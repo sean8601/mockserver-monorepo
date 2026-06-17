@@ -31,6 +31,7 @@ Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and type "MockServer":
 | **MockServer: Show Drift Report** | Shows the latest mock-drift records (how real upstream responses differ from your stub expectations) in a readable text tab |
 | **MockServer: Show Drift as Diagnostics** | Surfaces drift records as inline diagnostics on the open `*.mockserver.json` file, anchored to the affected expectation |
 | **MockServer: View Request Log** | Opens the log of requests the server has received in a new JSON editor tab |
+| **MockServer: Find Requests by Trace** | Prompts for a W3C trace id (32 hex) or full `traceparent`, then opens every received request belonging to that distributed trace in a new JSON editor tab |
 | **MockServer: Reset (Clear Expectations & Logs)** | Clears all expectations and the request log on the running server (after a confirmation prompt) |
 | **MockServer: Upload WASM Module** | Uploads a compiled `.wasm` custom-rule module to the running server so it can be referenced by name in an expectation body matcher |
 | **MockServer: List WASM Modules** | Opens the names of the WASM modules registered on the running server in a new JSON editor tab |
