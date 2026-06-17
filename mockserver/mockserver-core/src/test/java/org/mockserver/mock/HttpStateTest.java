@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.file.FilePath;
 import org.mockserver.file.FileReader;
+import org.mockserver.fixture.FixtureRedactor;
 import org.mockserver.log.MockServerEventLog;
 import org.mockserver.time.EpochService;
 import org.mockserver.time.GlobalFixedTime;
@@ -3822,6 +3823,87 @@ public class HttpStateTest {
         assertThat(responseBody, containsString("line1"));
         assertThat(responseBody, containsString("line2"));
         assertThat(responseBody, containsString("quoted"));
+    }
+
+    // a HAR with one entry whose JSON request body contains a default-sensitive field
+    // (password) plus a non-default field (foo); used to exercise import redaction over
+    // the REST endpoint (the importer filters volatile headers independently of
+    // redaction, so the stable signal is the JSON body fields)
+    private static final String IMPORT_REDACTION_HAR =
+        "{" +
+            "\"log\":{\"entries\":[{" +
+            "\"request\":{" +
+            "\"method\":\"POST\"," +
+            "\"url\":\"http://example.com/login\"," +
+            "\"postData\":{\"mimeType\":\"application/json\",\"text\":\"{\\\"password\\\":\\\"hunter2\\\",\\\"foo\\\":\\\"bar\\\"}\"}" +
+            "}," +
+            "\"response\":{\"status\":200}" +
+            "}]}}";
+
+    @Test
+    public void shouldImportWithRedactionEnabledByDefault() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withBody(IMPORT_REDACTION_HAR);
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then — the default-sensitive body field is redacted
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, not(containsString("hunter2")));
+        assertThat(body, containsString(FixtureRedactor.REDACTED_PLACEHOLDER));
+        // foo is not a default-sensitive field, so it is kept verbatim
+        assertThat(body, containsString("bar"));
+    }
+
+    @Test
+    public void shouldImportVerbatimWhenRedactSensitiveDataIsFalse() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withQueryStringParameter("redactSensitiveData", "false")
+            .withBody(IMPORT_REDACTION_HAR);
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then — nothing is redacted; the real secret is kept verbatim
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("hunter2"));
+        assertThat(body, containsString("bar"));
+        assertThat(body, not(containsString(FixtureRedactor.REDACTED_PLACEHOLDER)));
+    }
+
+    @Test
+    public void shouldRedactAdditionalBodyFieldsWhenRequested() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest importRequest = request("/mockserver/import")
+            .withMethod("PUT")
+            .withQueryStringParameter("format", "har")
+            .withQueryStringParameter("additionalRedactedBodyFields", "foo")
+            .withBody(IMPORT_REDACTION_HAR);
+
+        // when
+        boolean handle = httpState.handle(importRequest, responseWriter, false);
+
+        // then — the extra "foo" field is redacted in addition to the defaults
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, not(containsString("\"bar\"")));
+        assertThat(body, not(containsString("hunter2")));
+        assertThat(body, containsString(FixtureRedactor.REDACTED_PLACEHOLDER));
     }
 
 }
