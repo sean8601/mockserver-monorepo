@@ -27,6 +27,8 @@
     "index.d.ts",
     "llm.js",
     "llm.d.ts",
+    "mcpMockBuilder.js",
+    "mcpMockBuilder.d.ts",
     "mockServer.d.ts",
     "mockServerClient.js",
     "mockServerClient.d.ts",
