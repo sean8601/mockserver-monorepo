@@ -278,21 +278,11 @@ public class OpenAPIConverter {
                                                 response.withBody(stringExample.getValue());
                                             }
                                         } else if (generatedExample != null) {
-                                            if (isXmlContentType(contentType.getKey())) {
-                                                // an application/xml (or text/xml, or +xml) body must be serialised
-                                                // as XML using the namespace/prefix/wrapped/attribute metadata that
-                                                // ExampleBuilder populated, not as JSON
-                                                String xml = new org.mockserver.openapi.examples.XmlExampleSerializer().serialize(generatedExample);
-                                                if (xml != null) {
-                                                    response.withBody(xml);
-                                                }
+                                            String serialise = serialise(generatedExample);
+                                            if (isJsonContentType(contentType.getKey())) {
+                                                response.withBody(json(serialise));
                                             } else {
-                                                String serialise = serialise(generatedExample);
-                                                if (isJsonContentType(contentType.getKey())) {
-                                                    response.withBody(json(serialise));
-                                                } else {
-                                                    response.withBody(serialise);
-                                                }
+                                                response.withBody(serialise);
                                             }
                                         }
                                     }
@@ -391,11 +381,13 @@ public class OpenAPIConverter {
                         Map<String, Schema> ownProperties = composedSchema.getProperties();
                         for (Map.Entry<String, Schema> entry : ownProperties.entrySet()) {
                             Object propExample = resolveSchemaExample(entry.getValue(), openAPI, activeStack);
-                            // skip a property that has no resolvable example rather than discarding all
-                            // already-merged allOf content and sibling properties (matches the array branch,
-                            // which tolerates a null item)
+                            // Returning null for the WHOLE object when a property has no inline example is
+                            // load-bearing: it makes the caller fall back to ExampleBuilder.fromSchema, which
+                            // generates a COMPLETE example (samples for array/enum/sample-only properties).
+                            // Keeping a partial object here instead silently DROPS those properties from the
+                            // response body (regression: petstore photoUrls/tags/status disappeared).
                             if (propExample == null) {
-                                continue;
+                                return null;
                             }
                             merged.put(entry.getKey(), propExample);
                         }
@@ -424,10 +416,12 @@ public class OpenAPIConverter {
                 Map<String, Object> result = new LinkedHashMap<>();
                 for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : properties.entrySet()) {
                     Object propExample = resolveSchemaExample(entry.getValue(), openAPI, activeStack);
-                    // skip a property with no resolvable example rather than nulling away the whole
-                    // object (and any partial schema-level example) because one property lacked one
+                    // Returning null for the whole object when one property has no inline example is
+                    // load-bearing: it makes the caller fall back to ExampleBuilder.fromSchema, which produces
+                    // a COMPLETE example (samples for properties without an explicit example). Keeping a partial
+                    // object here silently DROPS the sample-only properties from the response body.
                     if (propExample == null) {
-                        continue;
+                        return null;
                     }
                     result.put(entry.getKey(), propExample);
                 }
@@ -449,15 +443,6 @@ public class OpenAPIConverter {
 
     public static boolean isJsonContentType(String contentType) {
         return org.mockserver.model.MediaType.parse(contentType).isJson();
-    }
-
-    /**
-     * True for {@code application/xml}, {@code text/xml}, and any {@code +xml} structured-suffix
-     * media type (e.g. {@code application/atom+xml}). Used to route a generated example through the
-     * {@link org.mockserver.openapi.examples.XmlExampleSerializer} rather than the JSON serializer.
-     */
-    public static boolean isXmlContentType(String contentType) {
-        return org.mockserver.model.MediaType.parse(contentType).isXml();
     }
 
     private void warnExampleNameNotFound(String exampleName, Map<String, Example> availableExamples) {

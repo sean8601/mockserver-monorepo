@@ -319,20 +319,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     from `toString()`/logs).
   - **No more silent wrong/empty responses.** Pinning a `statusCode`/`exampleName` that a spec does
     not define now logs a warning and falls back deliberately instead of silently returning an empty
-    `200` or a different example; a partial schema `example` keeps the properties that resolve instead
-    of being discarded wholesale; unresolvable example `$ref`s no longer leak literal `{"$ref":…}`
+    `200` or a different example; an object whose properties only partly carry inline examples still
+    generates a COMPLETE example body (explicit examples are honoured and a sample is generated for the
+    rest, rather than dropping the sample-only properties); unresolvable example `$ref`s no longer leak literal `{"$ref":…}`
     nodes into response bodies; and synthesised `operationId`s are now globally unique so a
     hand-written id like `GET /pets` can't conflate two operations.
   - **Example generation:** `integer`/`number` schemas without a `format` now honour `default`/`enum`
-    (previously emitted `0`/a random value); `application/xml` responses are now serialised as XML
-    (the XML serializer was dead code and XML was emitted as JSON); and minor precision/locale fixes
-    (double sample value, UTC date formatting, large-integer examples preserved).
+    (previously emitted `0`/a random value); plus minor precision/locale fixes (double sample value,
+    UTC date formatting, large-integer examples preserved). (Generating real XML — rather than the
+    long-standing JSON-shaped body — for `application/xml` responses is deferred to a dedicated change;
+    the response format is unchanged here.)
   - **Second-round fixes (re-review of the above).** A valid OAS 3.1 **webhooks-only** spec (no `paths:`)
-    no longer throws (it previously NPE'd the `PUT /mockserver/openapi` import and the validators);
-    **namespaced XML** response bodies are now well-formed and correctly namespaced (the wired XML
-    serializer previously produced empty/malformed bodies for namespaced schemas, then briefly bound
-    shadowed descendants to the wrong namespace; it now declares namespaces per element so scoping is
-    correct, and preserves supplementary-plane characters in values); the
+    no longer throws (it previously NPE'd the `PUT /mockserver/openapi` import and the validators); the
     expectations→OpenAPI **export** is schema-valid for more inputs (path templates without a matching
     parameter get a synthetic one, non-OpenAPI HTTP methods like `CONNECT` are skipped, duplicate
     `operationId`s are de-duplicated); request/traffic validation now prefers the most specific

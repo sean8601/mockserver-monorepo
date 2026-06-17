@@ -1452,27 +1452,4 @@ public class OpenAPIConverterTest {
         assertThat(createPetsStatus, is(nullValue()));
     }
 
-    @Test
-    public void shouldSerialiseApplicationXmlResponseBodyAsXmlNotJson() {
-        // given - a response whose content-type is application/xml
-        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_xml_response.yaml");
-
-        // when
-        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(
-            specUrlOrPayload,
-            null
-        );
-
-        // then - the body must be XML (element tags), not a JSON object
-        String body = actualExpectations.stream()
-            .filter(e -> "getPerson".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
-            .findFirst().orElseThrow(AssertionError::new)
-            .getHttpResponse().getBodyAsString();
-        assertThat("an application/xml body must be serialised as XML, not JSON", body, containsString("<name>"));
-        assertThat(body, containsString("some_string_value"));
-        assertThat(body, containsString("</name>"));
-        assertThat("an application/xml body must declare an XML document", body, containsString("<?xml"));
-        assertThat("an application/xml body must not be a JSON object", body, not(containsString("{")));
-    }
-
 }

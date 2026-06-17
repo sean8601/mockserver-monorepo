@@ -19,7 +19,7 @@ import static org.hamcrest.core.Is.is;
  * covering the defects fixed in {@link OpenAPIConverter} and {@link OpenAPIParser}:
  * <ol>
  *   <li>silent wrong selection when a requested status code / example name is absent (falls back, not empty 200);</li>
- *   <li>a partial object-level schema example must retain the properties that did resolve;</li>
+ *   <li>an object where only some properties carry an inline example still generates a COMPLETE example;</li>
  *   <li>an unresolvable internal {@code $ref} inside an example must not leak {@code {"$ref": ...}};</li>
  *   <li>colliding operationIds (author vs synthesized, path vs webhook) must stay distinct.</li>
  * </ol>
@@ -105,10 +105,13 @@ public class OpenAPIConverterCorrectnessTest {
         assertThat(response.getBodyAsString(), not(containsString("Crumble")));
     }
 
-    // --- Fix 2: partial object-level schema example retains resolved properties ---
+    // --- An object where only some properties carry an inline example must still generate a COMPLETE
+    //     example: properties with an example keep it, properties without one get a generated sample.
+    //     (resolveSchemaExample returns null for the whole object so ExampleBuilder.fromSchema fills in
+    //     the rest — keeping a partial object instead would silently drop the sample-only properties.) ---
 
     @Test
-    public void shouldRetainResolvedPropertiesWhenOnePropertyHasNoExample() {
+    public void shouldGenerateCompleteExampleWhenSomePropertiesLackExample() {
         // given - Widget has id and name with examples, colour with none
         String specUrlOrPayload = FileReader.readFileFromClassPathOrPath(
             "org/mockserver/openapi/openapi_partial_property_example.yaml"
@@ -120,7 +123,8 @@ public class OpenAPIConverterCorrectnessTest {
             null
         );
 
-        // then - the body retains id and name (not nulled away because colour lacked an example)
+        // then - id and name keep their explicit examples AND colour (no example) is still present with a
+        // generated sample value (the body must NOT silently drop the sample-only property)
         HttpResponse response = expectations.get(0).getHttpResponse();
         String body = response.getBodyAsString();
         assertThat(body, is(notNullValue()));
@@ -128,6 +132,14 @@ public class OpenAPIConverterCorrectnessTest {
         assertThat(body, containsString("42"));
         assertThat(body, containsString("\"name\""));
         assertThat(body, containsString("gadget"));
+        // properties without an inline example must still appear with a generated sample — a scalar, an
+        // array, and the first enum value (this is the exact class that regressed: petstore array/enum
+        // properties silently vanished from generated bodies)
+        assertThat("a scalar property without an example must appear", body, containsString("\"colour\""));
+        assertThat("an array property without an example must appear", body, containsString("\"tags\""));
+        assertThat("an enum property without an example must appear with its first value",
+            body, containsString("\"status\""));
+        assertThat(body, containsString("available"));
     }
 
     // --- Fix 3: unresolvable internal $ref must not leak a literal {"$ref": ...} into the body ---
