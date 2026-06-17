@@ -171,11 +171,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MockServer** menu and tool window; the **MockServer** tool window shows the configured `localhost:<port>`
   target with bold section headers, and the in-IDE dashboard shows a friendly "no MockServer running" panel
   (with a retry link) instead of a raw browser connection error when the server is unreachable.
+- JetBrains plugin **Save Recorded Expectations** now offers a JSON / Java DSL format choice (matching the VS
+  Code extension), so recorded traffic can be turned into Java code as well as JSON.
+- Both editor extensions now present a Marketplace-ready landing page that leads with the flagship
+  capabilities (schema authoring, record-to-code, in-IDE dashboard), a badge row, and a 30-second quick start
+  — the VS Code README and the JetBrains plugin's `<description>` (which is what the JetBrains Marketplace
+  actually renders, not the repo README).
 
 ### Fixed
 - JetBrains plugin no longer risks an `AlreadyDisposedException` when a project (or tool window) is closed
   while an extension HTTP request is still in flight — the result is now delivered on the UI thread through a
   single shared, project-disposal-guarded helper.
+- VS Code extension now activates on startup (`onStartupFinished`), so the MockServer status-bar item and the
+  expectation-file CodeLens appear immediately on a fresh window instead of only after the first command is
+  run from the palette.
+- JetBrains plugin **Start (Docker)** now checks the Docker daemon is reachable before launching and reports a
+  clear "Docker is not running" error instead of showing a success notification while nothing actually
+  started; the Docker check and launch run off the UI thread.
 - Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
   Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
   `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.

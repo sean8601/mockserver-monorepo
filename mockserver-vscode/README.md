@@ -1,48 +1,89 @@
 # MockServer for VS Code
 
-Author, validate, and inspect [MockServer](https://www.mock-server.com) expectations without
-leaving VS Code. The extension covers the full workflow: write expectation files with
-schema-validated autocompletion, push them to a running server in one click, generate
-expectations from an OpenAPI spec or by recording live traffic, inspect the request log, track
-mock drift, correlate distributed traces, manage WASM custom rules, and open the live dashboard
-inside the editor. Docker start/stop is included for local development.
+**Author, record, and debug HTTP/HTTPS mocks without leaving your editor.**
 
-## Quick start
+- **Zero-config schema authoring** — write expectation files with validation, completion, and hover, no language server to install.
+- **Record real traffic into code** — turn proxied requests into loadable JSON or a MockServerClient Java DSL.
+- **Live dashboard inside the editor** — watch requests arrive in a VS Code tab.
 
-1. Run **MockServer: Start (Docker)** from the Command Palette to launch a local server
-2. Create `login.mockserver.json` — the editor validates the schema as you type
-3. Click **Load into running MockServer** (the CodeLens at the top of the file, or the editor
-   title-bar / right-click menu) to push it live
-4. Click **Diff against live** to compare your file to what the server has loaded
-5. Run **MockServer: Open Dashboard (in editor)** to watch requests arrive in a VS Code tab
-6. Run **MockServer: Stop** when done
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/mockserver.mockserver?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/mockserver.mockserver)](https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/mockserver.mockserver)](https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver&ssr=false#review-details)
+[![Open VSX](https://img.shields.io/open-vsx/v/mockserver/mockserver?label=Open%20VSX)](https://open-vsx.org/extension/mockserver/mockserver)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-A **MockServer :&lt;port&gt;** entry sits in the status bar — click it any time for a quick menu of
-the most common actions (Open Dashboard, Start, Stop, View Request Log).
+[MockServer](https://www.mock-server.com) is an HTTP(S) mock server and proxy for testing. This
+extension brings the full authoring-to-debugging workflow into VS Code — and works against any
+running MockServer instance, with optional one-click Docker start/stop for local development.
 
-## Prerequisites
+---
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for **Start / Stop**;
-  all other commands work with any running MockServer instance)
+## Why you'll love it
+
+### Schema-driven authoring — no language server required
+
+*Validation, completion, enum suggestions, and hover docs the moment you name a file `*.mockserver.json`.*
+
+Name a file `*.mockserver.json` or `*.mockserver.jsonc` and the editor validates it against the same
+JSON schema MockServer uses internally. You get inline error squiggles, property autocompletion, enum
+suggestions, and hover documentation without ever starting the server. A file may hold a single
+expectation object or an array (initialization JSON); `.jsonc` files allow comments and trailing commas.
+
+<!-- TODO(media): schema-authoring.gif here -->
+
+### Record real traffic into code — the fast path to a mock
+
+*Proxy real traffic, then save what MockServer recorded as loadable JSON or a ready-to-paste Java DSL.*
+
+Point MockServer at a real upstream as a proxy, exercise your app, then run **Save Recorded
+Expectations (JSON or Java)**. Choose **JSON** to get a `*.mockserver.json` file you can load straight
+back in, or **Java** to get a `MockServerClient` DSL you can paste into a test. If nothing has been
+proxied yet, the command tells you instead of opening an empty file — no guessing.
+
+<!-- TODO(media): record-to-code.gif here -->
+
+### Live MockServer dashboard inside the editor
+
+*Open the real MockServer dashboard in a VS Code webview tab and watch requests land without switching apps.*
+
+Run **Open Dashboard (in editor)** to view the dashboard in a webview tab — active expectations,
+the request log, and live traffic, all inside VS Code. Re-running the command reveals the existing
+panel instead of opening a duplicate. Prefer your browser? **Open Dashboard** opens the same URL there.
+
+<!-- TODO(media): dashboard-in-editor.gif here -->
+
+---
+
+## 30-second quick start
+
+1. Create `login.mockserver.json` — the editor validates the schema as you type.
+2. **Start a server:** run **MockServer: Start (Docker)** for a local container, or point the
+   extension at an already-running server by setting `mockserver.port` (and `mockserver.dockerImage`
+   / `mockserver.containerName` if relevant).
+3. **Load it:** click the **Load into running MockServer** CodeLens at the top of the file (also in the
+   editor title bar and right-click menu) to push your expectation(s) to the server.
+4. **Watch it:** run **MockServer: Open Dashboard (in editor)** and send a request to see it arrive.
+
+A **MockServer :&lt;port&gt;** entry sits in the status bar — click it any time for a quick menu of the
+most common actions (Open Dashboard, Start, Stop, View Request Log).
+
+### Prerequisites
+
 - VS Code 1.80+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — only for **Start / Stop**; every
+  other command works against any running MockServer instance.
 
-## Installation
+### Installation
 
 Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mockserver.mockserver)
-or search for **MockServer** in the Extensions view.
+or search for **MockServer** in the Extensions view. For Open VSX (Eclipse Theia, Gitpod, etc.), install
+from [open-vsx.org](https://open-vsx.org/extension/mockserver/mockserver).
 
-For Open VSX (Eclipse Theia, Gitpod, etc.), install from
-[open-vsx.org](https://open-vsx.org/extension/mockserver/mockserver).
+---
 
-## Features
+## Everything the extension does
 
-### Expectation files — schema validation, completion, and CodeLens
-
-Name a file `*.mockserver.json` or `*.mockserver.jsonc` and the editor validates it against the
-same JSON schema MockServer uses internally — so you get inline error squiggles, property
-autocompletion, enum suggestions, and hover documentation without ever running the server. A file
-may contain a single expectation object or an array (initialization JSON). JSONC files support
-comments and trailing commas.
+### Expectation files — CodeLens, menus, and snippets
 
 At the top of every expectation file two CodeLens actions appear:
 
@@ -51,10 +92,10 @@ At the top of every expectation file two CodeLens actions appear:
 | **Load into running MockServer** | Sends the file's expectation(s) to `PUT /mockserver/expectation` on the configured port |
 | **Diff against live** | Fetches the server's active expectations and opens a side-by-side diff against your file |
 
-Both are also available as Command Palette commands. The same file-scoped actions appear in the
-editor **title bar** and the **right-click (editor context) menu** whenever a `*.mockserver.json`,
-`*.mockserver.jsonc`, or `*.mockserver-request.json` file is open, and are hidden from the Command
-Palette when no matching file is active.
+Both are also Command Palette commands. The same file-scoped actions appear in the editor **title bar**
+and the **right-click (editor context) menu** whenever a `*.mockserver.json`, `*.mockserver.jsonc`, or
+`*.mockserver-request.json` file is open, and are hidden from the Command Palette when no matching file
+is active.
 
 **Snippets** — in any `.json` or `.jsonc` file, type a prefix and press Tab:
 
@@ -68,36 +109,36 @@ Palette when no matching file is active.
 
 | Command | What it does |
 |---------|-------------|
-| **MockServer: Generate Expectations From OpenAPI Spec** | With an OpenAPI/Swagger spec (JSON or YAML) open in the editor, sends it to `PUT /mockserver/openapi` and opens the generated expectations in a new tab. Save as `*.mockserver.json` to keep them. |
-| **MockServer: Save Recorded Expectations (JSON or Java)** | Retrieves expectations the server recorded while proxying real traffic (`PUT /mockserver/retrieve?type=recorded_expectations`). Choose **JSON** (loadable as `*.mockserver.json`) or **Java** (MockServerClient DSL). If nothing has been proxied yet, the command says so rather than opening an empty file. |
+| **Generate Expectations From OpenAPI Spec** | With an OpenAPI/Swagger spec (JSON or YAML) open, sends it to `PUT /mockserver/openapi` and opens the generated expectations in a new tab. Save as `*.mockserver.json` to keep them. |
+| **Save Recorded Expectations (JSON or Java)** | Retrieves expectations the server recorded while proxying real traffic (`PUT /mockserver/retrieve?type=recorded_expectations`). Choose **JSON** (loadable as `*.mockserver.json`) or **Java** (MockServerClient DSL). If nothing has been proxied yet, the command says so rather than opening an empty file. |
 
 ### Inspect and control
 
 | Command | What it does |
 |---------|-------------|
-| **MockServer: View Request Log** | Opens the log of requests the server has received as pretty JSON in a new tab (`PUT /mockserver/retrieve?type=requests&format=json`). |
-| **MockServer: Find Requests by Trace** | Prompts for a W3C `traceparent` value or bare 32-hex trace id, then opens every request belonging to that distributed trace in a new JSON tab. |
-| **MockServer: Send Test Request** | Fires the request described by a `*.mockserver-request.json` file at the running server and shows `HTTP <status>` + body (pretty-printed when JSON) in a new tab. A **Send to MockServer** CodeLens appears at the top of the file. |
-| **MockServer: Show Drift Report** | Fetches drift records (`GET /mockserver/drift`) and shows a readable one-line-per-record report in a new tab. Drift is captured when MockServer proxies traffic and a matching stub expectation differs structurally from the real upstream response. |
-| **MockServer: Show Drift as Diagnostics** | Maps each drift record to the matching expectation line in the open `*.mockserver.json` file as an inline diagnostic (error / warning / info). Re-run to refresh; no drift clears them. |
-| **MockServer: Reset (Clear Expectations & Logs)** | Clears all expectations and the request log (`PUT /mockserver/reset`) after a confirmation prompt. |
+| **View Request Log** | Opens the requests the server has received as pretty JSON in a new tab (`PUT /mockserver/retrieve?type=requests&format=json`). |
+| **Find Requests by Trace** | Prompts for a W3C `traceparent` value or bare 32-hex trace id, then opens every request belonging to that distributed trace in a new JSON tab. |
+| **Send Test Request** | Fires the request described by a `*.mockserver-request.json` file at the running server and shows `HTTP <status>` + body (pretty-printed when JSON) in a new tab. A **Send to MockServer** CodeLens appears at the top of the file. |
+| **Show Drift Report** | Fetches drift records (`GET /mockserver/drift`) and shows a readable one-line-per-record report. Drift is captured when MockServer proxies traffic and a matching stub expectation differs structurally from the real upstream response. |
+| **Show Drift as Diagnostics** | Maps each drift record to the matching expectation line in the open `*.mockserver.json` file as an inline diagnostic (error / warning / info). Re-run to refresh; no drift clears them. |
+| **Reset (Clear Expectations & Logs)** | Clears all expectations and the request log (`PUT /mockserver/reset`) after a confirmation prompt. |
 
 ### Dashboard
 
 | Command | What it does |
 |---------|-------------|
-| **MockServer: Open Dashboard** | Opens `http://localhost:<port>/mockserver/dashboard` in the system browser. |
-| **MockServer: Open Dashboard (in editor)** | Opens the same URL in a VS Code webview tab — full in-editor view without switching applications. Re-running the command reveals the existing panel rather than creating a duplicate. |
+| **Open Dashboard** | Opens `http://localhost:<port>/mockserver/dashboard` in the system browser. |
+| **Open Dashboard (in editor)** | Opens the same URL in a VS Code webview tab. Re-running the command reveals the existing panel rather than creating a duplicate. |
 
 ### WASM custom rules
 
-MockServer supports WebAssembly custom-rule modules for body matching (requires `wasmEnabled=true`
-on the server). The extension lets you manage modules without leaving VS Code:
+MockServer supports WebAssembly custom-rule modules for body matching (requires `wasmEnabled=true` on
+the server). Manage modules without leaving VS Code:
 
 | Command | What it does |
 |---------|-------------|
-| **MockServer: Upload WASM Module** | Opens a file picker for a `.wasm` file, prompts for a module name (defaulting to the file's basename), and uploads it via `PUT /mockserver/wasm/modules?name=<name>`. |
-| **MockServer: List WASM Modules** | Retrieves the names of all registered modules (`GET /mockserver/wasm/modules`) and opens them as JSON in a new tab. |
+| **Upload WASM Module** | Opens a file picker for a `.wasm` file, prompts for a module name (defaulting to the file's basename), and uploads it via `PUT /mockserver/wasm/modules?name=<name>`. |
+| **List WASM Modules** | Retrieves the names of all registered modules (`GET /mockserver/wasm/modules`) and opens them as JSON in a new tab. |
 
 Once uploaded, reference a module in an expectation body matcher:
 
@@ -116,10 +157,12 @@ If WASM support is disabled on the server, the server's own error message is sur
 
 | Command | What it does |
 |---------|-------------|
-| **MockServer: Start (Docker)** | Runs `docker run -d --rm --name <containerName> -p <port>:1080 <image>`. Checks that Docker is running and that the container is not already active. |
-| **MockServer: Stop** | Stops the named container with `docker stop <containerName>`. |
+| **Start (Docker)** | Runs `docker run -d --rm --name <containerName> -p <port>:1080 <image>`. Checks that Docker is running and that the container is not already active. |
+| **Stop** | Stops the named container with `docker stop <containerName>`. |
 
-## Commands reference
+---
+
+## Command reference
 
 All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) by typing "MockServer".
 
@@ -171,10 +214,12 @@ All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift
 
 `method` and `path` are required; `headers` and `body` are optional.
 
+---
+
 ## Try it locally
 
-From the repo root, one command builds the extension, starts a local MockServer, loads sample
-files, and opens a sandboxed VS Code Extension Development Host — nothing to install or uninstall:
+From the repo root, one command builds the extension, starts a local MockServer, loads sample files,
+and opens a sandboxed VS Code Extension Development Host — nothing to install or uninstall:
 
 ```bash
 scripts/try-editor-extensions.sh           # VS Code Extension Development Host
@@ -197,6 +242,9 @@ npx vsce package
 
 Produces a `.vsix` file installable via `code --install-extension mockserver-*.vsix`.
 
-## License
+## Links
 
-Apache-2.0
+- Website: [www.mock-server.com](https://www.mock-server.com)
+- Source: [github.com/mock-server/mockserver](https://github.com/mock-server/mockserver) (`mockserver-vscode`)
+- Issues: [github.com/mock-server/mockserver/issues](https://github.com/mock-server/mockserver/issues)
+- License: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)

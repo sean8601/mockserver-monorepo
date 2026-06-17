@@ -1,6 +1,15 @@
 # MockServer JetBrains Plugin
 
-MockServer integration for IntelliJ IDEA and all JetBrains IDEs. Author and validate expectation files with full schema completion, manage a local MockServer directly from the IDE, inspect live traffic in an embedded dashboard, and correlate distributed traces — all from the **Tools > MockServer** menu or the dockable **MockServer** tool window.
+**Author, record, and debug HTTP/HTTPS mocks for MockServer without leaving your IDE.**
+
+MockServer integration for IntelliJ IDEA and all JetBrains IDEs — drive everything from the **Tools > MockServer** menu or the dockable **MockServer** tool window.
+
+**Highlights:**
+
+- **Schema-driven expectation authoring** — live validation, completion, and hover docs in `*.mockserver.json` files, with no language server.
+- **Record real traffic into code** — save the requests MockServer proxied from a real upstream as ready-to-use expectations, as JSON or a Java DSL snippet.
+- **Generate mocks from an OpenAPI/Swagger spec** — turn the open spec into a full set of expectations in one action.
+- **Live MockServer dashboard, embedded in the IDE** — watch requests, inspect match results, and review active expectations without switching to a browser.
 
 ## Features at a glance
 
@@ -35,7 +44,7 @@ All actions are available from **Tools > MockServer** and as buttons in the **Mo
 |-----------|-------------|
 | Open MockServer Dashboard | Opens `http://localhost:<port>/mockserver/dashboard` in your default browser |
 | Open MockServer Dashboard in IDE | Activates the **MockServerDashboard** tool window (right side), which embeds the live dashboard using JCEF (the bundled Chromium engine). Falls back to the external browser when JCEF is unavailable. Has Reload and Open-in-Browser toolbar buttons. |
-| Start MockServer (Docker) | Starts the configured `mockserver/mockserver` container via Docker on the configured port |
+| Start MockServer (Docker) | Probes Docker availability (`docker info`), then starts the configured `mockserver/mockserver` container via Docker on the configured port; shows a clear error if Docker is not running |
 | Reset MockServer | Prompts for confirmation, then calls `PUT /mockserver/reset` to clear all expectations and recorded logs |
 
 ### Editor actions (operate on the active file)
@@ -43,7 +52,7 @@ All actions are available from **Tools > MockServer** and as buttons in the **Mo
 | Menu text | What it does |
 |-----------|-------------|
 | Load Expectations Into Running Server | Sends the active editor's JSON content to `PUT /mockserver/expectation` — a single expectation object or an array of expectations |
-| Save Recorded Expectations | Calls `PUT /mockserver/retrieve?type=recorded_expectations&format=json`, opens the result as `recorded-expectations.mockserver.json` in a new tab |
+| Save Recorded Expectations | Prompts for an output format, then calls `PUT /mockserver/retrieve?type=recorded_expectations&format=json\|java`; opens the result as `recorded-expectations.mockserver.json` (JSON) or `RecordedExpectations.java` (Java DSL) in a new tab |
 | Generate Expectations From OpenAPI Spec | Sends the active editor's OpenAPI/Swagger spec (JSON or YAML) to `PUT /mockserver/openapi`, opens the generated expectations in a new tab |
 | Send Test Request | Reads a JSON request spec from the active editor, sends it to the running MockServer at the configured port, and opens the response (`HTTP <status>` + body) in a new tab |
 | Show Drift Report | Calls `GET /mockserver/drift`, formats the results (type, field, expected vs actual, confidence, affected expectation), and opens them in a new tab |

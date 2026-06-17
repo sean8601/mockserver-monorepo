@@ -499,8 +499,10 @@ export function extractTraceId(input: string): string | null {
 /**
  * Pull the `traceparent` header value(s) from a recorded request object. Handles
  * both header shapes MockServer may emit:
- * - the array form `[{ "name": "traceparent", "values": ["00-..."] }]` (primary), and
- * - the object-map form `{ "traceparent": ["00-..."] }` or `{ "traceparent": "00-..." }`.
+ * - the object-map form `{ "traceparent": ["00-..."] }` or `{ "traceparent": "00-..." }`,
+ *   which is what the server actually emits for `retrieve?type=requests`, and
+ * - the array form `[{ "name": "traceparent", "values": ["00-..."] }]`, kept as a
+ *   defensive fallback for other serialisations.
  * Header-name matching is case-insensitive. Returns an empty array when no headers
  * (or no traceparent header) are present, or the request is not an object.
  */

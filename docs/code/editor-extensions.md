@@ -65,6 +65,7 @@ schemas change. It is not auto-regenerated in CI.
 
 Notes:
 - "Diff against live" and "Stop Docker" are VS Code-only features at current implementation.
+- "Save Recorded Expectations" offers a JSON / Java DSL format choice in **both** extensions.
 - Drift inline diagnostics map `DriftRecord.expectationId` to a line in the open `.mockserver.json` file; this requires an open editor with the expectation file and is VS Code-specific.
 - "Find by trace" retrieves the full request log then filters client-side by W3C `traceparent` header.
 
@@ -74,7 +75,9 @@ Notes:
 
 **Language/runtime:** TypeScript, compiled to `out/extension.js`.
 
-**Entry point:** `src/extension.ts` — `activate()` registers all commands, CodeLens providers, and the `mockserver-live` virtual document scheme.
+**Entry point:** `src/extension.ts` — `activate()` registers all commands, CodeLens providers, the status-bar item, and the `mockserver-live` virtual document scheme.
+
+**Activation:** `activationEvents` is `["onStartupFinished"]` — this is required, not optional. The status-bar item and the CodeLens providers are created in `activate()`, so without a startup activation event they would not appear until the user first invoked a command from the palette (commands themselves get implicit `onCommand:` activation). `onStartupFinished` defers activation until the window is interactive, so the passive surfaces light up with negligible startup cost.
 
 ### Key components
 
@@ -238,3 +241,5 @@ The script starts a `mockserver-try` Docker container (unless `--no-server`), cr
 | JetBrains tool-window buttons use `ActionUtil.invokeAction` | Buttons in `MockServerToolWindowFactory` look up the registered `AnAction` by id via `ActionManager.getInstance().getAction(actionId)` and fire it with `ActionUtil.invokeAction(action, dataContext, ...)`. This reuses each action's own validation, notifications, and threading — do not call the action's REST logic directly from the button handler. The 5-arg data-context overload is `@Suppress("DEPRECATION")`-annotated: on platform `243` every non-deprecated replacement requires `ActionUiKind` (a later-platform API), so the migration is deferred until the minimum platform is raised |
 | Schema must be regenerated after `mockserver-core` changes | The committed schema in both extensions is a snapshot. After any change to `mockserver-core/.../schema/*.json` or to `JsonSchemaExpectationValidator`'s reference list, run `node scripts/generate-editor-expectation-schema.mjs` and commit the updated files in both extensions |
 | JetBrains `soft_fail` in CI | The JetBrains test step has `soft_fail: true` in `pipeline-editors.yml`. A failing JetBrains step does not block the build — check Buildkite manually if JetBrains tests become relevant to a change |
+| JetBrains Marketplace renders `<description>`, NOT the README | The JetBrains Marketplace page is built from the `<description>` HTML (limited subset: `<p>`, `<ul>`, `<li>`, `<b>`, `<em>`, `<a>`, `<br>` — no `<img>`/`<code>`/`<style>`) inside `plugin.xml`, not `mockserver-jetbrains/README.md`. Marketing copy must live in the `<description>`; screenshots/GIFs are uploaded separately in the Marketplace UI. The VS Code Marketplace and Open VSX, by contrast, render `mockserver-vscode/README.md` verbatim (images/GIFs allowed). When updating the pitch, update BOTH surfaces |
+| VS Code `activationEvents` must include `onStartupFinished` | The status-bar item and CodeLens providers are created in `activate()`. With an empty `activationEvents` they only appear after the first palette command runs (commands get implicit `onCommand:` activation). Keep `onStartupFinished` so the passive surfaces light up on a fresh window |

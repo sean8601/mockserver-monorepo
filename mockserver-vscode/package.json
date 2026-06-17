@@ -35,9 +35,13 @@
     "proxy",
     "debugging",
     "wasm",
-    "drift"
+    "drift",
+    "swagger",
+    "stub"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [

@@ -266,6 +266,18 @@ async function runTests(): Promise<void> {
         assert.ok(Array.isArray(schema.oneOf), "schema root should accept one expectation or an array");
     });
 
+    await test("package.json activationEvents include onStartupFinished (passive surfaces light up on startup)", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const pkgPath = path.resolve(__dirname, "../../package.json");
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        assert.ok(Array.isArray(pkg.activationEvents), "activationEvents should be an array");
+        assert.ok(
+            pkg.activationEvents.includes("onStartupFinished"),
+            "activationEvents should include onStartupFinished so the status bar and CodeLens appear on a fresh window"
+        );
+    });
+
     await test("activate registers mockserver.openDashboardInEditor command", () => {
         assert.ok(
             registeredCommands.has("mockserver.openDashboardInEditor"),
