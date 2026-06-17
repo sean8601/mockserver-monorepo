@@ -27,6 +27,8 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.slf4j.event.Level.WARN;
 
@@ -37,6 +39,11 @@ public class XmlExampleSerializer {
     private static final MockServerLogger MOCK_SERVER_LOGGER = new MockServerLogger(XmlExampleSerializer.class);
 
     int depth = 0;
+
+    // tracks namespace URIs already declared on an ancestor so each namespace is emitted only once
+    // (children inherit the declaration); prefix -> uri for prefixed namespaces, uri for default namespace
+    private final Set<String> declaredNamespaceUris = new HashSet<>();
+    private final Set<String> declaredPrefixes = new HashSet<>();
 
     public String serialize(Example o) {
         XMLStreamWriter writer = null;
@@ -75,15 +82,7 @@ public class XmlExampleSerializer {
                 name = "AnonymousModel";
             }
 
-            if (o.getNamespace() != null) {
-                if (o.getPrefix() != null) {
-                    writer.writeStartElement(o.getPrefix(), name, o.getNamespace());
-                } else {
-                    writer.writeStartElement(o.getNamespace(), name);
-                }
-            } else {
-                writer.writeStartElement(name);
-            }
+            String declaredUri = writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
 
             for (String key : or.keySet()) {
                 Object obj = or.get(key);
@@ -97,33 +96,19 @@ public class XmlExampleSerializer {
                 }
             }
             writer.writeEndElement();
+            undeclareNamespace(o.getPrefix(), declaredUri);
         } else if (o instanceof ArrayExample) {
             ArrayExample ar = (ArrayExample) o;
+            String wrappedDeclaredUri = null;
             if (o.getWrapped() != null && o.getWrapped()) {
                 if (o.getWrappedName() != null) {
-                    if (o.getNamespace() != null) {
-                        if (o.getPrefix() != null) {
-                            writer.writeStartElement(o.getPrefix(), o.getWrappedName(), o.getNamespace());
-                        } else {
-                            writer.writeStartElement(o.getNamespace(), o.getWrappedName());
-                        }
-                    } else {
-                        writer.writeStartElement(o.getWrappedName());
-                    }
-
+                    wrappedDeclaredUri = writeStartElement(writer, o.getPrefix(), o.getWrappedName(), o.getNamespace());
                 } else {
-                    if (o.getNamespace() != null) {
-                        if (o.getPrefix() != null) {
-                            writer.writeStartElement(o.getPrefix(), o.getName() + "s", o.getNamespace());
-                        } else {
-                            writer.writeStartElement(o.getNamespace(), o.getName() + "s");
-                        }
-                    } else {
-                        writer.writeStartElement(o.getName() + "s");
-                    }
+                    wrappedDeclaredUri = writeStartElement(writer, o.getPrefix(), o.getName() + "s", o.getNamespace());
                 }
             }
             for (Example item : ar.getItems()) {
+                String itemDeclaredUri = null;
                 if (item.getName() == null) {
 
                     String name = o.getName();
@@ -131,23 +116,17 @@ public class XmlExampleSerializer {
                         name = item.getTypeName();
                     }
 
-                    if (o.getNamespace() != null) {
-                        if (o.getPrefix() != null) {
-                            writer.writeStartElement(o.getPrefix(), name, o.getNamespace());
-                        } else {
-                            writer.writeStartElement(o.getNamespace(), name);
-                        }
-                    } else {
-                        writer.writeStartElement(name);
-                    }
+                    itemDeclaredUri = writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
                 }
                 writeTo(writer, item);
                 if (item.getName() == null && o.getName() != null) {
                     writer.writeEndElement();
+                    undeclareNamespace(o.getPrefix(), itemDeclaredUri);
                 }
             }
             if (o.getWrapped() != null && o.getWrapped()) {
                 writer.writeEndElement();
+                undeclareNamespace(o.getPrefix(), wrappedDeclaredUri);
             }
         } else {
             String name = o.getName();
@@ -156,31 +135,78 @@ public class XmlExampleSerializer {
                 name = getTypeName(o);
             }
             if (o.getAttribute() != null && o.getAttribute()) {
-
-                if (o.getNamespace() != null) {
-                    if (o.getPrefix() != null) {
-                        writer.writeAttribute(o.getPrefix(), o.getNamespace(), name, o.asString());
-                    } else {
-                        writer.writeAttribute(o.getNamespace(), name, o.asString());
-                    }
-                } else {
-                    writer.writeAttribute(name, o.asString());
-                }
+                writeAttribute(writer, o.getPrefix(), name, o.getNamespace(), o.asString());
             } else if (name == null) {
                 writer.writeCharacters(o.asString());
             } else {
-                if (o.getNamespace() != null) {
-                    if (o.getPrefix() != null) {
-                        writer.writeStartElement(o.getPrefix(), name, o.getNamespace());
-                    } else {
-                        writer.writeStartElement(o.getNamespace(), name);
-                    }
-                } else {
-                    writer.writeStartElement(name);
-                }
-
+                String declaredUri = writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
                 writer.writeCharacters(o.asString());
                 writer.writeEndElement();
+                undeclareNamespace(o.getPrefix(), declaredUri);
+            }
+        }
+        depth -= 1;
+    }
+
+    /**
+     * Writes a start element, declaring its XML namespace via the StAX namespace API so the output is
+     * well-formed. Each namespace is declared only once on the element that introduces it (children
+     * inherit the declaration), avoiding redundant re-declaration.
+     *
+     * @return the namespace URI declared on this element (so the caller can un-declare it on close), or
+     * {@code null} if no namespace was declared here
+     */
+    private String writeStartElement(XMLStreamWriter writer, String prefix, String name, String namespace) throws XMLStreamException {
+        if (namespace == null) {
+            writer.writeStartElement(name);
+            return null;
+        }
+        if (prefix != null && !prefix.isEmpty()) {
+            // prefixed namespace -> <prefix:name xmlns:prefix="ns">
+            writer.setPrefix(prefix, namespace);
+            writer.writeStartElement(prefix, name, namespace);
+            if (!declaredPrefixes.contains(prefix)) {
+                writer.writeNamespace(prefix, namespace);
+                declaredPrefixes.add(prefix);
+                return namespace;
+            }
+            return null;
+        }
+        // default namespace -> <name xmlns="ns">
+        writer.setDefaultNamespace(namespace);
+        writer.writeStartElement(namespace, name);
+        if (!declaredNamespaceUris.contains(namespace)) {
+            writer.writeDefaultNamespace(namespace);
+            declaredNamespaceUris.add(namespace);
+            return namespace;
+        }
+        return null;
+    }
+
+    /**
+     * Writes an attribute, binding and declaring its prefix when the attribute is namespaced. A namespaced
+     * attribute with no prefix is invalid in XML (attributes are not covered by a default namespace), so in
+     * that case the attribute is written without a namespace to keep the output well-formed.
+     */
+    private void writeAttribute(XMLStreamWriter writer, String prefix, String name, String namespace, String value) throws XMLStreamException {
+        if (namespace != null && prefix != null && !prefix.isEmpty()) {
+            if (!declaredPrefixes.contains(prefix)) {
+                writer.setPrefix(prefix, namespace);
+                writer.writeNamespace(prefix, namespace);
+                declaredPrefixes.add(prefix);
+            }
+            writer.writeAttribute(prefix, namespace, name, value);
+        } else {
+            writer.writeAttribute(name, value);
+        }
+    }
+
+    private void undeclareNamespace(String prefix, String declaredUri) {
+        if (declaredUri != null) {
+            if (prefix != null && !prefix.isEmpty()) {
+                declaredPrefixes.remove(prefix);
+            } else {
+                declaredNamespaceUris.remove(declaredUri);
             }
         }
     }

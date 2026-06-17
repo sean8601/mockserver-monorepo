@@ -713,7 +713,19 @@ public class ExampleBuilder {
                         if ("int64".equals(property.getFormat())) {
                             yield new LongExample(Long.parseLong(example.toString()));
                         }
-                        yield new IntegerExample(Integer.parseInt(example.toString()));
+                        // no/int32 format: an author example may exceed the int range (e.g. 3000000000) —
+                        // fall back to Long, then BigInteger, so a valid author example is preserved rather
+                        // than silently swallowed and replaced by a generated/sample value (mirrors the
+                        // typed IntegerSchema branch)
+                        try {
+                            yield new IntegerExample(Integer.parseInt(example.toString()));
+                        } catch (NumberFormatException tooLargeForInt) {
+                            try {
+                                yield new LongExample(Long.parseLong(example.toString()));
+                            } catch (NumberFormatException tooLargeForLong) {
+                                yield new BigIntegerExample(new BigInteger(example.toString()));
+                            }
+                        }
                     } catch (NumberFormatException ignored) {
                     }
                 }
