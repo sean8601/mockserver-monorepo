@@ -203,6 +203,15 @@ var mockServerClient;
             return (typeof require !== 'undefined') && require('browser-or-node').isNode;
         };
 
+        // LLM mocking builder factories (browser-safe): in Node use require,
+        // in the browser fall back to the global set by llm.js.
+        var _llm = (typeof require !== 'undefined') ? require('./llm') : (typeof window !== 'undefined' ? window.mockServerLlm : undefined);
+
+        // MCP (Model Context Protocol) mock builder factory (browser-safe): in
+        // Node use require, in the browser fall back to the global set by
+        // mcpMockBuilder.js.
+        var _mcpMock = (typeof require !== 'undefined') ? require('./mcpMockBuilder').mcpMock : (typeof window !== 'undefined' ? (window.mockServerMcp && window.mockServerMcp.mcpMock) : undefined);
+
         var makeRequest = (runningInNode() ? require('./sendRequest').sendRequest(tls, caCertPemFilePath) : function (host, port, path, jsonBody) {
             var body = (typeof jsonBody === "string" ? jsonBody : JSON.stringify(jsonBody || ""));
             var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
@@ -659,13 +668,13 @@ var mockServerClient;
             if (Array.isArray(expectation)) {
                 for (var i = 0; i < expectation.length; i++) {
                     expectation[i].httpRequest = addDefaultRequestMatcherHeaders(expectation[i].httpRequest);
-                    if (!expectation[i].httpResponseTemplate && !expectation[i].httpResponseClassCallback && !expectation[i].httpResponseObjectCallback && !expectation[i].httpForward && !expectation[i].httpForwardTemplate && !expectation[i].httpForwardClassCallback && !expectation[i].httpForwardObjectCallback && !expectation[i].httpOverrideForwardedRequest && !expectation[i].httpError && !expectation[i].httpSseResponse && !expectation[i].httpWebSocketResponse) {
+                    if (!expectation[i].httpResponseTemplate && !expectation[i].httpResponseClassCallback && !expectation[i].httpResponseObjectCallback && !expectation[i].httpForward && !expectation[i].httpForwardTemplate && !expectation[i].httpForwardClassCallback && !expectation[i].httpForwardObjectCallback && !expectation[i].httpOverrideForwardedRequest && !expectation[i].httpError && !expectation[i].httpSseResponse && !expectation[i].httpWebSocketResponse && !expectation[i].httpLlmResponse) {
                         expectation[i].httpResponse = addDefaultResponseMatcherHeaders(expectation[i].httpResponse);
                     }
                 }
             } else {
                 expectation.httpRequest = addDefaultRequestMatcherHeaders(expectation.httpRequest);
-                if (!expectation.httpResponseTemplate && !expectation.httpResponseClassCallback && !expectation.httpResponseObjectCallback && !expectation.httpForward && !expectation.httpForwardTemplate && !expectation.httpForwardClassCallback && !expectation.httpForwardObjectCallback && !expectation.httpOverrideForwardedRequest && !expectation.httpError && !expectation.httpSseResponse && !expectation.httpWebSocketResponse) {
+                if (!expectation.httpResponseTemplate && !expectation.httpResponseClassCallback && !expectation.httpResponseObjectCallback && !expectation.httpForward && !expectation.httpForwardTemplate && !expectation.httpForwardClassCallback && !expectation.httpForwardObjectCallback && !expectation.httpOverrideForwardedRequest && !expectation.httpError && !expectation.httpSseResponse && !expectation.httpWebSocketResponse && !expectation.httpLlmResponse) {
                     expectation.httpResponse = addDefaultResponseMatcherHeaders(expectation.httpResponse);
                 }
             }
@@ -702,6 +711,32 @@ var mockServerClient;
          * @param expectation the expectation to setup on the MockServer
          */
         var mockAnyResponse = function (expectation) {
+            return makeRequest(host, port, "/mockserver/expectation", addDefaultExpectationHeaders(expectation));
+        };
+        /**
+         * Setup one or more LLM mock expectations. Accepts a single expectation
+         * object, an array of expectations, or an LLM builder (the result of
+         * client.llm.llmMock(...), .conversation(), or .llmFailover()); builders
+         * are built via their .build() method. Equivalent to the Java client's
+         * builder.applyTo(mockServerClient).
+         *
+         *, for example:
+         *
+         *   client.mockWithLLM(
+         *       client.llm.llmMock("/v1/messages")
+         *           .withProvider(client.llm.Provider.ANTHROPIC)
+         *           .withModel("claude-sonnet-4")
+         *           .respondingWith(
+         *               client.llm.completion().withText("Paris.")
+         *           )
+         *   );
+         *
+         * @param expectationOrBuilder an expectation, array of expectations, or LLM builder
+         */
+        var mockWithLLM = function (expectationOrBuilder) {
+            var expectation = (expectationOrBuilder && typeof expectationOrBuilder.build === "function")
+                ? expectationOrBuilder.build()
+                : expectationOrBuilder;
             return makeRequest(host, port, "/mockserver/expectation", addDefaultExpectationHeaders(expectation));
         };
         /**
@@ -1717,10 +1752,41 @@ var mockServerClient;
             return makeRequest(host, port, "/mockserver/grpc/clear");
         };
 
+        /**
+         * Start building a mock MCP (Model Context Protocol) server that
+         * speaks JSON-RPC 2.0 over the Streamable HTTP transport.  Returns a
+         * fluent builder; call .applyTo() (with no arguments — this client is
+         * used) to register the generated expectations, or .build() to obtain
+         * the raw expectation array.  Mirrors the Java client McpMockBuilder.
+         *
+         * for example:
+         *
+         *   client.mcpMock("/mcp")
+         *       .withServerName("MyServer")
+         *       .withTool("get_weather")
+         *           .withDescription("Get the weather for a city")
+         *           .respondingWith("sunny")
+         *       .and()
+         *       .applyTo();
+         *
+         * @param path the HTTP path the MCP server is mounted on (default "/mcp")
+         */
+        var mcpMock = function (path) {
+            var builder = _mcpMock(path);
+            var applyTo = builder.applyTo;
+            // Default applyTo() to this client when none is supplied.
+            builder.applyTo = function (client) {
+                return applyTo(client || _this);
+            };
+            return builder;
+        };
+
         /* jshint -W003 */
         var _this = {
             openAPIExpectation: openAPIExpectation,
             mockAnyResponse: mockAnyResponse,
+            mockWithLLM: mockWithLLM,
+            llm: _llm,
             mockWithCallback: mockWithCallback,
             mockWithForwardCallback: mockWithForwardCallback,
             mockWithForwardAndResponseCallback: mockWithForwardAndResponseCallback,
@@ -1760,7 +1826,8 @@ var mockServerClient;
             clearBreakpointMatchers: clearBreakpointMatchers,
             uploadGrpcDescriptor: uploadGrpcDescriptor,
             retrieveGrpcServices: retrieveGrpcServices,
-            clearGrpcDescriptors: clearGrpcDescriptors
+            clearGrpcDescriptors: clearGrpcDescriptors,
+            mcpMock: mcpMock
         };
         return _this;
     };
@@ -1768,6 +1835,8 @@ var mockServerClient;
     if (typeof module !== 'undefined') {
         module.exports = {
             mockServerClient: mockServerClient,
+            llm: require('./llm'),
+            mcpMock: require('./mcpMockBuilder').mcpMock,
             routeBreakpointMessage: _routeBreakpointMessage,
             extractBreakpointHeaders: _extractBreakpointHeaders
         };
