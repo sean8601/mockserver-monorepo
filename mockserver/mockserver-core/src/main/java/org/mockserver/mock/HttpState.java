@@ -110,6 +110,11 @@ public class HttpState {
     private ExpectationToJavaSerializer expectationToJavaSerializer;
     private org.mockserver.serialization.code.ExpectationToJavaScriptSerializer expectationToJavaScriptSerializer;
     private org.mockserver.serialization.code.ExpectationToPythonSerializer expectationToPythonSerializer;
+    private org.mockserver.serialization.code.ExpectationToGoSerializer expectationToGoSerializer;
+    private org.mockserver.serialization.code.ExpectationToCSharpSerializer expectationToCSharpSerializer;
+    private org.mockserver.serialization.code.ExpectationToRubySerializer expectationToRubySerializer;
+    private org.mockserver.serialization.code.ExpectationToRustSerializer expectationToRustSerializer;
+    private org.mockserver.serialization.code.ExpectationToPhpSerializer expectationToPhpSerializer;
     private org.mockserver.serialization.ExpectationExportSerializer expectationExportSerializer;
     private VerificationSerializer verificationSerializer;
     private VerificationSequenceSerializer verificationSequenceSerializer;
@@ -1085,6 +1090,11 @@ public class HttpState {
                                 break;
                             case JAVASCRIPT:
                             case PYTHON:
+                            case GO:
+                            case CSHARP:
+                            case RUBY:
+                            case RUST:
+                            case PHP:
                                 response.withBody(format.name() + " not supported for REQUESTS (use RECORDED_EXPECTATIONS)", MediaType.create("text", "plain").withCharset(UTF_8));
                                 mockServerLogger.logEvent(logEntry);
                                 httpResponseFuture.complete(response);
@@ -1104,6 +1114,11 @@ public class HttpState {
                             case JAVA:
                             case JAVASCRIPT:
                             case PYTHON:
+                            case GO:
+                            case CSHARP:
+                            case RUBY:
+                            case RUST:
+                            case PHP:
                                 response.withBody(format.name() + " not supported for REQUEST_RESPONSES", MediaType.create("text", "plain").withCharset(UTF_8));
                                 mockServerLogger.logEvent(logEntry);
                                 httpResponseFuture.complete(response);
@@ -1250,6 +1265,81 @@ public class HttpState {
                                         }
                                     );
                                 break;
+                            case GO:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToGoSerializer().serialize(requests),
+                                                MediaType.create("text", "x-go").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
+                            case CSHARP:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToCSharpSerializer().serialize(requests),
+                                                MediaType.create("text", "x-csharp").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
+                            case RUBY:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToRubySerializer().serialize(requests),
+                                                MediaType.create("text", "x-ruby").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
+                            case RUST:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToRustSerializer().serialize(requests),
+                                                MediaType.create("text", "x-rust").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
+                            case PHP:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToPhpSerializer().serialize(requests),
+                                                MediaType.create("application", "x-httpd-php").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
                             case JSON:
                                 mockServerLog
                                     .retrieveRecordedExpectations(
@@ -1349,6 +1439,21 @@ public class HttpState {
                                 break;
                             case PYTHON:
                                 response.withBody(getExpectationToPythonSerializer().serialize(expectations), MediaType.create("text", "x-python").withCharset(UTF_8));
+                                break;
+                            case GO:
+                                response.withBody(getExpectationToGoSerializer().serialize(expectations), MediaType.create("text", "x-go").withCharset(UTF_8));
+                                break;
+                            case CSHARP:
+                                response.withBody(getExpectationToCSharpSerializer().serialize(expectations), MediaType.create("text", "x-csharp").withCharset(UTF_8));
+                                break;
+                            case RUBY:
+                                response.withBody(getExpectationToRubySerializer().serialize(expectations), MediaType.create("text", "x-ruby").withCharset(UTF_8));
+                                break;
+                            case RUST:
+                                response.withBody(getExpectationToRustSerializer().serialize(expectations), MediaType.create("text", "x-rust").withCharset(UTF_8));
+                                break;
+                            case PHP:
+                                response.withBody(getExpectationToPhpSerializer().serialize(expectations), MediaType.create("application", "x-httpd-php").withCharset(UTF_8));
                                 break;
                             case JSON:
                                 response.withBody(getExpectationSerializer().serialize(expectations), MediaType.JSON_UTF_8);
@@ -4094,6 +4199,41 @@ public class HttpState {
             this.expectationToPythonSerializer = new org.mockserver.serialization.code.ExpectationToPythonSerializer(getExpectationSerializerThatSerializesBodyDefault());
         }
         return expectationToPythonSerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToGoSerializer getExpectationToGoSerializer() {
+        if (this.expectationToGoSerializer == null) {
+            this.expectationToGoSerializer = new org.mockserver.serialization.code.ExpectationToGoSerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToGoSerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToCSharpSerializer getExpectationToCSharpSerializer() {
+        if (this.expectationToCSharpSerializer == null) {
+            this.expectationToCSharpSerializer = new org.mockserver.serialization.code.ExpectationToCSharpSerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToCSharpSerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToRubySerializer getExpectationToRubySerializer() {
+        if (this.expectationToRubySerializer == null) {
+            this.expectationToRubySerializer = new org.mockserver.serialization.code.ExpectationToRubySerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToRubySerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToRustSerializer getExpectationToRustSerializer() {
+        if (this.expectationToRustSerializer == null) {
+            this.expectationToRustSerializer = new org.mockserver.serialization.code.ExpectationToRustSerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToRustSerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToPhpSerializer getExpectationToPhpSerializer() {
+        if (this.expectationToPhpSerializer == null) {
+            this.expectationToPhpSerializer = new org.mockserver.serialization.code.ExpectationToPhpSerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToPhpSerializer;
     }
 
     private org.mockserver.serialization.ExpectationExportSerializer getExpectationExportSerializer() {

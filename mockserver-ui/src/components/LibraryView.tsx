@@ -37,6 +37,17 @@ import {
 import { buildBaseUrl } from '../lib/mcpClient';
 import { uploadDescriptorSet, listGrpcServices, clearGrpcDescriptors, type GrpcService } from '../lib/grpcDescriptors';
 import ConfirmDialog from './ConfirmDialog';
+import {
+  verifyToJava,
+  verifyToNode,
+  verifyToPython,
+  verifyToGo,
+  verifyToCsharp,
+  verifyToRuby,
+  verifyToRust,
+  type VerificationCodegenInput,
+} from '../lib/verificationCodegen';
+import type { VerificationTimesSpec } from '../lib/verification';
 
 // ---------------------------------------------------------------------------
 // Export sub-tab — download captured content in various formats
@@ -47,7 +58,16 @@ import ConfirmDialog from './ConfirmDialog';
 // than enumerating every scope×format pair in one long list.
 
 type ExportScope = 'expectations' | 'recorded' | 'requests' | 'logs';
-type ExportFormat = 'json' | 'java' | 'javascript' | 'python' | 'har' | 'openapi' | 'postman' | 'bruno' | 'logentries' | 'curl';
+type ExportFormat =
+  | 'json' | 'java' | 'javascript' | 'python' | 'go' | 'csharp' | 'ruby' | 'rust' | 'php'
+  | 'har' | 'openapi' | 'postman' | 'bruno' | 'logentries' | 'curl'
+  | 'verify-java' | 'verify-javascript' | 'verify-python' | 'verify-go'
+  | 'verify-csharp' | 'verify-ruby' | 'verify-rust';
+
+// A verification language whose code is generated client-side (by
+// verificationCodegen.ts) from the retrieved request/response JSON, rather than
+// asked of the server's retrieve endpoint.
+type VerifyLang = 'java' | 'node' | 'python' | 'go' | 'csharp' | 'ruby' | 'rust';
 
 const SCOPES: { value: ExportScope; label: string; retrieveType: string }[] = [
   { value: 'requests', label: 'Recorded requests', retrieveType: 'REQUEST_RESPONSES' },
@@ -60,18 +80,87 @@ const SCOPES: { value: ExportScope; label: string; retrieveType: string }[] = [
 // scopes the server accepts that format for (e.g. JAVA is expectations-only,
 // LOG_ENTRIES is the only format for the raw log stream — so the dropdown is filtered
 // by the chosen scope).
-const FORMATS: { value: ExportFormat; label: string; retrieveFormat: string; scopes: ExportScope[] }[] = [
+//
+// verifyLang marks a client-side-generated verification snippet: such an entry
+// has no server format of its own — the dashboard retrieves the recorded
+// request/response pairs as JSON and runs verificationCodegen over them, one
+// verify(...) call per recorded request.
+const FORMATS: { value: ExportFormat; label: string; retrieveFormat: string; scopes: ExportScope[]; verifyLang?: VerifyLang }[] = [
   { value: 'json', label: 'MockServer JSON', retrieveFormat: 'JSON', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'java', label: 'MockServer Java DSL', retrieveFormat: 'JAVA', scopes: ['expectations', 'recorded'] },
   { value: 'javascript', label: 'JavaScript client code', retrieveFormat: 'JAVASCRIPT', scopes: ['expectations', 'recorded'] },
   { value: 'python', label: 'Python client code', retrieveFormat: 'PYTHON', scopes: ['expectations', 'recorded'] },
+  { value: 'go', label: 'Go client code', retrieveFormat: 'GO', scopes: ['expectations', 'recorded'] },
+  { value: 'csharp', label: 'C# client code', retrieveFormat: 'CSHARP', scopes: ['expectations', 'recorded'] },
+  { value: 'ruby', label: 'Ruby client code', retrieveFormat: 'RUBY', scopes: ['expectations', 'recorded'] },
+  { value: 'rust', label: 'Rust client code', retrieveFormat: 'RUST', scopes: ['expectations', 'recorded'] },
+  { value: 'php', label: 'PHP client code', retrieveFormat: 'PHP', scopes: ['expectations', 'recorded'] },
   { value: 'har', label: 'HAR (HTTP Archive)', retrieveFormat: 'HAR', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'openapi', label: 'OpenAPI 3 spec', retrieveFormat: 'OPENAPI', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'postman', label: 'Postman collection v2.1', retrieveFormat: 'POSTMAN', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'bruno', label: 'Bruno collection (.zip)', retrieveFormat: 'BRUNO', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'logentries', label: 'Log entries (JSON)', retrieveFormat: 'LOG_ENTRIES', scopes: ['recorded', 'requests', 'logs'] },
   { value: 'curl', label: 'cURL commands', retrieveFormat: 'CURL', scopes: ['requests'] },
+  // Verification code — generated client-side from the recorded requests.
+  { value: 'verify-java', label: 'Verification code (Java)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'java' },
+  { value: 'verify-javascript', label: 'Verification code (JavaScript)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'node' },
+  { value: 'verify-python', label: 'Verification code (Python)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'python' },
+  { value: 'verify-go', label: 'Verification code (Go)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'go' },
+  { value: 'verify-csharp', label: 'Verification code (C#)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'csharp' },
+  { value: 'verify-ruby', label: 'Verification code (Ruby)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'ruby' },
+  { value: 'verify-rust', label: 'Verification code (Rust)', retrieveFormat: 'JSON', scopes: ['requests'], verifyLang: 'rust' },
 ];
+
+// One verify(...) snippet per recorded request, joined into a single document.
+// Each pair from REQUEST_RESPONSES retrieval contributes its httpRequest as a
+// single-mode verification asserting the request was received at least once.
+const VERIFY_GENERATORS: Record<VerifyLang, (input: VerificationCodegenInput) => string> = {
+  java: verifyToJava,
+  node: verifyToNode,
+  python: verifyToPython,
+  go: verifyToGo,
+  csharp: verifyToCsharp,
+  ruby: verifyToRuby,
+  rust: verifyToRust,
+};
+
+function generateVerificationCode(pairs: unknown, lang: VerifyLang, baseUrl: string): string {
+  const generate = VERIFY_GENERATORS[lang];
+  const list = Array.isArray(pairs) ? pairs : [];
+  const requests: Record<string, unknown>[] = list
+    .map((pair) => {
+      const httpRequest = (pair as { httpRequest?: unknown })?.httpRequest;
+      return httpRequest && typeof httpRequest === 'object' ? (httpRequest as Record<string, unknown>) : null;
+    })
+    .filter((r): r is Record<string, unknown> => r !== null);
+
+  const atLeastOnce: VerificationTimesSpec = { mode: 'atLeast', count: 1 };
+  if (requests.length === 0) {
+    // Still emit a usable, copy-pasteable skeleton (empty request matcher).
+    return generate({
+      mode: 'single',
+      httpRequest: {},
+      httpResponse: {},
+      times: atLeastOnce,
+      httpRequests: [],
+      httpResponses: [],
+      baseUrl,
+    });
+  }
+  return requests
+    .map((httpRequest) =>
+      generate({
+        mode: 'single',
+        httpRequest,
+        httpResponse: {},
+        times: atLeastOnce,
+        httpRequests: [],
+        httpResponses: [],
+        baseUrl,
+      }),
+    )
+    .join('\n\n');
+}
 
 interface ExportDetail {
   description: string;
@@ -97,6 +186,26 @@ const DETAILS: Record<ExportScope, Partial<Record<ExportFormat, ExportDetail>>> 
     python: {
       description: 'Python client code — one client.upsert(...) call per expectation. Paste into a script using the mockserver package.',
       filename: 'mockserver-expectations.py',
+    },
+    go: {
+      description: 'Go client code — one client.Upsert(...) call per expectation. Paste into a program using the mockserver-client-go package.',
+      filename: 'mockserver-expectations.go',
+    },
+    csharp: {
+      description: 'C# client code — one client.Upsert(...) call per expectation. Paste into a project using the MockServer.Client NuGet package.',
+      filename: 'mockserver-expectations.cs',
+    },
+    ruby: {
+      description: 'Ruby client code — one client.upsert(...) call per expectation. Paste into a script using the mockserver-client gem.',
+      filename: 'mockserver-expectations.rb',
+    },
+    rust: {
+      description: 'Rust client code — one client.upsert(...) call per expectation. Paste into a program using the mockserver-client crate.',
+      filename: 'mockserver-expectations.rs',
+    },
+    php: {
+      description: 'PHP client code — one $client->upsertExpectation(...) call per expectation. Paste into a script using the mock-server/mockserver-client package.',
+      filename: 'mockserver-expectations.php',
     },
     har: {
       description: 'HAR-formatted archive of each expectation as a synthetic request/response pair.',
@@ -144,6 +253,34 @@ const DETAILS: Record<ExportScope, Partial<Record<ExportFormat, ExportDetail>>> 
       description: 'A cURL command per captured request — paste into a shell to replay the traffic.',
       filename: 'mockserver-traffic.curl.sh',
     },
+    'verify-java': {
+      description: 'Java verify(...) call per captured request — paste into a JUnit test using the MockServer Java client.',
+      filename: 'mockserver-verify.java',
+    },
+    'verify-javascript': {
+      description: 'JavaScript verify(...) call per captured request — paste into a script using mockserver-client.',
+      filename: 'mockserver-verify.js',
+    },
+    'verify-python': {
+      description: 'Python client.verify(...) call per captured request — paste into a script using the mockserver package.',
+      filename: 'mockserver-verify.py',
+    },
+    'verify-go': {
+      description: 'Go client.Verify(...) call per captured request — paste into a program using the mockserver-client-go package.',
+      filename: 'mockserver-verify.go',
+    },
+    'verify-csharp': {
+      description: 'C# client.Verify(...) call per captured request — paste into a project using the MockServer.Client package.',
+      filename: 'mockserver-verify.cs',
+    },
+    'verify-ruby': {
+      description: 'Ruby client.verify(...) call per captured request — paste into a script using the mockserver-client gem.',
+      filename: 'mockserver-verify.rb',
+    },
+    'verify-rust': {
+      description: 'Rust client.verify(...) call per captured request — paste into a program using the mockserver-client crate.',
+      filename: 'mockserver-verify.rs',
+    },
   },
   recorded: {
     json: {
@@ -161,6 +298,26 @@ const DETAILS: Record<ExportScope, Partial<Record<ExportFormat, ExportDetail>>> 
     python: {
       description: 'Python client code recreating each recorded expectation — one client.upsert(...) call per expectation.',
       filename: 'mockserver-recorded-expectations.py',
+    },
+    go: {
+      description: 'Go client code recreating each recorded expectation — one client.Upsert(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.go',
+    },
+    csharp: {
+      description: 'C# client code recreating each recorded expectation — one client.Upsert(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.cs',
+    },
+    ruby: {
+      description: 'Ruby client code recreating each recorded expectation — one client.upsert(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.rb',
+    },
+    rust: {
+      description: 'Rust client code recreating each recorded expectation — one client.upsert(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.rs',
+    },
+    php: {
+      description: 'PHP client code recreating each recorded expectation — one $client->upsertExpectation(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.php',
     },
     har: {
       description: 'HAR archive of each recorded expectation as a request/response pair.',
@@ -233,15 +390,37 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
     }
   };
 
+  // Fetch the text payload for the current scope×format. For a server-rendered
+  // format this is just the retrieve response body; for a client-side
+  // verification language the server returns the recorded request/response JSON
+  // which verificationCodegen turns into verify(...) snippets in the browser.
+  const fetchText = useCallback(async (): Promise<string> => {
+    const base = buildBaseUrl(connectionParams);
+    const path = `/mockserver/retrieve?type=${scopeMeta.retrieveType}&format=${formatMeta.retrieveFormat}`;
+    const res = await fetch(`${base}${path}`, { method: 'PUT' });
+    if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);
+    if (formatMeta.verifyLang) {
+      const pairs = await res.json();
+      return generateVerificationCode(pairs, formatMeta.verifyLang, base);
+    }
+    return res.text();
+  }, [scopeMeta, formatMeta, connectionParams]);
+
   const handleDownload = useCallback(async () => {
     setDownloading(true);
     setError(null);
     try {
       const base = buildBaseUrl(connectionParams);
-      const path = `/mockserver/retrieve?type=${scopeMeta.retrieveType}&format=${formatMeta.retrieveFormat}`;
-      const res = await fetch(`${base}${path}`, { method: 'PUT' });
-      if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);
-      const blob = await res.blob();
+      let blob: Blob;
+      if (formatMeta.verifyLang) {
+        // client-side generated verification code
+        blob = new Blob([await fetchText()], { type: 'text/plain' });
+      } else {
+        const path = `/mockserver/retrieve?type=${scopeMeta.retrieveType}&format=${formatMeta.retrieveFormat}`;
+        const res = await fetch(`${base}${path}`, { method: 'PUT' });
+        if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);
+        blob = await res.blob();
+      }
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = objectUrl;
@@ -255,28 +434,25 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
     } finally {
       setDownloading(false);
     }
-  }, [scopeMeta, formatMeta, detail, connectionParams]);
+  }, [scopeMeta, formatMeta, detail, connectionParams, fetchText]);
 
   // bruno is a binary zip; every other format is text and can be copied to the
   // clipboard. The "copy as code" affordance is most useful for the code formats
-  // (java / javascript / python) but works for any text format.
+  // (java / javascript / python / go / csharp / ruby / rust / php and the
+  // verification snippets) but works for any text format.
   const copyable = format !== 'bruno';
 
   const handleCopy = useCallback(async () => {
     setError(null);
     try {
-      const base = buildBaseUrl(connectionParams);
-      const path = `/mockserver/retrieve?type=${scopeMeta.retrieveType}&format=${formatMeta.retrieveFormat}`;
-      const res = await fetch(`${base}${path}`, { method: 'PUT' });
-      if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);
-      const text = await res.text();
+      const text = await fetchText();
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [scopeMeta, formatMeta, connectionParams]);
+  }, [fetchText]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>

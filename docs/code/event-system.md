@@ -362,26 +362,50 @@ one per scope: `REQUESTS`, `REQUEST_RESPONSES`, `RECORDED_EXPECTATIONS`, `ACTIVE
 | `JAVA` | recorded + active expectations | `application/java` | `ExpectationToJavaSerializer` (typed builder DSL) |
 | `JAVASCRIPT` | recorded + active expectations | `application/javascript` | `ExpectationToJavaScriptSerializer` |
 | `PYTHON` | recorded + active expectations | `text/x-python` | `ExpectationToPythonSerializer` |
+| `GO` | recorded + active expectations | `text/x-go` | `ExpectationToGoSerializer` |
+| `CSHARP` | recorded + active expectations | `text/x-csharp` | `ExpectationToCSharpSerializer` |
+| `RUBY` | recorded + active expectations | `text/x-ruby` | `ExpectationToRubySerializer` |
+| `RUST` | recorded + active expectations | `text/x-rust` | `ExpectationToRustSerializer` |
+| `PHP` | recorded + active expectations | `application/x-httpd-php` | `ExpectationToPhpSerializer` |
 | `JSON` | all | `application/json` | `ExpectationSerializer` / `RequestDefinitionSerializer` |
 
-**Why JavaScript/Python are cheap.** Unlike the Java client (which needs the typed builder DSL, hence
-the ~20-class `*ToJavaSerializer` family), the Node.js and Python clients accept an expectation as a
-plain JSON/dict object. So `ExpectationToJavaScriptSerializer` and `ExpectationToPythonSerializer`
-(both in `org.mockserver.serialization.code`) reuse the existing JSON serialization (the same
-`ExpectationSerializer` used for `format=json`) and wrap each expectation in the correct client call
-plus an import preamble — one call per expectation. The embedded JSON is byte-identical to
-`format=json`, so the generated code round-trips through the real clients.
+**Why the non-Java languages are cheap.** Unlike the Java client (which needs the typed builder DSL,
+hence the ~20-class `*ToJavaSerializer` family), every other official client accepts an expectation as
+a JSON object. So each `ExpectationTo<Lang>Serializer` (all in `org.mockserver.serialization.code`)
+reuses the existing JSON serialization (the same `ExpectationSerializer` used for `format=json`) and
+wraps each expectation in the language's real upsert call plus an import/instantiation preamble — one
+call per expectation. The embedded JSON is byte-identical to `format=json`, so the generated code
+round-trips through the real clients.
 
 - **JavaScript**: `const { mockServerClient } = require('mockserver-client');` then one
   `mockServerClient("localhost", 1080).mockAnyResponse(<expectation JSON>);` per expectation.
 - **Python**: `import json` / `from mockserver import MockServerClient, Expectation` then one
-  `client.upsert(Expectation.from_dict(json.loads("""<expectation JSON>""")));` per expectation. The
-  JSON is embedded as a triple-quoted string parsed at runtime to avoid fragile JSON-literal-to-Python
-  translation of `true`/`false`/`null`.
+  `client.upsert(Expectation.from_dict(json.loads("""<expectation JSON>""")));` per expectation.
+- **Go**: `mockserver.New("localhost", 1080)` then `json.Unmarshal([]byte(`​`<JSON>`​`), &e); client.Upsert(e)`.
+  A Go raw-string (backtick) literal carries the JSON; it falls back to a double-quoted interpreted
+  string if the JSON contains a backtick.
+- **C#**: `new MockServerClient("localhost", 1080)` then
+  `client.Upsert(JsonSerializer.Deserialize<Expectation>(@"<JSON>", jsonOptions));`. The JSON sits in a
+  C# verbatim string (`@"..."`, double-quotes doubled).
+- **Ruby**: `require 'mockserver-client'` then
+  `client.upsert(MockServer::Expectation.from_hash(JSON.parse(<<JSON)));` with the JSON in a heredoc.
+- **Rust**: `ClientBuilder::new("localhost", 1080).build()?` then
+  `client.upsert(&[serde_json::from_str::<Expectation>(r#"<JSON>"#)?])?;`. The hash count of the raw
+  string is bumped if the JSON contains a quote-followed-by-hashes terminator.
+- **PHP**: `new MockServerClient('localhost', 1080)` then
+  `$client->upsertExpectation(Expectation::fromArray(json_decode(<<<'JSON' ... JSON, true)));`. The JSON
+  sits in a nowdoc (no interpolation). The PHP client's `Expectation::fromArray()` factory stores the
+  decoded array verbatim and replays it from `toArray()`, so every field round-trips without a typed
+  field-by-field inverse.
 
-`JAVASCRIPT`/`PYTHON` are expectation-scope formats; for `REQUESTS`/`REQUEST_RESPONSES` they return a
-clear "not supported" message, exactly as `JAVA` does for `REQUEST_RESPONSES`. The dashboard surfaces
-these via Library → Export (format dropdown + "Copy as code" button).
+Each generator escapes the embedded JSON for its language's string literal, so hostile values (quotes,
+backslashes, newlines, and the language's own raw-string/heredoc terminator) copy-paste cleanly. These
+are all expectation-scope formats; for `REQUESTS`/`REQUEST_RESPONSES` they return a clear "not
+supported" message, exactly as `JAVA` does for `REQUEST_RESPONSES`. The dashboard surfaces these via
+Library → Export (format dropdown + "Copy as code" button). The same Export tab also offers
+**verification code** for the recorded-requests scope in Java, JavaScript, Python, Go, C#, Ruby and
+Rust — that code is generated client-side in the dashboard (by `verificationCodegen.ts`) from the
+retrieved request JSON, one `verify(...)` per request, rather than by a server-side serializer.
 
 ## Persistence System
 

@@ -7,23 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Expectation code generation in JavaScript and Python**: the retrieve endpoint can now produce
-  copy-paste-ready client code from recorded or active expectations, alongside the existing Java
-  output. Call `PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=javascript` (or
-  `format=python`, and likewise for `type=ACTIVE_EXPECTATIONS`) to get one client call per expectation.
-  Unlike the Java DSL (`format=java`), the Node.js and Python clients accept an expectation as a
-  JSON/dict object, so the generated code embeds the expectation's existing JSON serialization in a
-  client call rather than reconstructing a typed builder. JavaScript output uses
-  `mockServerClient("localhost", 1080).mockAnyResponse(<expectation JSON>)` preceded by a
-  `const { mockServerClient } = require('mockserver-client');` preamble (Content-Type
-  `application/javascript`); Python output uses
-  `client.upsert(Expectation.from_dict(json.loads("""<expectation JSON>""")))` preceded by
-  `import json` / `from mockserver import MockServerClient, Expectation` (Content-Type `text/x-python`).
-  The embedded JSON is byte-identical to `format=json`, so it round-trips through the real clients.
-  The dashboard's Library → Export tab gains "JavaScript client code" and "Python client code" format
-  options (expectations and recorded-expectations scopes) plus a "Copy as code" button that copies the
-  generated text to the clipboard. The `Format` enum gains `JAVASCRIPT` and `PYTHON`; `java`, `json`,
-  and `log_entries` are unchanged.
+- **Expectation code generation in every client language**: the retrieve endpoint can now produce
+  copy-paste-ready client code from recorded or active expectations in **Java, JavaScript, Python, Go,
+  C#, Ruby, Rust and PHP**, alongside the existing Java output. Call
+  `PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=<language>` (and likewise for
+  `type=ACTIVE_EXPECTATIONS`) with `format` one of `javascript`, `python`, `go`, `csharp`, `ruby`,
+  `rust` or `php` to get one client call per expectation. Unlike the Java DSL (`format=java`), these
+  clients accept an expectation as a JSON object, so the generated code embeds the expectation's
+  existing JSON serialization (byte-identical to `format=json`, so it round-trips through the real
+  clients) in the language's real upsert call rather than reconstructing a typed builder:
+  - **JavaScript** — `mockServerClient("localhost", 1080).mockAnyResponse(<JSON>)` (Content-Type `application/javascript`)
+  - **Python** — `client.upsert(Expectation.from_dict(json.loads("""<JSON>""")))` (Content-Type `text/x-python`)
+  - **Go** — `json.Unmarshal([]byte(`​`<JSON>`​`), &e); client.Upsert(e)` using the `mockserver-client-go` package (Content-Type `text/x-go`)
+  - **C#** — `client.Upsert(JsonSerializer.Deserialize<Expectation>(@"<JSON>", jsonOptions))` using `MockServer.Client` (Content-Type `text/x-csharp`)
+  - **Ruby** — `client.upsert(MockServer::Expectation.from_hash(JSON.parse(<<JSON ... JSON)))` using the `mockserver-client` gem (Content-Type `text/x-ruby`)
+  - **Rust** — `client.upsert(&[serde_json::from_str::<Expectation>(r#"<JSON>"#)?])?` using the `mockserver-client` crate (Content-Type `text/x-rust`)
+  - **PHP** — `$client->upsertExpectation(Expectation::fromArray(json_decode(<<<'JSON' ... JSON, true)))` using `mock-server/mockserver-client` (Content-Type `application/x-httpd-php`); a new `Expectation::fromArray()` factory on the PHP client makes the generated code round-trip.
+
+  The embedded JSON is escaped correctly for each language's string literal (Go raw/interpreted
+  strings, C# verbatim strings, Ruby/PHP heredoc-nowdoc, Rust hash-bumped raw strings) so even hostile
+  values (quotes, backslashes, newlines, the language's own raw-string terminator) copy-paste cleanly.
+  The dashboard's Library → Export tab now offers all eight mock languages for the expectations and
+  recorded-expectations scopes, plus a **"Verification code"** option for the recorded-requests scope
+  in Java, JavaScript, Python, Go, C#, Ruby and Rust: it retrieves the recorded requests and generates
+  one `verify(...)` call per request entirely in the browser. Each format has a "Copy as code" button.
+  The `Format` enum gains `GO`, `CSHARP`, `RUBY`, `RUST` and `PHP` alongside `JAVASCRIPT`/`PYTHON`;
+  `java`, `json`, and `log_entries` are unchanged and existing formats are byte-identical.
 - **Match and verify by negotiated protocol** (HTTP/1.1, HTTP/2, HTTP/3): expectations can now match,
   and recorded requests can be verified, on the protocol a request actually arrived over. Use
   `request().withProtocol("HTTP_2")` (or `Protocol.HTTP_3`, etc.) on an expectation to only match

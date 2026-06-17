@@ -9,6 +9,19 @@ namespace MockServer;
  */
 class Expectation implements \JsonSerializable
 {
+    /**
+     * Raw expectation data captured by {@see Expectation::fromArray()}.
+     *
+     * When set (i.e. the expectation was reconstructed from a decoded JSON
+     * payload such as the output of MockServer's {@code retrieve?format=php}
+     * code generator), {@see Expectation::toArray()} returns this verbatim so
+     * the round-trip is byte-faithful regardless of which expectation fields
+     * are present. The typed builder path leaves this {@code null}.
+     *
+     * @var array<string, mixed>|null
+     */
+    private ?array $rawData = null;
+
     private ?string $id = null;
     private ?int $priority = null;
     private ?HttpRequest $httpRequest = null;
@@ -154,6 +167,10 @@ class Expectation implements \JsonSerializable
      */
     public function toArray(): array
     {
+        if ($this->rawData !== null) {
+            return $this->rawData;
+        }
+
         $data = [];
 
         if ($this->id !== null) {
@@ -197,5 +214,28 @@ class Expectation implements \JsonSerializable
         }
 
         return $data;
+    }
+
+    /**
+     * Reconstruct an Expectation from a decoded JSON array (the inverse of
+     * {@see Expectation::toArray()}).
+     *
+     * This is the factory used by code generated from
+     * {@code retrieve?type=ACTIVE_EXPECTATIONS&format=php}: the generated code
+     * does {@code Expectation::fromArray(json_decode($json, true))} and passes
+     * the result to {@see MockServerClient::upsertExpectation()}.
+     *
+     * The decoded array is stored verbatim and replayed by {@see toArray()},
+     * so every expectation field — including action types not yet modelled by
+     * the typed builder — round-trips faithfully without lossy field-by-field
+     * reconstruction.
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $expectation = new self();
+        $expectation->rawData = $data;
+        return $expectation;
     }
 }

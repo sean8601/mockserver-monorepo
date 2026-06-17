@@ -166,6 +166,55 @@ class ExpectationTest extends TestCase
         $this->assertSame('VELOCITY', $array['httpResponse']['body']['templateType']);
     }
 
+    public function testFromArrayRoundTripsBuilderOutput(): void
+    {
+        $built = (new Expectation())
+            ->id('rt')
+            ->priority(7)
+            ->httpRequest(
+                HttpRequest::request()
+                    ->method('POST')
+                    ->path('/api/"weird"\\path' . "\n" . 'x')
+                    ->body('{"name":"a\\b","q":"\"quoted\""}')
+            )
+            ->httpResponse(
+                HttpResponse::response()
+                    ->statusCode(201)
+                    ->body("body with \"quotes\", \\backslash and \n newline")
+                    ->delay(Delay::milliseconds(50))
+            )
+            ->times(Times::exactly(3));
+
+        $array = $built->toArray();
+        // simulate the generated code: json_encode then json_decode then fromArray
+        $decoded = json_decode(json_encode($array, JSON_THROW_ON_ERROR), true);
+        $reconstructed = Expectation::fromArray($decoded);
+
+        $this->assertSame($array, $reconstructed->toArray());
+        $this->assertSame(
+            json_encode($array, JSON_THROW_ON_ERROR),
+            json_encode($reconstructed, JSON_THROW_ON_ERROR)
+        );
+    }
+
+    public function testFromArrayPreservesFieldsNotModelledByBuilder(): void
+    {
+        // httpForwardTemplate has no typed builder, but fromArray must keep it
+        $raw = [
+            'httpRequest' => ['path' => '/x'],
+            'httpForwardTemplate' => [
+                'templateType' => 'JAVASCRIPT',
+                'template' => 'return { path: request.path };',
+            ],
+            'times' => ['remainingTimes' => 2, 'unlimited' => false],
+        ];
+
+        $reconstructed = Expectation::fromArray($raw);
+
+        $this->assertSame($raw, $reconstructed->toArray());
+        $this->assertSame($raw, $reconstructed->jsonSerialize());
+    }
+
     public function testGetters(): void
     {
         $request = HttpRequest::request()->path('/x');

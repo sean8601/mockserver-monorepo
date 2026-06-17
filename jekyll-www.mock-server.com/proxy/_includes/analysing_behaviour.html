@@ -13,6 +13,11 @@
     <li><strong>format=java</strong> &mdash; MockServer Java client builder DSL</li>
     <li><strong>format=javascript</strong> &mdash; Node.js client calls (<code class="inline code">mockServerClient(...).mockAnyResponse(&hellip;)</code>)</li>
     <li><strong>format=python</strong> &mdash; Python client calls (<code class="inline code">client.upsert(Expectation.from_dict(&hellip;))</code>)</li>
+    <li><strong>format=go</strong> &mdash; Go client calls (<code class="inline code">client.Upsert(&hellip;)</code>)</li>
+    <li><strong>format=csharp</strong> &mdash; C# client calls (<code class="inline code">client.Upsert(&hellip;)</code>)</li>
+    <li><strong>format=ruby</strong> &mdash; Ruby client calls (<code class="inline code">client.upsert(&hellip;)</code>)</li>
+    <li><strong>format=rust</strong> &mdash; Rust client calls (<code class="inline code">client.upsert(&hellip;)</code>)</li>
+    <li><strong>format=php</strong> &mdash; PHP client calls (<code class="inline code">$client-&gt;upsertExpectation(&hellip;)</code>)</li>
     <li><strong>format=json</strong> &mdash; round-trippable MockServer JSON</li>
 </ul>
 
@@ -24,7 +29,11 @@
 
 <pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=python"</code></pre>
 
-<p>The JavaScript and Python output embeds the expectation's JSON inside a client call, so it is correct for the published <code class="inline code">mockserver-client</code> (Node.js) and <code class="inline code">mockserver</code> (Python) packages and round-trips back into MockServer. In the dashboard, the same formats are available under <strong>Library &rarr; Export</strong>, with a <strong>Copy as code</strong> button.</p>
+<p>or as Go, C#, Ruby, Rust or PHP &mdash; e.g. Go:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=go"</code></pre>
+
+<p>Every language's output embeds the expectation's JSON inside a real client call, so it is correct for the published client packages (<code class="inline code">mockserver-client</code> for Node.js, <code class="inline code">mockserver</code> for Python, <code class="inline code">mockserver-client-go</code> for Go, <code class="inline code">MockServer.Client</code> for C#, the <code class="inline code">mockserver-client</code> gem for Ruby, the <code class="inline code">mockserver-client</code> crate for Rust, and <code class="inline code">mock-server/mockserver-client</code> for PHP) and round-trips back into MockServer. In the dashboard, all of these formats are available under <strong>Library &rarr; Export</strong>, each with a <strong>Copy as code</strong> button; the same Export tab can also generate <strong>verification code</strong> from the recorded requests in Java, JavaScript, Python, Go, C#, Ruby and Rust.</p>
 
 <a id="har_export" class="anchor" href="#har_export">&nbsp;</a>
 

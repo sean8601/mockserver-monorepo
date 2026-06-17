@@ -2078,6 +2078,303 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldRetrieveActiveExpectationsAsGo() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "GO");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBody().getContentType(), is(MediaType.create("text", "x-go").withCharset(UTF_8).toString()));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("mockserver \"github.com/mock-server/mockserver-monorepo/mockserver-client-go\""));
+        assertThat(body, containsString("client := mockserver.New(\"localhost\", 1080)"));
+        assertThat(body, containsString("client.Upsert(e)"));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
+    public void shouldRetrieveActiveExpectationsAsCSharp() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "CSHARP");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBody().getContentType(), is(MediaType.create("text", "x-csharp").withCharset(UTF_8).toString()));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("using MockServer.Client;"));
+        assertThat(body, containsString("new MockServerClient(\"localhost\", 1080)"));
+        assertThat(body, containsString("client.Upsert(JsonSerializer.Deserialize<Expectation>(@\""));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
+    public void shouldRetrieveActiveExpectationsAsRuby() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "RUBY");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBody().getContentType(), is(MediaType.create("text", "x-ruby").withCharset(UTF_8).toString()));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("require 'mockserver-client'"));
+        assertThat(body, containsString("MockServer::Client.new('localhost', 1080)"));
+        assertThat(body, containsString("client.upsert(MockServer::Expectation.from_hash(JSON.parse(<<JSON)))"));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
+    public void shouldRetrieveActiveExpectationsAsRust() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "RUST");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBody().getContentType(), is(MediaType.create("text", "x-rust").withCharset(UTF_8).toString()));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("use mockserver_client::{ClientBuilder, Expectation};"));
+        assertThat(body, containsString("ClientBuilder::new(\"localhost\", 1080).build()?"));
+        assertThat(body, containsString("client.upsert(&[serde_json::from_str::<Expectation>(r#\""));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
+    public void shouldRetrieveActiveExpectationsAsPhp() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "PHP");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBody().getContentType(), is(MediaType.create("application", "x-httpd-php").withCharset(UTF_8).toString()));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("use MockServer\\MockServerClient;"));
+        assertThat(body, containsString("$client = new MockServerClient('localhost', 1080);"));
+        assertThat(body, containsString("$client->upsertExpectation(Expectation::fromArray(json_decode(<<<'JSON'"));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
+    public void shouldRetrieveRecordedExpectationsAsGo() {
+        // given
+        logTwoRecordedExpectations();
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "go")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("text", "x-go").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        // import preamble emitted exactly once
+        assertThat(body.split("package main", -1).length - 1, is(1));
+        // one client call per recorded expectation
+        assertThat(body.split("client\\.Upsert\\(e\\)", -1).length - 1, is(2));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+    }
+
+    @Test
+    public void shouldRetrieveRecordedExpectationsAsCSharp() {
+        // given
+        logTwoRecordedExpectations();
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "csharp")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("text", "x-csharp").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        assertThat(body.split("using MockServer.Client;", -1).length - 1, is(1));
+        assertThat(body.split("client\\.Upsert\\(JsonSerializer", -1).length - 1, is(2));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+    }
+
+    @Test
+    public void shouldRetrieveRecordedExpectationsAsRuby() {
+        // given
+        logTwoRecordedExpectations();
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "ruby")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("text", "x-ruby").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        assertThat(body.split("require 'mockserver-client'", -1).length - 1, is(1));
+        assertThat(body.split("client\\.upsert\\(MockServer::Expectation", -1).length - 1, is(2));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+    }
+
+    @Test
+    public void shouldRetrieveRecordedExpectationsAsRust() {
+        // given
+        logTwoRecordedExpectations();
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "rust")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("text", "x-rust").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        assertThat(body.split("use mockserver_client", -1).length - 1, is(1));
+        assertThat(body.split("client\\.upsert\\(&\\[serde_json", -1).length - 1, is(2));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+    }
+
+    @Test
+    public void shouldRetrieveRecordedExpectationsAsPhp() {
+        // given
+        logTwoRecordedExpectations();
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "php")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("application", "x-httpd-php").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        assertThat(body.split("use MockServer\\\\MockServerClient;", -1).length - 1, is(1));
+        assertThat(body.split("\\$client->upsertExpectation\\(Expectation::fromArray", -1).length - 1, is(2));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+    }
+
+    @Test
+    public void shouldRejectGoForRequests() {
+        assertRejectedForRequests("go", "GO not supported for REQUESTS (use RECORDED_EXPECTATIONS)");
+    }
+
+    @Test
+    public void shouldRejectCSharpForRequests() {
+        assertRejectedForRequests("csharp", "CSHARP not supported for REQUESTS (use RECORDED_EXPECTATIONS)");
+    }
+
+    @Test
+    public void shouldRejectRubyForRequests() {
+        assertRejectedForRequests("ruby", "RUBY not supported for REQUESTS (use RECORDED_EXPECTATIONS)");
+    }
+
+    @Test
+    public void shouldRejectRustForRequests() {
+        assertRejectedForRequests("rust", "RUST not supported for REQUESTS (use RECORDED_EXPECTATIONS)");
+    }
+
+    @Test
+    public void shouldRejectPhpForRequests() {
+        assertRejectedForRequests("php", "PHP not supported for REQUESTS (use RECORDED_EXPECTATIONS)");
+    }
+
+    private void logTwoRecordedExpectations() {
+        httpState.log(
+            new LogEntry()
+                .setType(FORWARDED_REQUEST)
+                .setLogLevel(Level.INFO)
+                .setHttpRequest(request("request_one"))
+                .setHttpResponse(response("response_one"))
+                .setExpectation(request("request_one"), response("response_one"))
+        );
+        httpState.log(
+            new LogEntry()
+                .setLogLevel(INFO)
+                .setType(FORWARDED_REQUEST)
+                .setHttpRequest(request("request_two"))
+                .setHttpResponse(response("response_two"))
+                .setExpectation(request("request_two"), response("response_two"))
+        );
+    }
+
+    private void assertRejectedForRequests(String format, String expectedMessage) {
+        httpState.log(
+            new LogEntry()
+                .setHttpRequest(request("request_one"))
+                .setType(RECEIVED_REQUEST)
+        );
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "requests")
+                    .withQueryStringParameter("format", format)
+            );
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), is(expectedMessage));
+    }
+
+    @Test
     public void shouldRetrieveActiveExpectationsAsJson() {
         // given
         Expectation expectationOne = new Expectation(request("request_one")).thenRespond(response("response_one"));
@@ -2454,7 +2751,7 @@ public class HttpStateTest {
         } catch (Throwable throwable) {
             // then
             assertThat(throwable, instanceOf(IllegalArgumentException.class));
-            assertThat(throwable.getMessage(), is("\"invalid\" is not a valid value for \"format\" parameter, only the following values are supported [java, javascript, python, json, log_entries, har, openapi, postman, bruno, curl]"));
+            assertThat(throwable.getMessage(), is("\"invalid\" is not a valid value for \"format\" parameter, only the following values are supported [java, javascript, python, go, csharp, ruby, rust, php, json, log_entries, har, openapi, postman, bruno, curl]"));
         }
     }
 

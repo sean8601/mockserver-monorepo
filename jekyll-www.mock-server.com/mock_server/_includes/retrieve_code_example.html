@@ -236,6 +236,61 @@ $recordedExpectations = $client-&gt;retrieveRecordedExpectations(
             <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
         </div>
     </div>
+    <button id="button_retrieve_recorded_expectations_as_go" class="accordion">retrieve recorded expectations as go</button>
+    <div class="panel">
+        <button class="accordion inner">REST API</button>
+        <div class="panel">
+            <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=GO" -d '{
+    "path": "/some/path"
+}'</code></pre>
+            <p>Returns copy-paste-ready code for the Go (<span class="inline_code">mockserver-client-go</span>) client, embedding each expectation's JSON in a <span class="inline_code">client.Upsert(...)</span> call. Also available for <span class="inline_code">type=ACTIVE_EXPECTATIONS</span>.</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+        </div>
+    </div>
+    <button id="button_retrieve_recorded_expectations_as_csharp" class="accordion">retrieve recorded expectations as csharp</button>
+    <div class="panel">
+        <button class="accordion inner">REST API</button>
+        <div class="panel">
+            <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=CSHARP" -d '{
+    "path": "/some/path"
+}'</code></pre>
+            <p>Returns copy-paste-ready code for the C# (<span class="inline_code">MockServer.Client</span>) client, embedding each expectation's JSON in a <span class="inline_code">client.Upsert(...)</span> call. Also available for <span class="inline_code">type=ACTIVE_EXPECTATIONS</span>.</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+        </div>
+    </div>
+    <button id="button_retrieve_recorded_expectations_as_ruby" class="accordion">retrieve recorded expectations as ruby</button>
+    <div class="panel">
+        <button class="accordion inner">REST API</button>
+        <div class="panel">
+            <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=RUBY" -d '{
+    "path": "/some/path"
+}'</code></pre>
+            <p>Returns copy-paste-ready code for the Ruby (<span class="inline_code">mockserver-client</span>) client, embedding each expectation's JSON in a <span class="inline_code">client.upsert(...)</span> call. Also available for <span class="inline_code">type=ACTIVE_EXPECTATIONS</span>.</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+        </div>
+    </div>
+    <button id="button_retrieve_recorded_expectations_as_rust" class="accordion">retrieve recorded expectations as rust</button>
+    <div class="panel">
+        <button class="accordion inner">REST API</button>
+        <div class="panel">
+            <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=RUST" -d '{
+    "path": "/some/path"
+}'</code></pre>
+            <p>Returns copy-paste-ready code for the Rust (<span class="inline_code">mockserver-client</span>) crate, embedding each expectation's JSON in a <span class="inline_code">client.upsert(...)</span> call. Also available for <span class="inline_code">type=ACTIVE_EXPECTATIONS</span>.</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+        </div>
+    </div>
+    <button id="button_retrieve_recorded_expectations_as_php" class="accordion">retrieve recorded expectations as php</button>
+    <div class="panel">
+        <button class="accordion inner">REST API</button>
+        <div class="panel">
+            <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=PHP" -d '{
+    "path": "/some/path"
+}'</code></pre>
+            <p>Returns copy-paste-ready code for the PHP (<span class="inline_code">mock-server/mockserver-client</span>) client, embedding each expectation's JSON in a <span class="inline_code">$client-&gt;upsertExpectation(...)</span> call. Also available for <span class="inline_code">type=ACTIVE_EXPECTATIONS</span>.</p>
+            <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/control/put_retrieve" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+        </div>
+    </div>
     <button id="button_retrieve_recorded_expectations_as_json" class="accordion">retrieve recorded expectations as json</button>
     <div class="panel">
         <button class="accordion inner">Java</button>

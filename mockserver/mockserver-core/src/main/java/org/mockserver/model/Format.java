@@ -12,6 +12,17 @@ public enum Format {
     // client call. Applicable to RECORDED_EXPECTATIONS and ACTIVE_EXPECTATIONS.
     JAVASCRIPT,
     PYTHON,
+    // Additional client languages following the same JSON-wrap pattern as
+    // JAVASCRIPT/PYTHON: the generated code embeds the expectation's existing
+    // JSON serialization inside the real client's upsert call plus the import/
+    // instantiation preamble for that language. Applicable to
+    // RECORDED_EXPECTATIONS and ACTIVE_EXPECTATIONS (rejected for REQUESTS and
+    // REQUEST_RESPONSES like the other code formats).
+    GO,
+    CSHARP,
+    RUBY,
+    RUST,
+    PHP,
     JSON,
     LOG_ENTRIES,
     HAR,

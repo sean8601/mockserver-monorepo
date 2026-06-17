@@ -133,9 +133,9 @@ paths:
           name: format
           schema:
             type: string
-            enum: [ "java", "javascript", "python", "json", "log_entries", "har", "openapi", "postman", "bruno", "curl" ]
+            enum: [ "java", "javascript", "python", "go", "csharp", "ruby", "rust", "php", "json", "log_entries", "har", "openapi", "postman", "bruno", "curl" ]
           required: false
-          description: changes response format, default if not specified is "json", supported values are "java", "javascript", "python", "json", "log_entries", "har", "openapi", "postman", "bruno", "curl"
+          description: changes response format, default if not specified is "json", supported values are "java", "javascript", "python", "go", "csharp", "ruby", "rust", "php", "json", "log_entries", "har", "openapi", "postman", "bruno", "curl"
         - in: query
           name: type
           schema:
