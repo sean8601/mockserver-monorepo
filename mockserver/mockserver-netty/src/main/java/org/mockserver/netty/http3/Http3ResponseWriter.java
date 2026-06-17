@@ -118,11 +118,20 @@ public class Http3ResponseWriter extends ResponseWriter {
             },
             // onComplete -- flush an empty DATA frame to ensure all prior chunk
             // writes have drained through the QUIC pipeline before shutting down
-            // the stream output (avoids truncation race with pending async writes)
+            // the stream output (avoids truncation race with pending async writes).
+            // When the response carries trailers, emit a trailing HEADERS frame after
+            // the final DATA frame and before shutting down the stream output.
             () -> {
                 if (ctx.channel().isActive()) {
-                    ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.EMPTY_BUFFER))
-                        .addListener(future -> shutdownQuicStreamOutput());
+                    DefaultHttp3HeadersFrame trailersFrame = Http3RequestBridge.toHttp3TrailersFrame(response);
+                    if (trailersFrame != null) {
+                        ctx.write(new DefaultHttp3DataFrame(Unpooled.EMPTY_BUFFER));
+                        ctx.writeAndFlush(trailersFrame)
+                            .addListener(future -> shutdownQuicStreamOutput());
+                    } else {
+                        ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.EMPTY_BUFFER))
+                            .addListener(future -> shutdownQuicStreamOutput());
+                    }
                 }
             },
             // onError
@@ -150,10 +159,22 @@ public class Http3ResponseWriter extends ResponseWriter {
     private void writeStaticResponse(HttpResponse response) {
         DefaultHttp3HeadersFrame headersFrame = Http3RequestBridge.toHttp3HeadersFrame(response);
         DefaultHttp3DataFrame dataFrame = Http3RequestBridge.toHttp3DataFrame(response);
+        DefaultHttp3HeadersFrame trailersFrame = Http3RequestBridge.toHttp3TrailersFrame(response);
 
         ctx.write(headersFrame);
         if (dataFrame != null) {
-            ctx.writeAndFlush(dataFrame)
+            if (trailersFrame != null) {
+                // headers + data + trailing HEADERS frame, then shutdown the stream output
+                ctx.write(dataFrame);
+                ctx.writeAndFlush(trailersFrame)
+                    .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
+            } else {
+                ctx.writeAndFlush(dataFrame)
+                    .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
+            }
+        } else if (trailersFrame != null) {
+            // body-less response with trailers: headers + trailing HEADERS frame
+            ctx.writeAndFlush(trailersFrame)
                 .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
         } else {
             ctx.flush();

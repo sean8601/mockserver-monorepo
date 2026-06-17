@@ -134,4 +134,34 @@ public class HttpResponseDTOTest {
         assertThat(httpResponseDTO.getReasonPhrase(), is(nullValue()));
         assertThat(httpResponseDTO.getConnectionOptions(), is(nullValue()));
     }
+
+    @Test
+    public void shouldRoundTripTrailers() {
+        // given
+        Headers trailers = new Headers().withEntries(header("x-checksum", "abc123"));
+        HttpResponse httpResponse = new HttpResponse()
+            .withStatusCode(200)
+            .withTrailer("x-checksum", "abc123");
+
+        // when
+        HttpResponseDTO httpResponseDTO = new HttpResponseDTO(httpResponse);
+
+        // then DTO captures the trailers
+        assertThat(httpResponseDTO.getTrailers(), is(trailers));
+
+        // and building back yields an equal response with the trailers preserved
+        HttpResponse rebuilt = httpResponseDTO.buildObject();
+        assertThat(rebuilt.getTrailerList(), containsInAnyOrder(new Header("x-checksum", "abc123")));
+        assertThat(rebuilt, is(httpResponse));
+    }
+
+    @Test
+    public void shouldOmitTrailersWhenAbsent() {
+        // when
+        HttpResponseDTO httpResponseDTO = new HttpResponseDTO(new HttpResponse().withStatusCode(200));
+
+        // then
+        assertThat(httpResponseDTO.getTrailers(), is(nullValue()));
+        assertThat(httpResponseDTO.buildObject().getTrailers(), is(nullValue()));
+    }
 }

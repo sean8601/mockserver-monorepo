@@ -154,6 +154,24 @@ public final class Http3RequestBridge {
     }
 
     /**
+     * Build a trailing HTTP/3 HEADERS frame from the response trailers, or null when the
+     * response carries no trailers. The trailer field names are lower-cased per HTTP/3
+     * (HTTP/2-style) header conventions. This is the general-purpose (non-gRPC) trailer
+     * frame; gRPC trailers (grpc-status / grpc-message) are emitted separately by
+     * {@code Http3GrpcResponseWriter}.
+     */
+    public static DefaultHttp3HeadersFrame toHttp3TrailersFrame(HttpResponse response) {
+        if (response.getTrailerMultimap() == null || response.getTrailerMultimap().isEmpty()) {
+            return null;
+        }
+        DefaultHttp3HeadersFrame trailersFrame = new DefaultHttp3HeadersFrame();
+        response.getTrailerMultimap().entries().forEach(entry ->
+            trailersFrame.headers().add(entry.getKey().getValue().toLowerCase(), entry.getValue().getValue())
+        );
+        return trailersFrame;
+    }
+
+    /**
      * Convert the body of a MockServer {@link HttpResponse} into an HTTP/3 data frame.
      * Returns null if the response has no body.
      */

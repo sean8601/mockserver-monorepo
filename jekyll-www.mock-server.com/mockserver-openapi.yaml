@@ -2551,6 +2551,8 @@ components:
           $ref: "#/components/schemas/ConnectionOptions"
         headers:
           $ref: "#/components/schemas/KeyToMultiValue"
+        trailers:
+          $ref: "#/components/schemas/KeyToMultiValue"
         statusCode:
           type: integer
         reasonPhrase:

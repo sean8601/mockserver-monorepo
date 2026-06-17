@@ -15,6 +15,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private BodyWithContentTypeDTO body;
     private Cookies cookies;
     private Headers headers;
+    private Headers trailers;
     private DelayDTO delay;
     private ConnectionOptionsDTO connectionOptions;
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
@@ -29,6 +30,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             reasonPhrase = httpResponse.getReasonPhrase();
             body = BodyWithContentTypeDTO.createWithContentTypeDTO(httpResponse.getBody());
             headers = httpResponse.getHeaders();
+            trailers = httpResponse.getTrailers();
             cookies = httpResponse.getCookies();
             delay = (httpResponse.getDelay() != null ? new DelayDTO(httpResponse.getDelay()) : null);
             connectionOptions = (httpResponse.getConnectionOptions() != null ? new ConnectionOptionsDTO(httpResponse.getConnectionOptions()) : null);
@@ -42,6 +44,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withReasonPhrase(reasonPhrase)
             .withBody(body != null ? body.buildObject() : null)
             .withHeaders(headers)
+            .withTrailers(trailers)
             .withCookies(cookies)
             .withDelay((delay != null ? delay.buildObject() : null))
             .withConnectionOptions(connectionOptions != null ? connectionOptions.buildObject() : null)
@@ -81,6 +84,15 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public HttpResponseDTO setHeaders(Headers headers) {
         this.headers = headers;
+        return this;
+    }
+
+    public Headers getTrailers() {
+        return trailers;
+    }
+
+    public HttpResponseDTO setTrailers(Headers trailers) {
+        this.trailers = trailers;
         return this;
     }
 

@@ -29,6 +29,9 @@ public class HttpResponseDTOSerializer extends StdSerializer<HttpResponseDTO> {
         if (httpResponseDTO.getHeaders() != null && !httpResponseDTO.getHeaders().isEmpty()) {
             jgen.writeObjectField("headers", httpResponseDTO.getHeaders());
         }
+        if (httpResponseDTO.getTrailers() != null && !httpResponseDTO.getTrailers().isEmpty()) {
+            jgen.writeObjectField("trailers", httpResponseDTO.getTrailers());
+        }
         if (httpResponseDTO.getCookies() != null && !httpResponseDTO.getCookies().isEmpty()) {
             jgen.writeObjectField("cookies", httpResponseDTO.getCookies());
         }

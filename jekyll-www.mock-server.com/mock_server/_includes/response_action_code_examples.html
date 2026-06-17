@@ -878,6 +878,49 @@ $client-&gt;when(
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
+<button id="button_response_with_trailers" class="accordion">response with trailers (trailing headers)</button>
+<div class="panel">
+    <p>Response <strong>trailers</strong> are trailing headers sent <em>after</em> the response body. They are
+        configured exactly like headers, using <span class="inline_code">trailers</span> instead of
+        <span class="inline_code">headers</span>, and are sent as protocol-appropriate trailing headers: a
+        trailing HEADERS frame for HTTP/2 and HTTP/3, and a chunked trailer section for HTTP/1.1.</p>
+    <p><strong>HTTP/1.1 caveat:</strong> trailers require chunked transfer-encoding, so when trailers are set on
+        an HTTP/1.1 response MockServer automatically switches the response to
+        <span class="inline_code">Transfer-Encoding: chunked</span> and adds a
+        <span class="inline_code">Trailer</span> header announcing the trailer field names (as required by the
+        HTTP specification). Some clients ignore trailers unless they opt in via the <span class="inline_code">TE: trailers</span>
+        request header.</p>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withPath("/some/path")
+    )
+    .respond(
+        response()
+            .withBody("some_response_body")
+            .withTrailer("X-Checksum", "abc123")
+            .withTrailer("X-Signature", "deadbeef")
+    );</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint lang-json code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponse": {
+        "body": "some_response_body",
+        "trailers": {
+            "X-Checksum": ["abc123"],
+            "X-Signature": ["deadbeef"]
+        }
+    }
+}'</code></pre>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+</div>
 <button id="button_response_literal_with_cookie" class="accordion">json response with cookie</button>
 <div class="panel">
     <button class="accordion inner">Java</button>

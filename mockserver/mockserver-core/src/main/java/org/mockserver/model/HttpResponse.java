@@ -28,6 +28,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     private String reasonPhrase;
     private BodyWithContentType body;
     private Headers headers;
+    private Headers trailers;
     private Cookies cookies;
     private ConnectionOptions connectionOptions;
     private Integer streamId = null;
@@ -410,6 +411,127 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
         }
     }
 
+    public Headers getTrailers() {
+        return this.trailers;
+    }
+
+    private Headers getOrCreateTrailers() {
+        if (this.trailers == null) {
+            this.trailers = new Headers();
+            this.hashCode = 0;
+        }
+        return this.trailers;
+    }
+
+    /**
+     * The trailing headers (HTTP trailers) to send after the response body. Trailers
+     * are emitted as protocol-appropriate trailing headers: a chunked trailer section
+     * for HTTP/1.1 (with an automatic {@code Trailer} header and chunked transfer-encoding),
+     * a trailing HEADERS frame for HTTP/2, and a trailing HEADERS frame for HTTP/3.
+     * <p>
+     * On HTTP/1.1 trailers force {@code Transfer-Encoding: chunked} (RFC 7230 section 3.3.1 --
+     * trailers and a fixed {@code Content-Length} are mutually exclusive); any explicit
+     * {@code Content-Length} you set is dropped from a trailer-carrying HTTP/1.1 response.
+     * <p>
+     * Null or empty trailers result in no trailers being sent (the default behaviour).
+     *
+     * @param trailers a Headers object holding the trailing header fields
+     */
+    public HttpResponse withTrailers(Headers trailers) {
+        if (trailers == null || trailers.isEmpty()) {
+            this.trailers = null;
+        } else {
+            this.trailers = trailers;
+        }
+        this.hashCode = 0;
+        return this;
+    }
+
+    /**
+     * The trailing headers to send as a list of Header objects
+     *
+     * @param trailers a list of Header objects
+     */
+    public HttpResponse withTrailers(List<Header> trailers) {
+        getOrCreateTrailers().withEntries(trailers);
+        this.hashCode = 0;
+        return this;
+    }
+
+    /**
+     * The trailing headers to send as a varargs of Header objects
+     *
+     * @param trailers varargs of Header objects
+     */
+    public HttpResponse withTrailers(Header... trailers) {
+        getOrCreateTrailers().withEntries(trailers);
+        this.hashCode = 0;
+        return this;
+    }
+
+    /**
+     * Add a trailing header to send as a Header object, if a trailer with
+     * the same name already exists this will NOT be modified but
+     * two trailers will exist
+     *
+     * @param trailer a Header object
+     */
+    public HttpResponse withTrailer(Header trailer) {
+        getOrCreateTrailers().withEntry(trailer);
+        this.hashCode = 0;
+        return this;
+    }
+
+    /**
+     * Add a trailing header to send, if a trailer with
+     * the same name already exists this will NOT be modified but
+     * two trailers will exist
+     *
+     * @param name   the trailer name
+     * @param values the trailer values
+     */
+    public HttpResponse withTrailer(String name, String... values) {
+        if (values.length == 0) {
+            values = new String[]{".*"};
+        }
+        getOrCreateTrailers().withEntry(name, values);
+        this.hashCode = 0;
+        return this;
+    }
+
+    /**
+     * Add a trailing header to send, if a trailer with
+     * the same name already exists this will NOT be modified but
+     * two trailers will exist
+     *
+     * @param name   the trailer name as a NottableString
+     * @param values the trailer values which can be a varags of NottableStrings
+     */
+    public HttpResponse withTrailer(NottableString name, NottableString... values) {
+        if (values.length == 0) {
+            values = new NottableString[]{string(".*")};
+        }
+        getOrCreateTrailers().withEntry(header(name, values));
+        this.hashCode = 0;
+        return this;
+    }
+
+    public List<Header> getTrailerList() {
+        if (this.trailers != null) {
+            return this.trailers.getEntries();
+        } else {
+            return Collections.emptyList();
+        }
+    }
+
+    public Multimap<NottableString, NottableString> getTrailerMultimap() {
+        if (this.trailers != null) {
+            return this.trailers.getMultimap();
+        } else {
+            return null;
+        }
+    }
+
 
     public Cookies getCookies() {
         return this.cookies;
@@ -601,6 +723,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withReasonPhrase(reasonPhrase)
             .withBody(body)
             .withHeaders(headers)
+            .withTrailers(trailers)
             .withCookies(cookies)
             .withDelay(getDelay())
             .withConnectionOptions(connectionOptions)
@@ -616,6 +739,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withReasonPhrase(reasonPhrase)
             .withBody(body)
             .withHeaders(headers != null ? headers.clone() : null)
+            .withTrailers(trailers != null ? trailers.clone() : null)
             .withCookies(cookies != null ? cookies.clone() : null)
             .withDelay(getDelay())
             .withConnectionOptions(connectionOptions)
@@ -634,6 +758,9 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             }
             for (Header header : responseOverride.getHeaderList()) {
                 getOrCreateHeaders().replaceEntry(header);
+            }
+            for (Header trailer : responseOverride.getTrailerList()) {
+                getOrCreateTrailers().replaceEntry(trailer);
             }
             for (Cookie cookie : responseOverride.getCookieList()) {
                 withCookie(cookie);
@@ -682,6 +809,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             Objects.equals(reasonPhrase, that.reasonPhrase) &&
             Objects.equals(body, that.body) &&
             Objects.equals(headers, that.headers) &&
+            Objects.equals(trailers, that.trailers) &&
             Objects.equals(cookies, that.cookies) &&
             Objects.equals(connectionOptions, that.connectionOptions) &&
             Objects.equals(streamId, that.streamId);
@@ -690,7 +818,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), statusCode, reasonPhrase, body, headers, cookies, connectionOptions, streamId);
+            hashCode = Objects.hash(super.hashCode(), statusCode, reasonPhrase, body, headers, trailers, cookies, connectionOptions, streamId);
         }
         return hashCode;
     }

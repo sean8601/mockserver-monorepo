@@ -18,6 +18,9 @@
     "headers": {
       "$ref": "#/definitions/keyToMultiValue"
     },
+    "trailers": {
+      "$ref": "#/definitions/keyToMultiValue"
+    },
     "statusCode": {
       "type": "integer"
     },

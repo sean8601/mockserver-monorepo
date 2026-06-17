@@ -29,6 +29,9 @@ public class HttpResponseSerializer extends StdSerializer<HttpResponse> {
         if (httpResponse.getHeaderList() != null && !httpResponse.getHeaderList().isEmpty()) {
             jgen.writeObjectField("headers", httpResponse.getHeaders());
         }
+        if (httpResponse.getTrailerList() != null && !httpResponse.getTrailerList().isEmpty()) {
+            jgen.writeObjectField("trailers", httpResponse.getTrailers());
+        }
         if (httpResponse.getCookieList() != null && !httpResponse.getCookieList().isEmpty()) {
             jgen.writeObjectField("cookies", httpResponse.getCookies());
         }

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **HTTP response trailers** (trailing headers): a response can now carry trailing headers via
+  `httpResponse().withTrailers(...)` / `withTrailer(name, values...)` (mirroring the existing header
+  builder), serialised in JSON as a `trailers` object alongside `headers`. MockServer emits them as
+  protocol-appropriate trailing headers — for HTTP/1.1 the response is sent chunked with an automatic
+  `Trailer` header announcing the field names and a trailing-header block after the final chunk (an
+  explicit `Content-Length` is dropped, since trailers and a fixed length are mutually exclusive); for
+  HTTP/2 and HTTP/3 they become a trailing HEADERS frame. gRPC responses are unaffected: the gRPC layer
+  builds its own trailing HEADERS frame from `grpc-status`/`grpc-message` and does not read the general
+  `trailers` field, so general trailers are not emitted on gRPC responses. Fully backward compatible — a
+  response with no trailers is byte-for-byte identical to before.
 - Expectation **namespacing / multi-tenancy**: an optional `namespace` (tenant) field on each expectation lets
   multiple teams or test-suites share one MockServer instance without their expectations colliding. A request
   scopes matching to a namespace via a configurable header (`matchNamespaceHeader`, default

@@ -353,6 +353,48 @@ An `IdleStateHandler(0, 0, streamIdleTimeoutSeconds)` is added to the streaming 
 
 The server-side `NettyResponseWriter` checks `response.getStreamingBody() != null` and, when true, writes a `DefaultHttpResponse` head followed by `DefaultHttpContent` frames per chunk and `LastHttpContent.EMPTY_LAST_CONTENT` at stream end — mirroring the existing `HttpSseResponseActionHandler` pattern.
 
+## Response Trailers (Trailing Headers)
+
+A `HttpResponse` can carry **general HTTP trailers** (trailing headers) via
+`withTrailers(...)` / `withTrailer(name, values...)`, serialised in JSON as a `trailers`
+object that mirrors `headers`. When present they are emitted as protocol-appropriate
+trailing headers; when absent (null/empty — the default) the response is byte-for-byte
+identical to before.
+
+```mermaid
+flowchart TD
+    R["HttpResponse with trailers"] --> ENC["MockServerHttpToNettyHttpResponseEncoder\nMockServerHttpResponseToFullHttpResponse"]
+    ENC -->|"DefaultHttpResponse (chunked) + DefaultHttpContent +\nDefaultLastHttpContent.trailingHeaders()"| H1["HTTP/1.1: chunked body + Trailer header +\ntrailing header block"]
+    ENC -->|same LastHttpContent trailing headers| H2["HTTP/2: HttpToHttp2ConnectionHandler /\nHttp2StreamFrameToHttpObjectCodec ⇒ trailing HEADERS frame"]
+    W3["Http3ResponseWriter"] -->|"Http3RequestBridge.toHttp3TrailersFrame()"| H3["HTTP/3: trailing HEADERS frame after DATA"]
+```
+
+| Protocol | Where | How trailers are emitted |
+|----------|-------|--------------------------|
+| HTTP/1.1 | `MockServerHttpResponseToFullHttpResponse.mapResponseWithTrailers()` (`mockserver-core`) | Emits a `DefaultHttpResponse` head with **chunked** transfer-encoding and an automatic `Trailer` header listing the field names (RFC 9110 §6.5.1), the body as `DefaultHttpContent`, and a `DefaultLastHttpContent` whose `trailingHeaders()` carry the trailers. A body-less status (204/304/HEAD) yields an empty `LastHttpContent` that still carries the trailers. Trailers **force chunked encoding**: RFC 7230 §3.3.1 makes a fixed `Content-Length` and chunked transfer-encoding mutually exclusive, and Netty's `HttpObjectEncoder` only writes the trailing-header block while in its chunked state — so any explicit `Content-Length` (and `contentLengthHeaderOverride`) is **dropped** from a trailer-carrying HTTP/1.1 response. Streaming-body responses (`NettyResponseWriter.writeStreamingResponse`) are already chunked and emit the same trailing-header block on a `DefaultLastHttpContent` at stream completion. |
+| HTTP/2 | Netty `HttpToHttp2ConnectionHandler` (default pipeline) / `Http2StreamFrameToHttpObjectCodec` (gRPC-multiplex child pipeline) | Both adapters strip transfer-encoding and convert the same `LastHttpContent.trailingHeaders()` into a trailing HEADERS frame with `endStream=true`. No MockServer-specific wiring is needed beyond the HTTP/1.1 mapping. |
+| HTTP/3 | `Http3ResponseWriter` + `Http3RequestBridge.toHttp3TrailersFrame()` (`mockserver-netty`) | After the DATA frame(s), a trailing `Http3HeadersFrame` is written before the QUIC stream output is shut down — for both static and streaming responses. Field names are lower-cased per HTTP/2/3 conventions. |
+| Servlet (WAR) | `MockServerHttpResponseToHttpServletResponseEncoder.setTrailers()` (`mockserver-core`) | Sets `HttpServletResponse.setTrailerFields(...)`; the container handles framing. The Servlet API models one string value per name, so multi-valued trailers are joined with `", "` (HTTP list semantics) and duplicate names collapse to the last write — a WAR-path-only limitation. |
+
+### Precedence vs gRPC trailers
+
+gRPC responses carry their own status trailers (`grpc-status` / `grpc-message`), built by the
+gRPC layer independently of the general-trailer field:
+
+- On the **gRPC HTTP/2 path** (`GrpcToHttpResponseHandler`) the gRPC status is set as a
+  response header on a cloned `HttpResponse`; the gRPC writers (`Http3GrpcResponseWriter`,
+  `GrpcStreamResponseActionHandler`) build the trailing HEADERS frame directly from
+  `grpc-status`/`grpc-message`.
+- The gRPC writers do **not** read the general `trailers` field, so on a gRPC response general
+  trailers are simply **not emitted** — there is no name collision to resolve, because the
+  general-trailer block is never produced on the gRPC path.
+
+ByteBuf safety: the trailer path keeps the body buffer's refcount at exactly one across all
+branches — it is handed to a `DefaultHttpContent` only when non-empty and released in a
+`finally` otherwise (and on any exception between allocation and transfer), and a body-less
+response attaches an empty `Unpooled.EMPTY_BUFFER` `LastHttpContent`. The existing chunk-delay
+and HTTP/3 writer paths retain/release as before.
+
 ## Relay Connect Pattern
 
 When HTTP CONNECT or SOCKS tunneling is established, MockServer uses a **self-loopback relay** rather than connecting directly to the target:

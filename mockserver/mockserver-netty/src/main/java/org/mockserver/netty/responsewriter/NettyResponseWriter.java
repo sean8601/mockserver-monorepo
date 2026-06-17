@@ -81,6 +81,33 @@ public class NettyResponseWriter extends ResponseWriter {
         }
     }
 
+    /**
+     * Build the terminating {@link LastHttpContent} for a streaming response. When the response
+     * carries trailers, return a fresh {@link DefaultLastHttpContent} whose trailing headers carry
+     * them (mirroring the {@code MockServerHttpResponseToFullHttpResponse} mapper); otherwise reuse
+     * the shared {@link LastHttpContent#EMPTY_LAST_CONTENT} singleton (which must never be mutated).
+     */
+    private static LastHttpContent lastContentWithTrailers(HttpResponse response) {
+        if (response.getTrailerMultimap() == null || response.getTrailerMultimap().isEmpty()) {
+            return LastHttpContent.EMPTY_LAST_CONTENT;
+        }
+        DefaultLastHttpContent lastContent = new DefaultLastHttpContent(Unpooled.EMPTY_BUFFER);
+        response.getTrailerMultimap().entries().forEach(entry ->
+            lastContent.trailingHeaders().add(
+                sanitizeHeaderValue(entry.getKey().getValue()),
+                sanitizeHeaderValue(entry.getValue().getValue())
+            )
+        );
+        return lastContent;
+    }
+
+    private static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("\r", "").replace("\n", "");
+    }
+
     private void writeStreamingResponse(ChannelHandlerContext ctx, HttpRequest request, HttpResponse response) {
         StreamingBody streamingBody = response.getStreamingBody();
 
@@ -104,6 +131,19 @@ public class NettyResponseWriter extends ResponseWriter {
         // Ensure chunked transfer encoding
         if (!nettyResponse.headers().contains(HttpHeaderNames.TRANSFER_ENCODING)) {
             HttpUtil.setTransferEncodingChunked(nettyResponse, true);
+        }
+
+        // When the streaming response carries trailers, announce them via a Trailer header on
+        // the head (RFC 9110 section 6.5.1). The trailing-header block itself is written on the
+        // final LastHttpContent at stream completion (see onComplete below). The stream is
+        // already chunked, which is the framing trailers require on HTTP/1.1.
+        final boolean hasTrailers = response.getTrailerMultimap() != null && !response.getTrailerMultimap().isEmpty();
+        if (hasTrailers && !nettyResponse.headers().contains(HttpHeaderNames.TRAILER)) {
+            java.util.LinkedHashSet<String> trailerNames = new java.util.LinkedHashSet<>();
+            response.getTrailerMultimap().keySet().forEach(name -> trailerNames.add(sanitizeHeaderValue(name.getValue())));
+            if (!trailerNames.isEmpty()) {
+                nettyResponse.headers().set(HttpHeaderNames.TRAILER, String.join(", ", trailerNames));
+            }
         }
 
         // Send the response head
@@ -267,7 +307,7 @@ public class NettyResponseWriter extends ResponseWriter {
                     StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
                 }
                 if (ctx.channel().isActive()) {
-                    ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> {
+                    ctx.writeAndFlush(lastContentWithTrailers(response)).addListener(future -> {
                         boolean closeChannel;
                         ConnectionOptions connectionOptions = response.getConnectionOptions();
                         if (connectionOptions != null && connectionOptions.getCloseSocket() != null) {
