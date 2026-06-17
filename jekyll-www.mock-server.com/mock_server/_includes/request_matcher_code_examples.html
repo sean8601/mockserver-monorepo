@@ -6106,6 +6106,283 @@ curl_close($ch);</code></pre>
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
+<button id="button_match_request_by_multipart_body" class="accordion">match request by multipart/form-data body</button>
+<div class="panel">
+    <p>Matches <span class="inline_code">multipart/form-data</span> uploads (e.g. file upload forms) by field value, filename, and/or part content-type. Matching is a <strong>sub-set</strong> &mdash; extra parts in the actual request are ignored. Values support Java regex and the <span class="inline_code">!</span> prefix for negation, matching the same rules as form parameters.</p>
+    <p>The matcher fields are:</p>
+    <ul>
+        <li><strong>fields</strong> &mdash; map of field name to list of expected values (regex-capable)</li>
+        <li><strong>filenames</strong> (optional) &mdash; map of field name to list of expected filename patterns (regex-capable)</li>
+        <li><strong>partContentTypes</strong> (optional) &mdash; map of field name to list of expected part content-type patterns</li>
+    </ul>
+    <button class="accordion inner">JavaScript</button>
+    <div class="panel">
+        <pre class="prettyprint lang-javascript code"><code class="code">var mockServerClient = require('mockserver-client').mockServerClient;
+mockServerClient("localhost", 1080).mockAnyResponse({
+    "httpRequest": {
+        "method": "POST",
+        "path": "/upload",
+        "body": {
+            "type": "MULTIPART",
+            "fields": {
+                "description": ["monthly report"],
+                "file": [".*"]
+            },
+            "filenames": {
+                "file": ["report.*\\.pdf"]
+            },
+            "partContentTypes": {
+                "file": ["application/pdf"]
+            }
+        }
+    },
+    "httpResponse": {
+        "statusCode": 201,
+        "body": "upload accepted"
+    }
+}).then(
+    function () {
+        console.log("expectation created");
+    },
+    function (error) {
+        console.log(error);
+    }
+);</code></pre>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Expectation
+
+client = MockServerClient("localhost", 1080)
+client.upsert(Expectation.from_dict({
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/upload",
+    "body" : {
+      "type" : "MULTIPART",
+      "fields" : {
+        "description" : [ "monthly report" ],
+        "file" : [ ".*" ]
+      },
+      "filenames" : {
+        "file" : [ "report.*\\.pdf" ]
+      },
+      "partContentTypes" : {
+        "file" : [ "application/pdf" ]
+      }
+    }
+  },
+  "httpResponse" : {
+    "statusCode" : 201,
+    "body" : "upload accepted"
+  }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.upsert(MockServer::Expectation.from_hash({
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/upload",
+    "body" : {
+      "type" : "MULTIPART",
+      "fields" : {
+        "description" : [ "monthly report" ],
+        "file" : [ ".*" ]
+      },
+      "filenames" : {
+        "file" : [ "report.*\\.pdf" ]
+      },
+      "partContentTypes" : {
+        "file" : [ "application/pdf" ]
+      }
+    }
+  },
+  "httpResponse" : {
+    "statusCode" : 201,
+    "body" : "upload accepted"
+  }
+}))</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">package main
+
+import (
+    "bytes"
+    "net/http"
+)
+
+func main() {
+    body := []byte(`{
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/upload",
+    "body" : {
+      "type" : "MULTIPART",
+      "fields" : {
+        "description" : [ "monthly report" ],
+        "file" : [ ".*" ]
+      },
+      "filenames" : {
+        "file" : [ "report.*\\.pdf" ]
+      },
+      "partContentTypes" : {
+        "file" : [ "application/pdf" ]
+      }
+    }
+  },
+  "httpResponse" : {
+    "statusCode" : 201,
+    "body" : "upload accepted"
+  }
+}`)
+    req, _ := http.NewRequest("PUT",
+        "http://localhost:1080/mockserver/expectation",
+        bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    http.DefaultClient.Do(req)
+}</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using System.Net.Http;
+using System.Text;
+
+using var httpClient = new HttpClient();
+var json = @"{
+  ""httpRequest"" : {
+    ""method"" : ""POST"",
+    ""path"" : ""/upload"",
+    ""body"" : {
+      ""type"" : ""MULTIPART"",
+      ""fields"" : {
+        ""description"" : [ ""monthly report"" ],
+        ""file"" : [ "".*"" ]
+      },
+      ""filenames"" : {
+        ""file"" : [ ""report.*\\.pdf"" ]
+      },
+      ""partContentTypes"" : {
+        ""file"" : [ ""application/pdf"" ]
+      }
+    }
+  },
+  ""httpResponse"" : {
+    ""statusCode"" : 201,
+    ""body"" : ""upload accepted""
+  }
+}";
+await httpClient.PutAsync(
+    "http://localhost:1080/mockserver/expectation",
+    new StringContent(json, Encoding.UTF8, "application/json")
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use reqwest::blocking::Client;
+
+let client = Client::new();
+let body = r#"{
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/upload",
+    "body" : {
+      "type" : "MULTIPART",
+      "fields" : {
+        "description" : [ "monthly report" ],
+        "file" : [ ".*" ]
+      },
+      "filenames" : {
+        "file" : [ "report.*\\.pdf" ]
+      },
+      "partContentTypes" : {
+        "file" : [ "application/pdf" ]
+      }
+    }
+  },
+  "httpResponse" : {
+    "statusCode" : 201,
+    "body" : "upload accepted"
+  }
+}"#;
+client.put("http://localhost:1080/mockserver/expectation")
+    .header("Content-Type", "application/json")
+    .body(body.to_string())
+    .send()
+    .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">$json = &lt;&lt;&lt;'JSON'
+{
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/upload",
+    "body" : {
+      "type" : "MULTIPART",
+      "fields" : {
+        "description" : [ "monthly report" ],
+        "file" : [ ".*" ]
+      },
+      "filenames" : {
+        "file" : [ "report.*\\.pdf" ]
+      },
+      "partContentTypes" : {
+        "file" : [ "application/pdf" ]
+      }
+    }
+  },
+  "httpResponse" : {
+    "statusCode" : 201,
+    "body" : "upload accepted"
+  }
+}
+JSON;
+
+$ch = curl_init('http://localhost:1080/mockserver/expectation');
+curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST  =&gt; 'PUT',
+    CURLOPT_POSTFIELDS     =&gt; $json,
+    CURLOPT_HTTPHEADER     =&gt; ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+curl_exec($ch);
+curl_close($ch);</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+  "httpRequest" : {
+    "method" : "POST",
+    "path" : "/upload",
+    "body" : {
+      "type" : "MULTIPART",
+      "fields" : {
+        "description" : [ "monthly report" ],
+        "file" : [ ".*" ]
+      },
+      "filenames" : {
+        "file" : [ "report.*\\.pdf" ]
+      },
+      "partContentTypes" : {
+        "file" : [ "application/pdf" ]
+      }
+    }
+  },
+  "httpResponse" : {
+    "statusCode" : 201,
+    "body" : "upload accepted"
+  }
+}'</code></pre>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+</div>
 <button id="button_match_request_by_body_with_xpath" class="accordion">match request by body with xpath</button>
 <div class="panel">
     <p>Matches if at least one value is returned by the JsonPath expression</p>
