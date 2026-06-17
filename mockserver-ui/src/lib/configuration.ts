@@ -125,4 +125,59 @@ export const EDITABLE_PROPERTIES: readonly EditablePropertyDescriptor[] = [
     group: 'Chaos auto-halt',
   },
 
+  // Matching & proxying — read live on every request/match, so safe to change at runtime
+  {
+    key: 'matchersFailFast',
+    label: 'Matchers fail fast',
+    type: 'boolean',
+    help: 'Stop evaluating a request matcher at the first non-matching field instead of collecting every mismatch. Read live on each match.',
+    group: 'Matching & proxying',
+  },
+  {
+    key: 'attemptToProxyIfNoMatchingExpectation',
+    label: 'Proxy unmatched requests',
+    type: 'boolean',
+    help: 'When no expectation matches, forward the request to its Host instead of returning 404. Read live on each request.',
+    group: 'Matching & proxying',
+  },
+  {
+    key: 'maximumNumberOfRequestToReturnInVerificationFailure',
+    label: 'Max requests in verification failure',
+    type: 'number',
+    help: 'Cap on the number of recorded requests included in a verification failure message. Read live when a verification fails.',
+    group: 'Matching & proxying',
+  },
+
+  // Logging — read live on every log write, so safe to change at runtime
+  {
+    key: 'disableLogging',
+    label: 'Disable logging',
+    type: 'boolean',
+    help: 'Suppress all MockServer log output. Read live on each log write.',
+    group: 'Logging',
+  },
+  {
+    key: 'compactLogFormat',
+    label: 'Compact log format',
+    type: 'boolean',
+    help: 'Render log entries in a single-line compact format. Read live on each log write.',
+    group: 'Logging',
+  },
+
+  // CORS — read live when building responses / handling preflight, so safe to change at runtime
+  {
+    key: 'enableCORSForAPI',
+    label: 'CORS for control plane API',
+    type: 'boolean',
+    help: 'Add CORS headers (and answer preflight) for the MockServer control-plane API. Read live per request.',
+    group: 'CORS',
+  },
+  {
+    key: 'enableCORSForAllResponses',
+    label: 'CORS for all responses',
+    type: 'boolean',
+    help: 'Add CORS headers to every response, not just the control-plane API. Read live per response.',
+    group: 'CORS',
+  },
+
 ] as const;

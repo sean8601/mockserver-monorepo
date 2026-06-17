@@ -30,6 +30,13 @@ function fullConfig() {
     chaosAutoHaltEnabled: false,
     chaosAutoHaltErrorThreshold: 50,
     chaosAutoHaltWindowMillis: 30000,
+    matchersFailFast: false,
+    attemptToProxyIfNoMatchingExpectation: false,
+    maximumNumberOfRequestToReturnInVerificationFailure: 10,
+    disableLogging: false,
+    compactLogFormat: false,
+    enableCORSForAPI: false,
+    enableCORSForAllResponses: false,
     maxLogEntries: 1000,
     maxExpectations: 500,
   };
@@ -208,6 +215,84 @@ describe('ConfigurationDialog', () => {
     expect(putCalls).toHaveLength(0);
   });
 
+  it('renders the newly-editable runtime-safe boolean toggles', async () => {
+    stubFetchWithConfig(fullConfig());
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByText('Matchers fail fast')).toBeInTheDocument();
+    });
+    for (const label of [
+      'Matchers fail fast',
+      'Proxy unmatched requests',
+      'Disable logging',
+      'Compact log format',
+      'CORS for control plane API',
+      'CORS for all responses',
+    ]) {
+      const formControl = screen.getByText(label).closest('label')!;
+      expect(within(formControl).getByRole('switch')).toBeInTheDocument();
+    }
+  });
+
+  it('toggling matchersFailFast PUTs the right partial config', async () => {
+    stubFetchWithConfig(fullConfig());
+    const user = userEvent.setup();
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByText('Matchers fail fast')).toBeInTheDocument();
+    });
+
+    const formControl = screen.getByText('Matchers fail fast').closest('label')!;
+    await user.click(within(formControl).getByRole('switch'));
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const putCalls = fetchMock.mock.calls.filter(
+      (c: unknown[]) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+    );
+    const bodies = putCalls.map((c: unknown[]) => JSON.parse((c[1] as RequestInit).body as string));
+    expect(bodies).toContainEqual({ matchersFailFast: true });
+  });
+
+  it('renders maximumNumberOfRequestToReturnInVerificationFailure as a number field and PUTs the parsed value', async () => {
+    stubFetchWithConfig(fullConfig());
+    const user = userEvent.setup();
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Max requests in verification failure')).toBeInTheDocument();
+    });
+
+    const input = screen.getByLabelText('Max requests in verification failure') as HTMLInputElement;
+    expect(input.type).toBe('number');
+    expect(input.value).toBe('10');
+
+    await user.tripleClick(input);
+    await user.keyboard('25{Enter}');
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const putCalls = fetchMock.mock.calls.filter(
+      (c: unknown[]) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+    );
+    const bodies = putCalls.map((c: unknown[]) => JSON.parse((c[1] as RequestInit).body as string));
+    expect(bodies).toContainEqual({ maximumNumberOfRequestToReturnInVerificationFailure: 25 });
+  });
+
+  it('keeps startup-only maxExpectations read-only (not an editable control)', async () => {
+    stubFetchWithConfig(fullConfig());
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByText('All other settings (read-only)')).toBeInTheDocument();
+    });
+
+    // maxExpectations sizes a ring buffer at construction time → must stay read-only.
+    expect(screen.getByText('maxExpectations')).toBeInTheDocument();
+    // It must not be rendered as an editable control with a label.
+    expect(screen.queryByLabelText('maxExpectations')).not.toBeInTheDocument();
+  });
+
   it('renders group headers for descriptor groups', async () => {
     stubFetchWithConfig(fullConfig());
     renderDialog();
@@ -217,6 +302,9 @@ describe('ConfigurationDialog', () => {
     });
     expect(screen.getByText('Validation proxy')).toBeInTheDocument();
     expect(screen.getByText('Chaos auto-halt')).toBeInTheDocument();
+    expect(screen.getByText('Matching & proxying')).toBeInTheDocument();
+    expect(screen.getByText('Logging')).toBeInTheDocument();
+    expect(screen.getByText('CORS')).toBeInTheDocument();
   });
 
   it('excludes editable keys from the read-only table', async () => {
