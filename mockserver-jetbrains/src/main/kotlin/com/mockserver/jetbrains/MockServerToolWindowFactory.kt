@@ -66,6 +66,7 @@ class MockServerToolWindowFactory : ToolWindowFactory {
             add(actionButton("Generate From OpenAPI", "MockServer.GenerateFromOpenApi", project))
             add(actionButton("Send Test Request", "MockServer.SendRequest", project))
             add(actionButton("Show Drift Report", "MockServer.ShowDriftReport", project))
+            add(actionButton("Find Requests by Trace", "MockServer.FindByTrace", project))
         })
 
         panel.add(sectionGap())

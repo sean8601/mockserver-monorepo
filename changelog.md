@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Report** fetches the latest drift records (`GET /mockserver/drift`) and opens a readable text summary in
   a new tab (one line per drift: type, field, expected vs actual value, confidence, and the affected
   expectation). The HTTP call runs off the UI thread.
+- JetBrains plugin adds distributed-trace correlation: **Find Requests by Trace** (menu and tool window)
+  prompts for a W3C trace id (32 hex) or a full `traceparent` header value, retrieves the requests
+  MockServer has received (`PUT /mockserver/retrieve?type=requests`), filters them down to those carrying a
+  `traceparent` header with that trace id, and opens the matching requests as JSON in a new tab. The HTTP
+  call runs off the UI thread.
 - JetBrains plugin can author WASM custom-rule modules: **Upload WASM Module** picks a compiled `.wasm`
   file with the IDE file chooser, confirms a module name, and uploads its raw bytes
   (`PUT /mockserver/wasm/modules?name=<name>`, `application/octet-stream`) to the running server so it can

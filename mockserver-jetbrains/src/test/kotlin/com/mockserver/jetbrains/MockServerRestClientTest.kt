@@ -400,4 +400,136 @@ class MockServerRestClientTest {
         assertFalse(MockServerRestClient.isJsonObjectOrArray("42"))
         assertFalse(MockServerRestClient.isJsonObjectOrArray("openapi: 3.0.0"))
     }
+
+    // --- distributed-trace correlation ----------------------------------
+
+    @Test
+    fun `retrieve requests PUTs to retrieve endpoint for requests as json`() {
+        val req = MockServerRestClient.buildRetrieveRequestsRequest("http://localhost:1080")
+        assertEquals("PUT", req.method())
+        assertEquals("http://localhost:1080/mockserver/retrieve?type=requests&format=json", req.uri().toString())
+        assertEquals("application/json", req.headers().firstValue("Accept").orElse(""))
+        assertEquals(0L, req.bodyPublisher().orElseThrow().contentLength())
+    }
+
+    @Test
+    fun `extractTraceId reads the trace id from a full traceparent`() {
+        val traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        assertEquals("4bf92f3577b34da6a3ce929d0e0e4736", MockServerRestClient.extractTraceId(traceparent))
+    }
+
+    @Test
+    fun `extractTraceId accepts a bare 32-hex trace id`() {
+        assertEquals(
+            "4bf92f3577b34da6a3ce929d0e0e4736",
+            MockServerRestClient.extractTraceId("4bf92f3577b34da6a3ce929d0e0e4736")
+        )
+    }
+
+    @Test
+    fun `extractTraceId lower-cases an uppercase trace id`() {
+        assertEquals(
+            "4bf92f3577b34da6a3ce929d0e0e4736",
+            MockServerRestClient.extractTraceId("4BF92F3577B34DA6A3CE929D0E0E4736")
+        )
+        assertEquals(
+            "4bf92f3577b34da6a3ce929d0e0e4736",
+            MockServerRestClient.extractTraceId("00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01")
+        )
+    }
+
+    @Test
+    fun `extractTraceId returns null for junk`() {
+        assertNull(MockServerRestClient.extractTraceId("not-a-trace"))
+        assertNull(MockServerRestClient.extractTraceId(""))
+        assertNull(MockServerRestClient.extractTraceId("4bf92f3577b34da6a3ce929d0e0e47")) // too short
+        assertNull(MockServerRestClient.extractTraceId("zzf92f3577b34da6a3ce929d0e0e4736")) // non-hex
+    }
+
+    @Test
+    fun `filterRequestsByTrace keeps only requests with a matching traceparent (object-map headers, the real server shape)`() {
+        // MockServer's retrieve?type=requests serializes headers as a JSON object
+        // keyed by header name — { "traceparent": ["..."] } — NOT an array.
+        val requests = """
+            [
+              {
+                "method": "GET",
+                "path": "/a",
+                "headers": {
+                  "Host": ["localhost"],
+                  "traceparent": ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"]
+                }
+              },
+              {
+                "method": "GET",
+                "path": "/b",
+                "headers": {
+                  "traceparent": ["00-00000000000000000000000000000000-0000000000000000-00"]
+                }
+              }
+            ]
+        """.trimIndent()
+
+        val result = MockServerRestClient.filterRequestsByTrace(requests, "4bf92f3577b34da6a3ce929d0e0e4736")
+        assertEquals("4bf92f3577b34da6a3ce929d0e0e4736", result.traceId)
+        val matches = JsonParser.parseString(result.matchesJson).asJsonArray
+        assertEquals(1, matches.size())
+        assertEquals("/a", matches[0].asJsonObject.get("path").asString)
+    }
+
+    @Test
+    fun `filterRequestsByTrace matches the traceparent header name case-insensitively (object-map)`() {
+        val requests = """
+            [
+              { "path": "/a", "headers": { "TraceParent": ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"] } }
+            ]
+        """.trimIndent()
+
+        val result = MockServerRestClient.filterRequestsByTrace(
+            requests,
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        )
+        val matches = JsonParser.parseString(result.matchesJson).asJsonArray
+        assertEquals(1, matches.size())
+    }
+
+    @Test
+    fun `filterRequestsByTrace also accepts the array-of-name-values header form (defensive fallback)`() {
+        val requests = """
+            [
+              { "path": "/a", "headers": [ { "name": "traceparent", "values": ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"] } ] }
+            ]
+        """.trimIndent()
+        val result = MockServerRestClient.filterRequestsByTrace(requests, "4bf92f3577b34da6a3ce929d0e0e4736")
+        val matches = JsonParser.parseString(result.matchesJson).asJsonArray
+        assertEquals(1, matches.size())
+    }
+
+    @Test
+    fun `filterRequestsByTrace returns null traceId and empty array for junk input`() {
+        val requests = """[ { "path": "/a", "headers": [] } ]"""
+        val result = MockServerRestClient.filterRequestsByTrace(requests, "not-a-trace")
+        assertNull(result.traceId)
+        assertEquals("[]", result.matchesJson)
+    }
+
+    @Test
+    fun `filterRequestsByTrace is defensive against missing or non-array headers`() {
+        val requests = """
+            [
+              { "path": "/a" },
+              { "path": "/b", "headers": "oops" },
+              { "path": "/c", "headers": [ { "name": "X" } ] }
+            ]
+        """.trimIndent()
+        val result = MockServerRestClient.filterRequestsByTrace(requests, "4bf92f3577b34da6a3ce929d0e0e4736")
+        assertEquals("[]", result.matchesJson)
+    }
+
+    @Test
+    fun `filterRequestsByTrace returns empty array when the body is not a JSON array`() {
+        val result = MockServerRestClient.filterRequestsByTrace("""{ "not": "an array" }""", "4bf92f3577b34da6a3ce929d0e0e4736")
+        assertEquals("4bf92f3577b34da6a3ce929d0e0e4736", result.traceId)
+        assertEquals("[]", result.matchesJson)
+    }
 }

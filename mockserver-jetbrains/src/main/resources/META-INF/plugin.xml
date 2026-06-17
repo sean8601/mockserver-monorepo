@@ -72,6 +72,10 @@
                     class="com.mockserver.jetbrains.ShowDriftReportAction"
                     text="Show Drift Report"
                     description="Fetches MockServer's mock-drift records and opens a readable text report in a new tab"/>
+            <action id="MockServer.FindByTrace"
+                    class="com.mockserver.jetbrains.FindRequestsByTraceAction"
+                    text="Find Requests by Trace"
+                    description="Finds every received request belonging to a W3C trace id (or traceparent) and opens them in a new JSON tab"/>
             <action id="MockServer.UploadWasm"
                     class="com.mockserver.jetbrains.UploadWasmModuleAction"
                     text="Upload WASM Module"

@@ -2,6 +2,7 @@ package com.mockserver.jetbrains
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -76,6 +77,20 @@ object MockServerRestClient {
     fun buildRetrieveRecordedRequest(baseUrl: String, format: String): HttpRequest =
         HttpRequest.newBuilder()
             .uri(URI.create("$baseUrl/mockserver/retrieve?type=recorded_expectations&format=$format"))
+            .header("Accept", "application/json")
+            .PUT(HttpRequest.BodyPublishers.noBody())
+            .build()
+
+    /**
+     * `PUT /mockserver/retrieve?type=requests&format=json` — retrieve the requests
+     * MockServer has received as a JSON array. Each request's `headers` is an array
+     * of `{ "name", "values": [...] }` entries. The endpoint takes no body. Used by
+     * distributed-trace correlation to find every received request belonging to a
+     * given W3C trace.
+     */
+    fun buildRetrieveRequestsRequest(baseUrl: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/retrieve?type=requests&format=json"))
             .header("Accept", "application/json")
             .PUT(HttpRequest.BodyPublishers.noBody())
             .build()
@@ -335,6 +350,108 @@ object MockServerRestClient {
         }
         // YAML (or any non-JSON-object content): look for a top-level openapi:/swagger: key.
         return OPENAPI_YAML_KEY.containsMatchIn(specText)
+    }
+
+    // ---------------------------------------------------------------------
+    // Distributed-trace correlation (no I/O) — unit-testable.
+    // ---------------------------------------------------------------------
+
+    /** Full W3C `traceparent`: `version-traceId-parentId-flags` (2/32/16/2 hex). */
+    private val TRACEPARENT = Regex("(?i)^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$")
+
+    /** A bare 32-hex W3C trace id. */
+    private val TRACE_ID = Regex("(?i)^[0-9a-f]{32}$")
+
+    /**
+     * Extract the 32-hex W3C trace id from [input], lower-cased. Accepts either a
+     * full `traceparent` header value (`version-traceId-parentId-flags`) — in which
+     * case the embedded trace id is returned — or a bare 32-hex trace id. Returns
+     * `null` when [input] is neither.
+     */
+    fun extractTraceId(input: String): String? {
+        val trimmed = input.trim()
+        val match = TRACEPARENT.find(trimmed)
+        if (match != null) {
+            return match.groupValues[1].lowercase()
+        }
+        if (TRACE_ID.matches(trimmed)) {
+            return trimmed.lowercase()
+        }
+        return null
+    }
+
+    /**
+     * The result of filtering received requests by trace: the resolved [traceId]
+     * (`null` when [input] was not a valid trace id / traceparent) and the pretty
+     * JSON array [matchesJson] of the matching request objects (`"[]"` when none
+     * match or the trace id was invalid).
+     */
+    data class TraceFilterResult(val traceId: String?, val matchesJson: String)
+
+    /**
+     * Filter the received-request array in [requestsJson] (as returned by
+     * `PUT /mockserver/retrieve?type=requests&format=json`) down to the requests
+     * belonging to the trace described by [input].
+     *
+     * A request matches when its `headers` array contains an entry whose name is
+     * `traceparent` (case-insensitive) and any of whose values parses as a W3C
+     * `traceparent` carrying the target trace id. Defensive against a missing or
+     * non-array `headers` element and against malformed entries.
+     */
+    fun filterRequestsByTrace(requestsJson: String, input: String): TraceFilterResult {
+        val traceId = extractTraceId(input) ?: return TraceFilterResult(null, "[]")
+        val matches = JsonArray()
+        val parsed = try {
+            JsonParser.parseString(requestsJson)
+        } catch (_: Exception) {
+            return TraceFilterResult(traceId, "[]")
+        }
+        if (!parsed.isJsonArray) {
+            return TraceFilterResult(traceId, "[]")
+        }
+        for (element in parsed.asJsonArray) {
+            if (!element.isJsonObject) continue
+            if (requestHasTrace(element.asJsonObject, traceId)) {
+                matches.add(element)
+            }
+        }
+        return TraceFilterResult(traceId, PRETTY.toJson(matches))
+    }
+
+    /** True when [request]'s `headers` carry a `traceparent` with [traceId]. */
+    private fun requestHasTrace(request: JsonObject, traceId: String): Boolean {
+        if (!request.has("headers")) return false
+        val headers = request.get("headers")
+        // Primary: the object-map form the server actually serializes —
+        // { "traceparent": ["00-<trace>-..."], "host": ["..."] }.
+        if (headers.isJsonObject) {
+            for ((name, value) in headers.asJsonObject.entrySet()) {
+                if (!name.equals("traceparent", ignoreCase = true)) continue
+                if (value.isJsonArray && valuesContainTrace(value.asJsonArray, traceId)) return true
+            }
+            return false
+        }
+        // Defensive fallback: the array-of-{name,values} form.
+        if (headers.isJsonArray) {
+            for (headerElement in headers.asJsonArray) {
+                if (!headerElement.isJsonObject) continue
+                val header = headerElement.asJsonObject
+                val name = if (header.has("name") && header.get("name").isJsonPrimitive) header.get("name").asString else continue
+                if (!name.equals("traceparent", ignoreCase = true)) continue
+                if (header.has("values") && header.get("values").isJsonArray &&
+                    valuesContainTrace(header.getAsJsonArray("values"), traceId)) return true
+            }
+        }
+        return false
+    }
+
+    private fun valuesContainTrace(values: JsonArray, traceId: String): Boolean {
+        for (value in values) {
+            if (!value.isJsonPrimitive) continue
+            val match = TRACEPARENT.find(value.asString.trim()) ?: continue
+            if (match.groupValues[1].lowercase() == traceId) return true
+        }
+        return false
     }
 
     private fun tryParseJson(text: String): JsonElement? =
