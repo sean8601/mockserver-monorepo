@@ -254,14 +254,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clear "Docker is not running" error instead of showing a success notification while nothing actually
   started; the Docker check and launch run off the UI thread.
 - JetBrains plugin now provides JSON Schema **completion and validation** for `*.mockserver.json(c)` expectation
-  files. Two issues blocked it: (1) the bundled schema's root was a `oneOf` (single expectation or array),
-  which IntelliJ's JSON engine cannot navigate, and (2) the schema referenced the draft-07 meta-schema by its
-  remote `http://json-schema.org/draft-07/schema#` URL for embedded-schema fields, which IntelliJ tries to
-  **fetch over the network** — failing silently offline or behind a TLS proxy and making it discard the whole
-  schema. The root is now a concrete object/array union with inline properties, and the embedded-schema fields
+  files. Three issues blocked it: (1) the JSON-schema provider was registered under the wrong extension point
+  (`com.intellij.json` / `jsonSchema.ProviderFactory`) — IntelliJ's real EP is `JavaScript.JsonSchema.ProviderFactory`,
+  so the provider was never instantiated (this is why it never worked at all in IntelliJ); (2) the bundled
+  schema's root was a `oneOf` (single expectation or array), which IntelliJ's JSON engine cannot navigate; and
+  (3) the schema referenced the draft-07 meta-schema by its remote `http://json-schema.org/draft-07/schema#`
+  URL for embedded-schema fields, which IntelliJ tries to **fetch over the network** — failing silently offline
+  or behind a TLS proxy and making it discard the whole schema. The provider is now registered under the
+  correct EP, the root is a concrete object/array union with inline properties, and the embedded-schema fields
   use a permissive inline schema (no network fetch), so completion and error highlighting work in IntelliJ
-  (VS Code already tolerated both). The schema was also regenerated against the current `mockserver-core`,
-  picking up previously-missing fields (e.g. the `capture` rule, `namespace`, response `trailers`).
+  (VS Code already tolerated the schema shape). The schema was also regenerated against the current
+  `mockserver-core`, picking up previously-missing fields (e.g. the `capture` rule, `namespace`, response `trailers`).
 - Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
   Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
   `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.

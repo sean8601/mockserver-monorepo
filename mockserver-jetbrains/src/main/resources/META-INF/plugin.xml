@@ -160,7 +160,11 @@
                                  displayName="MockServer"/>
     </extensions>
 
-    <extensions defaultExtensionNs="com.intellij.json">
-        <jsonSchema.ProviderFactory implementation="com.mockserver.jetbrains.MockServerSchemaProviderFactory"/>
+    <!-- The JSON Schema provider extension point is `JavaScript.JsonSchema.ProviderFactory`
+         (defined by the bundled JSON plugin, despite the `JavaScript` namespace). Registering
+         it under any other namespace/name (e.g. `com.intellij.json` / `jsonSchema.ProviderFactory`)
+         silently does nothing — the factory is never instantiated, so no validation/completion. -->
+    <extensions defaultExtensionNs="JavaScript">
+        <JsonSchema.ProviderFactory implementation="com.mockserver.jetbrains.MockServerSchemaProviderFactory"/>
     </extensions>
 </idea-plugin>
