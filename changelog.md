@@ -294,6 +294,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually renders, not the repo README).
 
 ### Fixed
+- **OpenAPI handling hardened across both directions (audit follow-up to #2357).** A review of the
+  OpenAPI subsystem found and fixed a batch of correctness defects:
+  - **Range status-code keys** (`1XX`–`5XX`, legal in OpenAPI 3.x) no longer crash a spec import. A
+    response key such as `2XX` previously threw `NumberFormatException` and aborted the entire
+    `PUT /mockserver/openapi`; it now maps to a representative code (`2XX`→200). The response
+    validator likewise now matches a real status against a range key instead of reporting a false
+    "status not defined" error (exact code still wins over range, range over `default`).
+  - **No more cross-spec data loss on import.** The incremental-sync namespace was derived from
+    `info.title` alone, so importing a second spec that shared a title with a first **deleted** the
+    first's generated expectations. The namespace now uses a SHA-256 of the spec source (URL/file
+    reference, or inline payload), so distinct specs never collide. Note: re-importing a spec **by
+    URL/file** still prunes removed operations as before; an **edited inline payload** now lands in a
+    new namespace (its old operations are orphaned rather than pruned) — reference a spec by URL/file
+    for clean incremental sync. Manual (non-OpenAPI) expectations are never pruned.
+  - **Expectations→OpenAPI export** (`/retrieve?format=openapi`) now produces schema-valid, faithful
+    documents: `in:path` parameters are templated into the path, negated/schema matchers are no
+    longer silently exported as their positive literal form, two expectations on the same path+method
+    merge their responses instead of one overwriting the other, paths are normalised to a leading
+    `/`, body media types follow the actual `Content-Type` (binary → `format: binary`, not base64
+    text), and a serialisation failure returns a valid stub rather than `{}`.
+  - **`contextPathPrefix` on an `OpenAPIDefinition` matcher** is now accepted by its JSON schema and
+    emitted by the model serializer (it was honoured at runtime but rejected on validation and dropped
+    from `toString()`/logs).
+  - **No more silent wrong/empty responses.** Pinning a `statusCode`/`exampleName` that a spec does
+    not define now logs a warning and falls back deliberately instead of silently returning an empty
+    `200` or a different example; a partial schema `example` keeps the properties that resolve instead
+    of being discarded wholesale; unresolvable example `$ref`s no longer leak literal `{"$ref":…}`
+    nodes into response bodies; and synthesised `operationId`s are now globally unique so a
+    hand-written id like `GET /pets` can't conflate two operations.
+  - **Example generation:** `integer`/`number` schemas without a `format` now honour `default`/`enum`
+    (previously emitted `0`/a random value); `application/xml` responses are now serialised as XML
+    (the XML serializer was dead code and XML was emitted as JSON); and minor precision/locale fixes
+    (double sample value, UTC date formatting, large-integer examples preserved).
 - **CPU no longer climbs as the request/event log fills when using `/retrieve` and `clear` under sustained load (issue #2359, a follow-up to #2329).** The #2329 fix made log *insertion* O(1); this fixes the remaining cost on the *read* paths. `retrieveLogEntries` (used by every `/retrieve`) and `retrieveLogEntriesInReverseForUI` ran the expensive request matcher — which clones the request and runs full field-by-field matching — on **every** entry in the log *before* the cheap type/not-deleted filter, so the matcher was evaluated against deleted tombstones and wrong-type entries that were then discarded. As the log fills toward `maxLogEntries` (and clearing *expectations* does not clear the *log*, while `clear` at the default `INFO` level only marks entries deleted rather than removing them), this made each `/retrieve` cost grow with total log size and stay high. The filters are now ordered cheap-predicate-first (matching the existing expectation-id retrieve path), so the matcher only runs for entries that can actually be returned. Additionally, `clear` now skips entries already marked deleted, so a `clear` issued every test cycle no longer re-matches the whole accumulated log of tombstones. No behaviour change — same retrieved results and same clear semantics. Tip for high-throughput users (unchanged from #2329): also clear the log (`PUT /mockserver/clear?type=LOG` or `?type=ALL`, or `PUT /mockserver/reset`), not just expectations, or lower `maxLogEntries`.
 - Dashboard `favicon.svg` (and any future SVG asset) is now served with a valid `Content-Type: image/svg+xml`
   instead of a null header value. The `svg` extension was missing from the dashboard's MIME-type map, so the
