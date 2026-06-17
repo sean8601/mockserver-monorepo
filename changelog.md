@@ -140,6 +140,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deterministic per run and pin specific fields.
 - Dashboard "Why didn't this match?" now offers a side-by-side visual diff (request vs the closest
   expectation's matcher) alongside the existing text reasons.
+- LLM mocking API in the Python and Node clients: build completion/chat mocks, tool-use, token usage,
+  streaming physics, embeddings, multi-turn conversations and provider failover — producing the same wire
+  format as the Java `Llm` builders, bringing LLM mocking to those clients.
+- MCP (Model Context Protocol) server-mocking API in the Python and Node clients: define a mock MCP server's
+  tools and resources and their responses, mirroring the Java `McpMockBuilder`.
+- PHP client parity: gRPC descriptor management, SSE/WebSocket/DNS/binary/gRPC-stream response builders,
+  OpenAPI import, and `verifyZeroInteractions`.
+- Import Pact v3 consumer contracts as expectations: `PUT /mockserver/import?format=pact` (or the dedicated
+  `PUT /mockserver/pact/import`) consumes a Pact contract and generates matching expectations, mapping Pact
+  matchingRules to MockServer matchers — the inverse of the existing Pact export/verify.
+- Smart deduplication and templatization of recorded traffic: collapse many recorded requests that differ only
+  by an id segment (e.g. `/users/123`, `/users/456`) into one `/users/{id}` expectation, and drop exact
+  duplicates — without merging requests that have genuinely different responses.
+- Dashboard matcher test playground: enter a sample request and see whether a candidate expectation would
+  match it (a browser-side preview) before registering — reached from a new toolbar button.
 
 ### Changed
 - JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a
