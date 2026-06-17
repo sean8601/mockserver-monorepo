@@ -206,6 +206,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (with a retry link) instead of a raw browser connection error when the server is unreachable.
 - JetBrains plugin **Save Recorded Expectations** now offers a JSON / Java DSL format choice (matching the VS
   Code extension), so recorded traffic can be turned into Java code as well as JSON.
+- JetBrains plugin **MockServer** tool window now has an inline **Port** field (default 1080) next to the
+  status line, bound to the saved setting — change the port in one place and the Start (Docker) action, the
+  dashboard URL, and every REST action use it, no need to open Settings.
 - Both editor extensions now present a Marketplace-ready landing page that leads with the flagship
   capabilities (schema authoring, record-to-code, in-IDE dashboard), a badge row, and a 30-second quick start
   — the VS Code README and the JetBrains plugin's `<description>` (which is what the JetBrains Marketplace

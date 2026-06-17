@@ -13,11 +13,14 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
 import com.intellij.util.ui.JBUI
 import java.awt.Component
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.event.FocusAdapter
+import java.awt.event.FocusEvent
 import javax.swing.BorderFactory
 import javax.swing.BoxLayout
 import javax.swing.Icon
@@ -50,10 +53,11 @@ class MockServerToolWindowFactory : ToolWindowFactory {
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
         panel.border = JBUI.Borders.empty(8)
 
-        val port = MockServerSettings.getInstance().effectivePort()
-        panel.add(JBLabel("MockServer · localhost:$port", AllIcons.General.Web, JBLabel.LEFT).apply {
+        val statusLabel = JBLabel(statusText(), AllIcons.General.Web, JBLabel.LEFT).apply {
             alignmentX = Component.LEFT_ALIGNMENT
-        })
+        }
+        panel.add(statusLabel)
+        panel.add(portRow(statusLabel))
         panel.add(sectionGap())
 
         panel.add(sectionHeader("Server"))
@@ -87,6 +91,50 @@ class MockServerToolWindowFactory : ToolWindowFactory {
         })
 
         return panel
+    }
+
+    private fun statusText(): String =
+        "MockServer · localhost:${MockServerSettings.getInstance().effectivePort()}"
+
+    /**
+     * An inline "Port:" field bound to the single source of truth, the persistent
+     * [MockServerSettings] port. The field is prefilled from the saved setting and
+     * commits on Enter and on focus lost: a value that parses as an integer in
+     * 1..65535 is persisted back into the setting and the [statusLabel] is refreshed;
+     * any invalid value is silently reverted to the current saved value (never
+     * persisted). Because Start (Docker), the dashboard, and every REST action read
+     * [MockServerSettings.effectivePort] at click time, they automatically pick up the
+     * new value with no further wiring.
+     */
+    private fun portRow(statusLabel: JBLabel): JPanel {
+        val field = JBTextField(MockServerSettings.getInstance().effectivePort().toString(), 6)
+
+        fun revert() {
+            field.text = MockServerSettings.getInstance().effectivePort().toString()
+        }
+
+        fun commit() {
+            val parsed = field.text.trim().toIntOrNull()?.takeIf { it in 1..65535 }
+            if (parsed == null) {
+                revert()
+                return
+            }
+            MockServerSettings.getInstance().state.port = parsed
+            field.text = parsed.toString()
+            statusLabel.text = statusText()
+        }
+
+        // Enter commits.
+        field.addActionListener { commit() }
+        // Focus lost commits (and normalises / reverts).
+        field.addFocusListener(object : FocusAdapter() {
+            override fun focusLost(e: FocusEvent) = commit()
+        })
+
+        return row().apply {
+            add(JBLabel("Port:"))
+            add(field)
+        }
     }
 
     private fun sectionHeader(text: String): JComponent =

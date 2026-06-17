@@ -11,6 +11,24 @@ MockServer integration for IntelliJ IDEA and all JetBrains IDEs — drive everyt
 - **Generate mocks from an OpenAPI/Swagger spec** — turn the open spec into a full set of expectations in one action.
 - **Live MockServer dashboard, embedded in the IDE** — watch requests, inspect match results, and review active expectations without switching to a browser.
 
+## Screenshots
+
+**The live MockServer dashboard, embedded in the IDE** — event log, active expectations, and proxied requests without leaving your editor.
+
+![MockServer dashboard embedded in the IDE](docs/screenshots/intellij_dashboard_in_ide.png)
+
+**Export any expectation as code** — the dashboard's expectation builder generates the matching expectation as Java, Node, Python, Go, C#, Ruby, Rust, or JSON.
+
+![Dashboard expectation builder showing generated code](docs/screenshots/intellij_dashboard_code_export.png)
+
+**The MockServer tool window** — a status line with an inline port field plus grouped Server / Editor / WASM buttons at the bottom of the IDE.
+
+![MockServer tool window](docs/screenshots/intellij_tool_window.png)
+
+**The Tools ▸ MockServer menu** — every action one click away.
+
+![Tools menu listing all MockServer actions](docs/screenshots/intellij_tools_menu.png)
+
 ## Features at a glance
 
 ```mermaid
@@ -67,7 +85,7 @@ All actions are available from **Tools > MockServer** and as buttons in the **Mo
 
 ## Tool window layout
 
-The dockable **MockServer** tool window (bottom bar, MockServer icon) opens with a status line — `MockServer · localhost:<port>` showing the configured target — and groups icon buttons under bold section headers matching the action categories above:
+The dockable **MockServer** tool window (bottom bar, MockServer icon) opens with a status line — `MockServer · localhost:<port>` showing the configured target — and an inline **Port** field (default `1080`) bound to the same saved setting used by the menu actions, Start (Docker), and the dashboard; editing it (Enter or focus lost) persists the new port and updates the status line, while an out-of-range value reverts to the saved one. It then groups icon buttons under bold section headers matching the action categories above:
 
 - **Server** — Open Dashboard in IDE, Open Dashboard (Browser), Start (Docker), Reset
 - **Editor actions (use the active file)** — Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report, Find Requests by Trace
