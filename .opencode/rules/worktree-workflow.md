@@ -6,10 +6,24 @@ Every **independent session** — the primary interactive session, any
 parallel Claude/opencode window, and every long autonomous run — works
 inside its **own dedicated git worktree** on a **local-only branch**,
 not the main checkout. Start in a worktree (via `/worktree`) at session
-start. Changes return to `master` only via a gated merge using `flock`
-to serialize concurrent rebases. Isolation-by-default is what lets
-concurrent sessions operate on the same repo without stepping on each
-other, and matches the AI-in-SDLC spec (`docs/operations/ai-sdlc-integration-spec.md` §8.3).
+start. **This holds even when the session makes no changes** —
+read-only investigation, analysis, and review work in a worktree too;
+the rule is *no work runs in the bare main checkout*, not *only
+change-making work is isolated*. Changes return to `master` only via a
+gated merge using `flock` to serialize concurrent rebases.
+Isolation-by-default is what lets concurrent sessions operate on the
+same repo without stepping on each other, and matches the AI-in-SDLC
+spec (`docs/operations/ai-sdlc-integration-spec.md` §8.3).
+
+**Delegate, don't do — and delegating is how routing happens.** The
+primary session's job is to *orchestrate* (see [[operating-model]] and
+[[subagent-routing]]): it should hand almost all execution —
+implementation *and* investigation — to subagents rather than doing it
+inline, because a subagent is where the correct **model, temperature,
+and reasoning effort** are selected for the task. Those subagents are
+**helper subagents** and so share this session's worktree (next
+paragraph); the point is that the work still lands in *this* worktree,
+just run by a right-sized subagent.
 
 **Helper subagents are the one deliberate exception.** A subagent
 spawned by a primary via the `Agent` tool **shares the primary's tree**
@@ -25,10 +39,11 @@ Isolation is **between independent sessions, not within one**.
 | Situation | Use worktree? |
 |-----------|---------------|
 | **Primary interactive session** doing substantive work | **Yes (default)** — start in a worktree via `/worktree`. (This previously stayed in the main checkout for IDE visibility; that exception is gone now that IntelliJ integration has been dropped.) |
-| **Subagents spawned from the main session** via the `Agent` tool | **No, share the primary's checkout.** Helper subagents read/analyse in-flight work (uncommitted edits the primary just made). A worktree based on `origin/master` would only see committed state and miss the live changes — and would break the review gate, which reviews the primary's uncommitted diff |
+| **Primary session doing read-only work** (investigation, analysis, answering a question, reviewing) that makes no changes | **Yes** — still a worktree. The rule is *no work in the bare checkout*; isolation is not contingent on whether files change. The merge ceremony simply has nothing to merge (skip to cleanup). |
+| **Subagents spawned from the main session** via the `Agent` tool | **No separate worktree — share the spawning session's checkout.** Helper subagents read/analyse in-flight work (uncommitted edits the primary just made). A worktree based on `origin/master` would only see committed state and miss the live changes — and would break the review gate, which reviews the primary's uncommitted diff. They are still "in a worktree" — the primary's. |
 | **A second, independent Claude/opencode window** for parallel work on the same repo | **Yes** — that session invokes `/worktree` at start. Each independent session gets its own worktree |
 | Long autonomous task (`/loop`, `/schedule`, "go work on X and come back when done") | **Yes** — invoke `/worktree` at session start |
-| Trivial one-off (typo, comment, doc one-liner) in a quick session | Worktree optional — the 4-gate merge overhead can exceed the value (see [[operating-model]], Scale The Ceremony) |
+| Trivial one-off (typo, comment, doc one-liner) in a quick session | **Yes — still a worktree** (cheap: it shares the `.git` object store). What scales down for a trivial change is the *merge ceremony* (the 4-gate chain), not the isolation — see [[operating-model]], Scale The Ceremony |
 
 **Key principle**: worktrees provide isolation **between independent sessions** (different Claude windows / autonomous runs), not **within a session** (a primary + its helper subagents). Helper subagents inherit the primary's filesystem state so they can see its uncommitted work.
 

@@ -23,7 +23,10 @@ Rules:
 - On this project the per-agent temperatures already lay this out (see
   `docs/operations/opencode-configuration.md`): `council-seat` (0.7) is an explore
   stage; `taskify-agent` / `docs-writer` (0.3–0.4) refine; review/verify agents
-  (0.1) validate. A single agent can also self-stage by running explore → refine →
-  validate passes in sequence.
+  (0.1) validate. On the Claude harness, where per-subagent sampling temperature
+  is unavailable, **reasoning effort plays the analogous determinism/quality role**
+  (low for rote stages, high for hard reasoning and validation) — it is set
+  explicitly on every `.claude/agents/` definition. A single agent can also
+  self-stage by running explore → refine → validate passes in sequence.
 - Whether a multi-pass strategy was used **MUST** be recorded in the decision log
   ([[decision-log]]).

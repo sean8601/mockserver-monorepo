@@ -11,7 +11,7 @@
 
 **Outcome this specification mandates:** AI must be integrated into the SDLC as a **high-autonomy, subagent-first, worktree-isolated delivery system** whose autonomy is *earned through machine-verifiable evidence* — strong context, standardisation, continuous verification, fast diagnosis, reproducibility, and iterative adversarial review — rather than granted by default or backstopped by routine human review.
 
-The system **must** minimise routine human intervention while preserving **explicit escalation** for ambiguity, policy, and high-risk decisions. It **must** maximise safe parallelism under hard caps (no more than **10 active subagents** and **10-way parallelism** at any one time). It **must** delegate the majority of execution to subagents, selecting **model and temperature** as explicit, auditable decision variables, and **may** use multi-pass temperature pipelines (explore high → converge low → validate very low). Every significant action **must** be reproducible and auditable.
+The system **must** minimise routine human intervention while preserving **explicit escalation** for ambiguity, policy, and high-risk decisions. It **must** maximise safe parallelism under hard caps (no more than **10 active subagents** and **10-way parallelism** at any one time). The main agent's primary job is to **orchestrate subagents**: it **must** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents and reserve its own context for planning, decomposition, routing, review, and escalation. Delegating each unit to a purpose-built subagent is what lets the system pick the **model, temperature, and reasoning effort** that fit the task, which is the primary lever for managing **inference cost** and **determinism**; these are explicit, auditable decision variables, and the system **may** use multi-pass temperature pipelines (explore high → converge low → validate very low). Every significant action **must** be reproducible and auditable.
 
 The five mandatory pillars are **Context, Consistency, Verification, Diagnosis, and Adversarial Review**, bound together by **Reproducibility**. Adversarial review **must** be driven by per-artefact-type **review constitutions** (a focused profile for specifications, plans, ADRs, coding, investigation, documentation, deployment, periodic sweeps, etc.) rather than one generic checklist, so each review probes what actually breaks that artefact type. The system is also defended against its **own** failure modes — resisting prompt injection from untrusted inputs, never weakening or gaming the controls it is judged by, running tool execution in a bounded sandbox under an operator-controlled halt, and treating its own prompts, constitutions, routing, and model versions as change-managed artefacts validated against an evaluation suite (the binding requirements are C16–C19, §12 V7, §16, §17, §18.5; this summary is descriptive, not independently normative). The central discipline of the document: *humans are removed from routine loops by making the loops verifiable, not by lowering the bar.*
 
@@ -51,7 +51,7 @@ The integration **MUST** be designed to optimise, in balance:
 | O5 | **Fast feedback** | Verify early and continuously; shorten the loop between action and evidence. |
 | O6 | **Reproducibility** | Significant work is attributable to inputs, assumptions, evidence, and decisions. |
 | O7 | **Auditability** | Behaviour is explainable after the fact, by a human or another agent. |
-| O8 | **Cost effectiveness** | Right-size models, temperature, and concurrency to quality thresholds; avoid waste. |
+| O8 | **Cost effectiveness** | Right-size model, temperature, reasoning effort, and concurrency to quality thresholds; avoid waste. Per-subagent routing is the primary lever for managing inference cost. |
 | O9 | **Operational safety** | Fail safe, degrade gracefully, never act outside delegated authority. |
 | O10 | **Maintainability over time** | Outputs and the system itself stay comprehensible and evolvable. |
 
@@ -117,13 +117,13 @@ The system **MUST** detect uncertainty early and **SHOULD** ask clarifying quest
 Parallelism **MUST** be an intentional design concern. The system **MUST** decompose work into independently executable units, minimise contention on shared files/branches/state, avoid unnecessary serialisation, and preserve traceability of parallel outcomes — subject to the hard caps in §8 (≤10 active subagents, ≤10-way parallelism), with **lower** dynamic limits applied per §8.2.
 
 ### 5.4 All work is worktree-isolated
-Every agent and subagent **MUST** operate in its own dedicated, isolated worktree (§8.3). Worktree isolation is the default and mandatory mode. Worktree branches **MUST** be local-only and **MUST NOT** be pushed to remote by default.
+**No work runs in the bare main checkout** — every independent session **MUST** operate inside its own dedicated, isolated worktree on a local-only branch, and this holds **even when the work makes no changes** (read-only investigation, analysis, and review are worktree-bound too). Worktree isolation is the default and mandatory mode. The isolation unit is the **independent session** (the primary interactive session, each parallel window, each long autonomous run); helper subagents spawned *within* a session are the one deliberate exception — they **share the spawning session's worktree** so they can review its uncommitted in-flight work (§8.3). Worktree branches **MUST** be local-only and **MUST NOT** be pushed to remote by default.
 
 ### 5.5 Subagent-first execution
-The main agent **MUST** act primarily as orchestrator/planner/coordinator/reviewer and **MUST** delegate the majority of execution to subagents (§7). It **MUST** preserve its context window and reasoning capacity for orchestration, decomposition, review, and escalation.
+The main agent's **primary job is to orchestrate subagents.** It **MUST** act as orchestrator/planner/coordinator/reviewer and **MUST** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents (§7), performing work directly only for the trivial residue where delegation would add no value (e.g. a one-line edit). It **MUST** preserve its context window and reasoning capacity for orchestration, decomposition, routing, review, and escalation. Delegating each unit to a purpose-built subagent is also the mechanism by which **model, temperature, and reasoning effort** are matched to the task — the primary lever for managing inference cost and determinism (§5.6, §9).
 
-### 5.6 Explicit, intentional model and temperature selection
-Model capability and temperature **MUST** be treated as explicit, auditable decision variables chosen from task classification (§9), not defaults.
+### 5.6 Explicit, intentional model, temperature, and effort selection
+Model capability, temperature, **and reasoning effort** **MUST** be treated as explicit, auditable decision variables chosen from task classification (§9), not defaults. Per-task selection of these variables is the primary control for **inference cost** and **output determinism**; the per-subagent configuration is where they are set and recorded.
 
 ### 5.7 Multi-pass creativity-to-convergence
 Where it improves quality, the system **SHOULD** use multi-pass execution with descending temperature profiles (explore → refine → validate) as a structured pipeline, not ad hoc randomness (§9.4).
@@ -141,10 +141,10 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 
 - **C1 — Earned autonomy.** Autonomy level **MUST** be derived from risk class and verification strength (§19); it **MUST NOT** be globally fixed or self-asserted.
 - **C2 — Gate chain is the authority to ship.** A unit of work **MUST** pass a defined, fail-closed gate chain (classify → validate → adversarial review with explicit PASS → re-verify) before reintegration. If any gate cannot run or does not return a clean PASS, the system **MUST NOT** reintegrate, and **MUST** surface the failure (§12, §14, §20).
-- **C3 — Subagent-first.** Most execution **MUST** be delegated (§7).
-- **C4 — Worktree isolation.** All agent work **MUST** be isolated in worktrees; branches local-only by default (§8.3).
+- **C3 — Subagent-first.** The overwhelming majority of execution — implementation *and* investigation — **MUST** be delegated to subagents; the main agent acts primarily as orchestrator (§7).
+- **C4 — Worktree isolation.** All work **MUST** run inside a worktree, never the bare checkout — including read-only/investigation work that makes no changes; the isolation unit is the independent session, and helper subagents share the spawning session's worktree (§8.3). Branches local-only by default (§8.3).
 - **C5 — Concurrency caps.** ≤10 active subagents and ≤10-way parallelism at any time, with dynamic lower limits (§8).
-- **C6 — Explicit routing.** Model and temperature **MUST** be selected from task classification and recorded (§9, §21).
+- **C6 — Explicit routing.** Model, temperature, **and reasoning effort** **MUST** be selected from task classification and recorded (§9, §21).
 - **C7 — Verifiability.** Every AI output **MUST** be verifiable; unverifiable completion claims **MUST NOT** be accepted (§12).
 - **C8 — Adversarial review.** Key artefacts **MUST** undergo independent, iterative adversarial review to convergence or 8 iterations, with residual risk recorded if unconverged (§14).
 - **C9 — Reproducibility.** Significant outputs **MUST** be reconstructable from recorded inputs, assumptions, evidence, and decisions (§15).
@@ -158,7 +158,7 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 
 **Recommended (`SHOULD`):**
 
-- **C13** — Prefer the cheapest model/temperature/concurrency that meets the quality threshold (O8).
+- **C13** — Prefer the cheapest model/temperature/effort/concurrency that meets the quality threshold (O8).
 - **C14** — Prefer deterministic, machine-readable checks over probabilistic judgement wherever a deterministic check exists.
 - **C15** — Prefer reversible, incrementally-adopted changes over large irreversible ones (§22 rollout).
 
@@ -169,13 +169,13 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 **Intent:** Define the orchestrator/subagent division of labour and how tasks are delegated.
 
 ### 7.1 Roles
-- **Main / orchestrator agent (`MUST`)** — plans, decomposes, classifies risk, selects subagents/models/temperatures, schedules concurrency within caps, coordinates dependencies, runs the gate chain, makes escalation decisions, reintegrates, and maintains the decision log. It **MUST NOT** routinely perform heavy execution work that a subagent could do; it **MAY** perform execution directly only when delegation is unnecessary or would reduce efficiency (e.g. a trivial one-line edit).
-- **Execution subagents (`MUST`)** — perform scoped execution (coding, investigation, summarisation, validation) within an isolated worktree, returning structured results.
+- **Main / orchestrator agent (`MUST`)** — its **primary job is to orchestrate subagents**: plan, decompose, classify risk, select subagents/models/temperatures/effort, schedule concurrency within caps, coordinate dependencies, run the gate chain, make escalation decisions, reintegrate, and maintain the decision log. It **MUST NOT** routinely perform execution work — implementation *or* investigation — that a subagent could do; it **MAY** perform execution directly only for the trivial residue where delegation would add no value (e.g. a one-line edit). Keeping execution in subagents is what preserves the orchestrator's context *and* lets each unit run at a cost-and-determinism-appropriate model/temperature/effort.
+- **Execution subagents (`MUST`)** — perform scoped execution (coding, investigation, summarisation, validation) within the worktree (their own session's, or the spawning session's when they are helper subagents — §8.3), returning structured results.
 - **Adversarial reviewer subagents (`MUST`)** — independently challenge artefacts with clean context (§14).
 
 ### 7.2 Delegation by default
-- The system **MUST** delegate the majority of execution to subagents so the orchestrator can optimise task–model–temperature fit and preserve context.
-- Delegated tasks **MUST** carry **delegation metadata**: scope and boundaries, explicit success criteria, required context references (§10), dependencies, selected model class and temperature with rationale, risk class, verification expectations, and concurrency/isolation requirements.
+- The system **MUST** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents so the orchestrator can optimise task–model–temperature–effort fit (the primary inference-cost and determinism lever) and preserve context. Direct execution by the orchestrator is reserved for the trivial residue (§7.1).
+- Delegated tasks **MUST** carry **delegation metadata**: scope and boundaries, explicit success criteria, required context references (§10), dependencies, selected model class, temperature, and reasoning effort with rationale, risk class, verification expectations, and concurrency/isolation requirements.
 
 ### 7.3 Decomposition discipline (`MUST`)
 - Break work into the **smallest independent units** with clear interfaces.
@@ -203,8 +203,9 @@ The system **MAY** run speculative parallel attempts (e.g. multiple approaches t
 The system **MUST** apply a *lower* effective concurrency limit when warranted by: task complexity, cost budget, model availability, repository contention risk, verification capacity, or operational constraints. The effective limit **MUST** be recorded with its rationale.
 
 ### 8.3 Worktree isolation (`MUST`)
-- Every agent/subagent **MUST** work in its **own dedicated worktree**; concurrent agents **MUST NOT** share a working tree.
-- Worktrees **MUST** prevent filesystem interference and state contamination between concurrent activities.
+- **No work runs in the bare main checkout.** Every **independent session** — the primary interactive session, each parallel window, and each long autonomous run — **MUST** work in its **own dedicated worktree** on a local-only branch. This holds **even when the work makes no changes**: read-only investigation, analysis, and review sessions are worktree-bound too.
+- The isolation unit is the **independent session**, not every agent. **Concurrent independent sessions MUST NOT share a working tree.** **Helper subagents spawned within a session are the one deliberate exception: they share the spawning session's worktree** rather than getting their own. This is required for correctness, not convenience — reviewer and investigator subagents must read the spawning session's **uncommitted in-flight diff**, which a worktree branched off `origin/master` could not see, silently breaking the commit review gate (§14). Isolation is **between independent sessions, not within one.**
+- Worktrees **MUST** prevent filesystem interference and state contamination between **independent sessions**.
 - Worktree branches **MUST** be **local-only** and **MUST NOT** be pushed to remote by default. Remote branch creation **MUST** require explicit policy-based approval if ever permitted.
 - Temporary work artefacts **MUST** be attributable to the agent and task that produced them.
 - Completed or abandoned worktrees **MUST** be cleaned up safely and predictably; cleanup **MUST NOT** discard unmerged work without an explicit, logged decision.
@@ -221,23 +222,24 @@ Worktree isolation covers the filesystem only. Where agents touch shared mutable
 
 ---
 
-## 9. Subagent, model, and temperature selection strategy
+## 9. Subagent, model, temperature, and effort selection strategy
 
-**Intent:** Make capability and determinism explicit, intentional, and auditable optimisation controls.
+**Intent:** Make capability, determinism, and reasoning effort explicit, intentional, and auditable optimisation controls — the primary levers for inference cost and output quality. Because nearly all execution is delegated (§5.5, §7), this per-subagent selection is where cost and determinism are actually managed.
 
 ### 9.1 Task classification (`MUST`)
 Before selection, each task **MUST** be classified by: **complexity, ambiguity, risk, required reasoning depth, required determinism, required creativity, and available verification strength.**
 
 ### 9.2 Selection rules (`MUST`)
-- Subagent, model, and temperature **MUST** be selected from the classification.
+- Subagent, model, temperature, **and reasoning effort** **MUST** be selected from the classification.
 - **Deterministic** tasks **MUST** default to **low temperature**.
 - **Creative/exploratory** tasks **MAY** use **higher temperature** where beneficial.
 - **High-risk** tasks **MUST** default to **low temperature and/or stronger models**.
-- The system **SHOULD NOT** use expensive models where a lower-cost model meets the quality threshold (O8).
+- **Reasoning effort MUST track required reasoning depth (§9.1):** high-effort for hard implementation, authoritative review, security audit, and complex investigation; lower effort for mechanical or shallow tasks. On harnesses where temperature is unavailable (e.g. Claude Code subagents), effort and model choice are the determinism/quality levers in its place.
+- The system **SHOULD NOT** use expensive models, high temperature, or high effort where a cheaper/lower setting meets the quality threshold (O8) — per-subagent selection is the main inference-cost control.
 - Selection rationale **MUST** be recorded and explainable (§21).
 
 ### 9.3 Re-routing and fallback (`MUST`)
-- A task **MAY** be re-run with a different model/temperature if evidence suggests the original configuration was unfit; the re-route and its trigger **MUST** be recorded.
+- A task **MAY** be re-run with a different model/temperature/effort if evidence suggests the original configuration was unfit; the re-route and its trigger **MUST** be recorded.
 - **Fallback behaviour MUST exist** for when a selected model underperforms, fails, or is unavailable (degrade to an alternative model class, escalate, or defer — §20).
 
 ### 9.4 Multi-pass temperature pipeline (`SHOULD`)
@@ -453,7 +455,7 @@ flowchart TD
 - **OP1 — Failure handling & safe degradation.** The system **MUST** handle failures (model errors, tool failures, verification outages) by failing safe and degrading gracefully (§20).
 - **OP2 — Fallback modes.** Fallback modes **MUST** exist for model unavailability/underperformance (§9.3) and for verification or diagnosis tooling being unavailable.
 - **OP3 — Retry behaviour.** Retries **MUST** be bounded and **MUST NOT** mask persistent failures; a retried-then-failed task **MUST** be escalated/recorded.
-- **OP4 — Observability.** The system's own behaviour (tasks, agents, model/temperature choices, gate outcomes, costs, concurrency) **MUST** be observable.
+- **OP4 — Observability.** The system's own behaviour (tasks, agents, model/temperature/effort choices, gate outcomes, costs, concurrency) **MUST** be observable.
 - **OP5 — Cost visibility & controls.** Cost **MUST** be visible and controllable, with controls tied to **agent count, model class, and execution duration**, and to the concurrency caps (§8). A task or workflow that would exceed cost budget **MUST** be deferred or escalated, not silently run (§20).
 - **OP6 — Concurrency limits enforced.** The §8 caps and dynamic limits **MUST** be operationally enforced, not advisory.
 - **OP7 — Incident support.** The system **MUST** support its own use in incident response (fast diagnosis §13, auditable actions §21) and **MUST NOT** take unsafe autonomous action during incidents in reserved/sensitive domains.
@@ -565,7 +567,7 @@ The system **MUST** escalate to a human when: ambiguity materially blocks progre
 |-----------|------------------------------|
 | **Context missing** | Signal explicitly; obtain it, state an explicit safe assumption and proceed, or escalate (§10 CX7). |
 | **Requirements ambiguous** | Detect early; ask a high-value clarifying question, or proceed under recorded assumptions only if safe; otherwise escalate (§5.2). |
-| **Verification fails** | Do not reintegrate; iterate, re-route model/temperature, or escalate; record evidence (§12). |
+| **Verification fails** | Do not reintegrate; iterate, re-route model/temperature/effort, or escalate; record evidence (§12). |
 | **Low-confidence output** | Do not accept below threshold; refine, re-route, or escalate (§12.2 V3). |
 | **Subagents disagree** | Reconcile via evidence/adversarial review; if irreconcilable, escalate (§19.3). |
 | **Cost budget exceeded** | Defer or escalate; **MUST NOT** silently continue (§17 OP5). |
@@ -595,7 +597,7 @@ For each significant AI action/decision, the system **MUST** record:
 - **what context** was used (with provenance, §10);
 - **what assumptions** were made (§15 R2);
 - **what model class** was selected and **why** (§9);
-- **what temperature** was selected and **why**, and **whether a multi-pass strategy** was used (§9.4);
+- **what temperature** was selected and **why**, **what reasoning effort** was selected and **why**, and **whether a multi-pass strategy** was used (§9.4);
 - **what verification evidence** was observed (§12);
 - **which review constitution** (and version) was applied, and **what adversarial findings** were raised across iterations and their disposition (§14);
 - **why** the output was accepted, rejected, escalated, retried, or re-routed;
@@ -627,7 +629,7 @@ The system **MUST**:
 - capture failures and near-misses in a structured way;
 - update prompts, context, policies, constitutions, or guardrails based on evidence, validated against the evaluation harness before deployment (§18.5);
 - prevent recurrence of known failure patterns;
-- periodically review **model-routing** and **temperature-routing** effectiveness, **verification gaps**, and **standardisation opportunities**;
+- periodically review **model-routing**, **temperature-routing**, and **effort-routing** effectiveness, **inference-cost trends**, **verification gaps**, and **standardisation opportunities**;
 - feed these reviews into autonomy promotion/demotion (§19.2) and rollout (§22).
 
 ---
@@ -669,7 +671,7 @@ Adoption **MUST** be incremental and reversible:
 - Exact numeric **confidence thresholds** per artefact class and the evidence basis for setting them (§12.2 V3).
 - Precise **autonomy-promotion criteria** (how much verified track record promotes a work type, and the demotion trigger thresholds) (§19.2).
 - Concrete **cost-budget values** and how budgets are allocated across concurrent work (§17 OP5).
-- The authoritative **model/temperature routing policy** mapping classification → selection, and its review cadence (§9).
+- The authoritative **model/temperature/effort routing policy** mapping classification → selection, and its review cadence (§9).
 - Whether, and under what policy, **remote branch creation** for agent work is ever permitted (§8.3).
 - The definition of "**major**" vs "minor" adversarial finding for the convergence test (§14.5), and whether the threshold differs per review constitution (§14.3).
 - The authoritative **licence/IP policy** for generated artefacts and the allowed-licence set (§16 S13).

@@ -1,7 +1,7 @@
 # Evaluation Harness
 
 Changes to **AI components** — prompts / agent definitions, the review
-constitution, model/temperature routing, guardrails, and the model/provider
+constitution, model/temperature/effort routing, guardrails, and the model/provider
 versions in use — must be validated against an **offline evaluation suite** before
 rollout. Conforms to the AI-in-SDLC spec
 (`docs/operations/ai-sdlc-integration-spec.md` §18.5, §22.5).
@@ -37,7 +37,7 @@ Any change to an AI component (a *higher-scrutiny control change*, see
 
 - editing an agent prompt under `.opencode/agents/` or a `.claude/agents/` file;
 - editing the review constitution or a per-artefact review profile;
-- changing model or temperature routing (`opencode.jsonc`, `.claude/agents`);
+- changing model, temperature, or reasoning-effort routing (`opencode.jsonc`, `.claude/agents`);
 - a **model/provider version change** — treat it as a behavioural change, not a
   silent upgrade; re-run the suite to confirm no regression.
 

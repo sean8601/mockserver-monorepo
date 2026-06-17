@@ -1,7 +1,7 @@
 # Control Integrity
 
 The controls AI is judged by — tests, build/CI gates, the review constitution,
-model/temperature routing, guardrails, and the risk/authority policy — **must not
+model/temperature/effort routing, guardrails, and the risk/authority policy — **must not
 be weakened, disabled, or gamed** to make a gate pass. Conforms to the AI-in-SDLC
 spec (`docs/operations/ai-sdlc-integration-spec.md` §12 V7, §19.5).
 
@@ -15,7 +15,7 @@ includes:
 - updating golden/snapshot files or test fixtures to match incorrect output instead of fixing the underlying code;
 - narrowing a test's scope, adding `@Ignore` / `assumeTrue(false)`, or shrinking coverage to dodge a gate;
 - suppressing a lint / static-analysis or policy/security rule to silence a finding;
-- relaxing the review constitution, lowering a confidence threshold, or routing to a weaker model/temperature to get an easier PASS;
+- relaxing the review constitution, lowering a confidence threshold, or routing to a weaker model/temperature/effort to get an easier PASS;
 - dispositioning a MAJOR finding as "accepted" without the required approval (see [[review-constitution]] Iteration Protocol).
 
 A gate satisfied by **reducing its strength is a failure, not a pass.**
@@ -26,7 +26,7 @@ Changes **to the controls themselves** are a distinct, higher-scrutiny class:
 they are classified as **at least gated-approval** — **never act-autonomously**
 (see [[risk-authority-classification]]). This
 covers changes to: tests and test infrastructure, CI/build gates, the review
-constitution, model/temperature routing, guardrails/rules, and the risk/authority
+constitution, model/temperature/effort routing, guardrails/rules, and the risk/authority
 policy.
 
 For any such change:

@@ -36,7 +36,7 @@ novelty · dependency complexity.
 ### Always at least Gated approval (never autonomous), regardless of size
 
 - Changes to the **controls themselves** — tests/gates, the review constitution,
-  model/temperature routing, guardrails, or this risk/authority policy. These are
+  model/temperature/effort routing, guardrails, or this risk/authority policy. These are
   the *higher-scrutiny change class*; see [[control-integrity]]. **Separation of
   duties is mandatory**: the agent that authored the change MUST NOT be its
   approving reviewer — a distinct review agent or a human gates reintegration.

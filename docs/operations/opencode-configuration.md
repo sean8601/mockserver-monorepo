@@ -145,7 +145,7 @@ This file acts as the agent's "onboarding document" — everything a new enginee
 
 ## Building Block 2: Model Strategy
 
-Different tasks have different cognitive demands *and* different needs for determinism. Two decision variables are set explicitly per agent — **model** (capability/cost) and **temperature** (determinism vs creativity) — and both are recorded so the routing is auditable (see `docs/operations/ai-sdlc-integration-spec.md` §9). Agents are grouped into model tiers:
+Different tasks have different cognitive demands *and* different needs for determinism. Because the orchestrator delegates almost all execution — implementation *and* investigation — to subagents (see `docs/operations/ai-sdlc-integration-spec.md` §5.5/§7 and `.opencode/rules/subagent-routing.md`), the per-agent configuration is **where inference cost and determinism are actually managed**. Three decision variables are set explicitly per agent — **model** (capability/cost), **temperature** (determinism vs creativity, opencode side), and **reasoning effort** (reasoning budget, Claude Code side) — and all are recorded so the routing is auditable (see §9). Agents are grouped into model tiers:
 
 ```mermaid
 flowchart LR
@@ -182,11 +182,11 @@ flowchart LR
 | Tier | opencode (OpenAI) | Claude Code (Anthropic) | Agents | Rationale |
 |------|-------------------|--------------------------|--------|-----------|
 | **Reasoning** | `openai/gpt-5` | `claude-opus-4-8` + `effort: high` | review-final, security-auditor, debugger, implementer | Highest-stakes reasoning — authoritative binding review, security audit, hard debugging, and production code |
-| **Premium** | `openai/gpt-4o` | `claude-opus-4-8` | simplifier, pipeline-investigator | Strong reasoning for refactoring and CI investigation at moderate cost |
-| **Standard** | `openai/gpt-4o` | `claude-sonnet-4-6` | code-reviewer, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost |
-| **Fast** | `openai/gpt-4o-mini` | `claude-haiku-4-5-20251001` | test-runner, council-seat | Rote operations (run tests, emit short verdicts) — speed over depth |
+| **Premium** | `openai/gpt-4o` | `claude-opus-4-8` + `effort: high` | simplifier, pipeline-investigator | Strong reasoning for refactoring and CI investigation — deep enough to warrant a high reasoning budget at moderate model cost |
+| **Standard** | `openai/gpt-4o` | `claude-sonnet-4-6` + `effort: medium` | code-reviewer, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost and reasoning budget |
+| **Fast** | `openai/gpt-4o-mini` | `claude-haiku-4-5-20251001` + `effort: low–medium` | test-runner (`low`), council-seat (`medium`) | Rote test execution (`low`) vs short exploratory debate seats (`medium`) — speed over depth |
 
-This gives the review escalation a genuine **capability gradient** on both harnesses: `review-cheap` (gpt-4o / sonnet) → `review-final` (gpt-5 / opus + `effort: high`), so the binding gate is a stronger second brain, not a same-model re-run. On the Claude side the high-stakes lanes additionally raise the reasoning budget via the supported `effort: high` frontmatter field (see Temperature note below). `implementer` is deliberately on the Reasoning tier alongside the reviewers: generating production code has equal or higher blast radius than reviewing it, so it warrants the same model capability and reasoning budget.
+This gives the review escalation a genuine **capability gradient** on both harnesses: `review-cheap` (gpt-4o / sonnet + `effort: medium`) → `review-final` (gpt-5 / opus + `effort: high`), so the binding gate is a stronger second brain, not a same-model re-run. **`effort` is now set explicitly on every Claude agent** (not just the high-stakes lanes) so the reasoning budget is an intentional, auditable choice that tracks each task's reasoning depth — `high` for hard implementation/review/audit/investigation, `medium` for standard analysis and writing, `low` for mechanical work. `implementer` is deliberately on the Reasoning tier alongside the reviewers: generating production code has equal or higher blast radius than reviewing it, so it warrants the same model capability and reasoning budget.
 
 **Caveat — reasoning models and `temperature`:** OpenAI reasoning models may reject or ignore a custom sampling `temperature` (only the default is accepted). The Reasoning-tier agents retain their low `temperature` entries for documentation/auditability, but if the provider rejects them, drop the `temperature` field for those four agents and rely on the model's native low-variance reasoning. Re-verify against the OpenAI API behaviour for `gpt-5` after provisioning.
 

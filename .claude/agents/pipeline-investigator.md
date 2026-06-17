@@ -2,6 +2,7 @@
 name: pipeline-investigator
 description: Buildkite pipeline failure investigator. Spawn this agent to analyse CI/CD build failures, extract root causes from logs, and cross-reference with recent commits and infrastructure. Read-only — it diagnoses, not fixes.
 model: claude-opus-4-8
+effort: high
 tools:
   - Read
   - Bash
