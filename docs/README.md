@@ -25,6 +25,7 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [Domain Model](code/domain-model.md) | Low | Model hierarchy, matchers, codecs, OpenAPI support, configuration (incl. MCP) |
 | [TLS & Security](code/tls-and-security.md) | Low | BouncyCastle CA, SNI, mTLS, JWT auth, control plane security |
 | [Client & Integrations](code/client-and-integrations.md) | Low | MockServerClient, JUnit 4/5, Spring, WebSocket callbacks, VS Code extension, JetBrains plugin |
+| [Editor Extensions](code/editor-extensions.md) | Low | VS Code and JetBrains extensions: shared JSON Schema generation, REST client architecture, feature inventory, build/CI, gotchas |
 | [Memory Management](code/memory-management.md) | Medium | Log entry and expectation memory analysis, default limit calculation, tuning guide |
 | [Metrics & Monitoring](code/metrics.md) | Low | Prometheus metrics, memory monitoring, CSV export |
 | [Telemetry](code/telemetry.md) | Low | OpenTelemetry integration: OTLP export, GenAI spans, W3C trace context propagation |
@@ -118,7 +119,7 @@ mockserver-monorepo/
 ├── terraform/                      # Terraform IaC (Buildkite agents + pipelines)
 ├── scripts/                        # Build, deploy, and utility scripts
 └── docs/                           # This documentation (you are here)
-    ├── code/                       #   Code architecture (24 docs)
+    ├── code/                       #   Code architecture (25 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm, Service Mesh (6 docs)
     ├── operations/                 #   Build, release, deps, security, website, perf (15 docs)
     ├── plans/                      #   Active plans and RFCs (1 doc)
