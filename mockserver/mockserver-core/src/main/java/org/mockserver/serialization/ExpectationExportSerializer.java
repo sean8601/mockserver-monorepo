@@ -20,9 +20,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -44,6 +50,18 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 public class ExpectationExportSerializer {
 
     private static final String OPENAPI_VERSION = "3.0.3";
+
+    /**
+     * The fixed set of HTTP methods OpenAPI 3.0 permits as path-item operation
+     * keys (lower-case). A recorded {@code CONNECT} (proxy mode) or any
+     * arbitrary/whitespace method is not one of these and must NOT be emitted as
+     * an operation key — doing so produces a schema-invalid document.
+     */
+    private static final Set<String> OPENAPI_METHODS = new HashSet<>(Arrays.asList(
+        "get", "put", "post", "delete", "options", "head", "patch", "trace"));
+
+    /** Matches OpenAPI path-template placeholders, e.g. the {@code {orderId}} in {@code /orders/{orderId}}. */
+    private static final Pattern PATH_TEMPLATE = Pattern.compile("\\{([^/{}]+)}");
     private static final String POSTMAN_SCHEMA =
         "https://schema.getpostman.com/json/collection/v2.1.0/collection.json";
     private static final String COLLECTION_NAME = "MockServer Exported Expectations";
@@ -73,8 +91,10 @@ public class ExpectationExportSerializer {
             info.put("description", COLLECTION_DESCRIPTION);
 
             ObjectNode paths = root.putObject("paths");
+            // Defect 3: operationId must be unique across the whole document.
+            Set<String> emittedOperationIds = new HashSet<>();
             for (Expectation expectation : expectations) {
-                addOpenApiOperation(paths, expectation);
+                addOpenApiOperation(paths, expectation, emittedOperationIds);
             }
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
         } catch (JsonProcessingException e) {
@@ -88,7 +108,7 @@ public class ExpectationExportSerializer {
         }
     }
 
-    private void addOpenApiOperation(ObjectNode paths, Expectation expectation) {
+    private void addOpenApiOperation(ObjectNode paths, Expectation expectation, Set<String> emittedOperationIds) {
         if (!(expectation.getHttpRequest() instanceof HttpRequest)) {
             return;
         }
@@ -113,9 +133,20 @@ public class ExpectationExportSerializer {
         }
         String path = rawPath.startsWith("/") ? rawPath : "/" + rawPath;
 
-        String method = stringValue(req.getMethod(), "get").toLowerCase();
+        String method = stringValue(req.getMethod(), "get").trim().toLowerCase();
         if (method.isEmpty()) {
             method = "get";
+        }
+        // Defect 2: OpenAPI 3.0 only permits a fixed set of methods as path-item
+        // operation keys. A recorded CONNECT (proxy mode) or an arbitrary/whitespace
+        // method would produce a schema-invalid document, so skip the operation.
+        if (!OPENAPI_METHODS.contains(method)) {
+            mockServerLogger.logEvent(new org.mockserver.log.model.LogEntry()
+                .setType(org.mockserver.log.model.LogEntry.LogMessageType.INFO)
+                .setMessageFormat("skipping OpenAPI export of expectation " + expectation.getId()
+                    + " because HTTP method \"" + stringValue(req.getMethod(), "")
+                    + "\" is not a valid OpenAPI 3.0 operation"));
+            return;
         }
 
         ObjectNode pathItem = paths.has(path)
@@ -135,13 +166,16 @@ public class ExpectationExportSerializer {
 
         ObjectNode operation = pathItem.putObject(method);
         operation.put("summary", method.toUpperCase() + " " + path);
-        operation.put("operationId", expectation.getId());
+        // Defect 3: operationId must be unique across the whole document. A
+        // distinct operation that reuses an explicit expectation id is
+        // disambiguated with a deterministic numeric suffix.
+        operation.put("operationId", uniqueOperationId(expectation.getId(), emittedOperationIds));
 
         // Parameters: query + path + headers. Negated/schema matchers are
         // omitted rather than exported in their positive form (Defect 2).
         ArrayNode parameters = operation.putArray("parameters");
         addOpenApiParameters(parameters, req.getQueryStringParameters(), "query", path);
-        addOpenApiParameters(parameters, req.getPathParameters(), "path", path);
+        Set<String> emittedPathParams = addOpenApiParameters(parameters, req.getPathParameters(), "path", path);
         if (req.getHeaders() != null) {
             for (Header header : req.getHeaders().getEntries()) {
                 if (isNegatedOrSchema(header.getName())) {
@@ -155,6 +189,10 @@ public class ExpectationExportSerializer {
                 schema.put("type", "string");
             }
         }
+        // Defect 1: every {name} placeholder in the path key MUST have a matching
+        // in:path parameter, else the document is schema-invalid. Synthesise one
+        // for any placeholder not already covered by an emitted path parameter.
+        addSyntheticPathParameters(parameters, path, emittedPathParams);
         if (parameters.isEmpty()) {
             operation.remove("parameters");
         }
@@ -263,12 +301,19 @@ public class ExpectationExportSerializer {
         mediaTypeNode.put("example", bodyString != null ? bodyString : "");
     }
 
-    private void addOpenApiParameters(ArrayNode parameters,
-                                      org.mockserver.model.Parameters params,
-                                      String location,
-                                      String path) {
+    /**
+     * Emits parameters for one location and returns the set of {@code in:path}
+     * parameter names actually emitted (empty for non-path locations). The
+     * caller uses that set to synthesise any uncovered path placeholders
+     * (Defect 1).
+     */
+    private Set<String> addOpenApiParameters(ArrayNode parameters,
+                                             org.mockserver.model.Parameters params,
+                                             String location,
+                                             String path) {
+        Set<String> emittedPathParams = new LinkedHashSet<>();
         if (params == null) {
-            return;
+            return emittedPathParams;
         }
         for (Parameter parameter : params.getEntries()) {
             // Omit negated/schema parameter matchers rather than emitting their
@@ -295,7 +340,47 @@ public class ExpectationExportSerializer {
                     schema.put("example", first.getValue());
                 }
             }
+            if ("path".equals(location)) {
+                emittedPathParams.add(name);
+            }
         }
+        return emittedPathParams;
+    }
+
+    /**
+     * Defect 1: every {@code {name}} placeholder in the path key must be declared
+     * as an {@code in:path} parameter, otherwise swagger-parser rejects the
+     * document ("Declared path parameter ... needs to be defined as a path
+     * parameter"). Synthesise a {@code required:true, type:string} parameter for
+     * any placeholder not already covered by an emitted path parameter.
+     */
+    private void addSyntheticPathParameters(ArrayNode parameters, String path, Set<String> emittedPathParams) {
+        Set<String> seen = new LinkedHashSet<>(emittedPathParams);
+        Matcher matcher = PATH_TEMPLATE.matcher(path);
+        while (matcher.find()) {
+            String name = matcher.group(1);
+            if (seen.add(name)) {
+                ObjectNode p = parameters.addObject();
+                p.put("name", name);
+                p.put("in", "path");
+                p.put("required", true);
+                p.putObject("schema").put("type", "string");
+            }
+        }
+    }
+
+    /**
+     * Defect 3: returns an operationId that has not yet been emitted in this
+     * document. If {@code base} is already taken (a DISTINCT operation reusing an
+     * explicit expectation id), a deterministic numeric suffix is appended.
+     */
+    private String uniqueOperationId(String base, Set<String> emittedOperationIds) {
+        String candidate = base;
+        int suffix = 2;
+        while (!emittedOperationIds.add(candidate)) {
+            candidate = base + "-" + suffix++;
+        }
+        return candidate;
     }
 
     /**

@@ -275,6 +275,102 @@ public class ExpectationExportSerializerTest {
     }
 
     @Test
+    public void pathTemplateWithoutRegisteredParameterSynthesisesPathParam() throws Exception {
+        // Defect 1: path key has {orderId} but NO registered path parameter.
+        // The doc must still be valid because a path param is synthesised.
+        Expectation expectation = new Expectation(
+            request().withMethod("GET").withPath("/orders/{orderId}"))
+            .thenRespond(response().withStatusCode(200));
+
+        String openApi = serializer.serializeAsOpenApi(Collections.singletonList(expectation));
+        assertParsesCleanly(openApi);
+
+        JsonNode root = parseJson(openApi);
+        JsonNode params = root.at("/paths/~1orders~1{orderId}/get/parameters");
+        assertThat(params.isMissingNode(), is(false));
+        boolean hasSynthesised = false;
+        for (JsonNode p : params) {
+            if ("path".equals(p.path("in").asText()) && "orderId".equals(p.path("name").asText())) {
+                hasSynthesised = true;
+                assertThat(p.path("required").asBoolean(), is(true));
+                assertThat(p.path("schema").path("type").asText(), is(equalTo("string")));
+            }
+        }
+        assertTrue("expected a synthesised in:path parameter named orderId", hasSynthesised);
+    }
+
+    @Test
+    public void registeredPathParamIsNotDuplicatedBySynthesis() throws Exception {
+        // Defect 1: a {name} placeholder that DOES have a registered path
+        // parameter must produce exactly one in:path parameter, not two.
+        Expectation expectation = new Expectation(
+            request().withMethod("GET").withPath("/users/{id}")
+                .withPathParameter(param("id", "123")))
+            .thenRespond(response().withStatusCode(200));
+
+        String openApi = serializer.serializeAsOpenApi(Collections.singletonList(expectation));
+        assertParsesCleanly(openApi);
+
+        JsonNode root = parseJson(openApi);
+        JsonNode params = root.at("/paths/~1users~1{id}/get/parameters");
+        int idPathParams = 0;
+        for (JsonNode p : params) {
+            if ("path".equals(p.path("in").asText()) && "id".equals(p.path("name").asText())) {
+                idPathParams++;
+            }
+        }
+        assertThat("the registered path param must not be duplicated by synthesis",
+            idPathParams, is(equalTo(1)));
+    }
+
+    @Test
+    public void connectMethodOperationIsSkippedAndDocIsValid() {
+        // Defect 2: CONNECT (proxy mode) is not a valid OpenAPI operation key.
+        Expectation expectation = new Expectation(
+            request().withMethod("CONNECT").withPath("/tunnel"))
+            .thenRespond(response().withStatusCode(200));
+
+        String openApi = serializer.serializeAsOpenApi(Collections.singletonList(expectation));
+        assertParsesCleanly(openApi);
+        // the operation must be skipped entirely (no /tunnel path emitted)
+        assertThat(openApi, not(containsString("\"/tunnel\"")));
+    }
+
+    @Test
+    public void garbageMethodOperationIsSkippedAndDocIsValid() {
+        // Defect 2: an arbitrary/whitespace method must not be emitted verbatim.
+        Expectation expectation = new Expectation(
+            request().withMethod("FOO BAR").withPath("/garbage"))
+            .thenRespond(response().withStatusCode(200));
+
+        String openApi = serializer.serializeAsOpenApi(Collections.singletonList(expectation));
+        assertParsesCleanly(openApi);
+        assertThat(openApi, not(containsString("\"/garbage\"")));
+    }
+
+    @Test
+    public void distinctOperationsSharingAnExplicitIdGetDistinctOperationIds() throws Exception {
+        // Defect 3: two DIFFERENT operations whose expectations share an explicit
+        // id must not emit a repeated operationId.
+        Expectation x = new Expectation(request().withMethod("GET").withPath("/x"))
+            .withId("shared-id")
+            .thenRespond(response().withStatusCode(200));
+        Expectation y = new Expectation(request().withMethod("GET").withPath("/y"))
+            .withId("shared-id")
+            .thenRespond(response().withStatusCode(200));
+
+        String openApi = serializer.serializeAsOpenApi(Arrays.asList(x, y));
+        assertParsesCleanly(openApi);
+
+        JsonNode root = parseJson(openApi);
+        String idX = root.at("/paths/~1x/get/operationId").asText();
+        String idY = root.at("/paths/~1y/get/operationId").asText();
+        assertThat("both operations must be present", idX.isEmpty() || idY.isEmpty(), is(false));
+        assertThat("distinct operations must have distinct operationIds",
+            idX, is(not(equalTo(idY))));
+    }
+
+    @Test
     public void plainHttpRequestPathParamWithoutValueDoesNotProduceInvalidDoc() {
         // path declares no placeholder but a path param is present -> param omitted, still valid
         Expectation expectation = new Expectation(
