@@ -481,6 +481,12 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             } else {
                 metrics.increment(RESPONSE_EXPECTATIONS_MATCHED_COUNT);
             }
+            if (matchedExpectation != null && matchedExpectation.getAction() != null) {
+                // Opt-in per-expectation counter (perExpectationMetricsEnabled).
+                // No-op unless the counter is registered; labeled by the stable
+                // expectation id to bound Prometheus cardinality.
+                Metrics.incrementExpectationMatched(matchedExpectation.getId());
+            }
         }
         return matchedExpectation;
     }
@@ -532,6 +538,12 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 }
                 if (expectation.getTimes() != null && !expectation.getTimes().isUnlimited()) {
                     notifyListeners(this, Cause.API);
+                }
+                if (configuration.metricsEnabled() && expectation.getAction() != null) {
+                    // Opt-in per-expectation counter (perExpectationMetricsEnabled).
+                    // No-op unless the counter is registered; count early-matched
+                    // (respondBeforeBody) expectations consistently with the normal path.
+                    Metrics.incrementExpectationMatched(expectation.getId());
                 }
                 return expectation;
             }

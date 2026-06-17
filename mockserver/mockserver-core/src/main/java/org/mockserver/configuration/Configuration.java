@@ -44,6 +44,7 @@ public class Configuration {
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
     private Boolean llmMetricsEnabled;
+    private Boolean perExpectationMetricsEnabled;
     private Double llmCostBudgetUsd;
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
@@ -410,6 +411,23 @@ public class Configuration {
      */
     public Configuration llmMetricsEnabled(Boolean llmMetricsEnabled) {
         this.llmMetricsEnabled = llmMetricsEnabled;
+        return this;
+    }
+
+    public Boolean perExpectationMetricsEnabled() {
+        if (perExpectationMetricsEnabled == null) {
+            return ConfigurationProperties.perExpectationMetricsEnabled();
+        }
+        return perExpectationMetricsEnabled;
+    }
+
+    /**
+     * Enable the opt-in per-expectation Prometheus match counter.
+     *
+     * @param perExpectationMetricsEnabled enable per-expectation metrics
+     */
+    public Configuration perExpectationMetricsEnabled(Boolean perExpectationMetricsEnabled) {
+        this.perExpectationMetricsEnabled = perExpectationMetricsEnabled;
         return this;
     }
 
