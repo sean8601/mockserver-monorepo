@@ -128,8 +128,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The mock OIDC provider now supports the full OAuth2 authorization-code flow: a new `/authorize` endpoint issues
   a single-use code and redirects back with `code` and `state`, and `/token` exchanges it (with PKCE S256/plain
   support) for tokens — completing the interactive flow alongside the existing client-credentials grant.
+- Graceful shutdown now drains in-flight requests: on stop, MockServer waits up to `stopDrainMillis` (env
+  `MOCKSERVER_STOP_DRAIN_MILLIS`, default 15000; 0 disables) for active requests to complete before shutting
+  down — avoiding cut connections during Kubernetes rolling restarts.
+- Optional per-expectation Prometheus metrics: enable `perExpectationMetricsEnabled` (env
+  `MOCKSERVER_PER_EXPECTATION_METRICS`, default off) to emit a `mock_server_expectation_matched` counter
+  labelled by stable expectation id, for per-endpoint match dashboards (cardinality is bounded by expectation
+  count; off by default to avoid surprise series).
+- OpenAPI example generation accepts an optional reproducibility seed and per-field value overrides (via a
+  reserved `__generationOptions__` entry in the import's operations map), so generated example bodies can be
+  deterministic per run and pin specific fields.
+- Dashboard "Why didn't this match?" now offers a side-by-side visual diff (request vs the closest
+  expectation's matcher) alongside the existing text reasons.
 
 ### Changed
+- JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a
+  security hardening against SSRF / unexpected network fetches. Schemas using only internal/inline refs are
+  unaffected; set `-Dmockserver.jsonSchemaAllowRemoteRefs=true` to restore remote resolution.
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
   JetBrains "MockServer Dashboard" tool window (light/dark variants) and the VS Code dashboard webview tab.
 - Dashboard is now more usable on small screens (mobile and the IDE-embedded dashboard): the Get Started

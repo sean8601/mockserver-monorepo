@@ -44,6 +44,10 @@ public abstract class LifeCycle implements Stoppable {
     private final List<Future<Channel>> serverChannelFutures = new ArrayList<>();
     private final CompletableFuture<String> stopFuture = new CompletableFuture<>();
     private final AtomicBoolean stopping = new AtomicBoolean(false);
+    // Number of data-plane HTTP requests currently being processed (incremented when a request
+    // starts processing, decremented when its response has been written). Used by stopAsync() to
+    // drain in-flight requests before shutting down the event loops (WS7.2 graceful shutdown).
+    private final java.util.concurrent.atomic.AtomicInteger requestsInFlight = new java.util.concurrent.atomic.AtomicInteger(0);
     private final Scheduler scheduler;
     // optional OTel exporters — null unless the corresponding config is enabled
     private final org.mockserver.metrics.OtelMetricsExporter otelMetricsExporter;
@@ -170,6 +174,60 @@ public abstract class LifeCycle implements Stoppable {
         }
     }
 
+    /**
+     * Mark that a data-plane request has started processing. Must be paired with exactly one
+     * {@link #requestProcessingComplete()} call when the response has been written.
+     */
+    public void requestProcessingStarted() {
+        requestsInFlight.incrementAndGet();
+    }
+
+    /**
+     * Mark that a data-plane request has finished (its response has been written or the connection
+     * has otherwise completed). Callers must guard against double-invocation; the counter is never
+     * allowed to go negative.
+     */
+    public void requestProcessingComplete() {
+        requestsInFlight.updateAndGet(current -> current > 0 ? current - 1 : 0);
+    }
+
+    /**
+     * @return the number of data-plane requests currently being processed
+     */
+    public int getRequestsInFlight() {
+        return requestsInFlight.get();
+    }
+
+    /**
+     * Wait up to {@code stopDrainMillis} for in-flight requests to complete. When the timeout is 0
+     * draining is disabled and this returns immediately (pre-7.2 behaviour). If the timeout elapses
+     * with requests still in flight a warning is logged and shutdown proceeds anyway.
+     */
+    private void drainInFlightRequests() {
+        long drainMillis = org.mockserver.configuration.ConfigurationProperties.stopDrainMillis();
+        if (drainMillis <= 0 || requestsInFlight.get() <= 0) {
+            return;
+        }
+        long deadline = System.currentTimeMillis() + drainMillis;
+        while (requestsInFlight.get() > 0 && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        int remaining = requestsInFlight.get();
+        if (remaining > 0 && mockServerLogger != null && mockServerLogger.isEnabledForInstance(WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(WARN)
+                    .setMessageFormat("graceful shutdown drain timeout of " + drainMillis + "ms elapsed with " + remaining + " request(s) still in flight, proceeding with shutdown")
+            );
+        }
+    }
+
     public CompletableFuture<String> stopAsync() {
         if (!stopFuture.isDone() && stopping.compareAndSet(false, true)) {
             final String message = "stopped for port" + (getLocalPorts().size() == 1 ? ": " + getLocalPorts().get(0) : "s: " + getLocalPorts());
@@ -204,6 +262,11 @@ public abstract class LifeCycle implements Stoppable {
                     throwable.printStackTrace();
                 }
 
+                // Server channels are now disconnected so no new requests are accepted; wait for any
+                // requests still being processed to complete before tearing down the event loops
+                // (WS7.2 graceful shutdown connection drain). Bounded by stopDrainMillis.
+                drainInFlightRequests();
+
                 httpState.stop();
                 scheduler.shutdown();
                 if (otelMetricsExporter != null) {
@@ -230,7 +293,12 @@ public abstract class LifeCycle implements Stoppable {
 
     public void stop() {
         try {
-            stopAsync().get(10, SECONDS);
+            // The wait must never be shorter than the graceful-shutdown drain can legitimately take,
+            // otherwise stop() returns to the caller before the server has actually shut down. The
+            // drain can block up to stopDrainMillis (WS7.2), so allow that plus a buffer for the
+            // event-loop teardown that follows. Falls back to a 30s floor when draining is disabled.
+            long stopTimeoutMillis = Math.max(30_000L, org.mockserver.configuration.ConfigurationProperties.stopDrainMillis() + 10_000L);
+            stopAsync().get(stopTimeoutMillis, MILLISECONDS);
         } catch (Throwable throwable) {
             if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
                 mockServerLogger.logEvent(
