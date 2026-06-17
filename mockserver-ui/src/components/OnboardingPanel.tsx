@@ -41,7 +41,7 @@ function ActionCard({ icon, title, description, actionLabel, onAction }: ActionC
       <CardContent sx={{ flex: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           {icon}
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
             {title}
           </Typography>
         </Box>
@@ -143,44 +143,62 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
         full feature set.
       </Typography>
 
-      {/* Wide screens: feature tiles side by side. */}
-      <Box
-        sx={{
-          display: { xs: 'none', md: 'flex' },
-          flexWrap: 'nowrap',
-          gap: 2,
-          alignItems: 'stretch',
-          justifyContent: 'center',
-          width: '100%',
-          maxWidth: 1200,
-        }}
-      >
-        {primaryActions.map((action) => (
-          <ActionCard key={action.title} {...action} />
-        ))}
-      </Box>
+      {/* Responsive switch keyed off the CONTAINER width, not the viewport. The
+          dashboard is embedded in a narrow IDE tool window (JCEF) whose CSS
+          viewport stays wide regardless of the visible panel size, so a viewport
+          media query never fires there. A container query reacts to the actual
+          panel width, so this behaves the same in a browser and in the IDE.
+          Tiles are the default and only collapse to the bulleted list when the
+          panel is narrow — so an engine without container-query support (older
+          browsers, jsdom in tests) falls back to tiles rather than nothing. */}
+      <Box sx={{ containerType: 'inline-size', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {/* Wide panels: feature tiles side by side. */}
+        <Box
+          sx={{
+            display: 'flex',
+            '@container (max-width: 899.98px)': { display: 'none' },
+            flexWrap: 'nowrap',
+            gap: 2,
+            alignItems: 'stretch',
+            justifyContent: 'center',
+            width: '100%',
+            maxWidth: 1200,
+          }}
+        >
+          {primaryActions.map((action) => (
+            <ActionCard key={action.title} {...action} />
+          ))}
+        </Box>
 
-      {/* Narrow screens (mobile / IDE-embedded): a compact bulleted list, since
-          five tiles side by side become unreadably squished. */}
-      <Box
-        component="ul"
-        sx={{ display: { xs: 'block', md: 'none' }, m: 0, pl: 3, width: '100%', maxWidth: 760 }}
-      >
-        {primaryActions.map((action) => (
-          <Box component="li" key={action.title} sx={{ mb: 1 }}>
-            <Link
-              component="button"
-              type="button"
-              onClick={action.onAction}
-              sx={{ verticalAlign: 'baseline', fontWeight: 600 }}
-            >
-              {action.title}
-            </Link>
-            <Typography component="span" variant="body2" color="text.secondary">
-              {' '}— {action.description}
-            </Typography>
-          </Box>
-        ))}
+        {/* Narrow panels (mobile / IDE-embedded): a compact bulleted list, since
+            five tiles side by side become unreadably squished. */}
+        <Box
+          component="ul"
+          sx={{
+            display: 'none',
+            '@container (max-width: 899.98px)': { display: 'block' },
+            m: 0,
+            pl: 3,
+            width: '100%',
+            maxWidth: 760,
+          }}
+        >
+          {primaryActions.map((action) => (
+            <Box component="li" key={action.title} sx={{ mb: 1 }}>
+              <Link
+                component="button"
+                type="button"
+                onClick={action.onAction}
+                sx={{ verticalAlign: 'baseline', fontWeight: 600 }}
+              >
+                {action.title}
+              </Link>
+              <Typography component="span" variant="body2" color="text.secondary">
+                {' '}— {action.description}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
       </Box>
 
       <Box sx={{ mt: 4, maxWidth: 760, width: '100%' }}>

@@ -178,9 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
   JetBrains "MockServer Dashboard" tool window (light/dark variants) and the VS Code dashboard webview tab.
 - Dashboard is now more usable on small screens (mobile and the IDE-embedded dashboard): the Get Started
-  feature tiles collapse to a compact bulleted list below a medium viewport width, and the Log Messages list
+  feature tiles collapse to a compact bulleted list when the panel is narrow, and the Log Messages list
   hides the inline message preview when narrow (it wrapped one word per line) — the full message is still
-  available by expanding the row.
+  available by expanding the row. The Get Started collapse is now driven by a **CSS container query** (the
+  panel's own width) rather than the viewport width, so it works inside the narrow IDE-embedded dashboard
+  (whose CSS viewport stays wide regardless of the tool-window size), not only when a browser window is
+  narrowed; feature-tile titles that wrap to two lines also use a tighter line height.
 - VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
   (VS Code: `mockserver.*` settings). The Docker image tag now defaults to the extension's own version instead
   of a hardcoded constant, so it can no longer drift behind the release (previously pinned to `7.0.0`).
