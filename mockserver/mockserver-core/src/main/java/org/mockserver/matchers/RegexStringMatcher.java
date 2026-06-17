@@ -23,17 +23,25 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
     private final MockServerLogger mockServerLogger;
     private final NottableString matcher;
     private final boolean controlPlaneMatcher;
+    // Numeric comparison operators (e.g. "> 60") are only honoured for key/value map
+    // matching (headers, cookies, query-string and form/multipart parameters), which use
+    // the no-fixed-value constructor. The fixed-value constructor is used for method, path,
+    // regex body and reason-phrase matching, where a value like "== 5" must keep its
+    // original exact/regex string semantics — so numeric comparison stays disabled there.
+    private final boolean numericComparison;
 
     public RegexStringMatcher(MockServerLogger mockServerLogger, boolean controlPlaneMatcher) {
         this.mockServerLogger = mockServerLogger;
         this.controlPlaneMatcher = controlPlaneMatcher;
         this.matcher = null;
+        this.numericComparison = true;
     }
 
     RegexStringMatcher(MockServerLogger mockServerLogger, NottableString matcher, boolean controlPlaneMatcher) {
         this.mockServerLogger = mockServerLogger;
         this.controlPlaneMatcher = controlPlaneMatcher;
         this.matcher = matcher;
+        this.numericComparison = false;
     }
 
     public boolean matches(String matched) {
@@ -82,6 +90,16 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
         final String matcherValue = matcher.getValue();
         if (StringUtils.isBlank(matcherValue)) {
             return true;
+        } else if (numericComparison && NumericComparisonMatcher.isNumericComparison(matcherValue)) {
+            // match by numeric comparison operator (e.g. "> 60", "<= 30", "== 5"); for
+            // not-equal use NottableString negation ("!== 5"). Only enabled for key/value
+            // map matching (headers/cookies/query/params), not body/path/method/reason-phrase.
+            // a non-numeric or absent actual value simply does not match and never throws
+            boolean numericMatch = matched != null && NumericComparisonMatcher.matches(matcherValue, matched.getValue());
+            if (!numericMatch && context != null) {
+                context.addDifference(mockServerLogger, "numeric comparison match failed expected:{}found:{}", matcher, matched);
+            }
+            return numericMatch;
         } else {
             if (matched != null) {
                 final String matchedValue = matched.getValue();
