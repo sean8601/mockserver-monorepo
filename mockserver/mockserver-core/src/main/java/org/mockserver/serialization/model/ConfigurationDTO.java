@@ -104,6 +104,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     private String livenessHttpGetPath;
 
+    private String matchNamespaceHeader;
+
     private Boolean controlPlaneTLSMutualAuthenticationRequired;
     private String controlPlaneTLSMutualAuthenticationCAChain;
     private String controlPlanePrivateKeyPath;
@@ -243,6 +245,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.noProxyHosts = configuration.noProxyHosts();
 
             this.livenessHttpGetPath = configuration.livenessHttpGetPath();
+            this.matchNamespaceHeader = configuration.matchNamespaceHeader();
 
             this.controlPlaneTLSMutualAuthenticationRequired = configuration.controlPlaneTLSMutualAuthenticationRequired();
             this.controlPlaneTLSMutualAuthenticationCAChain = configuration.controlPlaneTLSMutualAuthenticationCAChain();
@@ -417,6 +420,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.noProxyHosts(noProxyHosts);
 
         configuration.livenessHttpGetPath(livenessHttpGetPath);
+
+        if (matchNamespaceHeader != null) {
+            configuration.matchNamespaceHeader(matchNamespaceHeader);
+        }
 
         configuration.controlPlaneTLSMutualAuthenticationRequired(controlPlaneTLSMutualAuthenticationRequired);
         configuration.controlPlaneTLSMutualAuthenticationCAChain(controlPlaneTLSMutualAuthenticationCAChain);
@@ -683,6 +690,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (livenessHttpGetPath != null) {
             target.livenessHttpGetPath(livenessHttpGetPath);
+        }
+        if (matchNamespaceHeader != null) {
+            target.matchNamespaceHeader(matchNamespaceHeader);
         }
         if (controlPlaneTLSMutualAuthenticationRequired != null) {
             target.controlPlaneTLSMutualAuthenticationRequired(controlPlaneTLSMutualAuthenticationRequired);
@@ -1457,6 +1467,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setLivenessHttpGetPath(String livenessHttpGetPath) {
         this.livenessHttpGetPath = livenessHttpGetPath;
+        return this;
+    }
+
+    public String getMatchNamespaceHeader() {
+        return matchNamespaceHeader;
+    }
+
+    public ConfigurationDTO setMatchNamespaceHeader(String matchNamespaceHeader) {
+        this.matchNamespaceHeader = matchNamespaceHeader;
         return this;
     }
 

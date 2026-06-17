@@ -245,6 +245,10 @@ public class ConfigurationProperties {
     // liveness
     private static final String MOCKSERVER_LIVENESS_HTTP_GET_PATH = "mockserver.livenessHttpGetPath";
 
+    // expectation namespacing / multi-tenancy
+    private static final String MOCKSERVER_MATCH_NAMESPACE_HEADER = "mockserver.matchNamespaceHeader";
+    private static final String DEFAULT_MATCH_NAMESPACE_HEADER = "X-MockServer-Namespace";
+
     // control plane authentication
     private static final String MOCKSERVER_CONTROL_PLANE_TLS_MUTUAL_AUTHENTICATION_REQUIRED = "mockserver.controlPlaneTLSMutualAuthenticationRequired";
     private static final String MOCKSERVER_CONTROL_PLANE_TLS_MUTUAL_AUTHENTICATION_CERTIFICATE_CHAIN = "mockserver.controlPlaneTLSMutualAuthenticationCAChain";
@@ -2975,6 +2979,30 @@ public class ConfigurationProperties {
      */
     public static void livenessHttpGetPath(String livenessPath) {
         setProperty(MOCKSERVER_LIVENESS_HTTP_GET_PATH, livenessPath);
+    }
+
+    // expectation namespacing / multi-tenancy
+
+    public static String matchNamespaceHeader() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_MATCH_NAMESPACE_HEADER, "MOCKSERVER_MATCH_NAMESPACE_HEADER", DEFAULT_MATCH_NAMESPACE_HEADER);
+    }
+
+    /**
+     * The name of the request header used to scope expectation matching to a namespace (tenant),
+     * enabling multiple teams or test-suites to share a single MockServer instance without their
+     * expectations colliding.
+     * <p>
+     * When a request carries this header with value {@code T}, matching considers expectations whose
+     * {@code namespace} equals {@code T} <em>plus</em> all global (no-namespace) expectations — and
+     * never expectations belonging to other namespaces. A request with no namespace header matches
+     * only global (no-namespace) expectations.
+     * <p>
+     * The default is {@code X-MockServer-Namespace}.
+     *
+     * @param matchNamespaceHeader the request header name carrying the namespace
+     */
+    public static void matchNamespaceHeader(String matchNamespaceHeader) {
+        setProperty(MOCKSERVER_MATCH_NAMESPACE_HEADER, matchNamespaceHeader);
     }
 
     // control plane authentication

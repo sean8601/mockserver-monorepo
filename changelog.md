@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Expectation **namespacing / multi-tenancy**: an optional `namespace` (tenant) field on each expectation lets
+  multiple teams or test-suites share one MockServer instance without their expectations colliding. A request
+  scopes matching to a namespace via a configurable header (`matchNamespaceHeader`, default
+  `X-MockServer-Namespace`; env `MOCKSERVER_MATCH_NAMESPACE_HEADER`): a request in namespace `T` matches
+  expectations whose `namespace` is `T` plus all global (no-namespace) expectations, and never another
+  tenant's. A request with no namespace header matches only global expectations (true isolation by default).
+  `PUT /mockserver/clear?namespace=T` and `PUT /mockserver/retrieve?type=active_expectations&namespace=T` are
+  scoped to a single tenant. The Java client adds `clearByNamespace(namespace)` and
+  `retrieveActiveExpectations(requestDefinition, namespace)` so a CI job can clear or inspect only its own
+  namespace on teardown without resorting to raw HTTP. Fully backward compatible — with no namespace ever set,
+  behaviour is unchanged.
 - VS Code extension adds **MockServer: Find Requests by Trace** — enter a W3C trace id (32 hex) or a full
   `traceparent` header value and the extension opens every request the server received that belongs to that
   distributed trace, so you can see every hop of one trace in a new JSON editor tab.

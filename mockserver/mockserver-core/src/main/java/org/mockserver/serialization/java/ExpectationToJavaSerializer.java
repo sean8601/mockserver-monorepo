@@ -60,6 +60,9 @@ public class ExpectationToJavaSerializer implements ToJavaSerializer<Expectation
             if (expectation.getPercentage() != null) {
                 appendNewLineAndIndent(numberOfSpacesToIndent * INDENT_SIZE, output).append(".withPercentage(").append(expectation.getPercentage()).append(")");
             }
+            if (isNotBlank(expectation.getNamespace())) {
+                appendNewLineAndIndent(numberOfSpacesToIndent * INDENT_SIZE, output).append(".withNamespace(\"").append(StringEscapeUtils.escapeJava(expectation.getNamespace())).append("\")");
+            }
             if (isNotBlank(expectation.getScenarioName())) {
                 appendNewLineAndIndent(numberOfSpacesToIndent * INDENT_SIZE, output).append(".withScenarioName(\"").append(StringEscapeUtils.escapeJava(expectation.getScenarioName())).append("\")");
             }

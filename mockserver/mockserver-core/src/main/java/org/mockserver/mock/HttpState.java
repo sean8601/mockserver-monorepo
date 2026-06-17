@@ -324,6 +324,11 @@ public class HttpState {
 
     public void clear(HttpRequest request) {
         final String logCorrelationId = UUIDService.getUUID();
+        // Namespace-scoped clear: ?namespace=T (or the configured namespace header)
+        // removes only that tenant's expectations, leaving other namespaces and
+        // global expectations intact. Takes precedence over request-matcher / id
+        // clearing for expectations; logs are not namespaced so are left untouched.
+        String namespaceFilter = resolveNamespaceFilter(request);
         RequestDefinition requestDefinition = null;
         ExpectationId expectationId = null;
         if (isNotBlank(request.getBodyAsString())) {
@@ -348,18 +353,27 @@ public class HttpState {
                     mockServerLog.clear(requestDefinition);
                     break;
                 case EXPECTATIONS:
-                    if (expectationId != null) {
+                    if (isNotBlank(namespaceFilter)) {
+                        requestMatchers.clearByNamespace(namespaceFilter, logCorrelationId);
+                    } else if (expectationId != null) {
                         requestMatchers.clear(expectationId, logCorrelationId);
                     } else {
                         requestMatchers.clear(requestDefinition);
                     }
                     break;
                 case ALL:
-                    mockServerLog.clear(requestDefinition);
-                    if (expectationId != null) {
-                        requestMatchers.clear(expectationId, logCorrelationId);
+                    if (isNotBlank(namespaceFilter)) {
+                        // Namespace-scoped: clear only this tenant's expectations.
+                        // The event log is not namespaced, so it is intentionally
+                        // left intact to avoid clearing other tenants' request logs.
+                        requestMatchers.clearByNamespace(namespaceFilter, logCorrelationId);
                     } else {
-                        requestMatchers.clear(requestDefinition);
+                        mockServerLog.clear(requestDefinition);
+                        if (expectationId != null) {
+                            requestMatchers.clear(expectationId, logCorrelationId);
+                        } else {
+                            requestMatchers.clear(requestDefinition);
+                        }
                     }
                     break;
             }
@@ -374,6 +388,27 @@ public class HttpState {
             );
             throw new IllegalArgumentException("\"" + request.getFirstQueryStringParameter("type") + "\" is not a valid value for \"type\" parameter, only the following values are supported " + Arrays.stream(ClearType.values()).map(input -> input.name().toLowerCase()).collect(Collectors.toList()));
         }
+    }
+
+    /**
+     * Resolves the namespace (tenant) filter for a control-plane request (clear / retrieve).
+     * The {@code ?namespace=T} query parameter takes precedence; if absent, the configured
+     * {@code matchNamespaceHeader} header on the control-plane request is used. Returns null
+     * when neither is present (i.e. an unscoped, all-namespaces operation).
+     */
+    private String resolveNamespaceFilter(HttpRequest request) {
+        String namespace = request.getFirstQueryStringParameter("namespace");
+        if (isNotBlank(namespace)) {
+            return namespace;
+        }
+        String headerName = configuration.matchNamespaceHeader();
+        if (isNotBlank(headerName)) {
+            String headerValue = request.getFirstHeader(headerName);
+            if (isNotBlank(headerValue)) {
+                return headerValue;
+            }
+        }
+        return null;
     }
 
     private RequestDefinition resolveExpectationId(ExpectationId expectationId) {
@@ -876,6 +911,10 @@ public class HttpState {
                 Format format = Format.valueOf(defaultIfEmpty(request.getFirstQueryStringParameter("format").toUpperCase(), "JSON"));
                 RetrieveType type = RetrieveType.valueOf(defaultIfEmpty(request.getFirstQueryStringParameter("type").toUpperCase(), "REQUESTS"));
                 final String correlationIdFilter = request.getFirstQueryStringParameter("correlationId");
+                // Optional namespace (tenant) filter for ACTIVE_EXPECTATIONS retrieval:
+                // ?namespace=T (or the configured namespace header) returns only that
+                // tenant's expectations plus global (no-namespace) expectations.
+                final String namespaceFilter = resolveNamespaceFilter(request);
                 switch (type) {
                     case LOGS: {
                         java.util.function.Consumer<List<LogEntry>> logsConsumer;
@@ -1254,6 +1293,13 @@ public class HttpState {
                     }
                     case ACTIVE_EXPECTATIONS: {
                         List<Expectation> expectations = requestMatchers.retrieveActiveExpectations(requestDefinition);
+                        if (isNotBlank(namespaceFilter)) {
+                            // Tenant view: keep this namespace's expectations plus global
+                            // (no-namespace) expectations; hide other tenants' expectations.
+                            expectations = expectations.stream()
+                                .filter(expectation -> isBlank(expectation.getNamespace()) || namespaceFilter.equals(expectation.getNamespace()))
+                                .collect(Collectors.toList());
+                        }
                         switch (format) {
                             case JAVA:
                                 response.withBody(getExpectationToJavaSerializer().serialize(expectations), MediaType.create("application", "java").withCharset(UTF_8));

@@ -25,6 +25,7 @@ import org.slf4j.event.Level;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -380,8 +381,24 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         Expectation closestMatchExpectation = null;
         int closestMatchFailures = Integer.MAX_VALUE;
         int totalFields = MatchDifference.Field.values().length;
+        String requestNamespace = extractRequestNamespace(requestDefinition);
+        // Count expectations skipped purely by the namespace gate, but only when
+        // the request actually carries a namespace — the common no-namespace hot
+        // path does no extra work (the counter stays 0 and is never read).
+        int namespaceSkipped = 0;
 
         for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
+            // Namespace (multi-tenancy) gate: skip expectations belonging to a
+            // different namespace than the request's. Global (null-namespace)
+            // expectations always pass; a request with no namespace sees only
+            // global expectations. Applied before matching so a foreign-namespace
+            // expectation never participates (and never pollutes closest-match).
+            if (!matchesNamespace(httpRequestMatcher.getExpectation(), requestNamespace)) {
+                if (requestNamespace != null) {
+                    namespaceSkipped++;
+                }
+                continue;
+            }
             MatchDifference matchDifference = new MatchDifference(configuration.detailedMatchFailures(), requestDefinition);
             if (httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                 Expectation expectation = httpRequestMatcher.getExpectation();
@@ -473,6 +490,24 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             );
         }
 
+        // Namespace-gated silence diagnostic: when a namespaced request matched
+        // nothing AND at least one expectation was excluded SOLELY by the namespace
+        // gate, surface a DEBUG entry so the "no expectation, no closest match"
+        // silence is explained. DEBUG-only so default-level behaviour is unchanged
+        // and there is no noise on the common no-namespace path (namespaceSkipped
+        // stays 0 unless the request carried a namespace).
+        if (matchedExpectation == null && namespaceSkipped > 0 && mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(EXPECTATION_NOT_MATCHED)
+                    .setLogLevel(Level.DEBUG)
+                    .setCorrelationId(requestDefinition.getLogCorrelationId())
+                    .setHttpRequest(requestDefinition)
+                    .setMessageFormat("request in namespace:{}did not match any expectation; " + namespaceSkipped + " expectation(s) skipped due to namespace mismatch")
+                    .setArguments(requestNamespace)
+            );
+        }
+
         if (configuration.metricsEnabled()) {
             if (matchedExpectation == null || matchedExpectation.getAction() == null) {
                 metrics.increment(EXPECTATIONS_NOT_MATCHED_COUNT);
@@ -492,9 +527,13 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     }
 
     public Expectation firstMatchingEarlyExpectation(HttpRequest headersOnlyRequest) {
+        String requestNamespace = extractRequestNamespace(headersOnlyRequest);
         for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
             Expectation expectation = httpRequestMatcher.getExpectation();
             if (expectation == null || !(expectation.getHttpRequest() instanceof HttpRequest)) {
+                continue;
+            }
+            if (!matchesNamespace(expectation, requestNamespace)) {
                 continue;
             }
             HttpRequest expectationRequest = (HttpRequest) expectation.getHttpRequest();
@@ -580,6 +619,44 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             }
         } else {
             reset();
+        }
+    }
+
+    /**
+     * Clears only the expectations belonging to the given namespace (tenant),
+     * leaving expectations in other namespaces (and global expectations) intact.
+     * This lets a tenant clean up after itself on a shared MockServer instance.
+     * <p>
+     * When {@code namespace} is blank this is a no-op (use {@link #reset()} or a
+     * request-matcher clear for a full clear) so that a blank namespace filter
+     * never accidentally clears global expectations.
+     *
+     * @param namespace        the namespace whose expectations to clear
+     * @param logCorrelationId correlation id for the resulting CLEARED log entry
+     */
+    public void clearByNamespace(String namespace, String logCorrelationId) {
+        if (isBlank(namespace)) {
+            return;
+        }
+        AtomicBoolean removedAny = new AtomicBoolean(false);
+        getHttpRequestMatchersCopy().forEach(httpRequestMatcher -> {
+            Expectation expectation = httpRequestMatcher.getExpectation();
+            if (expectation != null && namespace.equals(expectation.getNamespace())) {
+                removeHttpRequestMatcher(httpRequestMatcher, logCorrelationId);
+                removedAny.set(true);
+            }
+        });
+        // Only emit a CLEARED event when at least one expectation was actually
+        // removed; an idempotent CI teardown clearing an empty namespace stays quiet.
+        if (removedAny.get() && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(CLEARED)
+                    .setLogLevel(Level.INFO)
+                    .setCorrelationId(logCorrelationId)
+                    .setMessageFormat("cleared expectations in namespace:{}")
+                    .setArguments(namespace)
+            );
         }
     }
 
@@ -1022,6 +1099,46 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             return null;
         }
         return value;
+    }
+
+    // --- Namespace (multi-tenancy) helpers ---
+
+    /**
+     * Extracts the namespace (tenant) a request belongs to from the configured
+     * {@code matchNamespaceHeader} header. Only HTTP requests carry a namespace
+     * header; non-HTTP request definitions (binary, DNS) always resolve to the
+     * global namespace (null).
+     *
+     * @return the request namespace, or null when no namespace header is present
+     * (which scopes matching to global expectations only)
+     */
+    String extractRequestNamespace(RequestDefinition requestDefinition) {
+        if (!(requestDefinition instanceof HttpRequest)) {
+            return null;
+        }
+        String headerName = configuration.matchNamespaceHeader();
+        if (isBlank(headerName)) {
+            return null;
+        }
+        String value = ((HttpRequest) requestDefinition).getFirstHeader(headerName);
+        return isBlank(value) ? null : value;
+    }
+
+    /**
+     * Namespace isolation rule: an expectation matches a request's namespace when
+     * the expectation is global (null namespace) OR its namespace equals the
+     * request's namespace. A request with no namespace ({@code requestNamespace ==
+     * null}) therefore matches only global expectations — true tenant isolation.
+     */
+    private static boolean matchesNamespace(Expectation expectation, String requestNamespace) {
+        if (expectation == null) {
+            return true;
+        }
+        String expectationNamespace = expectation.getNamespace();
+        if (isBlank(expectationNamespace)) {
+            return true;
+        }
+        return expectationNamespace.equals(requestNamespace);
     }
 
     // --- Clustered shared-Times CAS helpers ---

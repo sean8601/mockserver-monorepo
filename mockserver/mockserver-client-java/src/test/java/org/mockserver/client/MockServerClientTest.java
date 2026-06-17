@@ -864,6 +864,26 @@ public class MockServerClientTest {
     }
 
     @Test
+    public void shouldSendClearByNamespaceRequest() {
+        // when
+        mockServerClient.clearByNamespace("team-a");
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/clear")
+                .withQueryStringParameter("type", ClearType.EXPECTATIONS.name().toLowerCase())
+                .withQueryStringParameter("namespace", "team-a"),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
     public void shouldSendClearRequestForNullRequest() {
         // when
         mockServerClient
@@ -1038,6 +1058,42 @@ public class MockServerClientTest {
                 .withPath("/mockserver/retrieve")
                 .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
                 .withQueryStringParameter("format", Format.JSON.name())
+                .withBody(someRequestMatcher.toString(), StandardCharsets.UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+        verify(mockExpectationSerializer).deserializeArray("body", true);
+    }
+
+    @Test
+    public void shouldRetrieveActiveExpectationsByNamespace() {
+        // given - a request
+        HttpRequest someRequestMatcher = new HttpRequest()
+            .withPath("/some_path")
+            .withBody(new StringBody("some_request_body"));
+        when(mockRequestDefinitionSerializer.serialize(someRequestMatcher)).thenReturn(someRequestMatcher.toString());
+
+        // and - a client
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean())).thenReturn(response().withBody("body"));
+
+        // and - an expectation
+        Expectation[] expectations = {};
+        when(mockExpectationSerializer.deserializeArray("body", true)).thenReturn(expectations);
+
+        // when
+        assertThat(mockServerClient.retrieveActiveExpectations(someRequestMatcher, "team-a"), sameInstance(expectations));
+
+        // then
+        verify(mockHttpClient).sendRequest(
+            request()
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath("/mockserver/retrieve")
+                .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+                .withQueryStringParameter("format", Format.JSON.name())
+                .withQueryStringParameter("namespace", "team-a")
                 .withBody(someRequestMatcher.toString(), StandardCharsets.UTF_8),
             20000,
             TimeUnit.MILLISECONDS,

@@ -95,6 +95,10 @@
         { "type": "array", "items": { "$ref": "#/definitions/captureRule" }, "minItems": 1 }
       ]
     },
+    "namespace": {
+      "description": "optional namespace (tenant) this expectation belongs to; when set, the expectation only matches requests carrying the configured matchNamespaceHeader with this value, plus it remains isolated from other namespaces",
+      "type": "string"
+    },
     "scenarioName": {
       "type": "string"
     },

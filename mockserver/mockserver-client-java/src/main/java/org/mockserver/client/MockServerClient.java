@@ -808,6 +808,30 @@ public class MockServerClient implements Stoppable {
     }
 
     /**
+     * Clear only the expectations belonging to a single namespace (tenant), leaving
+     * expectations in other namespaces and global (no-namespace) expectations intact.
+     * <p>
+     * This is the primary multi-tenancy teardown call: a CI job that registers its
+     * expectations under its own namespace can clean up after itself on a shared
+     * MockServer instance without disturbing other tenants. The event log is not
+     * namespaced, so logs are left untouched (only {@code expectations} are cleared).
+     *
+     * @param namespace the namespace (tenant) whose expectations to clear
+     */
+    public MockServerClient clearByNamespace(String namespace) {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("clear"))
+                .withQueryStringParameter("type", ClearType.EXPECTATIONS.name().toLowerCase())
+                .withQueryStringParameter("namespace", namespace),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
      * Clear expectations, logs or both that match the expectation id
      *
      * @param expectationId the expectation id that is used to clear expectations and logs
@@ -1873,6 +1897,38 @@ public class MockServerClient implements Stoppable {
      */
     public Expectation[] retrieveActiveExpectations(RequestDefinition requestDefinition) {
         String activeExpectations = retrieveActiveExpectations(requestDefinition, Format.JSON);
+        if (isNotBlank(activeExpectations) && !activeExpectations.equals("[]")) {
+            return expectationSerializer.deserializeArray(activeExpectations, true);
+        } else {
+            return new Expectation[0];
+        }
+    }
+
+    /**
+     * Retrieve the active expectations visible to a single namespace (tenant): the
+     * expectations registered under {@code namespace} plus all global (no-namespace)
+     * expectations. Other tenants' expectations are hidden.
+     * <p>
+     * Use null for {@code requestDefinition} to retrieve all of this namespace's
+     * expectations regardless of request matcher.
+     *
+     * @param requestDefinition the http request matched against when deciding whether to return each expectation, or null for all
+     * @param namespace         the namespace (tenant) whose expectations to view
+     * @return an array of the active expectations visible to the given namespace
+     */
+    public Expectation[] retrieveActiveExpectations(RequestDefinition requestDefinition, String namespace) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("retrieve"))
+                .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+                .withQueryStringParameter("format", Format.JSON.name())
+                .withQueryStringParameter("namespace", namespace)
+                .withBody(requestDefinition != null ? requestDefinitionSerializer.serialize(requestDefinition) : "", StandardCharsets.UTF_8),
+            false
+        );
+        String activeExpectations = httpResponse.getBodyAsString();
         if (isNotBlank(activeExpectations) && !activeExpectations.equals("[]")) {
             return expectationSerializer.deserializeArray(activeExpectations, true);
         } else {

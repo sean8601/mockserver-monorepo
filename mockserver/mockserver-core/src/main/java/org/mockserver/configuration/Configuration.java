@@ -210,6 +210,9 @@ public class Configuration {
     // liveness
     private String livenessHttpGetPath;
 
+    // expectation namespacing / multi-tenancy
+    private String matchNamespaceHeader;
+
     // control plane authentication
     private Boolean controlPlaneTLSMutualAuthenticationRequired;
     private String controlPlaneTLSMutualAuthenticationCAChain;
@@ -2660,6 +2663,32 @@ public class Configuration {
      */
     public Configuration livenessHttpGetPath(String livenessHttpGetPath) {
         this.livenessHttpGetPath = livenessHttpGetPath;
+        return this;
+    }
+
+    public String matchNamespaceHeader() {
+        if (matchNamespaceHeader == null) {
+            return ConfigurationProperties.matchNamespaceHeader();
+        }
+        return matchNamespaceHeader;
+    }
+
+    /**
+     * The name of the request header used to scope expectation matching to a namespace (tenant),
+     * enabling multiple teams or test-suites to share a single MockServer instance without their
+     * expectations colliding.
+     * <p>
+     * When a request carries this header with value {@code T}, matching considers expectations whose
+     * {@code namespace} equals {@code T} <em>plus</em> all global (no-namespace) expectations — and
+     * never expectations belonging to other namespaces. A request with no namespace header matches
+     * only global (no-namespace) expectations.
+     * <p>
+     * The default is {@code X-MockServer-Namespace}.
+     *
+     * @param matchNamespaceHeader the request header name carrying the namespace
+     */
+    public Configuration matchNamespaceHeader(String matchNamespaceHeader) {
+        this.matchNamespaceHeader = matchNamespaceHeader;
         return this;
     }
 

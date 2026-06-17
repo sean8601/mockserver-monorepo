@@ -1344,6 +1344,29 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.livenessHttpGetPath="/liveness/probe"</code></pre>
 </div>
 
+<a id="multi_tenancy_configuration" class="anchor" href="#multi_tenancy_configuration">&nbsp;</a>
+
+<h2>Multi-Tenancy (Namespacing) Configuration:</h2>
+
+<button id="button_configuration_match_namespace_header" class="accordion title"><strong>Request header that scopes matching to a namespace (tenant)</strong></button>
+<div class="panel title">
+    <p>Lets multiple teams or test-suites share a single MockServer instance without their expectations colliding, by partitioning expectations into named namespaces (tenants).</p>
+    <p>Give an expectation an optional <span class="inline_code">namespace</span> field. A request then chooses its namespace by sending this header. A request in namespace <span class="inline_code">T</span> matches expectations whose <span class="inline_code">namespace</span> is <span class="inline_code">T</span> <strong>plus</strong> all global (no-namespace) expectations &mdash; and never another team's. A request with no namespace header matches only global expectations, so isolation is the safe default.</p>
+    <p>You can also clear or retrieve just one tenant's expectations: <span class="inline_code">PUT /mockserver/clear?type=expectations&amp;namespace=T</span> removes only namespace <span class="inline_code">T</span>'s expectations (leaving others intact), and <span class="inline_code">PUT /mockserver/retrieve?type=active_expectations&amp;namespace=T</span> returns only that tenant's expectations plus global ones. Both also accept the namespace as the header instead of the query parameter.</p>
+    <p>This feature is fully backward compatible: if you never set a <span class="inline_code">namespace</span> on any expectation, matching behaves exactly as before.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"X-MockServer-Namespace"</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.matchNamespaceHeader(String matchNamespaceHeader)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.matchNamespaceHeader=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_MATCH_NAMESPACE_HEADER=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.matchNamespaceHeader=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.matchNamespaceHeader="X-Tenant"</code></pre>
+</div>
+
 <a id="openapi_configuration" class="anchor" href="#openapi_configuration">&nbsp;</a>
 
 <h2>OpenAPI Configuration:</h2>

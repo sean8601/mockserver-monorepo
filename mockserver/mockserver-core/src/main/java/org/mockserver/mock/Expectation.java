@@ -64,6 +64,7 @@ public class Expectation extends ObjectWithJsonToString {
     private ResponseMode responseMode;
     private List<CrossProtocolScenario> crossProtocolScenarios;
     private List<CaptureRule> capture;
+    private String namespace;
     private String scenarioName;
     private String scenarioState;
     private String newScenarioState;
@@ -668,6 +669,43 @@ public class Expectation extends ObjectWithJsonToString {
         return this;
     }
 
+    /**
+     * <p>
+     * Set the optional namespace (a.k.a. tenant) that this expectation belongs to,
+     * enabling multiple teams or test-suites to share a single MockServer instance
+     * without their expectations colliding.
+     * </p>
+     * <p>
+     * A {@code null} namespace (the default) places the expectation in the global
+     * namespace, which is matched regardless of any request namespace. A non-null
+     * namespace scopes the expectation so it only matches requests that carry the
+     * configured namespace header ({@code matchNamespaceHeader}, default
+     * {@code X-MockServer-Namespace}) with this exact value.
+     * </p>
+     *
+     * <p>
+     * The value is normalised at the source: a null, empty or whitespace-only
+     * namespace is stored as {@code null} (global), so a blank namespace is
+     * unambiguously "global" and can never produce an expectation that matches
+     * everything yet cannot be cleared by namespace.
+     * </p>
+     *
+     * @param namespace the namespace (tenant) for this expectation, or null for global
+     */
+    public Expectation withNamespace(String namespace) {
+        if (namespace != null) {
+            String trimmed = namespace.trim();
+            namespace = trimmed.isEmpty() ? null : trimmed;
+        }
+        this.namespace = namespace;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getNamespace() {
+        return namespace;
+    }
+
     public Expectation withScenarioName(String scenarioName) {
         this.scenarioName = scenarioName;
         this.hashCode = 0;
@@ -1197,6 +1235,7 @@ public class Expectation extends ObjectWithJsonToString {
             .withCreated(created)
             .withPercentage(percentage)
             .withChaos(chaos)
+            .withNamespace(namespace)
             .withScenarioName(scenarioName)
             .withScenarioState(scenarioState)
             .withNewScenarioState(newScenarioState)
@@ -1287,6 +1326,7 @@ public class Expectation extends ObjectWithJsonToString {
             Objects.equals(steps, that.steps) &&
             Objects.equals(httpResponses, that.httpResponses) &&
             Objects.equals(responseMode, that.responseMode) &&
+            Objects.equals(namespace, that.namespace) &&
             Objects.equals(scenarioName, that.scenarioName) &&
             Objects.equals(scenarioState, that.scenarioState) &&
             Objects.equals(newScenarioState, that.newScenarioState) &&
@@ -1297,7 +1337,7 @@ public class Expectation extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios, capture);
+            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, namespace, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios, capture);
         }
         return hashCode;
     }

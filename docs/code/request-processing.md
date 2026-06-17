@@ -203,6 +203,44 @@ When no expectation matches, the method logs a **closest match summary** identif
 
 A `MatchDifference` context is always created for each comparison (regardless of log level), so detailed field-level difference information is always available in the `EXPECTATION_NOT_MATCHED` log entries. The `MatchFailureHints` utility adds actionable suggestions for common mistakes (trailing slashes, Content-Type charset mismatches, unescaped regex metacharacters).
 
+### Expectation Namespacing (Multi-Tenancy)
+
+**Outcome:** multiple teams or test-suites can share one MockServer instance without their expectations colliding, by partitioning expectations into named namespaces (tenants). The feature is **additive and backward-compatible** — with no namespace ever set, behaviour is exactly as before.
+
+An expectation carries an optional `namespace` (a.k.a. tenant) string (`Expectation.withNamespace(...)`, `null` = the global namespace). A request declares its namespace via a configurable request header (`matchNamespaceHeader`, default `X-MockServer-Namespace`; env `MOCKSERVER_MATCH_NAMESPACE_HEADER`).
+
+**Matching rule** (`RequestMatchers.matchesNamespace`, applied as a pre-filter in `firstMatchingExpectation` / `firstMatchingEarlyExpectation` before each candidate is matched):
+
+| Request namespace `T` (from header) | Expectation namespace | Eligible to match? |
+|-------------------------------------|-----------------------|--------------------|
+| any (incl. absent) | `null` (global) | yes |
+| `T` | `T` | yes |
+| `T` | other (`≠ T`) | no |
+| absent | non-null | **no** |
+
+**No-header default decision — Option A (true isolation):** a request with no namespace header sees only global (null-namespace) expectations, never any tenant's. This is the least-surprising, safest default: isolation holds by construction, so a client that forgets the header (or a stray request) can never accidentally hit another tenant's mocks; shared infrastructure stubs are explicitly placed in the global namespace. (Option B — no-header sees everything — was rejected: it makes isolation opt-out and lets a forgotten header silently leak cross-tenant matches.)
+
+The namespace header does **not** participate in normal header matching: matching is unchanged except for the extra pre-filter skip. Existing expectations only match headers they explicitly declare, and the MockServer-specific namespace header is not one of them, so a request carrying it still matches a global expectation exactly as before. The header is not stripped.
+
+```mermaid
+flowchart TD
+    REQ([Incoming request]) --> NS["Extract request namespace\nfrom matchNamespaceHeader"]
+    NS --> LOOP{"For each expectation\nin priority order"}
+    LOOP --> GATE{"namespace gate:\nexpectation global OR\nexpectation.namespace == request.namespace?"}
+    GATE -->|no| LOOP
+    GATE -->|yes| MATCH["normal field matching\n(method, path, headers, body, ...)"]
+    MATCH -->|match| DONE([serve])
+    MATCH -->|no match| LOOP
+```
+
+**Scoped control-plane operations** (`HttpState.resolveNamespaceFilter` reads the `?namespace=T` query parameter, falling back to the `matchNamespaceHeader` header on the control-plane request):
+
+- `PUT /mockserver/clear?type=expectations&namespace=T` (and `?type=all&namespace=T`) removes **only** namespace `T`'s expectations via `RequestMatchers.clearByNamespace(...)`, leaving other tenants' and global expectations intact. A blank namespace is a no-op (it never clears global expectations). Because the event log is not namespaced, a namespace-scoped `all` clear deliberately leaves the request log untouched.
+- `PUT /mockserver/retrieve?type=active_expectations&namespace=T` returns only namespace `T`'s expectations plus global ones (other tenants hidden).
+- `PUT /mockserver/reset` with no namespace stays a full reset (unchanged semantics).
+
+All of the matching/clearing logic lives in `mockserver-core` (`Expectation`, `ExpectationDTO`, `RequestMatchers`, `HttpState`, `Configuration`/`ConfigurationProperties`); the Netty layer needs no change because it already passes all request headers through. The `namespace` field round-trips through `ExpectationDTO`, the expectation JSON Schema (`expectation.json`), the embedded OpenAPI model, and the Java-code serializer.
+
 ### Debug Mismatch Endpoint
 
 The `PUT /mockserver/debugMismatch` endpoint (implemented in `HttpState.debugMismatch()`) provides programmatic access to match analysis. It accepts a `RequestDefinition` body and returns structured JSON showing per-expectation, per-field match results ranked by closeness (fewest differing fields first), with the closest match highlighted and actionable `remediation` hints for each mismatched field. The MCP `debug_request_mismatch` tool delegates to this same implementation and adds ranking/remediation post-processing. The Java client exposes this via `MockServerClient.debugMismatch(RequestDefinition)`.

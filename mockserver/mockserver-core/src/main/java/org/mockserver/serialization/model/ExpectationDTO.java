@@ -54,6 +54,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private ResponseMode responseMode;
     private org.mockserver.serialization.model.TimesDTO times;
     private TimeToLiveDTO timeToLive;
+    private String namespace;
     private String scenarioName;
     private String scenarioState;
     private String newScenarioState;
@@ -181,6 +182,9 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             TimeToLive timeToLive = expectation.getTimeToLive();
             if (timeToLive != null) {
                 this.timeToLive = new TimeToLiveDTO(timeToLive);
+            }
+            if (expectation.getNamespace() != null) {
+                this.namespace = expectation.getNamespace();
             }
             if (expectation.getScenarioName() != null) {
                 this.scenarioName = expectation.getScenarioName();
@@ -315,6 +319,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .withId(this.id)
             .withPercentage(this.percentage)
             .withChaos(this.chaos != null ? this.chaos.buildObject() : null)
+            .withNamespace(this.namespace)
             .withScenarioName(this.scenarioName)
             .withScenarioState(this.scenarioState)
             .withNewScenarioState(this.newScenarioState)
@@ -632,6 +637,15 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
 
     public ExpectationDTO setResponseMode(ResponseMode responseMode) {
         this.responseMode = responseMode;
+        return this;
+    }
+
+    public String getNamespace() {
+        return namespace;
+    }
+
+    public ExpectationDTO setNamespace(String namespace) {
+        this.namespace = namespace;
         return this;
     }
 

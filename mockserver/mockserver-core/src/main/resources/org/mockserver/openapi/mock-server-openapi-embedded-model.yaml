@@ -347,6 +347,9 @@ components:
           $ref: "#/components/schemas/Times"
         timeToLive:
           $ref: "#/components/schemas/TimeToLive"
+        namespace:
+          type: string
+          description: optional namespace (tenant) this expectation belongs to; when set, the expectation only matches requests carrying the configured matchNamespaceHeader with this value, isolated from other namespaces
         scenarioName:
           type: string
         scenarioState:
