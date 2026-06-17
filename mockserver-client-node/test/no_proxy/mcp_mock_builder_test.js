@@ -284,3 +284,130 @@ describe('mcpMock escaping', function () {
         }, /Invalid JSON for inputSchema/);
     });
 });
+
+// =========================================================================
+// prompts
+// =========================================================================
+
+describe('mcpMock prompt registration', function () {
+    it('produces the exact prompts/list and prompts/get expectation JSON', function () {
+        var expectations = mcpMock('/mcp')
+            .withPrompt('greeting')
+            .withDescription('A friendly greeting')
+            .withArgument('name', 'the person to greet', true)
+            .withArgument('mood', undefined, false)
+            .respondingWith('user', 'Hello {{name}}!')
+            .respondingWith('assistant', 'Hi there!')
+            .and()
+            .build();
+
+        // initialize, ping, notifications, prompts/list, prompts/get => 5
+        assert.equal(expectations.length, 5);
+
+        // initialize advertises the prompts capability
+        var init = findByJsonRpc(expectations, 'initialize')[0];
+        assert.ok(init.httpResponseTemplate.template.indexOf('"prompts": {"listChanged": false}') !== -1);
+
+        // ----- prompts/list -----
+        var list = findByJsonRpc(expectations, 'prompts/list')[0];
+        assert.deepEqual(list.httpRequest, {
+            method: 'POST',
+            path: '/mcp',
+            body: { type: 'JSON_RPC', method: 'prompts/list' }
+        });
+        assert.equal(
+            list.httpResponseTemplate.template,
+            '{"statusCode": 200, ' +
+            '"headers": [{"name": "Content-Type", "values": ["application/json"]}], ' +
+            '"body": {"jsonrpc": "2.0", "result": ' +
+            '{"prompts": [{"name": "greeting", "description": "A friendly greeting", ' +
+            '"arguments": [{"name": "name", "description": "the person to greet", "required": true}, ' +
+            '{"name": "mood", "required": false}]}]}' +
+            ', "id": $!{request.jsonRpcRawId}}}'
+        );
+
+        // ----- prompts/get -----
+        var get = findByJsonPath(expectations, "@.method == 'prompts/get'")[0];
+        assert.deepEqual(get.httpRequest, {
+            method: 'POST',
+            path: '/mcp',
+            body: {
+                type: 'JSON_PATH',
+                jsonPath: "$[?(@.method == 'prompts/get' && @.params.name == 'greeting')]"
+            }
+        });
+        assert.equal(
+            get.httpResponseTemplate.template,
+            '{"statusCode": 200, ' +
+            '"headers": [{"name": "Content-Type", "values": ["application/json"]}], ' +
+            '"body": {"jsonrpc": "2.0", "result": ' +
+            '{"messages": [{"role": "user", "content": {"type": "text", "text": "Hello {{name}}!"}}, ' +
+            '{"role": "assistant", "content": {"type": "text", "text": "Hi there!"}}]}' +
+            ', "id": $!{request.jsonRpcRawId}}}'
+        );
+    });
+
+    it('emits prompts/list with no prompts when only withPromptsCapability() is set', function () {
+        var expectations = mcpMock('/mcp').withPromptsCapability().build();
+        var list = findByJsonRpc(expectations, 'prompts/list')[0];
+        assert.ok(list.httpResponseTemplate.template.indexOf('"prompts": []') !== -1);
+        var init = findByJsonRpc(expectations, 'initialize')[0];
+        assert.ok(init.httpResponseTemplate.template.indexOf('"prompts": {"listChanged": false}') !== -1);
+    });
+
+    it('omits the arguments array when a prompt has no arguments', function () {
+        var list = findByJsonRpc(
+            mcpMock('/mcp').withPrompt('p').respondingWith('user', 'hi').and().build(),
+            'prompts/list'
+        )[0];
+        // a prompt with zero arguments renders just {"name": "p"} with no "arguments" key
+        assert.ok(list.httpResponseTemplate.template.indexOf('{"prompts": [{"name": "p"}]}') !== -1);
+    });
+});
+
+// =========================================================================
+// capability toggles and multi-capability initialize
+// =========================================================================
+
+describe('mcpMock capability advertisement', function () {
+    it('withResourcesCapability advertises resources and emits an empty resources/list', function () {
+        var expectations = mcpMock('/mcp').withResourcesCapability().build();
+        var init = findByJsonRpc(expectations, 'initialize')[0];
+        assert.ok(init.httpResponseTemplate.template.indexOf('"resources": {"subscribe": false, "listChanged": false}') !== -1);
+        var list = findByJsonRpc(expectations, 'resources/list')[0];
+        assert.ok(list.httpResponseTemplate.template.indexOf('"resources": []') !== -1);
+    });
+
+    it('advertises all three capabilities together in the correct comma-joined order', function () {
+        var init = findByJsonRpc(
+            mcpMock('/mcp')
+                .withToolsCapability()
+                .withResourcesCapability()
+                .withPromptsCapability()
+                .build(),
+            'initialize'
+        )[0];
+        assert.ok(init.httpResponseTemplate.template.indexOf(
+            '"capabilities": {"tools": {"listChanged": false}, ' +
+            '"resources": {"subscribe": false, "listChanged": false}, ' +
+            '"prompts": {"listChanged": false}}'
+        ) !== -1);
+    });
+});
+
+// =========================================================================
+// applyTo wiring
+// =========================================================================
+
+describe('mcpMock applyTo', function () {
+    it('delegates to client.mockAnyResponse with the built expectation array', function () {
+        var captured = null;
+        var fakeClient = { mockAnyResponse: function (e) { captured = e; return 'APPLIED'; } };
+        var result = mcpMock('/mcp')
+            .withTool('t').respondingWith('x').and()
+            .applyTo(fakeClient);
+        assert.equal(result, 'APPLIED');
+        assert.ok(Array.isArray(captured));
+        assert.ok(captured.length >= 4);
+    });
+});

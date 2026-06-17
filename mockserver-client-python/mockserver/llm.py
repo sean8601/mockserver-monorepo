@@ -470,9 +470,8 @@ class Completion:
 
     def with_streaming_physics(self, physics: StreamingPhysics) -> Completion:
         self.streaming_physics = physics
-        # Calling implies streaming (matches Java semantics of withStreamingPhysics).
-        if self.streaming is None:
-            self.streaming = True
+        # Mirrors Java Completion.withStreamingPhysics: does NOT touch `streaming`.
+        # Callers enable streaming explicitly via with_streaming()/streaming_on().
         return self
 
     def with_output_schema(self, output_schema: str) -> Completion:

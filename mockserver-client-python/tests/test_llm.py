@@ -170,6 +170,35 @@ class TestStreaming:
             )
             .build()
         )
+        # Mirrors Java: with_streaming_physics() does NOT auto-enable `streaming`.
+        # A streaming-physics-only completion must NOT emit `streaming`.
+        assert e.to_dict()["httpLlmResponse"]["completion"] == {
+            "text": "streamed text",
+            "streamingPhysics": {
+                "timeToFirstToken": {"timeUnit": "MILLISECONDS", "value": 300},
+                "tokensPerSecond": 50,
+                "jitter": 0.2,
+            },
+        }
+
+    def test_streaming_physics_with_explicit_streaming(self):
+        e = (
+            llm_mock("/v1/chat/completions")
+            .with_provider(Provider.OPENAI)
+            .with_model("gpt-4o")
+            .responding_with(
+                completion(text="streamed text")
+                .streaming_on()
+                .with_streaming_physics(
+                    streaming_physics(
+                        tokens_per_second=50,
+                        jitter=0.2,
+                        time_to_first_token=time_to_first_token(300),
+                    )
+                )
+            )
+            .build()
+        )
         assert e.to_dict()["httpLlmResponse"]["completion"] == {
             "text": "streamed text",
             "streaming": True,

@@ -769,6 +769,7 @@
             expectations.push({
                 httpRequest: postMatcher(this._path),
                 times: { remainingTimes: cf.count, unlimited: false },
+                timeToLive: { unlimited: true },
                 httpResponse: {
                     statusCode: cf.statusCode,
                     headers: [{ name: "Content-Type", values: ["application/json"] }],
@@ -780,6 +781,7 @@
         expectations.push({
             httpRequest: postMatcher(this._path),
             times: { remainingTimes: 0, unlimited: true },
+            timeToLive: { unlimited: true },
             httpLlmResponse: buildLlmResponse(this._provider, this._model, this._successCompletion, null, null, null)
         });
 
