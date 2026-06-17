@@ -349,6 +349,40 @@ When `VerificationSequence.httpResponses` is non-empty, sequence verification sw
 
 See consumer documentation at [/mock_server/verification.html#how_verification_works](https://www.mock-server.com/mock_server/verification.html#how_verification_works) for user-facing guidance.
 
+## Retrieve Formats (Expectation Code Generation)
+
+`PUT /mockserver/retrieve?type=<scope>&format=<format>` converts recorded or active state into a
+chosen representation. The `format` query parameter maps to the `Format` enum
+(`mockserver-core/.../model/Format.java`) via `Format.valueOf(param.toUpperCase())`, defaulting to
+`JSON`. `HttpState.retrieve()` dispatches on `(scope, format)` in four `switch(format)` blocks —
+one per scope: `REQUESTS`, `REQUEST_RESPONSES`, `RECORDED_EXPECTATIONS`, `ACTIVE_EXPECTATIONS`.
+
+| Format | Scopes producing code/output | Content-Type | Generator |
+|--------|------------------------------|--------------|-----------|
+| `JAVA` | recorded + active expectations | `application/java` | `ExpectationToJavaSerializer` (typed builder DSL) |
+| `JAVASCRIPT` | recorded + active expectations | `application/javascript` | `ExpectationToJavaScriptSerializer` |
+| `PYTHON` | recorded + active expectations | `text/x-python` | `ExpectationToPythonSerializer` |
+| `JSON` | all | `application/json` | `ExpectationSerializer` / `RequestDefinitionSerializer` |
+
+**Why JavaScript/Python are cheap.** Unlike the Java client (which needs the typed builder DSL, hence
+the ~20-class `*ToJavaSerializer` family), the Node.js and Python clients accept an expectation as a
+plain JSON/dict object. So `ExpectationToJavaScriptSerializer` and `ExpectationToPythonSerializer`
+(both in `org.mockserver.serialization.code`) reuse the existing JSON serialization (the same
+`ExpectationSerializer` used for `format=json`) and wrap each expectation in the correct client call
+plus an import preamble — one call per expectation. The embedded JSON is byte-identical to
+`format=json`, so the generated code round-trips through the real clients.
+
+- **JavaScript**: `const { mockServerClient } = require('mockserver-client');` then one
+  `mockServerClient("localhost", 1080).mockAnyResponse(<expectation JSON>);` per expectation.
+- **Python**: `import json` / `from mockserver import MockServerClient, Expectation` then one
+  `client.upsert(Expectation.from_dict(json.loads("""<expectation JSON>""")));` per expectation. The
+  JSON is embedded as a triple-quoted string parsed at runtime to avoid fragile JSON-literal-to-Python
+  translation of `true`/`false`/`null`.
+
+`JAVASCRIPT`/`PYTHON` are expectation-scope formats; for `REQUESTS`/`REQUEST_RESPONSES` they return a
+clear "not supported" message, exactly as `JAVA` does for `REQUEST_RESPONSES`. The dashboard surfaces
+these via Library → Export (format dropdown + "Copy as code" button).
+
 ## Persistence System
 
 ### File Persistence

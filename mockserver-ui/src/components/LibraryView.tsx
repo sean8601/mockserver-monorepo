@@ -23,6 +23,7 @@ import Radio from '@mui/material/Radio';
 import Tooltip from '@mui/material/Tooltip';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { CassetteManagerBody } from './CassetteManager';
@@ -46,7 +47,7 @@ import ConfirmDialog from './ConfirmDialog';
 // than enumerating every scope×format pair in one long list.
 
 type ExportScope = 'expectations' | 'recorded' | 'requests' | 'logs';
-type ExportFormat = 'json' | 'java' | 'har' | 'openapi' | 'postman' | 'bruno' | 'logentries' | 'curl';
+type ExportFormat = 'json' | 'java' | 'javascript' | 'python' | 'har' | 'openapi' | 'postman' | 'bruno' | 'logentries' | 'curl';
 
 const SCOPES: { value: ExportScope; label: string; retrieveType: string }[] = [
   { value: 'requests', label: 'Recorded requests', retrieveType: 'REQUEST_RESPONSES' },
@@ -62,6 +63,8 @@ const SCOPES: { value: ExportScope; label: string; retrieveType: string }[] = [
 const FORMATS: { value: ExportFormat; label: string; retrieveFormat: string; scopes: ExportScope[] }[] = [
   { value: 'json', label: 'MockServer JSON', retrieveFormat: 'JSON', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'java', label: 'MockServer Java DSL', retrieveFormat: 'JAVA', scopes: ['expectations', 'recorded'] },
+  { value: 'javascript', label: 'JavaScript client code', retrieveFormat: 'JAVASCRIPT', scopes: ['expectations', 'recorded'] },
+  { value: 'python', label: 'Python client code', retrieveFormat: 'PYTHON', scopes: ['expectations', 'recorded'] },
   { value: 'har', label: 'HAR (HTTP Archive)', retrieveFormat: 'HAR', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'openapi', label: 'OpenAPI 3 spec', retrieveFormat: 'OPENAPI', scopes: ['expectations', 'recorded', 'requests'] },
   { value: 'postman', label: 'Postman collection v2.1', retrieveFormat: 'POSTMAN', scopes: ['expectations', 'recorded', 'requests'] },
@@ -86,6 +89,14 @@ const DETAILS: Record<ExportScope, Partial<Record<ExportFormat, ExportDetail>>> 
     java: {
       description: 'MockServer Java DSL that recreates each expectation — paste into a JUnit test or client.',
       filename: 'mockserver-expectations.java',
+    },
+    javascript: {
+      description: 'Node.js client code — one mockAnyResponse(...) call per expectation. Paste into a script using mockserver-client.',
+      filename: 'mockserver-expectations.js',
+    },
+    python: {
+      description: 'Python client code — one client.upsert(...) call per expectation. Paste into a script using the mockserver package.',
+      filename: 'mockserver-expectations.py',
     },
     har: {
       description: 'HAR-formatted archive of each expectation as a synthetic request/response pair.',
@@ -143,6 +154,14 @@ const DETAILS: Record<ExportScope, Partial<Record<ExportFormat, ExportDetail>>> 
       description: 'MockServer Java DSL recreating each recorded expectation.',
       filename: 'mockserver-recorded-expectations.java',
     },
+    javascript: {
+      description: 'Node.js client code recreating each recorded expectation — one mockAnyResponse(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.js',
+    },
+    python: {
+      description: 'Python client code recreating each recorded expectation — one client.upsert(...) call per expectation.',
+      filename: 'mockserver-recorded-expectations.py',
+    },
     har: {
       description: 'HAR archive of each recorded expectation as a request/response pair.',
       filename: 'mockserver-recorded-expectations.har',
@@ -176,6 +195,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
   const [scope, setScope] = useState<ExportScope>('requests');
   const [format, setFormat] = useState<ExportFormat>('har');
   const [downloading, setDownloading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const scopeMeta = SCOPES.find((s) => s.value === scope)!;
@@ -237,6 +257,27 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
     }
   }, [scopeMeta, formatMeta, detail, connectionParams]);
 
+  // bruno is a binary zip; every other format is text and can be copied to the
+  // clipboard. The "copy as code" affordance is most useful for the code formats
+  // (java / javascript / python) but works for any text format.
+  const copyable = format !== 'bruno';
+
+  const handleCopy = useCallback(async () => {
+    setError(null);
+    try {
+      const base = buildBaseUrl(connectionParams);
+      const path = `/mockserver/retrieve?type=${scopeMeta.retrieveType}&format=${formatMeta.retrieveFormat}`;
+      const res = await fetch(`${base}${path}`, { method: 'PUT' });
+      if (!res.ok) throw new Error(`MockServer returned ${res.status}: ${res.statusText}`);
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [scopeMeta, formatMeta, connectionParams]);
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
       <Typography variant="body2" color="text.secondary">
@@ -276,7 +317,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
           </MenuItem>
         ))}
       </TextField>
-      <Box>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         <Button
           variant="contained"
           size="small"
@@ -286,6 +327,16 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
         >
           {downloading ? 'Downloading…' : `Download ${detail.filename}`}
         </Button>
+        {copyable && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ContentCopyIcon sx={{ fontSize: '0.875rem' }} />}
+            onClick={() => void handleCopy()}
+          >
+            {copied ? 'Copied!' : 'Copy as code'}
+          </Button>
+        )}
       </Box>
       {error && <Alert severity="error" variant="outlined">{error}</Alert>}
       {notice && (

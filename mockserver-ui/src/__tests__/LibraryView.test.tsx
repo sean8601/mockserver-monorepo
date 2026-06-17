@@ -178,6 +178,22 @@ describe('LibraryView export controls', () => {
     expect(downloadButton()).toHaveTextContent('mockserver-traffic.curl.sh');
   });
 
+  it('offers JavaScript and Python client code only for expectations', async () => {
+    const user = userEvent.setup();
+    render(<LibraryView connectionParams={connectionParams} />);
+    await switchToExport(user);
+    // Default scope = recorded requests: no JS/Python code option.
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    expect(screen.queryByRole('option', { name: 'JavaScript client code' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Python client code' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    // Switch to expectations: both appear.
+    await user.click(screen.getByRole('radio', { name: 'Active expectations' }));
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    expect(screen.getByRole('option', { name: 'JavaScript client code' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Python client code' })).toBeInTheDocument();
+  });
+
   it('resets an expectations-only format back to JSON when switching to requests', async () => {
     const user = userEvent.setup();
     render(<LibraryView connectionParams={connectionParams} />);
@@ -319,6 +335,64 @@ describe('LibraryView export download', () => {
 
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  it('Selecting JavaScript drives format=JAVASCRIPT on the retrieve call', async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:fake');
+    URL.revokeObjectURL = vi.fn();
+
+    const user = userEvent.setup();
+    render(<LibraryView connectionParams={connectionParams} />);
+    await switchToExport(user);
+    await user.click(screen.getByRole('radio', { name: 'Active expectations' }));
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'JavaScript client code' }));
+    expect(downloadButton()).toHaveTextContent('mockserver-expectations.js');
+    await user.click(downloadButton());
+    await waitFor(() => {
+      const call = fetchCalls.find((c) => c.url.includes('/mockserver/retrieve'));
+      expect(call).toBeTruthy();
+      expect(call!.url).toBe('http://localhost:1080/mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=JAVASCRIPT');
+    });
+
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  it('Copy as code fetches the code text and writes it to the clipboard', async () => {
+    stubFetch(200, "mockServerClient(\"localhost\", 1080).mockAnyResponse({});");
+    const writeText = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    // Override clipboard after userEvent.setup() (which installs its own stub). Capture the original
+    // descriptor and restore it in finally so this override does not leak into later tests
+    // (vi.unstubAllGlobals does not track Object.defineProperty on navigator).
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      render(<LibraryView connectionParams={connectionParams} />);
+      await switchToExport(user);
+      await user.click(screen.getByRole('radio', { name: 'Active expectations' }));
+      await user.click(screen.getByRole('combobox', { name: 'Format' }));
+      await user.click(screen.getByRole('option', { name: 'Python client code' }));
+      await user.click(screen.getByRole('button', { name: /Copy as code/ }));
+      await waitFor(() => {
+        const call = fetchCalls.find((c) => c.url.includes('/mockserver/retrieve'));
+        expect(call!.url).toBe('http://localhost:1080/mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=PYTHON');
+        expect(writeText).toHaveBeenCalledWith('mockServerClient("localhost", 1080).mockAnyResponse({});');
+      });
+    } finally {
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      } else {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+      }
+    }
   });
 
   it('Export triggers a browser download with the correct filename', async () => {

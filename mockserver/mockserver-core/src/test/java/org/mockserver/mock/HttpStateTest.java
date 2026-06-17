@@ -396,6 +396,50 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldRetrieveActiveExpectationsAsJavaScript() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "JAVASCRIPT");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("const { mockServerClient } = require('mockserver-client');"));
+        assertThat(body, containsString("mockServerClient(\"localhost\", 1080).mockAnyResponse("));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
+    public void shouldRetrieveActiveExpectationsAsPython() {
+        // given
+        httpState.add(new Expectation(request("/somePath")).withId("key_one").thenRespond(response("someBody")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        HttpRequest retrieveRequest = request("/mockserver/retrieve")
+            .withMethod("PUT")
+            .withQueryStringParameter("type", RetrieveType.ACTIVE_EXPECTATIONS.name())
+            .withQueryStringParameter("format", "PYTHON");
+        boolean handle = httpState.handle(retrieveRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("from mockserver import MockServerClient, Expectation"));
+        assertThat(body, containsString("client.upsert(Expectation.from_dict(json.loads("));
+        assertThat(body, containsString("/somePath"));
+    }
+
+    @Test
     public void shouldHandleRetrieveRequestsAsCurl() {
         // given
         httpState.log(
@@ -1873,6 +1917,167 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldRetrieveRecordedExpectationsAsJavaScript() {
+        // given
+        httpState.log(
+            new LogEntry()
+                .setType(FORWARDED_REQUEST)
+                .setLogLevel(Level.INFO)
+                .setHttpRequest(request("request_one"))
+                .setHttpResponse(response("response_one"))
+                .setExpectation(request("request_one"), response("response_one"))
+        );
+        httpState.log(
+            new LogEntry()
+                .setLogLevel(INFO)
+                .setType(FORWARDED_REQUEST)
+                .setHttpRequest(request("request_two"))
+                .setHttpResponse(response("response_two"))
+                .setExpectation(request("request_two"), response("response_two"))
+        );
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "javascript")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("application", "javascript").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        // import preamble emitted exactly once
+        assertThat(body.split("require\\('mockserver-client'\\)", -1).length - 1, is(1));
+        // one client call per recorded expectation, each wrapping the expectation JSON
+        assertThat(body.split("mockAnyResponse\\(", -1).length - 1, is(2));
+        assertThat(body, containsString("mockServerClient(\"localhost\", 1080).mockAnyResponse("));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+        assertThat(body, containsString("response_one"));
+        assertThat(body, containsString("response_two"));
+    }
+
+    @Test
+    public void shouldRetrieveRecordedExpectationsAsPython() {
+        // given
+        httpState.log(
+            new LogEntry()
+                .setType(FORWARDED_REQUEST)
+                .setLogLevel(Level.INFO)
+                .setHttpRequest(request("request_one"))
+                .setHttpResponse(response("response_one"))
+                .setExpectation(request("request_one"), response("response_one"))
+        );
+        httpState.log(
+            new LogEntry()
+                .setLogLevel(INFO)
+                .setType(FORWARDED_REQUEST)
+                .setHttpRequest(request("request_two"))
+                .setHttpResponse(response("response_two"))
+                .setExpectation(request("request_two"), response("response_two"))
+        );
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "recorded_expectations")
+                    .withQueryStringParameter("format", "python")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBody().getContentType(), is(MediaType.create("text", "x-python").withCharset(UTF_8).toString()));
+        String body = response.getBodyAsString();
+        // import preamble emitted exactly once
+        assertThat(body.split("import json", -1).length - 1, is(1));
+        assertThat(body, containsString("from mockserver import MockServerClient, Expectation"));
+        // one client call per recorded expectation, each wrapping the expectation JSON
+        assertThat(body.split("client\\.upsert\\(", -1).length - 1, is(2));
+        assertThat(body, containsString("client.upsert(Expectation.from_dict(json.loads("));
+        assertThat(body, containsString("request_one"));
+        assertThat(body, containsString("request_two"));
+        assertThat(body, containsString("response_one"));
+        assertThat(body, containsString("response_two"));
+    }
+
+    @Test
+    public void shouldRejectJavaScriptForRequests() {
+        // given
+        httpState.log(
+            new LogEntry()
+                .setHttpRequest(request("request_one"))
+                .setType(RECEIVED_REQUEST)
+        );
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "requests")
+                    .withQueryStringParameter("format", "javascript")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), is("JAVASCRIPT not supported for REQUESTS (use RECORDED_EXPECTATIONS)"));
+    }
+
+    @Test
+    public void shouldRejectPythonForRequests() {
+        // given
+        httpState.log(
+            new LogEntry()
+                .setHttpRequest(request("request_one"))
+                .setType(RECEIVED_REQUEST)
+        );
+
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "requests")
+                    .withQueryStringParameter("format", "python")
+            );
+
+        // then
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), is("PYTHON not supported for REQUESTS (use RECORDED_EXPECTATIONS)"));
+    }
+
+    @Test
+    public void shouldRejectJavaScriptForRequestResponses() {
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "request_responses")
+                    .withQueryStringParameter("format", "javascript")
+                    .withBody(requestDefinitionSerializer.serialize(request("request_one")))
+            );
+
+        // then
+        assertThat(response.getBodyAsString(), is("JAVASCRIPT not supported for REQUEST_RESPONSES"));
+    }
+
+    @Test
+    public void shouldRejectPythonForRequestResponses() {
+        // when
+        HttpResponse response = httpState
+            .retrieve(
+                request()
+                    .withQueryStringParameter("type", "request_responses")
+                    .withQueryStringParameter("format", "python")
+                    .withBody(requestDefinitionSerializer.serialize(request("request_one")))
+            );
+
+        // then
+        assertThat(response.getBodyAsString(), is("PYTHON not supported for REQUEST_RESPONSES"));
+    }
+
+    @Test
     public void shouldRetrieveActiveExpectationsAsJson() {
         // given
         Expectation expectationOne = new Expectation(request("request_one")).thenRespond(response("response_one"));
@@ -2249,7 +2454,7 @@ public class HttpStateTest {
         } catch (Throwable throwable) {
             // then
             assertThat(throwable, instanceOf(IllegalArgumentException.class));
-            assertThat(throwable.getMessage(), is("\"invalid\" is not a valid value for \"format\" parameter, only the following values are supported [java, json, log_entries, har, openapi, postman, bruno, curl]"));
+            assertThat(throwable.getMessage(), is("\"invalid\" is not a valid value for \"format\" parameter, only the following values are supported [java, javascript, python, json, log_entries, har, openapi, postman, bruno, curl]"));
         }
     }
 

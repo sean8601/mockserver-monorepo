@@ -3,6 +3,29 @@
 <p>All requests and responses can be retrieved as expectations (called recorded expectations) in Java code or JSON.  This allows an easy way to replay a recording from the proxy.</p>
 <p>Unlike conventional record-replay approaches typically provided by other proxies, MockServer allows easy editing of the recorded requests because the recording is provided as Java code or JSON.  This ensures that if minor changes are made to an API the recording can easily be modified and no re-recording required avoiding the need to update test assertions.</p>
 
+<a id="code_export" class="anchor" href="#code_export">&nbsp;</a>
+
+<h2>Export Recorded Expectations as Client Code</h2>
+
+<p>Recorded (and active) expectations can be exported as ready-to-paste client code so you can drop a recording straight into a test. Use the retrieve API with <strong>type=RECORDED_EXPECTATIONS</strong> (or <strong>type=ACTIVE_EXPECTATIONS</strong>) and a code <strong>format</strong>:</p>
+
+<ul>
+    <li><strong>format=java</strong> &mdash; MockServer Java client builder DSL</li>
+    <li><strong>format=javascript</strong> &mdash; Node.js client calls (<code class="inline code">mockServerClient(...).mockAnyResponse(&hellip;)</code>)</li>
+    <li><strong>format=python</strong> &mdash; Python client calls (<code class="inline code">client.upsert(Expectation.from_dict(&hellip;))</code>)</li>
+    <li><strong>format=json</strong> &mdash; round-trippable MockServer JSON</li>
+</ul>
+
+<p>One client call is generated per expectation. For example, to export the recorded expectations as JavaScript:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=javascript"</code></pre>
+
+<p>or as Python:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=python"</code></pre>
+
+<p>The JavaScript and Python output embeds the expectation's JSON inside a client call, so it is correct for the published <code class="inline code">mockserver-client</code> (Node.js) and <code class="inline code">mockserver</code> (Python) packages and round-trips back into MockServer. In the dashboard, the same formats are available under <strong>Library &rarr; Export</strong>, with a <strong>Copy as code</strong> button.</p>
+
 <a id="har_export" class="anchor" href="#har_export">&nbsp;</a>
 
 <h2>HAR Export</h2>

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Expectation code generation in JavaScript and Python**: the retrieve endpoint can now produce
+  copy-paste-ready client code from recorded or active expectations, alongside the existing Java
+  output. Call `PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=javascript` (or
+  `format=python`, and likewise for `type=ACTIVE_EXPECTATIONS`) to get one client call per expectation.
+  Unlike the Java DSL (`format=java`), the Node.js and Python clients accept an expectation as a
+  JSON/dict object, so the generated code embeds the expectation's existing JSON serialization in a
+  client call rather than reconstructing a typed builder. JavaScript output uses
+  `mockServerClient("localhost", 1080).mockAnyResponse(<expectation JSON>)` preceded by a
+  `const { mockServerClient } = require('mockserver-client');` preamble (Content-Type
+  `application/javascript`); Python output uses
+  `client.upsert(Expectation.from_dict(json.loads("""<expectation JSON>""")))` preceded by
+  `import json` / `from mockserver import MockServerClient, Expectation` (Content-Type `text/x-python`).
+  The embedded JSON is byte-identical to `format=json`, so it round-trips through the real clients.
+  The dashboard's Library → Export tab gains "JavaScript client code" and "Python client code" format
+  options (expectations and recorded-expectations scopes) plus a "Copy as code" button that copies the
+  generated text to the clipboard. The `Format` enum gains `JAVASCRIPT` and `PYTHON`; `java`, `json`,
+  and `log_entries` are unchanged.
 - **Match and verify by negotiated protocol** (HTTP/1.1, HTTP/2, HTTP/3): expectations can now match,
   and recorded requests can be verified, on the protocol a request actually arrived over. Use
   `request().withProtocol("HTTP_2")` (or `Protocol.HTTP_3`, etc.) on an expectation to only match

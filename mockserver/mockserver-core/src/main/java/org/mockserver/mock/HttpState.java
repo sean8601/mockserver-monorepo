@@ -108,6 +108,8 @@ public class HttpState {
     private ExpectationSerializer expectationSerializerThatSerializesBodyDefault;
     private OpenAPIExpectationSerializer openAPIExpectationSerializer;
     private ExpectationToJavaSerializer expectationToJavaSerializer;
+    private org.mockserver.serialization.code.ExpectationToJavaScriptSerializer expectationToJavaScriptSerializer;
+    private org.mockserver.serialization.code.ExpectationToPythonSerializer expectationToPythonSerializer;
     private org.mockserver.serialization.ExpectationExportSerializer expectationExportSerializer;
     private VerificationSerializer verificationSerializer;
     private VerificationSequenceSerializer verificationSequenceSerializer;
@@ -1081,6 +1083,12 @@ public class HttpState {
                                     httpResponseFuture.complete(response);
                                 });
                                 break;
+                            case JAVASCRIPT:
+                            case PYTHON:
+                                response.withBody(format.name() + " not supported for REQUESTS (use RECORDED_EXPECTATIONS)", MediaType.create("text", "plain").withCharset(UTF_8));
+                                mockServerLogger.logEvent(logEntry);
+                                httpResponseFuture.complete(response);
+                                break;
                         }
                         break;
                     }
@@ -1094,7 +1102,9 @@ public class HttpState {
                             .setArguments(requestDefinition);
                         switch (format) {
                             case JAVA:
-                                response.withBody("JAVA not supported for REQUEST_RESPONSES", MediaType.create("text", "plain").withCharset(UTF_8));
+                            case JAVASCRIPT:
+                            case PYTHON:
+                                response.withBody(format.name() + " not supported for REQUEST_RESPONSES", MediaType.create("text", "plain").withCharset(UTF_8));
                                 mockServerLogger.logEvent(logEntry);
                                 httpResponseFuture.complete(response);
                                 break;
@@ -1210,6 +1220,36 @@ public class HttpState {
                                         }
                                     );
                                 break;
+                            case JAVASCRIPT:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToJavaScriptSerializer().serialize(requests),
+                                                MediaType.create("application", "javascript").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
+                            case PYTHON:
+                                mockServerLog
+                                    .retrieveRecordedExpectations(
+                                        requestDefinition,
+                                        rawRequests -> {
+                                            List<Expectation> requests = postProcessRecordedExpectations(rawRequests);
+                                            response.withBody(
+                                                getExpectationToPythonSerializer().serialize(requests),
+                                                MediaType.create("text", "x-python").withCharset(UTF_8)
+                                            );
+                                            mockServerLogger.logEvent(logEntry);
+                                            httpResponseFuture.complete(response);
+                                        }
+                                    );
+                                break;
                             case JSON:
                                 mockServerLog
                                     .retrieveRecordedExpectations(
@@ -1303,6 +1343,12 @@ public class HttpState {
                         switch (format) {
                             case JAVA:
                                 response.withBody(getExpectationToJavaSerializer().serialize(expectations), MediaType.create("application", "java").withCharset(UTF_8));
+                                break;
+                            case JAVASCRIPT:
+                                response.withBody(getExpectationToJavaScriptSerializer().serialize(expectations), MediaType.create("application", "javascript").withCharset(UTF_8));
+                                break;
+                            case PYTHON:
+                                response.withBody(getExpectationToPythonSerializer().serialize(expectations), MediaType.create("text", "x-python").withCharset(UTF_8));
                                 break;
                             case JSON:
                                 response.withBody(getExpectationSerializer().serialize(expectations), MediaType.JSON_UTF_8);
@@ -4034,6 +4080,20 @@ public class HttpState {
             this.expectationToJavaSerializer = new ExpectationToJavaSerializer();
         }
         return expectationToJavaSerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToJavaScriptSerializer getExpectationToJavaScriptSerializer() {
+        if (this.expectationToJavaScriptSerializer == null) {
+            this.expectationToJavaScriptSerializer = new org.mockserver.serialization.code.ExpectationToJavaScriptSerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToJavaScriptSerializer;
+    }
+
+    private org.mockserver.serialization.code.ExpectationToPythonSerializer getExpectationToPythonSerializer() {
+        if (this.expectationToPythonSerializer == null) {
+            this.expectationToPythonSerializer = new org.mockserver.serialization.code.ExpectationToPythonSerializer(getExpectationSerializerThatSerializesBodyDefault());
+        }
+        return expectationToPythonSerializer;
     }
 
     private org.mockserver.serialization.ExpectationExportSerializer getExpectationExportSerializer() {
