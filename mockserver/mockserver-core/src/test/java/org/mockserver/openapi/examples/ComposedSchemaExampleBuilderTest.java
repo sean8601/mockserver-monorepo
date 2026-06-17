@@ -5,6 +5,7 @@ import org.junit.Test;
 import org.mockserver.file.FileReader;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.Expectation;
+import org.mockserver.model.OpenAPIDefinition;
 import org.mockserver.openapi.OpenAPIConverter;
 import org.mockserver.openapi.examples.models.*;
 
@@ -126,13 +127,39 @@ public class ComposedSchemaExampleBuilderTest {
             .buildExpectations(spec, null);
 
         // then - the generated response body must be { "baz": "hello" }, not { "baz": ["hello"] }
-        Expectation getFoo = expectations.stream()
-            .filter(expectation -> expectation.toString().contains("getFoo"))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("getFoo expectation not found"));
-        String body = getFoo.getHttpResponse().getBodyAsString();
+        String body = bodyForOperation(expectations, "getFoo");
         assertThat("baz must be the string \"hello\", not an array or object wrapper",
             body, containsString("\"baz\" : \"hello\""));
         assertThat("baz must not be wrapped in an array", body, not(containsString("[")));
+    }
+
+    @Test
+    public void shouldGenerateStringBodyForTopLevelAllOfScalarRefEndToEnd() {
+        // given - a response whose schema is directly allOf: [ $ref to a string ]
+        String spec = FileReader.readFileFromClassPathOrPath(
+            "org/mockserver/openapi/openapi_allof_scalar_ref.yaml"
+        );
+
+        // when
+        List<Expectation> expectations = new OpenAPIConverter(new MockServerLogger(ComposedSchemaExampleBuilderTest.class))
+            .buildExpectations(spec, null);
+
+        // then - body is the JSON string "hello" (quoted scalar), not the array ["hello"]
+        assertThat(bodyForOperation(expectations, "getBaz"), is("\"hello\""));
+    }
+
+    /**
+     * Selects the response body of the expectation generated for a given operationId. The expectation's
+     * request is an {@link OpenAPIDefinition}, so match on its operationId rather than on
+     * {@code toString()} (which embeds the whole spec and therefore mentions every operationId).
+     */
+    private static String bodyForOperation(List<Expectation> expectations, String operationId) {
+        return expectations.stream()
+            .filter(expectation -> expectation.getHttpRequest() instanceof OpenAPIDefinition openAPIDefinition
+                && operationId.equals(openAPIDefinition.getOperationId()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(operationId + " expectation not found"))
+            .getHttpResponse()
+            .getBodyAsString();
     }
 }

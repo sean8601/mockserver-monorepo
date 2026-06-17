@@ -15,6 +15,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/foo'
+  "/baz":
+    get:
+      operationId: getBaz
+      summary: Returns a top-level allOf a single string $ref
+      responses:
+        '200':
+          description: a bare string
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/bar'
 components:
   schemas:
     bar:
