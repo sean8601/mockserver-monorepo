@@ -90,6 +90,56 @@ The `DashboardWebSocketHandler` implements both `MockServerLogListener` and `Moc
 
 **Throttling**: A `Semaphore(1)` with a scheduled release every 1 second limits updates to at most one per second per client, preventing UI flooding during high-traffic scenarios.
 
+## Error Resilience
+
+The entire view-switching region in `App.tsx` is wrapped in a single `ErrorBoundary` (`src/components/ErrorBoundary.tsx`) keyed on the active `view`:
+
+```tsx
+<ErrorBoundary label="this view" resetKeys={[view]}>
+  {view === 'dashboard' && <DashboardGrid />}
+  {/* ... */}
+</ErrorBoundary>
+```
+
+When any view throws during render — including a failed `lazy()` chunk import (e.g. `MetricsView`) — the boundary catches it and shows an inline alert instead of blanking the whole app. The AppBar sits **outside** the boundary so navigation always works. Two recovery paths:
+
+- **Chunk-load failure** (stale JS hashed URL after a redeploy): the fallback offers a hard "Reload page" button (`window.location.reload()`). These are detected by matching the browser's `Failed to fetch dynamically imported module` / `Importing a module script failed` error messages.
+- **Any other render error**: the fallback offers a "Try again" button that calls `boundary.reset()` in place.
+
+When `resetKeys` changes (the user navigates to another tab), the boundary clears its error state automatically — a crashed subtree recovers without a manual retry.
+
+`ErrorBoundary` accepts an optional `label` prop (shown in the fallback text and in `console.error`) and an `onReset` callback.
+
+## Auto-Refresh
+
+`src/hooks/useAutoRefresh.ts` is a thin wrapper over `usePolling` that drives periodic background refresh in panels that do not receive WebSocket push. It inherits `usePolling`'s self-rescheduling loop (next tick scheduled only after the previous run completes, preventing overlapping fetches), tab-visibility gating, and abort-on-unmount cleanup. The `AbortSignal` is forwarded to the callback so in-flight fetches are cancelled when the component unmounts or polling restarts.
+
+**Data-fetch model by panel:**
+
+| Panel | Refresh mechanism |
+|-------|------------------|
+| Dashboard, Traffic, Sessions | WebSocket push (`_mockserver_ui_websocket`) |
+| Breakpoints — live exchanges / frames | Callback WebSocket push (`_mockserver_callback_websocket`) |
+| Breakpoints — matcher list | `useAutoRefresh` (interval, default 3 s) |
+| Drift | `useAutoRefresh` (interval) |
+| AsyncAPI | `useAutoRefresh` (interval, 5 s) |
+| MCP tools panel | `useAutoRefresh` (interval, 3 s) |
+| Chaos | `setInterval` poll every 4 s (predates `useAutoRefresh`) |
+| Metrics | `usePolling` directly in `useMetricsPolling` (3 s) |
+
+## Shared Error Helpers
+
+`src/lib/errorMessage.ts` exports two functions used across control-plane calls:
+
+- **`humanizeError(e)`** — catches any thrown value; recognises the `MockServer returned <status>: <body>` shape (thrown by most lib helpers) and the `Replay failed (<status>): <body>` shape, then delegates to `humanizeServerError`. Falls back to a network-error message for `TypeError` / `Failed to fetch`. Returns `{ message, details? }`.
+- **`humanizeServerError(status, rawBody)`** — maps HTTP status + raw body to a short actionable `message`, keeping the raw body in `details`. Handles 400 (invalid, extracts `{ "error": "…" }` envelope or JSON-schema `N errors:` summary), 401/403 (not authorised), 404 (feature unavailable), 409 (conflict), 5xx (internal error).
+
+`src/components/HumanErrorAlert.tsx` (`HumanErrorAlert`) is the shared rendering component. It accepts a `HumanError` object (or discrete `message`/`details` props), shows the short message in an MUI `Alert`, and puts the raw `details` text behind an inline "Details" / "Hide details" toggle rendered in a monospace scrollable block. It replaces near-identical inline implementations that previously lived in `ComposerView`, `CaptureAsMockDialog`, and `ImportForm`.
+
+`src/lib/replay.ts` wraps `PUT /mockserver/replay`: `replayRequests(params, httpRequest)` returns the upstream response parsed as JSON (wraps non-JSON bodies as `{ body: text }`), throwing `ReplayError(status, body)` on non-2xx so `humanizeError` can parse it.
+
+`src/lib/expectations.ts` exposes `deleteExpectation(params, id)`, which issues `PUT /mockserver/clear?type=expectations` with body `{ "id": "<expectationId>" }` to remove a single expectation without disturbing logs or recorded requests.
+
 ## Top-Level Views
 
 The dashboard has **twelve top-level views** controlled by a toggle strip in the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
@@ -172,8 +222,11 @@ graph TB
 
 `MetricsView.tsx` (view = `metrics`) is the dashboard's observability surface. Unlike the other views — which are pushed data over the WebSocket — it **polls** MockServer's Prometheus endpoint `GET /mockserver/metrics` on an interval (default 3s) via the `useMetricsPolling` hook, parses the text exposition format (`lib/prometheusParser.ts`), and keeps a rolling history so it can derive time series client-side (`lib/metricsDerive.ts`).
 
+During the initial load (before the first scrape resolves) `MetricsView` renders MUI `Skeleton` placeholders — one text skeleton for the label and one rounded skeleton per chart — so the page shows structure rather than a blank area while waiting.
+
 It renders:
-- summary stat cards (requests received, matched, not-matched, forwarded) with inline-SVG sparklines (`Sparkline.tsx`),
+- **KPI hero stat cards** — four prominent headline counters (requests received, matched, not-matched, forwarded) rendered as `Card` components above the chart stack. When latency histogram data is present, p50/p95/p99 cards join the row.
+- time-series charts with a **real time axis** and **area fill** (via `@mui/x-charts` `AreaChart`) for throughput and latency trends; `@mui/x-charts` is lazy-loaded with the whole `MetricsView` chunk so it stays off the initial bundle,
 - a derived requests-per-second throughput chart (Δcount / Δt between scrapes, since the metrics are monotonic gauges),
 - request latency percentiles (p50/p95/p99) from the `mock_server_request_duration_seconds` histogram (shown only when present),
 - an **HTTP Chaos Faults** section (shown only when a chaos metric is present and has non-zero data) with: a per-fault-type stat + time-series chart of cumulative injections (`mock_server_http_chaos_injected_total`), and a separate per-fault-type chart of the active service-scoped chaos gauge (`mock_server_active_service_chaos`, labeled by `fault_type`) plotted by type rather than as a single counter. Fault types for both are discovered from the scrape via `labelValues`, so a future type renders automatically,
@@ -202,6 +255,13 @@ There is **no charting dependency** (inline SVG) and no server change required. 
 | Active Expectations | `ExpectationPanel` → `JsonListItem` | `activeExpectations` | Currently registered expectations |
 | Received Requests | `RequestPanel` → `JsonListItem` | `recordedRequests` | All received HTTP requests with paired responses |
 | Proxied Requests | `RequestPanel` → `JsonListItem` | `proxiedRequests` | Forwarded requests with upstream responses |
+
+### Per-Expectation Delete and Edit
+
+Each row in `ExpectationPanel` exposes two inline actions (shown only when the row has an `expectationId`):
+
+- **Delete** — opens a `ConfirmDialog` describing what will be removed; on confirmation calls `deleteExpectation(params, id)` from `src/lib/expectations.ts`, which issues `PUT /mockserver/clear?type=expectations { "id": "<id>" }`. The row is optimistically removed from the local store; a success toast confirms. Recorded requests and logs are kept.
+- **Edit** — calls the store action `editExpectation(item.value)`, which sets `pendingEditExpectation` in the store and switches `view` to `'composer'`. `ComposerView` detects the non-null `pendingEditExpectation` in a `useEffect`, loads the expectation JSON into the form, and switches to **Advanced** mode automatically. `clearPendingEditExpectation()` is called after loading so the signal is consumed once.
 
 ### Generate Stub on Unmatched Requests
 
@@ -315,7 +375,7 @@ The component is a pure renderer — it receives a parsed object from `llmTraffi
 
 Requests that do not match any isolated scenario are grouped by upstream host (from the `Host` header) into **unscoped** sessions. This proxy-aware fallback means proxied traffic to different LLM providers (e.g. `api.anthropic.com` vs `api.openai.com`) appears in separate swim-lanes even without any conversation-isolation expectations configured.
 
-Each swim-lane also has a collapsible **Conversation** section (`SessionConversation`) that renders the whole session as a chat-transcript using the same provider-specific Conversation views as the Traffic tab. Because each request in an agent run re-sends the full accumulated message history, it renders the *last* conversation-capable request in the session, which carries the complete transcript. Beneath it, a compact **Show Mermaid** link (`AgentRunGraph.tsx`) fetches the correlated agent-run call graph on demand via the `explain_agent_run` MCP tool and renders it as a Mermaid diagram — a secondary structural view alongside the chat transcript. Both are shown for any session with a detectable LLM provider, including unscoped/proxy sessions.
+Each swim-lane also has a collapsible **Conversation** section (`SessionConversation`) that renders the whole session as a chat-transcript using the same provider-specific Conversation views as the Traffic tab. Because each request in an agent run re-sends the full accumulated message history, it renders the *last* conversation-capable request in the session, which carries the complete transcript. Beneath it, a compact **Show graph** link (`AgentRunGraph.tsx`) fetches the correlated agent-run call graph on demand via the `explain_agent_run` MCP tool and renders it as a real Mermaid SVG diagram — a secondary structural view alongside the chat transcript. `AgentRunGraph` imports `mermaid` via a dynamic `import('mermaid')` inside an effect so the large Mermaid bundle (~hundreds of kB) stays out of the initial dashboard chunk and is fetched only the first time a user opens a graph. The SVG is rendered with `securityLevel: 'strict'` and a theme that follows the dashboard's light/dark mode. If Mermaid fails to load or render, the component falls back to displaying the Mermaid source text and a "Could not render the diagram" note. A "Show/Hide Mermaid source" toggle and a `CopyButton` are always available below the rendered diagram. Both graph and transcript are shown for any session with a detectable LLM provider, including unscoped/proxy sessions.
 
 The grouping logic lives in `src/lib/sessionGrouping.ts`. It uses `scenarioName` and `scenarioState` from the request data to identify which requests belong to which conversation session, with a host-based fallback for unscoped traffic.
 
@@ -325,9 +385,15 @@ Each session lane header displays **per-session token/cost totals**: total input
 
 `ComposerView.tsx` (view = `composer`, surfaced under the AppBar label **Mocks**) is a unified expectation creator and editor — a single inline form covering standard HTTP expectations of every action type plus multi-turn LLM conversations.
 
-At the top is an **Expectation kind** radio: **Standard HTTP expectation** or **LLM Conversation**.
+At the top is a **Quick mock / Advanced** toggle (`ComposerMode = 'quick' | 'advanced'`), defaulting to `'quick'`. The choice is persisted to `sessionStorage` so it survives navigation within the session. When a `pendingEditExpectation` arrives from the store (set by `ExpectationPanel`'s Edit action), the form loads the expectation and switches to **Advanced** mode automatically, since Quick mode only authors a plain HTTP static mock.
+
+Below the mode toggle is an **Expectation kind** radio: **Standard HTTP expectation** or **LLM Conversation**.
 
 ### Standard HTTP Expectation
+
+**Quick mock mode** (`QuickMockForm`) shows only the fields needed for the 90% case — method, path, status code, and a response body — and always produces a static HTTP expectation. It is the default for new sessions and for users who have not previously chosen Advanced. Switching to Advanced retains the current form state.
+
+**Advanced mode** exposes the full form described below.
 
 A **template snippet palette** (`SnippetPalette.tsx`) is available in both the Response Template and Forward Template steps. It is engine-aware — clicking a snippet inserts the correct Velocity, Mustache, or JavaScript syntax for the currently selected template engine. Each snippet shows a description and example output.
 
@@ -426,15 +492,26 @@ See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture 
 
 **Compare (diff) button** — a `CompareArrowsIcon` checkbox on each row. Selecting two rows enables structural comparison of those two requests or their responses via the `DiffPanel` (`PUT /mockserver/diff`). This is the same diff engine used by the Tools menu "Diff two requests" dialog.
 
-## AppBar Styling
+## AppBar Styling and Responsive Behaviour
 
 The AppBar renders the twelve toggle buttons (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics / Breakpoints / Get Started) as a `ToggleButtonGroup`. The **Mocks** button maps to `view = 'composer'`, **Verify** to `view = 'verification'`, and **Async** to `view = 'async'` (the AsyncAPI broker view). The HAR download lives in Library → Export rather than as a top-bar icon.
+
+**Responsive nav**: below the `lg` breakpoint (`useMediaQuery(theme.breakpoints.down('lg'))`) the twelve-button strip is replaced by a hamburger Menu icon. Clicking it opens an MUI `Menu` with the same navigation entries. The full button strip is shown only on large screens.
 
 **Light mode**: toggle buttons use `primary.contrastText` (white) text with a translucent white border (`rgba(255,255,255,0.3)`) and a translucent-white selected state. The status chip uses pale colour tints (`#7fffa0` connected, `#ffd180` connecting, `#ff8a80` error) so colour semantics remain readable against the blue AppBar background.
 
 **Dark mode**: MUI defaults are kept; no overrides applied.
 
-The toolbar uses `flexWrap` so its controls wrap onto a second row on narrow screens rather than clipping. Icon-only buttons carry both a `Tooltip` and an `aria-label`.
+**Responsive layout across views:**
+
+| Breakpoint | Effect |
+|-----------|--------|
+| `< lg` | AppBar nav collapses to hamburger menu |
+| `< md` | `DashboardGrid` collapses from 2×2 to a single stacked column |
+| `< md` | `TrafficInspector` stacks master list above detail pane (column layout) |
+| `< sm` | Dialogs rendered with `fullScreen` |
+
+Icon-only buttons carry both a `Tooltip` and an `aria-label`.
 
 ## Tools Menu
 
@@ -445,10 +522,13 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
 | Import OpenAPI / WSDL | `OpenApiImportDialog` / `WsdlImportDialog` | `PUT /mockserver/openapi` / WSDL import |
 | Pact contract (export / verify) | `PactExportDialog` | `PUT /mockserver/pact`, `PUT /mockserver/pact/verify` |
 | Mock OIDC provider | `OidcDialog` | `PUT /mockserver/oidc` |
+| Mock SAML provider | `SamlDialog` | `PUT /mockserver/saml` |
 | AsyncAPI broker mock | `AsyncApiDialog` | `PUT/GET /mockserver/asyncapi`, `PUT /mockserver/asyncapi/verify` |
 | Register CRUD resource | `CrudDialog` | `PUT /mockserver/crud` |
 | Mock file store | `FileStoreDialog` | `PUT /mockserver/files/{store,list,retrieve,delete}` |
 | Diff two requests | `DiffRequestsDialog` | `PUT /mockserver/diff` (renders `DiffPanel`) |
+
+`SamlDialog` is backed by `src/lib/saml.ts` (`createSamlProvider`), which calls `PUT /mockserver/saml` with a `SamlConfig` body and returns the count of expectations registered. All fields are optional; the server supplies sensible defaults so an empty submit produces a fully functional mock SAML 2.0 IdP. Errors are surfaced via `humanizeError`.
 
 ## Destructive-Action Safety & Feedback
 
@@ -473,10 +553,10 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
 
 ```typescript
 {
-  logMessages: [],           // Log entries (grouped by correlationId)
-  activeExpectations: [],    // Currently active expectations
-  recordedRequests: [],      // All received requests (with paired responses)
-  proxiedRequests: [],       // Forwarded request+response pairs
+  logMessages: [],               // Log entries (grouped by correlationId)
+  activeExpectations: [],        // Currently active expectations
+  recordedRequests: [],          // All received requests (with paired responses)
+  proxiedRequests: [],           // Forwarded request+response pairs
   connectionStatus: 'disconnected',
   error: null,
   filterEnabled: false,
@@ -487,10 +567,11 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
   receivedSearch: '',
   proxiedSearch: '',
   trafficSearch: '',
-  view: 'get-started',      // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view)
+  view: 'get-started',          // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view)
   selectedTrafficIndex: null,
   actionTypeFilter: [],
   llmProviderFilter: [],
+  pendingEditExpectation: null,  // Set by editExpectation(); consumed once by ComposerView to pre-fill the form
 }
 ```
 
@@ -613,6 +694,9 @@ Expandable match failure reasons"]
 | `CopyButton` | `CopyButton.tsx` | Hover-reveal icon button that copies text to clipboard |
 | `DescriptionDisplay` | `DescriptionDisplay.tsx` | Renders description variants: plain string, structured `{first, second}`, or JSON object |
 | `BecauseSection` | `BecauseSection.tsx` | Expandable list of match failure reasons for `EXPECTATION_NOT_MATCHED` entries |
+| `ErrorBoundary` | `ErrorBoundary.tsx` | Catches render-time exceptions; shows a recoverable inline fallback; keyed-reset on `view`; hard-reload for chunk-load failures |
+| `HumanErrorAlert` | `HumanErrorAlert.tsx` | Shared error alert: short `message` + inline "Details" expander for the raw server body |
+| `SamlDialog` | `SamlDialog.tsx` | Mock SAML 2.0 IdP registration dialog; backed by `lib/saml.ts` → `PUT /mockserver/saml` |
 
 ### Collapsible Items
 
@@ -655,8 +739,19 @@ Copy buttons appear on hover (CSS `opacity: 0` → `opacity: 1` on parent `:hove
 - Default: dark mode (unless user explicitly saved `'light'` in `localStorage` key `mockserver-theme`)
 - `getInitialTheme()` in store checks `localStorage` first; falls back to `'dark'`
 - `prefers-color-scheme` media query is **not** used — dark is always the default for new users
-- `buildTheme()` in `theme.ts` creates MUI theme from the mode
+- `buildTheme()` in `theme.ts` creates an MUI theme from the mode
 - Toggle via AppBar sun/moon icon; saved to `localStorage`
+
+`src/theme.ts` is now a full design system. Beyond `buildTheme()`, it exports:
+
+| Export | Purpose |
+|--------|---------|
+| `logTypeColors` | Flat `rgb(…)` map keyed by log type — light-background variants, kept for backwards compatibility |
+| `logTypeColor(type, mode)` | Mode-aware accessor; returns a dark-override colour for types whose light-bg value has low contrast on the dark `#1e1e1e` canvas (`CREATED_EXPECTATION`, `EXPECTATION_NOT_MATCHED`, `CLEARED`, `UPDATED_EXPECTATION`, `INFO`, `SERVER_CONFIGURATION`, `ERROR`, `EXCEPTION`) |
+| `transitions` | Shared motion tokens — `fast` (150 ms), `standard` (220 ms), `forProps(props[], ms?)` for property-scoped transitions |
+| `monospaceFontFamily` | Monospace font stack shared by log/JSON/code surfaces |
+
+`buildTheme()` now sets MUI `shape.borderRadius: 8`, a tuned typography scale (`h5`/`h6`/`subtitle1`/`subtitle2`/`body2`/`caption` all mapped to the rem sizes the dashboard already uses), shortened `transitions.duration` values, and component overrides for `MuiPaper`, `MuiCard`, `MuiAppBar`, `MuiButton`, `MuiChip`, `MuiToggleButton`, `MuiTooltip`, and `MuiTableRow`. Shadow tokens are mode-aware (deeper spreads on dark canvas) and are applied to Paper elevations, Cards, and the AppBar.
 
 ### Keyboard Shortcuts
 
@@ -702,11 +797,14 @@ Vitest + React Testing Library + jsdom — see `mockserver-ui/src/__tests__/` fo
 
 | Area | Example test files |
 |------|--------------------|
-| Store + hooks | `store.test.ts`, `useConnectionParams.test.ts`, `useKeyboardShortcuts.test.ts`, `useWebSocket.test.ts` |
-| App-chrome components | `AppBar.test.tsx`, `Panel.test.tsx`, `BecauseSection.test.tsx`, `CopyButton.test.tsx`, `DescriptionDisplay.test.tsx` |
+| Store + hooks | `store.test.ts`, `useConnectionParams.test.ts`, `useKeyboardShortcuts.test.ts`, `useWebSocket.test.ts`, `useAutoRefresh.test.ts` |
+| App-chrome components | `AppBar.test.tsx`, `Panel.test.tsx`, `BecauseSection.test.tsx`, `CopyButton.test.tsx`, `DescriptionDisplay.test.tsx`, `HumanErrorAlert.test.tsx` |
 | Log and request panels | `LogEntry.test.tsx`, `LogGroup.test.tsx`, `LogPanel.test.tsx`, `RequestPanel.test.tsx`, `ExpectationPanel.test.tsx`, `FilterPanel.test.tsx`, `JsonListItem.test.tsx` |
-| Traffic / Sessions inspectors | `TrafficInspector.test.tsx`, `SessionInspector.test.tsx`, `PredicatePills.test.tsx` |
-| LLM mocking flows | `CaptureAsMockDialog.test.tsx`, `ConversationWizard.test.tsx`, `CassetteManager.test.tsx`, `CompareRunsDialog.test.tsx`, `cassetteRegistry.test.ts`, `conversationCodegen.test.ts`, `expectationFromCapture.test.ts`, `llmExpectationCodegen.test.ts`, `llmPricing.test.ts`, `llmTraffic.test.ts`, `trajectoryDiff.test.ts`, `sessionGrouping.test.ts`, `mcpClient.test.ts` |
+| Traffic / Sessions inspectors | `TrafficInspector.test.tsx`, `SessionInspector.test.tsx`, `PredicatePills.test.tsx`, `AgentRunGraph.test.tsx` |
+| Responsive layout | `responsiveLayout.test.tsx` |
+| Metrics view | `MetricsView.test.tsx` |
+| Composer quick/advanced | `composerW6.test.tsx` |
+| LLM mocking flows | `CaptureAsMockDialog.test.tsx`, `ConversationWizard.test.tsx`, `CassetteManager.test.tsx`, `CompareRunsDialog.test.tsx`, `cassetteRegistry.test.ts`, `conversationCodegen.test.ts`, `expectationFromCapture.test.ts`, `llmExpectationCodegen.test.ts`, `llmPricing.test.ts`, `llmTraffic.test.ts`, `trajectoryDiff.test.ts`, `sessionGrouping.test.ts`, `mcpClient.test.ts`, `callGraph.test.ts` |
 
 Run `npm test` from `mockserver-ui/` to execute the full suite; the JUnit report is written to `mockserver-ui/test-reports/junit.xml`.
 
@@ -768,7 +866,9 @@ The dashboard uses specialized Jackson serializers for UI-friendly output:
 
 ### Log Entry Color Coding
 
-| Log Type | Color | RGB |
+The colour map lives in `src/theme.ts` as `logTypeColors` (light-background values). Use `logTypeColor(type, mode)` rather than indexing `logTypeColors` directly so dark-mode overrides are applied. Components that receive `themeMode` from the store pass it through to the colour accessor.
+
+| Log Type | Color | RGB (light) |
 |----------|-------|-----|
 | RECEIVED_REQUEST | Blue | `rgb(114,160,193)` |
 | EXPECTATION_RESPONSE | Light blue | `rgb(161,208,231)` |
