@@ -94,6 +94,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED = "mockserver.forwardConnectionPoolEnabled";
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY = "mockserver.forwardConnectionPoolMaxIdlePerKey";
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS = "mockserver.forwardConnectionPoolIdleTimeoutMillis";
+    private static final String MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS = "mockserver.enforceResponseValidationForMocks";
 
     // socket
     private static final String MOCKSERVER_MAX_SOCKET_TIMEOUT = "mockserver.maxSocketTimeout";
@@ -1450,6 +1451,25 @@ public class ConfigurationProperties {
      */
     public static void forwardConnectionPoolIdleTimeoutMillis(long idleTimeoutMillis) {
         setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS, "" + idleTimeoutMillis);
+    }
+
+    public static boolean enforceResponseValidationForMocks() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS, "MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS", "" + false));
+    }
+
+    /**
+     * If false (the default) OpenAPI response validation of mock responses is advisory only —
+     * validation failures are logged but the response is still returned to the client (matching the
+     * historical behaviour of {@code openAPIResponseValidation}). If true a mock response that fails
+     * OpenAPI response validation is replaced with a 502 error describing the violations, matching the
+     * enforcement already available on the validation-proxy path ({@code validateProxyEnforce}).
+     * <p>
+     * This flag only has any effect when {@code openAPIResponseValidation} is also enabled.
+     *
+     * @param enable enable enforcement (fail/replace) of OpenAPI response validation for mock responses
+     */
+    public static void enforceResponseValidationForMocks(boolean enable) {
+        setProperty(MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS, "" + enable);
     }
 
     // socket

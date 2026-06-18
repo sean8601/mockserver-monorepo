@@ -671,6 +671,33 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetEnforceResponseValidationForMocks() {
+        boolean original = ConfigurationProperties.enforceResponseValidationForMocks();
+        try {
+            // then - default value
+            assertThat(configuration.enforceResponseValidationForMocks(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.enforceResponseValidationForMocks(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.enforceResponseValidationForMocks(), equalTo(true));
+            assertThat(System.getProperty("mockserver.enforceResponseValidationForMocks"), equalTo("true"));
+            assertThat(configuration.enforceResponseValidationForMocks(), equalTo(true));
+            ConfigurationProperties.enforceResponseValidationForMocks(original);
+
+            // when - instance setter overrides the system property
+            ConfigurationProperties.enforceResponseValidationForMocks(false);
+            configuration.enforceResponseValidationForMocks(true);
+
+            // then - getter
+            assertThat(configuration.enforceResponseValidationForMocks(), equalTo(true));
+        } finally {
+            ConfigurationProperties.enforceResponseValidationForMocks(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetMaxSocketTimeoutInMillis() {
         long original = ConfigurationProperties.maxSocketTimeout();
         try {

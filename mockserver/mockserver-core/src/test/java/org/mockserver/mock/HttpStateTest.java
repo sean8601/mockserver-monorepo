@@ -205,6 +205,97 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldHandleContractTestRequestWhenServiceConforms() throws Exception {
+        // given — a conformant SUT: listPets (GET /pets) returns a JSON array as the spec requires
+        String spec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");
+        httpState.setReplayHandler(req -> {
+            HttpResponse upstream = response()
+                .withStatusCode(200)
+                .withHeader("content-type", "application/json")
+                .withBody("[{\"id\":1,\"name\":\"Fido\"}]");
+            return CompletableFuture.completedFuture(upstream);
+        });
+        HttpRequest contractTestRequest = request("/mockserver/contractTest")
+            .withMethod("PUT")
+            .withBody("{\"spec\":" + org.mockserver.serialization.ObjectMapperFactory.createObjectMapper().writeValueAsString(spec)
+                + ",\"baseUrl\":\"http://localhost:1080\",\"operationId\":\"listPets\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(contractTestRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        com.fasterxml.jackson.databind.JsonNode report =
+            org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                .readTree(responseWriter.response.getBodyAsString());
+        assertThat(report.get("baseUrl").asText(), is("http://localhost:1080"));
+        assertThat(report.get("totalOperations").asInt(), is(1));
+        assertThat(report.get("passed").asInt(), is(1));
+        assertThat(report.get("failed").asInt(), is(0));
+        assertThat(report.get("allPassed").asBoolean(), is(true));
+        com.fasterxml.jackson.databind.JsonNode result = report.get("results").get(0);
+        assertThat(result.get("operationId").asText(), is("listPets"));
+        assertThat(result.get("passed").asBoolean(), is(true));
+        assertThat(result.get("validationErrors").size(), is(0));
+    }
+
+    @Test
+    public void shouldHandleContractTestRequestWhenServiceViolatesSpec() throws Exception {
+        // given — a non-conformant SUT: listPets returns a JSON object instead of an array
+        String spec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");
+        httpState.setReplayHandler(req -> {
+            HttpResponse upstream = response()
+                .withStatusCode(200)
+                .withHeader("content-type", "application/json")
+                .withBody("{\"not\":\"an array\"}");
+            return CompletableFuture.completedFuture(upstream);
+        });
+        HttpRequest contractTestRequest = request("/mockserver/contractTest")
+            .withMethod("PUT")
+            .withBody("{\"spec\":" + org.mockserver.serialization.ObjectMapperFactory.createObjectMapper().writeValueAsString(spec)
+                + ",\"baseUrl\":\"http://localhost:1080\",\"operationId\":\"listPets\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(contractTestRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        com.fasterxml.jackson.databind.JsonNode report =
+            org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                .readTree(responseWriter.response.getBodyAsString());
+        assertThat(report.get("totalOperations").asInt(), is(1));
+        assertThat(report.get("passed").asInt(), is(0));
+        assertThat(report.get("failed").asInt(), is(1));
+        assertThat(report.get("allPassed").asBoolean(), is(false));
+        com.fasterxml.jackson.databind.JsonNode result = report.get("results").get(0);
+        assertThat(result.get("operationId").asText(), is("listPets"));
+        assertThat(result.get("passed").asBoolean(), is(false));
+        assertThat(result.get("validationErrors").size(), is(greaterThan(0)));
+    }
+
+    @Test
+    public void shouldRejectContractTestRequestWithoutBaseUrl() {
+        // given — body missing the required baseUrl
+        httpState.setReplayHandler(req -> CompletableFuture.completedFuture(response().withStatusCode(200)));
+        HttpRequest contractTestRequest = request("/mockserver/contractTest")
+            .withMethod("PUT")
+            .withBody("{\"spec\":\"{}\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+        // when
+        boolean handle = httpState.handle(contractTestRequest, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("baseUrl"));
+    }
+
+    @Test
     public void shouldHandleClearRequest() {
         // given
         httpState.add(new Expectation(request("request_one")).thenRespond(response("response_one")));

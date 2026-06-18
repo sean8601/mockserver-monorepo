@@ -1982,9 +1982,9 @@ public class HttpActionHandler {
                                 .setMessageFormat("returning response:{}for request:{}for action:{}from expectation:{}")
                                 .setArguments(responseToWrite, request, action, action.getExpectationId())
                         );
-                        validateOpenAPIResponse(responseToWrite, request, action, requestDefinition);
-                        responseWriter.writeResponse(request, responseToWrite, false);
-                        emitRequestSpan(request, responseToWrite, action, ctx, 0);
+                        HttpResponse validatedResponse = validateOpenAPIResponse(responseToWrite, request, action, requestDefinition);
+                        responseWriter.writeResponse(request, validatedResponse, false);
+                        emitRequestSpan(request, validatedResponse, action, ctx, 0);
                     }, postProcessor)) {
                         return; // async — postProcessor runs in the breakpoint continuation
                     }
@@ -2003,9 +2003,9 @@ public class HttpActionHandler {
                         .setMessageFormat("returning response:{}for request:{}for action:{}from expectation:{}")
                         .setArguments(effectiveResponse, request, action, action.getExpectationId())
                 );
-                validateOpenAPIResponse(effectiveResponse, request, action, requestDefinition);
-                responseWriter.writeResponse(request, effectiveResponse, false);
-                emitRequestSpan(request, effectiveResponse, action, ctx, 0);
+                HttpResponse validatedResponse = validateOpenAPIResponse(effectiveResponse, request, action, requestDefinition);
+                responseWriter.writeResponse(request, validatedResponse, false);
+                emitRequestSpan(request, validatedResponse, action, ctx, 0);
             } finally {
                 if (postProcessor != null) {
                     postProcessor.run();
@@ -2063,7 +2063,18 @@ public class HttpActionHandler {
         return combined;
     }
 
-    private void validateOpenAPIResponse(final HttpResponse response, final HttpRequest request, final Action action, final RequestDefinition requestDefinition) {
+    /**
+     * Validates a mock response against the OpenAPI spec it was generated from when
+     * {@code openAPIResponseValidation} is enabled.
+     * <p>
+     * By default validation is advisory only — violations are logged and the original response is
+     * returned unchanged. When {@code enforceResponseValidationForMocks} is also enabled a response
+     * that fails validation is replaced with a 502 describing the violations, matching the
+     * validation-proxy path's {@code validateProxyEnforce} behaviour.
+     *
+     * @return the original response (valid, validation disabled, or report-only) or a 502 replacement (enforce mode + violations)
+     */
+    private HttpResponse validateOpenAPIResponse(final HttpResponse response, final HttpRequest request, final Action action, final RequestDefinition requestDefinition) {
         if (configuration.openAPIResponseValidation() && requestDefinition instanceof OpenAPIDefinition openAPIDefinition) {
             if (isNotBlank(openAPIDefinition.getSpecUrlOrPayload()) && isNotBlank(openAPIDefinition.getOperationId())) {
                 List<String> validationErrors = OpenAPIResponseValidator.validate(
@@ -2084,9 +2095,15 @@ public class HttpActionHandler {
                             .setMessageFormat("OpenAPI response validation failed for operation " + openAPIDefinition.getOperationId() + ":{}for request:{}for response:{}")
                             .setArguments(String.join(NEW_LINE, validationErrors), request, response)
                     );
+                    if (Boolean.TRUE.equals(configuration.enforceResponseValidationForMocks())) {
+                        return response()
+                            .withStatusCode(502)
+                            .withBody("OpenAPI response validation failed: " + String.join("; ", validationErrors));
+                    }
                 }
             }
         }
+        return response;
     }
 
     void executeAfterForwardActionResponse(final HttpForwardActionResult responseFuture, final BiConsumer<HttpResponse, Throwable> command, final boolean synchronous) {

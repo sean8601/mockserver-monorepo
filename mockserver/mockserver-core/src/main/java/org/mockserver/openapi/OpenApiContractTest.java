@@ -60,6 +60,11 @@ public class OpenApiContractTest {
         List<ContractTestResult> results = new ArrayList<>();
         OpenAPI openAPI = buildOpenAPI(specUrlOrPayload, mockServerLogger);
 
+        // A valid OpenAPI document may have no paths (e.g. a webhooks-only or components-only spec)
+        if (openAPI.getPaths() == null) {
+            return results;
+        }
+
         // Iterate over all paths and operations
         for (Map.Entry<String, io.swagger.v3.oas.models.PathItem> pathEntry : openAPI.getPaths().entrySet()) {
             String pathTemplate = pathEntry.getKey();

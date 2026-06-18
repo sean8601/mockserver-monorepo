@@ -49,6 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cached forward-proxy PEM parsing**: forward-proxy private key and certificate-chain PEM material is now parsed
   once and cached by its configuration value, so an unchanged forward-proxy key/chain is not re-parsed on every
   client TLS context (re)build.
+- **OpenAPI contract testing endpoint `PUT /mockserver/contractTest`**: runs an OpenAPI spec as contract
+  tests against a live service. For each operation MockServer builds a representative example request, sends
+  it to the target `baseUrl` (reusing the wired HTTP client, with the same SSRF protection as the forward
+  and replay paths), and validates the response against the spec. Returns a structured pass/fail-per-operation
+  JSON report (`totalOperations`, `passed`, `failed`, `allPassed`, and per-operation `validationErrors`). An
+  optional `operationId` restricts the run to a single operation.
+- **Enforce OpenAPI response validation for mocks `enforceResponseValidationForMocks`**
+  (`MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS`, default false): when enabled (alongside
+  `openAPIResponseValidation`), a mock response that fails OpenAPI response validation is replaced with a
+  `502` error describing the violations, matching the enforcement already available on the validation-proxy
+  path via `validateProxyEnforce`. The default (false) keeps the historical advisory-only behaviour where
+  violations are logged but the response is still returned.
 - **Case-sensitive matching opt-in `matchExactCase`** (`MOCKSERVER_MATCH_EXACT_CASE`, default false): when
   enabled, request matching of the method, path and regex string body becomes case-sensitive (exact case)
   instead of the historical case-insensitive behaviour, so an expectation for `/Path` no longer matches a

@@ -99,6 +99,7 @@ public class Configuration {
     private Boolean forwardConnectionPoolEnabled;
     private Integer forwardConnectionPoolMaxIdlePerKey;
     private Long forwardConnectionPoolIdleTimeoutMillis;
+    private Boolean enforceResponseValidationForMocks;
 
     // socket
     private Long maxSocketTimeoutInMillis;
@@ -2049,6 +2050,28 @@ public class Configuration {
      */
     public Configuration openAPIResponseValidation(Boolean openAPIResponseValidation) {
         this.openAPIResponseValidation = openAPIResponseValidation;
+        return this;
+    }
+
+    public Boolean enforceResponseValidationForMocks() {
+        if (enforceResponseValidationForMocks == null) {
+            return ConfigurationProperties.enforceResponseValidationForMocks();
+        }
+        return enforceResponseValidationForMocks;
+    }
+
+    /**
+     * <p>If false (the default) OpenAPI response validation of mock responses is advisory only -
+     * validation failures are logged but the response is still returned to the client.</p>
+     * <p>If true a mock response that fails OpenAPI response validation is replaced with a 502 error
+     * describing the violations, matching the enforcement already available on the validation-proxy
+     * path ({@code validateProxyEnforce}).</p>
+     * <p>This flag only has any effect when {@code openAPIResponseValidation} is also enabled.</p>
+     *
+     * @param enforceResponseValidationForMocks if enabled mock responses that fail OpenAPI response validation are replaced with a 502 error
+     */
+    public Configuration enforceResponseValidationForMocks(Boolean enforceResponseValidationForMocks) {
+        this.enforceResponseValidationForMocks = enforceResponseValidationForMocks;
         return this;
     }
 

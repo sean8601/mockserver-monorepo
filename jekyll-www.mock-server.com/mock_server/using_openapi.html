@@ -1138,6 +1138,58 @@ mockServerClient("localhost", 1080).openAPIExpectation({
 
 <p>This means you can safely call <span class="inline_code">PUT /mockserver/openapi</span> on every test run or CI build &mdash; you will always end up with a consistent set of mock expectations matching the current spec, with no stale duplicates.</p>
 
+<a id="contract_testing" class="anchor" href="#contract_testing">&nbsp;</a>
+
+<h2>Contract Testing Against a Live Service</h2>
+
+<p>MockServer can run an OpenAPI specification as a set of contract tests against a real, running service. For each operation in the spec, MockServer builds a representative example request (using path, query, header, and body examples from the spec), sends it to the target service, and validates the response against the spec. This is useful for confirming that a deployed service still conforms to the contract its consumers rely on.</p>
+
+<p>Submit the request to the <span class="inline_code">PUT /mockserver/contractTest</span> endpoint with a JSON body containing:</p>
+
+<ul>
+    <li><span class="inline_code">spec</span> &mdash; required; a URL, file path, or inline JSON/YAML OpenAPI specification (the alias <span class="inline_code">specUrlOrPayload</span> is also accepted)</li>
+    <li><span class="inline_code">baseUrl</span> &mdash; required; the base URL of the service under test, e.g. <span class="inline_code">http://localhost:8080</span> (a path prefix in the base URL is prepended to each operation path)</li>
+    <li><span class="inline_code">operationId</span> &mdash; optional; restricts the run to a single operation</li>
+</ul>
+
+<p>Example request body:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+    "spec": "https://petstore.swagger.io/v2/swagger.json",
+    "baseUrl": "http://localhost:8080",
+    "operationId": "listPets"
+}</code></pre>
+
+<p>MockServer returns HTTP 200 with a structured pass/fail-per-operation report:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+    "baseUrl": "http://localhost:8080",
+    "totalOperations": 3,
+    "passed": 2,
+    "failed": 1,
+    "allPassed": false,
+    "results": [
+        {
+            "operationId": "listPets",
+            "method": "get",
+            "path": "/pets",
+            "statusCodeReceived": 200,
+            "passed": true,
+            "validationErrors": []
+        },
+        {
+            "operationId": "showPetById",
+            "method": "get",
+            "path": "/pets/{petId}",
+            "statusCodeReceived": 200,
+            "passed": false,
+            "validationErrors": ["Object instance has properties which are not allowed by the schema: [\"extra\"]"]
+        }
+    ]
+}</code></pre>
+
+<p>Each result reports the operation tested, the status code received, whether the response conformed to the spec, and any validation errors. The target host is subject to the same SSRF protection as the forward and replay paths &mdash; see <span class="inline_code">forwardProxyBlockPrivateNetworks</span>.</p>
+
 <a id="openapi_callbacks" class="anchor" href="#openapi_callbacks">&nbsp;</a>
 
 <h2>OpenAPI Callbacks (Webhooks)</h2>

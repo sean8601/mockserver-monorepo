@@ -1954,6 +1954,14 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/contractTest", "/contractTest")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    handleContractTest(request, responseWriter, canHandle);
+                } else {
+                    canHandle.complete(true);
+                }
+
             } else if (request.matches("PUT", PATH_PREFIX + "/pact/import", "/pact/import")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -4012,6 +4020,186 @@ public class HttpState {
      * Requests whose body exceeds this cap are rejected with 413 Payload Too Large.
      */
     private static final int REPLAY_MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+
+    /**
+     * Run OpenAPI contract tests against a live service. The control-plane request body is a JSON
+     * document containing:
+     * <ul>
+     *   <li>{@code spec} (or {@code specUrlOrPayload}) — required; a URL, file path, or inline JSON/YAML OpenAPI spec</li>
+     *   <li>{@code baseUrl} — required; the base URL of the service under test e.g. {@code http://localhost:8080}</li>
+     *   <li>{@code operationId} — optional; restricts the run to a single operation</li>
+     * </ul>
+     * <p>For each operation in the spec a representative example request is built, sent to the target
+     * service (reusing the wired HTTP client via {@link #replayHandler}), and the response is validated
+     * against the spec. A structured pass/fail-per-operation report is returned as JSON.</p>
+     * <p>The same SSRF policy applied to the forward/replay path is enforced against the resolved target
+     * host before any request is sent.</p>
+     */
+    private void handleContractTest(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
+        try {
+            if (replayHandler == null) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(NOT_IMPLEMENTED.code())
+                    .withBody("{\"error\":\"contract testing is not available — no HTTP client has been wired\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            String body = controlPlaneRequest.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required — must be a JSON document with a \\\"spec\\\" (URL or inline spec) and a \\\"baseUrl\\\"\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            com.fasterxml.jackson.databind.JsonNode rootNode = ObjectMapperFactory.createObjectMapper().readTree(body);
+            String spec = textOrNull(rootNode, "spec");
+            if (isBlank(spec)) {
+                spec = textOrNull(rootNode, "specUrlOrPayload");
+            }
+            String baseUrl = textOrNull(rootNode, "baseUrl");
+            String operationIdFilter = textOrNull(rootNode, "operationId");
+
+            if (isBlank(spec)) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body must contain a \\\"spec\\\" — a URL, file path, or inline OpenAPI spec\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+            if (isBlank(baseUrl)) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body must contain a \\\"baseUrl\\\" — the base URL of the service under test\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            final java.net.URI target;
+            try {
+                target = new java.net.URI(baseUrl.trim());
+            } catch (java.net.URISyntaxException e) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":" + jsonEncodeString("invalid baseUrl: " + e.getMessage()) + "}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+            final String targetHost = target.getHost();
+            if (isBlank(targetHost)) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"baseUrl must include a host e.g. http://localhost:8080\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            // SSRF protection: validate the target host against the same policy enforced by the
+            // normal forward and replay paths.
+            try {
+                InetAddressValidator.validateForwardTarget(configuration, targetHost);
+            } catch (IllegalArgumentException blocked) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setMessageFormat("contract test blocked by SSRF policy:{}")
+                        .setArguments(blocked.getMessage())
+                );
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(FORBIDDEN.code())
+                    .withBody("{\"error\":" + jsonEncodeString("contract test blocked by SSRF policy: " + blocked.getMessage()) + "}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            final boolean https = "https".equalsIgnoreCase(target.getScheme());
+            final int targetPort = target.getPort() != -1 ? target.getPort() : (https ? 443 : 80);
+            final String contextPath = target.getRawPath() != null && !"/".equals(target.getRawPath())
+                ? org.apache.commons.lang3.StringUtils.removeEnd(target.getRawPath(), "/") : "";
+            final long timeoutMillis = configuration.maxSocketTimeoutInMillis();
+
+            // HTTP sender: targets each example request at the service-under-test and blocks on the
+            // wired async HTTP client. Runs on the control-plane request thread; no breakpoints apply.
+            java.util.function.Function<HttpRequest, HttpResponse> httpSender = exampleRequest -> {
+                HttpRequest outbound = exampleRequest
+                    .withSocketAddress(targetHost, targetPort, https ? SocketAddress.Scheme.HTTPS : SocketAddress.Scheme.HTTP)
+                    .withSecure(https)
+                    .withHeader(HOST.toString(), targetPort == (https ? 443 : 80) ? targetHost : (targetHost + ":" + targetPort));
+                if (!contextPath.isEmpty()) {
+                    String path = outbound.getPath() != null ? outbound.getPath().getValue() : "/";
+                    outbound.withPath(contextPath + path);
+                }
+                try {
+                    HttpResponse upstream = replayHandler.apply(outbound)
+                        .get(timeoutMillis, MILLISECONDS);
+                    return upstream != null ? upstream : response().withStatusCode(0);
+                } catch (Exception e) {
+                    throw new RuntimeException("failed to send contract-test request to " + baseUrl + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()), e);
+                }
+            };
+
+            List<org.mockserver.openapi.OpenApiContractTest.ContractTestResult> results =
+                new org.mockserver.openapi.OpenApiContractTest(mockServerLogger)
+                    .runContractTests(spec, baseUrl, operationIdFilter, httpSender);
+
+            int passed = 0;
+            for (org.mockserver.openapi.OpenApiContractTest.ContractTestResult result : results) {
+                if (result.isPassed()) {
+                    passed++;
+                }
+            }
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode reportNode = objectMapper.createObjectNode();
+            reportNode.put("baseUrl", baseUrl);
+            reportNode.put("totalOperations", results.size());
+            reportNode.put("passed", passed);
+            reportNode.put("failed", results.size() - passed);
+            reportNode.put("allPassed", passed == results.size());
+            com.fasterxml.jackson.databind.node.ArrayNode resultsNode = reportNode.putArray("results");
+            for (org.mockserver.openapi.OpenApiContractTest.ContractTestResult result : results) {
+                com.fasterxml.jackson.databind.node.ObjectNode resultNode = resultsNode.addObject();
+                resultNode.put("operationId", result.getOperationId());
+                resultNode.put("method", result.getMethod());
+                resultNode.put("path", result.getPath());
+                resultNode.put("statusCodeReceived", result.getStatusCodeReceived());
+                resultNode.put("passed", result.isPassed());
+                com.fasterxml.jackson.databind.node.ArrayNode errorsNode = resultNode.putArray("validationErrors");
+                if (result.getValidationErrors() != null) {
+                    for (String error : result.getValidationErrors()) {
+                        errorsNode.add(error);
+                    }
+                }
+            }
+
+            responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                .withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(reportNode), MediaType.JSON_UTF_8)), true);
+            canHandle.complete(true);
+        } catch (Exception e) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setHttpRequest(controlPlaneRequest)
+                    .setMessageFormat("exception handling contract test request:{}error:{}")
+                    .setArguments(controlPlaneRequest, e.getMessage())
+                    .setThrowable(e)
+            );
+            responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                .withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":" + jsonEncodeString(e.getMessage() != null ? e.getMessage() : "unknown error") + "}", MediaType.JSON_UTF_8)), true);
+            canHandle.complete(true);
+        }
+    }
+
+    /**
+     * Returns the text value of a JSON field, or {@code null} if the field is absent, null, or not textual.
+     */
+    private static String textOrNull(com.fasterxml.jackson.databind.JsonNode rootNode, String fieldName) {
+        com.fasterxml.jackson.databind.JsonNode node = rootNode.get(fieldName);
+        return node != null && !node.isNull() ? node.asText() : null;
+    }
 
     /**
      * Re-issue a previously recorded/proxied request to its target and return
