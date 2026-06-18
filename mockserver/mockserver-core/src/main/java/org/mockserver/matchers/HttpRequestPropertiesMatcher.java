@@ -253,16 +253,27 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                     }
 
                     boolean pathMatches = StringUtils.isBlank(request.getPath().getValue()) || matches(PATH, context, pathMatcher, controlPlaneMatcher ? pathParametersParser.normalisePathWithParametersForMatching(request) : request.getPath());
-                    Parameters pathParameters = null;
-                    try {
-                        pathParameters = pathParametersParser.extractPathParameters(httpRequest, request);
-                    } catch (IllegalArgumentException iae) {
-                        if (!httpRequest.getPath().isBlank()) {
-                            if (context != null) {
-                                context.currentField(PATH);
-                                context.addDifference(mockServerLogger, iae.getMessage());
+                    // extractPathParameters clones (or allocates) the request's path Parameters and
+                    // runs the path-template regex even when this expectation declares no {pathParam}
+                    // templates. When the matcher has no path parameters the extraction is pure
+                    // overhead: it never adds an entry, the path-parameter matcher is blank (so it
+                    // matches anything), and the post-match withPathParameters assignment below
+                    // normalises empty/null identically whether handed the request's own Parameters
+                    // or a content-equal clone of them. So only run extraction when the expectation
+                    // actually declares path parameters; otherwise reuse the request's own Parameters.
+                    boolean expectationHasPathParameters = httpRequest.getPathParameters() != null && !httpRequest.getPathParameters().isEmpty();
+                    Parameters pathParameters = expectationHasPathParameters ? null : request.getPathParameters();
+                    if (expectationHasPathParameters) {
+                        try {
+                            pathParameters = pathParametersParser.extractPathParameters(httpRequest, request);
+                        } catch (IllegalArgumentException iae) {
+                            if (!httpRequest.getPath().isBlank()) {
+                                if (context != null) {
+                                    context.currentField(PATH);
+                                    context.addDifference(mockServerLogger, iae.getMessage());
+                                }
+                                pathMatches = false;
                             }
-                            pathMatches = false;
                         }
                     }
                     if (failFast(pathMatcher, context, matchDifferenceCount, becauseBuilder, pathMatches, PATH)) {
