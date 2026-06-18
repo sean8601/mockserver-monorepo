@@ -471,12 +471,28 @@ public class RequestMatchersStateBackendTest {
 
     @Test
     public void reconcileFromBackendPicksUpResponseBodyChange() {
+        // Remote-update reconciliation (picking up a backend write that bypassed
+        // the local add() path) only applies to a CLUSTERED backend — for the
+        // non-clustered in-memory default every mutation originates locally, so
+        // reconcileFromBackend() does a cheap eviction-only trim. Use a clustered
+        // backend so this test exercises the full remote-update reconcile path.
+        InMemoryStateBackend clusteredBackend = new InMemoryStateBackend(MAX_EXPECTATIONS) {
+            @Override
+            public boolean isClustered() {
+                return true;
+            }
+        };
+        RequestMatchers clusteredMatchers = new RequestMatchers(
+            configurationWithMax, new MockServerLogger(),
+            mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        clusteredMatchers.setStateBackend(clusteredBackend);
+
         // Add an expectation via the normal path
-        backendMatchers.add(new Expectation(request().withPath("/a")).withId("a")
+        clusteredMatchers.add(new Expectation(request().withPath("/a")).withId("a")
             .thenRespond(response().withBody("original-body")), API);
 
         // Verify matcher serves the original body
-        Expectation matched = backendMatchers.firstMatchingExpectation(request().withPath("/a"));
+        Expectation matched = clusteredMatchers.firstMatchingExpectation(request().withPath("/a"));
         assertThat(matched, is(notNullValue()));
         assertThat(matched.getHttpResponse().getBodyAsString(), is("original-body"));
 
@@ -486,16 +502,51 @@ public class RequestMatchersStateBackendTest {
         Expectation remoteUpdate = new Expectation(request().withPath("/a")).withId("a")
             .thenRespond(response().withBody("updated-body"));
         remoteUpdate.withCreated(matched.getCreated());
-        stateBackend.expectations().put("a", new ExpectationEntry(remoteUpdate));
+        clusteredBackend.expectations().put("a", new ExpectationEntry(remoteUpdate));
 
         // Trigger reconcile (simulates what the InvalidationListener does)
-        backendMatchers.reconcileFromBackend();
+        clusteredMatchers.reconcileFromBackend();
 
         // The matcher should now serve the updated body
-        Expectation matchedAfter = backendMatchers.firstMatchingExpectation(request().withPath("/a"));
+        Expectation matchedAfter = clusteredMatchers.firstMatchingExpectation(request().withPath("/a"));
         assertThat(matchedAfter, is(notNullValue()));
         assertThat("reconcile should pick up response body change",
             matchedAfter.getHttpResponse().getBodyAsString(), is("updated-body"));
+    }
+
+    @Test
+    public void clusteredReconcilePicksUpRemoteAdd() {
+        // Clustered remote-ADD reconciliation: an entry written directly to the
+        // backend by another node (bypassing add()) must materialise as a local
+        // matcher after reconcileFromBackend(). This guards that the clustered
+        // full-reconcile path is unchanged by the non-clustered fast-path.
+        InMemoryStateBackend clusteredBackend = new InMemoryStateBackend(10) {
+            @Override
+            public boolean isClustered() {
+                return true;
+            }
+        };
+        Configuration config10 = configuration().maxExpectations(10);
+        RequestMatchers clusteredMatchers = new RequestMatchers(
+            config10, new MockServerLogger(),
+            mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        clusteredMatchers.setStateBackend(clusteredBackend);
+
+        // Write an entry directly to the backend, simulating a remote node's add
+        Expectation remoteAdd = new Expectation(request().withPath("/remote")).withId("remote")
+            .thenRespond(response().withBody("remote-body"));
+        clusteredBackend.expectations().put("remote", new ExpectationEntry(remoteAdd));
+
+        // Before reconcile, the local cache has no matcher for it
+        assertThat(clusteredMatchers.size(), is(0));
+
+        // Reconcile picks up the remote add
+        clusteredMatchers.reconcileFromBackend();
+
+        assertThat(clusteredMatchers.size(), is(1));
+        Expectation matched = clusteredMatchers.firstMatchingExpectation(request().withPath("/remote"));
+        assertThat(matched, is(notNullValue()));
+        assertThat(matched.getHttpResponse().getBodyAsString(), is("remote-body"));
     }
 
     // -------------------------------------------------------

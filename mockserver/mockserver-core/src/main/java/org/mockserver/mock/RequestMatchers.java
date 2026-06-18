@@ -419,8 +419,13 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 // Extract isolation key for scenario state management
                 String isolationKey = extractIsolationKey(expectation, requestDefinition);
 
+                // Scenario gate: check the required state WITHOUT transitioning.
+                // The transition is a side-effect that must only happen once the
+                // expectation is actually committed (after percentage AND Times
+                // consumption succeed) — otherwise a skipped expectation would
+                // advance the scenario without ever being served (consume-then-skip).
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() != null) {
-                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), isolationKey, expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                    if (!scenarioManager.matchesState(expectation.getScenarioName(), isolationKey, expectation.getScenarioState())) {
                         continue;
                     }
                 }
@@ -454,6 +459,14 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                         httpRequestMatcher.setResponseInProgress(false);
                         continue;
                     }
+                }
+                // COMMIT POINT: the expectation is now definitely being served.
+                // Apply the scenario transition here (not at the gate above) so it
+                // only advances when the expectation is actually consumed. Guarded
+                // by getNewScenarioState() != null so non-transitioning expectations
+                // are unaffected.
+                if (expectation.getScenarioName() != null && expectation.getScenarioState() != null && expectation.getNewScenarioState() != null) {
+                    scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
                     scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
@@ -546,8 +559,12 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             }
             if (httpRequestMatcher.matches(null, headersOnlyRequest)) {
                 String isolationKey = extractIsolationKey(expectation, headersOnlyRequest);
+                // Scenario gate: check the required state WITHOUT transitioning.
+                // The transition happens only at the commit point below, once the
+                // expectation is actually consumed — see firstMatchingExpectation
+                // for the consume-then-skip rationale.
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() != null) {
-                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), isolationKey, expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                    if (!scenarioManager.matchesState(expectation.getScenarioName(), isolationKey, expectation.getScenarioState())) {
                         continue;
                     }
                 }
@@ -571,6 +588,11 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                         httpRequestMatcher.setResponseInProgress(false);
                         continue;
                     }
+                }
+                // COMMIT POINT: apply the scenario transition only now that the
+                // expectation is definitely being served (post-consume).
+                if (expectation.getScenarioName() != null && expectation.getScenarioState() != null && expectation.getNewScenarioState() != null) {
+                    scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
                     scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
@@ -718,6 +740,20 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         if (expectationBackend == null) {
             return;
         }
+        // Fast path: for the non-clustered (in-memory default) backend, all
+        // mutations originate locally and the node-local CPQ is already in sync
+        // except for backend eviction. The full reconcile below snapshots the
+        // ENTIRE backend into a HashMap and walks every entry on every add/update
+        // — and InMemoryExpectationKeyValueStore.put() also fires an invalidation
+        // listener that calls back into this method, so an unconditional full
+        // reconcile costs TWO O(n) passes per mutation → O(n^2) registration.
+        // A cheap eviction-only trim is all that is needed here; the expensive
+        // remote-add/remote-update reconciliation is required only for a
+        // clustered backend (where entries can appear/change on other nodes).
+        if (stateBackend == null || !stateBackend.isClustered()) {
+            trimEvictedFromBackend();
+            return;
+        }
         // Snapshot backend state
         Map<String, KeyValueStore.Entry<ExpectationEntry>> backendEntries = new HashMap<>();
         expectationBackend.entries().forEach(e -> backendEntries.put(e.getKey(), e));
@@ -777,6 +813,52 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     lastReconciledVersion.put(id, backendVersion);
                 }
             }
+        }
+    }
+
+    /**
+     * Cheap eviction-only trim for the non-clustered (in-memory default)
+     * backend. The node-local cache is already in sync with the backend for
+     * every add/update (those mutations are mirrored synchronously into the
+     * CPQ), so the ONLY divergence to reconcile after a local mutation is
+     * backend-side eviction: when the backend's own CPQ self-evicts the oldest
+     * entry past {@code maxExpectations}, the node-local cache (whose CPQ is at
+     * {@code Integer.MAX_VALUE} — see {@link #setStateBackend}) still holds that
+     * now-evicted id and must drop it.
+     * <p>
+     * Common-case fast exit: if the node-local cache holds no more ids than the
+     * backend, nothing was evicted and this returns immediately without
+     * iterating. Only when {@code matcherCacheById.size() > backend.size()} —
+     * i.e. an eviction actually happened — does it walk the cached ids and drop
+     * those no longer present in the backend. This keeps registration O(n)
+     * overall instead of the O(n^2) caused by a full snapshot-and-walk reconcile
+     * on every add.
+     */
+    private void trimEvictedFromBackend() {
+        if (expectationBackend == null) {
+            return;
+        }
+        if (matcherCacheById.size() <= expectationBackend.size()) {
+            // Nothing was evicted — the common case. No iteration needed.
+            return;
+        }
+        // An eviction happened: build the set of ids still present in the
+        // backend, then drop any cached id no longer present.
+        Set<String> backendIds = new HashSet<>();
+        expectationBackend.entries().forEach(e -> backendIds.add(e.getKey()));
+        List<String> evictedIds = new ArrayList<>();
+        for (String cachedId : matcherCacheById.keySet()) {
+            if (!backendIds.contains(cachedId)) {
+                evictedIds.add(cachedId);
+            }
+        }
+        for (String evictedId : evictedIds) {
+            HttpRequestMatcher evictedMatcher = matcherCacheById.remove(evictedId);
+            if (evictedMatcher != null) {
+                httpRequestMatchers.remove(evictedMatcher);
+            }
+            expectationRequestDefinitions.remove(evictedId);
+            lastReconciledVersion.remove(evictedId);
         }
     }
 

@@ -367,6 +367,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually renders, not the repo README).
 
 ### Fixed
+- **Scenario state no longer advances when a matching expectation is skipped**: a scenario expectation
+  whose scenario state matched but which was then skipped by a percentage (`withPercentage`) or
+  exhausted-`Times` gate previously advanced the scenario to its next state even though it was never
+  served (a consume-then-skip bug). The scenario now transitions only at the point the expectation is
+  actually served.
+- **Faster expectation registration**: registering large numbers of expectations on the default
+  in-memory setup was O(n²) because each add triggered two full backend reconciliation passes. The
+  non-clustered path now does a cheap eviction-only trim, restoring linear registration time;
+  clustered reconciliation behaviour is unchanged.
 - **Dashboard UI correctness fixes** (from an adversarial review):
   - The dashboard no longer crashes to a blank white screen when a view fails to load (e.g. the Metrics
     chunk after a redeploy) — views are wrapped in an error boundary that offers a reload/retry and
