@@ -112,6 +112,16 @@ public class JsonSchemaRequestDefinitionValidatorTest {
         assertThat(jsonSchemaValidator.isValid("{}"), is(""));
     }
 
+    @Test
+    public void shouldValidateNegatedHttpRequestDefinition() {
+        // when - a negated request matcher serializes a top-level "not" : true field
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "    \"not\" : true," + NEW_LINE +
+            "    \"method\" : \"GET\"," + NEW_LINE +
+            "    \"path\" : \"/somePath\"" + NEW_LINE +
+            "  }"), is(""));
+    }
+
     // valid openAPIDefinition inputs
 
     @Test
@@ -138,6 +148,15 @@ public class JsonSchemaRequestDefinitionValidatorTest {
             "    \"specUrlOrPayload\" : \"https://example.com/spec.json\"," + NEW_LINE +
             "    \"operationId\" : \"listPets\"," + NEW_LINE +
             "    \"contextPathPrefix\" : \"/api/v1\"" + NEW_LINE +
+            "  }"), is(""));
+    }
+
+    @Test
+    public void shouldValidateNegatedOpenAPIDefinition() {
+        // when - a negated OpenAPI request matcher serializes a top-level "not" : true field
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "    \"not\" : true," + NEW_LINE +
+            "    \"specUrlOrPayload\" : \"https://example.com/spec.json\"" + NEW_LINE +
             "  }"), is(""));
     }
 

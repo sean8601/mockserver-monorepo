@@ -444,6 +444,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        not:
+          type: boolean
         secure:
           type: boolean
         keepAlive:
@@ -474,6 +476,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        not:
+          type: boolean
         specUrlOrPayload:
           anyOf:
             - type: string
