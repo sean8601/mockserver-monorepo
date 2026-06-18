@@ -1469,4 +1469,21 @@ public class OpenAPIConverterTest {
         assertThat(createPetsStatus, is(nullValue()));
     }
 
+    @Test
+    public void shouldGenerateDistinctElementNamesForRecursiveXmlSchema() {
+        // a recursive XML schema (Node{left:$ref Node, right:$ref Node}) reuses one cached Example for both
+        // properties; the XML body must render BOTH <left> and <right>, not rename the shared instance so
+        // one property is dropped/duplicated
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_recursive_xml.yaml");
+
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(specUrlOrPayload, null);
+
+        String body = actualExpectations.stream()
+            .filter(e -> "getNode".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getBodyAsString();
+        assertThat("recursive XML must keep the 'left' element", body, containsString("<left>"));
+        assertThat("recursive XML must keep the 'right' element (shared Example not renamed)", body, containsString("<right>"));
+    }
+
 }

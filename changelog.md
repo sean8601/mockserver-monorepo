@@ -300,7 +300,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     XML using the schema's `xml` metadata (`name`/`namespace`/`prefix`/`attribute`/`wrapped`) per the
     OpenAPI XML Object rules, instead of the previous JSON-shaped body. Array elements follow the spec
     (unwrapped → repeated elements named after the property; `wrapped: true` → a wrapper element), fixing the
-    earlier malformed pluralised output. (Behaviour change for XML responses; JSON responses are unchanged.)
+    earlier malformed pluralised output, and a recursive schema (e.g. `Node{left:$ref Node, right:$ref Node}`)
+    now renders each property under its own element name rather than dropping one. (Behaviour change for XML
+    responses; JSON responses are unchanged.)
   - **OAS 3.1 multi-type `type` arrays are preserved** when serialising a schema: `type: ["string","null"]`
     now becomes `type: string` + `nullable: true` (and `["string","integer"]` is kept as a Draft-07 type
     array) instead of being silently dropped.

@@ -370,6 +370,30 @@ public class XmlExampleSerializerTest {
     }
 
     @Test
+    public void shouldNotPermanentlyRenameSharedObjectAcrossTwoProperties() throws Exception {
+        // two object PROPERTIES whose values are the SAME anonymous Example instance (as happens for a
+        // recursive $ref schema, e.g. Node{left:$ref Node, right:$ref Node}, where ExampleBuilder reuses
+        // one cached Example): each property must render under its OWN key — the first key must not
+        // permanently rename the shared instance and swallow the second.
+        ObjectExample shared = new ObjectExample();
+        shared.put("label", new StringExample("v"));
+
+        ObjectExample node = new ObjectExample();
+        node.setName("node");
+        node.put("left", shared);
+        node.put("right", shared);
+
+        String xml = new XmlExampleSerializer().serialize(node);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat("left property renders under its own key",
+            root.getElementsByTagName("left").getLength(), is(1));
+        assertThat("right property renders under its own key — NOT a second \"left\"",
+            root.getElementsByTagName("right").getLength(), is(1));
+    }
+
+    @Test
     public void shouldSerializeTopLevelScalar() throws Exception {
         StringExample scalar = new StringExample("hello");
         scalar.setName("greeting");

@@ -27,6 +27,8 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 import static org.slf4j.event.Level.WARN;
 
@@ -77,15 +79,30 @@ public class XmlExampleSerializer {
 
             writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
 
+            // A child Example that appears under more than one key in this object is SHARED — a recursive
+            // $ref schema (e.g. Node{left:$ref Node, right:$ref Node}) reuses one cached Example for both,
+            // and ExampleBuilder leaves its stored name as whichever property built it last. For such a
+            // shared child the stored name is unreliable, so it is rendered under the property KEY instead.
+            // A uniquely-placed child keeps its own name (a deliberate property-level xml.name) when set.
+            Map<Example, Boolean> sharedChildren = new IdentityHashMap<>();
+            for (String key : or.keySet()) {
+                Object obj = or.get(key);
+                if (obj instanceof Example) {
+                    sharedChildren.put((Example) obj, sharedChildren.containsKey(obj));
+                }
+            }
             for (String key : or.keySet()) {
                 Object obj = or.get(key);
                 if (obj instanceof Example) {
                     Example example = (Example) obj;
-                    if (example.getName() == null) {
+                    // apply the element name only for the duration of the recursive write, then restore it
+                    // so a shared instance is never permanently renamed (mirrors the ArrayExample branch)
+                    String savedName = example.getName();
+                    if (Boolean.TRUE.equals(sharedChildren.get(example)) || savedName == null) {
                         example.setName(key);
                     }
-
-                    writeTo(writer, (Example) obj);
+                    writeTo(writer, example);
+                    example.setName(savedName);
                 }
             }
             writer.writeEndElement();
