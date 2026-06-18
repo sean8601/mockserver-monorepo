@@ -20,6 +20,7 @@ import { importExpectationJson, importCollection } from '../lib/importMocks';
 import { importOpenApi } from '../lib/openapiImport';
 import { importWsdl } from '../lib/wsdlImport';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 import HumanErrorAlert from './HumanErrorAlert';
 
 // ---------------------------------------------------------------------------
@@ -141,7 +142,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
     <>
       {/* Format picker */}
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
           Format
         </Typography>
         <RadioGroup
@@ -157,10 +158,10 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
               control={<Radio size="small" sx={{ py: 0 }} />}
               label={
                 <Box>
-                  <Typography variant="body2" sx={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     {f.label}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                  <Typography variant="caption" color="text.secondary">
                     {f.description}
                   </Typography>
                 </Box>
@@ -173,7 +174,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
 
       {/* Source picker + content input */}
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
           Source
         </Typography>
         <RadioGroup
@@ -187,19 +188,19 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
           <FormControlLabel
             value="paste"
             control={<Radio size="small" />}
-            label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>Paste</Typography>}
+            label={<Typography variant="body2">Paste</Typography>}
           />
           {currentFormatMeta.urlSupported && (
             <FormControlLabel
               value="url"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>URL</Typography>}
+              label={<Typography variant="body2">URL</Typography>}
             />
           )}
           <FormControlLabel
             value="file"
             control={<Radio size="small" />}
-            label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>File</Typography>}
+            label={<Typography variant="body2">File</Typography>}
           />
         </RadioGroup>
 
@@ -212,7 +213,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
               value={urlValue}
               onChange={(e) => setUrlValue(e.target.value)}
               placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
             />
           )}
           {(source === 'paste' || source === 'file') && (
@@ -234,7 +235,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
                     onChange={handleFileSelect}
                     data-testid="import-file-input"
                   />
-                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1, fontSize: '0.7rem' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
                     The file contents will be loaded into the text area below.
                   </Typography>
                 </Box>
@@ -258,7 +259,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
                           ? '{ "info": { "name": "My API", ... }, "item": [ ... ] }'
                           : '{ "log": { "entries": [ ... ] } }'
                 }
-                slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+                slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               />
             </>
           )}
@@ -277,7 +278,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
           >
             {busy ? 'Importing...' : 'Import'}
           </Button>
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+          <Typography variant="caption" color="text.secondary">
             {currentFormatMeta.label} will be sent to MockServer and converted to expectations.
           </Typography>
         </Box>

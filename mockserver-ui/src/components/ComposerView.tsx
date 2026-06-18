@@ -31,6 +31,7 @@ import ListItemText from '@mui/material/ListItemText';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useDashboardStore } from '../store';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 import type { JsonListItem } from '../types';
 import { listConversationScenarios } from '../lib/conversationCodegen';
 import { buildBaseUrl } from '../lib/mcpClient';
@@ -449,7 +450,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           placeholder="/foo/bar  ·  prefix with ! to negate"
         />
       </Box>
-      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', mt: -1, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: -1, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
         Prefix any string field or any line below with <code>!</code> to negate the match.
         <InfoTip text="A leading ! means &quot;must NOT match this value&quot;. e.g. path !/admin matches every path except /admin; header !Authorization: … matches requests that do not carry that header." />
       </Typography>
@@ -463,7 +464,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           value={matcher.headers}
           onChange={(e) => setMatcher({ ...matcher, headers: e.target.value })}
           placeholder={'Accept: application/json\n!Authorization: Bearer …'}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
         <TextField
           label="Query params (key=value per line)"
@@ -474,7 +475,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           value={matcher.queryString}
           onChange={(e) => setMatcher({ ...matcher, queryString: e.target.value })}
           placeholder={'limit=50\noffset=0'}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
       </Box>
       <Box sx={{ display: 'flex', gap: 1 }}>
@@ -487,7 +488,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           value={matcher.cookies}
           onChange={(e) => setMatcher({ ...matcher, cookies: e.target.value })}
           placeholder={'session=abc123\ntheme=dark'}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
         <TextField
           label="Path parameters (name=value per line)"
@@ -498,7 +499,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           value={matcher.pathParams}
           onChange={(e) => setMatcher({ ...matcher, pathParams: e.target.value })}
           placeholder={'id=42  (for paths like /users/{id})'}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
       </Box>
       <Box>
@@ -589,7 +590,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                                   ? 'myMatcher'
                                   : 'e.g. hello world'
           }
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
         {matcher.bodyMatcherType === 'graphql' && (
           <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -607,7 +608,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                   },
                 })
               }
-              sx={{ width: 260 }}
+              sx={{ width: { xs: '100%', sm: 260 } }}
             >
               <MenuItem value="NORMALISED_STRING">Normalised string (default)</MenuItem>
               <MenuItem value="AST_EXACT">AST exact</MenuItem>
@@ -626,7 +627,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                   })
                 }
                 placeholder="hero, name, friends"
-                slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+                slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               />
             )}
           </Box>
@@ -641,7 +642,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
               onChange={(e) =>
                 setMatcher({ ...matcher, jsonMatchType: e.target.value as JsonMatchType })
               }
-              sx={{ width: 260 }}
+              sx={{ width: { xs: '100%', sm: 260 } }}
             >
               <MenuItem value="ONLY_MATCHING_FIELDS">Only matching fields (default)</MenuItem>
               <MenuItem value="STRICT">Strict (all fields must match)</MenuItem>
@@ -659,7 +660,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                   onChange={(e) => setMatcher({ ...matcher, bodySubString: e.target.checked })}
                 />
               }
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>SubString match</Typography>}
+              label={<Typography variant="body2">SubString match</Typography>}
             />
           </Box>
         )}
@@ -673,13 +674,13 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
               onChange={(e) => setMatcher({ ...matcher, secure: e.target.checked })}
             />
           }
-          label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>HTTPS only</Typography>}
+          label={<Typography variant="body2">HTTPS only</Typography>}
         />
         <TextField
           label="Priority (higher = wins)"
           size="small"
           type="number"
-          sx={{ width: 230 }}
+          sx={{ width: { xs: '100%', sm: 230 } }}
           value={matcher.priority}
           onChange={(e) => setMatcher({ ...matcher, priority: Number(e.target.value) || 0 })}
           slotProps={{ input: infoAdornment('When several mocks match the same request, the one with the highest priority wins. Leave at 0 unless you need to override a more general mock.') }}
@@ -688,7 +689,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           label="Times (0 = unlimited)"
           size="small"
           type="number"
-          sx={{ width: 200 }}
+          sx={{ width: { xs: '100%', sm: 200 } }}
           value={matcher.times}
           onChange={(e) => setMatcher({ ...matcher, times: Math.max(0, Number(e.target.value) || 0) })}
           slotProps={{ input: infoAdornment('How many times this mock will respond before it stops matching. 0 means unlimited — it responds to every matching request.') }}
@@ -697,7 +698,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           label="Time to live (s, 0 = forever)"
           size="small"
           type="number"
-          sx={{ width: 230 }}
+          sx={{ width: { xs: '100%', sm: 230 } }}
           value={matcher.ttlSeconds}
           onChange={(e) => setMatcher({ ...matcher, ttlSeconds: Math.max(0, Number(e.target.value) || 0) })}
           slotProps={{ input: infoAdornment('The mock auto-expires this many seconds after it is registered. 0 means it never expires.') }}
@@ -744,7 +745,7 @@ function DnsMatcherPanel({
         onChange={(e) => setDnsMatcher({ ...dnsMatcher, dnsName: e.target.value })}
         placeholder="example.com"
         helperText="required — the server routes to a DNS matcher when dnsName is present"
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <Box sx={{ display: 'flex', gap: 1 }}>
         <TextField
@@ -779,7 +780,7 @@ function DnsMatcherPanel({
           label="Priority (higher = wins)"
           size="small"
           type="number"
-          sx={{ width: 230 }}
+          sx={{ width: { xs: '100%', sm: 230 } }}
           value={matcher.priority}
           onChange={(e) => setMatcher({ ...matcher, priority: Number(e.target.value) || 0 })}
           slotProps={{ input: infoAdornment('When several mocks match the same request, the one with the highest priority wins. Leave at 0 unless you need to override a more general mock.') }}
@@ -788,7 +789,7 @@ function DnsMatcherPanel({
           label="Times (0 = unlimited)"
           size="small"
           type="number"
-          sx={{ width: 200 }}
+          sx={{ width: { xs: '100%', sm: 200 } }}
           value={matcher.times}
           onChange={(e) => setMatcher({ ...matcher, times: Math.max(0, Number(e.target.value) || 0) })}
           slotProps={{ input: infoAdornment('How many times this mock will respond before it stops matching. 0 means unlimited — it responds to every matching request.') }}
@@ -797,7 +798,7 @@ function DnsMatcherPanel({
           label="Time to live (s, 0 = forever)"
           size="small"
           type="number"
-          sx={{ width: 230 }}
+          sx={{ width: { xs: '100%', sm: 230 } }}
           value={matcher.ttlSeconds}
           onChange={(e) => setMatcher({ ...matcher, ttlSeconds: Math.max(0, Number(e.target.value) || 0) })}
           slotProps={{ input: infoAdornment('The mock auto-expires this many seconds after it is registered. 0 means it never expires.') }}
@@ -1383,14 +1384,14 @@ function StaticHttpPanel({
           type="number"
           value={state.statusCode}
           onChange={(e) => setState({ ...state, statusCode: Number(e.target.value) || 200 })}
-          sx={{ width: 130 }}
+          sx={{ width: { xs: '100%', sm: 130 } }}
         />
         <TextField
           label="Reason phrase (optional)"
           size="small"
           value={state.reasonPhrase}
           onChange={(e) => setState({ ...state, reasonPhrase: e.target.value })}
-          sx={{ width: 200 }}
+          sx={{ width: { xs: '100%', sm: 200 } }}
           placeholder="e.g. Not Found"
         />
         <TextField
@@ -1409,7 +1410,7 @@ function StaticHttpPanel({
         value={state.headers}
         onChange={(e) => setState({ ...state, headers: e.target.value })}
         placeholder={'Cache-Control: no-cache\nLocation: /elsewhere'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Response cookies (name=value per line)"
@@ -1419,7 +1420,7 @@ function StaticHttpPanel({
         value={state.cookies}
         onChange={(e) => setState({ ...state, cookies: e.target.value })}
         placeholder={'session=abc123\ntheme=dark'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         select
@@ -1427,7 +1428,7 @@ function StaticHttpPanel({
         size="small"
         value={state.bodyFromFile ? 'file' : 'inline'}
         onChange={(e) => setState({ ...state, bodyFromFile: e.target.value === 'file' })}
-        sx={{ width: 220 }}
+        sx={{ width: { xs: '100%', sm: 220 } }}
       >
         <MenuItem value="inline">Inline body</MenuItem>
         <MenuItem value="file">From file</MenuItem>
@@ -1440,7 +1441,7 @@ function StaticHttpPanel({
             value={state.filePath}
             onChange={(e) => setState({ ...state, filePath: e.target.value })}
             placeholder="responses/order.json"
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
           />
           <TextField
             select
@@ -1448,7 +1449,7 @@ function StaticHttpPanel({
             size="small"
             value={state.fileTemplateType}
             onChange={(e) => setState({ ...state, fileTemplateType: e.target.value as StaticState['fileTemplateType'] })}
-            sx={{ width: 320 }}
+            sx={{ width: { xs: '100%', sm: 320 } }}
             helperText="Render the file as a template against the request. JavaScript is not supported for body files — use a Response template for that."
           >
             <MenuItem value="">None (serve file verbatim)</MenuItem>
@@ -1465,7 +1466,7 @@ function StaticHttpPanel({
           value={state.body}
           onChange={(e) => setState({ ...state, body: e.target.value })}
           placeholder='{"ok":true}'
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
       )}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
@@ -1475,7 +1476,7 @@ function StaticHttpPanel({
           type="number"
           value={state.delayValue}
           onChange={(e) => setState({ ...state, delayValue: Number(e.target.value) || 0 })}
-          sx={{ width: 180 }}
+          sx={{ width: { xs: '100%', sm: 180 } }}
           helperText="0 = no delay"
         />
         <TextField
@@ -1484,7 +1485,7 @@ function StaticHttpPanel({
           select
           value={state.delayUnit}
           onChange={(e) => setState({ ...state, delayUnit: e.target.value as StaticDelayUnit })}
-          sx={{ width: 160 }}
+          sx={{ width: { xs: '100%', sm: 160 } }}
         >
           <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
           <MenuItem value="SECONDS">seconds</MenuItem>
@@ -1518,29 +1519,29 @@ function ConnectionOptionsFields({
     <Box>
       <Typography variant="caption" color="text.secondary">Connection options (advanced)</Typography>
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mt: 0.5 }}>
-        <TextField select size="small" label="Keep-alive" sx={{ width: 130 }} value={triValue(co.keepAliveOverride)}
+        <TextField select size="small" label="Keep-alive" sx={{ width: { xs: '100%', sm: 130 } }} value={triValue(co.keepAliveOverride)}
           onChange={(e) => update({ keepAliveOverride: triParse(e.target.value) })}>
           <MenuItem value="">Default</MenuItem>
           <MenuItem value="true">Keep alive</MenuItem>
           <MenuItem value="false">Close</MenuItem>
         </TextField>
-        <TextField select size="small" label="Close socket" sx={{ width: 150 }} value={triValue(co.closeSocket)}
+        <TextField select size="small" label="Close socket" sx={{ width: { xs: '100%', sm: 150 } }} value={triValue(co.closeSocket)}
           onChange={(e) => update({ closeSocket: triParse(e.target.value) })}>
           <MenuItem value="">Default</MenuItem>
           <MenuItem value="true">Yes</MenuItem>
           <MenuItem value="false">No</MenuItem>
         </TextField>
-        <TextField size="small" type="number" label="Content-Length override" sx={{ width: 210 }}
+        <TextField size="small" type="number" label="Content-Length override" sx={{ width: { xs: '100%', sm: 210 } }}
           value={co.contentLengthHeaderOverride ?? ''}
           onChange={(e) => update({ contentLengthHeaderOverride: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} />
         {/* ml: 1 cancels MUI FormControlLabel's default -11px left margin (which made the
             switch crowd the Content-Length field) and leaves a clear gap before each switch. */}
         <FormControlLabel sx={{ ml: 1 }} control={<Switch size="small" checked={co.suppressContentLengthHeader === true}
           onChange={(e) => update({ suppressContentLengthHeader: e.target.checked || undefined })} />}
-          label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Suppress Content-Length</Typography>} />
+          label={<Typography variant="body2">Suppress Content-Length</Typography>} />
         <FormControlLabel sx={{ ml: 1 }} control={<Switch size="small" checked={co.suppressConnectionHeader === true}
           onChange={(e) => update({ suppressConnectionHeader: e.target.checked || undefined })} />}
-          label={<Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Suppress Connection</Typography>} />
+          label={<Typography variant="body2">Suppress Connection</Typography>} />
       </Box>
     </Box>
   );
@@ -1576,7 +1577,7 @@ function ForwardPanel({
           select
           value={state.scheme}
           onChange={(e) => setState({ ...state, scheme: e.target.value as 'HTTP' | 'HTTPS' })}
-          sx={{ width: 130 }}
+          sx={{ width: { xs: '100%', sm: 130 } }}
         >
           <MenuItem value="HTTP">HTTP</MenuItem>
           <MenuItem value="HTTPS">HTTPS</MenuItem>
@@ -1593,7 +1594,7 @@ function ForwardPanel({
           label="Port"
           size="small"
           type="number"
-          sx={{ width: 110 }}
+          sx={{ width: { xs: '100%', sm: 110 } }}
           value={state.port}
           onChange={(e) => setState({ ...state, port: Number(e.target.value) || 0 })}
         />
@@ -1636,7 +1637,7 @@ function ForwardOverridePanel({
           select
           value={state.overrideMethod}
           onChange={(e) => setState({ ...state, overrideMethod: e.target.value })}
-          sx={{ width: 130 }}
+          sx={{ width: { xs: '100%', sm: 130 } }}
         >
           {['', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map((m) => (
             <MenuItem key={m || 'unchanged'} value={m}>{m || '(unchanged)'}</MenuItem>
@@ -1648,7 +1649,7 @@ function ForwardOverridePanel({
           select
           value={state.overrideScheme}
           onChange={(e) => setState({ ...state, overrideScheme: e.target.value as ForwardOverrideState['overrideScheme'] })}
-          sx={{ width: 140 }}
+          sx={{ width: { xs: '100%', sm: 140 } }}
         >
           <MenuItem value="">(unchanged)</MenuItem>
           <MenuItem value="HTTP">HTTP</MenuItem>
@@ -1678,7 +1679,7 @@ function ForwardOverridePanel({
         value={state.overrideQueryString}
         onChange={(e) => setState({ ...state, overrideQueryString: e.target.value })}
         placeholder={'limit=50\noffset=0'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Headers (one per line, Name: value)"
@@ -1688,7 +1689,7 @@ function ForwardOverridePanel({
         value={state.overrideHeaders}
         onChange={(e) => setState({ ...state, overrideHeaders: e.target.value })}
         placeholder={'X-Forwarded-For: 1.2.3.4\nAuthorization: Bearer XYZ'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Body override"
@@ -1698,7 +1699,7 @@ function ForwardOverridePanel({
         value={state.overrideBody}
         onChange={(e) => setState({ ...state, overrideBody: e.target.value })}
         placeholder='{"replaced":"body"}'
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
     </Box>
   );
@@ -1732,7 +1733,7 @@ function CallbackPanel({
         value={state.callbackClass}
         onChange={(e) => setState({ ...state, callbackClass: e.target.value })}
         placeholder="com.example.MyResponseCallback"
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
     </Box>
   );
@@ -1789,7 +1790,7 @@ function TemplatePanel({
           select
           value={state.templateType}
           onChange={(e) => setState({ ...state, templateType: e.target.value as TemplateType })}
-          sx={{ width: 200 }}
+          sx={{ width: { xs: '100%', sm: 200 } }}
         >
           <MenuItem value="VELOCITY">Velocity</MenuItem>
           <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
@@ -1808,7 +1809,7 @@ function TemplatePanel({
         value={state.template}
         onChange={(e) => setState({ ...state, template: e.target.value })}
         placeholder={TEMPLATE_PLACEHOLDERS[state.templateType]}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Or load template from file (optional)"
@@ -1817,7 +1818,7 @@ function TemplatePanel({
         onChange={(e) => setState({ ...state, templateFile: e.target.value })}
         placeholder="templates/some_response.mustache"
         helperText="Classpath or filesystem path. Used when the inline template above is empty; the inline template wins when both are set."
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
     </Box>
   );
@@ -1859,7 +1860,7 @@ function ErrorPanel({
           />
         }
         label={
-          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+          <Typography variant="body2">
             Drop connection (RST the TCP socket)
           </Typography>
         }
@@ -1870,7 +1871,7 @@ function ErrorPanel({
         value={state.responseBytesB64}
         onChange={(e) => setState({ ...state, responseBytesB64: e.target.value })}
         placeholder="SFRUUC8xLjEgNTAwIEludGVybmFsIFNlcnZlciBFcnJvcg=="
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         helperText="Sent before the connection is dropped (if drop is enabled). Base64-encoded raw bytes."
       />
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
@@ -1880,7 +1881,7 @@ function ErrorPanel({
           type="number"
           value={state.delayValue}
           onChange={(e) => setState({ ...state, delayValue: Number(e.target.value) || 0 })}
-          sx={{ width: 180 }}
+          sx={{ width: { xs: '100%', sm: 180 } }}
           helperText="0 = no delay"
         />
         <TextField
@@ -1889,7 +1890,7 @@ function ErrorPanel({
           select
           value={state.delayUnit}
           onChange={(e) => setState({ ...state, delayUnit: e.target.value as DelayUnit })}
-          sx={{ width: 160 }}
+          sx={{ width: { xs: '100%', sm: 160 } }}
         >
           <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
           <MenuItem value="SECONDS">seconds</MenuItem>
@@ -1929,7 +1930,7 @@ function ForwardFallbackPanel({
           select
           value={state.scheme}
           onChange={(e) => setState({ ...state, scheme: e.target.value as 'HTTP' | 'HTTPS' })}
-          sx={{ width: 130 }}
+          sx={{ width: { xs: '100%', sm: 130 } }}
         >
           <MenuItem value="HTTP">HTTP</MenuItem>
           <MenuItem value="HTTPS">HTTPS</MenuItem>
@@ -1946,7 +1947,7 @@ function ForwardFallbackPanel({
           label="Port"
           size="small"
           type="number"
-          sx={{ width: 110 }}
+          sx={{ width: { xs: '100%', sm: 110 } }}
           value={state.port}
           onChange={(e) => setState({ ...state, port: Number(e.target.value) || 0 })}
         />
@@ -1962,7 +1963,7 @@ function ForwardFallbackPanel({
           type="number"
           value={state.fallbackStatusCode}
           onChange={(e) => setState({ ...state, fallbackStatusCode: Number(e.target.value) || 200 })}
-          sx={{ width: 130 }}
+          sx={{ width: { xs: '100%', sm: 130 } }}
         />
         <TextField
           label="Fallback on status codes (comma-separated)"
@@ -1971,7 +1972,7 @@ function ForwardFallbackPanel({
           value={state.fallbackOnStatusCodes}
           onChange={(e) => setState({ ...state, fallbackOnStatusCodes: e.target.value })}
           placeholder="500,502,503"
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
       </Box>
       <TextField
@@ -1982,7 +1983,7 @@ function ForwardFallbackPanel({
         value={state.fallbackBody}
         onChange={(e) => setState({ ...state, fallbackBody: e.target.value })}
         placeholder='{"error":"upstream unavailable"}'
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <FormControlLabel
         control={
@@ -1993,7 +1994,7 @@ function ForwardFallbackPanel({
           />
         }
         label={
-          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+          <Typography variant="body2">
             Fallback on timeout / connection error
           </Typography>
         }
@@ -2054,7 +2055,7 @@ function WebSocketPanel({
         value={state.subprotocol}
         onChange={(e) => setState({ ...state, subprotocol: e.target.value })}
         placeholder="graphql-ws"
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Initial messages (one per line)"
@@ -2064,7 +2065,7 @@ function WebSocketPanel({
         value={state.messages}
         onChange={(e) => setState({ ...state, messages: e.target.value })}
         placeholder={'{"type":"connection_ack"}\n{"type":"ka"}'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <FormControlLabel
         control={
@@ -2075,7 +2076,7 @@ function WebSocketPanel({
           />
         }
         label={
-          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+          <Typography variant="body2">
             Close connection after messages
           </Typography>
         }
@@ -2099,7 +2100,7 @@ function WebSocketPanel({
               select
               value={m.frameType}
               onChange={(e) => updateMatcher(idx, { frameType: e.target.value as WebSocketFrameType })}
-              sx={{ width: 130 }}
+              sx={{ width: { xs: '100%', sm: 130 } }}
             >
               {(['TEXT', 'BINARY', 'PING', 'PONG', 'ANY'] as const).map((ft) => (
                 <MenuItem key={ft} value={ft}>{ft}</MenuItem>
@@ -2112,7 +2113,7 @@ function WebSocketPanel({
               value={m.textMatcher}
               onChange={(e) => updateMatcher(idx, { textMatcher: e.target.value })}
               placeholder='e.g. {"type":"ping"}'
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
             />
             <Button
               size="small"
@@ -2132,7 +2133,7 @@ function WebSocketPanel({
             value={m.responses}
             onChange={(e) => updateMatcher(idx, { responses: e.target.value })}
             placeholder={'{"type":"pong"}\n{"type":"ka"}'}
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
           />
         </Paper>
       ))}
@@ -2281,7 +2282,7 @@ function SsePanel({
           type="number"
           value={state.statusCode}
           onChange={(e) => setState({ ...state, statusCode: Number(e.target.value) || 200 })}
-          sx={{ width: 130 }}
+          sx={{ width: { xs: '100%', sm: 130 } }}
         />
       </Box>
       <TextField
@@ -2292,7 +2293,7 @@ function SsePanel({
         value={state.headers}
         onChange={(e) => setState({ ...state, headers: e.target.value })}
         placeholder={'Cache-Control: no-cache'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -2316,7 +2317,7 @@ function SsePanel({
             <TextField
               label="ID"
               size="small"
-              sx={{ width: 100 }}
+              sx={{ width: { xs: '100%', sm: 100 } }}
               value={ev.id}
               onChange={(e) => updateEvent(idx, { id: e.target.value })}
             />
@@ -2324,7 +2325,7 @@ function SsePanel({
               label="Retry (ms)"
               size="small"
               type="number"
-              sx={{ width: 100 }}
+              sx={{ width: { xs: '100%', sm: 100 } }}
               value={ev.retry}
               onChange={(e) => updateEvent(idx, { retry: e.target.value })}
             />
@@ -2346,7 +2347,7 @@ function SsePanel({
             value={ev.data}
             onChange={(e) => updateEvent(idx, { data: e.target.value })}
             placeholder='{"update":"value"}'
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
           />
         </Paper>
       ))}
@@ -2359,7 +2360,7 @@ function SsePanel({
           />
         }
         label={
-          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+          <Typography variant="body2">
             Close connection after events
           </Typography>
         }
@@ -2392,7 +2393,7 @@ function BinaryResponsePanel({
         value={state.binaryData}
         onChange={(e) => setState({ ...state, binaryData: e.target.value })}
         placeholder="SGVsbG8sIFdvcmxkIQ=="
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
     </Box>
   );
@@ -2421,7 +2422,7 @@ function DnsResponsePanel({
         select
         value={state.responseCode}
         onChange={(e) => setState({ ...state, responseCode: e.target.value as DnsResponseCodeName })}
-        sx={{ width: 200 }}
+        sx={{ width: { xs: '100%', sm: 200 } }}
       >
         {(['NOERROR', 'FORMERR', 'SERVFAIL', 'NXDOMAIN', 'NOTIMP', 'REFUSED'] as const).map((rc) => (
           <MenuItem key={rc} value={rc}>{rc}</MenuItem>
@@ -2443,7 +2444,7 @@ function DnsResponsePanel({
             value={state.answerRecords}
             onChange={(e) => setState({ ...state, answerRecords: e.target.value })}
             placeholder={'[\n  { "name": "example.com", "type": "A", "value": "127.0.0.1", "ttl": 300 }\n]'}
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
             helperText={invalid
               ? 'Not valid JSON — must be an array of records, e.g. [ { "name": "...", "type": "A", "value": "..." } ]'
               : 'Each record supports: name, type (A/AAAA/CNAME/MX/SRV/TXT/PTR), value, ttl, priority, weight, port. Advanced records are best authored via the REST API.'}
@@ -2490,7 +2491,7 @@ function ForwardTemplatePanel({
           select
           value={state.templateType}
           onChange={(e) => setState({ ...state, templateType: e.target.value as StandardForwardTemplateState['templateType'] })}
-          sx={{ width: 200 }}
+          sx={{ width: { xs: '100%', sm: 200 } }}
         >
           <MenuItem value="VELOCITY">Velocity</MenuItem>
           <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
@@ -2509,7 +2510,7 @@ function ForwardTemplatePanel({
         value={state.template}
         onChange={(e) => setState({ ...state, template: e.target.value })}
         placeholder='return { "method": request.method, "path": "/upstream" + request.path };'
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Or load template from file (optional)"
@@ -2518,7 +2519,7 @@ function ForwardTemplatePanel({
         onChange={(e) => setState({ ...state, templateFile: e.target.value })}
         placeholder="templates/forward_request.mustache"
         helperText="Classpath or filesystem path. Used when the inline template above is empty; the inline template wins when both are set."
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
     </Box>
   );
@@ -2548,7 +2549,7 @@ function ForwardClassCallbackPanel({
         value={state.callbackClass}
         onChange={(e) => setState({ ...state, callbackClass: e.target.value })}
         placeholder="com.example.MyForwardCallback"
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
     </Box>
   );
@@ -2597,7 +2598,7 @@ function GrpcStreamPanel({
         value={state.headers}
         onChange={(e) => setState({ ...state, headers: e.target.value })}
         placeholder={'grpc-encoding: identity'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <TextField
         label="Messages (one JSON per line)"
@@ -2607,7 +2608,7 @@ function GrpcStreamPanel({
         value={state.messages}
         onChange={(e) => setState({ ...state, messages: e.target.value })}
         placeholder={'{"name":"Alice"}\n{"name":"Bob"}'}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
       />
       <FormControlLabel
         control={
@@ -2618,7 +2619,7 @@ function GrpcStreamPanel({
           />
         }
         label={
-          <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+          <Typography variant="body2">
             Close connection after messages
           </Typography>
         }
@@ -2728,7 +2729,7 @@ function CapturePanel({
               onChange={(e) => updateRow(idx, { expression: e.target.value })}
               placeholder={captureExpressionPlaceholder(c.source)}
               sx={{ minWidth: 0, ...SIDE_EFFECT_FIELD_SX }}
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               fullWidth
             />
             <TextField
@@ -2738,7 +2739,7 @@ function CapturePanel({
               onChange={(e) => updateRow(idx, { into: e.target.value })}
               placeholder="orderId"
               sx={{ minWidth: 0, ...SIDE_EFFECT_FIELD_SX }}
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               fullWidth
             />
             <IconButton
@@ -2815,7 +2816,7 @@ function SideEffectsPanel({
               value={se.path}
               onChange={(e) => updateRow(idx, { path: e.target.value })}
               placeholder="/webhook/notify"
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               fullWidth
             />
             <IconButton
@@ -2835,7 +2836,7 @@ function SideEffectsPanel({
               onChange={(e) => updateRow(idx, { host: e.target.value })}
               placeholder="auth.svc:8080"
               sx={{ ...SIDE_EFFECT_FIELD_SX }}
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               fullWidth
             />
             <TextField
@@ -2845,7 +2846,7 @@ function SideEffectsPanel({
               value={se.body}
               onChange={(e) => updateRow(idx, { body: e.target.value })}
               placeholder='{"event":"matched"}'
-              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
               fullWidth
             />
           </Box>
@@ -2886,7 +2887,7 @@ function SideEffectsPanel({
                   />
                 }
                 label={
-                  <Typography variant="body2" sx={{ fontSize: '0.78rem' }}>
+                  <Typography variant="body2">
                     Blocking
                   </Typography>
                 }
@@ -3084,7 +3085,7 @@ function StepsPanel({
                     />
                   }
                   label={
-                    <Typography variant="body2" sx={{ fontSize: '0.78rem', fontWeight: step.responder ? 600 : 400 }}>
+                    <Typography variant="body2" sx={{ fontWeight: step.responder ? 600 : 400 }}>
                       Responder
                     </Typography>
                   }
@@ -3132,7 +3133,7 @@ function StepsPanel({
             value={step.actionBody}
             onChange={(e) => updateStep(idx, { actionBody: e.target.value })}
             placeholder={stepPlaceholder(step.actionType)}
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
           />
 
           {/* Side-effect controls — only for non-responder steps */}
@@ -3146,7 +3147,7 @@ function StepsPanel({
                     onChange={(e) => updateStep(idx, { blocking: e.target.checked })}
                   />
                 }
-                label={<Typography variant="body2" sx={{ fontSize: '0.78rem' }}>Blocking</Typography>}
+                label={<Typography variant="body2">Blocking</Typography>}
               />
               <TextField
                 label="Delay"
@@ -3154,7 +3155,7 @@ function StepsPanel({
                 type="number"
                 value={step.delayValue}
                 onChange={(e) => updateStep(idx, { delayValue: Number(e.target.value) || 0 })}
-                sx={{ width: 100 }}
+                sx={{ width: { xs: '100%', sm: 100 } }}
               />
               <TextField
                 label="Delay unit"
@@ -3162,7 +3163,7 @@ function StepsPanel({
                 select
                 value={step.delayUnit}
                 onChange={(e) => updateStep(idx, { delayUnit: e.target.value as SideEffectDelayUnit })}
-                sx={{ width: 140 }}
+                sx={{ width: { xs: '100%', sm: 140 } }}
               >
                 <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
                 <MenuItem value="SECONDS">seconds</MenuItem>
@@ -3174,7 +3175,7 @@ function StepsPanel({
                 type="number"
                 value={step.timeoutValue}
                 onChange={(e) => updateStep(idx, { timeoutValue: Number(e.target.value) || 0 })}
-                sx={{ width: 100 }}
+                sx={{ width: { xs: '100%', sm: 100 } }}
               />
               <TextField
                 label="Timeout unit"
@@ -3182,7 +3183,7 @@ function StepsPanel({
                 select
                 value={step.timeoutUnit}
                 onChange={(e) => updateStep(idx, { timeoutUnit: e.target.value as SideEffectDelayUnit })}
-                sx={{ width: 140 }}
+                sx={{ width: { xs: '100%', sm: 140 } }}
               >
                 <MenuItem value="MILLISECONDS">milliseconds</MenuItem>
                 <MenuItem value="SECONDS">seconds</MenuItem>
@@ -3194,7 +3195,7 @@ function StepsPanel({
                 select
                 value={step.failurePolicy}
                 onChange={(e) => updateStep(idx, { failurePolicy: e.target.value as SideEffectFailurePolicy })}
-                sx={{ width: 150 }}
+                sx={{ width: { xs: '100%', sm: 150 } }}
               >
                 <MenuItem value="BEST_EFFORT">BEST_EFFORT</MenuItem>
                 <MenuItem value="FAIL_FAST">FAIL_FAST</MenuItem>
@@ -3287,7 +3288,7 @@ function ExistingMocksList({
       )}
 
       {filtered.length === 0 ? (
-        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.78rem', fontStyle: 'italic', py: 1 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 1 }}>
           No {kindLabel(kind)} mocks yet — fill in the form below to add one.
         </Typography>
       ) : (
@@ -3314,7 +3315,7 @@ function ExistingMocksList({
                     primary={
                       <Typography
                         component="span"
-                        sx={{ fontSize: '0.78rem', fontFamily: 'monospace' }}
+                        sx={{ fontSize: '0.78rem', fontFamily: monospaceFontFamily }}
                       >
                         <Box component="span" sx={{ color: 'text.secondary', mr: 0.5 }}>
                           {idShort}...
@@ -3332,7 +3333,7 @@ function ExistingMocksList({
       )}
 
       {!selectedKey && filtered.length > 0 && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.68rem' }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
           Select a mock to edit it, or fill in the form below to add a new one.
         </Typography>
       )}
@@ -3374,7 +3375,7 @@ function QuickMockForm({
   return (
     <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }} data-testid="quick-mock-form">
       <Box>
-        <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
           1 · When this request arrives
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3402,7 +3403,7 @@ function QuickMockForm({
       </Box>
 
       <Box>
-        <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
           2 · Respond with
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
@@ -3410,7 +3411,7 @@ function QuickMockForm({
             label="Status code"
             size="small"
             type="number"
-            sx={{ width: 140 }}
+            sx={{ width: { xs: '100%', sm: 140 } }}
             value={staticState.statusCode}
             onChange={(e) => setStaticState({ ...staticState, statusCode: Number(e.target.value) || 0 })}
           />
@@ -3434,7 +3435,7 @@ function QuickMockForm({
           placeholder={'{"hello":"world"}'}
           disabled={staticState.bodyFromFile}
           helperText={staticState.bodyFromFile ? 'This mock serves its body from a file — switch to Advanced to edit that.' : undefined}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
         />
       </Box>
 
@@ -3455,9 +3456,9 @@ function QuickMockForm({
             </Button>
           </span>
         </Tooltip>
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+        <Typography variant="caption" color="text.secondary">
           Need headers, matchers, forwarding, fault injection, or other response types?{' '}
-          <Link component="button" type="button" underline="hover" onClick={onSwitchToAdvanced} sx={{ fontSize: '0.7rem' }}>
+          <Link component="button" type="button" variant="caption" underline="hover" onClick={onSwitchToAdvanced}>
             Switch to Advanced
           </Link>.
         </Typography>
@@ -3874,7 +3875,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
     <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
       <Box sx={{ maxWidth: 920, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>
+          <Typography variant="h5">
             Mocks
           </Typography>
           {/* Quick vs Advanced mode. Quick shows only the 90%-case fields for a
@@ -3919,7 +3920,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
             Hidden in Quick mode (Quick is always an HTTP static mock). */}
         {mode === 'advanced' && (
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
             Expectation kind
           </Typography>
           <RadioGroup
@@ -3959,32 +3960,32 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
             <FormControlLabel
               value="standard"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>HTTP</Typography>}
+              label={<Typography variant="body2">HTTP</Typography>}
             />
             <FormControlLabel
               value="llm_conversation"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>LLM Conversation</Typography>}
+              label={<Typography variant="body2">LLM Conversation</Typography>}
             />
             <FormControlLabel
               value="grpc"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>gRPC</Typography>}
+              label={<Typography variant="body2">gRPC</Typography>}
             />
             <FormControlLabel
               value="dns"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>DNS</Typography>}
+              label={<Typography variant="body2">DNS</Typography>}
             />
             <FormControlLabel
               value="mcp"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>MCP</Typography>}
+              label={<Typography variant="body2">MCP</Typography>}
             />
             <FormControlLabel
               value="import"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" sx={{ fontSize: '0.82rem' }}>Import</Typography>}
+              label={<Typography variant="body2">Import</Typography>}
             />
           </RadioGroup>
         </Paper>
@@ -4035,7 +4036,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               )}
 
               {llmScenarios.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.78rem', fontStyle: 'italic', py: 1 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 1 }}>
                   No LLM mocks yet — fill in the form below to add one.
                 </Typography>
               ) : (
@@ -4059,7 +4060,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                           primary={
                             <Typography
                               component="span"
-                              sx={{ fontSize: '0.78rem', fontFamily: 'monospace' }}
+                              sx={{ fontSize: '0.78rem', fontFamily: monospaceFontFamily }}
                             >
                               {s.shortName} ({s.expectations.length} turn{s.expectations.length === 1 ? '' : 's'})
                             </Typography>
@@ -4073,7 +4074,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               )}
 
               {!llmScenarioName && llmScenarios.length > 0 && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.68rem' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                   Select a scenario to edit it, or fill in the form below to add a new one.
                 </Typography>
               )}
@@ -4130,7 +4131,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                 dnsType / dnsClass instead of the HTTP method / path / headers
                 / body fields. */}
             <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                 1 · Match a request
               </Typography>
               {kind === 'dns' ? (
@@ -4141,7 +4142,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                     dnsMatcher={dnsMatcher}
                     setDnsMatcher={setDnsMatcher}
                   />
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                     DNS queries are matched by dnsName (required), record type, and record class.
                     Leave type and class empty to match any. The server routes to a DnsRequestDefinition
                     when the request object contains a dnsName field.
@@ -4150,7 +4151,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               ) : (
                 <>
                   <MatcherPanel matcher={matcher} setMatcher={setMatcher} />
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.7rem' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                     {kind === 'grpc'
                       ? 'gRPC path convention: /package.Service/Method. gRPC clients send Content-Type: application/grpc — add it to the matcher headers to restrict to gRPC traffic only.'
                       : 'Protocol (HTTP/1.1 vs HTTP/2), keep-alive, respond-before-body, the socket-address override, and client certificate chains are not yet exposed in the form — use the REST API or raw JSON for those.'}
@@ -4162,7 +4163,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
 
             {/* Step 2: action type */}
             <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                 2 · Respond with
               </Typography>
               <RadioGroup value={actionType} onChange={(e) => setActionType(e.target.value as ActionType)}>
@@ -4173,10 +4174,10 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                     control={<Radio size="small" />}
                     label={
                       <Box>
-                        <Typography variant="body2" sx={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
                           {a.label}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        <Typography variant="caption" color="text.secondary">
                           {a.description}
                         </Typography>
                       </Box>
@@ -4189,7 +4190,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
 
             {/* Step 3: per-action panel */}
             <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                 3 · {selectedMeta.label}
               </Typography>
               <Divider sx={{ mb: 1.5 }} />
@@ -4254,7 +4255,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                     />
                   }
                   label={
-                    <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                    <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                       Inject fault / chaos (optional)
                     </Typography>
                   }
@@ -4285,7 +4286,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                     />
                   }
                   label={
-                    <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: stepsEnabled ? 'text.disabled' : 'text.secondary' }}>
+                    <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, color: stepsEnabled ? 'text.disabled' : 'text.secondary' }}>
                       Before &amp; after actions (optional)
                     </Typography>
                   }
@@ -4321,7 +4322,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   />
                 }
                 label={
-                  <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                  <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                     Steps pipeline (advanced, optional)
                   </Typography>
                 }
@@ -4361,7 +4362,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                   />
                 }
                 label={
-                  <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                  <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                     Capture into scenario state (optional)
                   </Typography>
                 }
@@ -4505,7 +4506,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
 
               return (
                 <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                     4 · Review &amp; register
                   </Typography>
                   <Divider sx={{ mb: 1 }} />
@@ -4533,11 +4534,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                       </span>
                     </Tooltip>
                     {editingExisting ? (
-                      <Typography variant="caption" color="success.main" sx={{ fontSize: '0.7rem' }}>
+                      <Typography variant="caption" color="success.main">
                         Editing — the Expectation ID will be reused so this updates in place.
                       </Typography>
                     ) : (
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      <Typography variant="caption" color="text.secondary">
                         Leave the Expectation ID blank to create a new one, or paste an existing ID above to update in place.
                       </Typography>
                     )}
@@ -4558,8 +4559,8 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
             data-testid="register-success"
             onClose={() => setRegisteredLabel(null)}
           >
-            <AlertTitle sx={{ fontSize: '0.82rem', mb: 0.5 }}>Mock registered</AlertTitle>
-            <Typography variant="body2" sx={{ fontSize: '0.8rem', mb: 1 }}>
+            <AlertTitle sx={{ mb: 0.5 }}>Mock registered</AlertTitle>
+            <Typography variant="body2" sx={{ mb: 1 }}>
               <code>{registeredLabel}</code> is now live. What next?
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>

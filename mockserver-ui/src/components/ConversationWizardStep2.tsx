@@ -231,7 +231,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                     turnIndex: v === '' || Number.isNaN(n) ? undefined : n,
                   });
                 }}
-                sx={{ width: 110 }}
+                sx={{ width: { xs: '100%', sm: 110 } }}
               />
               <TextField
                 label="Latest msg contains"
@@ -266,7 +266,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                       (e.target.value as TurnMatchPredicates['latestMessageRole']) || undefined,
                   })
                 }
-                sx={{ width: 130 }}
+                sx={{ width: { xs: '100%', sm: 130 } }}
               >
                 <MenuItem value="">None</MenuItem>
                 {ROLES.map((r) => (
@@ -445,7 +445,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                       const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
                       updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
                     }}
-                    sx={{ width: 180 }}
+                    sx={{ width: { xs: '100%', sm: 180 } }}
                   />
                   <TextField
                     label="Tokens/sec"
@@ -461,7 +461,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                       const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
                       updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
                     }}
-                    sx={{ width: 120 }}
+                    sx={{ width: { xs: '100%', sm: 120 } }}
                   />
                   <TextField
                     label="Jitter (0-1)"
@@ -477,7 +477,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                       const hasValues = sp.timeToFirstToken != null || sp.tokensPerSecond != null || sp.jitter != null;
                       updateResponse(i, { streamingPhysics: hasValues ? sp : undefined });
                     }}
-                    sx={{ width: 120 }}
+                    sx={{ width: { xs: '100%', sm: 120 } }}
                   />
                 </Box>
               </Collapse>
@@ -521,14 +521,14 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   error={!!chaosErrorStatusError(turn.chaos?.errorStatus)}
                   helperText={chaosErrorStatusError(turn.chaos?.errorStatus)}
                   onChange={(e) => { const n = parseInt(e.target.value, 10); updateChaos(i, { errorStatus: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-                  sx={{ width: 110 }}
+                  sx={{ width: { xs: '100%', sm: 110 } }}
                 />
                 <TextField
                   label="Retry-After"
                   size="small"
                   value={turn.chaos?.retryAfter ?? ''}
                   onChange={(e) => updateChaos(i, { retryAfter: e.target.value || undefined })}
-                  sx={{ width: 110 }}
+                  sx={{ width: { xs: '100%', sm: 110 } }}
                 />
                 <TextField
                   label="Error prob (0-1)"
@@ -538,7 +538,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   error={!!errorProbabilityError(turn.chaos?.errorProbability)}
                   helperText={errorProbabilityError(turn.chaos?.errorProbability)}
                   onChange={(e) => { const n = parseFloat(e.target.value); updateChaos(i, { errorProbability: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-                  sx={{ width: 130 }}
+                  sx={{ width: { xs: '100%', sm: 130 } }}
                 />
                 <TextField
                   label="Truncate"
@@ -546,7 +546,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   select
                   value={turn.chaos?.truncateMode ?? 'NONE'}
                   onChange={(e) => updateChaos(i, { truncateMode: e.target.value as ChaosDraft['truncateMode'] })}
-                  sx={{ width: 130 }}
+                  sx={{ width: { xs: '100%', sm: 130 } }}
                 >
                   <MenuItem value="NONE">None</MenuItem>
                   <MenuItem value="MID_STREAM">Mid-stream</MenuItem>
@@ -559,7 +559,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   error={!!truncateAtFractionError(turn.chaos?.truncateAtFraction)}
                   helperText={truncateAtFractionError(turn.chaos?.truncateAtFraction)}
                   onChange={(e) => { const n = parseFloat(e.target.value); updateChaos(i, { truncateAtFraction: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-                  sx={{ width: 120 }}
+                  sx={{ width: { xs: '100%', sm: 120 } }}
                 />
                 <FormControlLabel
                   control={
@@ -578,7 +578,7 @@ export default function ConversationWizardStep2({ turns, onTurnsChange }: Step2P
                   type="number"
                   value={turn.chaos?.seed ?? ''}
                   onChange={(e) => { const n = parseInt(e.target.value, 10); updateChaos(i, { seed: e.target.value === '' || Number.isNaN(n) ? undefined : n }); }}
-                  sx={{ width: 100 }}
+                  sx={{ width: { xs: '100%', sm: 100 } }}
                   helperText="reproducible prob"
                 />
               </Box>

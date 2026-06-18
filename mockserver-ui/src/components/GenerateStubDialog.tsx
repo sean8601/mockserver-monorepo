@@ -13,6 +13,8 @@ import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { registerExpectation } from '../lib/generateStub';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 import JsonViewer from './JsonViewer';
 
 interface GenerateStubDialogProps {
@@ -35,7 +37,7 @@ export default function GenerateStubDialog({
   const [registering, setRegistering] = useState(false);
   const [registered, setRegistered] = useState<Set<number>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
 
   const handleRegister = useCallback(async () => {
     if (suggestions.length === 0 || selectedIndex >= suggestions.length) return;
@@ -45,7 +47,7 @@ export default function GenerateStubDialog({
       await registerExpectation(connectionParams, suggestions[selectedIndex]!);
       setRegistered((prev) => new Set(prev).add(selectedIndex));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setRegistering(false);
     }
@@ -71,9 +73,7 @@ export default function GenerateStubDialog({
       </DialogTitle>
       <DialogContent dividers>
         {error && (
-          <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
+          <HumanErrorAlert error={error} sx={{ mb: 1.5 }} onClose={() => setError(null)} />
         )}
         {registered.has(selectedIndex) && (
           <Alert severity="success" sx={{ mb: 1.5 }}>

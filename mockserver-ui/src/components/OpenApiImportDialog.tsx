@@ -10,6 +10,8 @@ import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import { importOpenApi } from '../lib/openapiImport';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 
 interface OpenApiImportDialogProps {
@@ -29,7 +31,7 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [spec, setSpec] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
 
   const handleImport = async () => {
@@ -40,7 +42,7 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
       const created = await importOpenApi(connectionParams, spec.trim());
       setCreatedCount(created.length);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -72,9 +74,7 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
           spellCheck={false}
         />
         {error !== null && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {error}
-          </Alert>
+          <HumanErrorAlert error={error} sx={{ mt: 1 }} />
         )}
         {createdCount !== null && (
           <Alert severity="success" sx={{ mt: 1 }}>

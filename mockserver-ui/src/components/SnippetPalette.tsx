@@ -18,6 +18,7 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import type { TemplateEngine } from '../lib/templateSnippets';
 import { SNIPPET_CATEGORIES } from '../lib/templateSnippets';
+import { monospaceFontFamily } from '../theme';
 
 interface SnippetPaletteProps {
   /** The currently selected template engine — determines which syntax to show and insert. */
@@ -102,14 +103,14 @@ export default function SnippetPalette({ engine, onInsert }: SnippetPaletteProps
                     <ListItemText
                       primary={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.82rem' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
                             {snippet.label}
                           </Typography>
                           <Chip
                             label={syntax}
                             size="small"
                             sx={{
-                              fontFamily: 'monospace',
+                              fontFamily: monospaceFontFamily,
                               fontSize: '0.7rem',
                               height: 20,
                               maxWidth: 220,
@@ -124,7 +125,6 @@ export default function SnippetPalette({ engine, onInsert }: SnippetPaletteProps
                             component="span"
                             variant="caption"
                             color="text.secondary"
-                            sx={{ fontSize: '0.72rem' }}
                           >
                             {snippet.description}
                           </Typography>
@@ -132,8 +132,7 @@ export default function SnippetPalette({ engine, onInsert }: SnippetPaletteProps
                             component="span"
                             variant="caption"
                             sx={{
-                              fontFamily: 'monospace',
-                              fontSize: '0.68rem',
+                              fontFamily: monospaceFontFamily,
                               color: 'success.main',
                               mt: 0.25,
                             }}
