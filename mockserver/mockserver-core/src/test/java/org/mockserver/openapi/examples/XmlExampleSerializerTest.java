@@ -397,6 +397,22 @@ public class XmlExampleSerializerTest {
     }
 
     @Test
+    public void shouldRenderNullStringValueAsEmptyElementNotLiteralNull() throws Exception {
+        // a StringExample with a null value must render as an empty element, NOT <field>null</field>
+        ObjectExample book = new ObjectExample();
+        book.setName("Book");
+        book.put("title", new StringExample(null));
+
+        String xml = new XmlExampleSerializer().serialize(book);
+        Document document = parseNamespaceAware(xml);
+
+        Element title = (Element) document.getDocumentElement().getElementsByTagName("title").item(0);
+        assertThat("a null string must be an empty element, not the text \"null\"",
+            title.getTextContent(), is(""));
+        assertThat(xml.contains(">null<"), is(false));
+    }
+
+    @Test
     public void shouldSerializeNoNamespaceObject() throws Exception {
         // regression of the existing (already-working) non-namespaced behaviour
         ObjectExample book = new ObjectExample();

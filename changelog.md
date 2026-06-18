@@ -311,6 +311,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     traffic validation are now reported with context (request vs response, operation, aspect) and the
     exception type rather than a raw — sometimes `null` — message, capped to a single bounded line; the full
     throwable is logged.
+  - A generated string example with a `null` value now renders as an empty XML element rather than the
+    literal text `null` (e.g. `<field></field>` instead of `<field>null</field>`).
 - **OpenAPI handling hardened across both directions (audit follow-up to #2357).** A review of the
   OpenAPI subsystem found and fixed a batch of correctness defects:
   - **Range status-code keys** (`1XX`–`5XX`, legal in OpenAPI 3.x) no longer crash a spec import. A
