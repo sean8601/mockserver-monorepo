@@ -26,6 +26,23 @@ public class OpenAPIConverterTest {
     MockServerLogger mockServerLogger = new MockServerLogger(OpenAPIConverterTest.class);
 
     @Test
+    public void shouldDetectXmlContentTypes() {
+        // xml content types route a generated example through XmlExampleSerializer
+        assertThat(OpenAPIConverter.isXmlContentType("application/xml"), is(true));
+        assertThat(OpenAPIConverter.isXmlContentType("application/xml; charset=utf-8"), is(true));
+        assertThat(OpenAPIConverter.isXmlContentType("text/xml"), is(true));
+        assertThat(OpenAPIConverter.isXmlContentType("application/atom+xml"), is(true));
+        assertThat(OpenAPIConverter.isXmlContentType("application/vnd.api+xml"), is(true));
+        assertThat(OpenAPIConverter.isXmlContentType("APPLICATION/XML"), is(true));
+        // non-xml content types are not treated as xml
+        assertThat(OpenAPIConverter.isXmlContentType("application/json"), is(false));
+        assertThat(OpenAPIConverter.isXmlContentType("application/vnd.api+json"), is(false));
+        assertThat(OpenAPIConverter.isXmlContentType("text/plain"), is(false));
+        assertThat(OpenAPIConverter.isXmlContentType(""), is(false));
+        assertThat(OpenAPIConverter.isXmlContentType(null), is(false));
+    }
+
+    @Test
     public void shouldHandleAddOpenAPIJson() {
         // given
         String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");

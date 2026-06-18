@@ -20,6 +20,7 @@ import org.mockserver.model.OpenAPIDefinition;
 import org.mockserver.openapi.examples.ExampleBuilder;
 import org.mockserver.openapi.examples.GenerationOptions;
 import org.mockserver.openapi.examples.JsonNodeExampleSerializer;
+import org.mockserver.openapi.examples.XmlExampleSerializer;
 import org.mockserver.openapi.examples.models.StringExample;
 import org.mockserver.serialization.ObjectMapperFactory;
 
@@ -278,11 +279,15 @@ public class OpenAPIConverter {
                                                 response.withBody(stringExample.getValue());
                                             }
                                         } else if (generatedExample != null) {
-                                            String serialise = serialise(generatedExample);
                                             if (isJsonContentType(contentType.getKey())) {
-                                                response.withBody(json(serialise));
+                                                response.withBody(json(serialise(generatedExample)));
+                                            } else if (isXmlContentType(contentType.getKey())) {
+                                                // common path: no inline example, so generate a real,
+                                                // spec-correct XML body from the generated Example tree
+                                                // rather than emitting a JSON-shaped string in an XML body
+                                                response.withBody(new XmlExampleSerializer().serialize(generatedExample));
                                             } else {
-                                                response.withBody(serialise);
+                                                response.withBody(serialise(generatedExample));
                                             }
                                         }
                                     }
@@ -443,6 +448,33 @@ public class OpenAPIConverter {
 
     public static boolean isJsonContentType(String contentType) {
         return org.mockserver.model.MediaType.parse(contentType).isJson();
+    }
+
+    /**
+     * True when the content type denotes XML — {@code application/xml}, {@code text/xml}, or any media
+     * type with a {@code +xml} structured-syntax suffix (e.g. {@code application/atom+xml}). Used to route
+     * a generated example through {@link XmlExampleSerializer} so an XML response yields a real XML body
+     * rather than a JSON-shaped string.
+     */
+    public static boolean isXmlContentType(String contentType) {
+        if (isBlank(contentType)) {
+            return false;
+        }
+        org.mockserver.model.MediaType mediaType = org.mockserver.model.MediaType.parse(contentType);
+        String type = mediaType.getType();
+        String subtype = mediaType.getSubtype();
+        if (type == null || subtype == null) {
+            return false;
+        }
+        type = type.toLowerCase(Locale.ROOT);
+        subtype = subtype.toLowerCase(Locale.ROOT);
+        if ("application".equals(type) && "xml".equals(subtype)) {
+            return true;
+        }
+        if ("text".equals(type) && "xml".equals(subtype)) {
+            return true;
+        }
+        return subtype.endsWith("+xml");
     }
 
     private void warnExampleNameNotFound(String exampleName, Map<String, Example> availableExamples) {

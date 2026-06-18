@@ -90,30 +90,56 @@ public class XmlExampleSerializer {
             }
             writer.writeEndElement();
         } else if (o instanceof ArrayExample) {
+            // OpenAPI 3.x "XML Object" array rules (https://spec.openapis.org/oas/v3.1.0#xml-object):
+            //
+            //  - default (xml.wrapped == false): an array property serialises as REPEATED elements, one
+            //    per item, each named by the item's own xml.name when present, otherwise by the array
+            //    property's name. There is NO wrapper element and NO pluralisation/singularisation.
+            //      photoUrls: ["a", "b"]  ->  <photoUrls>a</photoUrls><photoUrls>b</photoUrls>
+            //
+            //  - xml.wrapped == true: a wrapper element (named by the array's xml.name — carried here as
+            //    wrappedName — otherwise the array property's name) contains the item elements (named by
+            //    the item's xml.name when present, otherwise the array property's name).
+            //      photoUrls wrapped, items.xml.name=photoUrl
+            //        -> <photoUrls><photoUrl>a</photoUrl><photoUrl>b</photoUrl></photoUrls>
+            //
+            // The array property's name (o.getName()) is the array schema's xml.name, falling back to the
+            // owning property key (set by the ObjectExample branch above when iterating its entries).
             ArrayExample ar = (ArrayExample) o;
-            if (o.getWrapped() != null && o.getWrapped()) {
-                if (o.getWrappedName() != null) {
-                    writeStartElement(writer, o.getPrefix(), o.getWrappedName(), o.getNamespace());
-                } else {
-                    writeStartElement(writer, o.getPrefix(), o.getName() + "s", o.getNamespace());
-                }
+            boolean wrapped = o.getWrapped() != null && o.getWrapped();
+            if (wrapped) {
+                String wrapperName = o.getWrappedName() != null ? o.getWrappedName() : o.getName();
+                writeStartElement(writer, o.getPrefix(), wrapperName, o.getNamespace());
             }
             for (Example item : ar.getItems()) {
+                // Each item is rendered as exactly one element. The item's own name (items.xml.name) wins;
+                // an anonymous item falls back to the array property's name (NOT a pluralised/singularised
+                // form). The fallback name (and the array's namespace/prefix) is applied to the item only for
+                // the duration of the recursive writeTo — which then emits a single element with that name
+                // (letting writeTo add its own AnonymousModel wrapper would double-wrap) — and restored
+                // afterwards so a shared cached $ref item (multiple arrays referencing the same anonymous
+                // item type) is not permanently renamed by the first array that serialises it.
+                boolean nameApplied = false;
+                String savedNamespace = item.getNamespace();
+                String savedPrefix = item.getPrefix();
                 if (item.getName() == null) {
-
-                    String name = o.getName();
-                    if (name == null) {
-                        name = item.getTypeName();
+                    item.setName(o.getName() != null ? o.getName() : item.getTypeName());
+                    nameApplied = true;
+                    if (item.getNamespace() == null) {
+                        item.setNamespace(o.getNamespace());
                     }
-
-                    writeStartElement(writer, o.getPrefix(), name, o.getNamespace());
+                    if (item.getPrefix() == null) {
+                        item.setPrefix(o.getPrefix());
+                    }
                 }
                 writeTo(writer, item);
-                if (item.getName() == null && o.getName() != null) {
-                    writer.writeEndElement();
+                if (nameApplied) {
+                    item.setName(null);
+                    item.setNamespace(savedNamespace);
+                    item.setPrefix(savedPrefix);
                 }
             }
-            if (o.getWrapped() != null && o.getWrapped()) {
+            if (wrapped) {
                 writer.writeEndElement();
             }
         } else {

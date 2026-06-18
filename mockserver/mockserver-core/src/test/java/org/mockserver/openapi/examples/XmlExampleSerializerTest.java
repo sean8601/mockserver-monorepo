@@ -206,6 +206,169 @@ public class XmlExampleSerializerTest {
         assertThat(root.getPrefix(), nullValue());
     }
 
+    // -------------------------------------------------------------------------------------------------
+    // OpenAPI 3.x "XML Object" array rules — unwrapped vs wrapped, item naming, no pluralisation
+    // -------------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldSerializeUnwrappedArrayAsRepeatedElementsNamedAfterProperty() throws Exception {
+        // default (no xml.wrapped): repeated elements named after the property — NOT pluralised
+        // photoUrls: ["a", "b"] -> <photoUrls>a</photoUrls><photoUrls>b</photoUrls>
+        ArrayExample photoUrls = new ArrayExample();
+        photoUrls.setName("photoUrls");
+        photoUrls.add(new StringExample("a"));
+        photoUrls.add(new StringExample("b"));
+
+        ObjectExample pet = new ObjectExample();
+        pet.setName("pet");
+        pet.put("photoUrls", photoUrls);
+
+        String xml = new XmlExampleSerializer().serialize(pet);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat(root.getLocalName(), is("pet"));
+        // exactly two <photoUrls> repeated elements, no wrapper, no pluralised <photoUrlss>
+        assertThat(root.getElementsByTagName("photoUrls").getLength(), is(2));
+        assertThat(root.getElementsByTagName("photoUrlss").getLength(), is(0));
+        assertThat(((Element) root.getElementsByTagName("photoUrls").item(0)).getTextContent(), is("a"));
+        assertThat(((Element) root.getElementsByTagName("photoUrls").item(1)).getTextContent(), is("b"));
+    }
+
+    @Test
+    public void shouldSerializeWrappedArrayWithWrapperAndItemElementNames() throws Exception {
+        // xml.wrapped + items.xml.name=photoUrl
+        // -> <photoUrls><photoUrl>a</photoUrl><photoUrl>b</photoUrl></photoUrls>
+        ArrayExample photoUrls = new ArrayExample();
+        photoUrls.setName("photoUrls");
+        photoUrls.setWrapped(true);
+        StringExample a = new StringExample("a");
+        a.setName("photoUrl");
+        StringExample b = new StringExample("b");
+        b.setName("photoUrl");
+        photoUrls.add(a);
+        photoUrls.add(b);
+
+        ObjectExample pet = new ObjectExample();
+        pet.setName("pet");
+        pet.put("photoUrls", photoUrls);
+
+        String xml = new XmlExampleSerializer().serialize(pet);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        // single wrapper <photoUrls> containing two <photoUrl> item elements; no pluralisation
+        assertThat(root.getElementsByTagName("photoUrls").getLength(), is(1));
+        Element wrapper = (Element) root.getElementsByTagName("photoUrls").item(0);
+        assertThat(wrapper.getElementsByTagName("photoUrl").getLength(), is(2));
+        assertThat(((Element) wrapper.getElementsByTagName("photoUrl").item(0)).getTextContent(), is("a"));
+        assertThat(((Element) wrapper.getElementsByTagName("photoUrl").item(1)).getTextContent(), is("b"));
+        assertThat("no pluralised wrapper", xml.contains("photoUrlss"), is(false));
+    }
+
+    @Test
+    public void shouldSerializeWrappedArrayUsingWrappedNameForWrapperElement() throws Exception {
+        // wrapper named by the array's xml.name (carried as wrappedName) when present
+        ArrayExample books = new ArrayExample();
+        books.setName("book");
+        books.setWrapped(true);
+        books.setWrappedName("books");
+        ObjectExample book1 = new ObjectExample();
+        book1.put("title", new StringExample("Moby Dick"));
+        ObjectExample book2 = new ObjectExample();
+        book2.put("title", new StringExample("Bartleby"));
+        books.add(book1);
+        books.add(book2);
+
+        String xml = new XmlExampleSerializer().serialize(books);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat("wrapper uses xml.name (wrappedName)", root.getLocalName(), is("books"));
+        // anonymous object items take the array property name "book"
+        assertThat(root.getElementsByTagName("book").getLength(), is(2));
+    }
+
+    @Test
+    public void shouldSerializeWrappedArrayOfNamedObjects() throws Exception {
+        // tags: wrapped, items are Tag objects whose schema declared xml.name=tag
+        // -> <tags><tag>...</tag><tag>...</tag></tags>
+        ArrayExample tags = new ArrayExample();
+        tags.setName("tags");
+        tags.setWrapped(true);
+        ObjectExample tag1 = new ObjectExample();
+        tag1.setName("tag");
+        tag1.put("id", new IntegerExample(1));
+        ObjectExample tag2 = new ObjectExample();
+        tag2.setName("tag");
+        tag2.put("id", new IntegerExample(2));
+        tags.add(tag1);
+        tags.add(tag2);
+
+        String xml = new XmlExampleSerializer().serialize(tags);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat(root.getLocalName(), is("tags"));
+        assertThat(root.getElementsByTagName("tag").getLength(), is(2));
+        assertThat("no pluralised tagss wrapper", xml.contains("tagss"), is(false));
+    }
+
+    @Test
+    public void shouldSerializeUnwrappedArrayOfAnonymousObjectsAsRepeatedElements() throws Exception {
+        // unwrapped array of anonymous objects -> repeated elements named after the array property
+        ArrayExample items = new ArrayExample();
+        items.setName("entry");
+        ObjectExample o1 = new ObjectExample();
+        o1.put("v", new StringExample("x"));
+        ObjectExample o2 = new ObjectExample();
+        o2.put("v", new StringExample("y"));
+        items.add(o1);
+        items.add(o2);
+
+        ObjectExample container = new ObjectExample();
+        container.setName("container");
+        container.put("entry", items);
+
+        String xml = new XmlExampleSerializer().serialize(container);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat(root.getElementsByTagName("entry").getLength(), is(2));
+        assertThat(root.getElementsByTagName("entrys").getLength(), is(0));
+    }
+
+    @Test
+    public void shouldNotPermanentlyRenameSharedAnonymousItemAcrossTwoArrays() throws Exception {
+        // two array properties whose items are the SAME anonymous item instance (as can happen for two
+        // arrays referencing the same $ref with no items.xml.name): each array must render the item under
+        // its OWN property name — the first array serialised must not permanently rename the shared item.
+        ObjectExample sharedItem = new ObjectExample();
+        sharedItem.put("v", new StringExample("x"));
+
+        ArrayExample first = new ArrayExample();
+        first.setName("firsts");
+        first.add(sharedItem);
+
+        ArrayExample second = new ArrayExample();
+        second.setName("seconds");
+        second.add(sharedItem);
+
+        ObjectExample container = new ObjectExample();
+        container.setName("container");
+        container.put("firsts", first);
+        container.put("seconds", second);
+
+        String xml = new XmlExampleSerializer().serialize(container);
+        Document document = parseNamespaceAware(xml);
+
+        Element root = document.getDocumentElement();
+        assertThat("first array renders its item under its own property name",
+            root.getElementsByTagName("firsts").getLength(), is(1));
+        assertThat("second array renders its item under its own property name — NOT the first array's name",
+            root.getElementsByTagName("seconds").getLength(), is(1));
+    }
+
     @Test
     public void shouldSerializeTopLevelScalar() throws Exception {
         StringExample scalar = new StringExample("hello");
