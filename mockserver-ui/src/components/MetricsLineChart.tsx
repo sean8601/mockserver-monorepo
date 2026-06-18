@@ -103,7 +103,7 @@ export default function MetricsLineChart({ series, height = 220, valueFormatter,
           fillOpacity: 0.16,
         },
         '& .MuiChartsAxis-tickLabel': {
-          fontSize: '0.65rem',
+          fontSize: theme.typography.caption.fontSize,
         },
       }}
     />

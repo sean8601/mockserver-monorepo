@@ -9,7 +9,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Card from '@mui/material/Card';
 import Skeleton from '@mui/material/Skeleton';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { transitions } from '../theme';
+import { transitions, monospaceFontFamily } from '../theme';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useMetricsPolling } from '../hooks/useMetricsPolling';
 import { findSample, metricValue, metricValueByLabel, metricSum, hasMetric, labelValues } from '../lib/prometheusParser';
@@ -209,7 +209,7 @@ export default function MetricsView({ connectionParams }: MetricsViewProps) {
         <Alert severity="info" sx={{ mb: 1.5 }}>
           <AlertTitle>Metrics are disabled</AlertTitle>
           Start MockServer with metrics enabled to view live metrics here:
-          <Box component="pre" sx={{ mt: 1, mb: 0, p: 1, bgcolor: 'action.hover', borderRadius: 1, fontSize: '0.75rem', overflow: 'auto' }}>
+          <Box component="pre" sx={{ mt: 1, mb: 0, p: 1, bgcolor: 'action.hover', borderRadius: 1, typography: 'subtitle2', fontWeight: 400, fontFamily: monospaceFontFamily, overflow: 'auto' }}>
 {`-Dmockserver.metricsEnabled=true
 # or environment variable:
 MOCKSERVER_METRICS_ENABLED=true`}

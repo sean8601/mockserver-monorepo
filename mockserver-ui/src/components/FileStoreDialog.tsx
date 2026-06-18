@@ -23,7 +23,10 @@ import Paper from '@mui/material/Paper';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import ConfirmDialog from './ConfirmDialog';
+import HumanErrorAlert from './HumanErrorAlert';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 import {
   listFiles,
   storeFile,
@@ -49,7 +52,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [files, setFiles] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
   // Add-file form state
@@ -62,7 +65,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
   // View state
   const [viewName, setViewName] = useState<string | null>(null);
   const [viewContent, setViewContent] = useState<string | null>(null);
-  const [viewError, setViewError] = useState<string | null>(null);
+  const [viewError, setViewError] = useState<HumanError | null>(null);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -84,7 +87,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
       } catch (e) {
         if (!cancelled) {
           setFiles([]);
-          setError(e instanceof Error ? e.message : String(e));
+          setError(humanizeError(e));
         }
       }
     }
@@ -109,7 +112,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
       setNewBase64(false);
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setStoring(false);
     }
@@ -126,7 +129,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
       }
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     }
   }, [connectionParams, refresh, viewName]);
 
@@ -138,7 +141,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
       const text = await retrieveFileText(connectionParams, name);
       setViewContent(text);
     } catch (e) {
-      setViewError(e instanceof Error ? e.message : String(e));
+      setViewError(humanizeError(e));
     }
   }, [connectionParams]);
 
@@ -157,7 +160,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="file-store-dialog-title">
       <DialogTitle id="file-store-dialog-title">File Store</DialogTitle>
       <DialogContent dividers>
-        {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
+        {error && <HumanErrorAlert error={error} sx={{ mb: 1.5 }} />}
         {storeSuccess && <Alert severity="success" sx={{ mb: 1.5 }}>{storeSuccess}</Alert>}
 
         {/* File list */}
@@ -170,14 +173,14 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }} align="center">Actions</TableCell>
+                  <TableCell sx={{ typography: 'subtitle2' }}>Name</TableCell>
+                  <TableCell sx={{ typography: 'subtitle2' }} align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {files.map((name) => (
                   <TableRow key={name}>
-                    <TableCell sx={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>{name}</TableCell>
+                    <TableCell sx={{ typography: 'subtitle2', fontWeight: 400, fontFamily: monospaceFontFamily }}>{name}</TableCell>
                     <TableCell align="center">
                       <IconButton size="small" onClick={() => void handleView(name)} aria-label={`View ${name}`}>
                         <VisibilityIcon fontSize="small" />
@@ -199,14 +202,14 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
             <Typography variant="caption" color="text.secondary">
               Content of {viewName}
             </Typography>
-            {viewError && <Alert severity="error" sx={{ mt: 0.5 }}>{viewError}</Alert>}
+            {viewError && <HumanErrorAlert error={viewError} sx={{ mt: 0.5 }} />}
             {viewContent !== null && (
               <Box
                 component="pre"
                 sx={{
                   whiteSpace: 'pre-wrap',
-                  fontFamily: 'monospace',
-                  fontSize: '0.72rem',
+                  typography: 'caption',
+                  fontFamily: monospaceFontFamily,
                   m: 0,
                   mt: 0.5,
                   maxHeight: 200,
@@ -245,7 +248,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             placeholder="File content here..."
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }}
           />
           <FormControlLabel
             control={

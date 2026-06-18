@@ -22,6 +22,7 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { getAsyncApiStatus } from '../lib/asyncApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 
 interface AsyncApiPanelProps {
   connectionParams: ConnectionParams;
@@ -206,7 +207,7 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
                 {channels.map((ch) => (
                   <TableRow key={ch.name}>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                         {ch.name}
                       </Typography>
                     </TableCell>
@@ -262,7 +263,7 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
           placeholder="channel, key, or payload..."
           value={filterText}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value)}
-          sx={{ width: 220 }}
+          sx={{ width: { xs: 140, sm: 220 } }}
         />
       </Box>
       <Paper variant="outlined" sx={{ p: 1.25 }}>
@@ -288,12 +289,12 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
                 {filteredMessages.map((msg, i) => (
                   <TableRow key={`${msg.channel}-${msg.timestamp ?? i}-${i}`}>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                         {msg.channel}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                         {msg.key ?? '-'}
                       </Typography>
                     </TableCell>
@@ -302,7 +303,7 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
                         <Typography
                           variant="caption"
                           sx={{
-                            fontFamily: 'monospace',
+                            fontFamily: monospaceFontFamily,
                             maxWidth: 300,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',

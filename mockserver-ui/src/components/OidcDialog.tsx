@@ -14,6 +14,8 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { createOidcProvider, type OidcConfig } from '../lib/oidc';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 
 export default function OidcDialog({
   open,
@@ -37,7 +39,7 @@ export default function OidcDialog({
   const [tamperedSignature, setTamperedSignature] = useState(false);
 
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [created, setCreated] = useState<number | null>(null);
 
   const submit = useCallback(async () => {
@@ -60,7 +62,7 @@ export default function OidcDialog({
     try {
       setCreated(await createOidcProvider(connectionParams, config));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -90,7 +92,7 @@ export default function OidcDialog({
           introspection / revocation endpoints — as expectations. Leave a field blank to use the
           server default.
         </Typography>
-        {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
+        {error && <HumanErrorAlert error={error} sx={{ mb: 1.5 }} />}
         {created !== null && (
           <Alert severity="success" sx={{ mb: 1.5 }}>Created {created} expectation{created === 1 ? '' : 's'} for the mock OIDC provider.</Alert>
         )}
@@ -102,7 +104,7 @@ export default function OidcDialog({
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField size="small" label="Audience" placeholder="mock-audience" value={audience} onChange={(e) => setAudience(e.target.value)} sx={{ flex: 1 }} />
-            <TextField size="small" label="Token expiry (s)" type="number" placeholder="3600" value={tokenExpiry} onChange={(e) => setTokenExpiry(e.target.value)} sx={{ width: 150 }} />
+            <TextField size="small" label="Token expiry (s)" type="number" placeholder="3600" value={tokenExpiry} onChange={(e) => setTokenExpiry(e.target.value)} sx={{ width: { xs: '100%', sm: 150 } }} />
           </Box>
           <TextField size="small" label="Scopes (space/comma separated)" placeholder="openid profile email" value={scopes} onChange={(e) => setScopes(e.target.value)} />
           <Box>

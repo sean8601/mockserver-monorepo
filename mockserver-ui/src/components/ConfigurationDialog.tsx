@@ -12,7 +12,6 @@ import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Button from '@mui/material/Button';
-import Alert from '@mui/material/Alert';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Table from '@mui/material/Table';
@@ -20,6 +19,9 @@ import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
+import HumanErrorAlert from './HumanErrorAlert';
 import {
   getConfiguration,
   updateConfiguration,
@@ -61,7 +63,7 @@ export default function ConfigurationDialog({
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [config, setConfig] = useState<Configuration | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -77,7 +79,7 @@ export default function ConfigurationDialog({
         setConfig(next);
         setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setError(humanizeError(e));
       }
     }
     void load();
@@ -91,7 +93,7 @@ export default function ConfigurationDialog({
       await updateConfiguration(connectionParams, partial);
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -132,7 +134,7 @@ export default function ConfigurationDialog({
           Inspect the running server configuration and change common runtime settings. Changes apply
           immediately to this server.
         </Typography>
-        {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
+        {error && <HumanErrorAlert error={error} sx={{ mb: 1.5 }} />}
 
         {/* --- Original bespoke controls --- */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
@@ -184,8 +186,8 @@ export default function ConfigurationDialog({
             <TableBody>
               {entries.map(([k, v]) => (
                 <TableRow key={k}>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', width: '45%', verticalAlign: 'top' }}>{k}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', wordBreak: 'break-all' }}>{valueToText(v)}</TableCell>
+                  <TableCell sx={{ typography: 'subtitle2', fontWeight: 400, fontFamily: monospaceFontFamily, width: '45%', verticalAlign: 'top' }}>{k}</TableCell>
+                  <TableCell sx={{ typography: 'subtitle2', fontWeight: 400, fontFamily: monospaceFontFamily, wordBreak: 'break-all' }}>{valueToText(v)}</TableCell>
                 </TableRow>
               ))}
               {entries.length === 0 && (

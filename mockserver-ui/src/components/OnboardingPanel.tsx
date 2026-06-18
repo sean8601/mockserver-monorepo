@@ -31,12 +31,20 @@ function ActionCard({ icon, title, description, actionLabel, onAction }: ActionC
   return (
     <Card
       variant="outlined"
-      sx={{
+      sx={(theme) => ({
         flex: '1 1 0',
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
-      }}
+        transition: theme.transitions.create(['transform', 'box-shadow', 'border-color'], {
+          duration: theme.transitions.duration.shorter,
+        }),
+        '&:hover': {
+          transform: 'translateY(-3px)',
+          boxShadow: 4,
+          borderColor: 'primary.main',
+        },
+      })}
     >
       <CardContent sx={{ flex: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

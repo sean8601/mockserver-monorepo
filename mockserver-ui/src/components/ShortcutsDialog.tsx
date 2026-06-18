@@ -7,6 +7,7 @@ import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
+import { monospaceFontFamily } from '../theme';
 
 /**
  * Lists the global keyboard shortcuts. The list is the single source of truth for the
@@ -44,7 +45,7 @@ export default function ShortcutsDialog({
               <Typography
                 component="dt"
                 variant="body2"
-                sx={{ fontFamily: 'monospace', fontWeight: 600, whiteSpace: 'nowrap' }}
+                sx={{ fontFamily: monospaceFontFamily, fontWeight: 600, whiteSpace: 'nowrap' }}
               >
                 {s.keys}
               </Typography>

@@ -12,7 +12,8 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { createSamlProvider, type SamlConfig } from '../lib/saml';
-import { humanizeError } from '../lib/errorMessage';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 
 /** Parse the "key=value" lines of the attributes textarea into a map. Blank lines ignored. */
 function parseAttributes(raw: string): Record<string, string> {
@@ -49,7 +50,7 @@ export default function SamlDialog({
   const [attributes, setAttributes] = useState('');
 
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [created, setCreated] = useState<number | null>(null);
 
   const submit = useCallback(async () => {
@@ -70,7 +71,7 @@ export default function SamlDialog({
     try {
       setCreated(await createSamlProvider(connectionParams, config));
     } catch (e) {
-      setError(humanizeError(e).message);
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -98,7 +99,7 @@ export default function SamlDialog({
           implementing the SP-initiated Web-Browser-SSO POST profile — as expectations.
           Leave a field blank to use the server default.
         </Typography>
-        {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
+        {error && <HumanErrorAlert error={error} sx={{ mb: 1.5 }} />}
         {created !== null && (
           <Alert severity="success" sx={{ mb: 1.5 }}>Created {created} expectation{created === 1 ? '' : 's'} for the mock SAML provider.</Alert>
         )}
@@ -108,7 +109,7 @@ export default function SamlDialog({
           <TextField size="small" label="Assertion Consumer Service (ACS) URL" placeholder="http://localhost:8080/saml/acs" value={acsUrl} onChange={(e) => setAcsUrl(e.target.value)} />
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField size="small" label="Subject NameID" placeholder="mock-user@example.com" value={subjectNameId} onChange={(e) => setSubjectNameId(e.target.value)} sx={{ flex: 1 }} />
-            <TextField size="small" label="Session (s)" type="number" placeholder="3600" value={sessionDuration} onChange={(e) => setSessionDuration(e.target.value)} sx={{ width: 130 }} />
+            <TextField size="small" label="Session (s)" type="number" placeholder="3600" value={sessionDuration} onChange={(e) => setSessionDuration(e.target.value)} sx={{ width: { xs: '100%', sm: 130 } }} />
           </Box>
           <TextField size="small" label="NameID format" placeholder="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" value={nameIdFormat} onChange={(e) => setNameIdFormat(e.target.value)} />
           <TextField

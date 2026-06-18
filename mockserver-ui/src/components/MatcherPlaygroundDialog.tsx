@@ -17,6 +17,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutlineOutlined';
 import { previewMatch, type PreviewResult, type SampleRequest, type FieldResult } from '../lib/matcherPreview';
+import { monospaceFontFamily } from '../theme';
 
 const DEFAULT_EXPECTATION = `{
   "httpRequest": {
@@ -45,10 +46,10 @@ function FieldRow({ r }: { r: FieldResult }) {
     <Box sx={{ display: 'flex', gap: 1, py: 0.5, borderBottom: 1, borderColor: 'divider', '&:last-child': { borderBottom: 0 } }}>
       <Box sx={{ pt: '2px' }}>{verdictIcon(r.verdict)}</Box>
       <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, display: 'block' }}>
+        <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily, fontWeight: 600, display: 'block' }}>
           {r.field}
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block', wordBreak: 'break-word' }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: monospaceFontFamily, display: 'block', wordBreak: 'break-word' }}>
           expected {r.expected} · actual {r.actual}
         </Typography>
         {r.reason && (
@@ -155,7 +156,7 @@ export default function MatcherPlaygroundDialog({
               fullWidth
               error={parseError !== null}
               helperText={parseError ?? 'Either a full expectation or a bare httpRequest object.'}
-              slotProps={{ htmlInput: { 'aria-label': 'Candidate expectation JSON', sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+              slotProps={{ htmlInput: { 'aria-label': 'Candidate expectation JSON', sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }}
             />
           </Box>
 
@@ -169,11 +170,11 @@ export default function MatcherPlaygroundDialog({
               <TextField size="small" label="Path" value={sample.path} onChange={setField('path')}
                 slotProps={{ htmlInput: { 'aria-label': 'Sample path' } }} />
               <TextField size="small" label="Query (name=value per line)" value={sample.queryString} onChange={setField('queryString')}
-                multiline minRows={2} slotProps={{ htmlInput: { 'aria-label': 'Sample query', sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }} />
+                multiline minRows={2} slotProps={{ htmlInput: { 'aria-label': 'Sample query', sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }} />
               <TextField size="small" label="Headers (Name: value per line)" value={sample.headers} onChange={setField('headers')}
-                multiline minRows={2} slotProps={{ htmlInput: { 'aria-label': 'Sample headers', sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }} />
+                multiline minRows={2} slotProps={{ htmlInput: { 'aria-label': 'Sample headers', sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }} />
               <TextField size="small" label="Body" value={sample.body} onChange={setField('body')}
-                multiline minRows={2} slotProps={{ htmlInput: { 'aria-label': 'Sample body', sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }} />
+                multiline minRows={2} slotProps={{ htmlInput: { 'aria-label': 'Sample body', sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }} />
             </Box>
           </Box>
         </Box>

@@ -13,6 +13,8 @@ import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { loadAsyncApi, getAsyncApiStatus, verifyAsyncApi, AsyncApiUnavailableError } from '../lib/asyncApi';
+import { humanizeError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 
 export default function AsyncApiDialog({
   open,
@@ -46,7 +48,7 @@ export default function AsyncApiDialog({
         setUnavailable(next === null);
         setStatus(next);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setError(humanizeError(e).message);
       }
     }
     void load();
@@ -63,7 +65,7 @@ export default function AsyncApiDialog({
       setRefreshTick((t) => t + 1);
     } catch (e) {
       if (e instanceof AsyncApiUnavailableError) { setUnavailable(true); setError(e.message); }
-      else setError(e instanceof Error ? e.message : String(e));
+      else setError(humanizeError(e).message);
     } finally {
       setBusy(false);
     }
@@ -78,7 +80,7 @@ export default function AsyncApiDialog({
       setVerifyResult(await verifyAsyncApi(connectionParams, verifyBody));
     } catch (e) {
       if (e instanceof AsyncApiUnavailableError) { setUnavailable(true); setError(e.message); }
-      else setError(e instanceof Error ? e.message : String(e));
+      else setError(humanizeError(e).message);
     } finally {
       setVerifyBusy(false);
     }
@@ -111,7 +113,7 @@ export default function AsyncApiDialog({
         {result && (
           <Alert severity="success" sx={{ mb: 1.5 }}>
             AsyncAPI spec loaded.
-            <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.72rem', m: 0, mt: 0.5 }}>
+            <Box component="pre" sx={{ whiteSpace: 'pre-wrap', typography: 'caption', fontFamily: monospaceFontFamily, m: 0, mt: 0.5 }}>
               {JSON.stringify(result, null, 2)}
             </Box>
           </Alert>
@@ -121,12 +123,12 @@ export default function AsyncApiDialog({
           multiline minRows={10} maxRows={24} fullWidth disabled={unavailable}
           value={spec} onChange={(e) => setSpec(e.target.value)}
           placeholder={'asyncapi: 3.0.0\ninfo:\n  title: Orders\n  version: 1.0.0\nchannels:\n  orders:\n    address: orders'}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }}
         />
         {status && Object.keys(status).length > 0 && (
           <Box sx={{ mt: 1.5 }}>
             <Typography variant="caption" color="text.secondary">Current status</Typography>
-            <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.72rem', m: 0, mt: 0.5, maxHeight: 180, overflow: 'auto' }}>
+            <Box component="pre" sx={{ whiteSpace: 'pre-wrap', typography: 'caption', fontFamily: monospaceFontFamily, m: 0, mt: 0.5, maxHeight: 180, overflow: 'auto' }}>
               {JSON.stringify(status, null, 2)}
             </Box>
           </Box>
@@ -142,7 +144,7 @@ export default function AsyncApiDialog({
           multiline minRows={5} maxRows={16} fullWidth disabled={unavailable}
           value={verifyBody} onChange={(e) => setVerifyBody(e.target.value)}
           placeholder={'{\n  "channel": "orders",\n  "atLeast": 1\n}'}
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }}
         />
         {verifyResult && (
           <Alert severity={verifyResult.verified ? 'success' : 'warning'} sx={{ mt: 1 }}>

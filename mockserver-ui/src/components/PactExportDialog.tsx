@@ -14,6 +14,9 @@ import Divider from '@mui/material/Divider';
 import Box from '@mui/material/Box';
 import { exportPact, verifyPact } from '../lib/pactExport';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
+import HumanErrorAlert from './HumanErrorAlert';
 
 interface PactExportDialogProps {
   open: boolean;
@@ -31,13 +34,13 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
   const [consumer, setConsumer] = useState('');
   const [provider, setProvider] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [pactText, setPactText] = useState<string | null>(null);
 
   // Verify section
   const [verifyText, setVerifyText] = useState('');
   const [verifyBusy, setVerifyBusy] = useState(false);
-  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<HumanError | null>(null);
   const [verifyResult, setVerifyResult] = useState<{ verified: boolean; result: unknown } | null>(null);
 
   const handleVerify = async () => {
@@ -48,7 +51,7 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
     try {
       setVerifyResult(await verifyPact(connectionParams, verifyText));
     } catch (e) {
-      setVerifyError(e instanceof Error ? e.message : String(e));
+      setVerifyError(humanizeError(e));
     } finally {
       setVerifyBusy(false);
     }
@@ -62,7 +65,7 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
       const pact = await exportPact(connectionParams, consumer, provider);
       setPactText(JSON.stringify(pact, null, 2));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -119,11 +122,7 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
             fullWidth
           />
         </Stack>
-        {error !== null && (
-          <Alert severity="error" sx={{ mb: 1 }}>
-            {error}
-          </Alert>
-        )}
+        {error !== null && <HumanErrorAlert error={error} sx={{ mb: 1 }} />}
         {pactText !== null && (
           <TextField
             value={pactText}
@@ -150,13 +149,13 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
           minRows={6}
           maxRows={16}
           fullWidth
-          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+          slotProps={{ input: { sx: { typography: 'body2', fontFamily: monospaceFontFamily } } }}
         />
-        {verifyError !== null && <Alert severity="error" sx={{ mt: 1 }}>{verifyError}</Alert>}
+        {verifyError !== null && <HumanErrorAlert error={verifyError} sx={{ mt: 1 }} />}
         {verifyResult !== null && (
           <Alert severity={verifyResult.verified ? 'success' : 'warning'} sx={{ mt: 1 }}>
             {verifyResult.verified ? 'Contract verified — all interactions are satisfied.' : 'Not verified — some interactions are not satisfied.'}
-            <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.72rem', m: 0, mt: 0.5, maxHeight: 220, overflow: 'auto' }}>
+            <Box component="pre" sx={{ whiteSpace: 'pre-wrap', typography: 'caption', fontFamily: monospaceFontFamily, m: 0, mt: 0.5, maxHeight: 220, overflow: 'auto' }}>
               {JSON.stringify(verifyResult.result, null, 2)}
             </Box>
           </Alert>
