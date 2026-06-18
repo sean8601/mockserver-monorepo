@@ -13,6 +13,9 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { registerCrudResource, type CrudConfig, type CrudResult } from '../lib/crud';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
+import { monospaceFontFamily } from '../theme';
 
 export default function CrudDialog({
   open,
@@ -32,7 +35,7 @@ export default function CrudDialog({
   const [initialData, setInitialData] = useState('');
 
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [result, setResult] = useState<CrudResult | null>(null);
 
   const submit = useCallback(async () => {
@@ -41,7 +44,7 @@ export default function CrudDialog({
 
     const trimmedBasePath = basePath.trim();
     if (!trimmedBasePath) {
-      setError('basePath is required.');
+      setError({ message: 'basePath is required.' });
       return;
     }
 
@@ -52,12 +55,12 @@ export default function CrudDialog({
       try {
         const parsed: unknown = JSON.parse(trimmedData);
         if (!Array.isArray(parsed)) {
-          setError('initialData must be a JSON array.');
+          setError({ message: 'initialData must be a JSON array.' });
           return;
         }
         parsedInitialData = parsed;
       } catch {
-        setError('initialData is not valid JSON.');
+        setError({ message: 'initialData is not valid JSON.' });
         return;
       }
     }
@@ -72,7 +75,7 @@ export default function CrudDialog({
     try {
       setResult(await registerCrudResource(connectionParams, config));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -97,7 +100,7 @@ export default function CrudDialog({
           endpoints with automatic ID management. Leave optional fields blank to use server
           defaults.
         </Typography>
-        {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
+        {error && <HumanErrorAlert error={error} sx={{ mb: 1.5 }} />}
         {result && (
           <Alert severity="success" sx={{ mb: 1.5 }}>
             Registered CRUD resource at <strong>{result.basePath}</strong> ({result.idStrategy}, {result.itemCount} item{result.itemCount === 1 ? '' : 's'}).
@@ -113,7 +116,7 @@ export default function CrudDialog({
             value={basePath}
             onChange={(e) => setBasePath(e.target.value)}
           />
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <TextField
               size="small"
               label="ID field name"
@@ -121,7 +124,7 @@ export default function CrudDialog({
               helperText="Property used as each item's identifier (default: id)."
               value={idField}
               onChange={(e) => setIdField(e.target.value)}
-              sx={{ flex: 1 }}
+              sx={{ flex: 1, minWidth: { xs: '100%', sm: 140 } }}
             />
             <TextField
               size="small"
@@ -130,7 +133,7 @@ export default function CrudDialog({
               helperText="How new item IDs are generated."
               value={idStrategy}
               onChange={(e) => setIdStrategy(e.target.value as 'AUTO_INCREMENT' | 'UUID')}
-              sx={{ width: 180 }}
+              sx={{ width: { xs: '100%', sm: 180 } }}
             >
               <MenuItem value="AUTO_INCREMENT">AUTO_INCREMENT</MenuItem>
               <MenuItem value="UUID">UUID</MenuItem>
@@ -146,7 +149,7 @@ export default function CrudDialog({
             helperText="Optional JSON array of items to pre-populate the resource."
             value={initialData}
             onChange={(e) => setInitialData(e.target.value)}
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, typography: 'body2' } } }}
           />
         </Box>
       </DialogContent>

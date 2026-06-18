@@ -15,6 +15,7 @@ import { useDebugMismatchContext } from '../hooks/DebugMismatchContext';
 import { useGenerateStubContext } from '../hooks/GenerateStubContext';
 import { entryToText } from '../lib/logEntryText';
 import { parseLogTimestamp, formatCompactTime, formatAbsoluteTime } from '../lib/logEntryTime';
+import { monospaceFontFamily } from '../theme';
 
 // ---------------------------------------------------------------------------
 // W3C traceparent pill (F8)
@@ -116,7 +117,7 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
 
   return (
     <Tooltip
-      title={<Box component="pre" sx={{ m: 0, fontFamily: 'monospace', fontSize: '0.7rem', whiteSpace: 'pre-wrap' }}>{tooltipText}</Box>}
+      title={<Box component="pre" sx={{ m: 0, fontFamily: monospaceFontFamily, typography: 'caption', whiteSpace: 'pre-wrap' }}>{tooltipText}</Box>}
     >
       <Chip
         label={`[T] ${abbrev}`}
@@ -126,7 +127,7 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
         sx={{
           height: 18,
           fontSize: '0.6rem',
-          fontFamily: 'monospace',
+          fontFamily: monospaceFontFamily,
           ml: 0.5,
           '& .MuiChip-label': { px: 0.5 },
         }}
@@ -150,8 +151,8 @@ function LogTime({ timestamp }: { timestamp: string }) {
         aria-label={`Logged at ${absolute}`}
         {...(parsed.date ? { dateTime: parsed.date.toISOString() } : {})}
         sx={{
-          fontFamily: 'monospace',
-          fontSize: '0.7rem',
+          fontFamily: monospaceFontFamily,
+          typography: 'caption',
           color: 'text.secondary',
           mr: 0.75,
           flexShrink: 0,
@@ -211,7 +212,7 @@ function renderMessagePart(part: MessagePart) {
 
   if (!part.argument) {
     return (
-      <Box key={part.key} component="span" sx={{ fontFamily: 'monospace' }}>
+      <Box key={part.key} component="span" sx={{ fontFamily: monospaceFontFamily }}>
         {addLinks(String(part.value))}
       </Box>
     );
@@ -244,7 +245,7 @@ function renderMessagePart(part: MessagePart) {
       );
     }
     return (
-      <Box key={part.key} component="span" sx={{ fontFamily: 'monospace', pl: 0.5 }}>
+      <Box key={part.key} component="span" sx={{ fontFamily: monospaceFontFamily, pl: 0.5 }}>
         {String(part.value)}
       </Box>
     );
@@ -254,7 +255,7 @@ function renderMessagePart(part: MessagePart) {
     <Box
       key={part.key}
       component="span"
-      sx={{ fontFamily: 'monospace', pl: 0.5, letterSpacing: '0.08em', whiteSpace: 'pre' }}
+      sx={{ fontFamily: monospaceFontFamily, pl: 0.5, letterSpacing: '0.08em', whiteSpace: 'pre' }}
     >
       {addLinks(String(part.value))}
     </Box>
@@ -370,7 +371,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
             {entry.timestamp && <LogTime timestamp={entry.timestamp} />}
             <Box
               component="span"
-              sx={{ whiteSpace: 'pre', fontFamily: 'monospace' }}
+              sx={{ whiteSpace: 'pre', fontFamily: monospaceFontFamily }}
             >
               {descriptionText(entry) || 'SYSTEM_MESSAGE'}
             </Box>
@@ -418,7 +419,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
                     // Hidden on narrow viewports (mobile and the IDE-embedded
                     // dashboard) where it wraps one word per line and looks broken;
                     // the full message is still available by expanding the row.
-                    sx={{ fontFamily: 'monospace', color: 'text.secondary', ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: { xs: 'none', md: 'inline-block' } }}
+                    sx={{ fontFamily: monospaceFontFamily, color: 'text.secondary', ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: { xs: 'none', md: 'inline-block' } }}
                   >
                     {summary}
                   </Box>
@@ -439,7 +440,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
               title={descriptionText(entry)}
               sx={{
                 whiteSpace: 'pre',
-                fontFamily: 'monospace',
+                fontFamily: monospaceFontFamily,
                 display: 'flex',
                 alignItems: 'center',
               }}

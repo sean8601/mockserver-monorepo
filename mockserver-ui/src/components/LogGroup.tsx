@@ -10,6 +10,7 @@ import type { LogGroup as LogGroupType } from '../types';
 import LogEntry from './LogEntry';
 import { entryToText } from '../lib/logEntryText';
 import CopyButton from './CopyButton';
+import { monospaceFontFamily } from '../theme';
 
 interface LogGroupProps {
   group: LogGroupType;
@@ -90,7 +91,7 @@ function LogGroup({ group, open: openProp, onToggleOpen }: LogGroupProps) {
                   e.stopPropagation();
                   void navigator.clipboard.writeText(correlationId);
                 }}
-                sx={{ fontFamily: 'monospace', fontSize: '0.65rem', height: 18, cursor: 'pointer', flexShrink: 0 }}
+                sx={{ fontFamily: monospaceFontFamily, typography: 'caption', height: 18, cursor: 'pointer', flexShrink: 0 }}
               />
             </Tooltip>
           )}

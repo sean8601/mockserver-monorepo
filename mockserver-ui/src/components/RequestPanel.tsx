@@ -9,6 +9,7 @@ import JsonListItemComponent from './JsonListItem';
 import ProgressiveList from './ProgressiveList';
 import { useExpansion } from '../hooks/useExpansion';
 import { matchesItemSearch } from '../lib/searchMatcher';
+import { monospaceFontFamily } from '../theme';
 
 interface RequestPanelProps {
   title: string;
@@ -91,7 +92,7 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
 
   return (
     <Tooltip
-      title={<Box component="pre" sx={{ m: 0, fontFamily: 'monospace', fontSize: '0.7rem', whiteSpace: 'pre-wrap' }}>{tooltipText}</Box>}
+      title={<Box component="pre" sx={{ m: 0, fontFamily: monospaceFontFamily, typography: 'caption', whiteSpace: 'pre-wrap' }}>{tooltipText}</Box>}
     >
       <Chip
         label={`[T] ${abbrev}`}
@@ -101,7 +102,7 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
         sx={{
           height: 18,
           fontSize: '0.6rem',
-          fontFamily: 'monospace',
+          fontFamily: monospaceFontFamily,
           '& .MuiChip-label': { px: 0.5 },
         }}
       />

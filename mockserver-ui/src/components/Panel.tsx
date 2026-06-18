@@ -68,9 +68,7 @@ export default function Panel({
           flexShrink: 0,
         }}
       >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.79rem' }}>
-          {title}
-        </Typography>
+        <Typography variant="subtitle2">{title}</Typography>
         {count > 0 && (
           <Chip
             label={
@@ -99,7 +97,7 @@ export default function Panel({
               ),
             },
           }}
-          sx={{ ml: 'auto', maxWidth: 200, '& .MuiInputBase-root': { height: 28, fontSize: '0.75rem' }, '& .MuiSvgIcon-root': { fontSize: '0.875rem' } }}
+          sx={{ ml: 'auto', maxWidth: 200, '& .MuiInputBase-root': { height: 28, typography: 'subtitle2', fontWeight: 400 }, '& .MuiSvgIcon-root': { fontSize: '0.875rem' } }}
         />
       </Box>
       <Box

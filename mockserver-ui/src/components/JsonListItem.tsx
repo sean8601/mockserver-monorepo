@@ -15,6 +15,7 @@ import type { ConversationPredicates } from '../lib/llmTraffic';
 import JsonViewer from './JsonViewer';
 import DescriptionDisplay from './DescriptionDisplay';
 import PredicatePills from './PredicatePills';
+import { monospaceFontFamily, transitions } from '../theme';
 
 interface JsonListItemProps {
   item: JsonListItemType;
@@ -281,7 +282,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
           </IconButton>
           <Box
             component="span"
-            sx={{ fontFamily: 'monospace', fontSize: '0.8em', color: 'text.secondary', minWidth: 24 }}
+            sx={{ fontFamily: monospaceFontFamily, fontSize: '0.8em', color: 'text.secondary', minWidth: 24 }}
           >
             {index}
           </Box>
@@ -289,7 +290,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
             <Box
               component="span"
               sx={{
-                fontFamily: 'monospace',
+                fontFamily: monospaceFontFamily,
                 fontSize: '0.85em',
                 fontWeight: 600,
                 whiteSpace: 'nowrap',
@@ -302,7 +303,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
             <>
               <Box
                 component="span"
-                sx={{ fontFamily: 'monospace', fontSize: '0.85em', fontWeight: 600, minWidth: 50 }}
+                sx={{ fontFamily: monospaceFontFamily, fontSize: '0.85em', fontWeight: 600, minWidth: 50 }}
               >
                 {requestParts.method ?? '·'}
               </Box>
@@ -310,7 +311,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
               <Box
                 component="span"
                 sx={{
-                  fontFamily: 'monospace',
+                  fontFamily: monospaceFontFamily,
                   fontSize: '0.85em',
                   color: 'text.secondary',
                   textAlign: 'right',
@@ -359,7 +360,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                 ml: 0.5,
                 flexShrink: 0,
                 opacity: 0,
-                transition: 'opacity 0.1s',
+                transition: transitions.fast,
               }}
             >
               {onEdit && (
@@ -405,7 +406,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                   label="stream"
                   size="small"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: '0.65rem' }}
+                  sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
                 />
               ),
             });
@@ -420,7 +421,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                   label={lbl}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: '0.65rem' }}
+                  sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
                 />
               ),
             });
@@ -434,7 +435,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                   label="embedding"
                   size="small"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: '0.65rem' }}
+                  sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
                 />
               ),
             });
@@ -458,7 +459,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                   size="small"
                   color="info"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: '0.65rem' }}
+                  sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
                 />
               ),
             });
@@ -473,7 +474,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                   label={lbl}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: '0.65rem' }}
+                  sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
                 />
               ),
             });
@@ -496,7 +497,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
               size="small"
               color="secondary"
               variant="outlined"
-              sx={{ height: 20, fontSize: '0.65rem' }}
+              sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
             />
             {visibleChips.map((c) => <Fragment key={c.key}>{c.element}</Fragment>)}
             {hiddenChips.length > 0 && (
@@ -505,7 +506,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                   label={`+${hiddenChips.length} more`}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: '0.65rem' }}
+                  sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
                 />
               </Tooltip>
             )}
@@ -513,7 +514,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
               <Box
                 component="span"
                 sx={{
-                  fontFamily: 'monospace',
+                  fontFamily: monospaceFontFamily,
                   fontSize: '0.7em',
                   color: 'text.secondary',
                   maxWidth: 200,
@@ -537,7 +538,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
               size="small"
               color="warning"
               variant="outlined"
-              sx={{ height: 20, fontSize: '0.65rem' }}
+              sx={{ height: 20, fontSize: (t) => t.typography.caption.fontSize }}
             />
           </Box>
         )}

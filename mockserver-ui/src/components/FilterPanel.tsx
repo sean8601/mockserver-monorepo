@@ -69,7 +69,7 @@ function ChipCluster({ label, options, selected, onChange, displayMap, disabled 
             color={selected.includes(option) ? 'primary' : 'default'}
             onClick={() => toggle(option)}
             disabled={disabled}
-            sx={{ height: 24, fontSize: '0.7rem' }}
+            sx={{ height: 24 }}
           />
         ))}
       </Box>
@@ -117,7 +117,7 @@ export function MultiValueField({ label, items, onChange, disabled }: MultiValue
             value={item.name}
             onChange={(e) => setName(i, e.target.value)}
             disabled={disabled}
-            sx={{ width: 140 }}
+            sx={{ width: { xs: '100%', sm: 140 } }}
           />
           <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
             {item.values.map((val, vi) => (
@@ -128,7 +128,7 @@ export function MultiValueField({ label, items, onChange, disabled }: MultiValue
                   value={val}
                   onChange={(e) => setValue(i, vi, e.target.value)}
                   disabled={disabled}
-                  sx={{ width: 120 }}
+                  sx={{ width: { xs: '100%', sm: 120 } }}
                 />
                 {vi > 0 && (
                   <IconButton size="small" disabled={disabled} onClick={() => removeValue(i, vi)}>
@@ -181,7 +181,7 @@ export function SingleValueField({ label, items, onChange, disabled }: SingleVal
             value={item.name}
             onChange={(e) => setField(i, 'name', e.target.value)}
             disabled={disabled}
-            sx={{ width: 140 }}
+            sx={{ width: { xs: '100%', sm: 140 } }}
           />
           <TextField
             size="small"
@@ -189,7 +189,7 @@ export function SingleValueField({ label, items, onChange, disabled }: SingleVal
             value={item.value}
             onChange={(e) => setField(i, 'value', e.target.value)}
             disabled={disabled}
-            sx={{ width: 180 }}
+            sx={{ width: { xs: '100%', sm: 180 } }}
           />
           {i > 0 && (
             <IconButton size="small" disabled={disabled} onClick={() => removeRow(i)}>
@@ -387,7 +387,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
                 disabled={disabled}
-                sx={{ width: 130 }}
+                sx={{ width: { xs: '100%', sm: 130 } }}
               >
                 {HTTP_METHODS.map((m) => (
                   <MenuItem key={m} value={m}>
@@ -403,7 +403,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                 disabled={disabled}
                 error={Boolean(pathRegexError)}
                 helperText={pathRegexError}
-                sx={{ width: 200 }}
+                sx={{ width: { xs: '100%', sm: 200 } }}
               />
               <FormControlLabel
                 control={
@@ -480,7 +480,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                     handleSavePreset();
                   }
                 }}
-                sx={{ width: 200 }}
+                sx={{ width: { xs: '100%', sm: 200 } }}
               />
               <Button
                 size="small"
@@ -507,7 +507,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                     color="primary"
                     onClick={() => applyPreset(preset)}
                     onDelete={() => handleDeletePreset(preset.name)}
-                    sx={{ height: 24, fontSize: '0.7rem' }}
+                    sx={{ height: 24 }}
                   />
                 ))}
               </Box>
