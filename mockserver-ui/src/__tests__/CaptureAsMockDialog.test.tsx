@@ -5,6 +5,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
 import CaptureAsMockDialog from '../components/CaptureAsMockDialog';
 import { _clearMcpSessionCache } from '../lib/mcpClient';
+import { useDashboardStore } from '../store';
 import type { AnthropicParsed, OpenAiParsed, GenericParsed } from '../lib/llmTraffic';
 
 function renderDialog(overrides: Partial<Parameters<typeof CaptureAsMockDialog>[0]> = {}) {
@@ -439,5 +440,45 @@ describe('CaptureAsMockDialog', () => {
     expect(screen.getByText(/import static org.mockserver.model.HttpResponse.response/)).toBeInTheDocument();
     expect(screen.getByText(/withStatusCode\(200\)/)).toBeInTheDocument();
     expect(screen.queryByText(/llmResponse/)).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Refine in Composer handoff (generic HTTP only)
+  // -------------------------------------------------------------------------
+
+  it('hands a generic capture off to the Composer via editExpectation', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const genericParsed: GenericParsed = {
+      kind: 'generic',
+      method: 'GET',
+      path: '/api/health',
+      statusCode: 200,
+    };
+
+    useDashboardStore.setState({ pendingEditExpectation: null, view: 'traffic' });
+
+    renderDialog({
+      onClose,
+      parsed: genericParsed,
+      path: '/api/health',
+      itemValue: {
+        httpRequest: { method: 'GET', path: '/api/health' },
+        httpResponse: { statusCode: 200, body: '{"status":"ok"}' },
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: /Refine in Composer/ }));
+
+    const state = useDashboardStore.getState();
+    expect(state.view).toBe('composer');
+    expect(state.pendingEditExpectation).toHaveProperty('httpRequest');
+    expect(state.pendingEditExpectation).toHaveProperty('httpResponse');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does not offer Refine in Composer for LLM traffic', () => {
+    renderDialog();
+    expect(screen.queryByRole('button', { name: /Refine in Composer/ })).not.toBeInTheDocument();
   });
 });

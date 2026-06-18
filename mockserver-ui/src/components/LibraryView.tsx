@@ -21,13 +21,16 @@ import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
 import Tooltip from '@mui/material/Tooltip';
-import DeleteIcon from '@mui/icons-material/Delete';
-import DownloadIcon from '@mui/icons-material/Download';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
+import ContentCopyIcon from '@mui/icons-material/ContentCopyOutlined';
+import RefreshIcon from '@mui/icons-material/RefreshOutlined';
+import UploadFileIcon from '@mui/icons-material/UploadFileOutlined';
 import { CassetteManagerBody } from './CassetteManager';
 import ImportForm from './ImportForm';
+import HumanErrorAlert from './HumanErrorAlert';
+import { humanizeError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   listWasmModules,
@@ -353,7 +356,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
   const [format, setFormat] = useState<ExportFormat>('har');
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReturnType<typeof humanizeError> | null>(null);
 
   const scopeMeta = SCOPES.find((s) => s.value === scope)!;
   const availableFormats = FORMATS.filter((f) => f.scopes.includes(scope));
@@ -430,7 +433,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
       document.body.removeChild(anchor);
       URL.revokeObjectURL(objectUrl);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setDownloading(false);
     }
@@ -450,7 +453,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     }
   }, [fetchText]);
 
@@ -462,7 +465,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
         is what you get.
       </Typography>
       <FormControl>
-        <FormLabel sx={{ fontSize: '0.8rem' }}>What to export</FormLabel>
+        <FormLabel sx={{ typography: 'body2' }}>What to export</FormLabel>
         <RadioGroup
           row
           value={scope}
@@ -514,9 +517,9 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
           </Button>
         )}
       </Box>
-      {error && <Alert severity="error" variant="outlined">{error}</Alert>}
+      {error && <HumanErrorAlert error={error} variant="outlined" />}
       {notice && (
-        <Alert severity="info" variant="outlined" sx={{ fontSize: '0.8rem' }}>
+        <Alert severity="info" variant="outlined" sx={{ typography: 'body2' }}>
           {notice}
         </Alert>
       )}
@@ -533,8 +536,8 @@ const WASM_POLL_INTERVAL_MS = 8000;
 function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionParams }) {
   const [modules, setModules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [error, setError] = useState<ReturnType<typeof humanizeError> | null>(null);
+  const [actionError, setActionError] = useState<ReturnType<typeof humanizeError> | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadName, setUploadName] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
@@ -556,7 +559,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
         setLoading(false);
       } catch (e) {
         if (cancelled || controller.signal.aborted) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(humanizeError(e));
         setLoading(false);
       } finally {
         if (!cancelled) timer = setTimeout(() => void poll(), WASM_POLL_INTERVAL_MS);
@@ -573,12 +576,12 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
 
   const handleUpload = useCallback(async () => {
     if (!uploadName.trim()) {
-      setActionError('Module name is required');
+      setActionError({ message: 'Module name is required' });
       return;
     }
     const input = fileInputRef.current;
     if (!input?.files?.length) {
-      setActionError('Select a .wasm file to upload');
+      setActionError({ message: 'Select a .wasm file to upload' });
       return;
     }
     setBusy(true);
@@ -591,7 +594,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
       if (input) input.value = '';
       setRefreshTick((t) => t + 1);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -604,7 +607,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
       await deleteWasmModule(connectionParams, name);
       setRefreshTick((t) => t + 1);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -659,13 +662,11 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
       </Box>
 
       {actionError && (
-        <Alert severity="error" onClose={() => setActionError(null)}>
-          {actionError}
-        </Alert>
+        <HumanErrorAlert error={actionError} onClose={() => setActionError(null)} />
       )}
 
       {error && (
-        <Alert severity="error" variant="outlined">{error}</Alert>
+        <HumanErrorAlert error={error} variant="outlined" />
       )}
 
       {/* Modules table */}
@@ -686,7 +687,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
               {modules.map((name) => (
                 <TableRow key={name}>
                   <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{name}</Typography>
+                    <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{name}</Typography>
                   </TableCell>
                   <TableCell align="right">
                     <Tooltip title="Delete module">
@@ -697,7 +698,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
                           disabled={busy}
                           onClick={() => setDeleteTarget(name)}
                         >
-                          <DeleteIcon fontSize="small" />
+                          <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
                       </span>
                     </Tooltip>
@@ -727,8 +728,8 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
 
 function GrpcDescriptorsTab({ connectionParams }: { connectionParams: ConnectionParams }) {
   const [services, setServices] = useState<GrpcService[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReturnType<typeof humanizeError> | null>(null);
+  const [actionError, setActionError] = useState<ReturnType<typeof humanizeError> | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -745,7 +746,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
         setLoadError(null);
       } catch (e) {
         if (cancelled || controller.signal.aborted) return;
-        setLoadError(e instanceof Error ? e.message : String(e));
+        setLoadError(humanizeError(e));
       }
     }
     void load();
@@ -755,7 +756,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
   const handleUpload = useCallback(async () => {
     const input = fileInputRef.current;
     if (!input?.files?.length) {
-      setActionError('Select a compiled descriptor set (.desc / .pb / .bin) to upload');
+      setActionError({ message: 'Select a compiled descriptor set (.desc / .pb / .bin) to upload' });
       return;
     }
     setBusy(true);
@@ -766,7 +767,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
       if (input) input.value = '';
       setRefreshTick((t) => t + 1);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -779,7 +780,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
       await clearGrpcDescriptors(connectionParams);
       setRefreshTick((t) => t + 1);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -810,15 +811,15 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
         </Tooltip>
       </Box>
 
-      {actionError && <Alert severity="error" onClose={() => setActionError(null)}>{actionError}</Alert>}
-      {loadError && <Alert severity="error" variant="outlined">{loadError}</Alert>}
+      {actionError && <HumanErrorAlert error={actionError} onClose={() => setActionError(null)} />}
+      {loadError && <HumanErrorAlert error={loadError} variant="outlined" />}
 
       {services.length === 0 ? (
         <Typography variant="body2" color="text.secondary">No gRPC descriptors loaded.</Typography>
       ) : (
         services.map((svc) => (
           <Box key={svc.name}>
-            <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>{svc.name}</Typography>
+            <Typography variant="subtitle2" sx={{ fontFamily: monospaceFontFamily }}>{svc.name}</Typography>
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -831,8 +832,8 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
                 <TableBody>
                   {svc.methods.map((m) => (
                     <TableRow key={m.name}>
-                      <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{m.name}</Typography></TableCell>
-                      <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{m.inputType} → {m.outputType}</Typography></TableCell>
+                      <TableCell><Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{m.name}</Typography></TableCell>
+                      <TableCell><Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{m.inputType} → {m.outputType}</Typography></TableCell>
                       <TableCell>
                         <Typography variant="caption">
                           {m.clientStreaming && m.serverStreaming ? 'bidi' : m.clientStreaming ? 'client' : m.serverStreaming ? 'server' : 'unary'}
@@ -878,7 +879,7 @@ export default function LibraryView({ connectionParams }: LibraryViewProps) {
         <Tabs
           value={tab}
           onChange={(_, v: number) => setTab(v)}
-          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: '0.8rem' } }}
+          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, typography: 'body2' } }}
         >
           {TABS.map((label) => (
             <Tab key={label} label={label} />

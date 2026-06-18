@@ -11,16 +11,18 @@ import Switch from '@mui/material/Switch';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
-import Snackbar from '@mui/material/Snackbar';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import Typography from '@mui/material/Typography';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
+import { monospaceFontFamily } from '../theme';
+import { useDashboardStore } from '../store';
 import type { ParsedTraffic } from '../lib/llmTraffic';
 import {
   PROVIDERS,
@@ -94,13 +96,14 @@ export default function CaptureAsMockDialog({
 
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const setNotification = useDashboardStore((s) => s.setNotification);
+  const editExpectation = useDashboardStore((s) => s.editExpectation);
 
   // Editable state
   const [draft, setDraft] = useState<ExpectationDraft>(defaultDraft);
   const [tab, setTab] = useState(0);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<HumanError | null>(null);
-  const [snackOpen, setSnackOpen] = useState(false);
 
   // Reset all transient state (draft edits, error/details, registering flag,
   // snackbar) whenever the captured path changes OR the dialog transitions from
@@ -118,7 +121,6 @@ export default function CaptureAsMockDialog({
     setTab(0);
     setError(null);
     setRegistering(false);
-    setSnackOpen(false);
   } else if (open !== prevOpen) {
     setPrevOpen(open);
   }
@@ -193,7 +195,7 @@ export default function CaptureAsMockDialog({
         const args = expectationToMcpArgs(draft);
         const result = await callMcpTool(baseUrl, 'mock_llm_completion', args);
         if (result.ok) {
-          setSnackOpen(true);
+          setNotification({ message: 'Mock expectation registered successfully', severity: 'success' });
           onClose();
         } else {
           const raw =
@@ -211,7 +213,7 @@ export default function CaptureAsMockDialog({
           body,
         });
         if (response.ok) {
-          setSnackOpen(true);
+          setNotification({ message: 'Mock expectation registered successfully', severity: 'success' });
           onClose();
         } else {
           const text = await response.text();
@@ -225,7 +227,17 @@ export default function CaptureAsMockDialog({
     } finally {
       setRegistering(false);
     }
-  }, [connectionParams, draft, onClose]);
+  }, [connectionParams, draft, onClose, setNotification]);
+
+  // Hand the captured expectation off to the Composer for refinement instead of
+  // registering it directly here — this makes Capture and Composer one coherent
+  // creation flow rather than two divergent engines. Only the generic HTTP draft
+  // maps cleanly onto the Composer's expectation form.
+  const handleRefineInComposer = useCallback(() => {
+    if (draft.kind !== 'generic') return;
+    editExpectation(expectationToJsonObject(draft) as Record<string, unknown>);
+    onClose();
+  }, [draft, editExpectation, onClose]);
 
   // Determine if Register button should be disabled
   const registerDisabled = useMemo(() => {
@@ -251,7 +263,7 @@ export default function CaptureAsMockDialog({
           <Tabs
             value={tab}
             onChange={(_, v: number) => setTab(v)}
-            sx={{ mb: 2, minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5, fontSize: '0.8rem' } }}
+            sx={{ mb: 2, minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5, typography: 'body2' } }}
           >
             {tabLabels.map((label) => (
               <Tab key={label} label={label} />
@@ -329,7 +341,7 @@ export default function CaptureAsMockDialog({
                       onClick={() => removeToolCall(i)}
                       aria-label="Remove tool call"
                     >
-                      <DeleteIcon fontSize="small" />
+                      <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
                   </Box>
                 ))}
@@ -452,7 +464,7 @@ export default function CaptureAsMockDialog({
               <Box
                 component="pre"
                 sx={{
-                  fontFamily: 'monospace',
+                  fontFamily: monospaceFontFamily,
                   fontSize: '0.75rem',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-all',
@@ -478,7 +490,7 @@ export default function CaptureAsMockDialog({
               <Box
                 component="pre"
                 sx={{
-                  fontFamily: 'monospace',
+                  fontFamily: monospaceFontFamily,
                   fontSize: '0.75rem',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-all',
@@ -501,6 +513,15 @@ export default function CaptureAsMockDialog({
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>
+          {draft.kind === 'generic' && (
+            <Button
+              onClick={handleRefineInComposer}
+              startIcon={<EditOutlinedIcon sx={{ fontSize: '0.875rem' }} />}
+              disabled={registering || !draft.path}
+            >
+              Refine in Composer
+            </Button>
+          )}
           <Button
             variant="contained"
             onClick={() => void handleRegister()}
@@ -510,13 +531,6 @@ export default function CaptureAsMockDialog({
           </Button>
         </DialogActions>
       </Dialog>
-
-      <Snackbar
-        open={snackOpen}
-        autoHideDuration={3000}
-        onClose={() => setSnackOpen(false)}
-        message="Mock expectation registered successfully"
-      />
     </>
   );
 }

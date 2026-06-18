@@ -23,6 +23,7 @@ import type { DebugMismatchExpectationResult, DebugMismatchResult } from '../typ
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import type { GenericParsed } from '../lib/llmTraffic';
 import { mismatchDifferencesToDiffResult } from '../lib/diff';
+import { monospaceFontFamily } from '../theme';
 import CaptureAsMockDialog from './CaptureAsMockDialog';
 import DiffPanel from './DiffPanel';
 
@@ -79,9 +80,9 @@ function ExpectationResultRow({ result, isClosest }: { result: DebugMismatchExpe
           size="small"
           color={scoreColor(result.matchedFieldCount, result.totalFieldCount)}
           variant="outlined"
-          sx={{ fontFamily: 'monospace', fontSize: '0.75rem', height: 20, minWidth: 48 }}
+          sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem', height: 20, minWidth: 48 }}
         />
-        <Box component="span" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'text.secondary' }}>
+        <Box component="span" sx={{ fontFamily: monospaceFontFamily, fontSize: '0.8rem', color: 'text.secondary' }}>
           {result.expectationMethod && result.expectationPath
             ? `${result.expectationMethod} ${result.expectationPath}`
             : result.expectationId ?? 'unknown'}
@@ -96,7 +97,7 @@ function ExpectationResultRow({ result, isClosest }: { result: DebugMismatchExpe
             <Box key={field} sx={{ mb: 0.5 }}>
               <Typography
                 variant="caption"
-                sx={{ fontFamily: 'monospace', fontWeight: 600, color: 'error.main', display: 'block' }}
+                sx={{ fontFamily: monospaceFontFamily, fontWeight: 600, color: 'error.main', display: 'block' }}
               >
                 {field}
               </Typography>
@@ -105,7 +106,7 @@ function ExpectationResultRow({ result, isClosest }: { result: DebugMismatchExpe
                   key={i}
                   variant="caption"
                   sx={{
-                    fontFamily: 'monospace',
+                    fontFamily: monospaceFontFamily,
                     display: 'block',
                     pl: 2,
                     whiteSpace: 'pre-wrap',

@@ -10,6 +10,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
+import { monospaceFontFamily } from '../theme';
 import type { DiffResult, FieldDiff } from '../lib/diff';
 
 interface DiffPanelProps {
@@ -85,17 +86,17 @@ export default function DiffPanel({
               {result.diffs.map((diff: FieldDiff, i: number) => (
                 <TableRow key={`${diff.field}-${i}`}>
                   <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                    <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                       {diff.field}
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
                       {diff.expectedValue ?? '-'}
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
                       {diff.actualValue ?? '-'}
                     </Typography>
                   </TableCell>

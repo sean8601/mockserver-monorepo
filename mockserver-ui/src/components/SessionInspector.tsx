@@ -28,6 +28,7 @@ import {
 import AgentRunGraph from './AgentRunGraph';
 import { CompareRunsBody } from './CompareRunsDialog';
 import ScenarioPanel from './ScenarioPanel';
+import { monospaceFontFamily, transitions } from '../theme';
 
 // ---------------------------------------------------------------------------
 // Status colour for request chips
@@ -65,9 +66,10 @@ function RequestChip({ request, turnIndex, selected, onClick }: RequestChipProps
         sx={{
           height: 22,
           fontSize: '0.65rem',
-          fontFamily: 'monospace',
+          fontFamily: monospaceFontFamily,
           cursor: 'pointer',
           maxWidth: 220,
+          transition: transitions.forProps(['background-color', 'border-color', 'box-shadow']),
           '& .MuiChip-label': { px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
         }}
       />
@@ -109,7 +111,7 @@ function RequestDetail({ request }: { request: SessionRequest }) {
       <Box
         component="pre"
         sx={{
-          fontFamily: 'monospace',
+          fontFamily: monospaceFontFamily,
           fontSize: '0.65rem',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
@@ -327,7 +329,7 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
               label={`${usage.totalInputTokens.toLocaleString()} in / ${usage.totalOutputTokens.toLocaleString()} out`}
               size="small"
               variant="outlined"
-              sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', maxWidth: 180, '& .MuiChip-label': { px: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
+              sx={{ height: 18, fontSize: '0.6rem', fontFamily: monospaceFontFamily, maxWidth: 180, '& .MuiChip-label': { px: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
             />
           </Tooltip>
         )}
@@ -338,7 +340,7 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
               size="small"
               variant="outlined"
               color="warning"
-              sx={{ height: 18, fontSize: '0.6rem', fontFamily: 'monospace', '& .MuiChip-label': { px: 0.5 } }}
+              sx={{ height: 18, fontSize: '0.6rem', fontFamily: monospaceFontFamily, '& .MuiChip-label': { px: 0.5 } }}
             />
           </Tooltip>
         )}
@@ -438,7 +440,7 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
         <Tabs
           value={tab}
           onChange={(_, v: number) => setTab(v)}
-          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: '0.8rem' } }}
+          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, typography: 'body2' } }}
         >
           <Tab label="Sessions" />
           <Tab label="Scenarios" />

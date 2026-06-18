@@ -19,6 +19,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 import { useDashboardStore } from '../store';
+import { monospaceFontFamily } from '../theme';
 import { groupBySession, shortenScenarioName, type Session } from '../lib/sessionGrouping';
 import {
   extractTrajectory,
@@ -109,7 +110,7 @@ function ToolCallChain({
                 sx={{
                   height: 20,
                   fontSize: '0.6rem',
-                  fontFamily: 'monospace',
+                  fontFamily: monospaceFontFamily,
                   '& .MuiChip-label': { px: 0.5 },
                 }}
               />
@@ -157,16 +158,16 @@ function TokenTable({ report }: { report: DiffReport }) {
           {report.tokenTrajectory.map((entry) => (
             <TableRow key={entry.turn}>
               <TableCell sx={{ fontSize: '0.7rem' }}>{entry.turn}</TableCell>
-              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: 'monospace' }}>
+              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: monospaceFontFamily }}>
                 {entry.aInput ?? '-'}
               </TableCell>
-              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: 'monospace' }}>
+              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: monospaceFontFamily }}>
                 {entry.aOutput ?? '-'}
               </TableCell>
-              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: 'monospace' }}>
+              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: monospaceFontFamily }}>
                 {entry.bInput ?? '-'}
               </TableCell>
-              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: 'monospace' }}>
+              <TableCell align="right" sx={{ fontSize: '0.7rem', fontFamily: monospaceFontFamily }}>
                 {entry.bOutput ?? '-'}
               </TableCell>
             </TableRow>

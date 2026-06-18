@@ -7,6 +7,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import CopyButton from './CopyButton';
 import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
 import { parseCallGraph, toMermaid, type CallGraph } from '../lib/callGraph';
+import { humanizeError } from '../lib/errorMessage';
 import { useDashboardStore } from '../store';
 
 interface AgentRunGraphProps {
@@ -59,7 +60,7 @@ export default function AgentRunGraph({ connectionParams, provider, path }: Agen
         setError(typeof result.error === 'string' ? result.error : 'Failed to load call graph');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(humanizeError(err).message);
     } finally {
       setLoading(false);
     }

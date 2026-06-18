@@ -43,7 +43,9 @@ import type { ScriptedTurn } from './ConversationView';
 import type { JsonListItem } from '../types';
 import { isCapturableTraffic } from '../lib/expectationFromCapture';
 import { replayRequests } from '../lib/replay';
-import { humanizeError } from '../lib/errorMessage';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
+import { monospaceFontFamily, transitions } from '../theme';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   summarizeTraffic,
@@ -252,6 +254,7 @@ function TrafficRow({
         py: 0.5,
         cursor: 'pointer',
         bgcolor: selected ? 'action.selected' : 'transparent',
+        transition: transitions.forProps(['background-color']),
         '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
         borderBottom: 1,
         borderColor: 'divider',
@@ -272,7 +275,7 @@ function TrafficRow({
       )}
       <Typography
         variant="caption"
-        sx={{ fontFamily: 'monospace', color: 'text.secondary', minWidth: 24, flexShrink: 0 }}
+        sx={{ fontFamily: monospaceFontFamily, color: 'text.secondary', minWidth: 24, flexShrink: 0 }}
       >
         {index}
       </Typography>
@@ -286,7 +289,7 @@ function TrafficRow({
       <Typography
         variant="caption"
         sx={{
-          fontFamily: 'monospace',
+          fontFamily: monospaceFontFamily,
           fontWeight: 600,
           color: 'primary.main',
           flexShrink: 0,
@@ -299,7 +302,7 @@ function TrafficRow({
           variant="caption"
           noWrap
           sx={{
-            fontFamily: 'monospace',
+            fontFamily: monospaceFontFamily,
             flex: 1,
             minWidth: 80,
             overflow: 'hidden',
@@ -355,7 +358,7 @@ function AnthropicMessagesPanel({ parsed }: { parsed: AnthropicParsed }) {
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>System</Typography>
           <Box sx={{ mt: 0.5 }}>
             {typeof parsed.system === 'string' ? (
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap' }}>
+              <Typography variant="body2" sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem', whiteSpace: 'pre-wrap' }}>
                 {parsed.system}
               </Typography>
             ) : (
@@ -590,7 +593,7 @@ function SseTimeline({ events }: { events: SseEvent[] }) {
             onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
           >
             <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', minWidth: 24 }}>
+              <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily, color: 'text.secondary', minWidth: 24 }}>
                 {i + 1}
               </Typography>
               {evt.event && (
@@ -604,7 +607,7 @@ function SseTimeline({ events }: { events: SseEvent[] }) {
               <Typography
                 variant="caption"
                 noWrap
-                sx={{ fontFamily: 'monospace', fontSize: '0.65rem', color: 'text.secondary', flex: 1 }}
+                sx={{ fontFamily: monospaceFontFamily, fontSize: '0.65rem', color: 'text.secondary', flex: 1 }}
               >
                 {evt.data.length > 80 ? evt.data.slice(0, 80) + '...' : evt.data}
               </Typography>
@@ -615,7 +618,7 @@ function SseTimeline({ events }: { events: SseEvent[] }) {
               </Box>
             )}
             {expandedIndex === i && !parsedData && (
-              <Typography variant="body2" sx={{ mt: 0.5, ml: 3, fontFamily: 'monospace', fontSize: '0.7rem', whiteSpace: 'pre-wrap' }}>
+              <Typography variant="body2" sx={{ mt: 0.5, ml: 3, fontFamily: monospaceFontFamily, fontSize: '0.7rem', whiteSpace: 'pre-wrap' }}>
                 {evt.data}
               </Typography>
             )}
@@ -765,7 +768,7 @@ interface ReplayDialogProps {
 function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogProps) {
   const [loading, setLoading] = useState(false);
   const [replayResponse, setReplayResponse] = useState<Record<string, unknown> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
 
   const handleReplay = useCallback(async () => {
     setLoading(true);
@@ -777,8 +780,9 @@ function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogPro
       setReplayResponse(result);
     } catch (err) {
       // Route both server rejections (ReplayError) and network failures through
-      // the shared humaniser so the displayed message is consistent and actionable.
-      setError(humanizeError(err).message);
+      // the shared humaniser so the displayed message is consistent and actionable,
+      // with the raw server body kept behind a Details expander.
+      setError(humanizeError(err));
     } finally {
       setLoading(false);
     }
@@ -808,10 +812,10 @@ function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogPro
             <Typography variant="body2">Sending request...</Typography>
           </Box>
         )}
-        {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+        {error && <HumanErrorAlert error={error} sx={{ mb: 1 }} />}
         {replayResponse && (
           <Box sx={{ mt: 1 }}>
-            <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 600, fontSize: '0.8rem' }}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 600 }}>
               Upstream Response
             </Typography>
             <JsonViewer data={replayResponse} collapsed={3} />

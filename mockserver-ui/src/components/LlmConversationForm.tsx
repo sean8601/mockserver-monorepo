@@ -19,10 +19,12 @@ import {
   hasRangeErrors,
 } from '../lib/conversationCodegen';
 import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
+import { humanizeError } from '../lib/errorMessage';
 import { useDashboardStore } from '../store';
 import ConversationWizardStep1 from './ConversationWizardStep1';
 import ConversationWizardStep2 from './ConversationWizardStep2';
 import ConversationWizardStep3 from './ConversationWizardStep3';
+import { monospaceFontFamily } from '../theme';
 
 function emptyDraft(): ConversationDraft {
   return {
@@ -121,7 +123,7 @@ export default function LlmConversationForm({
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(humanizeError(err).message);
     } finally {
       setRegistering(false);
     }
@@ -201,7 +203,7 @@ export default function LlmConversationForm({
         </Box>
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
-            <Box component="pre" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', whiteSpace: 'pre-wrap', m: 0 }}>
+            <Box component="pre" sx={{ fontFamily: monospaceFontFamily, fontSize: '0.7rem', whiteSpace: 'pre-wrap', m: 0 }}>
               {error}
             </Box>
           </Alert>
@@ -215,7 +217,7 @@ export default function LlmConversationForm({
               )}
             </Typography>
             {Array.isArray(registrationResult['states']) && (
-              <Box component="pre" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', whiteSpace: 'pre-wrap', m: 0, mt: 0.5 }}>
+              <Box component="pre" sx={{ fontFamily: monospaceFontFamily, fontSize: '0.7rem', whiteSpace: 'pre-wrap', m: 0, mt: 0.5 }}>
                 {JSON.stringify(registrationResult['states'], null, 2)}
               </Box>
             )}
