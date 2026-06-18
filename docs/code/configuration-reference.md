@@ -21,6 +21,16 @@ This means properties file entries override environment variables, system proper
 
 The loader logs the resolved property source on startup at `TRACE` — useful when a value isn't what you expect.
 
+## Unknown-key warning
+
+A misspelled property (e.g. `-Dmockserver.maxExpectatons=…` or `MOCKSERVER_METRICS_ENABLE=…`) is silently ignored by the per-key resolution above — the typo never matches a getter, so the default is used and "my config did nothing". To catch this, `ConfigurationProperties` runs a one-time validation pass at startup (in its static initialiser, so it fires regardless of whether a properties file is present, covering env-only and `-D`-only deployments). It logs a `WARN` naming any key that is in the `mockserver.` / `MOCKSERVER_` namespace but is **not** a recognised property:
+
+- a JVM system property whose name starts with `mockserver.` but isn't a known key,
+- an environment variable whose name starts with `MOCKSERVER_` but isn't a known key,
+- a `mockserver.*` key in the loaded properties file that isn't a known key.
+
+The recognised-key set is derived **reflectively from the `MOCKSERVER_*` constant fields** in `ConfigurationProperties` (the constant's value is the `mockserver.*` key; the constant's field name is the `MOCKSERVER_*` env-var key), so it can never drift from the actual properties — adding a new property automatically extends recognition. Keys outside the `mockserver.`/`MOCKSERVER_` namespace (e.g. `JAVA_HOME`, `PATH`) are never flagged, so unrelated environment variables do not produce false positives. The check can never throw, so it cannot break startup. Only key **names** are logged, never values.
+
 ## The four equivalent forms
 
 | Form | Use when | Example |

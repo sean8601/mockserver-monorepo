@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Keyboard-shortcuts help dialog** so the ⌘K / ⌘L / Esc shortcuts are discoverable.
   - The agent-run graph (LLM/agent debugging) now renders as an **actual diagram** instead of showing
     raw Mermaid source text (Mermaid is lazily loaded so it stays out of the initial bundle).
+- **Warning for unrecognised configuration keys**: MockServer now logs a `WARN` at startup when it sees a
+  `mockserver.*` system property, a `MOCKSERVER_*` environment variable, or a properties-file key in the
+  `mockserver.` namespace that isn't a known configuration property — so a typo such as
+  `-Dmockserver.maxExpectatons=...` or `MOCKSERVER_METRICS_ENABLE=...` is surfaced instead of being silently
+  ignored (the previous behaviour, which left the default in effect with no signal). Recognised keys are
+  derived from the configuration constants themselves, plus the CLI/launcher keys (`MOCKSERVER_SERVER_PORT`,
+  `MOCKSERVER_LAUNCHER`, `MOCKSERVER_JAVA_OPTS`, etc.), so valid configuration never warns and unrelated
+  environment variables (`JAVA_HOME`, `PATH`, …) are ignored.
 - **Timestamps on dashboard log entries**: each entry in the dashboard's Log Messages list now shows the
   time it was logged — a compact local time inline, with the full `yyyy-MM-dd HH:mm:ss.SSS` timestamp on
   hover — so events can be correlated and ordering/latency seen at a glance. The timestamp was already

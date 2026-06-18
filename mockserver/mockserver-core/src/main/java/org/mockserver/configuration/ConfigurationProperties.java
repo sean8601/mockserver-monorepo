@@ -21,12 +21,15 @@ import org.slf4j.event.Level;
 
 import java.io.*;
 import java.lang.management.MemoryType;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -344,6 +347,46 @@ public class ConfigurationProperties {
 
     public static final Properties PROPERTIES = readPropertyFile();
 
+    // --- Unknown-configuration-key detection state (see the section near the end of this class) ---
+    // Declared BEFORE the static initializer below because that block calls
+    // warnAboutUnknownConfigurationProperties(), which reads these fields during <clinit>; a later
+    // declaration would leave them null at that point (the previous primitive boolean tolerated
+    // that via its default value, an AtomicBoolean / Set.of(...) does not).
+
+    // Legitimate keys handled by the CLI launcher (org.mockserver.cli.Main / its Arguments enum)
+    // or exported by the binary-launcher scripts (scripts/build-binary-bundle.sh), NOT declared as
+    // MOCKSERVER_* String constants in this class. Without this allowlist these documented keys
+    // would be wrongly flagged as typos. Keep each entry — do not delete without re-checking the
+    // referenced source, because that would reintroduce a false-positive warning.
+    //
+    //   mockserver.serverPort     - Arguments.serverPort.systemPropertyName(); the primary documented
+    //                               port knob (-Dmockserver.serverPort / --env MOCKSERVER_SERVER_PORT);
+    //                               resolved in Main.startServer, never read via a constant here.
+    //   mockserver.mockServerPort - set by System.setProperty in mockserver-maven-plugin
+    //                               (MockServerAbstractMojo.mockServerPort) and read by MockServerPort.
+    //   mockserver.launcherName   - read by Main.launcherName() to label usage text; Main explicitly
+    //                               excludes it from the resolved-config dump.
+    private static final Set<String> EXTRA_RECOGNISED_SYSTEM_PROPERTY_KEYS = Set.of(
+        "mockserver.serverPort",
+        "mockserver.mockServerPort",
+        "mockserver.launcherName"
+    );
+
+    //   MOCKSERVER_SERVER_PORT - Arguments.serverPort.longEnvironmentVariableName(); the documented
+    //                            Docker port env var (the short form SERVER_PORT lacks the MOCKSERVER_
+    //                            prefix so is never flagged). Resolved in Main.startServer.
+    //   MOCKSERVER_LAUNCHER    - exported by the binary-launcher scripts (build-binary-bundle.sh) as an
+    //                            internal usage-text hint; Main.startServer explicitly excludes it.
+    //   MOCKSERVER_JAVA_OPTS   - read by the binary-launcher scripts to pass extra JVM options; it
+    //                            remains in the launched JVM's environment, so guard against flagging it.
+    private static final Set<String> EXTRA_RECOGNISED_ENV_KEYS = Set.of(
+        "MOCKSERVER_SERVER_PORT",
+        "MOCKSERVER_LAUNCHER",
+        "MOCKSERVER_JAVA_OPTS"
+    );
+
+    private static final AtomicBoolean unknownConfigurationPropertiesChecked = new AtomicBoolean(false);
+
     static {
         // Apply the configured log level to java.util.logging once PROPERTIES is loaded.
         // MockServerLogger.<clinit> installs only the default format (it no longer reads
@@ -352,6 +395,12 @@ public class ConfigurationProperties {
         // The dependency is one-way (ConfigurationProperties -> MockServerLogger), so there
         // is no class-init cycle.
         MockServerLogger.configureLogger();
+
+        // Warn about any mockserver.* system property, MOCKSERVER_* environment variable, or
+        // mockserver.* properties-file key that is not a recognised configuration property. This
+        // runs once here (during <clinit>, after PROPERTIES is loaded) so it fires regardless of
+        // whether a property file is present — env-only / -D-only deployments are checked too.
+        warnAboutUnknownConfigurationProperties();
     }
 
     private static Map<String, String> slf4jOrJavaLoggerToJavaLoggerLevelMapping;
@@ -3835,6 +3884,155 @@ public class ConfigurationProperties {
             }
             getPropertyCache().put(systemPropertyKey, propertyValue);
             return propertyValue;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Unknown-configuration-key detection
+    //
+    // Every recognised configuration property is declared in this class as a
+    // "private static final String MOCKSERVER_XXX = "mockserver.xxx";" constant.
+    // Two facts make the constants the single source of truth (no second list to
+    // drift):
+    //   * the constant VALUE (e.g. "mockserver.maxExpectations") is the
+    //     mockserver.* system-property / properties-file key, and
+    //   * the constant NAME  (e.g. MOCKSERVER_MAX_EXPECTATIONS) is, verbatim, the
+    //     MOCKSERVER_* environment-variable key passed at every read site (the
+    //     env-var resolution does not transform the property name — it looks up a
+    //     literal MOCKSERVER_* string that equals the field name).
+    // We therefore enumerate the constants reflectively to build both authoritative
+    // sets, so adding a new property automatically extends recognition.
+    // ------------------------------------------------------------------------
+
+    private static volatile Set<String> recognisedSystemPropertyKeys;
+    private static volatile Set<String> recognisedEnvironmentVariableKeys;
+
+    private static void enumerateRecognisedKeys() {
+        if (recognisedSystemPropertyKeys != null) {
+            return;
+        }
+        Set<String> systemPropertyKeys = new HashSet<>();
+        Set<String> environmentVariableKeys = new HashSet<>();
+        for (Field field : ConfigurationProperties.class.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers())
+                && Modifier.isFinal(field.getModifiers())
+                && field.getType() == String.class
+                && field.getName().startsWith("MOCKSERVER_")) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(null);
+                    if (value instanceof String && ((String) value).startsWith("mockserver.")) {
+                        systemPropertyKeys.add((String) value);
+                        // The field NAME is the literal MOCKSERVER_* environment-variable key.
+                        environmentVariableKeys.add(field.getName());
+                    }
+                } catch (Throwable throwable) {
+                    // Ignore a single inaccessible constant rather than failing the whole scan.
+                }
+            }
+        }
+        // Union in the keys handled by the CLI launcher / launcher scripts rather than by a
+        // MOCKSERVER_* constant here (see the allowlist declarations above for why each belongs).
+        systemPropertyKeys.addAll(EXTRA_RECOGNISED_SYSTEM_PROPERTY_KEYS);
+        environmentVariableKeys.addAll(EXTRA_RECOGNISED_ENV_KEYS);
+        recognisedSystemPropertyKeys = systemPropertyKeys;
+        recognisedEnvironmentVariableKeys = environmentVariableKeys;
+    }
+
+    /**
+     * Recognised {@code mockserver.*} system-property / properties-file keys, derived
+     * reflectively from the {@code MOCKSERVER_*} constants declared in this class.
+     */
+    static Set<String> recognisedSystemPropertyKeys() {
+        enumerateRecognisedKeys();
+        return Collections.unmodifiableSet(recognisedSystemPropertyKeys);
+    }
+
+    /**
+     * Recognised {@code MOCKSERVER_*} environment-variable keys, derived reflectively
+     * from the {@code MOCKSERVER_*} constant field names declared in this class.
+     */
+    static Set<String> recognisedEnvironmentVariableKeys() {
+        enumerateRecognisedKeys();
+        return Collections.unmodifiableSet(recognisedEnvironmentVariableKeys);
+    }
+
+    /**
+     * Pure detection helper (no I/O, no global-state reads) used by both the startup
+     * warning and the tests: returns, sorted, the description of every supplied key that
+     * is in the {@code mockserver.}/{@code MOCKSERVER_} namespace but is not recognised.
+     *
+     * @param systemPropertyNames     names of JVM system properties (e.g. {@code System.getProperties()} keys)
+     * @param environmentVariableNames names of environment variables (e.g. {@code System.getenv()} keys)
+     * @param propertiesFile          loaded properties file (may be {@code null})
+     */
+    static List<String> findUnknownConfigurationKeys(Set<String> systemPropertyNames, Set<String> environmentVariableNames, Properties propertiesFile) {
+        enumerateRecognisedKeys();
+        Set<String> warnings = new TreeSet<>();
+
+        if (systemPropertyNames != null) {
+            for (String name : systemPropertyNames) {
+                if (name != null && name.startsWith("mockserver.") && !recognisedSystemPropertyKeys.contains(name)) {
+                    warnings.add("system property [" + name + "]");
+                }
+            }
+        }
+
+        if (environmentVariableNames != null) {
+            for (String name : environmentVariableNames) {
+                if (name != null && name.startsWith("MOCKSERVER_") && !recognisedEnvironmentVariableKeys.contains(name)) {
+                    warnings.add("environment variable [" + name + "]");
+                }
+            }
+        }
+
+        if (propertiesFile != null) {
+            Enumeration<?> propertyNames = propertiesFile.propertyNames();
+            while (propertyNames.hasMoreElements()) {
+                String name = String.valueOf(propertyNames.nextElement());
+                if (name.startsWith("mockserver.")
+                    && !recognisedSystemPropertyKeys.contains(name)
+                    // mockserver.propertyFile itself can legitimately be set in a file; it is a recognised key,
+                    // so this is covered by the recognised-set check above. No extra exclusions are needed.
+                    && !warnings.contains("system property [" + name + "]")) {
+                    warnings.add("properties-file key [" + name + "]");
+                }
+            }
+        }
+
+        return new ArrayList<>(warnings);
+    }
+
+    /**
+     * Logs a WARN for every {@code mockserver.*} system property, {@code MOCKSERVER_*}
+     * environment variable, or {@code mockserver.*} properties-file key that is not a
+     * recognised configuration property — the common "I set it but nothing happened"
+     * typo (e.g. {@code -Dmockserver.maxExpectatons=...}). Runs at most once and can
+     * never throw, so it cannot break startup.
+     */
+    static void warnAboutUnknownConfigurationProperties() {
+        // compareAndSet ensures the check runs at most once even under concurrent callers, so two
+        // threads racing here can never both emit the same warning.
+        if (!unknownConfigurationPropertiesChecked.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            Set<String> systemPropertyNames = System.getProperties().stringPropertyNames();
+            Set<String> environmentVariableNames = System.getenv().keySet();
+            List<String> unknownKeys = findUnknownConfigurationKeys(systemPropertyNames, environmentVariableNames, PROPERTIES);
+            if (!unknownKeys.isEmpty() && LoggerHolder.LOGGER != null) {
+                for (String unknownKey : unknownKeys) {
+                    LoggerHolder.LOGGER.logEvent(
+                        new LogEntry()
+                            .setAlwaysLog(true)
+                            .setType(SERVER_CONFIGURATION)
+                            .setLogLevel(Level.WARN)
+                            .setMessageFormat("unrecognised MockServer configuration " + unknownKey + " - it is not a known configuration property and will be ignored (check for a typo)")
+                    );
+                }
+            }
+        } catch (Throwable throwable) {
+            // Never let configuration validation break startup.
         }
     }
 }
