@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dashboard UI — usability, responsiveness and new surfaces**: a broad pass over the dashboard from
+  an adversarial review.
+  - **Delete and edit a single mock** from the dashboard's Active Expectations panel (previously the
+    only removal was "clear all expectations"): per-row Delete (confirmed) and Edit (loads the mock
+    into the Composer).
+  - **Auto-refreshing live panels**: Drift, Breakpoints, AsyncAPI and MCP panels now refresh
+    automatically on an interval instead of only on a manual button (the manual Refresh is kept as a
+    force-refresh), so they stay live like the Metrics and Chaos panels.
+  - **Quick mock mode** in the Composer: a Quick/Advanced toggle defaults to a minimal
+    method + path + status + body form for the common case, with Advanced revealing the full
+    matcher/action machinery; plus plain-language tooltips for Times/TTL/Priority/JSON-match-type/`!`
+    negation and a "View on dashboard / Add another" next step after registering.
+  - **SAML provider mocking** in the dashboard (the OIDC parallel that was missing): a "Mock SAML
+    provider…" tool backed by `PUT /mockserver/saml`.
+  - **Responsive layout**: the dashboard now works on tablet and mobile — the 2×2 grid collapses to a
+    single scrollable column, the navigation collapses to a menu when it doesn't fit, the
+    master/detail traffic view stacks, and large dialogs go full-screen on small screens.
+  - **Keyboard-shortcuts help dialog** so the ⌘K / ⌘L / Esc shortcuts are discoverable.
+  - The agent-run graph (LLM/agent debugging) now renders as an **actual diagram** instead of showing
+    raw Mermaid source text (Mermaid is lazily loaded so it stays out of the initial bundle).
 - **Expectation code generation in every client language**: the retrieve endpoint can now produce
   copy-paste-ready client code from recorded or active expectations in **Java, JavaScript, Python, Go,
   C#, Ruby, Rust and PHP**, alongside the existing Java output. Call
@@ -247,6 +267,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
 
 ### Changed
+- **Dashboard UI visual refresh**: the dashboard now has a real design system (consistent spacing,
+  shadows, typography and a dark-mode-aware log-colour palette). The Metrics view leads with KPI
+  "hero" stat cards, its charts have a real time axis and area fill, and panels show skeleton
+  placeholders while loading instead of a bare spinner. Server error messages shown in the UI are now
+  humanised (a short, actionable message with the raw server detail tucked behind a "Details" toggle)
+  instead of dumping raw server output.
 - JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a
   security hardening against SSRF / unexpected network fetches. Schemas using only internal/inline refs are
   unaffected; set `-Dmockserver.jsonSchemaAllowRemoteRefs=true` to restore remote resolution.
@@ -294,6 +320,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually renders, not the repo README).
 
 ### Fixed
+- **Dashboard UI correctness fixes** (from an adversarial review):
+  - The dashboard no longer crashes to a blank white screen when a view fails to load (e.g. the Metrics
+    chunk after a redeploy) — views are wrapped in an error boundary that offers a reload/retry and
+    keeps the navigation usable.
+  - The Drift panel no longer hides failures: a failed "Clear" used to report success and a server
+    error used to look like "no drift detected". Errors now surface, and a server that doesn't support
+    drift correctly shows the "not available" notice.
+  - The "Capture as mock" dialog no longer shows a stale error or stale edits when reopened, and a body
+    matcher can now be added even when the captured request had no body.
+  - The mock import dialog no longer reports a misleading "Imported 0 expectations" on an unusual
+    success response.
+  - The traffic comparison's "Diff (N/2)" counter and button state no longer disagree after a refresh
+    drops a selected request.
+  - Non-HTTP (e.g. gRPC) expectations no longer render their id twice in the Active Expectations list.
 - **OpenAPI follow-ups (further re-review).**
   - **XML response bodies are now real, spec-correct XML.** When an OpenAPI response content type is XML
     (`application/xml`, `text/xml`, or a `+xml` suffix) MockServer now serialises the generated example as
