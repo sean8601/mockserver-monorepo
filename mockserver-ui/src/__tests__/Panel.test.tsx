@@ -33,6 +33,24 @@ describe('Panel', () => {
     expect(input).toHaveValue('hello');
   });
 
+  it('applies a transition and a hover style to the panel surface for motion', () => {
+    const { container } = render(
+      <Panel title="Motion" count={1} searchValue="" onSearchChange={() => {}}>
+        <div>content</div>
+      </Panel>,
+    );
+    const paper = container.querySelector('.MuiPaper-root') as HTMLElement;
+    expect(paper).not.toBeNull();
+    // MUI emits the sx transition + :hover rules into emotion <style> tags in the
+    // head; assert the panel's generated CSS carries the hover motion.
+    const css = Array.from(document.querySelectorAll('style'))
+      .map((s) => s.textContent ?? '')
+      .join('\n');
+    expect(css).toMatch(/transition:[^;]*box-shadow/);
+    expect(css).toMatch(/transition:[^;]*border-color/);
+    expect(css).toContain(':hover');
+  });
+
   it('calls onSearchChange when typing in search', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();

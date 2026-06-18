@@ -7,6 +7,7 @@ import Chip from '@mui/material/Chip';
 import InputAdornment from '@mui/material/InputAdornment';
 import SearchIcon from '@mui/icons-material/Search';
 import { useDashboardStore } from '../store';
+import { transitions } from '../theme';
 
 interface PanelProps {
   title: string;
@@ -45,6 +46,14 @@ export default function Panel({
         flexDirection: 'column',
         height: '100%',
         overflow: 'hidden',
+        // Gentle affordance: the panel lifts and its border warms on hover so the
+        // dashboard feels responsive rather than inert. Uses the shared transition
+        // token and theme shadow ramp so motion stays consistent.
+        transition: transitions.forProps(['box-shadow', 'border-color']),
+        '&:hover': {
+          boxShadow: (theme) => theme.shadows[2],
+          borderColor: 'primary.main',
+        },
       }}
     >
       <Box
