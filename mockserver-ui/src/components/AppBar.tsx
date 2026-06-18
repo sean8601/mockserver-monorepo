@@ -39,6 +39,11 @@ import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import Select from '@mui/material/Select';
 import type { SelectChangeEvent } from '@mui/material/Select';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
+import MenuIcon from '@mui/icons-material/Menu';
+import KeyboardIcon from '@mui/icons-material/Keyboard';
+import type { ReactNode } from 'react';
 // Snackbar/Alert removed — mode errors now use the app-wide notification store
 import BuildIcon from '@mui/icons-material/Build';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -59,6 +64,8 @@ import WsdlImportDialog from './WsdlImportDialog';
 import OpenApiImportDialog from './OpenApiImportDialog';
 import PactExportDialog from './PactExportDialog';
 import OidcDialog from './OidcDialog';
+import SamlDialog from './SamlDialog';
+import ShortcutsDialog from './ShortcutsDialog';
 import AsyncApiDialog from './AsyncApiDialog';
 import CrudDialog from './CrudDialog';
 import FileStoreDialog from './FileStoreDialog';
@@ -106,6 +113,31 @@ function statusChipPaletteSx(themeMode: 'light' | 'dark', status: ConnectionStat
   };
 }
 
+interface NavTab {
+  value: ViewMode;
+  label: string;
+  ariaLabel: string;
+  icon: ReactNode;
+}
+
+// Single source of truth for the navigation tabs — rendered as the inline
+// ToggleButtonGroup on wide screens and as an overflow Menu on narrow ones so
+// the full tab list never overflows into a hidden horizontal scroll strip.
+const NAV_TABS: NavTab[] = [
+  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'dashboard', label: 'Dashboard', ariaLabel: 'Dashboard view', icon: <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'chaos', label: 'Chaos', ariaLabel: 'Service chaos view', icon: <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'async', label: 'Async', ariaLabel: 'AsyncAPI broker mock view', icon: <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'sessions', label: 'Sessions', ariaLabel: 'Session inspector view', icon: <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'library', label: 'Library', ariaLabel: 'Library of captured content', icon: <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'drift', label: 'Drift', ariaLabel: 'Drift detection view', icon: <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'verification', label: 'Verify', ariaLabel: 'Verification view', icon: <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'metrics', label: 'Metrics', ariaLabel: 'Metrics view', icon: <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+];
+
 interface AppBarProps {
   onClearServer: () => Promise<void>;
   onClearLogs: () => Promise<void>;
@@ -121,6 +153,11 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const view = useDashboardStore((s) => s.view);
   const setView = useDashboardStore((s) => s.setView);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const theme = useTheme();
+  // Below this width the inline tab strip would overflow into a hidden scroll
+  // region, so collapse the nav into a "hamburger" Menu instead.
+  const compactNav = useMediaQuery(theme.breakpoints.down('lg'));
+  const [navAnchorEl, setNavAnchorEl] = useState<null | HTMLElement>(null);
 
   const connectionParams = useConnectionParams();
   const [mode, setModeState] = useState<MockServerMode | null>(null);
@@ -132,6 +169,8 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [explainOpen, setExplainOpen] = useState(false);
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [oidcOpen, setOidcOpen] = useState(false);
+  const [samlOpen, setSamlOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [asyncApiOpen, setAsyncApiOpen] = useState(false);
   const [wsdlOpen, setWsdlOpen] = useState(false);
   const [openApiOpen, setOpenApiOpen] = useState(false);
@@ -226,96 +265,98 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             />
           </Tooltip>
         )}
-        <Box sx={{ overflowX: 'auto', maxWidth: '100%', flexShrink: 1 }}>
-        <ToggleButtonGroup
-          value={view}
-          exclusive
-          size="small"
-          onChange={(_, newView: ViewMode | null) => {
-            if (newView !== null) setView(newView);
-          }}
-          sx={{
-            ml: 1,
-            '& .MuiToggleButton-root': {
-              py: 0.25,
-              px: 1,
-              fontSize: '0.7rem',
-              textTransform: 'none',
-              lineHeight: 1.4,
-              // Light-mode-only: force white text + translucent border so the
-              // buttons read against the primary-coloured AppBar. Dark mode
-              // keeps MUI's defaults which already contrast against the bar.
-              ...(themeMode === 'light' ? {
-                color: 'primary.contrastText',
-                borderColor: 'rgba(255, 255, 255, 0.3)',
-                '&:hover': {
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                },
-                '&.Mui-selected': {
+        {compactNav ? (
+          <>
+            <Tooltip title="Navigate">
+              <IconButton
+                size="small"
+                color="inherit"
+                aria-label="Open navigation menu"
+                onClick={(e) => setNavAnchorEl(e.currentTarget)}
+                sx={{ ml: 1 }}
+              >
+                <MenuIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+              {NAV_TABS.find((t) => t.value === view)?.label ?? ''}
+            </Typography>
+            <Menu
+              anchorEl={navAnchorEl}
+              open={Boolean(navAnchorEl)}
+              onClose={() => setNavAnchorEl(null)}
+            >
+              {NAV_TABS.map((tab) => (
+                <MenuItem
+                  key={tab.value}
+                  selected={view === tab.value}
+                  aria-label={tab.ariaLabel}
+                  onClick={() => {
+                    setView(tab.value);
+                    setNavAnchorEl(null);
+                  }}
+                >
+                  <ListItemIcon>{tab.icon}</ListItemIcon>
+                  <ListItemText>{tab.label}</ListItemText>
+                </MenuItem>
+              ))}
+            </Menu>
+          </>
+        ) : (
+          <Box sx={{ maxWidth: '100%', flexShrink: 1 }}>
+          <ToggleButtonGroup
+            value={view}
+            exclusive
+            size="small"
+            onChange={(_, newView: ViewMode | null) => {
+              if (newView !== null) setView(newView);
+            }}
+            sx={{
+              ml: 1,
+              '& .MuiToggleButton-root': {
+                py: 0.25,
+                px: 1,
+                fontSize: '0.7rem',
+                textTransform: 'none',
+                lineHeight: 1.4,
+                // Light-mode-only: force white text + translucent border so the
+                // buttons read against the primary-coloured AppBar. Dark mode
+                // keeps MUI's defaults which already contrast against the bar.
+                ...(themeMode === 'light' ? {
                   color: 'primary.contrastText',
-                  backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                  borderColor: 'rgba(255, 255, 255, 0.3)',
                   '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
                   },
-                },
-              } : {}),
-            },
-          }}
-        >
-          <ToggleButton value="get-started" aria-label="Get started view">
-            <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Get Started
-          </ToggleButton>
-          <ToggleButton value="dashboard" aria-label="Dashboard view">
-            <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Dashboard
-          </ToggleButton>
-          <ToggleButton value="traffic" aria-label="Traffic inspector view">
-            <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Traffic
-          </ToggleButton>
-          <ToggleButton value="breakpoints" aria-label="Breakpoints view">
-            <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Breakpoints
-          </ToggleButton>
-          <ToggleButton value="composer" aria-label="Mocks view">
-            <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Mocks
-          </ToggleButton>
-          <ToggleButton value="chaos" aria-label="Service chaos view">
-            <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Chaos
-          </ToggleButton>
-          <ToggleButton value="async" aria-label="AsyncAPI broker mock view">
-            <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Async
-          </ToggleButton>
-          <ToggleButton value="sessions" aria-label="Session inspector view">
-            <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Sessions
-          </ToggleButton>
-          <ToggleButton value="library" aria-label="Library of captured content">
-            <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Library
-          </ToggleButton>
-          <ToggleButton value="drift" aria-label="Drift detection view">
-            <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Drift
-          </ToggleButton>
-          <ToggleButton value="verification" aria-label="Verification view">
-            <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Verify
-          </ToggleButton>
-          <ToggleButton value="metrics" aria-label="Metrics view">
-            <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />
-            Metrics
-          </ToggleButton>
-        </ToggleButtonGroup>
-        </Box>
+                  '&.Mui-selected': {
+                    color: 'primary.contrastText',
+                    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.24)',
+                    },
+                  },
+                } : {}),
+              },
+            }}
+          >
+            {NAV_TABS.map((tab) => (
+              <ToggleButton key={tab.value} value={tab.value} aria-label={tab.ariaLabel}>
+                {tab.icon}
+                {tab.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          </Box>
+        )}
         <Box sx={{ flex: 1 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           ⌘K search · ⌘L clear logs · Esc filter
         </Typography>
+        <Tooltip title="Keyboard shortcuts">
+          <IconButton size="small" color="inherit" onClick={() => setShortcutsOpen(true)} aria-label="Keyboard shortcuts">
+            <KeyboardIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Server clock (freeze / advance time)">
           <IconButton size="small" color="inherit" onClick={() => setClockOpen(true)} aria-label="Server clock">
             <AccessTimeIcon fontSize="small" />
@@ -485,6 +526,15 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           </MenuItem>
           <MenuItem
             onClick={() => {
+              setSamlOpen(true);
+              setToolsAnchorEl(null);
+            }}
+          >
+            <ListItemIcon><VpnKeyIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Mock SAML provider…</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
               setAsyncApiOpen(true);
               setToolsAnchorEl(null);
             }}
@@ -543,6 +593,8 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       <ExplainUnmatchedDialog open={explainOpen} onClose={() => setExplainOpen(false)} connectionParams={connectionParams} />
       <MatcherPlaygroundDialog open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} />
       <OidcDialog open={oidcOpen} onClose={() => setOidcOpen(false)} connectionParams={connectionParams} />
+      <SamlDialog open={samlOpen} onClose={() => setSamlOpen(false)} connectionParams={connectionParams} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <AsyncApiDialog open={asyncApiOpen} onClose={() => setAsyncApiOpen(false)} connectionParams={connectionParams} />
       <CrudDialog open={crudOpen} onClose={() => setCrudOpen(false)} connectionParams={connectionParams} />
       <FileStoreDialog open={fileStoreOpen} onClose={() => setFileStoreOpen(false)} connectionParams={connectionParams} />

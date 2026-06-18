@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
@@ -150,5 +150,92 @@ describe('AppBar', () => {
     // Wait for the H3 status effect to complete before asserting absence.
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(screen.queryByText(/^H3 :/)).not.toBeInTheDocument();
+  });
+
+  it('opens the keyboard shortcuts dialog from the keyboard icon', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
+    expect(screen.getByText('Focus the log search field')).toBeInTheDocument();
+  });
+
+  it('opens the SAML dialog from the tools menu', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    const toolsButton = screen.getAllByRole('button').find(
+      (b) => b.getAttribute('aria-label') === 'Import / export tools',
+    );
+    expect(toolsButton).toBeDefined();
+    await user.click(toolsButton!);
+
+    await user.click(screen.getByText('Mock SAML provider…'));
+    // The dialog title appears once the SAML dialog opens.
+    expect(screen.getByText('Mock SAML provider')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Drive the AppBar at a narrow viewport by stubbing matchMedia so every media
+ * query matches — this makes `useMediaQuery(theme.breakpoints.down('lg'))`
+ * resolve to true and the nav collapses into the "hamburger" Menu.
+ */
+function stubMatchMedia(matches: boolean) {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
+describe('AppBar responsive navigation', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({
+      connectionStatus: 'connected',
+      themeMode: 'dark',
+      autoScroll: true,
+      view: 'dashboard',
+    });
+  });
+
+  afterEach(() => {
+    // @ts-expect-error allow deleting the optional stub so other suites see desktop
+    delete window.matchMedia;
+  });
+
+  it('renders the full inline tab strip on wide screens (no hamburger)', () => {
+    // jsdom default: no matchMedia → useMediaQuery returns false → wide layout.
+    renderAppBar();
+    // All tabs are present as toggle buttons.
+    expect(screen.getByRole('button', { name: 'Dashboard view' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Metrics view' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
+  });
+
+  it('collapses the nav into a hamburger Menu on narrow screens', async () => {
+    stubMatchMedia(true);
+    const user = userEvent.setup();
+    renderAppBar();
+
+    // The inline tab strip is gone; a hamburger button takes its place.
+    const navButton = screen.getByRole('button', { name: 'Open navigation menu' });
+    expect(navButton).toBeInTheDocument();
+    // The current view label is still shown so the active view stays visible.
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+
+    // The full tab list is reachable from the menu, including the last tab.
+    await user.click(navButton);
+    const metricsItem = screen.getByRole('menuitem', { name: 'Metrics view' });
+    expect(metricsItem).toBeInTheDocument();
+
+    // Selecting a tab from the menu changes the active view.
+    await user.click(metricsItem);
+    expect(useDashboardStore.getState().view).toBe('metrics');
   });
 });

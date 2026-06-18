@@ -75,14 +75,17 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
 
   // The five key features, rendered as tiles on wide screens and as a compact
   // bulleted list on narrow ones (mobile / the IDE-embedded dashboard).
+  // Ordered to lead with the most common first task (Mocking) and otherwise
+  // follow the AppBar tab order (Traffic, Breakpoints, Chaos, Sessions) so the
+  // onboarding and the navigation tell a consistent story.
   const primaryActions: ActionCardProps[] = [
     {
-      icon: <PauseCircleIcon color="primary" />,
-      title: 'Breakpoints',
+      icon: <UploadFileIcon color="primary" />,
+      title: 'Mocking',
       description:
-        'Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them.',
-      actionLabel: 'Open Breakpoints',
-      onAction: go('breakpoints'),
+        'Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically.',
+      actionLabel: 'Import OpenAPI',
+      onAction: () => setOpenApiOpen(true),
     },
     {
       icon: <SwapHorizIcon color="primary" />,
@@ -93,20 +96,12 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
       onAction: go('traffic'),
     },
     {
-      icon: <SmartToyIcon color="primary" />,
-      title: 'LLM / AI Debugging',
+      icon: <PauseCircleIcon color="primary" />,
+      title: 'Breakpoints',
       description:
-        'Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session.',
-      actionLabel: 'Open Sessions',
-      onAction: go('sessions'),
-    },
-    {
-      icon: <UploadFileIcon color="primary" />,
-      title: 'Mocking',
-      description:
-        'Build mock responses by hand, or import an OpenAPI / Swagger spec, Postman collection, WSDL, or HAR file to generate stubs automatically.',
-      actionLabel: 'Import OpenAPI',
-      onAction: () => setOpenApiOpen(true),
+        'Pause requests and responses mid-flight — proxied, mocked, or unmatched — then inspect, edit, continue, or abort them.',
+      actionLabel: 'Open Breakpoints',
+      onAction: go('breakpoints'),
     },
     {
       icon: <BoltIcon color="primary" />,
@@ -115,6 +110,14 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
         'Inject latency, errors, and dropped connections to test how your system copes when the APIs it depends on misbehave.',
       actionLabel: 'Open Chaos',
       onAction: go('chaos'),
+    },
+    {
+      icon: <SmartToyIcon color="primary" />,
+      title: 'LLM / AI Debugging',
+      description:
+        'Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session.',
+      actionLabel: 'Open Sessions',
+      onAction: go('sessions'),
     },
   ];
 

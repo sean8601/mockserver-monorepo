@@ -373,6 +373,11 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                 }
                 label="Enabled"
               />
+              {disabled && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -0.5 }}>
+                  Turn on “Enabled” to filter.
+                </Typography>
+              )}
             </Box>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1 }}>
               <TextField
