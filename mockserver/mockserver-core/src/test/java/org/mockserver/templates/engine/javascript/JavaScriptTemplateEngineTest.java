@@ -1125,4 +1125,80 @@ public class JavaScriptTemplateEngineTest {
         newFixedThreadPool.shutdown();
     }
 
+    @Test
+    public void shouldHandleJavaScriptResponseTemplateWithJsonPath() {
+        // given
+        graalJsAvailable();
+        String template = "return {" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': '{\\'title\\': \\'' + jsonPath('$.store.book[0].title') + '\\', \\'bikeColor\\': \\'' + jsonPath('$.store.bicycle.color') + '\\'}'" + NEW_LINE +
+            "};";
+        HttpRequest request = request()
+            .withPath("/somePath")
+            .withBody(json("{" + NEW_LINE +
+                "    \"store\": {" + NEW_LINE +
+                "        \"book\": [" + NEW_LINE +
+                "            { \"title\": \"Sayings of the Century\", \"price\": 18.95 }" + NEW_LINE +
+                "        ]," + NEW_LINE +
+                "        \"bicycle\": { \"color\": \"red\", \"price\": 19.95 }" + NEW_LINE +
+                "    }" + NEW_LINE +
+                "}"));
+
+        // when
+        HttpResponse actualHttpResponse = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+
+        // then
+        assertThat(actualHttpResponse, is(
+            response()
+                .withStatusCode(200)
+                .withBody("{'title': 'Sayings of the Century', 'bikeColor': 'red'}")
+        ));
+    }
+
+    @Test
+    public void shouldHandleJavaScriptResponseTemplateWithXPath() {
+        // given
+        graalJsAvailable();
+        String template = "return {" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': '{\\'key\\': \\'' + xPath('/element/key') + '\\', \\'value\\': \\'' + xPath('/element/value') + '\\'}'" + NEW_LINE +
+            "};";
+        HttpRequest request = request()
+            .withPath("/somePath")
+            .withBody("<element><key>some_key</key><value>some_value</value></element>");
+
+        // when
+        HttpResponse actualHttpResponse = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+
+        // then
+        assertThat(actualHttpResponse, is(
+            response()
+                .withStatusCode(200)
+                .withBody("{'key': 'some_key', 'value': 'some_value'}")
+        ));
+    }
+
+    @Test
+    public void shouldHandleJavaScriptResponseTemplateWithJsonPathForMissingPath() {
+        // given
+        graalJsAvailable();
+        String template = "return {" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': '{\\'missing\\': \\'' + jsonPath('$.store.does.not.exist') + '\\'}'" + NEW_LINE +
+            "};";
+        HttpRequest request = request()
+            .withPath("/somePath")
+            .withBody(json("{ \"store\": { \"bicycle\": { \"color\": \"red\" } } }"));
+
+        // when
+        HttpResponse actualHttpResponse = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+
+        // then - missing path mirrors Mustache: empty value, no exception
+        assertThat(actualHttpResponse, is(
+            response()
+                .withStatusCode(200)
+                .withBody("{'missing': ''}")
+        ));
+    }
+
 }

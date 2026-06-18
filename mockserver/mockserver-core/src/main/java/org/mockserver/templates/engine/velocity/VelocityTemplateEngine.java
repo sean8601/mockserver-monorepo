@@ -20,6 +20,7 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.model.DTO;
 import org.mockserver.templates.engine.TemplateEngine;
 import org.mockserver.templates.engine.TemplateFunctions;
+import org.mockserver.templates.engine.helpers.RequestBodyExtractionHelper;
 import org.mockserver.templates.engine.model.HttpRequestTemplateObject;
 import org.mockserver.templates.engine.model.HttpResponseTemplateObject;
 import org.mockserver.templates.engine.serializer.HttpTemplateOutputDeserializer;
@@ -166,6 +167,9 @@ public class VelocityTemplateEngine implements TemplateEngine {
             context.put("request", new HttpRequestTemplateObject(request));
             TemplateFunctions.BUILT_IN_FUNCTIONS.forEach(context::put);
             TemplateFunctions.BUILT_IN_HELPERS.forEach(context::put);
+            RequestBodyExtractionHelper bodyExtractionHelper = new RequestBodyExtractionHelper(request, mockServerLogger);
+            context.put("jsonPath", new RequestBodyExtractionHelper.JsonPathTool(bodyExtractionHelper));
+            context.put("xPath", new RequestBodyExtractionHelper.XPathTool(bodyExtractionHelper));
             velocityEngine.evaluate(context, writer, "VelocityResponseTemplate", template);
             return writer.toString();
         } catch (Exception e) {
@@ -185,6 +189,9 @@ public class VelocityTemplateEngine implements TemplateEngine {
             }
             TemplateFunctions.BUILT_IN_FUNCTIONS.forEach(context::put);
             TemplateFunctions.BUILT_IN_HELPERS.forEach(context::put);
+            RequestBodyExtractionHelper bodyExtractionHelper = new RequestBodyExtractionHelper(request, mockServerLogger);
+            context.put("jsonPath", new RequestBodyExtractionHelper.JsonPathTool(bodyExtractionHelper));
+            context.put("xPath", new RequestBodyExtractionHelper.XPathTool(bodyExtractionHelper));
             velocityEngine.evaluate(context, writer, "VelocityResponseTemplate", template);
             JsonNode generatedObject = null;
             try {

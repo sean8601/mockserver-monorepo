@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **JSONPath / XPath request-body extraction in Velocity and JavaScript response templates**: the Velocity
+  and JavaScript template engines now expose the same `jsonPath` / `xPath` request-body extraction the
+  Mustache engine already had, so a field can be pulled out of the request body without hand-parsing it.
+  In Velocity use `$jsonPath.find("$.store.book[0].title")` and `$xPath.find("/element/key")`; in
+  JavaScript call `jsonPath('$.store.book[0].title')` and `xPath('/element/key')`. Both operate on the
+  request body, share the exact same JSONPath/XPath libraries and error handling as Mustache, and a missing
+  path resolves to an empty value (logged, never thrown) just as it does for Mustache templates.
 - **Dashboard UI — usability, responsiveness and new surfaces**: a broad pass over the dashboard from
   an adversarial review.
   - **Delete and edit a single mock** from the dashboard's Active Expectations panel (previously the

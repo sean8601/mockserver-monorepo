@@ -1374,6 +1374,17 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
   "body" : "{'key': 'some_key', 'value': 'some_value'}"
 }</code></pre>
 
+<h4>JsonPath and XPath helpers</h4>
+
+<p>As a quicker alternative to <code class="inline_code">$xml.parse()</code> / <code class="inline_code">$json.parse()</code>, Velocity templates can extract a single value directly from the request body using the same JsonPath and XPath support as Mustache templates, via the <code class="inline_code">$jsonPath</code> and <code class="inline_code">$xPath</code> helpers:</p>
+
+<pre class="prettyprint lang-java code"><code class="code">{
+    'statusCode': 200,
+    'body': "{'title': '$jsonPath.find('$.store.book[0].title')', 'key': '$xPath.find('/element/key')'}"
+}</code></pre>
+
+<p><code class="inline_code">$jsonPath.find(...)</code> evaluates a JsonPath expression against a JSON request body and <code class="inline_code">$xPath.find(...)</code> evaluates an XPath expression against an XML request body. A missing path or invalid expression resolves to an empty value (the error is logged, not thrown), exactly as in Mustache templates.</p>
+
 <h4>Velocity Tools</h4>
 
 <p>The following velocity tools are available for velocity response templates:</p>
@@ -1432,6 +1443,17 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
     'statusCode': 200,
     'body': '{\'method\': \'' + request.method + '\', \'path\': \'' + request.path + '\', \'header\': \'' + request.headers.host[0] + '\'}'
 };</code></pre>
+
+<h4>JsonPath and XPath helpers</h4>
+
+<p>As an alternative to <code class="inline code">JSON.parse(request.body)</code>, JavaScript templates can extract a single value directly from the request body using the same JsonPath and XPath support as Mustache templates, via the <code class="inline code">jsonPath(...)</code> and <code class="inline code">xPath(...)</code> functions:</p>
+
+<pre class="prettyprint lang-java code"><code class="code">return {
+    'statusCode': 200,
+    'body': '{\'title\': \'' + jsonPath('$.store.book[0].title') + '\', \'key\': \'' + xPath('/element/key') + '\'}'
+};</code></pre>
+
+<p><code class="inline code">jsonPath(...)</code> evaluates a JsonPath expression against a JSON request body and <code class="inline code">xPath(...)</code> evaluates an XPath expression against an XML request body. A missing path or invalid expression returns an empty value (the error is logged, not thrown), exactly as in Mustache templates.</p>
 
 <h4>Conditionals</h4>
 

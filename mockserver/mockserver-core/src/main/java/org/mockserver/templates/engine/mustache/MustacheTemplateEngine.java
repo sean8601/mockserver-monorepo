@@ -3,7 +3,6 @@ package org.mockserver.templates.engine.mustache;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Splitter;
-import com.jayway.jsonpath.JsonPath;
 import com.samskivert.mustache.Mustache;
 import com.samskivert.mustache.Template;
 import org.mockserver.configuration.Configuration;
@@ -15,13 +14,13 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.model.DTO;
 import org.mockserver.templates.engine.TemplateEngine;
 import org.mockserver.templates.engine.TemplateFunctions;
+import org.mockserver.templates.engine.helpers.RequestBodyExtractionHelper;
 import org.mockserver.templates.engine.model.HttpRequestTemplateObject;
 import org.mockserver.templates.engine.model.HttpResponseTemplateObject;
 import org.mockserver.templates.engine.serializer.HttpTemplateOutputDeserializer;
-import org.mockserver.xml.XPathEvaluator;
 import org.slf4j.event.Level;
 
-import javax.xml.xpath.XPathConstants;
+import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.util.Map;
@@ -149,61 +148,17 @@ public class MustacheTemplateEngine implements TemplateEngine {
         }
     }
 
-    private void evaluateJsonPath(Map<String, Object> data, String jsonPath, HttpRequest request, Writer out) {
-        try {
-            Object jsonPathResult = JsonPath.compile(jsonPath).read(request.getBodyAsJsonOrXmlString());
-            data.put("jsonPathResult", jsonPathResult);
-            if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
-                mockServerLogger.logEvent(
-                    new LogEntry()
-                        .setLogLevel(Level.TRACE)
-                        .setHttpRequest(request)
-                        .setMessageFormat("evaluated jsonPath:{}against json body:{}as:{}")
-                        .setArguments(jsonPath, request.getBodyAsJsonOrXmlString(), jsonPathResult)
-                );
-            }
-            out.write("");
-        } catch (Throwable throwable) {
-            mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(Level.INFO)
-                    .setHttpRequest(request)
-                    .setMessageFormat("exception evaluating jsonPath:{}against json body:{}")
-                    .setArguments(jsonPath, request.getBodyAsJsonOrXmlString())
-                    .setThrowable(throwable)
-            );
-        }
+    private void evaluateJsonPath(Map<String, Object> data, String jsonPath, HttpRequest request, Writer out) throws IOException {
+        // Delegate the actual extraction to the shared helper so the Mustache, Velocity and JavaScript
+        // engines all use the same JSONPath/XPath logic and error handling. The Mustache idiom is to
+        // store the extracted value under "jsonPathResult" (so it can be iterated in a following section)
+        // and emit nothing inline.
+        Object jsonPathResult = new RequestBodyExtractionHelper(request, mockServerLogger).jsonPath(jsonPath);
+        data.put("jsonPathResult", jsonPathResult);
+        out.write("");
     }
 
-    private void evaluatedXPath(String xPath, HttpRequest request, Writer out) {
-        try {
-            String xPathResult = String.valueOf(new XPathEvaluator(xPath, null).evaluateXPathExpression(request.getBodyAsJsonOrXmlString(), (matched, exception, level) -> mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(Level.INFO)
-                    .setHttpRequest(request)
-                    .setMessageFormat("exception evaluating xPath:{}against xml body:{}")
-                    .setArguments(xPath, request.getBodyAsJsonOrXmlString())
-                    .setThrowable(exception)
-            ), XPathConstants.STRING));
-            if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
-                mockServerLogger.logEvent(
-                    new LogEntry()
-                        .setLogLevel(Level.TRACE)
-                        .setHttpRequest(request)
-                        .setMessageFormat("evaluated xPath:{}against xml body:{}as:{}")
-                        .setArguments(xPath, request.getBodyAsJsonOrXmlString(), xPathResult)
-                );
-            }
-            out.write(xPathResult);
-        } catch (Throwable throwable) {
-            mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(Level.INFO)
-                    .setHttpRequest(request)
-                    .setMessageFormat("exception evaluating xPath:{}against xml body:{}")
-                    .setArguments(xPath, request.getBodyAsJsonOrXmlString())
-                    .setThrowable(throwable)
-            );
-        }
+    private void evaluatedXPath(String xPath, HttpRequest request, Writer out) throws IOException {
+        out.write(new RequestBodyExtractionHelper(request, mockServerLogger).xPath(xPath));
     }
 }
