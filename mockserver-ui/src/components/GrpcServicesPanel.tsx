@@ -17,6 +17,7 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { fetchGrpcStatus, type GrpcStatus, type ServingStatus } from '../lib/grpc';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 import HumanErrorAlert from './HumanErrorAlert';
 
 interface GrpcServicesPanelProps {
@@ -156,7 +157,7 @@ export default function GrpcServicesPanel({ connectionParams }: GrpcServicesPane
           return (
             <Paper key={service.name} variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontFamily: monospaceFontFamily }}>
                   {service.name}
                 </Typography>
                 <Chip
@@ -184,17 +185,17 @@ export default function GrpcServicesPanel({ connectionParams }: GrpcServicesPane
                     {(service.methods ?? []).map((method) => (
                       <TableRow key={method.name}>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                             {method.name}
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color="text.secondary">
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }} color="text.secondary">
                             {method.inputType}
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color="text.secondary">
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }} color="text.secondary">
                             {method.outputType}
                           </Typography>
                         </TableCell>

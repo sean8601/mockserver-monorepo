@@ -14,6 +14,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { compareBaseline, type BaselineDiffReport } from '../lib/baseline';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 import HumanErrorAlert from './HumanErrorAlert';
 import JsonViewer from './JsonViewer';
 
@@ -98,7 +99,7 @@ export default function BaselineCompareDialog({ open, onClose, connectionParams 
           fullWidth
           value={baselineText}
           onChange={(e) => setBaselineText(e.target.value)}
-          sx={{ mb: 1.5, '& textarea': { fontFamily: 'monospace', fontSize: '0.8rem' } }}
+          sx={{ mb: 1.5, '& textarea': { fontFamily: monospaceFontFamily, fontSize: '0.8rem' } }}
         />
 
         <TextField
@@ -110,7 +111,7 @@ export default function BaselineCompareDialog({ open, onClose, connectionParams 
           fullWidth
           value={currentText}
           onChange={(e) => setCurrentText(e.target.value)}
-          sx={{ mb: 1.5, '& textarea': { fontFamily: 'monospace', fontSize: '0.8rem' } }}
+          sx={{ mb: 1.5, '& textarea': { fontFamily: monospaceFontFamily, fontSize: '0.8rem' } }}
         />
 
         {error && <HumanErrorAlert error={error} sx={{ mb: 1.5 }} />}

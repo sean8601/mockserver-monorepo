@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Keyboard-shortcuts help dialog** so the ⌘K / ⌘L / Esc shortcuts are discoverable.
   - The agent-run graph (LLM/agent debugging) now renders as an **actual diagram** instead of showing
     raw Mermaid source text (Mermaid is lazily loaded so it stays out of the initial bundle).
+  - **gRPC services view**: a new dashboard tab lists the loaded gRPC services and their methods
+    (input/output types, streaming kind) with per-service health, auto-refreshing live.
+  - **Compare against baseline**: a new tool runs `PUT /mockserver/baseline/compare` and shows the
+    added / removed / changed expectations against a baseline.
+  - **De-cluttered navigation**: the top navigation now keeps the common tabs inline and moves the rest
+    into a "More" menu (and a single menu on narrow screens), so the 13 views are no longer one long row.
+  - **Consistency pass**: control-plane error messages are humanised everywhere (a short message with the
+    raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
+    come from a single typography scale, and "Capture as mock" can hand a captured request straight to
+    the Composer to refine.
 - **Default response headers**: a new `defaultResponseHeaders` setting stamps one or more headers onto every
   response MockServer returns (mock, forwarded and proxied), so organisation-wide headers — a `Server`
   banner, a build or trace id, custom org headers — can be set once instead of on every expectation. The

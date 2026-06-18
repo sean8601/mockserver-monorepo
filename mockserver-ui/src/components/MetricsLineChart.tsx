@@ -23,6 +23,7 @@ interface MetricsLineChartProps {
 }
 
 /** HH:MM in the viewer's locale, used for the time x-axis tick labels. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatTimeLabel(epochMillis: number): string {
   return new Date(epochMillis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

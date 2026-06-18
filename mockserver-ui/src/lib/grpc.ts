@@ -2,7 +2,7 @@
  * Client for MockServer's gRPC management endpoints used by the gRPC Services
  * dashboard view:
  *   PUT /mockserver/grpc/services  — list the services/methods from the loaded descriptors.
- *   PUT /mockserver/grpc/health    — per-service gRPC health-check serving status.
+ *   GET /mockserver/grpc/health    — per-service gRPC health-check serving status.
  *
  * Errors are thrown in the `MockServer returned <status>: <body>` shape so
  * callers can pass the caught error straight to {@link humanizeError}.
