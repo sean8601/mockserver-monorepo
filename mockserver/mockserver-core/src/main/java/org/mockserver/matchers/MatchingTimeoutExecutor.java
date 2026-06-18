@@ -10,10 +10,13 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 import static org.slf4j.event.Level.WARN;
@@ -25,21 +28,58 @@ import static org.slf4j.event.Level.WARN;
  * attacks where a single malicious expectation or input would otherwise pin a
  * Netty worker thread.
  * <p>
- * The pool is cached (not single-thread) so concurrent matches do not serialize,
+ * The pool is multi-threaded (not single-thread) so concurrent matches do not serialize,
  * and daemon-flagged so it never blocks JVM shutdown.
+ * <p>
+ * The pool is <em>bounded</em> rather than unbounded-cached: an unbounded cached pool would spawn
+ * one thread per concurrent match, so a burst of slow (ReDoS) patterns under load could create
+ * thousands of threads and exhaust memory — turning the DoS protection into a DoS amplifier. The
+ * bounded pool caps live evaluator threads at {@code availableProcessors * 2}; a
+ * {@link SynchronousQueue} means there is no work backlog, and on saturation submission is
+ * <em>rejected</em> (rather than blocking the calling Netty worker). A rejection is treated exactly
+ * like a timeout — the safe sentinel ({@code onTimeout}) is returned, i.e. a non-match — so we never
+ * block unboundedly and never silently run a match without the timeout protection.
  */
 public final class MatchingTimeoutExecutor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MatchingTimeoutExecutor.class);
 
-    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool(
+    private static final int MAX_POOL_SIZE = Math.max(2, Runtime.getRuntime().availableProcessors() * 2);
+
+    private static final ExecutorService EXECUTOR = new ThreadPoolExecutor(
+        0,
+        MAX_POOL_SIZE,
+        60L,
+        TimeUnit.SECONDS,
+        // SynchronousQueue: no backlog — a task either gets a thread immediately (creating one up to
+        // MAX_POOL_SIZE) or is rejected, which we convert to the safe sentinel below.
+        new SynchronousQueue<>(),
         new ThreadFactoryBuilder()
             .setNameFormat("mockserver-match-eval-%d")
             .setDaemon(true)
-            .build()
+            .build(),
+        // AbortPolicy: throw RejectedExecutionException on saturation so the caller falls back to the
+        // safe sentinel instead of blocking a Netty worker thread.
+        new ThreadPoolExecutor.AbortPolicy()
     );
 
+    /**
+     * Count of tasks actually submitted to {@link #EXECUTOR} (i.e. not skipped via a literal
+     * short-circuit and not rejected on saturation). Exposed for tests to assert that the fast
+     * literal path does not touch the pool, without depending on {@link ThreadPoolExecutor}'s
+     * documented-as-approximate internal counters.
+     */
+    private static final AtomicLong SUBMITTED_TASK_COUNT = new AtomicLong();
+
     private MatchingTimeoutExecutor() {
+    }
+
+    /**
+     * @return the number of tasks successfully submitted to the shared executor pool. Visible for
+     * testing the literal short-circuit; not part of the public timeout contract.
+     */
+    static long submittedTaskCount() {
+        return SUBMITTED_TASK_COUNT.get();
     }
 
     /**
@@ -63,7 +103,20 @@ public final class MatchingTimeoutExecutor {
             Thread.interrupted();
             return task.call();
         };
-        Future<T> future = EXECUTOR.submit(cleanTask);
+        final Future<T> future;
+        try {
+            future = EXECUTOR.submit(cleanTask);
+            SUBMITTED_TASK_COUNT.incrementAndGet();
+        } catch (RejectedExecutionException ree) {
+            // pool saturated (all MAX_POOL_SIZE evaluator threads busy, SynchronousQueue has no
+            // backlog). Treat exactly like a timeout: fire the callback and return the safe sentinel
+            // (non-match) rather than blocking the calling thread or silently running the task
+            // without the timeout protection.
+            if (onTimeoutCallback != null) {
+                onTimeoutCallback.fired(timeoutMillis);
+            }
+            return onTimeout;
+        }
         try {
             return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException te) {

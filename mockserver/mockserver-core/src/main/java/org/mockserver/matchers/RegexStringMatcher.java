@@ -109,42 +109,63 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
                         return true;
                     }
 
-                    // match as regex - matcher -> matched (data plane or control plane)
-                    try {
-                        if (runRegexWithTimeout(mockServerLogger, matcher, matchedValue)) {
-                            return true;
-                        }
-                    } catch (PatternSyntaxException pse) {
-                        if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setLogLevel(DEBUG)
-                                    .setMessageFormat("error while matching regex [" + matcher + "] for string [" + matched + "] " + pse.getMessage())
-                                    .setThrowable(pse)
-                            );
-                        }
-                    }
-                    // match as regex - matched -> matcher (control plane only)
-                    try {
-                        if (controlPlaneMatcher && runRegexWithTimeout(mockServerLogger, matched, matcherValue)) {
-                            return true;
-                        } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG) && runRegexWithTimeout(mockServerLogger, matched, matcherValue)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setLogLevel(DEBUG)
-                                    .setMessageFormat("matcher{}would match{}if matcher was used for control plane")
-                                    .setArguments(matcher, matched)
-                            );
-                        }
-                    } catch (PatternSyntaxException pse) {
-                        if (controlPlaneMatcher) {
+                    // match as regex - matcher -> matched (data plane or control plane).
+                    // Skip the timeout-protected regex path when the matcher value is a pure-ASCII
+                    // literal (no regex metacharacters): NottableString.matches() compiles with
+                    // CASE_INSENSITIVE|UNICODE_CASE|DOTALL and does an anchored full match, so for a
+                    // pure-ASCII literal the regex outcome is provably identical to the
+                    // equalsIgnoreCase that already ran above (and failed) — hence a guaranteed
+                    // non-match. Non-ASCII values keep the regex path because UNICODE_CASE folding
+                    // can diverge from String.equalsIgnoreCase.
+                    if (!isPureAsciiLiteral(matcherValue)) {
+                        try {
+                            if (runRegexWithTimeout(mockServerLogger, matcher, matchedValue)) {
+                                return true;
+                            }
+                        } catch (PatternSyntaxException pse) {
                             if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
                                 mockServerLogger.logEvent(
                                     new LogEntry()
                                         .setLogLevel(DEBUG)
-                                        .setMessageFormat("error while matching regex [" + matched + "] for string [" + matcher + "] " + pse.getMessage())
+                                        .setMessageFormat("error while matching regex [" + matcher + "] for string [" + matched + "] " + pse.getMessage())
                                         .setThrowable(pse)
                                 );
+                            }
+                        }
+                    }
+                    // match as regex - matched -> matcher (control plane only).
+                    // Same pure-ASCII-literal short-circuit as above: when the matched value is a
+                    // pure-ASCII literal the anchored regex result is identical to the
+                    // equalsIgnoreCase already performed, so there is nothing left to gain by
+                    // entering the timeout-protected pool.
+                    if (!isPureAsciiLiteral(matchedValue)) {
+                        try {
+                            // evaluate the reversed regex once and reuse the result for both the
+                            // control-plane match decision and the DEBUG "would match" trace, so a
+                            // single logical check submits a single task to the timeout-protected pool
+                            // and cannot observe two divergent results under pool contention.
+                            if (controlPlaneMatcher) {
+                                if (runRegexWithTimeout(mockServerLogger, matched, matcherValue)) {
+                                    return true;
+                                }
+                            } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG) && runRegexWithTimeout(mockServerLogger, matched, matcherValue)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setLogLevel(DEBUG)
+                                        .setMessageFormat("matcher{}would match{}if matcher was used for control plane")
+                                        .setArguments(matcher, matched)
+                                );
+                            }
+                        } catch (PatternSyntaxException pse) {
+                            if (controlPlaneMatcher) {
+                                if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
+                                    mockServerLogger.logEvent(
+                                        new LogEntry()
+                                            .setLogLevel(DEBUG)
+                                            .setMessageFormat("error while matching regex [" + matched + "] for string [" + matcher + "] " + pse.getMessage())
+                                            .setThrowable(pse)
+                                    );
+                                }
                             }
                         }
                     }
@@ -184,6 +205,66 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * A value is a "pure ASCII literal" when it contains no regex metacharacter AND every
+     * character is ASCII (code point &lt;= 0x7F). For such a value the anchored, case-insensitive
+     * regex match performed by {@link NottableString#matches(String)} is provably identical to the
+     * {@code equalsIgnoreCase} comparison already performed by the caller, so the timeout-protected
+     * regex path can be skipped entirely — a literal non-match never needs the executor pool.
+     * <p>
+     * Non-ASCII values are deliberately excluded even when they contain no metacharacter, because
+     * {@code Pattern}'s {@code UNICODE_CASE} folding can differ from {@link String#equalsIgnoreCase},
+     * so the regex path must still run for them to preserve behaviour.
+     */
+    private static boolean isPureAsciiLiteral(String s) {
+        return !looksLikeRegex(s) && isPureAscii(s);
+    }
+
+    /**
+     * Returns true when the string contains any regex metacharacter (any of:
+     * {@code \ . [ ] { } ( ) * + ? ^ $ |}). A string with none of these characters cannot behave
+     * as anything other than a literal when compiled as a pattern.
+     */
+    private static boolean looksLikeRegex(String s) {
+        if (s == null) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            switch (s.charAt(i)) {
+                case '\\':
+                case '.':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case '(':
+                case ')':
+                case '*':
+                case '+':
+                case '?':
+                case '^':
+                case '$':
+                case '|':
+                    return true;
+                default:
+                    // continue scanning
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPureAscii(String s) {
+        if (s == null) {
+            return true;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) > 0x7F) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override

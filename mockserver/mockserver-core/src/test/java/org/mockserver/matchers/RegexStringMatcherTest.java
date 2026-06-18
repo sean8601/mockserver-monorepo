@@ -151,4 +151,77 @@ public class RegexStringMatcherTest {
         java.util.Arrays.fill(buf, c);
         return new String(buf);
     }
+
+    // --- pure-ASCII literal short-circuit (does not enter the timeout-protected executor pool) ---
+
+    @Test
+    public void shouldNotEnterExecutorPoolForPureAsciiLiteralNonMatch() throws Exception {
+        long submittedBefore = executorSubmittedTaskCount();
+        // pure-ASCII literal matcher value, no regex metacharacters: the equalsIgnoreCase check
+        // already decides this is a non-match, so the regex/executor path must be skipped entirely.
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("some_value"), false).matches("not_matching"), is(false));
+        long submittedAfter = executorSubmittedTaskCount();
+        assertThat("pure-ASCII literal non-match must not submit any task to the matching executor pool",
+            submittedAfter - submittedBefore, is(0L));
+    }
+
+    @Test
+    public void shouldEnterExecutorPoolForRealRegexNonMatch() throws Exception {
+        long submittedBefore = executorSubmittedTaskCount();
+        // a real regex (contains metacharacters) that does not match still exercises the executor path
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("some_[a-z]{4}"), false).matches("some_value"), is(false));
+        long submittedAfter = executorSubmittedTaskCount();
+        assertThat("a real regex must still be evaluated via the timeout-protected executor pool",
+            submittedAfter - submittedBefore > 0L, is(true));
+    }
+
+    @Test
+    public void shouldStillMatchAsciiLiteralCaseInsensitively() {
+        // exact and case-insensitive matches are decided before any regex/short-circuit logic
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("Some_Value"), false).matches("some_value"), is(true));
+    }
+
+    @Test
+    public void shouldKeepRegexPathForNonAsciiLiteralValue() throws Exception {
+        // 'İ' (U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE) folds differently under UNICODE_CASE
+        // than under String.equalsIgnoreCase, so non-ASCII values must keep the regex path.
+        long submittedBefore = executorSubmittedTaskCount();
+        // a non-matching non-ASCII literal still goes through the executor (proving it is not short-circuited)
+        new RegexStringMatcher(new MockServerLogger(), string("café"), false).matches("teapot");
+        long submittedAfter = executorSubmittedTaskCount();
+        assertThat("a non-ASCII literal must keep the timeout-protected regex path",
+            submittedAfter - submittedBefore > 0L, is(true));
+    }
+
+    // --- looksLikeRegex helper ---
+
+    @Test
+    public void looksLikeRegexShouldDetectMetacharacters() throws Exception {
+        for (String withMeta : new String[]{
+            "a.b", "a*", "a+", "a?", "^a", "a$", "a|b", "(a)", "[a]", "{2}", "a\\d", "a]", "a}", "a)"
+        }) {
+            assertThat("expected '" + withMeta + "' to look like a regex", invokeLooksLikeRegex(withMeta), is(true));
+        }
+    }
+
+    @Test
+    public void looksLikeRegexShouldRejectPlainLiterals() throws Exception {
+        for (String plain : new String[]{"some_value", "Some Value 123", "a-b_c", "", "café", "text/html"}) {
+            assertThat("expected '" + plain + "' to NOT look like a regex", invokeLooksLikeRegex(plain), is(false));
+        }
+    }
+
+    private static boolean invokeLooksLikeRegex(String s) throws Exception {
+        java.lang.reflect.Method m = RegexStringMatcher.class.getDeclaredMethod("looksLikeRegex", String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, s);
+    }
+
+    // RegexStringMatcherTest runs in the sequential (parallel=none, forkCount=1) Surefire phase, so
+    // no other test submits to the shared pool concurrently. MatchingTimeoutExecutor.submittedTaskCount()
+    // is an explicit AtomicLong incremented on successful submit (not the JDK's documented-as-approximate
+    // ThreadPoolExecutor.getTaskCount()), making these before/after deltas exact.
+    private static long executorSubmittedTaskCount() {
+        return MatchingTimeoutExecutor.submittedTaskCount();
+    }
 }
