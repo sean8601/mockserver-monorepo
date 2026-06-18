@@ -122,6 +122,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
     private static final String MOCKSERVER_PER_EXPECTATION_METRICS = "mockserver.perExpectationMetrics";
     private static final String MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS = "mockserver.deduplicateRecordedExpectations";
+    private static final String MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS = "mockserver.redactSecretsInRecordedExpectations";
     private static final String MOCKSERVER_LLM_COST_BUDGET_USD = "mockserver.llmCostBudgetUsd";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
@@ -1849,6 +1850,29 @@ public class ConfigurationProperties {
      */
     public static void deduplicateRecordedExpectations(boolean enable) {
         setProperty(MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS, "" + enable);
+    }
+
+    public static boolean redactSecretsInRecordedExpectations() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS, "MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS", "" + false));
+    }
+
+    /**
+     * Enable opt-in redaction of secrets in retrieved recorded (proxy SPY/CAPTURE) expectations.
+     * When enabled, sensitive header values ({@code Authorization}, {@code Proxy-Authorization},
+     * {@code Cookie}, {@code Set-Cookie}, {@code x-api-key}, {@code api-key} — which also covers
+     * bearer/token credentials carried in those headers) are masked with a placeholder before the
+     * recorded expectations are returned, generated as client code, or persisted to JSON. This
+     * prevents proxied credentials leaking into shared recordings.
+     * <p>
+     * Trade-off: a redacted recorded expectation can no longer replay against an upstream that
+     * requires that credential, so redaction is opt-in and off by default.
+     * <p>
+     * Default is false (off) so retrieved recorded expectations are byte-for-byte unchanged.
+     *
+     * @param enable enable redaction of secrets in recorded expectations
+     */
+    public static void redactSecretsInRecordedExpectations(boolean enable) {
+        setProperty(MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS, "" + enable);
     }
 
     /**

@@ -4261,17 +4261,28 @@ public class HttpState {
      * @return the post-processed list when the flag is on, otherwise the input list
      */
     private List<Expectation> postProcessRecordedExpectations(List<Expectation> expectations) {
-        if (!Boolean.TRUE.equals(configuration.deduplicateRecordedExpectations())) {
-            return expectations;
+        List<Expectation> processed = expectations;
+        if (Boolean.TRUE.equals(configuration.deduplicateRecordedExpectations())) {
+            int inputCount = processed == null ? 0 : processed.size();
+            processed = RecordedExpectationPostProcessor.deduplicateAndTemplatize(processed);
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(LogEntry.LogMessageType.INFO)
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("deduplicated and templatized recorded expectations from " + inputCount + " to " + processed.size())
+            );
         }
-        int inputCount = expectations == null ? 0 : expectations.size();
-        List<Expectation> processed = RecordedExpectationPostProcessor.deduplicateAndTemplatize(expectations);
-        mockServerLogger.logEvent(
-            new LogEntry()
-                .setType(LogEntry.LogMessageType.INFO)
-                .setLogLevel(Level.INFO)
-                .setMessageFormat("deduplicated and templatized recorded expectations from " + inputCount + " to " + processed.size())
-        );
+        if (Boolean.TRUE.equals(configuration.redactSecretsInRecordedExpectations()) && processed != null && !processed.isEmpty()) {
+            Expectation[] redacted = new org.mockserver.fixture.FixtureRedactor()
+                .redact(processed.toArray(new Expectation[0]), true);
+            processed = new java.util.ArrayList<>(java.util.Arrays.asList(redacted));
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(LogEntry.LogMessageType.INFO)
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("redacted secrets in " + processed.size() + " recorded expectations")
+            );
+        }
         return processed;
     }
 

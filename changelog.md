@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Keyboard-shortcuts help dialog** so the ⌘K / ⌘L / Esc shortcuts are discoverable.
   - The agent-run graph (LLM/agent debugging) now renders as an **actual diagram** instead of showing
     raw Mermaid source text (Mermaid is lazily loaded so it stays out of the initial bundle).
+- **Redact secrets in recorded expectations**: a new opt-in setting masks sensitive request headers
+  (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key`) when recorded
+  expectations are retrieved (as JSON or as generated client code) or persisted, so credentials captured
+  while proxying don't leak into shared recordings, generated code, or persisted JSON. Off by default
+  (current behaviour is unchanged); enable with `-Dmockserver.redactSecretsInRecordedExpectations=true` or
+  `MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS=true`. Redaction preserves each expectation's `times`,
+  `timeToLive`, `priority` and `id`, so recordings still replay correctly. Note: because credentials are
+  replaced with a placeholder, a recording that relies on the original credential to authenticate against an
+  upstream must be retrieved with redaction disabled.
 - **Expectation code generation in every client language**: the retrieve endpoint can now produce
   copy-paste-ready client code from recorded or active expectations in **Java, JavaScript, Python, Go,
   C#, Ruby, Rust and PHP**, alongside the existing Java output. Call

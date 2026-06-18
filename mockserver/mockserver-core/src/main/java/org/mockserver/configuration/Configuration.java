@@ -46,6 +46,7 @@ public class Configuration {
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
+    private Boolean redactSecretsInRecordedExpectations;
     private Double llmCostBudgetUsd;
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
@@ -450,6 +451,29 @@ public class Configuration {
      */
     public Configuration deduplicateRecordedExpectations(Boolean deduplicateRecordedExpectations) {
         this.deduplicateRecordedExpectations = deduplicateRecordedExpectations;
+        return this;
+    }
+
+    public Boolean redactSecretsInRecordedExpectations() {
+        if (redactSecretsInRecordedExpectations == null) {
+            return ConfigurationProperties.redactSecretsInRecordedExpectations();
+        }
+        return redactSecretsInRecordedExpectations;
+    }
+
+    /**
+     * Enable opt-in redaction of secrets in retrieved recorded expectations. When enabled,
+     * sensitive header values (such as {@code Authorization}, {@code Cookie}, {@code x-api-key}
+     * and bearer/token credentials) are masked before recorded expectations are returned,
+     * generated as client code, or persisted to JSON.
+     * <p>
+     * Trade-off: a redacted recorded expectation can no longer replay against an upstream that
+     * requires that credential, so this is off by default.
+     *
+     * @param redactSecretsInRecordedExpectations enable redaction of secrets in recorded expectations
+     */
+    public Configuration redactSecretsInRecordedExpectations(Boolean redactSecretsInRecordedExpectations) {
+        this.redactSecretsInRecordedExpectations = redactSecretsInRecordedExpectations;
         return this;
     }
 

@@ -90,22 +90,48 @@ public class FixtureRedactor {
     /**
      * Redact sensitive headers in an array of expectations. Returns new Expectation objects;
      * the originals are not modified.
+     * <p>
+     * The {@code Times} / {@code TimeToLive} of the result default to unlimited and the
+     * expectation {@code id} is dropped — appropriate for the fixture export/import use
+     * case where redacted expectations are re-imported as fresh, unlimited mocks. Use
+     * {@link #redact(Expectation[], boolean)} with {@code preserveConstraints=true} to keep
+     * the original replay constraints and id (e.g. on the recorded-expectation path).
      *
      * @param expectations the expectations to redact
      * @return new expectations with sensitive header values replaced
      */
     public Expectation[] redact(Expectation[] expectations) {
+        return redact(expectations, false);
+    }
+
+    /**
+     * Redact sensitive headers in an array of expectations. Returns new Expectation objects;
+     * the originals are not modified.
+     *
+     * @param expectations        the expectations to redact
+     * @param preserveConstraints when {@code true}, copy {@code Times}, {@code TimeToLive},
+     *                            {@code priority} and {@code id} from each source expectation
+     *                            into its redacted result; when {@code false}, default to
+     *                            unlimited {@code Times} / {@code TimeToLive} and drop the id
+     *                            (original fixture export/import behaviour)
+     * @return new expectations with sensitive header values replaced
+     */
+    public Expectation[] redact(Expectation[] expectations, boolean preserveConstraints) {
         if (expectations == null) {
             return new Expectation[0];
         }
         Expectation[] result = new Expectation[expectations.length];
         for (int i = 0; i < expectations.length; i++) {
-            result[i] = redactExpectation(expectations[i]);
+            result[i] = redactExpectation(expectations[i], preserveConstraints);
         }
         return result;
     }
 
     private Expectation redactExpectation(Expectation expectation) {
+        return redactExpectation(expectation, false);
+    }
+
+    private Expectation redactExpectation(Expectation expectation, boolean preserveConstraints) {
         RequestDefinition requestDef = expectation.getHttpRequest();
         HttpResponse response = expectation.getHttpResponse();
         HttpSseResponse sseResponse = expectation.getHttpSseResponse();
@@ -119,10 +145,14 @@ public class FixtureRedactor {
 
         Expectation result = new Expectation(
             redactedRequestDef,
-            Times.unlimited(),
-            TimeToLive.unlimited(),
+            preserveConstraints ? expectation.getTimes() : Times.unlimited(),
+            preserveConstraints ? expectation.getTimeToLive() : TimeToLive.unlimited(),
             expectation.getPriority()
         );
+
+        if (preserveConstraints && expectation.getId() != null) {
+            result.withId(expectation.getId());
+        }
 
         if (redactedSseResponse != null) {
             result.thenRespondWithSse(redactedSseResponse);
