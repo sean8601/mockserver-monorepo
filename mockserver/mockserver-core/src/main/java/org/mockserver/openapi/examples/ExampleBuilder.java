@@ -398,7 +398,11 @@ public class ExampleBuilder {
             } else {
                 Schema<?> inner = arraySchema.getItems();
                 if (inner != null) {
-                    Example innerExample = fromProperty(property.getType(), inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
+                    // pass a null item name (NOT the array's type, "array"): an array item's XML element name
+                    // is its own xml.name when set, otherwise the array property's name, which the XML
+                    // serializer applies as a fallback only when the item name is null. Baking "array" in here
+                    // produced <array> item elements instead of e.g. <photoUrls>.
+                    Example innerExample = fromProperty(null, inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     if (innerExample != null) {
                         ArrayExample an = new ArrayExample();
                         an.add(innerExample);
@@ -799,7 +803,9 @@ public class ExampleBuilder {
                 }
                 Schema<?> items = property.getItems();
                 if (items != null) {
-                    Example innerExample = fromProperty(type, items, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
+                    // null item name (not the array "type"): the array property name is the item element-name
+                    // fallback in the XML serializer; see the ArraySchema branch above.
+                    Example innerExample = fromProperty(null, items, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     if (innerExample != null) {
                         ArrayExample arrayEx = new ArrayExample();
                         arrayEx.add(innerExample);

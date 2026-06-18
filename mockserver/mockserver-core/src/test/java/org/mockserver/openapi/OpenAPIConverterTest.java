@@ -1486,4 +1486,21 @@ public class OpenAPIConverterTest {
         assertThat("recursive XML must keep the 'right' element (shared Example not renamed)", body, containsString("<right>"));
     }
 
+    @Test
+    public void shouldNameXmlArrayItemsAfterTheArrayPropertyNotTheLiteralArray() {
+        // arrays whose items have no items.xml.name must render each item under the array PROPERTY name
+        // (tags -> <tags>, animals -> <animals>), never the literal element name <array>
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_xml_arrays.yaml");
+
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(specUrlOrPayload, null);
+
+        String body = actualExpectations.stream()
+            .filter(e -> "getZoo".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getBodyAsString();
+        assertThat("array of scalars renders items under the property name", body, containsString("<tags>"));
+        assertThat("array of objects renders items under the property name", body, containsString("<animals>"));
+        assertThat("array items must NOT be named after the literal type 'array'", body, not(containsString("<array>")));
+    }
+
 }
