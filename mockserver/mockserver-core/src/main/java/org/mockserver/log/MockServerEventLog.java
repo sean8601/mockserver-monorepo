@@ -65,11 +65,21 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         -> !input.isDeleted();
     private static final Predicate<LogEntry> requestLogPredicate = input
         -> !input.isDeleted() && input.getType() == RECEIVED_REQUEST;
+    // matches only responses the configured mocks actually produced (a matched expectation
+    // response or a forwarded/proxied response), NOT MockServer's own auto-generated no-match
+    // responses (NO_MATCH_RESPONSE, e.g. the default 404 for an unmatched request). Used both for
+    // "matching expectations only" request retrieval AND for response VERIFICATION
+    // (responseVerificationLogPredicate is an alias for that second use) — deliberately narrower
+    // than requestResponseLogPredicate, which is shared with /retrieve and must keep NO_MATCH_RESPONSE.
     private static final Predicate<LogEntry> expectationLogPredicate = input
         -> !input.isDeleted() && (
         input.getType() == EXPECTATION_RESPONSE
             || input.getType() == FORWARDED_REQUEST
     );
+    // response VERIFICATION must exclude MockServer's own NO_MATCH_RESPONSE auto-404s and count
+    // only mock-produced responses — the same filter as expectationLogPredicate; aliased here so
+    // the verification call sites read clearly and a future change to one is forced to consider both.
+    private static final Predicate<LogEntry> responseVerificationLogPredicate = expectationLogPredicate;
     private static final Predicate<LogEntry> requestResponseLogPredicate = input
         -> !input.isDeleted() && (
         input.getType() == EXPECTATION_RESPONSE
@@ -413,9 +423,13 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
     }
 
     public void retrieveRequestResponses(RequestDefinition requestDefinition, Consumer<List<LogEventRequestAndResponse>> listConsumer) {
+        retrieveRequestResponses(requestDefinition, requestResponseLogPredicate, listConsumer);
+    }
+
+    private void retrieveRequestResponses(RequestDefinition requestDefinition, Predicate<LogEntry> logEntryPredicate, Consumer<List<LogEventRequestAndResponse>> listConsumer) {
         retrieveLogEntries(
             requestDefinition,
-            requestResponseLogPredicate,
+            logEntryPredicate,
             logEntryToHttpRequestAndHttpResponse,
             logEventStream -> listConsumer.accept(logEventStream.filter(Objects::nonNull).collect(Collectors.toList()))
         );
@@ -442,16 +456,26 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         disruptor.publishEvent(new LogEntry()
             .setType(RUNNABLE)
             .setConsumer(() -> {
-                HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(requestDefinition);
-                consumer.accept(this.eventLog
-                    .stream()
-                    // cheap type/not-deleted predicate first so the expensive request matcher
-                    // (which clones the request and runs full matching) only runs for entries
-                    // that can actually be returned, not for deleted tombstones or wrong-type
-                    // entries — keeps /retrieve cost low as the log fills (#2359)
-                    .filter(logEntryPredicate)
-                    .filter(logItem -> logItem.matches(httpRequestMatcher))
-                );
+                // build the matcher (which can throw, e.g. for an invalid OpenAPI/schema filter)
+                // BEFORE invoking the consumer so any failure routes an empty stream to the consumer
+                // rather than being swallowed by the disruptor exception handler — otherwise a verify
+                // CompletableFuture waiting on the consumer would never complete and the caller hangs
+                Stream<LogEntry> logEntryStream;
+                try {
+                    HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(requestDefinition);
+                    logEntryStream = this.eventLog
+                        .stream()
+                        // cheap type/not-deleted predicate first so the expensive request matcher
+                        // (which clones the request and runs full matching) only runs for entries
+                        // that can actually be returned, not for deleted tombstones or wrong-type
+                        // entries — keeps /retrieve cost low as the log fills (#2359)
+                        .filter(logEntryPredicate)
+                        .filter(logItem -> logItem.matches(httpRequestMatcher));
+                } catch (Throwable throwable) {
+                    logger.error("exception building request matcher while retrieving log entries", throwable);
+                    logEntryStream = Stream.empty();
+                }
+                consumer.accept(logEntryStream);
             })
         );
     }
@@ -460,15 +484,23 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         disruptor.publishEvent(new LogEntry()
             .setType(RUNNABLE)
             .setConsumer(() -> {
-                RequestDefinition requestDefinitionMatcher = requestDefinition != null ? requestDefinition : request().withLogCorrelationId(UUIDService.getUUID());
-                HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(requestDefinitionMatcher);
-                consumer.accept(this.eventLog
-                    .stream()
-                    // cheap predicate before the expensive request matcher — see #2359
-                    .filter(logEntryPredicate)
-                    .filter(logItem -> logItem.matches(httpRequestMatcher))
-                    .map(logEntryMapper)
-                );
+                // build the matcher before invoking the consumer so a build failure routes an empty
+                // stream rather than being swallowed and hanging a waiting verify future — see above
+                Stream<T> resultStream;
+                try {
+                    RequestDefinition requestDefinitionMatcher = requestDefinition != null ? requestDefinition : request().withLogCorrelationId(UUIDService.getUUID());
+                    HttpRequestMatcher httpRequestMatcher = matcherBuilder.transformsToMatcher(requestDefinitionMatcher);
+                    resultStream = this.eventLog
+                        .stream()
+                        // cheap predicate before the expensive request matcher — see #2359
+                        .filter(logEntryPredicate)
+                        .filter(logItem -> logItem.matches(httpRequestMatcher))
+                        .map(logEntryMapper);
+                } catch (Throwable throwable) {
+                    logger.error("exception building request matcher while retrieving log entries", throwable);
+                    resultStream = Stream.empty();
+                }
+                consumer.accept(resultStream);
             })
         );
     }
@@ -656,7 +688,7 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         RequestDefinition requestFilter = verification.getHttpRequest() != null
             ? verification.getHttpRequest().withLogCorrelationId(logCorrelationId)
             : null;
-        retrieveRequestResponses(requestFilter, allPairs -> {
+        retrieveRequestResponses(requestFilter, responseVerificationLogPredicate, allPairs -> {
             try {
                 HttpResponseMatcher responseMatcher = new HttpResponseMatcher(configuration, mockServerLogger, verification.getHttpResponse());
                 List<LogEventRequestAndResponse> matchingPairs = allPairs.stream()
@@ -740,7 +772,16 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                         .setArguments(verificationSequence)
                 );
             }
-            if (verificationSequence.getExpectationIds() != null && !verificationSequence.getExpectationIds().isEmpty()) {
+            boolean hasExpectationIds = verificationSequence.getExpectationIds() != null && !verificationSequence.getExpectationIds().isEmpty();
+            boolean hasRequests = verificationSequence.getHttpRequests() != null && !verificationSequence.getHttpRequests().isEmpty();
+            boolean hasResponses = verificationSequence.getHttpResponses() != null && !verificationSequence.getHttpResponses().isEmpty();
+            if (!hasExpectationIds && !hasRequests && !hasResponses) {
+                // an entirely-empty sequence (no expectationIds, no requests, no responses) is
+                // meaningless — reject it with a clear error rather than vacuously passing
+                resultConsumer.accept("No expectations, requests or responses specified in verification sequence");
+                return;
+            }
+            if (hasExpectationIds) {
                 retrieveAllRequests(verificationSequence.getExpectationIds().stream().map(ExpectationId::getId).collect(Collectors.toList()), allRequests -> {
                     List<RequestDefinition> requestDefinitions = allRequests.stream().map(RequestAndExpectationId::getRequestDefinition).collect(Collectors.toList());
                     try {
@@ -767,15 +808,31 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                         verificationSequenceExceptionHandler(verificationSequence, resultConsumer, logCorrelationId, throwable, "exception:{} while processing verification sequence:{}", "exception while processing verification sequence");
                     }
                 });
-            } else if (verificationSequence.getHttpResponses() != null && !verificationSequence.getHttpResponses().isEmpty()) {
-                // response-aware sequence verification over recorded request-response pairs
-                retrieveRequestResponses(null, allPairs -> {
+            } else if (hasResponses) {
+                // response-aware sequence verification over recorded request-response pairs.
+                // Only count responses the mocks actually produced (EXPECTATION_RESPONSE +
+                // FORWARDED_REQUEST), never MockServer's own NO_MATCH_RESPONSE auto-404s.
+                final List<RequestDefinition> httpRequests = verificationSequence.getHttpRequests();
+                final List<HttpResponse> httpResponses = verificationSequence.getHttpResponses();
+                // A response-aware sequence pairs the i-th request with the i-th response, so when
+                // both lists are supplied they MUST be the same length. Previously the shorter list
+                // was padded with null and a null matcher always matched, so a mismatched-length
+                // sequence silently passed on the unspecified steps — reject it instead. One list
+                // being empty (request-only or response-only sequence) is still valid.
+                if (!httpRequests.isEmpty() && httpRequests.size() != httpResponses.size()) {
+                    resultConsumer.accept(
+                        "Request and response sequences must be the same length for a response-aware verification sequence, found "
+                            + httpRequests.size() + " request(s) and " + httpResponses.size() + " response(s)"
+                    );
+                    return;
+                }
+                retrieveRequestResponses(null, responseVerificationLogPredicate, allPairs -> {
                     try {
                         String failureMessage = "";
                         int pairLogCounter = 0;
-                        List<RequestDefinition> httpRequests = verificationSequence.getHttpRequests();
-                        List<HttpResponse> httpResponses = verificationSequence.getHttpResponses();
-                        int stepCount = Math.max(httpRequests.size(), httpResponses.size());
+                        // requests are either absent (response-only) or the same length as responses
+                        // (enforced above), so the response count is the number of steps to verify
+                        int stepCount = httpResponses.size();
                         for (int i = 0; i < stepCount; i++) {
                             RequestDefinition verificationHttpRequest = i < httpRequests.size() ? httpRequests.get(i) : null;
                             HttpResponse verificationHttpResponse = i < httpResponses.size() ? httpResponses.get(i) : null;
@@ -788,17 +845,22 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                             boolean foundMatch = false;
                             for (; !foundMatch && pairLogCounter < allPairs.size(); pairLogCounter++) {
                                 LogEventRequestAndResponse pair = allPairs.get(pairLogCounter);
-                                boolean requestMatches = httpRequestMatcher == null || httpRequestMatcher.matches(((HttpRequest) pair.getHttpRequest()).cloneWithLogCorrelationId());
+                                // a pair with a null recorded request can never satisfy a
+                                // request-constrained step — treat it as non-matching rather than
+                                // dereferencing it (which would NPE and be masked as a generic
+                                // "exception while processing verification sequence")
+                                boolean requestMatches = httpRequestMatcher == null
+                                    || (pair.getHttpRequest() != null && httpRequestMatcher.matches(((HttpRequest) pair.getHttpRequest()).cloneWithLogCorrelationId()));
                                 boolean responseMatches = httpResponseMatcher == null || httpResponseMatcher.matches(pair.getHttpResponse());
                                 if (requestMatches && responseMatches) {
                                     foundMatch = true;
                                 }
                             }
                             if (!foundMatch) {
-                                List<RequestDefinition> allRequestDefs = allPairs.stream()
-                                    .map(p -> (RequestDefinition) p.getHttpRequest())
+                                List<HttpResponse> recordedResponses = allPairs.stream()
+                                    .map(LogEventRequestAndResponse::getHttpResponse)
                                     .collect(Collectors.toList());
-                                failureMessage = verificationSequenceFailureMessage(verificationSequence, logCorrelationId, allRequestDefs);
+                                failureMessage = verificationResponseSequenceFailureMessage(verificationSequence, logCorrelationId, recordedResponses);
                                 break;
                             }
                         }
@@ -916,6 +978,37 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                     .setHttpRequests(verificationSequence.getHttpRequests().toArray(new RequestDefinition[0]))
                     .setMessageFormat("request sequence not found, expected:{}but was:{}")
                     .setArguments(arguments)
+            );
+        }
+        return failureMessage;
+    }
+
+    private String verificationResponseSequenceFailureMessage(VerificationSequence verificationSequence, String logCorrelationId, List<HttpResponse> recordedResponses) {
+        // for a response-aware sequence the meaningful "expected" and "actual" are the RESPONSES,
+        // not the requests — serialize the expected response sequence and the recorded responses
+        HttpResponseSerializer httpResponseSerializer = new HttpResponseSerializer(mockServerLogger);
+        List<HttpResponse> expectedResponses = verificationSequence.getHttpResponses();
+        String serializedExpectedResponses = expectedResponses.size() == 1
+            ? httpResponseSerializer.serialize(expectedResponses.get(0))
+            : httpResponseSerializer.serialize(expectedResponses);
+        Integer maximumNumberOfRequestToReturnInVerificationFailure = verificationSequence.getMaximumNumberOfRequestToReturnInVerificationFailure() != null ? verificationSequence.getMaximumNumberOfRequestToReturnInVerificationFailure() : configuration.maximumNumberOfRequestToReturnInVerificationFailure();
+        String failureMessage;
+        if (recordedResponses.size() < maximumNumberOfRequestToReturnInVerificationFailure) {
+            String serializedRecordedResponses = recordedResponses.size() == 1
+                ? httpResponseSerializer.serialize(recordedResponses.get(0))
+                : httpResponseSerializer.serialize(recordedResponses);
+            failureMessage = "Response sequence not found, expected:<" + serializedExpectedResponses + "> but was:<" + serializedRecordedResponses + ">";
+        } else {
+            failureMessage = "Response sequence not found, expected:<" + serializedExpectedResponses + "> but was not found, found " + recordedResponses.size() + " other responses";
+        }
+        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(VERIFICATION_FAILED)
+                    .setLogLevel(Level.INFO)
+                    .setCorrelationId(logCorrelationId)
+                    .setMessageFormat("response sequence not found, expected:{}but was:{}")
+                    .setArguments(expectedResponses, recordedResponses)
             );
         }
         return failureMessage;

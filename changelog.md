@@ -451,6 +451,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`BodyMatching`), so a response body matcher behaves exactly like the equivalent request body matcher,
   including a clean non-match (no swallowed exception) when the response has no body. Request matching is
   unchanged.
+- **Response verification no longer counts MockServer's own auto-generated no-match responses**: verifying a
+  response (e.g. `verify(response().withStatusCode(404))`) or a response-aware sequence now counts only the
+  responses your mocks actually produced (matched expectation responses and forwarded/proxied responses), not
+  the default 404 MockServer returns for an unmatched request. Those auto no-match responses are still
+  returned by `/retrieve` — they are excluded only from verification.
+- **Response-aware verification sequences with mismatched request/response list lengths are now rejected**:
+  a sequence that supplies both `httpRequests` and `httpResponses` but of different non-empty lengths
+  previously padded the shorter list with nulls (which always matched), silently passing on the unspecified
+  steps. Such a sequence now returns a clear error. A request-only or response-only sequence (one list empty)
+  remains valid.
+- **Response sequence verification no longer throws on a recorded pair with a null request**: a request-
+  constrained step that encountered a recorded request/response pair whose request was null previously
+  NPE'd and was masked as a generic "exception while processing verification sequence"; it is now correctly
+  treated as a non-matching pair.
+- **Failing response-sequence verification messages now show the responses**: a response-aware sequence
+  failure now serialises the expected response sequence and the recorded responses (it previously reported
+  the requests, often an empty `[]` for a response-only sequence).
+- **An entirely-empty verification sequence is now rejected**: a `VerificationSequence` with no
+  expectationIds, requests or responses previously passed vacuously; it now returns a clear error.
+- **Verification no longer hangs if its request filter fails to build**: a verification whose request filter
+  could not be turned into a matcher (e.g. an invalid OpenAPI/schema filter) previously left the verify
+  result future uncompleted, hanging the caller; the failure is now logged and the verification completes.
 - **`not(...)` expectations now match correctly with fail-fast matching enabled (the default)**: a negated
   request matcher (`not(request()...)`, or a request-matcher-level `not`) could wrongly report a non-match
   whenever a field other than the HTTP method matched before the first mismatching field. With the default
