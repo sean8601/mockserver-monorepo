@@ -29,6 +29,7 @@ import OnboardingPanel from './components/OnboardingPanel';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import GenerateStubDialog from './components/GenerateStubDialog';
 import ConfirmDialog from './components/ConfirmDialog';
+import ErrorBoundary from './components/ErrorBoundary';
 import type { RequestFilter } from './types';
 
 // Lazy-loaded so the @mui/x-charts bundle only loads when the Metrics tab is
@@ -122,22 +123,31 @@ export default function App() {
               {error}
             </Alert>
           )}
-          {view === 'get-started' && <OnboardingPanel connectionParams={params} />}
-          {view === 'dashboard' && <DashboardGrid />}
-          {view === 'traffic' && <TrafficInspector />}
-          {view === 'sessions' && <SessionInspector connectionParams={params} />}
-          {view === 'composer' && <ComposerView connectionParams={params} />}
-          {view === 'library' && <LibraryView connectionParams={params} />}
-          {view === 'metrics' && (
-            <Suspense fallback={<Box sx={{ p: 2 }}>Loading metrics…</Box>}>
-              <MetricsView connectionParams={params} />
-            </Suspense>
-          )}
-          {view === 'chaos' && <ServiceChaosPanel connectionParams={params} />}
-          {view === 'drift' && <DriftPanel connectionParams={params} />}
-          {view === 'verification' && <VerificationView connectionParams={params} />}
-          {view === 'async' && <AsyncApiPanel connectionParams={params} />}
-          {view === 'breakpoints' && <BreakpointsPanel connectionParams={params} />}
+          {/*
+            One ErrorBoundary around the whole view-switching region, reset on
+            `view`. A crash in any single view (including a failed lazy() chunk
+            import for Metrics) shows the fallback panel instead of blanking the
+            entire app, and clears automatically when the user switches tabs. The
+            AppBar above stays OUTSIDE the boundary so navigation always works.
+          */}
+          <ErrorBoundary label="this view" resetKeys={[view]}>
+            {view === 'get-started' && <OnboardingPanel connectionParams={params} />}
+            {view === 'dashboard' && <DashboardGrid />}
+            {view === 'traffic' && <TrafficInspector />}
+            {view === 'sessions' && <SessionInspector connectionParams={params} />}
+            {view === 'composer' && <ComposerView connectionParams={params} />}
+            {view === 'library' && <LibraryView connectionParams={params} />}
+            {view === 'metrics' && (
+              <Suspense fallback={<Box sx={{ p: 2 }}>Loading metrics…</Box>}>
+                <MetricsView connectionParams={params} />
+              </Suspense>
+            )}
+            {view === 'chaos' && <ServiceChaosPanel connectionParams={params} />}
+            {view === 'drift' && <DriftPanel connectionParams={params} />}
+            {view === 'verification' && <VerificationView connectionParams={params} />}
+            {view === 'async' && <AsyncApiPanel connectionParams={params} />}
+            {view === 'breakpoints' && <BreakpointsPanel connectionParams={params} />}
+          </ErrorBoundary>
         </Box>
         <Snackbar
           open={notification !== null}
