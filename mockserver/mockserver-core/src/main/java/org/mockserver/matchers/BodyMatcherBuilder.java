@@ -16,6 +16,12 @@ public class BodyMatcherBuilder {
 
     public static BodyMatcher buildBodyMatcher(Configuration configuration, MockServerLogger mockServerLogger, Body body, boolean controlPlaneMatcher) {
         BodyMatcher bodyMatcher = null;
+        // Exact-case (case-sensitive) string-body matching is opt-in via matchExactCase and only
+        // applies to data-plane request matching; control-plane (clear/verify/retrieve) body filters
+        // keep the historical case-insensitive behaviour. ExactStringMatcher and SubStringMatcher are
+        // already case-sensitive in their primary (non-substring) comparison, so this flag only changes
+        // the regex body matcher's regex compilation and its equalsIgnoreCase fallback.
+        boolean caseSensitive = !controlPlaneMatcher && configuration != null && configuration.matchExactCase();
         if (body != null) {
             switch (body.getType()) {
                 case STRING:
@@ -28,7 +34,7 @@ public class BodyMatcherBuilder {
                     break;
                 case REGEX:
                     RegexBody regexBody = (RegexBody) body;
-                    bodyMatcher = new RegexStringMatcher(mockServerLogger, NottableString.string(regexBody.getValue()), controlPlaneMatcher);
+                    bodyMatcher = new RegexStringMatcher(mockServerLogger, NottableString.string(regexBody.getValue()), controlPlaneMatcher, caseSensitive);
                     break;
                 case PARAMETERS:
                     ParameterBody parameterBody = (ParameterBody) body;

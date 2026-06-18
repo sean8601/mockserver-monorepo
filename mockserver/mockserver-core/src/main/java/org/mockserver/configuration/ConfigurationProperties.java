@@ -90,6 +90,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_WEB_SOCKET_CLIENT_EVENT_LOOP_THREAD_COUNT = "mockserver.webSocketClientEventLoopThreadCount";
     private static final String MOCKSERVER_MAX_FUTURE_TIMEOUT = "mockserver.maxFutureTimeout";
     private static final String MOCKSERVER_MATCHERS_FAIL_FAST = "mockserver.matchersFailFast";
+    private static final String MOCKSERVER_MATCH_EXACT_CASE = "mockserver.matchExactCase";
 
     // socket
     private static final String MOCKSERVER_MAX_SOCKET_TIMEOUT = "mockserver.maxSocketTimeout";
@@ -1374,6 +1375,22 @@ public class ConfigurationProperties {
      */
     public static void matchersFailFast(boolean enable) {
         setProperty(MOCKSERVER_MATCHERS_FAIL_FAST, "" + enable);
+    }
+
+    public static boolean matchExactCase() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_MATCH_EXACT_CASE, "MOCKSERVER_MATCH_EXACT_CASE", "" + false));
+    }
+
+    /**
+     * If false (the default) request matching for the method, path and string body is case-insensitive,
+     * matching the historical behaviour. If true matching of those three fields becomes case-sensitive
+     * (exact case). Header names and values, cookie names and values, and query string parameters are
+     * always matched case-insensitively regardless of this setting.
+     *
+     * @param enable enabled exact-case (case-sensitive) matching of method, path and string body
+     */
+    public static void matchExactCase(boolean enable) {
+        setProperty(MOCKSERVER_MATCH_EXACT_CASE, "" + enable);
     }
 
     // socket

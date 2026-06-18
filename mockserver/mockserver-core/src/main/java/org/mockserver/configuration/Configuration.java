@@ -95,6 +95,7 @@ public class Configuration {
     private Integer webSocketClientEventLoopThreadCount;
     private Long maxFutureTimeoutInMillis;
     private Boolean matchersFailFast;
+    private Boolean matchExactCase;
 
     // socket
     private Long maxSocketTimeoutInMillis;
@@ -1190,6 +1191,26 @@ public class Configuration {
      */
     public Configuration matchersFailFast(Boolean matchersFailFast) {
         this.matchersFailFast = matchersFailFast;
+        return this;
+    }
+
+    public Boolean matchExactCase() {
+        if (matchExactCase == null) {
+            return ConfigurationProperties.matchExactCase();
+        }
+        return matchExactCase;
+    }
+
+    /**
+     * If false (the default) request matching for the method, path and string body is case-insensitive,
+     * matching the historical behaviour. If true matching of those three fields becomes case-sensitive
+     * (exact case). Header names and values, cookie names and values, and query string parameters are
+     * always matched case-insensitively regardless of this setting.
+     *
+     * @param matchExactCase enabled exact-case (case-sensitive) matching of method, path and string body
+     */
+    public Configuration matchExactCase(Boolean matchExactCase) {
+        this.matchExactCase = matchExactCase;
         return this;
     }
 

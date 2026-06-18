@@ -29,19 +29,35 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
     // regex body and reason-phrase matching, where a value like "== 5" must keep its
     // original exact/regex string semantics — so numeric comparison stays disabled there.
     private final boolean numericComparison;
+    // When false (the default for every pre-existing caller, including all key/value map
+    // matching for headers/cookies/query/params) matching is case-insensitive — byte-for-byte
+    // the original behaviour. When true (only the method/path/string-body matchers, and only
+    // when the opt-in matchExactCase flag is enabled) the equalsIgnoreCase fallback is skipped
+    // and the regex is compiled without CASE_INSENSITIVE|UNICODE_CASE, so matching is exact-case.
+    private final boolean caseSensitive;
 
     public RegexStringMatcher(MockServerLogger mockServerLogger, boolean controlPlaneMatcher) {
+        this(mockServerLogger, controlPlaneMatcher, false);
+    }
+
+    public RegexStringMatcher(MockServerLogger mockServerLogger, boolean controlPlaneMatcher, boolean caseSensitive) {
         this.mockServerLogger = mockServerLogger;
         this.controlPlaneMatcher = controlPlaneMatcher;
         this.matcher = null;
         this.numericComparison = true;
+        this.caseSensitive = caseSensitive;
     }
 
     RegexStringMatcher(MockServerLogger mockServerLogger, NottableString matcher, boolean controlPlaneMatcher) {
+        this(mockServerLogger, matcher, controlPlaneMatcher, false);
+    }
+
+    RegexStringMatcher(MockServerLogger mockServerLogger, NottableString matcher, boolean controlPlaneMatcher, boolean caseSensitive) {
         this.mockServerLogger = mockServerLogger;
         this.controlPlaneMatcher = controlPlaneMatcher;
         this.matcher = matcher;
         this.numericComparison = false;
+        this.caseSensitive = caseSensitive;
     }
 
     public boolean matches(String matched) {
@@ -105,21 +121,25 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
                 final String matchedValue = matched.getValue();
                 if (matchedValue != null) {
                     // match as exact string
-                    if (matchedValue.equals(matcherValue) || matchedValue.equalsIgnoreCase(matcherValue)) {
+                    // The equalsIgnoreCase fallback is the default case-insensitive behaviour; it is
+                    // dropped only when caseSensitive is set (opt-in matchExactCase, method/path/body only).
+                    if (matchedValue.equals(matcherValue) || (!caseSensitive && matchedValue.equalsIgnoreCase(matcherValue))) {
                         return true;
                     }
 
                     // match as regex - matcher -> matched (data plane or control plane).
                     // Skip the timeout-protected regex path when the matcher value is a pure-ASCII
-                    // literal (no regex metacharacters): NottableString.matches() compiles with
-                    // CASE_INSENSITIVE|UNICODE_CASE|DOTALL and does an anchored full match, so for a
-                    // pure-ASCII literal the regex outcome is provably identical to the
-                    // equalsIgnoreCase that already ran above (and failed) — hence a guaranteed
-                    // non-match. Non-ASCII values keep the regex path because UNICODE_CASE folding
-                    // can diverge from String.equalsIgnoreCase.
+                    // literal (no regex metacharacters): NottableString.matches() does an anchored full
+                    // match, so for a pure-ASCII literal the regex outcome is provably identical to the
+                    // string comparison that already ran above (and failed) — hence a guaranteed
+                    // non-match. This holds in both modes: case-insensitive matching compiles with
+                    // CASE_INSENSITIVE|UNICODE_CASE and is equivalent to the equalsIgnoreCase that ran;
+                    // case-sensitive matching (matchExactCase) compiles without them and is equivalent
+                    // to the equals that ran. Non-ASCII values keep the regex path because UNICODE_CASE
+                    // folding can diverge from String.equalsIgnoreCase.
                     if (!isPureAsciiLiteral(matcherValue)) {
                         try {
-                            if (runRegexWithTimeout(mockServerLogger, matcher, matchedValue)) {
+                            if (runRegexWithTimeout(mockServerLogger, matcher, matchedValue, caseSensitive)) {
                                 return true;
                             }
                         } catch (PatternSyntaxException pse) {
@@ -145,10 +165,10 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
                             // single logical check submits a single task to the timeout-protected pool
                             // and cannot observe two divergent results under pool contention.
                             if (controlPlaneMatcher) {
-                                if (runRegexWithTimeout(mockServerLogger, matched, matcherValue)) {
+                                if (runRegexWithTimeout(mockServerLogger, matched, matcherValue, caseSensitive)) {
                                     return true;
                                 }
-                            } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG) && runRegexWithTimeout(mockServerLogger, matched, matcherValue)) {
+                            } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG) && runRegexWithTimeout(mockServerLogger, matched, matcherValue, caseSensitive)) {
                                 mockServerLogger.logEvent(
                                     new LogEntry()
                                         .setLogLevel(DEBUG)
@@ -183,11 +203,11 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
         return matcher == null || StringUtils.isBlank(matcher.getValue());
     }
 
-    private static boolean runRegexWithTimeout(MockServerLogger mockServerLogger, NottableString pattern, String input) {
+    private static boolean runRegexWithTimeout(MockServerLogger mockServerLogger, NottableString pattern, String input, boolean caseSensitive) {
         long timeoutMillis = ConfigurationProperties.regexMatchingTimeoutMillis();
         try {
             return MatchingTimeoutExecutor.callWithTimeout(
-                () -> pattern.matches(input),
+                () -> pattern.matches(input, caseSensitive),
                 timeoutMillis,
                 Boolean.FALSE,
                 fired -> {

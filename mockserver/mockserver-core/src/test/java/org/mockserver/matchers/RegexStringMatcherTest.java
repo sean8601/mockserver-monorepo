@@ -193,6 +193,29 @@ public class RegexStringMatcherTest {
             submittedAfter - submittedBefore > 0L, is(true));
     }
 
+    // --- case-sensitive (matchExactCase) constructor ---
+
+    @Test
+    public void shouldMatchAsciiLiteralCaseSensitivelyWhenCaseSensitive() {
+        // case-sensitive constructor: only an exact-case literal matches (no equalsIgnoreCase fallback)
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("Some_Value"), false, true).matches("Some_Value"), is(true));
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("Some_Value"), false, true).matches("some_value"), is(false));
+    }
+
+    @Test
+    public void shouldMatchRegexCaseSensitivelyWhenCaseSensitive() {
+        // a real regex (metacharacters) compiled without CASE_INSENSITIVE only matches exact case
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("hello.*"), false, true).matches("hello world"), is(true));
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("hello.*"), false, true).matches("HELLO world"), is(false));
+    }
+
+    @Test
+    public void shouldDefaultConstructorRemainCaseInsensitive() {
+        // the original (no caseSensitive) constructor keeps the historical case-insensitive behaviour
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("hello.*"), false).matches("HELLO world"), is(true));
+        assertThat(new RegexStringMatcher(new MockServerLogger(), string("Some_Value"), false).matches("some_value"), is(true));
+    }
+
     // --- looksLikeRegex helper ---
 
     @Test

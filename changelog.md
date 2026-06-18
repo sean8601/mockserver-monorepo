@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Case-sensitive matching opt-in `matchExactCase`** (`MOCKSERVER_MATCH_EXACT_CASE`, default false): when
+  enabled, request matching of the method, path and regex string body becomes case-sensitive (exact case)
+  instead of the historical case-insensitive behaviour, so an expectation for `/Path` no longer matches a
+  request to `/path`. (Exact string bodies were already matched case-sensitively and are unaffected.) Header
+  names and values, cookie names and values, and query string parameters always remain case-insensitive
+  regardless of this setting. The default (false) is byte-for-byte the existing behaviour.
 - **Weighted/probabilistic response selection**: a new `WEIGHTED` `ResponseMode` selects among an
   expectation's multiple `httpResponses` by relative weight (via the index-aligned `responseWeights` list,
   e.g. `[90, 10]` for a 90%/10% split). Missing or non-positive weights default to 1; a non-positive total

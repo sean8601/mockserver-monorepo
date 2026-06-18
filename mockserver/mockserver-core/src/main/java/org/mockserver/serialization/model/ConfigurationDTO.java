@@ -43,6 +43,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Integer webSocketClientEventLoopThreadCount;
     private Long maxFutureTimeoutInMillis;
     private Boolean matchersFailFast;
+    private Boolean matchExactCase;
 
     private Long maxSocketTimeoutInMillis;
     private Long socketConnectionTimeoutInMillis;
@@ -177,6 +178,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.webSocketClientEventLoopThreadCount = configuration.webSocketClientEventLoopThreadCount();
             this.maxFutureTimeoutInMillis = configuration.maxFutureTimeoutInMillis();
             this.matchersFailFast = configuration.matchersFailFast();
+            this.matchExactCase = configuration.matchExactCase();
 
             this.maxSocketTimeoutInMillis = configuration.maxSocketTimeoutInMillis();
             this.socketConnectionTimeoutInMillis = configuration.socketConnectionTimeoutInMillis();
@@ -357,6 +359,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.webSocketClientEventLoopThreadCount(webSocketClientEventLoopThreadCount);
         configuration.maxFutureTimeoutInMillis(maxFutureTimeoutInMillis);
         configuration.matchersFailFast(matchersFailFast);
+        configuration.matchExactCase(matchExactCase);
 
         configuration.maxSocketTimeoutInMillis(maxSocketTimeoutInMillis);
         configuration.socketConnectionTimeoutInMillis(socketConnectionTimeoutInMillis);
@@ -551,6 +554,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (matchersFailFast != null) {
             target.matchersFailFast(matchersFailFast);
+        }
+        if (matchExactCase != null) {
+            target.matchExactCase(matchExactCase);
         }
         if (maxSocketTimeoutInMillis != null) {
             target.maxSocketTimeoutInMillis(maxSocketTimeoutInMillis);
@@ -1036,6 +1042,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setMatchersFailFast(Boolean matchersFailFast) {
         this.matchersFailFast = matchersFailFast;
+        return this;
+    }
+
+    public Boolean getMatchExactCase() {
+        return matchExactCase;
+    }
+
+    public ConfigurationDTO setMatchExactCase(Boolean matchExactCase) {
+        this.matchExactCase = matchExactCase;
         return this;
     }
 

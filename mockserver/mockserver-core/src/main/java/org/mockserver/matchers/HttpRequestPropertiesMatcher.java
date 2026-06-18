@@ -199,10 +199,16 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                 // first, then publish it through a single volatile assignment, so a concurrent
                 // matches() never observes a new httpRequest paired with a stale or null field
                 // matcher — it sees either the whole previous holder or the whole new one.
+                // Exact-case (case-sensitive) matching of method, path and string body is opt-in via
+                // matchExactCase and only applies to data-plane request matching. Control-plane
+                // matchers (clear/verify/retrieve filters) keep the historical case-insensitive
+                // behaviour so administrative operations are unaffected. Header/cookie/query map
+                // matchers below always use the default case-insensitive constructors.
+                boolean caseSensitive = !controlPlaneMatcher && configuration.matchExactCase();
                 rebuilt = new Compiled(
                     httpRequest,
-                    new RegexStringMatcher(mockServerLogger, httpRequest.getMethod(), controlPlaneMatcher),
-                    new RegexStringMatcher(mockServerLogger, pathParametersParser.normalisePathWithParametersForMatching(httpRequest), controlPlaneMatcher),
+                    new RegexStringMatcher(mockServerLogger, httpRequest.getMethod(), controlPlaneMatcher, caseSensitive),
+                    new RegexStringMatcher(mockServerLogger, pathParametersParser.normalisePathWithParametersForMatching(httpRequest), controlPlaneMatcher, caseSensitive),
                     new MultiValueMapMatcher(mockServerLogger, httpRequest.getPathParameters(), controlPlaneMatcher),
                     new MultiValueMapMatcher(mockServerLogger, httpRequest.getQueryStringParameters(), controlPlaneMatcher),
                     buildBodyMatcher(httpRequest.getBody()),
