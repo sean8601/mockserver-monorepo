@@ -31,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (input/output types, streaming kind) with per-service health, auto-refreshing live.
   - **Compare against baseline**: a new tool runs `PUT /mockserver/baseline/compare` and shows the
     added / removed / changed expectations against a baseline.
-  - **De-cluttered navigation**: the top navigation now keeps the common tabs inline and moves the rest
-    into a "More" menu (and a single menu on narrow screens), so the 13 views are no longer one long row.
+  - **Adaptive navigation**: the top navigation now shows as many view tabs inline as fit and moves the
+    rest into a "More" menu only when space runs out — all tabs are inline at full width, tabs flow into
+    "More" as the window narrows, and on very narrow screens it collapses to the active page plus a menu.
   - **Consistency pass**: control-plane error messages are humanised everywhere (a short message with the
     raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
     come from a single typography scale, and "Capture as mock" can hand a captured request straight to

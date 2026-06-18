@@ -224,38 +224,28 @@ describe('AppBar responsive navigation', () => {
     delete window.matchMedia;
   });
 
-  it('renders the primary inline tabs plus a More overflow on wide screens (no hamburger)', () => {
+  it('renders every nav tab inline on wide screens with no More button or hamburger', () => {
     // jsdom default: no matchMedia → useMediaQuery returns false → wide layout.
+    // jsdom also measures every element width as 0, so the priority-nav split
+    // defaults to "everything fits inline" — all 13 tabs render as toggle
+    // buttons and the "More" overflow button is absent.
     renderAppBar();
-    // Primary tabs are present inline as toggle buttons.
     expect(screen.getByRole('button', { name: 'Dashboard view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mocks view' })).toBeInTheDocument();
-    // Less-common tabs (e.g. Metrics) are NOT inline — they live in the More menu.
-    expect(screen.queryByRole('button', { name: 'Metrics view' })).not.toBeInTheDocument();
-    // The More overflow button is present, the hamburger is not.
-    expect(screen.getByRole('button', { name: 'More views' })).toBeInTheDocument();
+    // Previously-"overflow" tabs (e.g. gRPC, Metrics) are now inline too.
+    expect(screen.getByRole('button', { name: 'gRPC services view' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Metrics view' })).toBeInTheDocument();
+    // No "More" overflow button (nothing overflows) and no hamburger.
+    expect(screen.queryByRole('button', { name: 'More views' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
   });
 
-  it('opens the More overflow menu and navigates to a less-common view', async () => {
-    const user = userEvent.setup();
+  it('does not render the keyboard-shortcut caption (the ? dialog replaces it)', () => {
     renderAppBar();
-
-    await user.click(screen.getByRole('button', { name: 'More views' }));
-    // Overflow views — including the new gRPC view — are reachable from the menu.
-    expect(screen.getByRole('menuitem', { name: 'gRPC services view' })).toBeInTheDocument();
-    const metricsItem = screen.getByRole('menuitem', { name: 'Metrics view' });
-    expect(metricsItem).toBeInTheDocument();
-
-    await user.click(metricsItem);
-    expect(useDashboardStore.getState().view).toBe('metrics');
-  });
-
-  it('labels the More button with the active overflow view so the selection stays visible', () => {
-    useDashboardStore.setState({ view: 'grpc' });
-    renderAppBar();
-    // When the active view lives in the overflow group the button shows its label.
-    expect(screen.getByRole('button', { name: 'More views' })).toHaveTextContent('gRPC');
+    expect(screen.queryByText(/clear logs/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Esc filter/i)).not.toBeInTheDocument();
+    // The Keyboard-shortcuts dialog button remains the discoverability path.
+    expect(screen.getByRole('button', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
   });
 
   it('navigates to the gRPC view from the hamburger menu on narrow screens', async () => {

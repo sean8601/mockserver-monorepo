@@ -51,7 +51,7 @@ import type { ReactNode } from 'react';
 import BuildIcon from '@mui/icons-material/Build';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
 import type { ConnectionStatus } from '../types';
 import { useConnectionParams } from '../hooks/useConnectionParams';
@@ -122,24 +122,20 @@ interface NavTab {
   label: string;
   ariaLabel: string;
   icon: ReactNode;
-  /**
-   * Primary tabs render inline on wide screens; the rest collapse into a
-   * labelled "More" overflow Menu so the desktop tab strip stays uncluttered.
-   * On narrow screens every tab lives in the hamburger Menu regardless.
-   */
-  primary?: boolean;
 }
 
-// Single source of truth for the navigation tabs. On wide screens the `primary`
-// tabs render as an inline ToggleButtonGroup and the rest collapse into a
-// labelled "More" overflow Menu; on narrow screens the full list lives in the
+// Single source of truth for the navigation tabs, in priority order. On wide
+// screens a measured "priority+ / progressive overflow" strip renders as many
+// tabs inline as fit (longest fitting prefix of this list) and moves the
+// remainder into a labelled "More" overflow Menu; when every tab fits there is
+// no "More" button at all. On narrow screens the full list lives in the
 // hamburger Menu. The order here is the order shown in every menu.
 const NAV_TABS: NavTab[] = [
-  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
-  { value: 'dashboard', label: 'Dashboard', ariaLabel: 'Dashboard view', icon: <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
-  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
-  { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
-  { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
+  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'dashboard', label: 'Dashboard', ariaLabel: 'Dashboard view', icon: <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'chaos', label: 'Chaos', ariaLabel: 'Service chaos view', icon: <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'async', label: 'Async', ariaLabel: 'AsyncAPI broker mock view', icon: <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'grpc', label: 'gRPC', ariaLabel: 'gRPC services view', icon: <RpcIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
@@ -149,9 +145,6 @@ const NAV_TABS: NavTab[] = [
   { value: 'verification', label: 'Verify', ariaLabel: 'Verification view', icon: <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'metrics', label: 'Metrics', ariaLabel: 'Metrics view', icon: <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
 ];
-
-const PRIMARY_NAV_TABS = NAV_TABS.filter((t) => t.primary);
-const OVERFLOW_NAV_TABS = NAV_TABS.filter((t) => !t.primary);
 
 interface AppBarProps {
   onClearServer: () => Promise<void>;
@@ -173,8 +166,106 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   // region, so collapse the nav into a "hamburger" Menu instead.
   const compactNav = useMediaQuery(theme.breakpoints.down('lg'));
   const [navAnchorEl, setNavAnchorEl] = useState<null | HTMLElement>(null);
-  // Wide-screen "More" overflow menu holding the less-common views.
+  // Wide-screen "More" overflow menu holding the tabs that don't fit inline.
   const [moreNavAnchorEl, setMoreNavAnchorEl] = useState<null | HTMLElement>(null);
+
+  // --- Priority-navigation measurement ---
+  // We measure the REAL rendered buttons rather than a hidden mirror so there is
+  // no duplicated, query-pollutable text in the DOM. `navRegionRef` is the box
+  // whose width we fit into; `tabGroupRef` wraps the inline ToggleButtonGroup;
+  // `moreButtonRef` is the live "More" button when present.
+  const navRegionRef = useRef<HTMLDivElement | null>(null);
+  const tabGroupRef = useRef<HTMLDivElement | null>(null);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Cached natural width per tab value, learned as each tab is observed inline.
+  // Because we DEFAULT to all-inline, the very first layout measures every tab;
+  // widths persist after a tab moves into the overflow menu (its button
+  // unmounts but its cached width stays valid). Also caches the More-button
+  // width to reserve when overflow occurs.
+  const tabWidthsRef = useRef<Map<ViewMode, number>>(new Map());
+  const moreButtonWidthRef = useRef<number>(0);
+  // How many leading tabs render inline. Default to ALL so nothing disappears
+  // before/without a real measurement (initial render, jsdom). Refined once real
+  // widths are known and the available width is smaller than the full strip.
+  const [inlineCount, setInlineCount] = useState<number>(NAV_TABS.length);
+
+  // Recompute the largest prefix of NAV_TABS that fits the available width,
+  // reserving room for the "More" button whenever at least one tab overflows.
+  const recomputeInlineCount = useCallback(() => {
+    const region = navRegionRef.current;
+    if (!region) return;
+    const available = region.clientWidth;
+    const widths = tabWidthsRef.current;
+    // Until we have a real width for every tab and a real container width, keep
+    // everything inline (initial render, jsdom where getBoundingClientRect → 0).
+    const allKnown = NAV_TABS.every((t) => (widths.get(t.value) ?? 0) > 0);
+    if (!available || !allKnown) {
+      setInlineCount(NAV_TABS.length);
+      return;
+    }
+    const totalAll = NAV_TABS.reduce((sum, t) => sum + (widths.get(t.value) ?? 0), 0);
+    // Whole strip fits → no "More" button at all.
+    if (totalAll <= available) {
+      setInlineCount(NAV_TABS.length);
+      return;
+    }
+    // Otherwise reserve room for the "More" button and take the longest prefix
+    // that still fits alongside it. At least one tab always overflows here.
+    const reserve = moreButtonWidthRef.current;
+    let used = 0;
+    let count = 0;
+    for (const tab of NAV_TABS) {
+      const next = used + (widths.get(tab.value) ?? 0);
+      if (next + reserve <= available) {
+        used = next;
+        count += 1;
+      } else {
+        break;
+      }
+    }
+    setInlineCount(count);
+  }, []);
+
+  // After each layout, cache the natural width of every currently-inline button
+  // (keyed by tab value) and the More-button width, then recompute the split.
+  useLayoutEffect(() => {
+    if (compactNav) return; // hamburger tier doesn't use the measured strip
+    const group = tabGroupRef.current;
+    if (group) {
+      const tabEls = group.querySelectorAll<HTMLElement>('[data-nav-tab]');
+      tabEls.forEach((el) => {
+        const value = el.getAttribute('data-nav-tab') as ViewMode | null;
+        const w = el.getBoundingClientRect().width;
+        if (value && w > 0) tabWidthsRef.current.set(value, w);
+      });
+    }
+    if (moreButtonRef.current) {
+      const w = moreButtonRef.current.getBoundingClientRect().width;
+      if (w > 0) moreButtonWidthRef.current = w;
+    }
+    recomputeInlineCount();
+  }, [compactNav, inlineCount, recomputeInlineCount]);
+
+  // Recompute on available-width changes via ResizeObserver, falling back to a
+  // window 'resize' listener where ResizeObserver is unavailable.
+  useEffect(() => {
+    if (compactNav) return;
+    const region = navRegionRef.current;
+    if (!region) return;
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => recomputeInlineCount());
+      ro.observe(region);
+      return () => ro.disconnect();
+    }
+    const onResize = () => recomputeInlineCount();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [compactNav, recomputeInlineCount]);
+
+  const inlineTabs = NAV_TABS.slice(0, inlineCount);
+  const overflowTabs = NAV_TABS.slice(inlineCount);
+  const hasOverflow = overflowTabs.length > 0;
+  const activeOverflowTab = overflowTabs.find((t) => t.value === view);
 
   const connectionParams = useConnectionParams();
   const [mode, setModeState] = useState<MockServerMode | null>(null);
@@ -249,6 +340,37 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       });
   };
 
+  // Styling for the inline ToggleButtonGroup nav strip.
+  const toggleGroupSx = {
+    ml: 1,
+    flexShrink: 0,
+    '& .MuiToggleButton-root': {
+      py: 0.25,
+      px: 1,
+      fontSize: '0.7rem',
+      textTransform: 'none',
+      lineHeight: 1.4,
+      whiteSpace: 'nowrap',
+      // Light-mode-only: force white text + translucent border so the
+      // buttons read against the primary-coloured AppBar. Dark mode
+      // keeps MUI's defaults which already contrast against the bar.
+      ...(themeMode === 'light' ? {
+        color: 'primary.contrastText',
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+        '&:hover': {
+          backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        },
+        '&.Mui-selected': {
+          color: 'primary.contrastText',
+          backgroundColor: 'rgba(255, 255, 255, 0.18)',
+          '&:hover': {
+            backgroundColor: 'rgba(255, 255, 255, 0.24)',
+          },
+        },
+      } : {}),
+    },
+  } as const;
+
   return (
     <MuiAppBar position="static" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
       <Toolbar variant="dense" sx={{ gap: 1, minHeight: 36, flexWrap: 'wrap', rowGap: 0.5, py: 0.5 }}>
@@ -321,100 +443,80 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             </Menu>
           </>
         ) : (
-          <Box sx={{ maxWidth: '100%', flexShrink: 1, display: 'flex', alignItems: 'center' }}>
+          <Box
+            ref={navRegionRef}
+            sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative', overflow: 'hidden' }}
+          >
           <ToggleButtonGroup
+            ref={tabGroupRef}
             value={view}
             exclusive
             size="small"
             onChange={(_, newView: ViewMode | null) => {
               if (newView !== null) setView(newView);
             }}
-            sx={{
-              ml: 1,
-              '& .MuiToggleButton-root': {
-                py: 0.25,
-                px: 1,
-                fontSize: '0.7rem',
-                textTransform: 'none',
-                lineHeight: 1.4,
-                // Light-mode-only: force white text + translucent border so the
-                // buttons read against the primary-coloured AppBar. Dark mode
-                // keeps MUI's defaults which already contrast against the bar.
-                ...(themeMode === 'light' ? {
-                  color: 'primary.contrastText',
-                  borderColor: 'rgba(255, 255, 255, 0.3)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  },
-                  '&.Mui-selected': {
-                    color: 'primary.contrastText',
-                    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-                    '&:hover': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.24)',
-                    },
-                  },
-                } : {}),
-              },
-            }}
+            sx={toggleGroupSx}
           >
-            {PRIMARY_NAV_TABS.map((tab) => (
-              <ToggleButton key={tab.value} value={tab.value} aria-label={tab.ariaLabel}>
+            {inlineTabs.map((tab) => (
+              <ToggleButton key={tab.value} value={tab.value} aria-label={tab.ariaLabel} data-nav-tab={tab.value}>
                 {tab.icon}
                 {tab.label}
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
-          {/* "More" overflow menu for the less-common views so the inline strip
-              stays uncluttered. When the active view lives in here, the button
-              shows that view's label so the current selection is always visible. */}
-          <Button
-            size="small"
-            color="inherit"
-            aria-label="More views"
-            aria-haspopup="menu"
-            endIcon={<ExpandMoreIcon sx={{ fontSize: '0.875rem' }} />}
-            onClick={(e) => setMoreNavAnchorEl(e.currentTarget)}
-            sx={{
-              ml: 0.5,
-              py: 0.25,
-              px: 1,
-              fontSize: '0.7rem',
-              textTransform: 'none',
-              lineHeight: 1.4,
-              whiteSpace: 'nowrap',
-              ...(OVERFLOW_NAV_TABS.some((t) => t.value === view)
-                ? { backgroundColor: 'rgba(255, 255, 255, 0.18)' }
-                : {}),
-            }}
-          >
-            {OVERFLOW_NAV_TABS.find((t) => t.value === view)?.label ?? 'More'}
-          </Button>
-          <Menu
-            anchorEl={moreNavAnchorEl}
-            open={Boolean(moreNavAnchorEl)}
-            onClose={() => setMoreNavAnchorEl(null)}
-          >
-            {OVERFLOW_NAV_TABS.map((tab) => (
-              <MenuItem
-                key={tab.value}
-                selected={view === tab.value}
-                aria-label={tab.ariaLabel}
-                onClick={() => {
-                  setView(tab.value);
-                  setMoreNavAnchorEl(null);
+          {/* "More" overflow menu holding the tabs that don't fit inline. It
+              only renders when at least one tab overflows. When the active view
+              lives in here, the button shows that view's label so the current
+              selection is always visible. */}
+          {hasOverflow && (
+            <>
+              <Button
+                ref={moreButtonRef}
+                size="small"
+                color="inherit"
+                aria-label="More views"
+                aria-haspopup="menu"
+                endIcon={<ExpandMoreIcon sx={{ fontSize: '0.875rem' }} />}
+                onClick={(e) => setMoreNavAnchorEl(e.currentTarget)}
+                sx={{
+                  ml: 0.5,
+                  py: 0.25,
+                  px: 1,
+                  fontSize: '0.7rem',
+                  textTransform: 'none',
+                  lineHeight: 1.4,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  ...(activeOverflowTab ? { backgroundColor: 'rgba(255, 255, 255, 0.18)' } : {}),
                 }}
               >
-                <ListItemIcon>{tab.icon}</ListItemIcon>
-                <ListItemText>{tab.label}</ListItemText>
-              </MenuItem>
-            ))}
-          </Menu>
+                {activeOverflowTab?.label ?? 'More'}
+              </Button>
+              <Menu
+                anchorEl={moreNavAnchorEl}
+                open={Boolean(moreNavAnchorEl)}
+                onClose={() => setMoreNavAnchorEl(null)}
+              >
+                {overflowTabs.map((tab) => (
+                  <MenuItem
+                    key={tab.value}
+                    selected={view === tab.value}
+                    aria-label={tab.ariaLabel}
+                    onClick={() => {
+                      setView(tab.value);
+                      setMoreNavAnchorEl(null);
+                    }}
+                  >
+                    <ListItemIcon>{tab.icon}</ListItemIcon>
+                    <ListItemText>{tab.label}</ListItemText>
+                  </MenuItem>
+                ))}
+              </Menu>
+            </>
+          )}
           </Box>
         )}
-        <Box sx={{ flex: 1 }} />
-        <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
-          ⌘K search · ⌘L clear logs · Esc filter
-        </Typography>
+        <Box sx={{ flex: compactNav ? 1 : '0 0 auto' }} />
         <Tooltip title="Keyboard shortcuts">
           <IconButton size="small" color="inherit" onClick={() => setShortcutsOpen(true)} aria-label="Keyboard shortcuts">
             <KeyboardIcon fontSize="small" />
