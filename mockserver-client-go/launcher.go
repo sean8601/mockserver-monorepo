@@ -49,6 +49,26 @@ var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.
 // TLS handshake timeouts are shorter to fail fast on unreachable hosts.
 const defaultHTTPTimeout = 10 * time.Minute
 
+// errNotFound is returned by downloadFile when the server responds with HTTP
+// 404, so callers can distinguish "no bundle published for this version" from
+// other transport errors and emit actionable guidance.
+var errNotFound = errors.New("not found (HTTP 404)")
+
+// noBundleMessage builds a clear, actionable error explaining that no
+// downloadable release bundle exists for the requested version, and listing the
+// concrete alternatives. The wording is kept consistent across all client
+// languages.
+func noBundleMessage(version string) string {
+	return fmt.Sprintf(
+		"mockserver: no MockServer release bundle is published for version %s "+
+			"(no downloadable asset at the GitHub release tag 'mockserver-%s'). "+
+			"Use a MockServer version that ships self-contained bundles, "+
+			"or run MockServer via Docker (docker run mockserver/mockserver:mockserver-%s), "+
+			"or use the Maven Central jar (org.mock-server:mockserver-netty:%s).",
+		version, version, version, version,
+	)
+}
+
 // PlatformInfo holds the resolved OS, architecture, and archive extension for
 // the current platform.
 type PlatformInfo struct {
@@ -316,6 +336,12 @@ func EnsureBinary(version string, opts *EnsureOptions) (string, error) {
 		// H3: clean up both .part and .sha256 on any failure
 		os.Remove(partial)
 		os.Remove(shaFile)
+		// A 404 means the release tag exists but ships no bundle for this
+		// version (or the tag does not exist). Emit actionable guidance
+		// instead of an opaque HTTP error.
+		if errors.Is(err, errNotFound) {
+			return "", errors.New(noBundleMessage(version))
+		}
 		return "", fmt.Errorf("mockserver: download archive: %w", err)
 	}
 
@@ -429,6 +455,9 @@ func downloadFile(client *http.Client, url, dest string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("GET %s: %w", url, errNotFound)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}

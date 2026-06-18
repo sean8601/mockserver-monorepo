@@ -43,6 +43,21 @@ var SNAPSHOT_CDN = 'https://downloads.mock-server.com';
  */
 var VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+([-][0-9A-Za-z]+([.][0-9A-Za-z]+)*)?$/;
 
+/**
+ * Build a clear, actionable error message for a missing release bundle.
+ * Explains that no downloadable bundle exists for the version and lists the
+ * concrete alternatives. The wording is kept consistent across all client languages.
+ * @param {string} version
+ * @returns {string}
+ */
+function noBundleMessage(version) {
+  return 'no MockServer release bundle is published for version ' + version +
+    " (no downloadable asset at the GitHub release tag 'mockserver-" + version + "'). " +
+    'Use a MockServer version that ships self-contained bundles, ' +
+    'or run MockServer via Docker (docker run mockserver/mockserver:mockserver-' + version + '), ' +
+    'or use the Maven Central jar (org.mock-server:mockserver-netty:' + version + ').';
+}
+
 // ---------- H1: version validation ----------
 
 /**
@@ -216,7 +231,11 @@ function download(url, dest) {
     var req = lib.get(url, opts, function (res) {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         res.resume(); // drain
-        reject(new Error('download ' + url + ' failed: HTTP ' + res.statusCode));
+        var httpErr = new Error('download ' + url + ' failed: HTTP ' + res.statusCode);
+        // Tag 404 so callers can distinguish "no bundle published" from other
+        // transport errors and emit actionable guidance.
+        httpErr.statusCode = res.statusCode;
+        reject(httpErr);
         return;
       }
       var out = fs.createWriteStream(dest);
@@ -454,7 +473,17 @@ async function ensureBinary(version, opts) {
     // Download to a temp file and rename only after the checksum passes, so an
     // interrupted download never leaves a truncated archive that looks complete.
     log('Downloading ' + assetUrl(version, archiveFile));
-    await download(assetUrl(version, archiveFile), partial);
+    try {
+      await download(assetUrl(version, archiveFile), partial);
+    } catch (e) {
+      // A 404 means the release tag exists but ships no bundle for this version
+      // (or the tag does not exist). Surface actionable guidance instead of an
+      // opaque HTTP error.
+      if (e && e.statusCode === 404) {
+        throw new Error(noBundleMessage(version));
+      }
+      throw e;
+    }
 
     // H2: SHA-256 verification is mandatory — always fail-closed
     await download(assetUrl(version, archiveFile + '.sha256'), shaFile);

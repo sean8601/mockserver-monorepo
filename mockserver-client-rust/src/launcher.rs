@@ -59,6 +59,10 @@ pub enum LauncherError {
     Io(io::Error),
     /// An HTTP transport error.
     Http(String),
+    /// The server responded with HTTP 404 — no asset was published at the URL.
+    NotFound(String),
+    /// No downloadable release bundle exists for the requested version.
+    NoBundle(String),
     /// The extraction command (`tar`) failed.
     ExtractionFailed(String),
     /// The launcher binary was missing or empty after extraction.
@@ -82,6 +86,8 @@ impl std::fmt::Display for LauncherError {
             }
             LauncherError::Io(e) => write!(f, "I/O error: {e}"),
             LauncherError::Http(msg) => write!(f, "HTTP error: {msg}"),
+            LauncherError::NotFound(msg) => write!(f, "not found (HTTP 404): {msg}"),
+            LauncherError::NoBundle(msg) => write!(f, "{msg}"),
             LauncherError::ExtractionFailed(msg) => {
                 write!(f, "extraction failed: {msg}")
             }
@@ -334,6 +340,21 @@ pub fn cache_dir() -> PathBuf {
 /// The CDN base URL used for SNAPSHOT version downloads.
 const SNAPSHOT_CDN: &str = "https://downloads.mock-server.com";
 
+/// Build a clear, actionable error message for a missing release bundle.
+///
+/// Explains that no downloadable bundle exists for `version` and lists the
+/// concrete alternatives. The wording is kept consistent across all client
+/// languages.
+fn no_bundle_message(version: &str) -> String {
+    format!(
+        "no MockServer release bundle is published for version {version} \
+         (no downloadable asset at the GitHub release tag 'mockserver-{version}'). \
+         Use a MockServer version that ships self-contained bundles, \
+         or run MockServer via Docker (docker run mockserver/mockserver:mockserver-{version}), \
+         or use the Maven Central jar (org.mock-server:mockserver-netty:{version})."
+    )
+}
+
 /// Returns `true` if the version string contains "-SNAPSHOT" (case-insensitive),
 /// indicating a pre-release snapshot build.
 pub fn is_snapshot(version: &str) -> bool {
@@ -418,6 +439,9 @@ fn download(url: &str, dest: &Path) -> LauncherResult<()> {
         .send()
         .map_err(|e| LauncherError::Http(format!("GET {url} failed: {e}")))?;
 
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(LauncherError::NotFound(format!("GET {url}")));
+    }
     if !resp.status().is_success() {
         return Err(LauncherError::Http(format!(
             "GET {url} failed: HTTP {}",
@@ -500,7 +524,16 @@ pub fn ensure_binary(version: &str, opts: &EnsureOptions) -> LauncherResult<Path
     }
 
     let result = (|| -> LauncherResult<()> {
-        download(&url, &partial)?;
+        // A 404 on the archive means the release tag exists but ships no bundle
+        // for this version (or the tag does not exist). Translate it into
+        // actionable guidance instead of an opaque HTTP error.
+        match download(&url, &partial) {
+            Ok(()) => {}
+            Err(LauncherError::NotFound(_)) => {
+                return Err(LauncherError::NoBundle(no_bundle_message(version)));
+            }
+            Err(e) => return Err(e),
+        }
 
         // Verify SHA-256 — always fail-closed. (H2: not bypassable)
         let sha_url = asset_url(version, &format!("{archive_file}.sha256"));
@@ -1763,6 +1796,44 @@ mod tests {
         assert!(
             msg.contains("empty or unparseable"),
             "error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_ensure_binary_missing_bundle_404_gives_actionable_error() {
+        // Serve an EMPTY directory so every asset 404s — simulates a release
+        // tag that ships no bundle for this version.
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let tmp = TempDir::new("ensure-http-404");
+        let version = "99.9.9";
+
+        let serve_dir = tmp.path().join("serve");
+        fs::create_dir_all(&serve_dir).unwrap();
+
+        let server = TestServer::start(serve_dir);
+        let (base_url, _handle) = server.serve_in_background();
+
+        let cache = tmp.path().join("cache");
+        let _guard_cache =
+            EnvGuard::new("MOCKSERVER_BINARY_CACHE", Some(cache.to_str().unwrap()));
+        let _guard_skip = EnvGuard::new("MOCKSERVER_SKIP_BINARY_DOWNLOAD", None);
+        let _guard_url = EnvGuard::new("MOCKSERVER_BINARY_BASE_URL", Some(&base_url));
+
+        let result = ensure_binary(version, &EnsureOptions::default());
+        assert!(result.is_err(), "should fail when no bundle exists");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains(version), "should name the version: {msg}");
+        assert!(
+            msg.contains("no MockServer release bundle"),
+            "should explain no bundle: {msg}"
+        );
+        assert!(
+            msg.contains("docker run mockserver/mockserver:mockserver-99.9.9"),
+            "should suggest Docker: {msg}"
+        );
+        assert!(
+            msg.contains("org.mock-server:mockserver-netty:99.9.9"),
+            "should suggest Maven Central jar: {msg}"
         );
     }
 

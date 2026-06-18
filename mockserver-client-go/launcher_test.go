@@ -621,6 +621,39 @@ func TestEnsureBinary_ChecksumAlwaysEnforced(t *testing.T) {
 	}
 }
 
+// TestEnsureBinary_NoBundle404 verifies that a 404 on the archive download
+// produces a clear, actionable error (not an opaque HTTP error) naming the
+// version, that no bundle exists, and the Docker / Maven Central alternatives.
+func TestEnsureBinary_NoBundle404(t *testing.T) {
+	cacheDir := t.TempDir()
+
+	// Serve 404 for every asset — simulates a release tag with no bundle.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+	}))
+	defer ts.Close()
+
+	t.Setenv("MOCKSERVER_BINARY_CACHE", cacheDir)
+	t.Setenv("MOCKSERVER_BINARY_BASE_URL", ts.URL)
+	t.Setenv("MOCKSERVER_SKIP_BINARY_DOWNLOAD", "")
+
+	_, err := EnsureBinary("9.9.9", &EnsureOptions{})
+	if err == nil {
+		t.Fatal("expected an error for a missing release bundle")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"9.9.9",
+		"no MockServer release bundle",
+		"docker run mockserver/mockserver:mockserver-9.9.9",
+		"org.mock-server:mockserver-netty:9.9.9",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error message missing %q; got: %v", want, msg)
+		}
+	}
+}
+
 // --- Semver Comparison Tests (H7) ---
 
 func TestCompareSemver(t *testing.T) {

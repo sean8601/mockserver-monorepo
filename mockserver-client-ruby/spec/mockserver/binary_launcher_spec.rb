@@ -415,6 +415,28 @@ RSpec.describe MockServer::BinaryLauncher do
       ENV.delete('MOCKSERVER_BINARY_BASE_URL')
     end
 
+    it 'raises a clear, actionable error when no release bundle exists (HTTP 404)' do
+      cache = File.join(tmpdir, 'cache')
+      ENV['MOCKSERVER_BINARY_CACHE'] = cache
+      ENV['MOCKSERVER_BINARY_BASE_URL'] = 'https://example.invalid'
+
+      # Simulate the GitHub release tag existing but shipping no bundle.
+      allow(described_class).to receive(:download_file)
+        .and_raise(MockServer::BinaryLauncher::NotFoundError, 'HTTP 404')
+
+      expect do
+        described_class.ensure_launcher(version: version, log: log)
+      end.to raise_error(MockServer::Error) { |e|
+        expect(e.message).to include(version)
+        expect(e.message).to include('no MockServer release bundle')
+        expect(e.message).to include("docker run mockserver/mockserver:mockserver-#{version}")
+        expect(e.message).to include("org.mock-server:mockserver-netty:#{version}")
+      }
+    ensure
+      ENV.delete('MOCKSERVER_BINARY_CACHE')
+      ENV.delete('MOCKSERVER_BINARY_BASE_URL')
+    end
+
     it 'fails with a wrong SHA-256 checksum' do
       fixture_dir = File.join(tmpdir, 'fixtures')
       FileUtils.mkdir_p(fixture_dir)

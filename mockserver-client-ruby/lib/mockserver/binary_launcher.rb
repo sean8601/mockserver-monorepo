@@ -32,6 +32,11 @@ module MockServer
   # @example Just ensure the binary is present
   #   path = MockServer::BinaryLauncher.ensure_launcher
   class BinaryLauncher
+    # Raised internally when a download returns HTTP 404, so the caller can
+    # distinguish "no bundle published for this version" from other transport
+    # errors and emit actionable guidance.
+    class NotFoundError < StandardError; end
+
     REPO = 'mock-server/mockserver-monorepo'
 
     # CDN base URL used for SNAPSHOT version downloads.
@@ -171,7 +176,14 @@ module MockServer
           # Download to a temp file
           url = asset_url(version, archive_file)
           log.info("Downloading #{url}")
-          download_file(url, partial)
+          begin
+            download_file(url, partial)
+          rescue NotFoundError
+            # A 404 means the release tag exists but ships no bundle for this
+            # version (or the tag does not exist). Emit actionable guidance
+            # instead of an opaque HTTP error.
+            raise Error, no_bundle_message(version)
+          end
 
           # Verify SHA-256 (fail-closed — always required, no bypass)
           sha_url = asset_url(version, "#{archive_file}.sha256")
@@ -316,6 +328,22 @@ module MockServer
       end
 
       private
+
+      # Build a clear, actionable error message for a missing release bundle.
+      #
+      # Explains that no downloadable bundle exists for +version+ and lists the
+      # concrete alternatives. The wording is kept consistent across all client
+      # languages.
+      #
+      # @param version [String]
+      # @return [String]
+      def no_bundle_message(version)
+        "no MockServer release bundle is published for version #{version} " \
+          "(no downloadable asset at the GitHub release tag 'mockserver-#{version}'). " \
+          'Use a MockServer version that ships self-contained bundles, ' \
+          "or run MockServer via Docker (docker run mockserver/mockserver:mockserver-#{version}), " \
+          "or use the Maven Central jar (org.mock-server:mockserver-netty:#{version})."
+      end
 
       # Validate the version string against the strict pattern (H1).
       #
@@ -567,6 +595,8 @@ module MockServer
             response.read_body
             location = response['location']
             fetch_with_redirects(URI.parse(location), dest, max_redirects - 1)
+          when Net::HTTPNotFound
+            raise NotFoundError, "download #{uri} failed: HTTP 404"
           else
             raise Error, "download #{uri} failed: HTTP #{response.code}"
           end

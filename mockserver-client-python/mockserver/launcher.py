@@ -37,6 +37,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -61,6 +62,22 @@ _VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$")
 # HTTP timeouts (seconds): connect and read.
 _HTTP_CONNECT_TIMEOUT = 30
 _HTTP_READ_TIMEOUT = 300
+
+
+def _no_bundle_message(version: str) -> str:
+    """Build a clear, actionable error for a missing release bundle.
+
+    Explains that no downloadable bundle exists for *version* and lists the
+    concrete alternatives.  The wording is kept consistent across all client
+    languages.
+    """
+    return (
+        f"no MockServer release bundle is published for version {version} "
+        f"(no downloadable asset at the GitHub release tag 'mockserver-{version}'). "
+        "Use a MockServer version that ships self-contained bundles, "
+        f"or run MockServer via Docker (docker run mockserver/mockserver:mockserver-{version}), "
+        f"or use the Maven Central jar (org.mock-server:mockserver-netty:{version})."
+    )
 
 
 def _validate_version(version: str) -> None:
@@ -379,7 +396,15 @@ def ensure_binary(
 
     try:
         # Download to a temp file; rename only after checksum passes.
-        _download(asset_url(version, archive_name), partial)
+        try:
+            _download(asset_url(version, archive_name), partial)
+        except urllib.error.HTTPError as exc:
+            # A 404 means the release tag exists but ships no bundle for this
+            # version (or the tag does not exist). Surface actionable guidance
+            # instead of an opaque HTTP error.
+            if exc.code == 404:
+                raise RuntimeError(_no_bundle_message(version)) from exc
+            raise
 
         # Download and verify SHA-256 (fail-closed on missing/empty checksum).
         _download(asset_url(version, f"{archive_name}.sha256"), sha_file)

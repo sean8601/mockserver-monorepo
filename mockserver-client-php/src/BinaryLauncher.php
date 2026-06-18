@@ -237,7 +237,17 @@ class BinaryLauncher
             // so an interrupted download never leaves a truncated archive.
             $url = self::assetUrl($this->version, $archiveFile);
             $this->log("Downloading {$url}");
-            $this->downloadFile($url, $partial);
+            try {
+                $this->downloadFile($url, $partial);
+            } catch (BinaryInstallException $e) {
+                // A 404 means the release tag exists but ships no bundle for this
+                // version (or the tag does not exist). Surface actionable guidance
+                // instead of an opaque HTTP error.
+                if ($e->getCode() === 404) {
+                    throw new BinaryInstallException(self::noBundleMessage($this->version));
+                }
+                throw $e;
+            }
 
             // Verify the published SHA-256 — fail closed on missing/empty/unparseable checksum
             $shaUrl = self::assetUrl($this->version, $archiveFile . '.sha256');
@@ -505,6 +515,22 @@ class BinaryLauncher
     // -----------------------------------------------------------------
 
     /**
+     * Build a clear, actionable error message for a missing release bundle.
+     *
+     * Explains that no downloadable bundle exists for the version and lists the
+     * concrete alternatives. The wording is kept consistent across all client
+     * languages.
+     */
+    private static function noBundleMessage(string $version): string
+    {
+        return "no MockServer release bundle is published for version {$version} "
+            . "(no downloadable asset at the GitHub release tag 'mockserver-{$version}'). "
+            . 'Use a MockServer version that ships self-contained bundles, '
+            . "or run MockServer via Docker (docker run mockserver/mockserver:mockserver-{$version}), "
+            . "or use the Maven Central jar (org.mock-server:mockserver-netty:{$version}).";
+    }
+
+    /**
      * Validate that a version string is safe (no path traversal, strict semver-ish pattern).
      *
      * @throws BinaryInstallException If the version is invalid
@@ -608,7 +634,13 @@ class BinaryLauncher
         if ($source === false) {
             // $http_response_header is set if the connection succeeded but returned an error status
             $status = isset($http_response_header[0]) ? $http_response_header[0] : '(connection failed)';
-            throw new BinaryInstallException("Failed to download {$url}: {$status}");
+            // Pass the HTTP status code (if any) as the exception code so callers
+            // can distinguish a 404 (no bundle published) from other errors.
+            $code = 0;
+            if (isset($http_response_header[0]) && preg_match('/\s([4-5]\d{2})\s/', $http_response_header[0], $m)) {
+                $code = (int) $m[1];
+            }
+            throw new BinaryInstallException("Failed to download {$url}: {$status}", $code);
         }
 
         // Check HTTP status code even on successful fopen (some configurations may not fail on 4xx/5xx)
@@ -616,7 +648,12 @@ class BinaryLauncher
             $statusLine = $http_response_header[0];
             if (preg_match('/\s([4-5]\d{2})\s/', $statusLine, $m)) {
                 fclose($source);
-                throw new BinaryInstallException("Failed to download {$url}: {$statusLine}");
+                // Pass the HTTP status code as the exception code so callers can
+                // distinguish a 404 (no bundle published) from other errors.
+                throw new BinaryInstallException(
+                    "Failed to download {$url}: {$statusLine}",
+                    (int) $m[1]
+                );
             }
         }
 

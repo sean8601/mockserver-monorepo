@@ -287,6 +287,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   placeholders while loading instead of a bare spinner. Server error messages shown in the UI are now
   humanised (a short, actionable message with the raw server detail tucked behind a "Details" toggle)
   instead of dumping raw server output.
+- **Clearer error when a client's binary launcher finds no release bundle**: the Go, Node, Python, Ruby,
+  Rust and PHP clients' auto-download launchers now detect an HTTP 404 on the MockServer release bundle and
+  fail with an actionable message — naming the requested version and pointing to a version that ships
+  bundles, the Docker image (`mockserver/mockserver:mockserver-<version>`), or the Maven Central jar —
+  instead of a raw 404 or a corrupt download. (Some release tags ship no self-contained bundle; previously
+  every launcher hard-404'd with no guidance.)
 - JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a
   security hardening against SSRF / unexpected network fetches. Schemas using only internal/inline refs are
   unaffected; set `-Dmockserver.jsonSchemaAllowRemoteRefs=true` to restore remote resolution.

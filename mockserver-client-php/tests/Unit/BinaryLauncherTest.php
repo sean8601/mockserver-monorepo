@@ -291,6 +291,32 @@ class BinaryLauncherTest extends TestCase
         $launcher->ensureBinary();
     }
 
+    public function testMissingReleaseBundle404GivesActionableError(): void
+    {
+        $cacheDir = $this->tmpDir . DIRECTORY_SEPARATOR . 'no-bundle';
+        $this->setEnv('MOCKSERVER_BINARY_CACHE', $cacheDir);
+
+        // A launcher whose archive download fails with HTTP 404, simulating a
+        // release tag that ships no bundle for this version.
+        $launcher = new class ('9.9.9') extends BinaryLauncher {
+            protected function downloadFile(string $url, string $dest): void
+            {
+                throw new BinaryInstallException("Failed to download {$url}: HTTP/1.1 404 Not Found", 404);
+            }
+        };
+
+        try {
+            $launcher->ensureBinary();
+            $this->fail('expected a BinaryInstallException for a missing release bundle');
+        } catch (BinaryInstallException $e) {
+            $msg = $e->getMessage();
+            $this->assertStringContainsString('9.9.9', $msg);
+            $this->assertStringContainsString('no MockServer release bundle', $msg);
+            $this->assertStringContainsString('docker run mockserver/mockserver:mockserver-9.9.9', $msg);
+            $this->assertStringContainsString('org.mock-server:mockserver-netty:9.9.9', $msg);
+        }
+    }
+
     public function testSha256ParsesHashFromHashFilenameFormat(): void
     {
         $cacheDir = $this->tmpDir . DIRECTORY_SEPARATOR . 'sha-format';

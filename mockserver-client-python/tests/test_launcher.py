@@ -356,6 +356,34 @@ class TestChecksumVerification:
                 ensure_binary("9.9.9", log=False)
 
 
+class TestMissingBundle:
+    """A 404 on the archive download yields a clear, actionable error."""
+
+    def test_404_raises_actionable_error(self, tmp_path: Path):
+        import urllib.error
+
+        from mockserver import launcher as lmod
+
+        def fake_download(url: str, dest: Path) -> None:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)  # type: ignore[arg-type]
+
+        cache = tmp_path / "cache"
+        env = {
+            "MOCKSERVER_BINARY_CACHE": str(cache),
+            "MOCKSERVER_BINARY_BASE_URL": "https://example.invalid",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop("MOCKSERVER_SKIP_BINARY_DOWNLOAD", None)
+            with mock.patch.object(lmod, "_download", side_effect=fake_download):
+                with pytest.raises(RuntimeError) as exc_info:
+                    ensure_binary("9.9.9", log=False)
+        msg = str(exc_info.value)
+        assert "9.9.9" in msg
+        assert "no MockServer release bundle" in msg
+        assert "docker run mockserver/mockserver:mockserver-9.9.9" in msg
+        assert "org.mock-server:mockserver-netty:9.9.9" in msg
+
+
 # ---------------------------------------------------------------------------
 # MOCKSERVER_SKIP_BINARY_DOWNLOAD
 # ---------------------------------------------------------------------------

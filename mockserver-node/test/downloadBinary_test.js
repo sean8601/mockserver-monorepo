@@ -336,6 +336,50 @@ test('ensureBinary succeeds with correct SHA-256 checksum', async function () {
 });
 
 // ================================================================
+// 7b. Missing release bundle (HTTP 404) — clear, actionable error
+// ================================================================
+
+test('ensureBinary gives an actionable error when no bundle exists (HTTP 404)', async function () {
+  var http = require('http');
+  var tmp = makeTempDir('ms-404-');
+  var cacheBase = path.join(tmp.base, 'cache');
+
+  // Local server that 404s every asset (simulates a release tag with no bundle).
+  var server = http.createServer(function (req, res) { res.statusCode = 404; res.end('Not Found'); });
+  await new Promise(function (resolve) { server.listen(0, '127.0.0.1', resolve); });
+  var addr = server.address();
+
+  var prevBase = process.env.MOCKSERVER_BINARY_BASE_URL;
+  var prevCache = process.env.MOCKSERVER_BINARY_CACHE;
+  var prevSkip = process.env.MOCKSERVER_SKIP_BINARY_DOWNLOAD;
+  try {
+    process.env.MOCKSERVER_BINARY_BASE_URL = 'http://127.0.0.1:' + addr.port + '/mockserver-9.9.9';
+    process.env.MOCKSERVER_BINARY_CACHE = cacheBase;
+    delete process.env.MOCKSERVER_SKIP_BINARY_DOWNLOAD;
+
+    await assert.rejects(
+      binary.ensureBinary('9.9.9'),
+      function (err) {
+        var m = err.message;
+        return m.indexOf('9.9.9') !== -1 &&
+          m.indexOf('no MockServer release bundle') !== -1 &&
+          m.indexOf('docker run mockserver/mockserver:mockserver-9.9.9') !== -1 &&
+          m.indexOf('org.mock-server:mockserver-netty:9.9.9') !== -1;
+      }
+    );
+  } finally {
+    await new Promise(function (resolve) { server.close(resolve); });
+    if (prevBase === undefined) { delete process.env.MOCKSERVER_BINARY_BASE_URL; }
+    else { process.env.MOCKSERVER_BINARY_BASE_URL = prevBase; }
+    if (prevCache === undefined) { delete process.env.MOCKSERVER_BINARY_CACHE; }
+    else { process.env.MOCKSERVER_BINARY_CACHE = prevCache; }
+    if (prevSkip === undefined) { delete process.env.MOCKSERVER_SKIP_BINARY_DOWNLOAD; }
+    else { process.env.MOCKSERVER_SKIP_BINARY_DOWNLOAD = prevSkip; }
+    tmp.cleanup();
+  }
+});
+
+// ================================================================
 // 8. SHA-256 verification — checksum mismatch fails (H2)
 // ================================================================
 
