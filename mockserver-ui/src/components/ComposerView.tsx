@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
@@ -9,6 +9,8 @@ import Radio from '@mui/material/Radio';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
+import Link from '@mui/material/Link';
 import MenuItem from '@mui/material/MenuItem';
 import Divider from '@mui/material/Divider';
 import Snackbar from '@mui/material/Snackbar';
@@ -16,7 +18,11 @@ import Switch from '@mui/material/Switch';
 import Checkbox from '@mui/material/Checkbox';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import DeleteIcon from '@mui/icons-material/Delete';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import List from '@mui/material/List';
@@ -24,6 +30,7 @@ import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useDashboardStore } from '../store';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
 import type { JsonListItem } from '../types';
 import { listConversationScenarios } from '../lib/conversationCodegen';
 import { buildBaseUrl } from '../lib/mcpClient';
@@ -378,6 +385,33 @@ function isValidBase64(raw: string): boolean {
   return s.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(s);
 }
 
+/**
+ * A small "i" info adornment that reveals a plain-language explanation on hover.
+ * Used to demystify the worst jargon in the form (Times, TTL, Priority, JSON
+ * match type, `!` negation) without cluttering every label with prose.
+ */
+function InfoTip({ text }: { text: string }) {
+  return (
+    <Tooltip title={text} arrow>
+      <InfoOutlinedIcon
+        fontSize="inherit"
+        sx={{ fontSize: '0.95rem', color: 'text.secondary', cursor: 'help', verticalAlign: 'middle' }}
+      />
+    </Tooltip>
+  );
+}
+
+/** End-adornment variant of {@link InfoTip} for use inside a TextField. */
+function infoAdornment(text: string) {
+  return {
+    endAdornment: (
+      <InputAdornment position="end">
+        <InfoTip text={text} />
+      </InputAdornment>
+    ),
+  };
+}
+
 function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatcher: (m: MatcherState) => void }) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -414,8 +448,9 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           placeholder="/foo/bar  ·  prefix with ! to negate"
         />
       </Box>
-      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', mt: -1 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', mt: -1, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
         Prefix any string field or any line below with <code>!</code> to negate the match.
+        <InfoTip text="A leading ! means &quot;must NOT match this value&quot;. e.g. path !/admin matches every path except /admin; header !Authorization: … matches requests that do not carry that header." />
       </Typography>
       <Box sx={{ display: 'flex', gap: 1 }}>
         <TextField
@@ -596,7 +631,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           </Box>
         )}
         {matcher.bodyMatcherType === 'json' && (
-          <Box sx={{ mt: 1 }}>
+          <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 0.75 }}>
             <TextField
               label="JSON match type"
               size="small"
@@ -610,6 +645,7 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
               <MenuItem value="ONLY_MATCHING_FIELDS">Only matching fields (default)</MenuItem>
               <MenuItem value="STRICT">Strict (all fields must match)</MenuItem>
             </TextField>
+            <InfoTip text="Only matching fields: the request must contain the fields you list (extra fields are ignored) — best for partial matches. Strict: the request body must match exactly, with no extra or missing fields." />
           </Box>
         )}
         {matcher.bodyMatcherType === 'string' && (
@@ -642,25 +678,28 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
           label="Priority (higher = wins)"
           size="small"
           type="number"
-          sx={{ width: 200 }}
+          sx={{ width: 230 }}
           value={matcher.priority}
           onChange={(e) => setMatcher({ ...matcher, priority: Number(e.target.value) || 0 })}
+          slotProps={{ input: infoAdornment('When several mocks match the same request, the one with the highest priority wins. Leave at 0 unless you need to override a more general mock.') }}
         />
         <TextField
           label="Times (0 = unlimited)"
           size="small"
           type="number"
-          sx={{ width: 170 }}
+          sx={{ width: 200 }}
           value={matcher.times}
           onChange={(e) => setMatcher({ ...matcher, times: Math.max(0, Number(e.target.value) || 0) })}
+          slotProps={{ input: infoAdornment('How many times this mock will respond before it stops matching. 0 means unlimited — it responds to every matching request.') }}
         />
         <TextField
           label="Time to live (s, 0 = forever)"
           size="small"
           type="number"
-          sx={{ width: 200 }}
+          sx={{ width: 230 }}
           value={matcher.ttlSeconds}
           onChange={(e) => setMatcher({ ...matcher, ttlSeconds: Math.max(0, Number(e.target.value) || 0) })}
+          slotProps={{ input: infoAdornment('The mock auto-expires this many seconds after it is registered. 0 means it never expires.') }}
         />
       </Box>
     </Box>
@@ -739,25 +778,28 @@ function DnsMatcherPanel({
           label="Priority (higher = wins)"
           size="small"
           type="number"
-          sx={{ width: 200 }}
+          sx={{ width: 230 }}
           value={matcher.priority}
           onChange={(e) => setMatcher({ ...matcher, priority: Number(e.target.value) || 0 })}
+          slotProps={{ input: infoAdornment('When several mocks match the same request, the one with the highest priority wins. Leave at 0 unless you need to override a more general mock.') }}
         />
         <TextField
           label="Times (0 = unlimited)"
           size="small"
           type="number"
-          sx={{ width: 170 }}
+          sx={{ width: 200 }}
           value={matcher.times}
           onChange={(e) => setMatcher({ ...matcher, times: Math.max(0, Number(e.target.value) || 0) })}
+          slotProps={{ input: infoAdornment('How many times this mock will respond before it stops matching. 0 means unlimited — it responds to every matching request.') }}
         />
         <TextField
           label="Time to live (s, 0 = forever)"
           size="small"
           type="number"
-          sx={{ width: 200 }}
+          sx={{ width: 230 }}
           value={matcher.ttlSeconds}
           onChange={(e) => setMatcher({ ...matcher, ttlSeconds: Math.max(0, Number(e.target.value) || 0) })}
+          slotProps={{ input: infoAdornment('The mock auto-expires this many seconds after it is registered. 0 means it never expires.') }}
         />
       </Box>
     </Box>
@@ -3298,6 +3340,132 @@ function ExistingMocksList({
 }
 
 // ---------------------------------------------------------------------------
+// Quick mock form — the 90%-case minimal HTTP static mock. Binds to the SAME
+// `matcher` and `staticState` the advanced form uses, so switching modes never
+// loses work. Shows only: method + path, and response status + content-type +
+// body. All advanced machinery (headers, body match types, priority/times/TTL,
+// chaos, side-effects, steps, capture, non-static actions) stays in Advanced.
+// ---------------------------------------------------------------------------
+
+interface QuickMockFormProps {
+  matcher: MatcherState;
+  setMatcher: (m: MatcherState) => void;
+  staticState: StaticState;
+  setStaticState: (s: StaticState) => void;
+  registering: boolean;
+  editingExisting: boolean;
+  onRegister: () => void;
+  onSwitchToAdvanced: () => void;
+}
+
+function QuickMockForm({
+  matcher,
+  setMatcher,
+  staticState,
+  setStaticState,
+  registering,
+  editingExisting,
+  onRegister,
+  onSwitchToAdvanced,
+}: QuickMockFormProps) {
+  const disabledReason =
+    matcher.path.trim().length === 0 ? 'Enter a request path to match' : null;
+  return (
+    <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }} data-testid="quick-mock-form">
+      <Box>
+        <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+          1 · When this request arrives
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField
+            label="Method"
+            size="small"
+            select
+            value={matcher.method}
+            onChange={(e) => setMatcher({ ...matcher, method: e.target.value })}
+            sx={{ minWidth: 110 }}
+          >
+            {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY'].map((m) => (
+              <MenuItem key={m} value={m === 'ANY' ? '' : m}>{m}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            label="Path"
+            size="small"
+            sx={{ flex: 1, minWidth: 200 }}
+            value={matcher.path}
+            onChange={(e) => setMatcher({ ...matcher, path: e.target.value })}
+            placeholder="/foo/bar"
+          />
+        </Box>
+      </Box>
+
+      <Box>
+        <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+          2 · Respond with
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
+          <TextField
+            label="Status code"
+            size="small"
+            type="number"
+            sx={{ width: 140 }}
+            value={staticState.statusCode}
+            onChange={(e) => setStaticState({ ...staticState, statusCode: Number(e.target.value) || 0 })}
+          />
+          <TextField
+            label="Content-Type"
+            size="small"
+            sx={{ flex: 1, minWidth: 200 }}
+            value={staticState.contentType}
+            onChange={(e) => setStaticState({ ...staticState, contentType: e.target.value })}
+            placeholder="application/json"
+          />
+        </Box>
+        <TextField
+          label="Response body"
+          fullWidth
+          multiline
+          minRows={3}
+          maxRows={12}
+          value={staticState.body}
+          onChange={(e) => setStaticState({ ...staticState, body: e.target.value })}
+          placeholder={'{"hello":"world"}'}
+          disabled={staticState.bodyFromFile}
+          helperText={staticState.bodyFromFile ? 'This mock serves its body from a file — switch to Advanced to edit that.' : undefined}
+          slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
+        />
+      </Box>
+
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Tooltip title={!registering && disabledReason ? disabledReason : ''}>
+          <span>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={onRegister}
+              disabled={registering || disabledReason !== null}
+            >
+              {registering
+                ? 'Registering…'
+                : editingExisting
+                  ? 'Update mock'
+                  : 'Register mock'}
+            </Button>
+          </span>
+        </Tooltip>
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+          Need headers, matchers, forwarding, fault injection, or other response types?{' '}
+          <Link component="button" type="button" underline="hover" onClick={onSwitchToAdvanced} sx={{ fontSize: '0.7rem' }}>
+            Switch to Advanced
+          </Link>.
+        </Typography>
+      </Box>
+    </Paper>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main view
 // ---------------------------------------------------------------------------
 
@@ -3305,8 +3473,33 @@ export interface ComposerViewProps {
   connectionParams: ConnectionParams;
 }
 
+/**
+ * Form complexity mode. 'quick' shows only the 90%-case fields (HTTP static
+ * mock: method + path + status + body + content-type); 'advanced' reveals the
+ * full machinery. Persisted within the browser session so the choice survives
+ * navigating away and back. Defaults to 'quick' for a fresh form.
+ */
+type ComposerMode = 'quick' | 'advanced';
+
+const MODE_STORAGE_KEY = 'mockserver-composer-mode';
+
+function getInitialMode(): ComposerMode {
+  try {
+    const stored = globalThis.sessionStorage?.getItem(MODE_STORAGE_KEY);
+    if (stored === 'quick' || stored === 'advanced') return stored;
+  } catch {
+    // sessionStorage may be unavailable in test/SSR environments
+  }
+  return 'quick';
+}
+
 export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const activeExpectations = useDashboardStore((s) => s.activeExpectations);
+  const pendingEditExpectation = useDashboardStore((s) => s.pendingEditExpectation);
+  const clearPendingEditExpectation = useDashboardStore((s) => s.clearPendingEditExpectation);
+  const setView = useDashboardStore((s) => s.setView);
+
+  const [mode, setMode] = useState<ComposerMode>(getInitialMode);
 
   const [kind, setKind] = useState<ExpectationKind>('standard');
   const [actionType, setActionType] = useState<ActionType>('static');
@@ -3420,8 +3613,14 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [captureRules, setCaptureRules] = useState<StandardCaptureRule[]>([]);
 
   const [registering, setRegistering] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Humanised register error (short message + raw details behind an expander).
+  const [error, setError] = useState<HumanError | null>(null);
+  const [errorDetailsOpen, setErrorDetailsOpen] = useState(false);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
+  // After a successful register, an inline next-step banner offers "View on
+  // dashboard" / "Add another" so the user does not accidentally re-register the
+  // still-populated form. Holds the label of the just-registered mock.
+  const [registeredLabel, setRegisteredLabel] = useState<string | null>(null);
 
   const selectedMeta = useMemo(
     () => ACTION_TYPES.find((a) => a.value === actionType)!,
@@ -3449,12 +3648,18 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       const m = effectiveMatcher ?? matcher;
       setRegistering(true);
       setError(null);
+      setErrorDetailsOpen(false);
+      setRegisteredLabel(null);
       try {
         await registerExpectation(connectionParams, m, action);
         const label = m.dns ? m.dns.dnsName : `${m.method || 'ANY'} ${m.path}`;
         setSnackMessage(`Registered ${label}`);
+        // Surface a persistent next-step banner (the snackbar auto-hides).
+        setRegisteredLabel(label);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        // Route the raw `MockServer returned <status>: <body>` throw through the
+        // shared humaniser: short message inline, raw text behind "Details".
+        setError(humanizeError(e));
       } finally {
         setRegistering(false);
       }
@@ -3556,6 +3761,103 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
     [activeExpectations],
   );
 
+  // Reset the whole form to a blank HTTP static mock. Shared by the
+  // "New / clear" button and the success banner's "Add another" action so a
+  // successful register can be followed by a fresh form without the user
+  // re-registering the still-populated one.
+  const resetForm = useCallback(() => {
+    setLoadFromKey('');
+    setMatcher(emptyMatcher());
+    setDnsMatcher({ dnsName: '', dnsType: '', dnsClass: '' });
+    setChaosEnabled(false);
+    setChaosState({});
+    setSideEffectsEnabled(false);
+    setSideEffects([]);
+    setStepsEnabled(false);
+    setStepsState([]);
+    setCaptureEnabled(false);
+    setCaptureRules([]);
+    setError(null);
+    setRegisteredLabel(null);
+  }, []);
+
+  // Persist the Quick/Advanced choice within the browser session so it survives
+  // navigating away and back (cheap, non-destructive).
+  useEffect(() => {
+    try {
+      globalThis.sessionStorage?.setItem(MODE_STORAGE_KEY, mode);
+    } catch {
+      // sessionStorage may be unavailable — the choice simply isn't persisted.
+    }
+  }, [mode]);
+
+  // Edit hand-off from the dashboard's Active Expectations "Edit" action. When a
+  // pendingEditExpectation appears, load it into the form, switch to ADVANCED so
+  // nothing is hidden, then consume the hand-off (clear it) so it only fires once.
+  useEffect(() => {
+    if (!pendingEditExpectation) return;
+    const value = pendingEditExpectation;
+    const key = typeof value['id'] === 'string' && (value['id'] as string).length > 0
+      ? (value['id'] as string)
+      : '__pending_edit__';
+    // Reuse the same load path the existing-mocks picker uses by wrapping the
+    // raw value into a JsonListItem. handleLoadExisting looks the item up in
+    // activeExpectations by key, so when the hand-off isn't already in the live
+    // list (e.g. a just-captured request) we fall back to loading it directly.
+    const inList = activeExpectations.find((e) => e.key === key || e.value['id'] === value['id']);
+    // Consuming a one-shot hand-off from the Zustand store IS the legitimate
+    // "sync React state from an external system" case the rule exempts; the
+    // effect clears the signal at the end so it runs exactly once per hand-off.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMode('advanced');
+    if (inList) {
+      handleLoadExisting(inList.key);
+    } else {
+      const item: JsonListItem = { key, value };
+      setMatcher(matcherFromExpectation(item));
+      const prefill = actionFromExpectation(item);
+      if (prefill) {
+        const inferredKind = kindForActionType(prefill.type);
+        setKind(inferredKind);
+        setActionType(prefill.type);
+        if (prefill.staticState) setStaticState(prefill.staticState);
+        if (prefill.forwardState) setForwardState(prefill.forwardState);
+        if (prefill.forwardOverrideState) setForwardOverrideState(prefill.forwardOverrideState);
+        if (prefill.forwardFallbackState) setForwardFallbackState(prefill.forwardFallbackState);
+        if (prefill.callbackState) setCallbackState(prefill.callbackState);
+        if (prefill.templateState) setTemplateState(prefill.templateState);
+        if (prefill.errorState) setErrorState(prefill.errorState);
+        if (prefill.websocketState) setWebsocketState(prefill.websocketState);
+        if (prefill.sseState) setSseState(prefill.sseState);
+        if (prefill.binaryResponseState) setBinaryResponseState(prefill.binaryResponseState);
+        if (prefill.dnsResponseState) setDnsResponseState(prefill.dnsResponseState);
+        if (prefill.forwardTemplateState) setForwardTemplateState(prefill.forwardTemplateState);
+        if (prefill.forwardClassCallbackState) setForwardClassCallbackState(prefill.forwardClassCallbackState);
+        if (prefill.grpcStreamState) setGrpcStreamState(prefill.grpcStreamState);
+        const req = (value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
+        if (typeof req['dnsName'] === 'string') {
+          const validTypes: string[] = ['A', 'AAAA', 'CNAME', 'MX', 'SRV', 'TXT', 'PTR'];
+          const validClasses: string[] = ['IN', 'CH', 'HS', 'ANY'];
+          setDnsMatcher({
+            dnsName: req['dnsName'] as string,
+            dnsType: validTypes.includes(req['dnsType'] as string) ? (req['dnsType'] as DnsRecordType) : '',
+            dnsClass: validClasses.includes(req['dnsClass'] as string) ? (req['dnsClass'] as DnsRecordClass) : '',
+          });
+        }
+        const existingChaos = chaosFromExpectation(value);
+        if (existingChaos) { setChaosEnabled(true); setChaosState(existingChaos); }
+        const existingSideEffects = sideEffectsFromExpectation(value);
+        if (existingSideEffects) { setSideEffectsEnabled(true); setSideEffects(existingSideEffects); }
+        const existingSteps = stepsFromExpectation(value);
+        if (existingSteps) { setStepsEnabled(true); setStepsState(existingSteps); setSideEffectsEnabled(false); setSideEffects([]); }
+        const existingCapture = captureFromExpectation(value);
+        if (existingCapture) { setCaptureEnabled(true); setCaptureRules(existingCapture); }
+      }
+    }
+    // Consume the hand-off so re-renders don't reload it.
+    clearPendingEditExpectation();
+  }, [pendingEditExpectation, activeExpectations, handleLoadExisting, clearPendingEditExpectation]);
+
   // Standard kind picker only lists expectations that AREN'T LLM
   // Conversation scenarios — those have their own picker on the
   // LLM-conversation kind below.
@@ -3572,11 +3874,51 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   return (
     <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
       <Box sx={{ maxWidth: 920, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>
-          Mocks
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+          <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>
+            Mocks
+          </Typography>
+          {/* Quick vs Advanced mode. Quick shows only the 90%-case fields for a
+              simple HTTP mock; Advanced reveals every option. */}
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={mode}
+            onChange={(_e, next: ComposerMode | null) => {
+              if (!next || next === mode) return;
+              if (next === 'quick') {
+                // Quick mode only authors a plain HTTP static mock, so force the
+                // kind / action back to that shape. The matcher + staticState
+                // values are preserved, so nothing the user typed is lost.
+                setKind('standard');
+                setActionType('static');
+              }
+              setMode(next);
+            }}
+            aria-label="Form complexity"
+            sx={{ '& .MuiToggleButton-root': { textTransform: 'none', px: 1.5, py: 0.25, fontSize: '0.78rem' } }}
+          >
+            <ToggleButton value="quick" aria-label="Quick mock">Quick mock</ToggleButton>
+            <ToggleButton value="advanced" aria-label="Advanced">Advanced</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
 
-        {/* Top-level kind selector — each kind has a different form path. */}
+        {mode === 'quick' && (
+          <QuickMockForm
+            matcher={matcher}
+            setMatcher={setMatcher}
+            staticState={staticState}
+            setStaticState={setStaticState}
+            registering={registering}
+            editingExisting={matcher.id.trim().length > 0}
+            onRegister={() => void handleRegister({ type: 'static', static: staticState }, matcher)}
+            onSwitchToAdvanced={() => setMode('advanced')}
+          />
+        )}
+
+        {/* Top-level kind selector — each kind has a different form path.
+            Hidden in Quick mode (Quick is always an HTTP static mock). */}
+        {mode === 'advanced' && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Typography variant="subtitle2" sx={{ fontSize: '0.78rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
             Expectation kind
@@ -3647,30 +3989,19 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
             />
           </RadioGroup>
         </Paper>
+        )}
 
-        {(kind === 'standard' || kind === 'grpc' || kind === 'mcp' || kind === 'dns') && (
+        {mode === 'advanced' && (kind === 'standard' || kind === 'grpc' || kind === 'mcp' || kind === 'dns') && (
           <ExistingMocksList
             kind={kind}
             expectations={standardExpectations}
             selectedKey={loadFromKey}
             onSelect={handleLoadExisting}
-            onClear={() => {
-              setLoadFromKey('');
-              setMatcher(emptyMatcher());
-              setDnsMatcher({ dnsName: '', dnsType: '', dnsClass: '' });
-              setChaosEnabled(false);
-              setChaosState({});
-              setSideEffectsEnabled(false);
-              setSideEffects([]);
-              setStepsEnabled(false);
-              setStepsState([]);
-              setCaptureEnabled(false);
-              setCaptureRules([]);
-            }}
+            onClear={resetForm}
           />
         )}
 
-        {kind === 'llm_conversation' && (
+        {mode === 'advanced' && kind === 'llm_conversation' && (
           <>
             <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="existing-mocks-list">
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
@@ -3759,11 +4090,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
           </>
         )}
 
-        {kind === 'import' && (
+        {mode === 'advanced' && kind === 'import' && (
           <ImportForm connectionParams={connectionParams} />
         )}
 
-        {(kind === 'standard' || kind === 'grpc' || kind === 'mcp' || kind === 'dns') && (
+        {mode === 'advanced' && (kind === 'standard' || kind === 'grpc' || kind === 'mcp' || kind === 'dns') && (
           <>
             {kind === 'grpc' && (
               <Alert severity="info" variant="outlined" sx={{ fontSize: '0.78rem' }}>
@@ -4219,8 +4550,81 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
           </>
         )}
 
+        {/* Success next-step — offer a clear action so the still-populated form
+            isn't accidentally re-registered. Persists until dismissed. */}
+        {registeredLabel && (
+          <Alert
+            severity="success"
+            variant="outlined"
+            data-testid="register-success"
+            onClose={() => setRegisteredLabel(null)}
+          >
+            <AlertTitle sx={{ fontSize: '0.82rem', mb: 0.5 }}>Mock registered</AlertTitle>
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', mb: 1 }}>
+              <code>{registeredLabel}</code> is now live. What next?
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                size="small"
+                variant="contained"
+                color="success"
+                onClick={() => {
+                  setRegisteredLabel(null);
+                  setView('dashboard');
+                }}
+              >
+                View on dashboard
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="success"
+                onClick={resetForm}
+              >
+                Add another
+              </Button>
+            </Box>
+          </Alert>
+        )}
+
+        {/* Humanised register error: short message inline, raw server text behind
+            a "Details" expander. */}
         {error && (
-          <Alert severity="error" variant="outlined">{error}</Alert>
+          <Alert
+            severity="error"
+            variant="outlined"
+            data-testid="register-error"
+            action={
+              error.details ? (
+                <Button color="inherit" size="small" onClick={() => setErrorDetailsOpen((o) => !o)}>
+                  {errorDetailsOpen ? 'Hide details' : 'Details'}
+                </Button>
+              ) : undefined
+            }
+          >
+            {error.message}
+            {error.details && (
+              <Collapse in={errorDetailsOpen} unmountOnExit>
+                <Box
+                  component="pre"
+                  sx={{
+                    mt: 1,
+                    p: 1,
+                    fontSize: '0.72rem',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    bgcolor: 'action.hover',
+                    borderRadius: 1,
+                    maxHeight: 240,
+                    overflow: 'auto',
+                  }}
+                >
+                  {error.details}
+                </Box>
+              </Collapse>
+            )}
+          </Alert>
         )}
       </Box>
       <Snackbar
