@@ -576,63 +576,20 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
 
     @SuppressWarnings("unchecked")
     private boolean bodyMatches(Compiled compiled, BodyMatcher bodyMatcher, MatchDifference context, HttpRequest request) {
-        boolean bodyMatches;
-        HttpRequest httpRequest = compiled.httpRequest;
-        if (httpRequest.getBody().getOptional() != null && httpRequest.getBody().getOptional() && request.getBody() == null) {
-            bodyMatches = true;
-        } else if (bodyMatcher instanceof MultipartMatcher) {
-            // multipart/form-data field-level matcher: needs both the raw body bytes and the
-            // Content-Type header (which carries the boundary) to decode the parts
-            bodyMatches = matches(BODY, context, bodyMatcher, new MultipartMatcher.MultipartInput(
-                request.getFirstHeader("Content-Type"),
-                request.getBodyAsRawBytes()
-            ));
-        } else if (bodyMatcher instanceof BinaryMatcher) {
-            if (request.getOriginalBody() != null) {
-                // the request was compressed: a binary matcher may target either the decompressed body or
-                // the original compressed bytes, so accept a match against either representation
-                bodyMatches = matches(BODY, null, bodyMatcher, request.getBodyAsRawBytes())
-                    || matches(BODY, null, bodyMatcher, request.getOriginalBody());
-                if (!bodyMatches && context != null) {
-                    // record the difference against the primary (decompressed) representation
-                    matches(BODY, context, bodyMatcher, request.getBodyAsRawBytes());
-                }
-            } else {
-                bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsRawBytes());
-            }
-        } else {
-            if (bodyMatcher instanceof ExactStringMatcher ||
-                bodyMatcher instanceof SubStringMatcher ||
-                bodyMatcher instanceof RegexStringMatcher) {
-                // string body matcher
-                bodyMatches = matches(BODY, context, bodyMatcher, string(request.getBodyAsString()));
-            } else if (bodyMatcher instanceof XmlStringMatcher ||
-                bodyMatcher instanceof XmlSchemaMatcher
-            ) {
-                // xml body matcher
-                bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsString());
-            } else if (bodyMatcher instanceof JsonRpcMatcher) {
-                bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsString());
-            } else if (bodyMatcher instanceof GraphQLMatcher) {
-                bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsString());
-            } else if (bodyMatcher instanceof JsonStringMatcher ||
-                bodyMatcher instanceof JsonSchemaMatcher ||
-                bodyMatcher instanceof JsonPathMatcher
-            ) {
-                // json body matcher
-                try {
-                    bodyMatches = matches(BODY, context, bodyMatcher, compiled.jsonSchemaBodyParser.convertToJson(request, bodyMatcher));
-                } catch (IllegalArgumentException iae) {
-                    if (context != null) {
-                        context.addDifference(mockServerLogger, iae, iae.getMessage());
-                    }
-                    bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsString());
-                }
-            } else {
-                bodyMatches = matches(BODY, context, bodyMatcher, request.getBodyAsString());
-            }
-        }
-        return bodyMatches;
+        // Delegate to the shared body-dispatch so request and response body matching stay in lock
+        // step. The optional-body short-circuit there models "no actual body" as
+        // getBodyAsString() == null, which is exactly request.getBody() == null for a request (an
+        // empty-but-present body returns "" not null), so behaviour is identical to the previous
+        // inline implementation — including the multipart, binary original/compressed and
+        // JSON/XML/GraphQL/JsonRpc dispatch and the MatchDifference context population.
+        return BodyMatching.bodyMatches(
+            bodyMatcher,
+            compiled.httpRequest.getBody().getOptional(),
+            BodyMatching.of(request),
+            context,
+            compiled.jsonSchemaBodyParser,
+            mockServerLogger
+        );
     }
 
     private <T> boolean matches(MatchDifference.Field field, MatchDifference context, Matcher<T> matcher, T t) {

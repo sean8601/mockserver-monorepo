@@ -1,17 +1,25 @@
 package org.mockserver.matchers;
 
 import org.junit.Test;
+import org.mockserver.codec.JsonSchemaBodyDecoder;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Header;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.MultipartBody;
+import org.mockserver.model.Parameter;
+
+import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.model.BinaryBody.binary;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.JsonBody.json;
+import static org.mockserver.model.JsonPathBody.jsonPath;
 import static org.mockserver.model.StringBody.exact;
+import static org.mockserver.model.XmlBody.xml;
 
 /**
  * Tests for {@link HttpResponseMatcher}.
@@ -157,5 +165,157 @@ public class HttpResponseMatcherTest {
                 .withHeaders(new Header("X-Any", "value"))
                 .withBody("any body content")),
             is(true));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Parity with request body matching: the shared BodyMatching dispatch gives a response body
+    // matcher the JSON/XML/form conversion, optional-body short-circuit, multipart decode, binary
+    // dual-match and null-safety that the request body matcher already had.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldMatchJsonMatcherAgainstXmlResponseBodyViaConversion() {
+        // a JSON matcher against an XML actual response body: the actual XML is converted to JSON
+        // (driven by the Content-Type header) before matching — request-side behaviour, now on
+        // responses
+        // root element wraps the field so the XML converts to a JSON object {"name":"value"}
+        // (a bare <name>value</name> would convert to the scalar string "value")
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(json("{ \"name\": \"value\" }")));
+        assertThat(matcher.matches(
+            response()
+                .withHeaders(new Header("Content-Type", "application/xml"))
+                .withBody("<root><name>value</name></root>")), is(true));
+        assertThat(matcher.matches(
+            response()
+                .withHeaders(new Header("Content-Type", "application/xml"))
+                .withBody("<root><name>other</name></root>")), is(false));
+    }
+
+    @Test
+    public void shouldMatchJsonMatcherAgainstFormResponseBodyViaConversion() {
+        // a JSON matcher against an application/x-www-form-urlencoded actual response body: the form
+        // body is converted to a JSON object before matching
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(json("{ \"name\": \"value\" }")));
+        assertThat(matcher.matches(
+            response()
+                .withHeaders(new Header("Content-Type", "application/x-www-form-urlencoded"))
+                .withBody("name=value")), is(true));
+        assertThat(matcher.matches(
+            response()
+                .withHeaders(new Header("Content-Type", "application/x-www-form-urlencoded"))
+                .withBody("name=other")), is(false));
+    }
+
+    @Test
+    public void shouldMatchXmlResponseBody() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(xml("<name>value</name>")));
+        assertThat(matcher.matches(
+            response().withBody("<name>value</name>")), is(true));
+        assertThat(matcher.matches(
+            response().withBody("<name>other</name>")), is(false));
+    }
+
+    @Test
+    public void shouldMatchJsonPathResponseBodyViaSharedDispatch() {
+        // JsonPathBody extends Body (not BodyWithContentType) so it cannot be carried by an
+        // HttpResponse template through withBody; exercise the shared BodyMatching dispatch directly
+        // (the same code the response matcher invokes) to prove the JSON family is handled on the
+        // response BodySource
+        BodyMatcher bodyMatcher = BodyMatcherBuilder.buildBodyMatcher(configuration, mockServerLogger, jsonPath("$.status"), false);
+        JsonSchemaBodyDecoder parser = new JsonSchemaBodyDecoder(configuration, mockServerLogger, null, null);
+        assertThat(BodyMatching.bodyMatches(bodyMatcher, null,
+            BodyMatching.of(response().withBody("{ \"status\": \"ok\" }")), null, parser, mockServerLogger), is(true));
+        assertThat(BodyMatching.bodyMatches(bodyMatcher, null,
+            BodyMatching.of(response().withBody("{ \"other\": \"ok\" }")), null, parser, mockServerLogger), is(false));
+    }
+
+    @Test
+    public void shouldMatchOptionalResponseBodyWhenResponseHasNoBody() {
+        // an optional template body matches a response with no body at all
+        org.mockserver.model.JsonBody optionalJsonBody = json("{ \"status\": \"ok\" }");
+        optionalJsonBody.withOptional(true);
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(optionalJsonBody));
+        assertThat(matcher.matches(response().withStatusCode(204)), is(true));
+        // ...but a present, non-matching body is still rejected
+        assertThat(matcher.matches(response().withBody("{ \"status\": \"error\" }")), is(false));
+        // ...and a present, matching body still matches
+        assertThat(matcher.matches(response().withBody("{ \"status\": \"ok\" }")), is(true));
+    }
+
+    @Test
+    public void shouldMatchMultipartResponseBodyViaSharedDispatch() {
+        // MultipartBody extends Body (not BodyWithContentType) so it cannot be carried by an
+        // HttpResponse template through withBody; exercise the shared BodyMatching dispatch directly
+        // to prove the multipart branch decodes the response's raw bytes using the Content-Type
+        // boundary (the branch the old response matcher mis-dispatched to the generic string else)
+        String boundary = "----MockServerBoundaryResp";
+        String body =
+            "--" + boundary + "\r\n" +
+                "Content-Disposition: form-data; name=\"field\"\r\n" +
+                "\r\n" +
+                "fieldValue\r\n" +
+                "--" + boundary + "--\r\n";
+        BodyMatcher bodyMatcher = BodyMatcherBuilder.buildBodyMatcher(configuration, mockServerLogger,
+            new MultipartBody(new Parameter("field", "fieldValue")), false);
+        JsonSchemaBodyDecoder parser = new JsonSchemaBodyDecoder(configuration, mockServerLogger, null, null);
+        assertThat(bodyMatcher instanceof MultipartMatcher, is(true));
+        assertThat(BodyMatching.bodyMatches(bodyMatcher, null, BodyMatching.of(
+            response()
+                .withHeaders(new Header("Content-Type", "multipart/form-data; boundary=" + boundary))
+                .withBody(body.getBytes(StandardCharsets.UTF_8))), null, parser, mockServerLogger), is(true));
+
+        String otherBody =
+            "--" + boundary + "\r\n" +
+                "Content-Disposition: form-data; name=\"field\"\r\n" +
+                "\r\n" +
+                "otherValue\r\n" +
+                "--" + boundary + "--\r\n";
+        assertThat(BodyMatching.bodyMatches(bodyMatcher, null, BodyMatching.of(
+            response()
+                .withHeaders(new Header("Content-Type", "multipart/form-data; boundary=" + boundary))
+                .withBody(otherBody.getBytes(StandardCharsets.UTF_8))), null, parser, mockServerLogger), is(false));
+    }
+
+    @Test
+    public void shouldMatchBinaryResponseBody() {
+        byte[] bytes = {1, 2, 3, 4, 5};
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(binary(bytes)));
+        assertThat(matcher.matches(
+            response().withBody(binary(new byte[]{1, 2, 3, 4, 5}))), is(true));
+        assertThat(matcher.matches(
+            response().withBody(binary(new byte[]{9, 9, 9}))), is(false));
+    }
+
+    @Test
+    public void shouldCleanlyNonMatchJsonMatcherAgainstResponseWithNoBody() {
+        // a JSON matcher against a response with NO body must be a clean non-match, NOT an internal
+        // NPE swallowed into a silent non-match — i.e. the matcher returns false without throwing
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(json("{ \"status\": \"ok\" }")));
+        assertThat(matcher.matches(response().withStatusCode(204)), is(false));
+    }
+
+    @Test
+    public void shouldCleanlyNonMatchXmlMatcherAgainstResponseWithNoBody() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(xml("<name>value</name>")));
+        assertThat(matcher.matches(response().withStatusCode(204)), is(false));
+    }
+
+    @Test
+    public void shouldFallbackToBodyStringWhenXmlConversionFailsOnResponse() {
+        // a JSON matcher against a malformed XML response body: the XML→JSON conversion fails and
+        // falls back to matching the raw body string — a clean non-match, never a surfaced exception
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withBody(json("{ \"name\": \"value\" }")));
+        assertThat(matcher.matches(
+            response()
+                .withHeaders(new Header("Content-Type", "application/xml"))
+                .withBody("<root><name>value</name>")), is(false));
     }
 }

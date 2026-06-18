@@ -441,6 +441,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
+- **Response body matching now has full parity with request body matching**: matching a proxied/forwarded
+  upstream response body previously used a stripped-down copy of the request body dispatch that was missing
+  several behaviours — it did not convert an XML or form actual body to JSON before applying a JSON / JSON
+  schema / JSON path matcher, ignored an optional template body, mis-routed a multipart matcher to the generic
+  string path, and only checked the decompressed (not the original/compressed) bytes for a binary matcher.
+  A JSON or XML matcher against a response with no body at all could also trigger an internal NullPointer that
+  was swallowed into a silent non-match. Request and response body matching now share a single dispatch
+  (`BodyMatching`), so a response body matcher behaves exactly like the equivalent request body matcher,
+  including a clean non-match (no swallowed exception) when the response has no body. Request matching is
+  unchanged.
 - **`not(...)` expectations now match correctly with fail-fast matching enabled (the default)**: a negated
   request matcher (`not(request()...)`, or a request-matcher-level `not`) could wrongly report a non-match
   whenever a field other than the HTTP method matched before the first mismatching field. With the default

@@ -1,5 +1,6 @@
 package org.mockserver.matchers;
 
+import org.mockserver.codec.JsonSchemaBodyDecoder;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpResponse;
@@ -11,6 +12,12 @@ import static org.mockserver.model.NottableString.string;
  * <p>
  * Each template field constrains the match only when it is set (non-null/non-blank).
  * A null or empty template matches any response.
+ * <p>
+ * Body matching shares the exact dispatch used by request matching via {@link BodyMatching}, so a
+ * response body matcher has full parity with a request body matcher: XML/form actual bodies are
+ * converted to JSON for the JSON family of matchers, an optional template body matches an absent
+ * response body, multipart and binary (including original/compressed) bodies are handled, and an
+ * absent actual body against a JSON/XML matcher is a clean non-match rather than a swallowed NPE.
  */
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class HttpResponseMatcher {
@@ -19,9 +26,13 @@ public class HttpResponseMatcher {
     private final RegexStringMatcher reasonPhraseMatcher;
     private final MultiValueMapMatcher headerMatcher;
     private final BodyMatcher bodyMatcher;
+    private final Boolean bodyOptional;
+    private final JsonSchemaBodyDecoder jsonSchemaBodyParser;
+    private final MockServerLogger mockServerLogger;
 
     public HttpResponseMatcher(Configuration configuration, MockServerLogger mockServerLogger, HttpResponse template) {
         this.template = template;
+        this.mockServerLogger = mockServerLogger;
         if (template != null) {
             this.reasonPhraseMatcher = template.getReasonPhrase() != null
                 ? new RegexStringMatcher(mockServerLogger, string(template.getReasonPhrase()), false)
@@ -32,10 +43,19 @@ public class HttpResponseMatcher {
             this.bodyMatcher = template.getBody() != null
                 ? BodyMatcherBuilder.buildBodyMatcher(configuration, mockServerLogger, template.getBody(), false)
                 : null;
+            this.bodyOptional = template.getBody() != null ? template.getBody().getOptional() : null;
+            // No expectation / template request is available for a response match — they are used by
+            // the parser only for a JSON-conversion failure log, which the response path reports as
+            // null (it has no originating request to attribute the failure to).
+            this.jsonSchemaBodyParser = this.bodyMatcher != null
+                ? new JsonSchemaBodyDecoder(configuration, mockServerLogger, null, null)
+                : null;
         } else {
             this.reasonPhraseMatcher = null;
             this.headerMatcher = null;
             this.bodyMatcher = null;
+            this.bodyOptional = null;
+            this.jsonSchemaBodyParser = null;
         }
     }
 
@@ -72,34 +92,23 @@ public class HttpResponseMatcher {
             }
         }
 
-        // body: reuse the same body matcher building logic as request matching
+        // body: share the exact dispatch used by request matching so the response body matcher has
+        // full parity (JSON conversion of XML/form bodies, optional body, multipart, binary
+        // original/compressed, null-safe JSON/XML). A null context is passed because response-side
+        // match diagnostics are added in a later change; the dispatch tolerates a null context.
         if (bodyMatcher != null) {
-            if (!bodyMatcherMatches(actual)) {
+            if (!BodyMatching.bodyMatches(
+                bodyMatcher,
+                bodyOptional,
+                BodyMatching.of(actual),
+                null,
+                jsonSchemaBodyParser,
+                mockServerLogger
+            )) {
                 return false;
             }
         }
 
         return true;
-    }
-
-    private boolean bodyMatcherMatches(HttpResponse actual) {
-        if (bodyMatcher instanceof BinaryMatcher) {
-            return bodyMatcher.matches(null, actual.getBodyAsRawBytes());
-        } else if (bodyMatcher instanceof ExactStringMatcher ||
-            bodyMatcher instanceof SubStringMatcher ||
-            bodyMatcher instanceof RegexStringMatcher) {
-            return bodyMatcher.matches(null, string(actual.getBodyAsString()));
-        } else if (bodyMatcher instanceof XmlStringMatcher ||
-            bodyMatcher instanceof XmlSchemaMatcher ||
-            bodyMatcher instanceof JsonRpcMatcher ||
-            bodyMatcher instanceof GraphQLMatcher) {
-            return bodyMatcher.matches(null, actual.getBodyAsString());
-        } else if (bodyMatcher instanceof JsonStringMatcher ||
-            bodyMatcher instanceof JsonSchemaMatcher ||
-            bodyMatcher instanceof JsonPathMatcher) {
-            return bodyMatcher.matches(null, actual.getBodyAsString());
-        } else {
-            return bodyMatcher.matches(null, actual.getBodyAsString());
-        }
     }
 }
