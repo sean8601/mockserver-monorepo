@@ -403,6 +403,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capabilities (schema authoring, record-to-code, in-IDE dashboard), a badge row, and a 30-second quick start
   — the VS Code README and the JetBrains plugin's `<description>` (which is what the JetBrains Marketplace
   actually renders, not the repo README).
+- **Faster request matching with many expectations**: the incoming request's headers, cookies, query
+  parameters and path parameters are now converted into their internal matcher form once per request and
+  reused across every candidate expectation, instead of being rebuilt for each expectation evaluated. The
+  conversion is keyed by data-plane/control-plane and is invalidated whenever the request collection is
+  mutated mid-match (e.g. query-parameter splitting), so matching behaviour is unchanged. This reduces
+  per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
 - **Scenario state no longer advances when a matching expectation is skipped**: a scenario expectation
