@@ -666,6 +666,94 @@ class ClusteredTwoNodeTest {
     }
 
     /**
+     * Cross-node serving guard (review-final): two nodes racing the SAME
+     * Started-&gt;Step1 scenario step through the production serving path
+     * ({@link RequestMatchers#firstMatchingExpectation}) must serve the
+     * response from EXACTLY ONE node. The loser's commit-point CAS
+     * (matchesAndTransition) fails and it falls through without serving.
+     * <p>
+     * This closes the gap that {@link #twoNodesCannotDoubleTransitionSameScenario}
+     * left open: that test exercises {@link ScenarioManager} directly, not the
+     * production serving path where an unconditional put would have allowed
+     * both nodes to serve the same step.
+     */
+    @Test
+    void scenarioStepShouldBeServedExactlyOnceAcrossTwoNodes() throws Exception {
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA);
+        RequestMatchers nodeBMatchers = createNodeMatchers(nodeB);
+        wireReconciliationListener(nodeA, nodeAMatchers);
+        wireReconciliationListener(nodeB, nodeBMatchers);
+
+        // setStateBackend (in createNodeMatchers) already wired each node's
+        // internal ScenarioManager to that node's view of the SAME replicated
+        // scenarioStates() store, so the commit-point CAS races cross-node
+        // exactly as in production.
+        ScenarioManager managerA = nodeAMatchers.getScenarioManager();
+        ScenarioManager managerB = nodeBMatchers.getScenarioManager();
+
+        // A single Started->Step1 scenario expectation (unlimited Times) so
+        // the ONLY thing gating the second serve is the scenario CAS.
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/scenario-step")
+        ).thenRespond(HttpResponse.response("step1-served"))
+            .withScenarioName("raceScenario")
+            .withScenarioState(ScenarioManager.STARTED)
+            .withNewScenarioState("Step1");
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        awaitCondition(
+            () -> nodeBMatchers.peekFirstMatchingExpectation(
+                HttpRequest.request("/scenario-step")) != null,
+            Duration.ofSeconds(5),
+            "node B should see the scenario expectation"
+        );
+
+        HttpRequest request = HttpRequest.request("/scenario-step");
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        AtomicReference<Expectation> resultA = new AtomicReference<>();
+        AtomicReference<Expectation> resultB = new AtomicReference<>();
+        AtomicReference<Throwable> error = new AtomicReference<>();
+
+        Thread threadA = new Thread(() -> {
+            try {
+                barrier.await();
+                Expectation matched = nodeAMatchers.firstMatchingExpectation(request);
+                resultA.set(matched);
+                nodeAMatchers.postProcess(matched);
+            } catch (Exception e) {
+                error.set(e);
+            }
+        });
+        Thread threadB = new Thread(() -> {
+            try {
+                barrier.await();
+                Expectation matched = nodeBMatchers.firstMatchingExpectation(request);
+                resultB.set(matched);
+                nodeBMatchers.postProcess(matched);
+            } catch (Exception e) {
+                error.set(e);
+            }
+        });
+
+        threadA.start();
+        threadB.start();
+        threadA.join(10_000);
+        threadB.join(10_000);
+
+        assertNull(error.get(), "no exceptions expected");
+
+        // Exactly one node should have served the step; the loser's
+        // commit-point CAS failed and it returned null.
+        int totalServed = (resultA.get() != null ? 1 : 0) + (resultB.get() != null ? 1 : 0);
+        assertThat("Started->Step1 scenario step should be served by exactly 1 node, got " + totalServed,
+            totalServed, is(1));
+
+        // The scenario advanced exactly once, visible on both nodes.
+        assertThat(managerA.getState("raceScenario"), is("Step1"));
+        assertThat(managerB.getState("raceScenario"), is("Step1"));
+    }
+
+    /**
      * G10: scenario clear on node A should be visible on node B.
      */
     @Test

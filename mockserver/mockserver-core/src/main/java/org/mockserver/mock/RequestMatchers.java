@@ -465,10 +465,39 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 // only advances when the expectation is actually consumed. Guarded
                 // by getNewScenarioState() != null so non-transitioning expectations
                 // are unaffected.
+                //
+                // For an expectation with a REQUIRED scenario state, transition
+                // ATOMICALLY via matchesAndTransition (a CAS on the scenario-state
+                // KV store) rather than an unconditional put. This re-checks the
+                // required state at the commit point and advances it in a single
+                // step, preserving the documented cross-node "exactly one winner"
+                // guarantee (docs/code/clustered-state.md): when two nodes race the
+                // same step (both passed the pure matchesState gate above, both read
+                // "Started"), exactly one CAS succeeds. matchesAndTransition is the
+                // correct primitive for BOTH the local in-memory backend (where it
+                // is a single-writer ConcurrentHashMap.compute — always succeeds, no
+                // single-node regression) AND clustered backends, so it is used
+                // unconditionally with no isClustered() branch.
+                //
+                // Times interaction: this CAS runs AFTER consumeMatch() succeeded.
+                // For the dominant unlimited-Times scenario case consumeMatch is a
+                // no-op success, so a lost scenario CAS loses nothing. For the rare
+                // limited-Times + scenario case, losing the CAS means a Times unit
+                // was already consumed on THIS node — an accepted tradeoff that is
+                // strictly better than double-serving the same scenario step.
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() != null && expectation.getNewScenarioState() != null) {
-                    scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
+                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), isolationKey, expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                        // Lost the cross-node race: another node already advanced the
+                        // scenario past the required state. This node must NOT serve —
+                        // fall through to the next expectation (mirrors the Times-CAS
+                        // lost-race handling above).
+                        httpRequestMatcher.setResponseInProgress(false);
+                        continue;
+                    }
                 }
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
+                    // Entry-state expectation (no required state to CAS against) —
+                    // an unconditional transition is correct here.
                     scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
                 boolean remainingMatchesDecremented = expectation.getTimes() != null && !expectation.getTimes().isUnlimited();
@@ -591,10 +620,24 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 }
                 // COMMIT POINT: apply the scenario transition only now that the
                 // expectation is definitely being served (post-consume).
+                //
+                // For an expectation with a REQUIRED scenario state, transition
+                // ATOMICALLY via matchesAndTransition (a CAS) — see the detailed
+                // rationale on the firstMatchingExpectation commit point. This keeps
+                // the cross-node "exactly one winner" guarantee on clustered backends
+                // while being a no-op-equivalent single-writer compute on the local
+                // backend (no single-node regression). The same accepted limited-
+                // Times tradeoff applies: a lost CAS means a Times unit was already
+                // consumed on this node, which is strictly better than double-serving.
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() != null && expectation.getNewScenarioState() != null) {
-                    scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
+                    if (!scenarioManager.matchesAndTransition(expectation.getScenarioName(), isolationKey, expectation.getScenarioState(), expectation.getNewScenarioState())) {
+                        // Lost the cross-node race — do not serve, fall through.
+                        httpRequestMatcher.setResponseInProgress(false);
+                        continue;
+                    }
                 }
                 if (expectation.getScenarioName() != null && expectation.getScenarioState() == null && expectation.getNewScenarioState() != null) {
+                    // Entry-state expectation (no required state to CAS against).
                     scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
                 if (expectation.getTimes() != null && !expectation.getTimes().isUnlimited()) {

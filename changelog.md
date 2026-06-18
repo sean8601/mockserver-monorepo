@@ -368,10 +368,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Scenario state no longer advances when a matching expectation is skipped**: a scenario expectation
-  whose scenario state matched but which was then skipped by a percentage (`withPercentage`) or
-  exhausted-`Times` gate previously advanced the scenario to its next state even though it was never
-  served (a consume-then-skip bug). The scenario now transitions only at the point the expectation is
-  actually served.
+  whose scenario state matched but which was then skipped by a percentage (`withPercentage`) gate
+  previously advanced the scenario to its next state even though it was never served (a
+  consume-then-skip bug). The scenario now transitions only at the point the expectation is actually
+  served, and the transition is applied atomically (compare-and-set) so that on a clustered backend two
+  nodes racing the same scenario step serve the response from exactly one node — preserving the
+  documented cross-node "exactly one winner" guarantee.
 - **Faster expectation registration**: registering large numbers of expectations on the default
   in-memory setup was O(n²) because each add triggered two full backend reconciliation passes. The
   non-clustered path now does a cheap eviction-only trim, restoring linear registration time;
