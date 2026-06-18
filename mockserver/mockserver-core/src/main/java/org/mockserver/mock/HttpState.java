@@ -486,6 +486,13 @@ public class HttpState {
     }
 
     public List<Expectation> add(OpenAPIExpectation openAPIExpectation) {
+        // A spec referenced by URL/file may have changed since it was last parsed and cached (the parse is
+        // LRU-cached for up to 30 minutes keyed by the reference string). Re-importing is an explicit signal
+        // to pick up the current content, so evict the cache entry first. Inline payloads are keyed by their
+        // content, so they need no eviction (a changed payload is a different key).
+        if (org.mockserver.openapi.OpenAPIParser.isSpecUrl(openAPIExpectation.getSpecUrlOrPayload())) {
+            org.mockserver.openapi.OpenAPIParser.clearCache(openAPIExpectation.getSpecUrlOrPayload());
+        }
         List<Expectation> newExpectations = getOpenAPIConverter().buildExpectations(
             openAPIExpectation.getSpecUrlOrPayload(),
             openAPIExpectation.getOperationsAndResponses(),

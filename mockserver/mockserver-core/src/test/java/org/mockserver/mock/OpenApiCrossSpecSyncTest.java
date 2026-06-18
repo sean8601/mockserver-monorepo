@@ -187,6 +187,35 @@ public class OpenApiCrossSpecSyncTest {
     }
 
     @Test
+    public void reimportingAChangedUrlSpecAutomaticallyEvictsTheParseCache() throws Exception {
+        // Re-importing a URL/file spec must pick up the CURRENT content without a manual cache eviction:
+        // HttpState.add evicts the LRU parse cache for a URL/file spec before re-importing (an inline
+        // payload needs no eviction — it is keyed by content). This test performs NO manual clearCache
+        // between the two imports, so it fails if the import does not auto-evict.
+        Path specFile = Files.createTempFile("openapi-autoevict-", ".yaml");
+        try {
+            String specUrl = specFile.toAbsolutePath().toString();
+
+            // given - v1 (opOne + opTwo) imported and parsed-into-cache by the import itself
+            Files.write(specFile, SPEC_C_V1.getBytes(StandardCharsets.UTF_8));
+            httpState.add(openAPIExpectation(specUrl));
+            assertThat(activeIds().stream().anyMatch(id -> id.endsWith(":opTwo")), is(true));
+
+            // when - the same URL now resolves to v2 (opTwo removed) and is re-imported WITHOUT a manual clearCache
+            Files.write(specFile, SPEC_C_V2.getBytes(StandardCharsets.UTF_8));
+            httpState.add(openAPIExpectation(specUrl));
+
+            // then - the import auto-evicted the stale parse, so opTwo is pruned
+            assertThat("opOne retained", activeIds().stream().anyMatch(id -> id.endsWith(":opOne")), is(true));
+            assertThat("opTwo pruned because the changed URL spec was re-read (cache auto-evicted)",
+                activeIds().stream().anyMatch(id -> id.endsWith(":opTwo")), is(false));
+        } finally {
+            Files.deleteIfExists(specFile);
+            OpenAPIParser.clearCache(specFile.toAbsolutePath().toString());
+        }
+    }
+
+    @Test
     public void reimportingSameSpecIsIdempotent() {
         httpState.add(openAPIExpectation(SPEC_A));
         int afterFirst = activeIds().size();
