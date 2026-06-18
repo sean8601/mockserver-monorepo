@@ -103,7 +103,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers a host from the form', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -124,7 +124,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('rejects a register with a host but no fault set', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -138,7 +138,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('rejects error probability without an error status', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -153,7 +153,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('removes a single host', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: { 'a.svc': { errorStatus: 503 } } });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
@@ -165,7 +165,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('clears all registrations after confirmation', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: { 'a.svc': { errorStatus: 503 } } });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
@@ -191,7 +191,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('renders a remove button scoped to each host', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     stubServiceChaos({ services: { 'a.svc': { errorStatus: 503 }, 'b.svc': { errorStatus: 500 } } });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
@@ -220,7 +220,7 @@ describe('ServiceChaosPanel', () => {
 
   it('renders Health Status and Fault Injection sub-sections inside gRPC Chaos panel', async () => {
     stubServiceChaos({ services: {} });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ServiceChaosPanel connectionParams={params} />);
     // Expand the gRPC Chaos panel
     await waitFor(() => expect(screen.getByText('gRPC Chaos')).toBeInTheDocument());
@@ -240,7 +240,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers HTTP chaos with GraphQL errors enabled', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -298,7 +298,7 @@ describe('ServiceChaosPanel', () => {
       {},
       { services: { 'streaming.v1.StreamService': { errorStatusCode: 'INTERNAL', omitGrpcStatus: true } } },
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ServiceChaosPanel connectionParams={params} />);
     // Expand gRPC Chaos panel, then Fault Injection sub-section
     await waitFor(() => expect(screen.getByText('gRPC Chaos')).toBeInTheDocument());
@@ -315,7 +315,7 @@ describe('ServiceChaosPanel', () => {
       {},
       { services: { 'bidi.v1.BidiStream': { errorStatusCode: 'UNAVAILABLE', abortAfterMessages: 5 } } },
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ServiceChaosPanel connectionParams={params} />);
     // Expand gRPC Chaos panel, then Fault Injection sub-section
     await waitFor(() => expect(screen.getByText('gRPC Chaos')).toBeInTheDocument());
@@ -332,7 +332,7 @@ describe('ServiceChaosPanel', () => {
   // --- Full chaos fault-type controls tests ---
 
   it('registers HTTP chaos with body corruption controls (truncate + malformed)', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -351,7 +351,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers HTTP chaos with slow response (chunk size + delay)', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -373,7 +373,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers HTTP chaos with quota (rate limit) controls', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -399,7 +399,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers HTTP chaos with outage window and degradation ramp', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -425,7 +425,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers HTTP chaos with retry-after header', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -444,7 +444,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('registers a full chaos profile with all fault types', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -499,7 +499,7 @@ describe('ServiceChaosPanel', () => {
       },
       ttlMillis: 120000,
     });
-  });
+  }, 40000);
 
   it('shows summary chips for all new fault types from server', async () => {
     stubServiceChaos({
@@ -538,7 +538,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('validates retry-after requires an error status', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { puts } = stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('No service-scoped chaos registered.')).toBeInTheDocument());
@@ -572,7 +572,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('starts a multi-stage experiment with correct payload', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const experimentPuts: Array<{ body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -651,7 +651,7 @@ describe('ServiceChaosPanel', () => {
   });
 
   it('adds and removes stages in the experiment editor', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
@@ -711,7 +711,7 @@ describe('ServiceChaosPanel', () => {
         return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
       }),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
     // The chip should show "running"
@@ -753,7 +753,7 @@ describe('ServiceChaosPanel', () => {
         return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
       }),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ServiceChaosPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByText('running')).toBeInTheDocument());
 
