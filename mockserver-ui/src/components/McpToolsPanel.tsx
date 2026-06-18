@@ -48,9 +48,9 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
   // The read-only tool list auto-refreshes; the spinner is shown only for the
   // initial load and explicit manual refreshes, not on every background poll,
   // so the Refresh button doesn't flicker every interval.
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await callMcpTool(buildBaseUrl(connectionParams), 'list_mock_tools', {});
+      const res = await callMcpTool(buildBaseUrl(connectionParams), 'list_mock_tools', {}, signal);
       if (!res.ok) {
         setError(typeof res.error === 'string' ? res.error : 'failed to generate MCP tools');
         setTools([]);
@@ -61,9 +61,10 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
       setTools(rawTools);
       setError(null);
     } catch (e) {
+      if (signal?.aborted) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [connectionParams]);
 

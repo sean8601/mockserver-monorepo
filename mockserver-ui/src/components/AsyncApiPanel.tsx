@@ -75,9 +75,9 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
   const [filterText, setFilterText] = useState('');
 
   // Auto-refresh the read-only broker status + recorded-message feed.
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await getAsyncApiStatus(connectionParams);
+      const result = await getAsyncApiStatus(connectionParams, signal);
       if (result === null) {
         setUnavailable(true);
         setStatus(null);
@@ -87,6 +87,7 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
       }
       setLoadError(null);
     } catch (e) {
+      if (signal?.aborted) return;
       setLoadError(humanizeError(e).message);
     }
   }, [connectionParams]);

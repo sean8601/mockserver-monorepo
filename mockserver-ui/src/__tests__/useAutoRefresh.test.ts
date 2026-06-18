@@ -29,6 +29,37 @@ describe('useAutoRefresh', () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
+  it('forwards an AbortSignal to fn on each poll', async () => {
+    const fn = vi.fn<(signal?: AbortSignal) => void>();
+    renderHook(() => useAutoRefresh(fn, { intervalMs: 1000 }));
+
+    await flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+    const firstSignal = fn.mock.calls[0]?.[0];
+    expect(firstSignal).toBeInstanceOf(AbortSignal);
+    expect(firstSignal?.aborted).toBe(false);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn.mock.calls[1]?.[0]).toBeInstanceOf(AbortSignal);
+  });
+
+  it('aborts the forwarded signal on unmount so an in-flight fn is cancelled', async () => {
+    let captured!: AbortSignal;
+    const fn = vi.fn((signal?: AbortSignal) => {
+      captured = signal as AbortSignal;
+      return new Promise<void>(() => {});
+    });
+    const { unmount } = renderHook(() => useAutoRefresh(fn, { intervalMs: 1000 }));
+
+    await flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(captured.aborted).toBe(false);
+
+    unmount();
+    expect(captured.aborted).toBe(true);
+  });
+
   it('honours a custom interval', async () => {
     const fn = vi.fn();
     renderHook(() => useAutoRefresh(fn, { intervalMs: 1000 }));

@@ -35,6 +35,7 @@ import type { JsonListItem } from '../types';
 import { listConversationScenarios } from '../lib/conversationCodegen';
 import { buildBaseUrl } from '../lib/mcpClient';
 import LlmConversationForm from './LlmConversationForm';
+import HumanErrorAlert from './HumanErrorAlert';
 import StandardReview from './StandardReview';
 import {
   buildExpectationJson,
@@ -3615,7 +3616,6 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   const [registering, setRegistering] = useState(false);
   // Humanised register error (short message + raw details behind an expander).
   const [error, setError] = useState<HumanError | null>(null);
-  const [errorDetailsOpen, setErrorDetailsOpen] = useState(false);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
   // After a successful register, an inline next-step banner offers "View on
   // dashboard" / "Add another" so the user does not accidentally re-register the
@@ -3648,7 +3648,6 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
       const m = effectiveMatcher ?? matcher;
       setRegistering(true);
       setError(null);
-      setErrorDetailsOpen(false);
       setRegisteredLabel(null);
       try {
         await registerExpectation(connectionParams, m, action);
@@ -4590,41 +4589,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
         {/* Humanised register error: short message inline, raw server text behind
             a "Details" expander. */}
         {error && (
-          <Alert
-            severity="error"
-            variant="outlined"
-            data-testid="register-error"
-            action={
-              error.details ? (
-                <Button color="inherit" size="small" onClick={() => setErrorDetailsOpen((o) => !o)}>
-                  {errorDetailsOpen ? 'Hide details' : 'Details'}
-                </Button>
-              ) : undefined
-            }
-          >
-            {error.message}
-            {error.details && (
-              <Collapse in={errorDetailsOpen} unmountOnExit>
-                <Box
-                  component="pre"
-                  sx={{
-                    mt: 1,
-                    p: 1,
-                    fontSize: '0.72rem',
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    bgcolor: 'action.hover',
-                    borderRadius: 1,
-                    maxHeight: 240,
-                    overflow: 'auto',
-                  }}
-                >
-                  {error.details}
-                </Box>
-              </Collapse>
-            )}
-          </Alert>
+          <HumanErrorAlert error={error} variant="outlined" data-testid="register-error" />
         )}
       </Box>
       <Snackbar

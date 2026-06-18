@@ -111,12 +111,13 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
   // Auto-refresh the read-only drift feed. The lib throws on a non-OK response,
   // so a 500 surfaces as a real error and a 404 routes to the "not available"
   // branch — neither is silently swallowed as "no drift" any more.
-  const loadDrift = useCallback(async () => {
+  const loadDrift = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetchDriftRecords(connectionParams, undefined, 50);
+      const response = await fetchDriftRecords(connectionParams, undefined, 50, signal);
       setData(response);
       setLoadError(null);
     } catch (e) {
+      if (signal?.aborted) return;
       setLoadError(humanizeError(e).message);
     }
   }, [connectionParams]);

@@ -11,7 +11,6 @@ import Switch from '@mui/material/Switch';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
-import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
@@ -20,8 +19,6 @@ import Typography from '@mui/material/Typography';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
-import Collapse from '@mui/material/Collapse';
-import Link from '@mui/material/Link';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import type { ParsedTraffic } from '../lib/llmTraffic';
@@ -45,6 +42,7 @@ import {
 import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import CopyButton from './CopyButton';
+import HumanErrorAlert from './HumanErrorAlert';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -102,7 +100,6 @@ export default function CaptureAsMockDialog({
   const [tab, setTab] = useState(0);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<HumanError | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [snackOpen, setSnackOpen] = useState(false);
 
   // Reset all transient state (draft edits, error/details, registering flag,
@@ -120,7 +117,6 @@ export default function CaptureAsMockDialog({
     setDraft(defaultDraft);
     setTab(0);
     setError(null);
-    setDetailsOpen(false);
     setRegistering(false);
     setSnackOpen(false);
   } else if (open !== prevOpen) {
@@ -189,7 +185,6 @@ export default function CaptureAsMockDialog({
   const handleRegister = useCallback(async () => {
     setRegistering(true);
     setError(null);
-    setDetailsOpen(false);
     try {
       const baseUrl = buildBaseUrl(connectionParams);
 
@@ -501,38 +496,7 @@ export default function CaptureAsMockDialog({
           )}
 
           {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error.message}
-              {error.details && (
-                <Box sx={{ mt: 0.5 }}>
-                  <Link
-                    component="button"
-                    type="button"
-                    variant="caption"
-                    underline="hover"
-                    onClick={() => setDetailsOpen((o) => !o)}
-                    sx={{ color: 'inherit' }}
-                  >
-                    {detailsOpen ? 'Hide details' : 'Details'}
-                  </Link>
-                  <Collapse in={detailsOpen} unmountOnExit>
-                    <Box
-                      component="pre"
-                      sx={{
-                        fontFamily: 'monospace',
-                        fontSize: '0.7rem',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-all',
-                        mt: 0.5,
-                        mb: 0,
-                      }}
-                    >
-                      {error.details}
-                    </Box>
-                  </Collapse>
-                </Box>
-              )}
-            </Alert>
+            <HumanErrorAlert error={error} sx={{ mt: 2 }} />
           )}
         </DialogContent>
         <DialogActions>

@@ -196,12 +196,13 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   // Matchers polling (auto-refresh the read-only registered-matcher list)
   // -------------------------------------------------------------------------
 
-  const loadMatchers = useCallback(async () => {
+  const loadMatchers = useCallback(async (signal?: AbortSignal) => {
     try {
-      const resp = await listBreakpointMatchers(connectionParams);
+      const resp = await listBreakpointMatchers(connectionParams, signal);
       setMatchers(resp.matchers ?? []);
       setMatchersError(null);
     } catch (e) {
+      if (signal?.aborted) return;
       setMatchersError(e instanceof Error ? e.message : String(e));
     }
   }, [connectionParams]);

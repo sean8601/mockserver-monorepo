@@ -13,16 +13,14 @@ import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
 import Button from '@mui/material/Button';
-import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
-import Collapse from '@mui/material/Collapse';
-import Link from '@mui/material/Link';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { importExpectationJson, importCollection } from '../lib/importMocks';
 import { importOpenApi } from '../lib/openapiImport';
 import { importWsdl } from '../lib/wsdlImport';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,7 +61,6 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
   const [urlValue, setUrlValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HumanError | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -96,7 +93,6 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
   const handleImport = useCallback(async () => {
     setBusy(true);
     setError(null);
-    setDetailsOpen(false);
     try {
       const input = source === 'url' ? urlValue.trim() : payload.trim();
       if (!input) {
@@ -288,38 +284,7 @@ export default function ImportForm({ connectionParams }: ImportFormProps) {
       </Paper>
 
       {error && (
-        <Alert severity="error" variant="outlined">
-          {error.message}
-          {error.details && (
-            <Box sx={{ mt: 0.5 }}>
-              <Link
-                component="button"
-                type="button"
-                variant="caption"
-                underline="hover"
-                onClick={() => setDetailsOpen((o) => !o)}
-                sx={{ color: 'inherit' }}
-              >
-                {detailsOpen ? 'Hide details' : 'Details'}
-              </Link>
-              <Collapse in={detailsOpen} unmountOnExit>
-                <Box
-                  component="pre"
-                  sx={{
-                    fontFamily: 'monospace',
-                    fontSize: '0.7rem',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all',
-                    mt: 0.5,
-                    mb: 0,
-                  }}
-                >
-                  {error.details}
-                </Box>
-              </Collapse>
-            </Box>
-          )}
-        </Alert>
+        <HumanErrorAlert error={error} variant="outlined" />
       )}
 
       <Snackbar

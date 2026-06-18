@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useRef, useState, useCallback } from 'react';
 import Typography from '@mui/material/Typography';
 import { useDashboardStore } from '../store';
 import Panel from './Panel';
@@ -35,6 +35,11 @@ export default function ExpectationPanel() {
   // delete is in flight.
   const [pendingDelete, setPendingDelete] = useState<JsonListItem | null>(null);
 
+  // Guards the confirm handler against re-entrancy: the ConfirmDialog button
+  // fires onConfirm() before the close re-render lands, so a fast double-click
+  // could otherwise dispatch two DELETE requests for the same expectation.
+  const deletingRef = useRef(false);
+
   // Compute turn N of M across the FULL set (not the filtered subset) so the
   // total stays meaningful even when search hides siblings.
   const turnPositions = useMemo(() => buildTurnPositionMap(expectations), [expectations]);
@@ -62,6 +67,9 @@ export default function ExpectationPanel() {
     if (!pendingDelete) return;
     const id = expectationIdOf(pendingDelete);
     if (!id) return;
+    // No-op if a delete is already in flight (re-entrant double-click).
+    if (deletingRef.current) return;
+    deletingRef.current = true;
     try {
       await deleteExpectation(params, id);
       // Optimistically drop the row; the next WebSocket push will reconcile.
@@ -71,6 +79,8 @@ export default function ExpectationPanel() {
       setNotification({ message: `Expectation ${id} deleted`, severity: 'success' });
     } catch (e) {
       setNotification({ message: humanizeError(e).message, severity: 'error' });
+    } finally {
+      deletingRef.current = false;
     }
   }, [pendingDelete, params, setNotification]);
 
