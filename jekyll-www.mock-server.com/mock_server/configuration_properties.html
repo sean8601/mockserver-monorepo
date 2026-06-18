@@ -1631,6 +1631,20 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.clusterTransportConfig=/etc/mockserver/jgroups-tcp.xml</code></pre>
 </div>
 
+<button id="button_configuration_cluster_shared_times_enabled" class="accordion title"><strong>Cluster Shared Times Enabled</strong></button>
+<div class="panel title">
+    <p>Controls how limited-use expectations (those created with <span class="inline_code">Times.exactly(n)</span>) count their remaining uses across a cluster. When <span class="keyword">true</span> (the default), the remaining count is shared across all nodes using an atomic compare-and-set on the replicated store, so an expectation set to respond N times responds exactly N times across the whole cluster. This costs a synchronous replicated write on the request-handling thread each time such an expectation matches. Set to <span class="keyword">false</span> to skip the shared counter and use a faster node-local count instead — each node then serves up to its own N, so the fleet-wide total becomes approximate. Only affects clustered deployments with limited-use expectations; single-node and unlimited-use matching are unaffected.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.clusterSharedTimesEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.clusterSharedTimesEnabled=false</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CLUSTER_SHARED_TIMES_ENABLED=false</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.clusterSharedTimesEnabled=false</code></pre>
+</div>
+
 <h2>Cloud Blob Store Configuration:</h2>
 
 <p>These properties configure cloud-backed blob storage for durable persistence of expectations, cassettes, and fixture files. Each cloud backend requires its own optional module on the classpath. Set <span class="inline_code">blobStoreType</span> to <span class="inline_code">s3</span>, <span class="inline_code">gcs</span>, or <span class="inline_code">azure</span> and configure the backend-specific properties below.</p>

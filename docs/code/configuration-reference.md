@@ -73,7 +73,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Chaos auto-halt | `chaosAutoHaltEnabled`, `chaosAutoHaltErrorThreshold`, `chaosAutoHaltWindowMillis` |
 | Breakpoints | `breakpointTimeoutMillis`, `breakpointMaxHeld` (breakpoint activation is now via the matcher-based registry REST API) |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs` |
-| Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig` |
+| Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig`, `clusterSharedTimesEnabled` |
 | Blob store | `blobStoreType`, `blobStoreBucket`, `blobStoreRegion`, `blobStoreEndpoint`, `blobStoreKeyPrefix`, `blobStoreAccessKeyId`, `blobStoreSecretAccessKey`, `blobStoreContainer`, `blobStoreConnectionString`, `blobStoreProjectId` |
 | Async messaging | `asyncKafkaBootstrapServers`, `asyncMqttBrokerUrl`, `asyncRecordedMessageMaxEntries` |
 | JSON Schema matching | `jsonSchemaAllowRemoteRefs` (JVM system property only — not in `ConfigurationProperties`; read via `System.getProperty` in `JsonSchemaValidator` at schema-build time) |
