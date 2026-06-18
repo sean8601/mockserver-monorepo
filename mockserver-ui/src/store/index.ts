@@ -77,11 +77,24 @@ interface DashboardState {
 
   selectedTrafficKey: string | null;
 
+  /**
+   * An expectation handed off from the Active Expectations panel's "Edit"
+   * action for the Composer to load into its form. Null when there is no
+   * pending edit. The raw expectation value (the matcher + action JSON) is
+   * stored as-is; the Composer consumes and then clears it.
+   */
+  pendingEditExpectation: Record<string, unknown> | null;
+
   actionTypeFilter: string[];
   llmProviderFilter: string[];
 
   setActionTypeFilter: (types: string[]) => void;
   setLlmProviderFilter: (providers: string[]) => void;
+
+  /** Load an expectation into the Composer for editing and switch to that view. */
+  editExpectation: (expectation: Record<string, unknown>) => void;
+  /** Clear the pending edit handoff (called by the Composer once consumed). */
+  clearPendingEditExpectation: () => void;
 
   applyMessage: (message: WebSocketMessage) => void;
   clearUI: () => void;
@@ -161,6 +174,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
 
   selectedTrafficKey: null,
 
+  pendingEditExpectation: null,
+
   actionTypeFilter: [],
   llmProviderFilter: [],
 
@@ -193,6 +208,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       recordedRequests: [],
       proxiedRequests: [],
       selectedTrafficKey: null,
+      pendingEditExpectation: null,
       error: null,
       notification: null,
       view: 'get-started' as ViewMode,
@@ -236,6 +252,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   setProxiedSearch: (term) => set({ proxiedSearch: term }),
   setTrafficSearch: (term) => set({ trafficSearch: term }),
   setSelectedTrafficKey: (key) => set({ selectedTrafficKey: key }),
+  editExpectation: (expectation) => set({ pendingEditExpectation: expectation, view: 'composer' as ViewMode, selectedTrafficKey: null }),
+  clearPendingEditExpectation: () => set({ pendingEditExpectation: null }),
   setError: (error) => set({ error }),
   setNotification: (notification) => set({ notification }),
   openDebugMismatch: (result) =>

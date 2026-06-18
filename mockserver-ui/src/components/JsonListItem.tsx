@@ -8,6 +8,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import BoltIcon from '@mui/icons-material/Bolt';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import type { JsonListItem as JsonListItemType } from '../types';
 import type { ConversationPredicates } from '../lib/llmTraffic';
 import JsonViewer from './JsonViewer';
@@ -31,6 +33,18 @@ interface JsonListItemProps {
    */
   expanded?: boolean;
   onToggleExpand?: (key: string) => void;
+  /**
+   * When provided, an "Edit" icon button is rendered (revealed on row hover)
+   * that hands this expectation off to the Composer. Only wired up by the
+   * Active Expectations panel; omitted for Received / Proxied request rows.
+   */
+  onEdit?: (item: JsonListItemType) => void;
+  /**
+   * When provided, a "Delete" icon button is rendered (revealed on row hover)
+   * that removes this single expectation. Only wired up by the Active
+   * Expectations panel.
+   */
+  onDelete?: (item: JsonListItemType) => void;
 }
 
 import { PROVIDER_DISPLAY } from '../lib/clientFilters';
@@ -77,6 +91,47 @@ function extractRequestParts(value: Record<string, unknown>): { method: string |
   const path = readField('path');
   if (!method && !path) return null;
   return { method, path };
+}
+
+// Top-level action keys an expectation may carry, mapped to a short human
+// label. Used to give non-HTTP expectations (gRPC / spec-derived matchers with
+// no method+path) a meaningful row summary instead of repeating the id.
+const ACTION_LABELS: ReadonlyArray<readonly [string, string]> = [
+  ['httpResponse', 'HTTP response'],
+  ['httpResponseTemplate', 'response template'],
+  ['httpResponseClassCallback', 'response callback'],
+  ['httpResponseObjectCallback', 'response callback'],
+  ['httpForward', 'forward'],
+  ['httpForwardTemplate', 'forward template'],
+  ['httpForwardClassCallback', 'forward callback'],
+  ['httpForwardObjectCallback', 'forward callback'],
+  ['httpOverrideForwardedRequest', 'override forward'],
+  ['httpError', 'error'],
+  ['httpLlmResponse', 'LLM response'],
+];
+
+/**
+ * Derive a short human label for an expectation that lacks a recognisable
+ * method+path summary (e.g. gRPC or OpenAPI-derived matchers). Prefers the
+ * top-level action key; falls back to a generic "expectation". Never returns
+ * the id, so the row never renders "<id>: <id>".
+ */
+function extractActionLabel(value: Record<string, unknown>): string {
+  for (const [key, label] of ACTION_LABELS) {
+    if (value[key] != null) return label;
+  }
+  return 'expectation';
+}
+
+/**
+ * Whether `item.description` is just the expectation id (the server falls back
+ * to the id as the description for non-HTTP matchers, which would render as
+ * "<id>: <id>"). When true the caller should show a derived label instead.
+ */
+function descriptionIsJustId(description: unknown, value: Record<string, unknown>): boolean {
+  const id = value['id'];
+  if (typeof id !== 'string' || typeof description !== 'string') return false;
+  return description.trim() === id;
 }
 
 function extractIsolationLabel(scenarioName: string | undefined): string | null {
@@ -166,7 +221,7 @@ function extractChaosSummary(value: Record<string, unknown>): string | null {
   return parts.length > 0 ? parts.join(', ') : 'enabled';
 }
 
-function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onToggleExpand }: JsonListItemProps) {
+function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onToggleExpand, onEdit, onDelete }: JsonListItemProps) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp ?? internalExpanded;
   const handleToggle = () => {
@@ -191,6 +246,9 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
         borderBottom: 1,
         borderColor: 'divider',
         '&:hover .copy-btn': { opacity: 1 },
+        '&:hover .row-actions': { opacity: 1 },
+        // Keep the actions reachable for keyboard users even without hover.
+        '&:focus-within .row-actions': { opacity: 1 },
         '&:last-child': { borderBottom: 0 },
       }}
     >
@@ -266,8 +324,70 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                 {requestParts.path ?? '·'}
               </Box>
             </>
+          ) : descriptionIsJustId(item.description, item.value) ? (
+            // Non-HTTP expectation (e.g. gRPC / spec-derived) whose server-side
+            // description is just the id. Show a derived action label instead of
+            // repeating the id (which produced the "<id>: <id>" display bug).
+            <>
+              <Box
+                component="span"
+                sx={{ fontSize: '0.8em', color: 'text.secondary', fontStyle: 'italic' }}
+              >
+                {extractActionLabel(item.value)}
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }} />
+            </>
+          ) : item.description ? (
+            <>
+              <DescriptionDisplay description={item.description} />
+              <Box sx={{ flex: 1, minWidth: 0 }} />
+            </>
           ) : (
-            item.description && <DescriptionDisplay description={item.description} />
+            <Box sx={{ flex: 1, minWidth: 0 }} />
+          )}
+          {(onEdit || onDelete) && (
+            // Per-row Edit / Delete actions for Active Expectations. Hidden until
+            // the row is hovered (see the parent's `&:hover .row-actions` rule)
+            // so they don't clutter the dense list. stopPropagation keeps a click
+            // from toggling the row's expand state.
+            <Box
+              className="row-actions"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.25,
+                ml: 0.5,
+                flexShrink: 0,
+                opacity: 0,
+                transition: 'opacity 0.1s',
+              }}
+            >
+              {onEdit && (
+                <Tooltip title="Edit in Composer">
+                  <IconButton
+                    size="small"
+                    aria-label="Edit expectation"
+                    onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                    sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              {onDelete && (
+                <Tooltip title="Delete expectation">
+                  <IconButton
+                    size="small"
+                    color="error"
+                    aria-label="Delete expectation"
+                    onClick={(e) => { e.stopPropagation(); onDelete(item); }}
+                    sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}
+                  >
+                    <DeleteOutlineIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
           )}
         </Box>
         {/* Second row: LLM badge chips below the matcher so wide chip sets wrap

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import JsonListItem from '../components/JsonListItem';
@@ -396,5 +396,85 @@ describe('JsonListItem', () => {
       />,
     );
     expect(screen.queryByText(/Chaos:/)).not.toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------
+  // Non-HTTP expectation row (no method+path; description is just the id)
+  // -----------------------------------------------------------------------
+
+  it('shows the id once with a derived action label when the description duplicates the id', () => {
+    const id = '0100cb33-3c14-4b22-80cb-333c14cb2252';
+    render(
+      <JsonListItem
+        // gRPC / spec-derived matcher: no httpRequest.method/path, and the
+        // server falls back to the id as the description. The row must NOT
+        // render "<id>: <id>".
+        item={{ key: id, description: id, value: { id, httpResponse: { statusCode: 200 } } }}
+        index={1}
+      />,
+    );
+    // The id appears exactly once (in the "<id>:" prefix), not twice.
+    const idMatches = screen.getAllByText((_content, el) => el?.textContent?.trim() === `${id}:`);
+    expect(idMatches.length).toBeGreaterThan(0);
+    // A derived action label is shown instead of the duplicated id.
+    expect(screen.getByText('HTTP response')).toBeInTheDocument();
+    // The id text never renders without the trailing colon (i.e. not twice).
+    expect(screen.queryByText(id)).not.toBeInTheDocument();
+  });
+
+  it('falls back to a generic "expectation" label when no action key is recognised', () => {
+    const id = 'abc-no-action';
+    render(
+      <JsonListItem
+        item={{ key: id, description: id, value: { id } }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('expectation')).toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------
+  // Per-row Edit / Delete actions
+  // -----------------------------------------------------------------------
+
+  it('renders Edit and Delete buttons only when the callbacks are provided', () => {
+    const { rerender } = render(
+      <JsonListItem
+        item={{ key: 'e1', value: { id: 'e1', httpRequest: { method: 'GET', path: '/a' } } }}
+        index={1}
+      />,
+    );
+    expect(screen.queryByLabelText('Edit expectation')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Delete expectation')).not.toBeInTheDocument();
+
+    rerender(
+      <JsonListItem
+        item={{ key: 'e1', value: { id: 'e1', httpRequest: { method: 'GET', path: '/a' } } }}
+        index={1}
+        onEdit={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText('Edit expectation')).toBeInTheDocument();
+    expect(screen.getByLabelText('Delete expectation')).toBeInTheDocument();
+  });
+
+  it('invokes onEdit/onDelete with the item and does not toggle the row body', async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const item = { key: 'e2', value: { id: 'e2', httpRequest: { method: 'GET', path: '/b' } } };
+    const { container } = render(
+      <JsonListItem item={item} index={1} onEdit={onEdit} onDelete={onDelete} />,
+    );
+
+    await user.click(screen.getByLabelText('Edit expectation'));
+    expect(onEdit).toHaveBeenCalledWith(item);
+    // The expensive JSON body must NOT have expanded from clicking an action.
+    expect(container.querySelector('.w-rjv')).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Delete expectation'));
+    expect(onDelete).toHaveBeenCalledWith(item);
+    expect(container.querySelector('.w-rjv')).not.toBeInTheDocument();
   });
 });
