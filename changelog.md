@@ -303,7 +303,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     earlier malformed pluralised output, and a recursive schema (e.g. `Node{left:$ref Node, right:$ref Node}`)
     now renders each property under its own element name rather than dropping one, and array items without an
     explicit `items.xml.name` are named after the array property (e.g. `<tags>`) instead of the literal
-    `<array>`. (Behaviour change for XML
+    `<array>`, and a recursive `$ref` the parser cannot inline (e.g. `Tree{children:[$ref Tree]}`) now renders
+    its items/properties under the property name (`<children>`) rather than the schema component name
+    (`<Tree>`). (Behaviour change for XML
     responses; JSON responses are unchanged.)
   - **OAS 3.1 multi-type `type` arrays are preserved** when serialising a schema: `type: ["string","null"]`
     now becomes `type: string` + `nullable: true` (and `["string","integer"]` is kept as a Draft-07 type

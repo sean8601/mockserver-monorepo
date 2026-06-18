@@ -1503,4 +1503,21 @@ public class OpenAPIConverterTest {
         assertThat("array items must NOT be named after the literal type 'array'", body, not(containsString("<array>")));
     }
 
+    @Test
+    public void shouldNameXmlElementsAfterPropertiesNotSchemaRefForRecursiveSchema() {
+        // a recursive $ref (Tree{children: array of $ref Tree}) cannot be inlined by the parser, so it
+        // hits the ExampleBuilder $ref-resolution path. The child array items must render under the
+        // PROPERTY name (<children>), never the schema component name (<Tree>).
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_recursive_xml_ref.yaml");
+
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(specUrlOrPayload, null);
+
+        String body = actualExpectations.stream()
+            .filter(e -> "getTree".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getBodyAsString();
+        assertThat("recursive array $ref item renders under the property name", body, containsString("<children>"));
+        assertThat("must NOT render the schema component name as an element", body, not(containsString("<Tree>")));
+    }
+
 }

@@ -145,7 +145,13 @@ public class ExampleBuilder {
             } else if (definitions != null) {
                 Schema<?> model = definitions.get(ref);
                 if (model != null) {
-                    output = fromProperty(ref, model, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
+                    // resolve the referenced model under the CURRENT property name (the property key /
+                    // array context / xml.name held in `name`), NOT the bare schema ref name. A schema
+                    // component name (e.g. "Node") is not an XML element name; using it caused a recursive
+                    // $ref that the parser could not inline (e.g. Tree{children:[$ref Tree]}) to render
+                    // <Tree>/<Node> elements instead of the property name <children>/<next>. The $ref cache
+                    // is keyed by the ref STRING below, so this does not affect cycle detection.
+                    output = fromProperty(name, model, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     processedModels.put(ref, output);
                 }
             }
