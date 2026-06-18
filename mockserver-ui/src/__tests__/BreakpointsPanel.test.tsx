@@ -257,6 +257,24 @@ describe('BreakpointsPanel — Matchers tab', () => {
     expect(screen.getByText('Connection refused')).toBeInTheDocument();
   });
 
+  it('auto-refreshes the matcher list on an interval without a manual click', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(async () => ({
+        ok: true, status: 200, json: async () => emptyMatchers,
+      }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderPanel();
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows unavailable message for 404', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: false,
@@ -420,6 +438,57 @@ describe('BreakpointsPanel — Live Exchanges tab', () => {
     expect(envelope.type).toBe('org.mockserver.model.HttpResponse');
     const inner = JSON.parse(envelope.value);
     expect(inner.statusCode).toBe(503);
+  });
+
+  it('renders a disabled, clearly-labelled Abort for RESPONSE-phase items (cannot abort a response)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    const ws = connectCallbackWs();
+
+    // Push a RESPONSE-phase paused item (request + response pair).
+    ws.simulateMessage({
+      type: 'org.mockserver.model.HttpRequestAndHttpResponse',
+      value: JSON.stringify({
+        httpRequest: {
+          method: 'GET',
+          path: '/resp',
+          headers: {
+            'WebSocketCorrelationId': ['corr-resp-1'],
+            'X-MockServer-BreakpointId': ['bp-resp-1'],
+          },
+        },
+        httpResponse: { statusCode: 200, reasonPhrase: 'OK' },
+      }),
+    });
+
+    await switchToExchangesTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('RESPONSE')).toBeInTheDocument();
+    });
+
+    // The Abort control for a response is rendered but disabled and labelled as
+    // not applicable, so it cannot silently behave like Continue.
+    const abortBtn = screen
+      .getAllByRole('button')
+      .find((b) => b.getAttribute('aria-label')?.startsWith('Abort'));
+    expect(abortBtn).toBeDefined();
+    expect(abortBtn).toBeDisabled();
+    expect(abortBtn!.getAttribute('aria-label')).toMatch(/not applicable for responses/);
+
+    // Continue must still be enabled — the legitimate way to resolve a response.
+    const continueBtn = screen
+      .getAllByRole('button')
+      .find((b) => b.getAttribute('aria-label')?.startsWith('Continue'));
+    expect(continueBtn).toBeDefined();
+    expect(continueBtn).not.toBeDisabled();
   });
 
   it('opens modify dialog and sends modified request over WS', async () => {

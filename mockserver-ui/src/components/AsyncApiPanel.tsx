@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -20,6 +20,8 @@ import ErrorOutlinedIcon from '@mui/icons-material/ErrorOutlined';
 import HubIcon from '@mui/icons-material/Hub';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { getAsyncApiStatus } from '../lib/asyncApi';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { humanizeError } from '../lib/errorMessage';
 
 interface AsyncApiPanelProps {
   connectionParams: ConnectionParams;
@@ -70,44 +72,31 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
   const [status, setStatus] = useState<AsyncApiStatus | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [filterText, setFilterText] = useState('');
 
-  const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
-
-  // Poll async API status
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function poll(): Promise<void> {
-      try {
-        const result = await getAsyncApiStatus(connectionParams, controller.signal);
-        if (cancelled) return;
-        if (result === null) {
-          setUnavailable(true);
-          setStatus(null);
-        } else {
-          setUnavailable(false);
-          setStatus(result as unknown as AsyncApiStatus);
-        }
-        setLoadError(null);
-      } catch (e) {
-        if (cancelled || controller.signal.aborted) return;
-        setLoadError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!cancelled) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+  // Auto-refresh the read-only broker status + recorded-message feed.
+  const loadStatus = useCallback(async () => {
+    try {
+      const result = await getAsyncApiStatus(connectionParams);
+      if (result === null) {
+        setUnavailable(true);
+        setStatus(null);
+      } else {
+        setUnavailable(false);
+        setStatus(result as unknown as AsyncApiStatus);
       }
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(humanizeError(e).message);
     }
+  }, [connectionParams]);
 
-    void poll();
-    return () => {
-      cancelled = true;
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [connectionParams, refreshTick]);
+  useAutoRefresh(loadStatus, { intervalMs: POLL_INTERVAL_MS });
+
+  // Manual force-refresh (the existing Refresh button) — same fetch, off-cycle.
+  const refresh = useCallback(() => {
+    void loadStatus();
+  }, [loadStatus]);
 
   const channels = status?.channels ?? [];
   const recordedMessages = useMemo(() => status?.recordedMessages ?? [], [status]);

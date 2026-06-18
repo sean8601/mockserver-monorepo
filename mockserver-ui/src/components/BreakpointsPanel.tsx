@@ -56,6 +56,9 @@ import { MultiValueField, SingleValueField } from './FilterPanel';
 import type { KeyToMultiValue, KeyToValue } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import TruncatedText from './TruncatedText';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+
+const MATCHERS_POLL_INTERVAL_MS = 5000;
 
 interface BreakpointsPanelProps {
   connectionParams: ConnectionParams;
@@ -104,7 +107,6 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   // -- Matchers state --
   const [matchers, setMatchers] = useState<BreakpointMatcherEntry[]>([]);
   const [matchersError, setMatchersError] = useState<string | null>(null);
-  const [matchersRefreshTick, setMatchersRefreshTick] = useState(0);
 
   // Registration form
   const [formMethod, setFormMethod] = useState('');
@@ -191,33 +193,25 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   }, [connectionParams]);
 
   // -------------------------------------------------------------------------
-  // Matchers polling
+  // Matchers polling (auto-refresh the read-only registered-matcher list)
   // -------------------------------------------------------------------------
 
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    async function load(): Promise<void> {
-      try {
-        const resp = await listBreakpointMatchers(connectionParams, controller.signal);
-        if (cancelled) return;
-        setMatchers(resp.matchers ?? []);
-        setMatchersError(null);
-      } catch (e) {
-        if (cancelled || controller.signal.aborted) return;
-        setMatchersError(e instanceof Error ? e.message : String(e));
-      }
+  const loadMatchers = useCallback(async () => {
+    try {
+      const resp = await listBreakpointMatchers(connectionParams);
+      setMatchers(resp.matchers ?? []);
+      setMatchersError(null);
+    } catch (e) {
+      setMatchersError(e instanceof Error ? e.message : String(e));
     }
+  }, [connectionParams]);
 
-    void load();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [connectionParams, matchersRefreshTick]);
+  useAutoRefresh(loadMatchers, { intervalMs: MATCHERS_POLL_INTERVAL_MS });
 
-  const refreshMatchers = useCallback(() => setMatchersRefreshTick((t) => t + 1), []);
+  // Manual force-refresh (the existing Refresh button) — same fetch, off-cycle.
+  const refreshMatchers = useCallback(() => {
+    void loadMatchers();
+  }, [loadMatchers]);
 
   // -------------------------------------------------------------------------
   // Matcher registration
@@ -330,17 +324,17 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   }, [removeItem]);
 
   const handleAbortExchange = useCallback((item: PausedItem & { key: number }) => {
-    const client = clientRef.current;
+    // Abort only genuinely applies to the REQUEST phase, where it sends an
+    // HttpResponse instead of forwarding. There is no way to abort a RESPONSE
+    // (the upstream response has already been received), so the Abort control is
+    // not rendered for RESPONSE-phase items — this is a defensive no-op for them.
     if (item.phase === 'REQUEST') {
-      // Abort = send an HttpResponse (server writes it to client, no forward)
-      client.resolveRequest(item.correlationId, { statusCode: 503, body: 'Aborted by breakpoint' });
+      clientRef.current.resolveRequest(item.correlationId, {
+        statusCode: 503,
+        body: 'Aborted by breakpoint',
+      });
+      removeItem(item.key);
     }
-    // For RESPONSE phase, abort is not applicable (response already received)
-    // Just continue with original
-    if (item.phase === 'RESPONSE') {
-      client.resolveResponse(item.correlationId, item.response ?? {});
-    }
-    removeItem(item.key);
   }, [removeItem]);
 
   const openModifyExchangeDialog = useCallback((item: PausedItem & { key: number }) => {
@@ -800,19 +794,39 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                                   </IconButton>
                                 </span>
                               </Tooltip>
-                              <Tooltip title={isResponse ? 'Continue (cannot abort response)' : 'Abort (do not forward)'}>
-                                <span>
-                                  <IconButton
-                                    size="small"
-                                    color="error"
-                                    disabled={busy}
-                                    onClick={() => handleAbortExchange(item)}
-                                    aria-label={`Abort ${item.key}`}
-                                  >
-                                    <BlockIcon fontSize="small" />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
+                              {/* Abort only genuinely applies to the REQUEST phase (send an
+                                  error response instead of forwarding). A RESPONSE has already
+                                  been received upstream and cannot be aborted, so we render a
+                                  clearly-labelled disabled control there instead of a red button
+                                  that silently behaves like Continue. */}
+                              {isResponse ? (
+                                <Tooltip title="Abort not applicable — the response has already been received and can only be continued or modified">
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      disabled
+                                      aria-label={`Abort ${item.key} (not applicable for responses)`}
+                                    >
+                                      <BlockIcon fontSize="small" />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip title="Abort (do not forward)">
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      disabled={busy}
+                                      onClick={() => handleAbortExchange(item)}
+                                      aria-label={`Abort ${item.key}`}
+                                    >
+                                      <BlockIcon fontSize="small" />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              )}
                             </Box>
                           </TableCell>
                         </TableRow>

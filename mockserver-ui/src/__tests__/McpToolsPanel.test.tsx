@@ -56,4 +56,18 @@ describe('McpToolsPanel', () => {
     renderPanel();
     await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument());
   });
+
+  it('auto-refreshes the tool list on an interval without a manual click', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(callMcpTool).mockResolvedValue({ ok: true, result: { tools: [], count: 0 } });
+      renderPanel();
+
+      await vi.waitFor(() => expect(callMcpTool).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.waitFor(() => expect(vi.mocked(callMcpTool).mock.calls.length).toBeGreaterThan(1));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

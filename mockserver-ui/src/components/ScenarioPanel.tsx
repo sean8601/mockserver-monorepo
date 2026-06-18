@@ -11,6 +11,7 @@ import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TimerIcon from '@mui/icons-material/Timer';
+import ConfirmDialog from './ConfirmDialog';
 import {
   getScenarioState,
   setScenarioState,
@@ -96,6 +97,9 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
 
   // Trigger section
   const [triggerState, setTriggerState] = useState('');
+  // Triggering forces an external state transition (and can fire scenario
+  // side-effects) — confirm before applying it, consistent with the other panels.
+  const [confirmTriggerOpen, setConfirmTriggerOpen] = useState(false);
 
   // Timed transition countdown
   const [scheduledTransitionMs, setScheduledTransitionMs] = useState<number | null>(null);
@@ -374,13 +378,22 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
           variant="outlined"
           size="small"
           startIcon={<PlayArrowIcon sx={{ fontSize: '0.75rem' }} />}
-          onClick={() => void handleTrigger()}
+          onClick={() => setConfirmTriggerOpen(true)}
           disabled={loading || !scenarioName.trim() || !triggerState.trim()}
           sx={{ height: 24, fontSize: '0.65rem', textTransform: 'none' }}
         >
           Trigger
         </Button>
       </Box>
+
+      <ConfirmDialog
+        open={confirmTriggerOpen}
+        title="Trigger scenario transition?"
+        message={`This forces scenario "${scenarioName.trim()}" to state "${triggerState.trim()}", advancing the state machine and firing any associated transition side-effects. This cannot be undone.`}
+        confirmLabel="Trigger transition"
+        onConfirm={() => void handleTrigger()}
+        onClose={() => setConfirmTriggerOpen(false)}
+      />
 
       {/* Cross-protocol scenario legend (F15) */}
       <Divider sx={{ my: 1 }} />
