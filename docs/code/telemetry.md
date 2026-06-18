@@ -128,6 +128,15 @@ Span attributes (OpenTelemetry semantic conventions where applicable):
 | `http.response.status_code` | response status code |
 | `mockserver.expectation_id` | matched expectation id (when an expectation matched) |
 | `mockserver.response_time_ms` | forward path response time (omitted on mocked path) |
+| `server.address` | resolved upstream host on the forward/proxy path (omitted on the mocked path) |
+| `server.port` | resolved upstream port on the forward/proxy path (omitted when unknown or on the mocked path) |
+
+On the forward/proxy paths, `server.address`/`server.port` are populated from the resolved upstream
+(the matched forward action's host where available — the real upstream even behind an HTTP
+forward-proxy — else the resolved socket address), giving per-upstream visibility in traces. They are
+omitted on the mocked-response path. The same forward paths also feed two Prometheus metrics
+(`mock_server_forward_request_duration_seconds`, `mock_server_forward_requests`) labelled by upstream
+host — see [metrics.md](metrics.md).
 
 The span parent is taken from the inbound W3C trace context when present. The
 `AttributeKey<W3CTraceContext>` is defined once in `org.mockserver.telemetry.TraceContextAttributes`

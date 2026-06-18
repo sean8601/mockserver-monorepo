@@ -67,6 +67,35 @@ public class RequestSpansTest {
     }
 
     @Test
+    public void emitsServerAddressAndPortForForwardPath() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        Tracer tracer = tracerFor(spanExporter);
+
+        RequestSpans.recordRequest(tracer, "GET", "/api/users", 200, "exp-123", 42, null, "api.upstream.com", 8443);
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans.size(), is(1));
+        SpanData span = spans.get(0);
+        assertThat(span.getAttributes().get(stringKey("server.address")), is("api.upstream.com"));
+        assertThat(span.getAttributes().get(longKey("server.port")), is(8443L));
+    }
+
+    @Test
+    public void omitsServerAddressAndPortOnMockedPath() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        Tracer tracer = tracerFor(spanExporter);
+
+        // mocked path: no upstream address/port
+        RequestSpans.recordRequest(tracer, "GET", "/api/users", 200, "exp-123", 42, null, null, null);
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans.size(), is(1));
+        SpanData span = spans.get(0);
+        assertThat(span.getAttributes().get(stringKey("server.address")), is(nullValue()));
+        assertThat(span.getAttributes().get(longKey("server.port")), is(nullValue()));
+    }
+
+    @Test
     public void emitsSpanWithRemoteParentContext() {
         InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
         Tracer tracer = tracerFor(spanExporter);

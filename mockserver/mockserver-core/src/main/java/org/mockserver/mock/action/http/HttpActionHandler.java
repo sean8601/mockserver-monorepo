@@ -844,7 +844,9 @@ public class HttpActionHandler {
                             // has already been written to the client — violations are logged (report-only).
                             final HttpResponse streamingResponse = response;
                             // OpenTelemetry: emit SERVER span for the unmatched streaming forward path
-                            emitRequestSpan(request, streamingResponse, null, ctx, responseTimeMs);
+                            emitRequestSpan(request, streamingResponse, null, ctx, responseTimeMs, remoteAddress);
+                            // Metrics: per-upstream forward latency + status for the unmatched proxy path
+                            recordForwardMetrics(null, streamingResponse, remoteAddress, responseTimeMs);
                             responseWriter.writeResponse(request, streamingResponse, false);
                             streamingResponse.getStreamingBody().addCompletionListener(() -> {
                                 HttpResponse logResponse = streamingResponse.clone();
@@ -876,7 +878,9 @@ public class HttpActionHandler {
                                 response = validateProxyResponse(request, response, false);
                             }
                             // OpenTelemetry: emit SERVER + GenAI spans for the unmatched non-streaming forward path
-                            emitRequestSpan(request, response, null, ctx, responseTimeMs);
+                            emitRequestSpan(request, response, null, ctx, responseTimeMs, remoteAddress);
+                            // Metrics: per-upstream forward latency + status for the unmatched proxy path
+                            recordForwardMetrics(null, response, remoteAddress, responseTimeMs);
                             emitForwardGenAiSpan(clonedRequest, response);
                             // Response breakpoint: hold non-streaming unmatched proxy responses before writing
                             {
@@ -1186,11 +1190,15 @@ public class HttpActionHandler {
                             return;
                         }
 
+                        long forwardStartNanos = System.nanoTime();
                         final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, targetAddress), null, targetAddress);
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
+                        long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
                         if (response == null) {
                             response = badGatewayResponse();
                         }
+                        // Metrics: per-upstream forward latency + status for the proxy-pass reverse-proxy route
+                        recordForwardMetrics(null, response, targetAddress, responseTimeMs);
                         if (response.getStreamingBody() != null) {
                             // Note: enforce mode cannot replace a streaming response since the body
                             // has already been written to the client — violations are logged (report-only).
@@ -2151,7 +2159,10 @@ public class HttpActionHandler {
                 analyseDrift(request, response, responseTimeMs);
 
                 // OpenTelemetry: emit a request-level span for the forwarded request
-                emitRequestSpan(request, effectiveResponse, action, ctx, responseTimeMs);
+                emitRequestSpan(request, effectiveResponse, action, ctx, responseTimeMs, responseFuture.getRemoteAddress());
+                // Metrics: per-upstream forward latency + status (uses the precise Timing
+                // from the real upstream response, before any chaos replacement)
+                recordForwardMetrics(action, response, responseFuture.getRemoteAddress(), responseTimeMs);
 
                 // Determine streaming BEFORE the breakpoint check so GenAI span can
                 // be emitted for non-streaming responses ahead of a possible early return.
@@ -3417,6 +3428,16 @@ public class HttpActionHandler {
      */
     private void emitRequestSpan(HttpRequest request, HttpResponse response, Action action,
                                  ChannelHandlerContext ctx, long responseTimeMs) {
+        emitRequestSpan(request, response, action, ctx, responseTimeMs, null);
+    }
+
+    /**
+     * Emit a request-level SERVER span, additionally carrying the resolved
+     * upstream {@code server.address}/{@code server.port} for forward/proxy paths.
+     */
+    private void emitRequestSpan(HttpRequest request, HttpResponse response, Action action,
+                                 ChannelHandlerContext ctx, long responseTimeMs,
+                                 InetSocketAddress upstreamAddress) {
         if (!RequestSpans.isEnabled()) {
             return;
         }
@@ -3429,9 +3450,59 @@ public class HttpActionHandler {
             if (ctx != null) {
                 parentContext = ctx.channel().attr(TraceContextAttributes.TRACE_CONTEXT).get();
             }
-            RequestSpans.recordRequest(method, path, statusCode, expectationId, responseTimeMs, parentContext);
+            String serverAddress = resolveUpstreamHost(action, upstreamAddress);
+            Integer serverPort = upstreamAddress != null && upstreamAddress.getPort() > 0 ? upstreamAddress.getPort() : null;
+            RequestSpans.recordRequest(method, path, statusCode, expectationId, responseTimeMs, parentContext, serverAddress, serverPort);
         } catch (Exception e) {
             // fail-soft: telemetry must never affect the served response
         }
+    }
+
+    /**
+     * Record per-upstream forward/proxy observability metrics for a completed
+     * forward. No-op unless metrics are enabled (the underlying recorder is a
+     * static no-op then). Labels by upstream host only (never the full URL/path)
+     * to keep Prometheus cardinality bounded. Fail-soft.
+     *
+     * @param action          the matched forward action, or null on the unmatched proxy path
+     * @param response        the upstream response (carries the Timing for latency), or null
+     * @param upstreamAddress the resolved upstream socket address
+     * @param responseTimeMs  fallback wall-clock latency when the response carries no Timing
+     */
+    private void recordForwardMetrics(Action action, HttpResponse response,
+                                      InetSocketAddress upstreamAddress, long responseTimeMs) {
+        if (!org.mockserver.metrics.Metrics.isForwardMetricsActive()) {
+            return;
+        }
+        try {
+            String host = resolveUpstreamHost(action, upstreamAddress);
+            Integer statusCode = response != null ? response.getStatusCode() : null;
+            // Prefer the precise Timing measured by NettyHttpClient (total round-trip);
+            // fall back to the coarse wall-clock delta when no Timing is attached.
+            long latencyMillis = responseTimeMs;
+            if (response != null && response.getTiming() != null && response.getTiming().getTotalTimeInMillis() != null) {
+                latencyMillis = response.getTiming().getTotalTimeInMillis();
+            }
+            org.mockserver.metrics.Metrics.observeForwardRequest(host, statusCode, latencyMillis / 1000.0);
+        } catch (Exception e) {
+            // fail-soft: metrics must never affect the served response
+        }
+    }
+
+    /**
+     * Resolve the upstream host label for forward observability: prefer the
+     * explicit host from a matched forward action (the real upstream even behind
+     * an HTTP forward-proxy), else fall back to the resolved socket address host.
+     * Returns null when neither is available.
+     */
+    private String resolveUpstreamHost(Action action, InetSocketAddress upstreamAddress) {
+        String host = resolveForwardTargetHost(action);
+        if (host != null && !host.isEmpty()) {
+            return host;
+        }
+        if (upstreamAddress != null) {
+            return upstreamAddress.getHostString();
+        }
+        return null;
     }
 }

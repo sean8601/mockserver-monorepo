@@ -41,6 +41,12 @@ public class Metrics {
     private static volatile Histogram requestDurationByMethodSeconds;
     // Counter for slow forwarded requests. Null until metrics are enabled.
     private static volatile Counter slowRequestTotal;
+    // Per-upstream forwarded-request observability. Histogram of forward/proxy
+    // latency labeled by upstream host, plus a count labeled by host + status
+    // class. Both null until metrics are enabled. Cardinality is bounded by the
+    // number of distinct upstream hosts forwarded to (NOT the full URL/path).
+    private static volatile Histogram forwardRequestDurationSeconds;
+    private static volatile Counter forwardRequestsTotal;
     // Counter for HTTP chaos faults injected (error or latency). Null until metrics are enabled.
     private static volatile Counter httpChaosInjectedTotal;
     // Counter for chaos auto-halt events. Null until metrics are enabled.
@@ -93,6 +99,18 @@ public class Metrics {
                     slowRequestTotal = Counter.builder()
                         .name("mock_server_slow_requests")
                         .help("Total number of forwarded requests that exceeded the slow request threshold")
+                        .register();
+                    forwardRequestDurationSeconds = Histogram.builder()
+                        .name("mock_server_forward_request_duration_seconds")
+                        .help("Latency of forwarded/proxied requests in seconds, labeled by upstream host")
+                        .labelNames("upstream_host")
+                        .classicOnly()
+                        .classicUpperBounds(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+                        .register();
+                    forwardRequestsTotal = Counter.builder()
+                        .name("mock_server_forward_requests")
+                        .help("Total forwarded/proxied requests by upstream host and response status class")
+                        .labelNames("upstream_host", "status_class")
                         .register();
                     httpChaosInjectedTotal = Counter.builder()
                         .name("mock_server_http_chaos_injected")
@@ -222,6 +240,8 @@ public class Metrics {
             requestDurationSeconds = null;
             requestDurationByMethodSeconds = null;
             slowRequestTotal = null;
+            forwardRequestDurationSeconds = null;
+            forwardRequestsTotal = null;
             httpChaosInjectedTotal = null;
             chaosAutoHaltTotal = null;
             mcpToolCallsTotal = null;
@@ -312,6 +332,68 @@ public class Metrics {
         if (counter != null) {
             counter.inc();
         }
+    }
+
+    /**
+     * Record observability for a single forwarded/proxied request: its latency
+     * (seconds) in the per-upstream histogram and a count in the per-upstream,
+     * per-status-class counter. No-op unless metrics are enabled (both metrics
+     * are null until then), so the forward path pays nothing when metrics are off.
+     * <p>
+     * Cardinality is bounded by the number of distinct upstream hosts (the
+     * {@code upstream_host} label is the host only — never the full URL/path) and
+     * the five status classes ({@code 1xx}..{@code 5xx}). A null/blank host is
+     * recorded as {@code "unknown"}.
+     *
+     * @param upstreamHost the resolved upstream host (no port, no path)
+     * @param statusCode   the upstream response status code, or null if unknown
+     * @param latencySeconds the forward latency in seconds (negative values are clamped to 0)
+     */
+    public static void observeForwardRequest(String upstreamHost, Integer statusCode, double latencySeconds) {
+        String hostLabel = upstreamHost != null && !upstreamHost.isEmpty() ? upstreamHost : "unknown";
+        Histogram histogram = forwardRequestDurationSeconds;
+        if (histogram != null) {
+            histogram.labelValues(hostLabel).observe(latencySeconds > 0 ? latencySeconds : 0);
+        }
+        Counter counter = forwardRequestsTotal;
+        if (counter != null) {
+            counter.labelValues(hostLabel, statusClass(statusCode)).inc();
+        }
+    }
+
+    /**
+     * Map an HTTP status code to its status class label ({@code "1xx"}..{@code "5xx"}).
+     * Unknown/out-of-range codes are recorded as {@code "unknown"} so the
+     * {@code status_class} label has a small, bounded value set.
+     */
+    private static String statusClass(Integer statusCode) {
+        if (statusCode == null || statusCode < 100 || statusCode >= 600) {
+            return "unknown";
+        }
+        return (statusCode / 100) + "xx";
+    }
+
+    /**
+     * Return the current forward-request count for the given upstream host and
+     * status class, or 0 if metrics are disabled.
+     */
+    public static long getForwardRequestCount(String upstreamHost, String statusClass) {
+        Counter counter = forwardRequestsTotal;
+        if (counter == null || upstreamHost == null || statusClass == null) {
+            return 0L;
+        }
+        try {
+            return (long) counter.labelValues(upstreamHost, statusClass).get();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Return true if the per-upstream forward metrics are registered (i.e. metrics are enabled).
+     */
+    public static boolean isForwardMetricsActive() {
+        return forwardRequestsTotal != null;
     }
 
     /**

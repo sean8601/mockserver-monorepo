@@ -149,6 +149,103 @@ public class MetricsTest {
         assertThat(Metrics.getActiveServiceChaosCountByFaultType().get("error"), is(0));
     }
 
+    // --- per-upstream forward observability tests ---
+
+    @Test
+    public void registersForwardObservabilityMetrics() {
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.observeForwardRequest("api.example.com", 200, 0.05);
+
+        assertThat(scrapeContains("mock_server_forward_request_duration_seconds"), is(true));
+        assertThat(scrapeContains("mock_server_forward_requests"), is(true));
+    }
+
+    @Test
+    public void forwardRequestsCounterLabelsByHostAndStatusClass() {
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.observeForwardRequest("api.example.com", 200, 0.01);
+        Metrics.observeForwardRequest("api.example.com", 204, 0.02);
+        Metrics.observeForwardRequest("api.example.com", 502, 0.03);
+        Metrics.observeForwardRequest("other.example.com", 200, 0.04);
+
+        assertThat(scrapeForwardCount("api.example.com", "2xx"), is(2.0));
+        assertThat(scrapeForwardCount("api.example.com", "5xx"), is(1.0));
+        assertThat(scrapeForwardCount("other.example.com", "2xx"), is(1.0));
+    }
+
+    @Test
+    public void forwardObservabilityRecordsLatencyHistogram() {
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.observeForwardRequest("api.example.com", 200, 0.05);
+
+        // _count series of the histogram should reflect one observation
+        assertThat(scrapeForwardDurationCount("api.example.com"), is(1.0));
+    }
+
+    @Test
+    public void getForwardRequestCountReturnsPerHostStatusClassCount() {
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.observeForwardRequest("api.example.com", 200, 0.01);
+        Metrics.observeForwardRequest("api.example.com", 201, 0.01);
+
+        assertThat(Metrics.getForwardRequestCount("api.example.com", "2xx"), is(2L));
+        assertThat(Metrics.getForwardRequestCount("api.example.com", "5xx"), is(0L));
+        assertThat(Metrics.getForwardRequestCount("nonexistent", "2xx"), is(0L));
+    }
+
+    @Test
+    public void forwardObservabilityNullHostRecordedAsUnknown() {
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.observeForwardRequest(null, 200, 0.01);
+
+        assertThat(Metrics.getForwardRequestCount("unknown", "2xx"), is(1L));
+    }
+
+    @Test
+    public void forwardObservabilityNullStatusRecordedAsUnknownClass() {
+        new Metrics(configuration().metricsEnabled(true));
+        Metrics.observeForwardRequest("api.example.com", null, 0.01);
+
+        assertThat(Metrics.getForwardRequestCount("api.example.com", "unknown"), is(1L));
+    }
+
+    @Test
+    public void observeForwardRequestDoesNotThrowWhenDisabled() {
+        // safe to call when metrics not registered (no-op)
+        Metrics.observeForwardRequest("api.example.com", 200, 0.05);
+        assertThat(Metrics.isForwardMetricsActive(), is(false));
+    }
+
+    private static double scrapeForwardCount(String host, String statusClass) {
+        MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
+        for (MetricSnapshot snapshot : snapshots) {
+            if (snapshot.getMetadata().getName().equals("mock_server_forward_requests") && snapshot instanceof CounterSnapshot counterSnapshot) {
+                for (CounterSnapshot.CounterDataPointSnapshot dataPoint : counterSnapshot.getDataPoints()) {
+                    if (host.equals(dataPoint.getLabels().get("upstream_host"))
+                        && statusClass.equals(dataPoint.getLabels().get("status_class"))) {
+                        return dataPoint.getValue();
+                    }
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    private static double scrapeForwardDurationCount(String host) {
+        MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
+        for (MetricSnapshot snapshot : snapshots) {
+            if (snapshot.getMetadata().getName().equals("mock_server_forward_request_duration_seconds")
+                && snapshot instanceof io.prometheus.metrics.model.snapshots.HistogramSnapshot histogramSnapshot) {
+                for (io.prometheus.metrics.model.snapshots.HistogramSnapshot.HistogramDataPointSnapshot dataPoint : histogramSnapshot.getDataPoints()) {
+                    if (host.equals(dataPoint.getLabels().get("upstream_host"))) {
+                        return dataPoint.getCount();
+                    }
+                }
+            }
+        }
+        return 0.0;
+    }
+
     // --- MCP tool call counter tests ---
 
     @Test

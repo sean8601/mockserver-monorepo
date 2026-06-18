@@ -124,6 +124,29 @@ histogram_quantile(0.95, sum by (le) (rate(mock_server_request_duration_seconds_
 
 It is registered (once) when `metricsEnabled`. Timing is captured per `NettyResponseWriter` (one is created per request, so there is no cross-request race) and **only when metrics are enabled** — `Metrics.observeRequestDurationSeconds(...)` is a no-op otherwise, so the request hot path pays nothing when metrics are off.
 
+### Per-Upstream Forward/Proxy Observability
+
+Two Prometheus metrics give per-upstream visibility into forwarded and proxied requests — which upstream a request hit and how it performed. Both are registered once when `metricsEnabled` is `true`.
+
+| Metric Name | Type | Labels | Description |
+|-------------|------|--------|-------------|
+| `mock_server_forward_request_duration_seconds` | Histogram (classic, 0.5 ms–10 s buckets) | `upstream_host` | Latency of forwarded/proxied requests, by upstream host |
+| `mock_server_forward_requests` | Counter | `upstream_host`, `status_class` | Count of forwarded/proxied requests, by upstream host and status class (`1xx`..`5xx`, or `unknown`) |
+
+Recording happens in `HttpActionHandler` on every forward/proxy completion: matched FORWARD actions, the unmatched proxy-pass path (streaming and non-streaming), and `proxyPassMappings` reverse-proxy routes. The latency is taken from the precise client-side `Timing` (`getTotalTimeInMillis()`) already computed by `NettyHttpClient` — it is *not* re-measured — falling back to a coarse wall-clock delta only when no `Timing` is attached.
+
+The `upstream_host` label is resolved from the matched forward action's host (the real upstream even behind an HTTP forward-proxy), falling back to the resolved socket address host; a null/blank host is recorded as `unknown`. **Cardinality is deliberately bounded to the host** (never the full URL or path) plus the five status classes, so the series count scales with the number of distinct upstreams, not with request volume or path variety. `Metrics.observeForwardRequest(host, statusCode, latencySeconds)` is a static no-op when metrics are disabled (the histogram/counter are `null`), so the forward hot path pays nothing when metrics are off.
+
+Example PromQL (p95 forward latency per upstream):
+```promql
+histogram_quantile(0.95, sum by (le, upstream_host) (rate(mock_server_forward_request_duration_seconds_bucket[5m])))
+```
+
+Example PromQL (5xx rate per upstream):
+```promql
+sum by (upstream_host) (rate(mock_server_forward_requests{status_class="5xx"}[5m]))
+```
+
 ### HTTP Chaos Fault Counter
 
 `mock_server_http_chaos_injected_total` is a Prometheus `Counter` with a `fault_type` label (values: `"drop"`, `"error"`, `"latency"`, `"truncate"`, `"malformed"`, `"slow"`, `"quota"`, `"graphql"`) that tracks every HTTP chaos fault injected by the chaos profile subsystem. It is registered once when `metricsEnabled` is `true`.

@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JavaScript call `jsonPath('$.store.book[0].title')` and `xPath('/element/key')`. Both operate on the
   request body, share the exact same JSONPath/XPath libraries and error handling as Mustache, and a missing
   path resolves to an empty value (logged, never thrown) just as it does for Mustache templates.
+- **Per-upstream forward/proxy observability**: forwarded and proxied requests are now observable by
+  the upstream they hit and how it performed. When `metricsEnabled` is set, two new Prometheus metrics
+  are exposed: `mock_server_forward_request_duration_seconds` (a histogram of forward latency labelled
+  by `upstream_host`, sourced from the existing client-side `Timing` rather than re-measured) and
+  `mock_server_forward_requests` (a count labelled by `upstream_host` and `status_class`, e.g. `2xx`/`5xx`).
+  When `otelTracesEnabled` is set, the forward/proxy request span additionally carries the OpenTelemetry
+  `server.address`/`server.port` attributes for the resolved upstream. Labels are bounded to the upstream
+  host (never the full URL/path) to keep cardinality in check, and all recording is a no-op with zero
+  overhead when metrics/telemetry are disabled.
 - **Dashboard UI — usability, responsiveness and new surfaces**: a broad pass over the dashboard from
   an adversarial review.
   - **Delete and edit a single mock** from the dashboard's Active Expectations panel (previously the

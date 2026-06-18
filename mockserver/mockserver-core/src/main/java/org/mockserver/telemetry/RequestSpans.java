@@ -42,11 +42,26 @@ public final class RequestSpans {
     public static void recordRequest(String method, String path, Integer statusCode,
                                      String expectationId, long responseTimeMs,
                                      W3CTraceContext parentContext) {
+        recordRequest(method, path, statusCode, expectationId, responseTimeMs, parentContext, null, null);
+    }
+
+    /**
+     * Emit one SERVER span for a served HTTP request, additionally carrying the
+     * resolved upstream {@code server.address}/{@code server.port} for forward
+     * and proxy paths. No-op when disabled.
+     *
+     * @param serverAddress  the resolved upstream host (no port), or null on the mocked path
+     * @param serverPort     the resolved upstream port, or null if unknown
+     */
+    public static void recordRequest(String method, String path, Integer statusCode,
+                                     String expectationId, long responseTimeMs,
+                                     W3CTraceContext parentContext,
+                                     String serverAddress, Integer serverPort) {
         Tracer current = tracer;
         if (current == null) {
             return;
         }
-        recordRequest(current, method, path, statusCode, expectationId, responseTimeMs, parentContext);
+        recordRequest(current, method, path, statusCode, expectationId, responseTimeMs, parentContext, serverAddress, serverPort);
     }
 
     /**
@@ -58,6 +73,18 @@ public final class RequestSpans {
     static void recordRequest(Tracer explicitTracer, String method, String path, Integer statusCode,
                               String expectationId, long responseTimeMs,
                               W3CTraceContext parentContext) {
+        recordRequest(explicitTracer, method, path, statusCode, expectationId, responseTimeMs, parentContext, null, null);
+    }
+
+    /**
+     * Record a request span using the given tracer, additionally carrying the
+     * resolved upstream {@code server.address}/{@code server.port}. Package-private
+     * for tests.
+     */
+    static void recordRequest(Tracer explicitTracer, String method, String path, Integer statusCode,
+                              String expectationId, long responseTimeMs,
+                              W3CTraceContext parentContext,
+                              String serverAddress, Integer serverPort) {
         try {
             String resolvedMethod = method != null && !method.isEmpty() ? method : "HTTP";
             String spanName = resolvedMethod + " " + (path != null && !path.isEmpty() ? path : "/");
@@ -91,6 +118,15 @@ public final class RequestSpans {
                 }
                 if (responseTimeMs > 0) {
                     span.setAttribute("mockserver.response_time_ms", responseTimeMs);
+                }
+                // server.address / server.port — the resolved upstream the request was
+                // forwarded/proxied to (OpenTelemetry semantic conventions). Present only
+                // on forward/proxy paths; omitted on the mocked-response path.
+                if (serverAddress != null && !serverAddress.isEmpty()) {
+                    span.setAttribute("server.address", serverAddress);
+                }
+                if (serverPort != null && serverPort > 0) {
+                    span.setAttribute("server.port", (long) serverPort);
                 }
             } finally {
                 span.end();
