@@ -775,6 +775,7 @@ Coverage by schema format:
 | `uuid` | Seeded UUID v4 |
 | `date` | ISO-8601 date (e.g. `2022-07-14`) |
 | `date-time` | ISO-8601 offset date-time (UTC) |
+| `time` | `HH:mm:ss` (e.g. `14:32:07`) |
 | `uri` / `url` | `faker.internet().url()` |
 | `hostname` | `faker.internet().domainName()` |
 | `ipv4` / `ipv6` | `faker.internet().ipV4Address()` / `ipV6Address()` |
@@ -787,6 +788,20 @@ Coverage by schema format:
 | `boolean` | `random.nextBoolean()` |
 
 This feature is off by default (`generateRealisticExampleValues=false`). Enabling it affects all paths that call `ExampleBuilder`: `PUT /mockserver/openapi`, `initializationOpenAPIPath`, the `run_contract_test` and `run_resiliency_test` MCP tools, and `OpenApiContractTest` used by WSDL-generated callbacks.
+
+### JSON-Schema constraints honoured during generation
+
+Independently of the `generateRealisticExampleValues` flag, `ExampleBuilder` honours several additional JSON-Schema constraints so generated examples are less likely to fail a consumer's own validators. These apply in both the default (placeholder) and realistic modes:
+
+| Constraint | Behaviour |
+|------------|-----------|
+| `minItems` / `maxItems` (arrays) | Emits `minItems` items (clamped to a small cap of 5) instead of always a single element; `maxItems` below 1 yields an empty array. Default is still 1 item when neither is set. |
+| `pattern` (strings) | Generates a value matching the regex via Datafaker's seeded `regexify` (e.g. SKUs, phone numbers). An unsupported/invalid regex falls back to the previous behaviour rather than failing. This runs even with the flag off, using a deterministic generator. |
+| `exclusiveMinimum` / `exclusiveMaximum` (numbers) | The generated number sits strictly inside the open bound. Both the OpenAPI 3.0 boolean-flag form (paired with `minimum`/`maximum`) and the 3.1 numeric form (`exclusiveMinimumValue`/`exclusiveMaximumValue`) are supported. |
+| `time` format (strings) | Produces a valid `HH:mm:ss` example. |
+| `minProperties` (free-form / `additionalProperties` objects) | Emits at least that many entries (clamped to a cap of 10). |
+
+Unconstrained schemas are unaffected — there is no behaviour change when none of these constraints are present.
 
 ## Configuration
 

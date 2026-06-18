@@ -346,6 +346,17 @@ public class ExampleBuilderTest {
         assertThat(((StringExample) result).getValue(), is(SAMPLE_STRING_PROPERTY_VALUE));
     }
 
+    @Test
+    public void shouldHonourPatternForOas31TypeArrayString() {
+        // type: [string] with a pattern — the OAS 3.1 type-array path must honour the pattern
+        // with the same priority as the typed StringSchema path
+        Schema<?> schema = new Schema<>();
+        schema.setTypes(new java.util.LinkedHashSet<>(List.of("string")));
+        schema.setPattern("[A-Z]{2}\\d{3}");
+        Example result = build(schema);
+        assertThat(((StringExample) result).getValue(), matchesPattern("[A-Z]{2}\\d{3}"));
+    }
+
     // --- circular references ---
 
     @Test
@@ -362,5 +373,119 @@ public class ExampleBuilderTest {
 
         // terminates without StackOverflow (the forward/circular ref is logged and dropped)
         assertThat(result, is(instanceOf(ObjectExample.class)));
+    }
+
+    // --- JSON-Schema constraints (minItems/maxItems, pattern, exclusive bounds, time, minProperties) ---
+
+    @Test
+    public void shouldEmitMinItemsArrayItems() {
+        ArraySchema schema = new ArraySchema();
+        schema.setItems(new StringSchema());
+        schema.setMinItems(3);
+        Example result = build(schema);
+        assertThat(result, is(instanceOf(ArrayExample.class)));
+        assertThat(((ArrayExample) result).getItems(), hasSize(3));
+    }
+
+    @Test
+    public void shouldClampLargeMinItemsToCap() {
+        ArraySchema schema = new ArraySchema();
+        schema.setItems(new StringSchema());
+        schema.setMinItems(1000);
+        Example result = build(schema);
+        // clamped to the small cap so the example does not explode in size
+        assertThat(((ArrayExample) result).getItems(), hasSize(5));
+    }
+
+    @Test
+    public void shouldHonourMaxItemsBelowOne() {
+        ArraySchema schema = new ArraySchema();
+        schema.setItems(new StringSchema());
+        schema.setMaxItems(0);
+        Example result = build(schema);
+        // maxItems 0 => an empty array, handled gracefully (no items, not a single default item)
+        assertThat(((ArrayExample) result).getItems(), is(anyOf(nullValue(), empty())));
+    }
+
+    @Test
+    public void shouldGenerateStringMatchingPattern() {
+        StringSchema schema = new StringSchema();
+        schema.setPattern("[A-Z]{3}-\\d{4}");
+        Example result = build(schema);
+        String value = ((StringExample) result).getValue();
+        assertThat(value, matchesPattern("[A-Z]{3}-\\d{4}"));
+    }
+
+    @Test
+    public void shouldFallBackWhenPatternCannotBeGenerated() {
+        StringSchema schema = new StringSchema();
+        // an invalid/unsupported regex must not fail generation — fall back to the default sample
+        schema.setPattern("[unterminated");
+        Example result = build(schema);
+        assertThat(((StringExample) result).getValue(), is(SAMPLE_STRING_PROPERTY_VALUE));
+    }
+
+    @Test
+    public void shouldGenerateValidTimeFormatString() {
+        StringSchema schema = new StringSchema();
+        schema.setFormat("time");
+        Example result = build(schema);
+        assertThat(((StringExample) result).getValue(), matchesPattern("\\d{2}:\\d{2}:\\d{2}"));
+    }
+
+    @Test
+    public void shouldRespectExclusiveMinimumOas30() {
+        NumberSchema schema = new NumberSchema();
+        schema.setMinimum(new BigDecimal("10"));
+        schema.setExclusiveMinimum(true);
+        Example result = build(schema);
+        assertThat(((DecimalExample) result).getValue(), is(greaterThan(new BigDecimal("10"))));
+    }
+
+    @Test
+    public void shouldRespectExclusiveMinimumOas31() {
+        NumberSchema schema = new NumberSchema();
+        schema.setExclusiveMinimumValue(new BigDecimal("10"));
+        Example result = build(schema);
+        assertThat(((DecimalExample) result).getValue(), is(greaterThan(new BigDecimal("10"))));
+    }
+
+    @Test
+    public void shouldRespectExclusiveMaximumInteger() {
+        IntegerSchema schema = new IntegerSchema();
+        schema.setExclusiveMaximumValue(new BigDecimal("5"));
+        schema.setMinimum(new BigDecimal("0"));
+        Example result = build(schema);
+        assertThat(((IntegerExample) result).getValue(), is(lessThan(5)));
+    }
+
+    @Test
+    public void shouldEmitMinPropertiesForAdditionalProperties() {
+        ObjectSchema schema = new ObjectSchema();
+        schema.setAdditionalProperties(new StringSchema());
+        schema.setMinProperties(5);
+        Example result = build(schema);
+        assertThat(result, is(instanceOf(ObjectExample.class)));
+        assertThat(((ObjectExample) result).keySet(), hasSize(5));
+    }
+
+    @Test
+    public void shouldEmitMinPropertiesUpToCap() {
+        ObjectSchema schema = new ObjectSchema();
+        schema.setAdditionalProperties(new StringSchema());
+        schema.setMinProperties(8);
+        Example result = build(schema);
+        // within the property cap (10), so the constraint is fully satisfied
+        assertThat(((ObjectExample) result).keySet(), hasSize(8));
+    }
+
+    @Test
+    public void shouldRespectExclusiveMinimumInt64WithoutTruncation() {
+        IntegerSchema schema = new IntegerSchema();
+        schema.setFormat("int64");
+        // a bound beyond the int range must not be truncated by the static-mode clamp
+        schema.setExclusiveMinimumValue(new BigDecimal("3000000000"));
+        Example result = build(schema);
+        assertThat(((LongExample) result).getValue(), is(greaterThan(3000000000L)));
     }
 }

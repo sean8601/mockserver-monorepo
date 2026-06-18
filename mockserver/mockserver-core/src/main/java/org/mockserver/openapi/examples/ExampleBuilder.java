@@ -205,21 +205,26 @@ public class ExampleBuilder {
                 }
 
                 if (defaultValue == null) {
-                    if (generator != null) {
-                        String format = stringSchema.getFormat();
-                        if ("uri".equals(format) || "url".equals(format)) {
-                            output = new StringExample(generator.uri());
-                        } else if ("hostname".equals(format)) {
-                            output = new StringExample(generator.hostname());
-                        } else if ("ipv4".equals(format)) {
-                            output = new StringExample(generator.ipv4());
-                        } else if ("ipv6".equals(format)) {
-                            output = new StringExample(generator.ipv6());
+                    // honour a pattern (regex) or time format before any generic generation, even when
+                    // the realistic-values flag is off, so constrained fields produce valid example data
+                    output = constrainedStringExample(stringSchema, generator);
+                    if (output == null) {
+                        if (generator != null) {
+                            String format = stringSchema.getFormat();
+                            if ("uri".equals(format) || "url".equals(format)) {
+                                output = new StringExample(generator.uri());
+                            } else if ("hostname".equals(format)) {
+                                output = new StringExample(generator.hostname());
+                            } else if ("ipv4".equals(format)) {
+                                output = new StringExample(generator.ipv4());
+                            } else if ("ipv6".equals(format)) {
+                                output = new StringExample(generator.ipv6());
+                            } else {
+                                output = new StringExample(generator.stringWithConstraints(stringSchema.getMinLength(), stringSchema.getMaxLength()));
+                            }
                         } else {
-                            output = new StringExample(generator.stringWithConstraints(stringSchema.getMinLength(), stringSchema.getMaxLength()));
+                            output = new StringExample(SAMPLE_STRING_PROPERTY_VALUE);
                         }
-                    } else {
-                        output = new StringExample(SAMPLE_STRING_PROPERTY_VALUE);
                     }
                 } else {
                     output = new StringExample(defaultValue);
@@ -276,16 +281,18 @@ public class ExampleBuilder {
                         defaultValue = enums.get(0);
                     }
                 }
+                BigDecimal intMin = effectiveMinimum(property, INTEGER_STEP);
+                BigDecimal intMax = effectiveMaximum(property, INTEGER_STEP);
                 if (property.getFormat() != null) {
                     if (property.getFormat().equals("int32")) {
-                        output = new IntegerExample(defaultValue == null ? (generator != null ? generator.integer(property.getMinimum(), property.getMaximum()) : SAMPLE_INT_PROPERTY_VALUE) : defaultValue.intValue());
+                        output = new IntegerExample(defaultValue == null ? (generator != null ? generator.integer(intMin, intMax) : intSampleWithin(intMin, intMax, SAMPLE_INT_PROPERTY_VALUE)) : defaultValue.intValue());
                     } else if (property.getFormat().equals("int64")) {
-                        output = new LongExample(defaultValue == null ? (generator != null ? generator.longValue(property.getMinimum(), property.getMaximum()) : SAMPLE_LONG_PROPERTY_VALUE) : defaultValue.longValue());
+                        output = new LongExample(defaultValue == null ? (generator != null ? generator.longValue(intMin, intMax) : longSampleWithin(intMin, intMax, SAMPLE_LONG_PROPERTY_VALUE)) : defaultValue.longValue());
                     }
                 } else {
                     // no format: honour an explicit default/enum value before falling back to the
                     // generator/sample (mirrors the int32/int64 branches and generateExampleForType)
-                    output = new IntegerExample(defaultValue == null ? (generator != null ? generator.integer(property.getMinimum(), property.getMaximum()) : SAMPLE_BASE_INTEGER_PROPERTY_VALUE) : defaultValue.intValue());
+                    output = new IntegerExample(defaultValue == null ? (generator != null ? generator.integer(intMin, intMax) : intSampleWithin(intMin, intMax, SAMPLE_BASE_INTEGER_PROPERTY_VALUE)) : defaultValue.intValue());
                 }
             }
         } else if (property instanceof NumberSchema numberSchema) {
@@ -314,17 +321,19 @@ public class ExampleBuilder {
                         defaultValue = enums.get(0);
                     }
                 }
+                BigDecimal numMin = effectiveMinimum(property, DECIMAL_STEP);
+                BigDecimal numMax = effectiveMaximum(property, DECIMAL_STEP);
                 if (property.getFormat() != null) {
                     if (property.getFormat().equals("double")) {
-                        output = new DoubleExample(defaultValue == null ? (generator != null ? generator.doubleValue(property.getMinimum(), property.getMaximum()) : SAMPLE_DOUBLE_PROPERTY_VALUE) : defaultValue.doubleValue());
+                        output = new DoubleExample(defaultValue == null ? (generator != null ? generator.doubleValue(numMin, numMax) : decimalSampleWithin(numMin, numMax, BigDecimal.valueOf(SAMPLE_DOUBLE_PROPERTY_VALUE)).doubleValue()) : defaultValue.doubleValue());
                     }
                     if (property.getFormat().equals("float")) {
-                        output = new FloatExample(defaultValue == null ? (generator != null ? generator.floatValue(property.getMinimum(), property.getMaximum()) : SAMPLE_FLOAT_PROPERTY_VALUE) : defaultValue.floatValue());
+                        output = new FloatExample(defaultValue == null ? (generator != null ? generator.floatValue(numMin, numMax) : decimalSampleWithin(numMin, numMax, BigDecimal.valueOf(SAMPLE_FLOAT_PROPERTY_VALUE)).floatValue()) : defaultValue.floatValue());
                     }
                 } else {
                     // no format: honour an explicit default/enum value before falling back to the
                     // generator/sample (mirrors the float/double branches and generateExampleForType)
-                    output = new DecimalExample(defaultValue == null ? (generator != null ? generator.decimal(property.getMinimum(), property.getMaximum()) : new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE)) : defaultValue);
+                    output = new DecimalExample(defaultValue == null ? (generator != null ? generator.decimal(numMin, numMax) : decimalSampleWithin(numMin, numMax, new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE))) : defaultValue);
                 }
             }
 
@@ -404,14 +413,23 @@ public class ExampleBuilder {
             } else {
                 Schema<?> inner = arraySchema.getItems();
                 if (inner != null) {
-                    // pass a null item name (NOT the array's type, "array"): an array item's XML element name
-                    // is its own xml.name when set, otherwise the array property's name, which the XML
-                    // serializer applies as a fallback only when the item name is null. Baking "array" in here
-                    // produced <array> item elements instead of e.g. <photoUrls>.
-                    Example innerExample = fromProperty(null, inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
-                    if (innerExample != null) {
-                        ArrayExample an = new ArrayExample();
-                        an.add(innerExample);
+                    // emit minItems items (clamped, default 1 when unset) so the example satisfies an
+                    // array length constraint instead of always producing a single element.
+                    int itemCount = arrayItemCount(arraySchema);
+                    ArrayExample an = new ArrayExample();
+                    boolean built = itemCount == 0;
+                    for (int i = 0; i < itemCount; i++) {
+                        // pass a null item name (NOT the array's type, "array"): an array item's XML element name
+                        // is its own xml.name when set, otherwise the array property's name, which the XML
+                        // serializer applies as a fallback only when the item name is null. Baking "array" in here
+                        // produced <array> item elements instead of e.g. <photoUrls>.
+                        Example innerExample = fromProperty(null, inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
+                        if (innerExample != null) {
+                            an.add(innerExample);
+                            built = true;
+                        }
+                    }
+                    if (built) {
                         an.setName(property.getName());
                         output = an;
                     }
@@ -511,7 +529,18 @@ public class ExampleBuilder {
         }
         if (property.getAdditionalProperties() instanceof Schema<?> inner) {
             if (inner != null) {
-                for (int i = 1; i <= 3; i++) {
+                // emit at least minProperties entries (default 3) so a minProperties constraint on a
+                // free-form / additionalProperties object is satisfied; clamp to a small cap.
+                int additionalCount = 3;
+                Integer minProperties = property.getMinProperties();
+                if (minProperties != null) {
+                    int alreadyPresent = output instanceof ObjectExample existing ? existing.keySet().size() : 0;
+                    int needed = minProperties - alreadyPresent;
+                    if (needed > additionalCount) {
+                        additionalCount = Math.min(needed, PROPERTY_CAP);
+                    }
+                }
+                for (int i = 1; i <= additionalCount; i++) {
                     Example innerExample = fromProperty(inner.getType(), inner, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
                     if (innerExample != null) {
                         if (output == null) {
@@ -625,6 +654,184 @@ public class ExampleBuilder {
     }
 
     /**
+     * Effective inclusive minimum for numeric generation, folding in {@code exclusiveMinimum}.
+     * Supports both OpenAPI 3.0 ({@code exclusiveMinimum} boolean flag paired with {@code minimum})
+     * and OpenAPI 3.1 ({@code exclusiveMinimumValue} numeric). Returns a value strictly greater than
+     * the exclusive bound by {@code step}; {@code null} when no minimum constraint applies.
+     */
+    static BigDecimal effectiveMinimum(Schema<?> property, BigDecimal step) {
+        BigDecimal exclusiveValue = property.getExclusiveMinimumValue();
+        if (exclusiveValue != null) {
+            return exclusiveValue.add(step);
+        }
+        BigDecimal minimum = property.getMinimum();
+        if (minimum != null && Boolean.TRUE.equals(property.getExclusiveMinimum())) {
+            return minimum.add(step);
+        }
+        return minimum;
+    }
+
+    /**
+     * Effective inclusive maximum for numeric generation, folding in {@code exclusiveMaximum}
+     * (both the OpenAPI 3.0 boolean-flag and 3.1 numeric forms). Returns a value strictly less than
+     * the exclusive bound by {@code step}; {@code null} when no maximum constraint applies.
+     */
+    static BigDecimal effectiveMaximum(Schema<?> property, BigDecimal step) {
+        BigDecimal exclusiveValue = property.getExclusiveMaximumValue();
+        if (exclusiveValue != null) {
+            return exclusiveValue.subtract(step);
+        }
+        BigDecimal maximum = property.getMaximum();
+        if (maximum != null && Boolean.TRUE.equals(property.getExclusiveMaximum())) {
+            return maximum.subtract(step);
+        }
+        return maximum;
+    }
+
+    private static final BigDecimal INTEGER_STEP = BigDecimal.ONE;
+    private static final BigDecimal DECIMAL_STEP = new BigDecimal("0.01");
+
+    /**
+     * Number of array items to emit for the given items schema, honouring {@code minItems} /
+     * {@code maxItems}. Defaults to 1 when unconstrained (historic behaviour); clamps {@code minItems}
+     * to a small cap so a large {@code minItems} does not produce an unwieldy example, and never
+     * emits more than {@code maxItems} (treating {@code maxItems < 1} as 0).
+     */
+    static int arrayItemCount(Schema<?> arraySchema) {
+        int count = 1;
+        Integer minItems = arraySchema.getMinItems();
+        if (minItems != null && minItems > 1) {
+            count = Math.min(minItems, ARRAY_ITEM_CAP);
+        }
+        Integer maxItems = arraySchema.getMaxItems();
+        if (maxItems != null && maxItems < count) {
+            count = Math.max(maxItems, 0);
+        }
+        return count;
+    }
+
+    private static final int ARRAY_ITEM_CAP = 5;
+
+    // free-form minProperties cap — larger than the array cap because object property counts
+    // requested via minProperties tend to be modest but more than a handful.
+    private static final int PROPERTY_CAP = 10;
+
+    // Reusable deterministic generator (fixed seed) for honouring pattern/time constraints when the
+    // realistic-values flag is off, so a Faker instance is not allocated per field.
+    private static final SampleDataGenerator STATIC_GENERATOR = new SampleDataGenerator();
+
+    /**
+     * Static-mode integer sample that respects effective (exclusive-folded) bounds: returns the
+     * {@code fallback} sample when it lies within the bounds, otherwise the nearest in-bounds value.
+     * Keeps the historic sample (0) for unconstrained schemas while ensuring a constrained value
+     * (e.g. {@code exclusiveMinimum: 0}) is not violated even when realistic generation is off.
+     */
+    private static int intSampleWithin(BigDecimal minimum, BigDecimal maximum, int fallback) {
+        // clamp the BigDecimal bounds to the int range first so a bound beyond Integer.MAX/MIN_VALUE
+        // (e.g. a malformed int32 schema with exclusiveMinimum: 3000000000) is not silently truncated
+        // by BigDecimal.intValue()'s modular conversion.
+        int value = fallback;
+        if (minimum != null) {
+            int min = clampToInt(minimum);
+            if (value < min) {
+                value = min;
+            }
+        }
+        if (maximum != null) {
+            int max = clampToInt(maximum);
+            if (value > max) {
+                value = max;
+            }
+        }
+        return value;
+    }
+
+    private static int clampToInt(BigDecimal value) {
+        if (value.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+            return Integer.MAX_VALUE;
+        }
+        if (value.compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) < 0) {
+            return Integer.MIN_VALUE;
+        }
+        return value.intValue();
+    }
+
+    /**
+     * Static-mode long sample that respects effective (exclusive-folded) bounds — like
+     * {@link #intSampleWithin(BigDecimal, BigDecimal, int)} but using {@code long} arithmetic so int64
+     * bounds beyond the int range (e.g. {@code exclusiveMinimum: 3000000000}) are not truncated.
+     */
+    private static long longSampleWithin(BigDecimal minimum, BigDecimal maximum, long fallback) {
+        // clamp to the long range first (mirrors intSampleWithin/clampToInt) so a bound beyond
+        // Long.MAX/MIN_VALUE is not silently truncated by BigDecimal.longValue()'s modular conversion.
+        long value = fallback;
+        if (minimum != null) {
+            long min = clampToLong(minimum);
+            if (value < min) {
+                value = min;
+            }
+        }
+        if (maximum != null) {
+            long max = clampToLong(maximum);
+            if (value > max) {
+                value = max;
+            }
+        }
+        return value;
+    }
+
+    private static long clampToLong(BigDecimal value) {
+        if (value.compareTo(BigDecimal.valueOf(Long.MAX_VALUE)) > 0) {
+            return Long.MAX_VALUE;
+        }
+        if (value.compareTo(BigDecimal.valueOf(Long.MIN_VALUE)) < 0) {
+            return Long.MIN_VALUE;
+        }
+        return value.longValue();
+    }
+
+    /**
+     * Static-mode decimal sample that respects effective (exclusive-folded) bounds — analogous to
+     * {@link #intSampleWithin(BigDecimal, BigDecimal, int)} for number schemas.
+     */
+    private static BigDecimal decimalSampleWithin(BigDecimal minimum, BigDecimal maximum, BigDecimal fallback) {
+        BigDecimal value = fallback;
+        if (minimum != null && value.compareTo(minimum) < 0) {
+            value = minimum;
+        }
+        if (maximum != null && value.compareTo(maximum) > 0) {
+            value = maximum;
+        }
+        return value;
+    }
+
+    /**
+     * Generates a {@link StringExample} that satisfies a {@code pattern} (regex) or {@code time}
+     * format constraint, or {@code null} when neither applies or the constraint cannot be honoured
+     * (the caller then keeps its existing default behaviour). A deterministic generator is used even
+     * when the realistic-values flag is off so pattern/time fields still produce valid example data.
+     * <p>
+     * A {@code pattern} takes priority over a recognised string {@code format} (uri/hostname/ipv4/ipv6):
+     * a pattern is the more specific constraint and a format-shaped value may not satisfy it.
+     */
+    private static StringExample constrainedStringExample(Schema<?> property, SampleDataGenerator generator) {
+        // reuse the shared deterministic generator when the realistic-values flag is off, rather than
+        // allocating a Faker per field
+        SampleDataGenerator effectiveGenerator = generator != null ? generator : STATIC_GENERATOR;
+        String pattern = property.getPattern();
+        if (isNotBlank(pattern)) {
+            String generated = effectiveGenerator.regexify(pattern);
+            if (generated != null) {
+                return new StringExample(generated);
+            }
+        }
+        if ("time".equals(property.getFormat())) {
+            return new StringExample(effectiveGenerator.timeString());
+        }
+        return null;
+    }
+
+    /**
      * Resolves the primary (non-null) type from an OpenAPI 3.1 type array.
      * For example, {@code type: [string, "null"]} returns {@code "string"}.
      * If all types are "null", returns null.
@@ -690,6 +897,20 @@ public class ExampleBuilder {
                 if (example != null) {
                     yield new StringExample(example.toString());
                 }
+                Object stringDefault = property.getDefault();
+                if (stringDefault != null) {
+                    yield new StringExample(stringDefault.toString());
+                }
+                List<?> stringEnums = property.getEnum();
+                if (stringEnums != null && !stringEnums.isEmpty()) {
+                    yield new StringExample(stringEnums.get(0).toString());
+                }
+                // pattern (and the time format) take priority over a recognised format — but after an
+                // explicit default/enum — matching the typed StringSchema branch's priority order
+                StringExample patternOrTime = constrainedStringExample(property, generator);
+                if (patternOrTime != null) {
+                    yield patternOrTime;
+                }
                 String format = property.getFormat();
                 if ("date".equals(format)) {
                     yield new StringExample(generator != null ? generator.dateString() : SAMPLE_DATE_PROPERTY_VALUE);
@@ -706,14 +927,7 @@ public class ExampleBuilder {
                 } else if ("password".equals(format)) {
                     yield new StringExample(generator != null ? generator.password() : SAMPLE_STRING_PROPERTY_VALUE);
                 } else {
-                    Object defaultValue = property.getDefault();
-                    if (defaultValue != null) {
-                        yield new StringExample(defaultValue.toString());
-                    }
-                    List<?> enums = property.getEnum();
-                    if (enums != null && !enums.isEmpty()) {
-                        yield new StringExample(enums.get(0).toString());
-                    }
+                    // default/enum/pattern/time already handled above
                     yield new StringExample(generator != null ? generator.stringWithConstraints(property.getMinLength(), property.getMaxLength()) : SAMPLE_STRING_PROPERTY_VALUE);
                 }
             }
@@ -739,10 +953,12 @@ public class ExampleBuilder {
                     } catch (NumberFormatException ignored) {
                     }
                 }
+                BigDecimal intMin = effectiveMinimum(property, INTEGER_STEP);
+                BigDecimal intMax = effectiveMaximum(property, INTEGER_STEP);
                 if ("int64".equals(property.getFormat())) {
-                    yield new LongExample(generator != null ? generator.longValue(property.getMinimum(), property.getMaximum()) : SAMPLE_LONG_PROPERTY_VALUE);
+                    yield new LongExample(generator != null ? generator.longValue(intMin, intMax) : longSampleWithin(intMin, intMax, SAMPLE_LONG_PROPERTY_VALUE));
                 }
-                yield new IntegerExample(generator != null ? generator.integer(property.getMinimum(), property.getMaximum()) : SAMPLE_INT_PROPERTY_VALUE);
+                yield new IntegerExample(generator != null ? generator.integer(intMin, intMax) : intSampleWithin(intMin, intMax, SAMPLE_INT_PROPERTY_VALUE));
             }
             case "number" -> {
                 if (example != null) {
@@ -756,12 +972,14 @@ public class ExampleBuilder {
                     } catch (NumberFormatException ignored) {
                     }
                 }
+                BigDecimal numMin = effectiveMinimum(property, DECIMAL_STEP);
+                BigDecimal numMax = effectiveMaximum(property, DECIMAL_STEP);
                 if ("float".equals(property.getFormat())) {
-                    yield new FloatExample(generator != null ? generator.floatValue(property.getMinimum(), property.getMaximum()) : SAMPLE_FLOAT_PROPERTY_VALUE);
+                    yield new FloatExample(generator != null ? generator.floatValue(numMin, numMax) : decimalSampleWithin(numMin, numMax, BigDecimal.valueOf(SAMPLE_FLOAT_PROPERTY_VALUE)).floatValue());
                 } else if ("double".equals(property.getFormat())) {
-                    yield new DoubleExample(generator != null ? generator.doubleValue(property.getMinimum(), property.getMaximum()) : SAMPLE_DOUBLE_PROPERTY_VALUE);
+                    yield new DoubleExample(generator != null ? generator.doubleValue(numMin, numMax) : decimalSampleWithin(numMin, numMax, BigDecimal.valueOf(SAMPLE_DOUBLE_PROPERTY_VALUE)).doubleValue());
                 }
-                yield new DecimalExample(generator != null ? generator.decimal(property.getMinimum(), property.getMaximum()) : new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE));
+                yield new DecimalExample(generator != null ? generator.decimal(numMin, numMax) : decimalSampleWithin(numMin, numMax, new BigDecimal(SAMPLE_DECIMAL_PROPERTY_VALUE)));
             }
             case "boolean" -> {
                 if (example != null) {
@@ -809,12 +1027,20 @@ public class ExampleBuilder {
                 }
                 Schema<?> items = property.getItems();
                 if (items != null) {
-                    // null item name (not the array "type"): the array property name is the item element-name
-                    // fallback in the XML serializer; see the ArraySchema branch above.
-                    Example innerExample = fromProperty(null, items, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
-                    if (innerExample != null) {
-                        ArrayExample arrayEx = new ArrayExample();
-                        arrayEx.add(innerExample);
+                    // emit minItems items (clamped, default 1 when unset); see the ArraySchema branch above.
+                    int itemCount = arrayItemCount(property);
+                    ArrayExample arrayEx = new ArrayExample();
+                    boolean built = itemCount == 0;
+                    for (int i = 0; i < itemCount; i++) {
+                        // null item name (not the array "type"): the array property name is the item element-name
+                        // fallback in the XML serializer; see the ArraySchema branch above.
+                        Example innerExample = fromProperty(null, items, definitions, processedModels, modelsStartedProcessing, location, generator, generationOptions);
+                        if (innerExample != null) {
+                            arrayEx.add(innerExample);
+                            built = true;
+                        }
+                    }
+                    if (built) {
                         arrayEx.setName(property.getName());
                         yield arrayEx;
                     }

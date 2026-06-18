@@ -385,6 +385,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-memory setup was O(n²) because each add triggered two full backend reconciliation passes. The
   non-clustered path now does a cheap eviction-only trim, restoring linear registration time;
   clustered reconciliation behaviour is unchanged.
+- **OpenAPI example generation now honours more JSON-Schema constraints**, so generated example data is
+  less likely to fail a consumer's own validators:
+  - Arrays emit `minItems` items (clamped to a small cap) instead of always a single element, and an
+    explicit `maxItems` below 1 yields an empty array rather than a stray default item.
+  - String `pattern` (regex) constraints produce a matching value (e.g. SKUs, phone numbers) instead of a
+    generic word; an unsupported/invalid regex falls back to the previous behaviour rather than failing.
+  - `exclusiveMinimum` / `exclusiveMaximum` (both the OpenAPI 3.0 boolean-flag and 3.1 numeric forms) are
+    respected — the generated number sits strictly inside the open bound.
+  - The `time` string format now produces a valid `HH:mm:ss` example (previously only `date` and
+    `date-time` were format-aware).
+  - `minProperties` on a free-form / `additionalProperties` object now emits at least that many entries
+    (clamped to a cap of 10).
+  - Unconstrained schemas are unchanged — there is no behaviour change when none of these constraints are
+    present.
 - **Dashboard UI correctness fixes** (from an adversarial review):
   - The dashboard no longer crashes to a blank white screen when a view fails to load (e.g. the Metrics
     chunk after a redeploy) — views are wrapped in an error boundary that offers a reload/retry and
