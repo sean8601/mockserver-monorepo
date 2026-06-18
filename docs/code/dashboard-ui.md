@@ -123,6 +123,7 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 | Breakpoints — matcher list | `useAutoRefresh` (interval, default 3 s) |
 | Drift | `useAutoRefresh` (interval) |
 | AsyncAPI | `useAutoRefresh` (interval, 5 s) |
+| gRPC Services | `useAutoRefresh` (interval, 5 s) |
 | MCP tools panel | `useAutoRefresh` (interval, 3 s) |
 | Chaos | `setInterval` poll every 4 s (predates `useAutoRefresh`) |
 | Metrics | `usePolling` directly in `useMetricsPolling` (3 s) |
@@ -134,7 +135,9 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 - **`humanizeError(e)`** — catches any thrown value; recognises the `MockServer returned <status>: <body>` shape (thrown by most lib helpers) and the `Replay failed (<status>): <body>` shape, then delegates to `humanizeServerError`. Falls back to a network-error message for `TypeError` / `Failed to fetch`. Returns `{ message, details? }`.
 - **`humanizeServerError(status, rawBody)`** — maps HTTP status + raw body to a short actionable `message`, keeping the raw body in `details`. Handles 400 (invalid, extracts `{ "error": "…" }` envelope or JSON-schema `N errors:` summary), 401/403 (not authorised), 404 (feature unavailable), 409 (conflict), 5xx (internal error).
 
-`src/components/HumanErrorAlert.tsx` (`HumanErrorAlert`) is the shared rendering component. It accepts a `HumanError` object (or discrete `message`/`details` props), shows the short message in an MUI `Alert`, and puts the raw `details` text behind an inline "Details" / "Hide details" toggle rendered in a monospace scrollable block. It replaces near-identical inline implementations that previously lived in `ComposerView`, `CaptureAsMockDialog`, and `ImportForm`.
+`src/components/HumanErrorAlert.tsx` (`HumanErrorAlert`) is the shared rendering component. It accepts a `HumanError` object (or discrete `message`/`details` props), shows the short message in an MUI `Alert`, and puts the raw `details` text behind an inline "Details" / "Hide details" toggle rendered in a monospace scrollable block. It replaces near-identical inline implementations that previously lived in `ComposerView`, `CaptureAsMockDialog`, and `ImportForm`. All panels added in subsequent rounds (`GrpcServicesPanel`, `BaselineCompareDialog`, `AsyncApiPanel`, etc.) use `HumanErrorAlert` and `humanizeError` consistently — there are no longer any inline error string concatenations in control-plane call sites.
+
+`monospaceFontFamily` exported from `src/theme.ts` is the canonical monospace font stack. All code, JSON, log, and identifier surfaces across the dashboard use it via `sx={{ fontFamily: monospaceFontFamily }}` or the MUI theme's `typography` overrides rather than hardcoded `'monospace'` strings, giving a consistent typeface across panels.
 
 `src/lib/replay.ts` wraps `PUT /mockserver/replay`: `replayRequests(params, httpRequest)` returns the upstream response parsed as JSON (wraps non-JSON bodies as `{ body: text }`), throwing `ReplayError(status, body)` on non-2xx so `humanizeError` can parse it.
 
@@ -142,12 +145,12 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 
 ## Top-Level Views
 
-The dashboard has **twelve top-level views** controlled by a toggle strip in the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
+The dashboard has **thirteen top-level views** controlled by the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
 
 ```
 ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'
          | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async'
-         | 'breakpoints' | 'get-started'
+         | 'grpc' | 'breakpoints' | 'get-started'
 ```
 
 `'composer'` is surfaced in the UI under the button label **Mocks**; `'async'` is the **AsyncAPI** broker view; `'get-started'` is the initial onboarding view shown to new users before any data arrives.
@@ -166,6 +169,7 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 | `drift` | Drift | `DriftPanel.tsx` | Mock drift detection results: divergence records between forwarded responses and stub expectations |
 | `verification` | Verify | `VerificationView.tsx` | Build and run verifications — request matchers, expected counts (atLeast/atMost/exactly/between), or an ordered sequence — against received requests |
 | `async` | Async | `AsyncApiPanel.tsx` | AsyncAPI broker mock status: loaded spec, channels/topics, publisher/subscriber summary, and recorded broker messages |
+| `grpc` | gRPC | `GrpcServicesPanel.tsx` | gRPC services and methods loaded from protobuf descriptors, with per-service health-check status (see [gRPC Services View](#grpc-services-view)) |
 | `metrics` | Metrics | `MetricsView.tsx` | Prometheus metrics polling: request counters, latency percentiles, JVM stats, chaos gauges |
 | `breakpoints` | Breakpoints | `BreakpointsPanel.tsx` | Live table of paused HTTP exchanges and held streaming frames; continue / modify / abort each (see [Breakpoints Panel](#breakpoints-panel)) |
 
@@ -173,7 +177,7 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 graph TB
     APP["App.tsx"]
     AB["AppBar.tsx
-12-button toggle strip"]
+primary tabs + More overflow"]
     FP["FilterPanel.tsx
 (dashboard, traffic, sessions only)"]
     GS["OnboardingPanel.tsx
@@ -196,6 +200,8 @@ graph TB
 (view = 'verification')"]
     AAP["AsyncApiPanel.tsx
 (view = 'async')"]
+    GP["GrpcServicesPanel.tsx
+(view = 'grpc')"]
     MV["MetricsView.tsx
 (view = 'metrics')"]
     BP["BreakpointsPanel.tsx
@@ -214,6 +220,7 @@ graph TB
     APP -->|view = drift| DP
     APP -->|view = verification| VV
     APP -->|view = async| AAP
+    APP -->|view = grpc| GP
     APP -->|view = metrics| MV
     APP -->|view = breakpoints| BP
 ```
@@ -331,7 +338,7 @@ Below the strip, the adaptive tab row:
 | MCP JSON-RPC (`jsonrpc` field present) | **MCP**, **Raw JSON** |
 | All other traffic | Raw JSON rendered directly (no tab bar) |
 
-A **Capture as mock** button appears top-right of the detail pane for LLM-kind rows. Clicking it opens `CaptureAsMockDialog.tsx`, which calls the MCP `mock_llm_completion` tool to register a mock expectation from the captured traffic.
+A **Capture as mock** button appears top-right of the detail pane for LLM-kind rows. Clicking it opens `CaptureAsMockDialog.tsx`, which calls the MCP `mock_llm_completion` tool to register a mock expectation from the captured traffic. For non-LLM (generic HTTP) traffic, the same dialog is opened with a generic draft. In the generic case a **Refine in Composer** button appears alongside the Register button in the dialog actions: clicking it calls the store's `editExpectation` action, which loads the draft into the Composer and switches to `view = 'composer'`, so the capture and the Composer share a single creation flow rather than being two divergent engines. Only the generic draft maps cleanly onto the Composer form; LLM drafts go directly to the MCP tool.
 
 ### ConversationView Component
 
@@ -443,6 +450,24 @@ Empty form fields are omitted from the built `httpRequest` (`buildHttpRequest`).
 
 When the `mockserver-async` jar is not on the server's classpath the helper returns `null` and the panel shows a "Module unavailable" warning. A spec is loaded from the **AsyncAPI broker mock** entry in the Tools menu (`AsyncApiDialog`) or via `PUT /mockserver/asyncapi`.
 
+## gRPC Services View
+
+`GrpcServicesPanel.tsx` (view = `grpc`, AppBar label **gRPC**) lists the gRPC services and methods loaded from compiled protobuf descriptors, together with the health-check serving status of each service. It **polls** every 5 s via `useAutoRefresh`, fetching both data sources in parallel via `lib/grpc.ts`:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `PUT /mockserver/grpc/services` | `listGrpcServices` | Returns the services and methods from loaded FileDescriptorSets |
+| `GET /mockserver/grpc/health` | `fetchGrpcHealth` | Returns a map of service name → `ServingStatus` |
+
+`fetchGrpcStatus` wraps both calls; the health fetch is best-effort — if the endpoint is unavailable (older server), the panel still renders services with an empty health map rather than failing.
+
+The panel renders:
+- a **header** with service count, total method count, and an overall server `ServingStatus` chip (derived from the `_default` or empty-string key in the health map),
+- one **collapsible card per service** — service name in monospace, a per-service health chip (`SERVING` / `NOT_SERVING` / `SERVICE_UNKNOWN` / `UNKNOWN`), and a method count,
+- within each card, a **methods table** with columns: Method (name), Input (fully-qualified message type), Output (fully-qualified message type), and Kind (`unary` / `server stream` / `client stream` / `bidi stream`).
+
+When no descriptors are loaded, a centred prompt directs the user to `PUT /mockserver/grpc/descriptors`. Errors are surfaced via `HumanErrorAlert`. Health chip colours: `SERVING` → success, `NOT_SERVING` → error, `SERVICE_UNKNOWN` / `UNKNOWN` → warning.
+
 ## MCP Session Handshake
 
 `mockserver-ui/src/lib/mcpClient.ts` manages all MCP tool calls from the UI (capture-as-mock, conversation registration, cassette record/load). It performs the MCP `initialize` + `notifications/initialized` handshake lazily on first use and caches the resulting `Mcp-Session-Id` per base URL in a module-level `Map`. If a call fails with a "Missing or invalid Mcp-Session-Id" error, the client reinitializes automatically before retrying.
@@ -478,6 +503,8 @@ The matcher list loads on mount and via a manual Refresh button (no interval).
 
 Held items are bounded client-side and cleared when the callback WebSocket disconnects (a reconnect issues a new `clientId`, so older paused items can no longer be resolved).
 
+**Empty-state guidance**: when there are no paused exchanges or stream frames yet, each tab shows a contextual prompt directing the user to the correct next step — e.g. "Register a breakpoint matcher (Matchers tab) to pause matching forwarded requests or responses." If the callback WebSocket is not yet `connected`, an info banner explains the state and tells the user that items will appear once the connection establishes and matchers are registered.
+
 See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture (`BreakpointRegistry`, `PausedExchange`, phases) and the callback-WebSocket resolution protocol.
 
 ## Get-Started / Onboarding View
@@ -494,9 +521,12 @@ See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture 
 
 ## AppBar Styling and Responsive Behaviour
 
-The AppBar renders the twelve toggle buttons (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics / Breakpoints / Get Started) as a `ToggleButtonGroup`. The **Mocks** button maps to `view = 'composer'`, **Verify** to `view = 'verification'`, and **Async** to `view = 'async'` (the AsyncAPI broker view). The HAR download lives in Library → Export rather than as a top-bar icon.
+The AppBar navigation is driven by a single `NAV_TABS` array where each entry carries a `primary?: boolean` flag. On wide screens (`>= lg`) the AppBar renders two distinct controls:
 
-**Responsive nav**: below the `lg` breakpoint (`useMediaQuery(theme.breakpoints.down('lg'))`) the twelve-button strip is replaced by a hamburger Menu icon. Clicking it opens an MUI `Menu` with the same navigation entries. The full button strip is shown only on large screens.
+1. **Primary tabs** (`PRIMARY_NAV_TABS`) — a `ToggleButtonGroup` with five buttons shown inline: Get Started, Dashboard, Traffic, Breakpoints, Mocks.
+2. **"More ▾" overflow menu** (`OVERFLOW_NAV_TABS`) — an MUI `Button` that opens a `Menu` containing the remaining views: Chaos, Async, gRPC, Sessions, Library, Drift, Verify, Metrics. The button label changes to the active overflow tab's name when one of those views is selected.
+
+Below the `lg` breakpoint (`useMediaQuery(theme.breakpoints.down('lg'))`) both controls are replaced by a single hamburger menu icon that opens an MUI `Menu` listing all thirteen navigation entries. The **Mocks** button maps to `view = 'composer'`, **Verify** to `view = 'verification'`, **Async** to `view = 'async'` (the AsyncAPI broker view), and **gRPC** to `view = 'grpc'`. The HAR download lives in Library → Export rather than as a top-bar icon.
 
 **Light mode**: toggle buttons use `primary.contrastText` (white) text with a translucent white border (`rgba(255,255,255,0.3)`) and a translucent-white selected state. The status chip uses pale colour tints (`#7fffa0` connected, `#ffd180` connecting, `#ff8a80` error) so colour semantics remain readable against the blue AppBar background.
 
@@ -506,7 +536,7 @@ The AppBar renders the twelve toggle buttons (Dashboard / Traffic / Sessions / M
 
 | Breakpoint | Effect |
 |-----------|--------|
-| `< lg` | AppBar nav collapses to hamburger menu |
+| `< lg` | AppBar nav collapses from primary + "More ▾" to hamburger menu |
 | `< md` | `DashboardGrid` collapses from 2×2 to a single stacked column |
 | `< md` | `TrafficInspector` stacks master list above detail pane (column layout) |
 | `< sm` | Dialogs rendered with `fullScreen` |
@@ -527,6 +557,9 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
 | Register CRUD resource | `CrudDialog` | `PUT /mockserver/crud` |
 | Mock file store | `FileStoreDialog` | `PUT /mockserver/files/{store,list,retrieve,delete}` |
 | Diff two requests | `DiffRequestsDialog` | `PUT /mockserver/diff` (renders `DiffPanel`) |
+| Compare against baseline | `BaselineCompareDialog` | `PUT /mockserver/baseline/compare` |
+
+**Baseline Compare** (`BaselineCompareDialog.tsx`, backed by `lib/baseline.ts`) lets the user paste a known-good array of expectations as the baseline and optionally a second array as the current state. When the current array is omitted, the server diffs the baseline against its live recorded expectations. It calls `PUT /mockserver/baseline/compare` with `{ baseline: [...], current?: [...] }` and displays a `BaselineDiffReport` with `added`, `removed`, and `changed` arrays keyed by `METHOD path`, plus a `hasDrift` boolean, rendered as summary chips and a `JsonViewer` tree. The dialog is full-screen below the `sm` breakpoint and surfaces errors via `HumanErrorAlert`.
 
 `SamlDialog` is backed by `src/lib/saml.ts` (`createSamlProvider`), which calls `PUT /mockserver/saml` with a `SamlConfig` body and returns the count of expectations registered. All fields are optional; the server supplies sensible defaults so an empty submit produces a fully functional mock SAML 2.0 IdP. Errors are surfaced via `humanizeError`.
 
@@ -567,7 +600,7 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
   receivedSearch: '',
   proxiedSearch: '',
   trafficSearch: '',
-  view: 'get-started',          // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view)
+  view: 'get-started',          // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async' | 'grpc' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view, grpc is the gRPC Services view)
   selectedTrafficIndex: null,
   actionTypeFilter: [],
   llmProviderFilter: [],
@@ -677,7 +710,7 @@ Expandable match failure reasons"]
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu, 12-button view toggle (Dashboard / Traffic / Sessions / Mocks / Library / Chaos / Drift / Verify / Async / Metrics / Breakpoints / Get Started) |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu; on wide screens: 5-button primary `ToggleButtonGroup` (Get Started / Dashboard / Traffic / Breakpoints / Mocks) + "More ▾" overflow menu (Chaos / Async / gRPC / Sessions / Library / Drift / Verify / Metrics); on narrow screens: hamburger menu listing all 13 views |
 | `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send; shown on dashboard/traffic/sessions |
 | `DashboardGrid` | `DashboardGrid.tsx` | 2×2 CSS grid layout for the four panels |
 | `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for all captured traffic (mock-matched + proxied) |
@@ -697,6 +730,8 @@ Expandable match failure reasons"]
 | `ErrorBoundary` | `ErrorBoundary.tsx` | Catches render-time exceptions; shows a recoverable inline fallback; keyed-reset on `view`; hard-reload for chunk-load failures |
 | `HumanErrorAlert` | `HumanErrorAlert.tsx` | Shared error alert: short `message` + inline "Details" expander for the raw server body |
 | `SamlDialog` | `SamlDialog.tsx` | Mock SAML 2.0 IdP registration dialog; backed by `lib/saml.ts` → `PUT /mockserver/saml` |
+| `GrpcServicesPanel` | `GrpcServicesPanel.tsx` | gRPC Services view: polls services + health every 5 s via `lib/grpc.ts` (`PUT /mockserver/grpc/services`, `GET /mockserver/grpc/health`); renders per-service method tables with streaming kind chips |
+| `BaselineCompareDialog` | `BaselineCompareDialog.tsx` | Tools-menu dialog: paste baseline + optional current expectation arrays, calls `PUT /mockserver/baseline/compare` via `lib/baseline.ts`, renders `BaselineDiffReport` summary chips and `JsonViewer` tree |
 
 ### Collapsible Items
 
