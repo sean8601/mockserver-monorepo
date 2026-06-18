@@ -569,4 +569,79 @@ public class RequestMatchersStateBackendTest {
         // maxExpectations=2, so only 2 should remain
         assertThat(backendMatchers.size(), is(2));
     }
+
+    // -------------------------------------------------------
+    // (g) clusterSharedTimesEnabled knob: shared CAS vs node-local Times
+    // -------------------------------------------------------
+
+    private InMemoryStateBackend newClusteredBackend() {
+        return new InMemoryStateBackend(10) {
+            @Override
+            public boolean isClustered() {
+                return true;
+            }
+        };
+    }
+
+    @Test
+    public void clusteredLimitedTimesUsesSharedBackendCasByDefault() {
+        // Default (clusterSharedTimesEnabled=true): a match on a clustered
+        // backend decrements the SHARED remainingTimes counter via CAS, so
+        // the backend entry reflects fleet-wide consumption.
+        InMemoryStateBackend clusteredBackend = newClusteredBackend();
+        Configuration config = configuration().maxExpectations(10);
+        RequestMatchers matchers = new RequestMatchers(
+            config, new MockServerLogger(),
+            mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        matchers.setStateBackend(clusteredBackend);
+
+        matchers.add(new Expectation(request().withPath("/a"),
+            Times.exactly(3), null, 0).withId("a")
+            .thenRespond(response().withBody("a")), API);
+
+        // Backend seeded with remainingTimes = 3
+        assertThat(clusteredBackend.expectations().get("a").get().getValue().getRemainingTimes(),
+            is(3));
+
+        // One match decrements the SHARED counter via CAS
+        Expectation matched = matchers.firstMatchingExpectation(request().withPath("/a"));
+        assertThat(matched, is(notNullValue()));
+        assertThat("default shared-Times path decrements the backend counter",
+            clusteredBackend.expectations().get("a").get().getValue().getRemainingTimes(),
+            is(2));
+    }
+
+    @Test
+    public void clusteredLimitedTimesFallsBackToNodeLocalWhenSharedTimesDisabled() {
+        // Opt-out (clusterSharedTimesEnabled=false): even on a clustered
+        // backend, the match takes the NODE-LOCAL fast path — no shared CAS,
+        // so the backend's shared remainingTimes counter is NOT touched.
+        InMemoryStateBackend clusteredBackend = newClusteredBackend();
+        Configuration config = configuration().maxExpectations(10)
+            .clusterSharedTimesEnabled(false);
+        RequestMatchers matchers = new RequestMatchers(
+            config, new MockServerLogger(),
+            mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        matchers.setStateBackend(clusteredBackend);
+
+        matchers.add(new Expectation(request().withPath("/a"),
+            Times.exactly(3), null, 0).withId("a")
+            .thenRespond(response().withBody("a")), API);
+
+        // Backend seeded with remainingTimes = 3
+        assertThat(clusteredBackend.expectations().get("a").get().getValue().getRemainingTimes(),
+            is(3));
+
+        // The match succeeds via node-local Times...
+        Expectation matched = matchers.firstMatchingExpectation(request().withPath("/a"));
+        assertThat(matched, is(notNullValue()));
+        // ...and the node-local Times counter is what decremented (3 -> 2).
+        assertThat("node-local Times decrements when shared-Times is disabled",
+            matched.getTimes().getRemainingTimes(), is(2));
+        // ...while the SHARED backend counter is untouched (still 3),
+        // proving the synchronous backend CAS round-trip was bypassed.
+        assertThat("backend shared counter is NOT touched when shared-Times disabled",
+            clusteredBackend.expectations().get("a").get().getValue().getRemainingTimes(),
+            is(3));
+    }
 }

@@ -1270,19 +1270,52 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
     /**
      * Returns {@code true} when the expectation has LIMITED Times AND a
-     * clustered backend is active. Only in this case does the match
-     * consume path need to go through the shared backend CAS.
+     * clustered backend is active AND cluster-wide shared-Times enforcement
+     * is enabled (the default). Only in this case does the match consume
+     * path go through the shared backend CAS.
      * <p>
      * Unlimited Times, no-backend (in-memory default), or non-clustered
      * backends all return {@code false}, keeping the fast path identical
      * to the pre-clustering single-node behaviour.
+     * <p>
+     * <b>Event-loop blocking trade-off.</b> When this returns {@code true},
+     * {@link #consumeTimesViaBackendCas(Expectation)} runs on the Netty
+     * request-worker thread and performs up to {@code MAX_CAS_RETRIES}
+     * synchronous backend writes (a clustered Infinispan {@code REPL_SYNC}
+     * {@code compareAndSet} is a network round-trip that waits for
+     * replication acks from all members). The backend {@code get()} reads
+     * from the node-local replica (no network), but each retried CAS
+     * <i>write</i> blocks the worker until replication completes. The
+     * worst-case bound is {@code MAX_CAS_RETRIES} (10) replicated writes
+     * under extreme cross-node contention on the SAME expectation; in
+     * practice limited-Times expectations are low-count and contention is
+     * rare, so the common case is a single CAS write. Latency-sensitive
+     * clustered deployments that can tolerate approximate (per-node) Times
+     * may disable this via
+     * {@code Configuration.clusterSharedTimesEnabled(false)} /
+     * {@code -Dmockserver.clusterSharedTimesEnabled=false}, which restores
+     * the node-local fast path with no backend round-trip on the worker.
+     * See docs/code/clustered-state.md ("Clustered Times Counters").
      */
     private boolean isClusteredLimitedTimes(Expectation expectation) {
         if (stateBackend == null || !stateBackend.isClustered()) {
             return false;
         }
+        if (!configuration.clusterSharedTimesEnabled()) {
+            // Opt-out: fall back to node-local Times enforcement (no
+            // synchronous backend CAS on the request worker thread).
+            return false;
+        }
         return expectation.getTimes() != null && !expectation.getTimes().isUnlimited();
     }
+
+    /**
+     * Maximum number of CAS retry attempts for clustered shared-Times
+     * consumption. Bounds the worst-case number of synchronous replicated
+     * writes performed on the request-worker thread per match (see
+     * {@link #consumeTimesViaBackendCas(Expectation)}).
+     */
+    private static final int MAX_CAS_RETRIES = 10;
 
     /**
      * Result of a shared-Times CAS attempt on the backend.
@@ -1323,12 +1356,22 @@ public class RequestMatchers extends MockServerMatcherNotifier {
      * This is a conservative choice: the expectation is not served rather
      * than risking a double-serve. In practice, CAS contention is rare
      * because limited-Times expectations are low-count by nature.
+     * <p>
+     * <b>Runs on the request-worker (event-loop) thread.</b> Each
+     * {@code compareAndSet} on a clustered {@code REPL_SYNC} backend is a
+     * synchronous replicated write (a network round-trip awaiting acks from
+     * all cluster members). The {@code get()} reads from the local replica
+     * and does not hit the network. The worst-case blocking on the worker
+     * is therefore {@code MAX_CAS_RETRIES} (10)
+     * replicated writes; the common (uncontended) case is a single write.
+     * This path is gated by {@link #isClusteredLimitedTimes(Expectation)},
+     * which can be disabled via {@code clusterSharedTimesEnabled=false} for
+     * latency-sensitive deployments (see that method's javadoc).
      *
      * @param expectation the expectation whose shared Times to consume
      * @return the CAS result indicating success or failure/exhaustion
      */
     ConsumeTimesResult consumeTimesViaBackendCas(Expectation expectation) {
-        final int MAX_CAS_RETRIES = 10;
         final String id = expectation.getId();
 
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {

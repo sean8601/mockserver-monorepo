@@ -225,6 +225,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CLUSTER_ENABLED = "mockserver.clusterEnabled";
     private static final String MOCKSERVER_CLUSTER_NAME = "mockserver.clusterName";
     private static final String MOCKSERVER_CLUSTER_TRANSPORT_CONFIG = "mockserver.clusterTransportConfig";
+    private static final String MOCKSERVER_CLUSTER_SHARED_TIMES_ENABLED = "mockserver.clusterSharedTimesEnabled";
 
     // verification
     private static final String MOCKSERVER_MAXIMUM_NUMBER_OF_REQUESTS_TO_RETURN_IN_VERIFICATION_FAILURE = "mockserver.maximumNumberOfRequestToReturnInVerificationFailure";
@@ -2680,6 +2681,36 @@ public class ConfigurationProperties {
         // throws NPE for null values. Store empty string to mirror other
         // nullable string properties.
         setProperty(MOCKSERVER_CLUSTER_TRANSPORT_CONFIG, clusterTransportConfig != null ? clusterTransportConfig : "");
+    }
+
+    /**
+     * Returns whether per-expectation {@code Times} limits are enforced
+     * cluster-wide via a shared backend compare-and-set (CAS). Default is
+     * {@code true} (a {@code Times.exactly(N)} expectation serves exactly N
+     * times across the whole fleet).
+     * <p>
+     * Only relevant when a clustered backend is active. When set to
+     * {@code false}, limited-{@code Times} matching falls back to the
+     * node-local fast path: each node enforces {@code Times} independently
+     * (no synchronous backend round-trip on the request worker thread).
+     * This trades the fleet-wide exactly-N guarantee for lower, more
+     * predictable matching latency in latency-sensitive clustered
+     * deployments. See {@code RequestMatchers.consumeTimesViaBackendCas}.
+     */
+    public static boolean clusterSharedTimesEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CLUSTER_SHARED_TIMES_ENABLED, "MOCKSERVER_CLUSTER_SHARED_TIMES_ENABLED", "true"));
+    }
+
+    /**
+     * Enables or disables cluster-wide shared-{@code Times} CAS enforcement.
+     *
+     * @param clusterSharedTimesEnabled {@code true} (default) to enforce
+     *                                  {@code Times} limits fleet-wide via
+     *                                  backend CAS; {@code false} to fall
+     *                                  back to node-local {@code Times}
+     */
+    public static void clusterSharedTimesEnabled(boolean clusterSharedTimesEnabled) {
+        setProperty(MOCKSERVER_CLUSTER_SHARED_TIMES_ENABLED, String.valueOf(clusterSharedTimesEnabled));
     }
 
     // verification

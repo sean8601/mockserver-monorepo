@@ -190,6 +190,7 @@ public class Configuration {
     private Boolean clusterEnabled;
     private String clusterName;
     private String clusterTransportConfig;
+    private Boolean clusterSharedTimesEnabled;
 
     // verification
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
@@ -2376,6 +2377,39 @@ public class Configuration {
      */
     public Configuration clusterTransportConfig(String clusterTransportConfig) {
         this.clusterTransportConfig = clusterTransportConfig;
+        return this;
+    }
+
+    /**
+     * Returns whether per-expectation {@code Times} limits are enforced
+     * cluster-wide via a shared backend compare-and-set (CAS). Default is
+     * {@code true} — a {@code Times.exactly(N)} expectation serves exactly N
+     * times across the whole fleet. Only relevant when a clustered backend
+     * is active.
+     * <p>
+     * When {@code false}, limited-{@code Times} matching falls back to the
+     * node-local fast path (no synchronous backend round-trip on the request
+     * worker thread), trading the fleet-wide exactly-N guarantee for lower,
+     * more predictable matching latency. See
+     * {@code RequestMatchers.consumeTimesViaBackendCas}.
+     */
+    public boolean clusterSharedTimesEnabled() {
+        if (clusterSharedTimesEnabled == null) {
+            return ConfigurationProperties.clusterSharedTimesEnabled();
+        }
+        return clusterSharedTimesEnabled;
+    }
+
+    /**
+     * Enables or disables cluster-wide shared-{@code Times} CAS enforcement.
+     *
+     * @param clusterSharedTimesEnabled {@code true} (default) to enforce
+     *                                  {@code Times} limits fleet-wide via
+     *                                  backend CAS; {@code false} for
+     *                                  node-local {@code Times}
+     */
+    public Configuration clusterSharedTimesEnabled(boolean clusterSharedTimesEnabled) {
+        this.clusterSharedTimesEnabled = clusterSharedTimesEnabled;
         return this;
     }
 

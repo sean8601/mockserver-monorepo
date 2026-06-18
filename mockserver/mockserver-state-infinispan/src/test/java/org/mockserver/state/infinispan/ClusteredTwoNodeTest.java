@@ -497,6 +497,67 @@ class ClusteredTwoNodeTest {
     }
 
     /**
+     * Opt-out: with {@code clusterSharedTimesEnabled=false}, limited-Times
+     * matching takes the NODE-LOCAL fast path even on a clustered backend —
+     * the synchronous shared-counter CAS (a replicated write on the request
+     * worker thread) is bypassed entirely. We prove the bypass by asserting
+     * the shared backend {@code remainingTimes} counter is NEVER decremented
+     * by matching: node A serves the match via its node-local {@code Times},
+     * while the replicated backend entry still reads its seeded value.
+     * <p>
+     * (The default shared path DOES decrement the backend counter — asserted
+     * by {@link #backendRemainingTimesShouldReachZeroWhenExhausted()} and by
+     * the fleet-wide exactly-N guarantee in
+     * {@link #timesExactlyNShouldBeServedExactlyNTimesAcrossTwoNodes()}.)
+     * <p>
+     * The trade-off — that node-local Times makes fleet-wide N approximate —
+     * is documented in docs/code/clustered-state.md; we deliberately assert
+     * the verifiable "no shared CAS" invariant rather than a brittle total
+     * match count (the first node to exhaust removes the shared entry, which
+     * replicates, so the exact cross-node total is order-dependent).
+     */
+    @Test
+    void sharedTimesCasBypassedWhenSharedTimesDisabled() throws Exception {
+        final int N = 3;
+        // Node A opts OUT of cluster-wide shared-Times CAS.
+        RequestMatchers nodeAMatchers = createNodeMatchers(nodeA, false);
+
+        Expectation expectation = Expectation.when(
+            HttpRequest.request("/times-no-cas"),
+            Times.exactly(N),
+            org.mockserver.matchers.TimeToLive.unlimited()
+        ).thenRespond(HttpResponse.response("no-cas"));
+        nodeAMatchers.add(expectation, RequestMatchers.Cause.API);
+
+        // Backend entry seeded with the full allotment, replicated to node B.
+        awaitCondition(
+            () -> nodeB.expectations().get(expectation.getId())
+                .map(v -> v.getValue().getRemainingTimes() == N).orElse(false),
+            Duration.ofSeconds(5),
+            "node B should see remainingTimes=" + N
+        );
+
+        HttpRequest request = HttpRequest.request("/times-no-cas");
+
+        // Serve a match on node A — node-local Times decrements, NOT the
+        // shared backend counter (no CAS round-trip).
+        Expectation matched = nodeAMatchers.firstMatchingExpectation(request);
+        nodeAMatchers.postProcess(matched);
+        assertThat("node A should serve via node-local Times", matched, is(notNullValue()));
+        assertThat("node A node-local Times decremented (3 -> 2)",
+            matched.getTimes().getRemainingTimes(), is(N - 1));
+
+        // The shared backend counter is UNTOUCHED on both nodes — the
+        // replicated CAS write on the worker thread was bypassed.
+        assertThat("shared backend counter not decremented on node A",
+            nodeA.expectations().get(expectation.getId()).get().getValue().getRemainingTimes(),
+            is(N));
+        assertThat("shared backend counter not decremented on node B (replica)",
+            nodeB.expectations().get(expectation.getId()).get().getValue().getRemainingTimes(),
+            is(N));
+    }
+
+    /**
      * G10: unlimited-Times expectations with a clustered backend should
      * still work without CAS overhead. Both nodes should be able to match
      * indefinitely.
@@ -815,11 +876,25 @@ class ClusteredTwoNodeTest {
     // --- Helpers for clustered Times tests ---
 
     /**
-     * Creates a {@link RequestMatchers} wired to the given backend node.
+     * Creates a {@link RequestMatchers} wired to the given backend node,
+     * with cluster-wide shared-Times CAS enforcement enabled (the default).
      */
     private RequestMatchers createNodeMatchers(InfinispanStateBackend backend) {
+        return createNodeMatchers(backend, true);
+    }
+
+    /**
+     * Creates a {@link RequestMatchers} wired to the given backend node,
+     * with shared-Times CAS enforcement explicitly enabled or disabled.
+     *
+     * @param sharedTimesEnabled {@code true} for fleet-wide exactly-N via
+     *                           backend CAS; {@code false} for node-local
+     *                           Times fallback (no backend round-trip)
+     */
+    private RequestMatchers createNodeMatchers(InfinispanStateBackend backend, boolean sharedTimesEnabled) {
         Configuration config = Configuration.configuration()
-            .maxExpectations(MAX_EXPECTATIONS);
+            .maxExpectations(MAX_EXPECTATIONS)
+            .clusterSharedTimesEnabled(sharedTimesEnabled);
         RequestMatchers matchers = new RequestMatchers(
             config, new MockServerLogger(),
             mock(Scheduler.class), mock(WebSocketClientRegistry.class));
