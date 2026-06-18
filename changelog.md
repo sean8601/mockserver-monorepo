@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Keyboard-shortcuts help dialog** so the ⌘K / ⌘L / Esc shortcuts are discoverable.
   - The agent-run graph (LLM/agent debugging) now renders as an **actual diagram** instead of showing
     raw Mermaid source text (Mermaid is lazily loaded so it stays out of the initial bundle).
+- **Timestamps on dashboard log entries**: each entry in the dashboard's Log Messages list now shows the
+  time it was logged — a compact local time inline, with the full `yyyy-MM-dd HH:mm:ss.SSS` timestamp on
+  hover — so events can be correlated and ordering/latency seen at a glance. The timestamp was already
+  captured server-side; the dashboard WebSocket serializer now sends it and the UI renders it (rows without
+  a timestamp are unchanged).
 - **Redact secrets in recorded expectations**: a new opt-in setting masks sensitive request headers
   (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key`) when recorded
   expectations are retrieved (as JSON or as generated client code) or persisted, so credentials captured

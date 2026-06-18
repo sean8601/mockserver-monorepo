@@ -29,6 +29,14 @@ export interface LogEntryValue {
   description?: Description;
   style?: Record<string, string>;
   messageParts?: MessagePart[];
+  /**
+   * Server-side capture time of the log entry, as the raw string MockServer
+   * formats it (`yyyy-MM-dd HH:mm:ss.SSS`). Optional: older servers — and the
+   * current dashboard WebSocket serializer — may omit it, in which case no time
+   * is rendered. When present, the row shows a compact time with the full
+   * timestamp on hover.
+   */
+  timestamp?: string;
 }
 
 export interface LogEntry {

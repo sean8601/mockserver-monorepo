@@ -14,6 +14,7 @@ import CopyButton from './CopyButton';
 import { useDebugMismatchContext } from '../hooks/DebugMismatchContext';
 import { useGenerateStubContext } from '../hooks/GenerateStubContext';
 import { entryToText } from '../lib/logEntryText';
+import { parseLogTimestamp, formatCompactTime, formatAbsoluteTime } from '../lib/logEntryTime';
 
 // ---------------------------------------------------------------------------
 // W3C traceparent pill (F8)
@@ -130,6 +131,36 @@ function TraceparentPill({ info }: { info: TraceparentInfo }) {
           '& .MuiChip-label': { px: 0.5 },
         }}
       />
+    </Tooltip>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Log entry timestamp (compact inline time, absolute on hover)
+// ---------------------------------------------------------------------------
+
+function LogTime({ timestamp }: { timestamp: string }) {
+  const parsed = useMemo(() => parseLogTimestamp(timestamp), [timestamp]);
+  const compact = formatCompactTime(parsed);
+  const absolute = formatAbsoluteTime(parsed);
+  return (
+    <Tooltip title={absolute}>
+      <Box
+        component="time"
+        aria-label={`Logged at ${absolute}`}
+        {...(parsed.date ? { dateTime: parsed.date.toISOString() } : {})}
+        sx={{
+          fontFamily: 'monospace',
+          fontSize: '0.7rem',
+          color: 'text.secondary',
+          mr: 0.75,
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+          cursor: 'default',
+        }}
+      >
+        {compact}
+      </Box>
     </Tooltip>
   );
 }
@@ -336,6 +367,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
             >
               {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
             </IconButton>
+            {entry.timestamp && <LogTime timestamp={entry.timestamp} />}
             <Box
               component="span"
               sx={{ whiteSpace: 'pre', fontFamily: 'monospace' }}
@@ -402,7 +434,7 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
         </>
       ) : (
         <>
-          {entry.description && (
+          {entry.description ? (
             <Box
               title={descriptionText(entry)}
               sx={{
@@ -412,9 +444,12 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
                 alignItems: 'center',
               }}
             >
+              {entry.timestamp && <LogTime timestamp={entry.timestamp} />}
               {descriptionText(entry)}
               {traceparent && <TraceparentPill info={traceparent} />}
             </Box>
+          ) : (
+            entry.timestamp && <LogTime timestamp={entry.timestamp} />
           )}
           {entry.messageParts?.map(renderMessagePart)}
         </>

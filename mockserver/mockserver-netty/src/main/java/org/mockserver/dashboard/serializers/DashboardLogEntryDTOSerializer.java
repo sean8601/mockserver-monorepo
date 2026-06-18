@@ -30,6 +30,9 @@ public class DashboardLogEntryDTOSerializer extends StdSerializer<DashboardLogEn
         jsonGenerator.writeStartObject();
         jsonGenerator.writeObjectField("key", logEntry.getId() + "_log");
         jsonGenerator.writeObjectFieldStart("value");
+        if (logEntry.getTimestamp() != null) {
+            jsonGenerator.writeObjectField("timestamp", logEntry.getTimestamp());
+        }
         if (logEntry.getDescription() != null) {
             jsonGenerator.writeObjectField("description", logEntry.getDescription());
         }
