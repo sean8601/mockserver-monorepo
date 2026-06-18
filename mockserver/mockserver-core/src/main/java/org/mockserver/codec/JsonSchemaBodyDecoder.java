@@ -53,34 +53,13 @@ public class JsonSchemaBodyDecoder {
         String bodyAsJson = request.getBodyAsString();
         String contentType = request.getFirstHeader(CONTENT_TYPE.toString());
         if (contentType.contains(APPLICATION_XML) || contentType.contains(TEXT_XML)) {
-            try {
-                Map<StringToXmlDocumentParser.ErrorLevel, String> errors = new HashMap<>();
-                Document document = new StringToXmlDocumentParser().buildDocument(request.getBodyAsString(), (matchedInException, throwable, level) -> {
-                    errors.put(level, throwable.getMessage());
-                });
-                if (errors.containsKey(FATAL_ERROR)) {
-                    throw new IllegalArgumentException(formatLogMessage("failed to convert:{}to json for json schema matcher:{}", request.getBodyAsString(), bodyMatcher, Joiner.on("\n").join(errors.values())));
-                }
-                for (Map.Entry<StringToXmlDocumentParser.ErrorLevel, String> errorEntry : errors.entrySet()) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setLogLevel(Level.ERROR)
-                            .setMessageFormat("failed to convert:{}to json for json schema matcher:{}")
-                            .setArguments(request.getBodyAsString(), bodyMatcher, prettyPrint(errorEntry.getKey()) + ": " + errorEntry.getValue())
-                    );
-                }
-                Object objectMap = xmlToMap(document.getFirstChild());
-                bodyAsJson = ObjectMapperFactory.createObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(objectMap);
-            } catch (Throwable throwable) {
-                mockServerLogger.logEvent(
-                    new LogEntry()
-                        .setType(EXCEPTION)
-                        .setHttpRequest(request)
-                        .setExpectation(this.expectation)
-                        .setMessageFormat("exception parsing xml body for{}while matching against request{}")
-                        .setArguments(request, this.httpRequest)
-                );
-            }
+            // The XML-to-JSON conversion is a pure function of the request body, so memoize it on the
+            // request and reuse it across the N-expectation match scan rather than re-parsing the XML
+            // (DOM parse + ObjectMapper serialisation) once per candidate expectation. The supplier
+            // returns the same value the inline branch did — the converted JSON on success, or the
+            // original body string on any parse failure — preserving match and exception behaviour
+            // (this branch never propagates an exception; it swallows Throwable and falls back).
+            bodyAsJson = request.getOrComputeConvertedBody(HttpRequest.ConvertedBodyType.XML_TO_JSON, () -> convertXmlToJson(request, bodyMatcher));
         } else if (contentType.contains(APPLICATION_X_WWW_FORM_URLENCODED)) {
             ObjectNode objectNode = new ObjectNode(JsonNodeFactory.instance);
             Parameters parameters = formParameterParser
@@ -94,6 +73,44 @@ public class JsonSchemaBodyDecoder {
             bodyAsJson = objectNode.toPrettyString();
         }
         return bodyAsJson;
+    }
+
+    /**
+     * Performs the XML-body-to-JSON conversion. Extracted so it can be memoized on the request via
+     * {@link HttpRequest#getOrComputeConvertedBody}. Behaviour is identical to the previous inline
+     * branch: returns the converted JSON on success, or the original body string on any failure
+     * (a fatal XML parse error is logged and swallowed, never propagated).
+     */
+    private String convertXmlToJson(HttpRequest request, BodyMatcher<?> bodyMatcher) {
+        try {
+            Map<StringToXmlDocumentParser.ErrorLevel, String> errors = new HashMap<>();
+            Document document = new StringToXmlDocumentParser().buildDocument(request.getBodyAsString(), (matchedInException, throwable, level) -> {
+                errors.put(level, throwable.getMessage());
+            });
+            if (errors.containsKey(FATAL_ERROR)) {
+                throw new IllegalArgumentException(formatLogMessage("failed to convert:{}to json for json schema matcher:{}", request.getBodyAsString(), bodyMatcher, Joiner.on("\n").join(errors.values())));
+            }
+            for (Map.Entry<StringToXmlDocumentParser.ErrorLevel, String> errorEntry : errors.entrySet()) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.ERROR)
+                        .setMessageFormat("failed to convert:{}to json for json schema matcher:{}")
+                        .setArguments(request.getBodyAsString(), bodyMatcher, prettyPrint(errorEntry.getKey()) + ": " + errorEntry.getValue())
+                );
+            }
+            Object objectMap = xmlToMap(document.getFirstChild());
+            return ObjectMapperFactory.createObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(objectMap);
+        } catch (Throwable throwable) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(EXCEPTION)
+                    .setHttpRequest(request)
+                    .setExpectation(this.expectation)
+                    .setMessageFormat("exception parsing xml body for{}while matching against request{}")
+                    .setArguments(request, this.httpRequest)
+            );
+            return request.getBodyAsString();
+        }
     }
 
 

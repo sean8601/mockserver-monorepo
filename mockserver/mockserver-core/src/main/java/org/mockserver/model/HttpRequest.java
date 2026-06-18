@@ -42,6 +42,24 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     private SocketAddress socketAddress;
     private String localAddress;
     private String remoteAddress;
+    // Per-request memoization of the expensive body conversion performed during matching
+    // (e.g. the XML DOM parse + ObjectMapper serialisation in JsonSchemaBodyDecoder.convertToJson).
+    // The conversion result is a pure function of the request body + the target content type, so it
+    // can be computed once per request and reused across the N-expectation match scan instead of
+    // being re-parsed once per candidate expectation. Excluded from equals/hashCode/clone/JSON: it
+    // is a derived, transient cache, not part of request identity. The body is immutable during a
+    // match scan (only path/query parameters are mutated, never the body), and a request is matched
+    // on a single thread, so this lazy cache is safe without synchronisation.
+    @JsonIgnore
+    private transient Map<ConvertedBodyType, String> convertedBodyCache;
+
+    /**
+     * Identifies a memoizable body-conversion target. The conversion result depends only on the
+     * request body and this target type, so it is safe to cache per request keyed on this value.
+     */
+    public enum ConvertedBodyType {
+        XML_TO_JSON
+    }
 
     public static HttpRequest request() {
         return new HttpRequest();
@@ -755,6 +773,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     public HttpRequest withBody(String body) {
         this.body = new StringBody(body);
         this.hashCode = 0;
+        this.convertedBodyCache = null;
         return this;
     }
 
@@ -768,6 +787,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         if (body != null) {
             this.body = new StringBody(body, charset);
             this.hashCode = 0;
+            this.convertedBodyCache = null;
         }
         return this;
     }
@@ -780,6 +800,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     public HttpRequest withBody(byte[] body) {
         this.body = new BinaryBody(body);
         this.hashCode = 0;
+        this.convertedBodyCache = null;
         return this;
     }
 
@@ -859,6 +880,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     public HttpRequest withBody(Body body) {
         this.body = body;
         this.hashCode = 0;
+        this.convertedBodyCache = null;
         return this;
     }
 
@@ -904,6 +926,37 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         } else {
             return null;
         }
+    }
+
+    /**
+     * Returns the memoized result of an expensive body conversion for the given target type,
+     * computing and caching it on first request. Subsequent calls for the same target return the
+     * cached value without re-running the conversion. Used by {@code JsonSchemaBodyDecoder} so the
+     * incoming request body is parsed once per request rather than once per candidate expectation
+     * during the matching scan.
+     * <p>
+     * The supplier is invoked at most once per (request, target) pair. Whatever it produces —
+     * including {@code null} or a fall-back value — is cached, so the observable behaviour of a
+     * cached call is identical to recomputing it. The supplier therefore MUST itself preserve the
+     * original conversion semantics (e.g. swallow/translate exceptions exactly as before).
+     *
+     * @param type     the conversion target identifying the cache slot
+     * @param supplier computes the converted body on a cache miss
+     * @return the converted body (possibly {@code null} if that is what the supplier produced)
+     */
+    @JsonIgnore
+    public String getOrComputeConvertedBody(ConvertedBodyType type, java.util.function.Supplier<String> supplier) {
+        if (convertedBodyCache == null) {
+            convertedBodyCache = new EnumMap<>(ConvertedBodyType.class);
+        }
+        // EnumMap distinguishes an absent key from a present key whose value is null, so a cached
+        // null fall-back result is returned without re-running the supplier
+        if (convertedBodyCache.containsKey(type)) {
+            return convertedBodyCache.get(type);
+        }
+        String converted = supplier.get();
+        convertedBodyCache.put(type, converted);
+        return converted;
     }
 
     @JsonIgnore
