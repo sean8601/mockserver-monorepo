@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Keyboard-shortcuts help dialog** so the ⌘K / ⌘L / Esc shortcuts are discoverable.
   - The agent-run graph (LLM/agent debugging) now renders as an **actual diagram** instead of showing
     raw Mermaid source text (Mermaid is lazily loaded so it stays out of the initial bundle).
+- **Default response headers**: a new `defaultResponseHeaders` setting stamps one or more headers onto every
+  response MockServer returns (mock, forwarded and proxied), so organisation-wide headers — a `Server`
+  banner, a build or trace id, custom org headers — can be set once instead of on every expectation. The
+  value is a pipe-separated list of `name=value` pairs, e.g.
+  `-Dmockserver.defaultResponseHeaders="Server=MockServer|X-Trace-Id=abc123"` (also
+  `MOCKSERVER_DEFAULT_RESPONSE_HEADERS` / `mockserver.defaultResponseHeaders` in a properties file). Values
+  may contain commas and `=`; headers are applied **add-if-absent**, so a header already set on the response
+  (including CORS headers) is never overwritten. Default empty = no change.
 - **Warning for unrecognised configuration keys**: MockServer now logs a `WARN` at startup when it sees a
   `mockserver.*` system property, a `MOCKSERVER_*` environment variable, or a properties-file key in the
   `mockserver.` namespace that isn't a known configuration property — so a typo such as

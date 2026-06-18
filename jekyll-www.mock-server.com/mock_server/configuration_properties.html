@@ -732,6 +732,28 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 {% include_subpage _includes/cors_configuration.html %}
 
+<a id="default_response_headers_configuration" class="anchor" href="#default_response_headers_configuration">&nbsp;</a>
+
+<h2>Default Response Headers Configuration:</h2>
+
+<button id="button_configuration_default_response_headers" class="accordion title"><strong>Default Response Headers</strong></button>
+<div class="panel title">
+    <p>Headers that MockServer stamps onto every response it returns &mdash; mock responses, the control&#8209;plane / dashboard responses, and forwarded / proxied responses. Use this to add organisation&#8209;wide headers (for example a <span class="constant">Server</span> header, a build or trace id, or custom org headers) without repeating them on every individual expectation.</p>
+    <p><strong>Add&#8209;if&#8209;absent:</strong> a default header is only added when the response does not already contain a header with that name (matched case&#8209;insensitively), so a header explicitly set on the matched expectation / response always wins.</p>
+    <p><strong>Format:</strong> a pipe (<span class="this_value">|</span>) separated list of <span class="this_value">name=value</span> pairs, for example <span class="this_value">Server=MockServer|X-Trace-Id=abc123</span>. A header value may itself contain commas (for example <span class="this_value">Cache-Control=no-cache, no-store</span>) &mdash; only <span class="this_value">|</span> separates headers and only the first <span class="this_value">=</span> in each pair separates the name from the value. Leading / trailing whitespace around each name and value is trimmed.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span> (no default response headers are added, so behaviour is unchanged)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.defaultResponseHeaders(String defaultResponseHeaders)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.defaultResponseHeaders=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DEFAULT_RESPONSE_HEADERS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.defaultResponseHeaders=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.defaultResponseHeaders="Server=MockServer|X-Trace-Id=abc123"</code></pre>
+</div>
+
 {% include_subpage _includes/template_restriction_configuration.html %}
 
 {% include_subpage _includes/initializer_persistence_configuration.html %}

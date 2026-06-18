@@ -5,7 +5,9 @@ import com.google.common.net.InetAddresses;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.model.BinaryProxyListener;
 import org.mockserver.model.Delay;
+import org.mockserver.model.Header;
 import org.mockserver.model.ProxyPassMapping;
+import org.mockserver.responseheaders.DefaultResponseHeaders;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.slf4j.event.Level;
 
@@ -13,6 +15,7 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -134,6 +137,13 @@ public class Configuration {
     private String corsAllowHeaders;
     private Boolean corsAllowCredentials;
     private Integer corsMaxAgeInSeconds;
+
+    // default response headers
+    private String defaultResponseHeaders;
+    // memoised parse of defaultResponseHeaders() so the pipe-split parse runs once per distinct
+    // resolved value rather than per HTTP request (DefaultResponseHeaders is constructed per request)
+    private volatile List<Header> parsedDefaultResponseHeaders;
+    private volatile String parsedDefaultResponseHeadersSource;
 
     // template restrictions
     private String javascriptDisallowedClasses;
@@ -1699,6 +1709,57 @@ public class Configuration {
             return ConfigurationProperties.corsMaxAgeInSeconds();
         }
         return corsMaxAgeInSeconds;
+    }
+
+    public String defaultResponseHeaders() {
+        if (defaultResponseHeaders == null) {
+            return ConfigurationProperties.defaultResponseHeaders();
+        }
+        return defaultResponseHeaders;
+    }
+
+    /**
+     * Returns the parsed {@code defaultResponseHeaders} as an immutable list of {@link Header}s,
+     * memoised so the pipe-split parse runs once per distinct resolved value rather than on every
+     * response. {@link org.mockserver.responseheaders.DefaultResponseHeaders} is constructed per
+     * HTTP request, so without this cache the parse would run on the hot path for every response.
+     *
+     * <p>The cache is keyed on the resolved value returned by {@link #defaultResponseHeaders()}, so
+     * it is transparently invalidated both when {@link #defaultResponseHeaders(String)} is set to a
+     * new value and when the value resolves to the global {@code ConfigurationProperties} default
+     * and that changes. The empty/default case returns a shared empty list, allocating nothing.</p>
+     *
+     * @return an immutable list of parsed default response headers (empty when none are configured)
+     */
+    public List<Header> parsedDefaultResponseHeaders() {
+        String source = defaultResponseHeaders();
+        // equality on the source string is the cache validity check; the two volatiles are not read
+        // or written atomically, but the parse is a pure deterministic function of source, so a race
+        // can at worst cause a redundant recompute (never a wrong result) and is self-correcting
+        List<Header> cached = parsedDefaultResponseHeaders;
+        if (cached == null || !Objects.equals(source, parsedDefaultResponseHeadersSource)) {
+            cached = DefaultResponseHeaders.parse(source);
+            parsedDefaultResponseHeaders = cached;
+            parsedDefaultResponseHeadersSource = source;
+        }
+        return cached;
+    }
+
+    /**
+     * <p>Default response headers that MockServer stamps onto every response it returns (mock responses, control-plane / dashboard responses, and forwarded / proxied responses) using add-if-absent semantics, so a header explicitly set on the matched response always wins.</p>
+     * <p>The format is a pipe (<code>|</code>) separated list of <code>name=value</code> pairs, e.g. <code>Server=MockServer|X-Trace-Id=abc123</code>. A header value may itself contain commas; only <code>|</code> separates headers and only the first <code>=</code> in each pair separates the name from the value.</p>
+     * <p>The default is "" (no default response headers are added, so behaviour is unchanged).</p>
+     * <p>Passing {@code null} clears the per-instance override so the value reverts to the global {@link ConfigurationProperties#defaultResponseHeaders()} property default (consistent with other nullable string properties such as {@code corsAllowOrigin} and {@code localBoundIP}).</p>
+     *
+     * @param defaultResponseHeaders pipe separated list of name=value header pairs added to responses if not already present
+     */
+    public Configuration defaultResponseHeaders(String defaultResponseHeaders) {
+        this.defaultResponseHeaders = defaultResponseHeaders;
+        // invalidate the memoised parse; parsedDefaultResponseHeaders() will recompute lazily,
+        // also picking up any change in the global property when defaultResponseHeaders is null
+        this.parsedDefaultResponseHeaders = null;
+        this.parsedDefaultResponseHeadersSource = null;
+        return this;
     }
 
     /**

@@ -177,6 +177,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CORS_ALLOW_CREDENTIALS = "mockserver.corsAllowCredentials";
     private static final String MOCKSERVER_CORS_MAX_AGE_IN_SECONDS = "mockserver.corsMaxAgeInSeconds";
 
+    // default response headers
+    private static final String MOCKSERVER_DEFAULT_RESPONSE_HEADERS = "mockserver.defaultResponseHeaders";
+
     // template restrictions
     private static final String MOCKSERVER_JAVASCRIPT_DISALLOWED_CLASSES = "mockserver.javascriptDisallowedClasses";
     private static final String MOCKSERVER_JAVASCRIPT_DISALLOWED_TEXT = "mockserver.javascriptDisallowedText";
@@ -2179,6 +2182,23 @@ public class ConfigurationProperties {
      */
     public static void corsMaxAgeInSeconds(int ageInSeconds) {
         setProperty(MOCKSERVER_CORS_MAX_AGE_IN_SECONDS, "" + ageInSeconds);
+    }
+
+    // default response headers
+
+    public static String defaultResponseHeaders() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DEFAULT_RESPONSE_HEADERS, "MOCKSERVER_DEFAULT_RESPONSE_HEADERS", "");
+    }
+
+    /**
+     * <p>Default response headers that MockServer stamps onto every response it returns (mock responses, control-plane / dashboard responses, and forwarded / proxied responses) using add-if-absent semantics, so a header explicitly set on the matched response always wins.</p>
+     * <p>The format is a pipe (<code>|</code>) separated list of <code>name=value</code> pairs, e.g. <code>Server=MockServer|X-Trace-Id=abc123</code>. A header value may itself contain commas (e.g. <code>Cache-Control=no-cache, no-store</code>); only <code>|</code> separates headers and only the first <code>=</code> in each pair separates the name from the value.</p>
+     * <p>The default is "" (no default response headers are added, so behaviour is unchanged).</p>
+     *
+     * @param defaultResponseHeaders pipe separated list of name=value header pairs added to responses if not already present
+     */
+    public static void defaultResponseHeaders(String defaultResponseHeaders) {
+        setProperty(MOCKSERVER_DEFAULT_RESPONSE_HEADERS, defaultResponseHeaders);
     }
 
     // template restrictions

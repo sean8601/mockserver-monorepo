@@ -66,6 +66,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean corsAllowCredentials;
     private Integer corsMaxAgeInSeconds;
 
+    private String defaultResponseHeaders;
+
     private String javascriptDisallowedClasses;
     private String javascriptDisallowedText;
     private Boolean velocityDisallowClassLoading;
@@ -198,6 +200,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.corsAllowHeaders = configuration.corsAllowHeaders();
             this.corsAllowCredentials = configuration.corsAllowCredentials();
             this.corsMaxAgeInSeconds = configuration.corsMaxAgeInSeconds();
+            this.defaultResponseHeaders = configuration.defaultResponseHeaders();
 
             this.javascriptDisallowedClasses = configuration.javascriptDisallowedClasses();
             this.javascriptDisallowedText = configuration.javascriptDisallowedText();
@@ -376,6 +379,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.corsAllowHeaders(corsAllowHeaders);
         configuration.corsAllowCredentials(corsAllowCredentials);
         configuration.corsMaxAgeInSeconds(corsMaxAgeInSeconds);
+
+        configuration.defaultResponseHeaders(defaultResponseHeaders);
 
         configuration.javascriptDisallowedClasses(javascriptDisallowedClasses);
         configuration.javascriptDisallowedText(javascriptDisallowedText);
@@ -597,6 +602,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (corsMaxAgeInSeconds != null) {
             target.corsMaxAgeInSeconds(corsMaxAgeInSeconds);
+        }
+        if (defaultResponseHeaders != null) {
+            target.defaultResponseHeaders(defaultResponseHeaders);
         }
         if (javascriptDisallowedClasses != null) {
             target.javascriptDisallowedClasses(javascriptDisallowedClasses);
@@ -1184,6 +1192,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setCorsMaxAgeInSeconds(Integer corsMaxAgeInSeconds) {
         this.corsMaxAgeInSeconds = corsMaxAgeInSeconds;
+        return this;
+    }
+
+    public String getDefaultResponseHeaders() {
+        return defaultResponseHeaders;
+    }
+
+    public ConfigurationDTO setDefaultResponseHeaders(String defaultResponseHeaders) {
+        this.defaultResponseHeaders = defaultResponseHeaders;
         return this;
     }
 
