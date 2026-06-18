@@ -771,9 +771,11 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
      * @param body the body on such as "this is an exact string body"
      */
     public HttpRequest withBody(String body) {
-        this.body = new StringBody(body);
-        this.hashCode = 0;
-        this.convertedBodyCache = null;
+        if (body != null) {
+            this.body = new StringBody(body);
+            this.hashCode = 0;
+            this.convertedBodyCache = null;
+        }
         return this;
     }
 

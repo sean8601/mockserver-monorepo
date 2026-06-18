@@ -370,6 +370,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
 
 ### Changed
+- **`HttpRequest.withBody((String) null)` now leaves the body unset**: a null string body passed to a
+  request builder no longer coerces to an empty `StringBody` — the body field stays `null`, exactly as
+  `HttpResponse.withBody((String) null)` has always behaved. `getBodyAsString()` therefore returns `null`
+  (not `""`) for such a request, and the request serializes with no `body` field at all. Body matching is
+  unchanged: a request expectation built with a null string body still matches any body, just as before.
+  Passing an empty string (`withBody("")`) is unaffected and still produces an empty `StringBody`.
 - **Dashboard UI visual refresh**: the dashboard now has a real design system (consistent spacing,
   shadows, typography and a dark-mode-aware log-colour palette). The Metrics view leads with KPI
   "hero" stat cards, its charts have a real time axis and area fill, and panels show skeleton

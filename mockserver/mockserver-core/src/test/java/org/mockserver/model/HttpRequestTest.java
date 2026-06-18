@@ -9,6 +9,8 @@ import java.util.Collections;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.collection.IsEmptyCollection.empty;
+import static org.hamcrest.Matchers.instanceOf;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsSame.sameInstance;
 import static org.mockserver.character.Character.NEW_LINE;
@@ -164,6 +166,28 @@ public class HttpRequestTest {
     @Test
     public void returnsBody() {
         assertThat(new HttpRequest().withBody(new StringBody("somebody")).getBody(), is(new StringBody("somebody")));
+        assertThat(new HttpRequest().withBody("somebody").getBodyAsString(), is("somebody"));
+    }
+
+    @Test
+    public void nullStringBodyLeavesBodyNull() {
+        // a request constructed with no body at all has a null body
+        assertThat(new HttpRequest().getBody(), nullValue());
+        assertThat(new HttpRequest().getBodyAsString(), nullValue());
+
+        // a null string body must leave the body NULL (mirrors HttpResponse.withBody((String) null)),
+        // rather than coercing to an empty StringBody
+        assertThat(new HttpRequest().withBody((String) null).getBody(), nullValue());
+        assertThat(new HttpRequest().withBody((String) null).getBodyAsString(), nullValue());
+
+        // the charset overload already guarded null and remains so
+        assertThat(new HttpRequest().withBody((String) null, java.nio.charset.StandardCharsets.UTF_8).getBody(), nullValue());
+        assertThat(new HttpRequest().withBody((String) null, java.nio.charset.StandardCharsets.UTF_8).getBodyAsString(), nullValue());
+
+        // the byte[] overload is intentionally NOT changed: it still constructs a BinaryBody whose
+        // value is null, so getBody() is a non-null BinaryBody but getBodyAsString() is null
+        assertThat(new HttpRequest().withBody((byte[]) null).getBody(), instanceOf(BinaryBody.class));
+        assertThat(new HttpRequest().withBody((byte[]) null).getBodyAsString(), nullValue());
     }
 
     @Test
