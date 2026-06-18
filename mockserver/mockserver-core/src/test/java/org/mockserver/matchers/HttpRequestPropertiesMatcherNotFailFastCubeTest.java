@@ -23,10 +23,11 @@ import static org.mockserver.model.Not.not;
  *
  * <p>The NOT-operator composition ({@code applyNotOperators} over the incoming request's
  * {@code isNot()}, the expectation request's {@code isNot()}, and the matcher's own {@code not})
- * is applied in two places inside {@link HttpRequestPropertiesMatcher}: once on the fast-fail
- * re-apply inside {@code failFast(...)} and once on the final result. The two copies are correct
- * but duplicated and fragile — a future edit to one and not the other would silently diverge only
- * when {@code matchersFailFast} is enabled.</p>
+ * is the load-bearing semantics of {@link HttpRequestPropertiesMatcher}. The matcher contains a
+ * fail-fast (early non-match return) optimisation inside {@code failFast(...)} that short-circuits
+ * as soon as a field mismatches. That optimisation MUST produce the identical final verdict as a
+ * full evaluation with {@code matchersFailFast} disabled — the early return is purely a performance
+ * concern and must never change the answer.</p>
  *
  * <p>This parameterized test exercises the full cube:</p>
  * <ul>
@@ -34,24 +35,23 @@ import static org.mockserver.model.Not.not;
  *   <li>expectation-request {@code isNot()}: true / false</li>
  *   <li>incoming-request {@code isNot()}: true / false</li>
  *   <li>{@code matchersFailFast}: on / off</li>
- *   <li>which single field mismatches: method / none</li>
+ *   <li>which single field mismatches: none / method / path / header / body</li>
  * </ul>
  *
- * <p><strong>Why only the method field (and the all-match case) drive the base mismatch:</strong>
- * the method matcher is an exact single-valued matcher, so flipping the method deterministically
- * produces a clean base non-match across the whole NOT cube, with the fail-fast and non-fail-fast
- * paths agreeing in every cell — which is exactly the duplicated-logic invariant this test exists
- * to lock in. The header field cannot force a base mismatch at all (header matching is sub-set /
- * multi-value-map, so a single differing header value still matches), and the <em>path</em> field
- * exposes a genuine pre-existing fail-fast/non-fail-fast divergence under an odd number of NOT
- * flags (the path block runs extra path-parameter handling that the fast-fail short-circuit skips).
- * Both are documented separately as findings rather than asserted here, so this regression guard
- * stays green and pins the NOT composition without baking in or masking that path quirk.</p>
+ * <p><strong>Why every non-first field is exercised:</strong> the fail-fast short-circuit used to
+ * negate a <em>partial</em> "have we failed so far?" signal through the NOT operators. With an odd
+ * number of NOT flags and zero failures accumulated <em>so far</em>, that partial signal evaluated
+ * to a premature (wrong) non-match — so every field that <em>matched</em> before the first
+ * mismatching field would falsely short-circuit a NOT expectation. The METHOD field is evaluated
+ * first, so it escaped the bug; PATH, HEADER and BODY (each evaluated after at least one matching
+ * field) exposed it. Driving the base mismatch on each of those fields, across the whole NOT cube,
+ * pins that the fail-fast and full-evaluation paths now agree in every cell and both equal the NOT
+ * truth table.</p>
  *
  * <p>For every cell it asserts that:</p>
  * <ol>
  *   <li>the fail-fast and non-fail-fast evaluations produce the <em>identical</em> final verdict
- *       (the duplicated NOT logic stays in lock-step), and</li>
+ *       (the fail-fast optimisation never changes the answer), and</li>
  *   <li>that verdict equals the expected NOT-composition truth table value: the base match
  *       (all-fields-match when no field mismatches) negated once per enabled NOT flag (sequential,
  *       independent negation — an odd number of NOTs flips the result).</li>
@@ -64,6 +64,7 @@ public class HttpRequestPropertiesMatcherNotFailFastCubeTest {
     private static final String MATCH_PATH = "/test";
     private static final String MATCH_HEADER_NAME = "X-Test";
     private static final String MATCH_HEADER_VALUE = "value";
+    private static final String MATCH_BODY = "expected-body";
 
     @Parameterized.Parameter(0)
     public boolean matcherNot;
@@ -80,7 +81,10 @@ public class HttpRequestPropertiesMatcherNotFailFastCubeTest {
         for (boolean matcherNot : new boolean[]{false, true}) {
             for (boolean expectationNot : new boolean[]{false, true}) {
                 for (boolean requestNot : new boolean[]{false, true}) {
-                    for (String mismatch : new String[]{"none", "method"}) {
+                    // "method" is evaluated first (escaped the bug); "path", "header" and "body"
+                    // are each evaluated after at least one matching field, which is exactly where
+                    // the fail-fast short-circuit used to diverge from full evaluation under odd NOT.
+                    for (String mismatch : new String[]{"none", "method", "path", "header", "body"}) {
                         params.add(new Object[]{matcherNot, expectationNot, requestNot, mismatch});
                     }
                 }
@@ -95,21 +99,40 @@ public class HttpRequestPropertiesMatcherNotFailFastCubeTest {
         HttpRequest expectation = request()
             .withMethod(MATCH_METHOD)
             .withPath(MATCH_PATH)
-            .withHeader(MATCH_HEADER_NAME, MATCH_HEADER_VALUE);
+            .withHeader(MATCH_HEADER_NAME, MATCH_HEADER_VALUE)
+            .withBody(MATCH_BODY);
         return expectationNot ? not(expectation) : expectation;
     }
 
     private HttpRequest incomingRequest() {
-        // start fully matching, then flip exactly one field to force a base mismatch
+        // start fully matching, then flip exactly one field to force a clean base mismatch
         HttpRequest incoming = request()
             .withMethod(MATCH_METHOD)
             .withPath(MATCH_PATH)
-            .withHeader(MATCH_HEADER_NAME, MATCH_HEADER_VALUE);
-        if ("method".equals(mismatchField)) {
-            // flip exactly one exact single-valued field to force a clean base non-match
-            incoming.withMethod("POST");
+            .withHeader(MATCH_HEADER_NAME, MATCH_HEADER_VALUE)
+            .withBody(MATCH_BODY);
+        switch (mismatchField) {
+            case "method":
+                incoming.withMethod("POST");
+                break;
+            case "path":
+                incoming.withPath("/other");
+                break;
+            case "header":
+                // the expectation requires X-Test: value under SUB_SET header matching, so the
+                // required header must be PRESENT in the request. Omitting it entirely is a clean
+                // base non-match. (A differing *value* for a present required header does NOT
+                // force a base mismatch — the header value matcher is permissive — so we drop the
+                // whole header rather than change its value.)
+                incoming.removeHeader(MATCH_HEADER_NAME);
+                break;
+            case "body":
+                incoming.withBody("different-body");
+                break;
+            default:
+                // "none" leaves the request fully matching
+                break;
         }
-        // "none" leaves the request fully matching
         return requestNot ? not(incoming) : incoming;
     }
 

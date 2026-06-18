@@ -429,6 +429,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
+- **`not(...)` expectations now match correctly with fail-fast matching enabled (the default)**: a negated
+  request matcher (`not(request()...)`, or a request-matcher-level `not`) could wrongly report a non-match
+  whenever a field other than the HTTP method matched before the first mismatching field. With the default
+  `matchersFailFast=true`, the early-exit short-circuit negated a *partial* "failed so far?" signal through
+  the NOT operators, producing a premature wrong verdict for any expectation with an odd number of NOT flags.
+  For example `not(request().withMethod("GET").withPath("/test"))` failed to match an incoming `GET /other`
+  even though it plainly is not `GET /test`. The fix only short-circuits when no NOT operator is in play
+  (preserving the fail-fast optimisation for the common case) and evaluates all fields for NOT expectations,
+  so the verdict now always equals a full evaluation. Affected the path, header and body fields.
 - **Notted key in `MATCHING_KEY` mode now asserts key-absence**: a notted matcher key (e.g. `!X`) used with
   `KeyMatchStyle.MATCHING_KEY` (for headers/query/cookies) previously aggregated values from every key that
   was not `X` and matched against that bag — a meaningless result. It now means "no key equal to `X` is

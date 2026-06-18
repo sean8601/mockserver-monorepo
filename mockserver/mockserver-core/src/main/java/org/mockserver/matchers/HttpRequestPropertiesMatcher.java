@@ -478,13 +478,25 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         if (!fieldMatches) {
             matchDifferenceCount.incrementFailures();
         }
-        if (matcher != null && !matcher.isBlank() && configuration.matchersFailFast()) {
-            return applyNotOperators(
-                matchDifferenceCount.getFailures() != 0,
-                matchDifferenceCount.getHttpRequest().isNot(),
-                compiled.httpRequest.isNot(),
-                not
-            );
+        // Fail-fast (early non-match return) is only SOUND when there are no NOT
+        // operators anywhere. The short-circuit asks "have we failed so far?"
+        // (failures != 0) and feeds that through applyNotOperators — but a partial
+        // "failures != 0" is NOT the final base-match (which is "failures == 0 once
+        // every field has been evaluated"). With an odd number of NOT flags and zero
+        // failures accumulated so far, failures != 0 is false, which applyNotOperators
+        // negates to true, prematurely returning a (wrong) non-match — so every field
+        // that matches before the first mismatching field would falsely short-circuit
+        // a NOT expectation. The only sound base-match under NOT is the final
+        // applyNotOperators(failures == 0, ...) computed once all fields are evaluated.
+        // So short-circuit ONLY when no NOT flag is in play (the common case — the vast
+        // majority of expectations have no NOT operators, so the fail-fast performance
+        // optimisation is preserved for them). When any NOT flag is set, never
+        // short-circuit: let matches() evaluate every field (the per-field failure
+        // bookkeeping above still runs for all of them) and rely on the single correct
+        // final applyNotOperators(failures == 0, ...).
+        boolean anyNotOperator = matchDifferenceCount.getHttpRequest().isNot() || compiled.httpRequest.isNot() || not;
+        if (!anyNotOperator && matcher != null && !matcher.isBlank() && configuration.matchersFailFast()) {
+            return matchDifferenceCount.getFailures() != 0;
         }
         return false;
     }
