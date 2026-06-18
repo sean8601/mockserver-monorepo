@@ -174,6 +174,21 @@ describe('AppBar', () => {
     // The dialog title appears once the SAML dialog opens.
     expect(screen.getByText('Mock SAML provider')).toBeInTheDocument();
   });
+
+  it('opens the baseline compare dialog from the tools menu', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    const toolsButton = screen.getAllByRole('button').find(
+      (b) => b.getAttribute('aria-label') === 'Import / export tools',
+    );
+    expect(toolsButton).toBeDefined();
+    await user.click(toolsButton!);
+
+    await user.click(screen.getByText('Compare against baseline…'));
+    // The dialog heading appears once the baseline compare dialog opens.
+    expect(screen.getByRole('heading', { name: 'Compare against baseline' })).toBeInTheDocument();
+  });
 });
 
 /**
@@ -209,13 +224,49 @@ describe('AppBar responsive navigation', () => {
     delete window.matchMedia;
   });
 
-  it('renders the full inline tab strip on wide screens (no hamburger)', () => {
+  it('renders the primary inline tabs plus a More overflow on wide screens (no hamburger)', () => {
     // jsdom default: no matchMedia → useMediaQuery returns false → wide layout.
     renderAppBar();
-    // All tabs are present as toggle buttons.
+    // Primary tabs are present inline as toggle buttons.
     expect(screen.getByRole('button', { name: 'Dashboard view' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Metrics view' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mocks view' })).toBeInTheDocument();
+    // Less-common tabs (e.g. Metrics) are NOT inline — they live in the More menu.
+    expect(screen.queryByRole('button', { name: 'Metrics view' })).not.toBeInTheDocument();
+    // The More overflow button is present, the hamburger is not.
+    expect(screen.getByRole('button', { name: 'More views' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
+  });
+
+  it('opens the More overflow menu and navigates to a less-common view', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    await user.click(screen.getByRole('button', { name: 'More views' }));
+    // Overflow views — including the new gRPC view — are reachable from the menu.
+    expect(screen.getByRole('menuitem', { name: 'gRPC services view' })).toBeInTheDocument();
+    const metricsItem = screen.getByRole('menuitem', { name: 'Metrics view' });
+    expect(metricsItem).toBeInTheDocument();
+
+    await user.click(metricsItem);
+    expect(useDashboardStore.getState().view).toBe('metrics');
+  });
+
+  it('labels the More button with the active overflow view so the selection stays visible', () => {
+    useDashboardStore.setState({ view: 'grpc' });
+    renderAppBar();
+    // When the active view lives in the overflow group the button shows its label.
+    expect(screen.getByRole('button', { name: 'More views' })).toHaveTextContent('gRPC');
+  });
+
+  it('navigates to the gRPC view from the hamburger menu on narrow screens', async () => {
+    stubMatchMedia(true);
+    const user = userEvent.setup();
+    renderAppBar();
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation menu' }));
+    const grpcItem = screen.getByRole('menuitem', { name: 'gRPC services view' });
+    await user.click(grpcItem);
+    expect(useDashboardStore.getState().view).toBe('grpc');
   });
 
   it('collapses the nav into a hamburger Menu on narrow screens', async () => {

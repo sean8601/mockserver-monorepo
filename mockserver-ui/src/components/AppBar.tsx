@@ -37,6 +37,9 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import PanToolIcon from '@mui/icons-material/PanTool';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import RpcIcon from '@mui/icons-material/Cable';
+import Button from '@mui/material/Button';
 import Select from '@mui/material/Select';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -76,6 +79,7 @@ import HubIcon from '@mui/icons-material/Hub';
 import StorageIcon from '@mui/icons-material/Storage';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import Divider from '@mui/material/Divider';
+import BaselineCompareDialog from './BaselineCompareDialog';
 
 function statusColor(status: ConnectionStatus): 'success' | 'warning' | 'error' | 'default' {
   switch (status) {
@@ -118,25 +122,36 @@ interface NavTab {
   label: string;
   ariaLabel: string;
   icon: ReactNode;
+  /**
+   * Primary tabs render inline on wide screens; the rest collapse into a
+   * labelled "More" overflow Menu so the desktop tab strip stays uncluttered.
+   * On narrow screens every tab lives in the hamburger Menu regardless.
+   */
+  primary?: boolean;
 }
 
-// Single source of truth for the navigation tabs — rendered as the inline
-// ToggleButtonGroup on wide screens and as an overflow Menu on narrow ones so
-// the full tab list never overflows into a hidden horizontal scroll strip.
+// Single source of truth for the navigation tabs. On wide screens the `primary`
+// tabs render as an inline ToggleButtonGroup and the rest collapse into a
+// labelled "More" overflow Menu; on narrow screens the full list lives in the
+// hamburger Menu. The order here is the order shown in every menu.
 const NAV_TABS: NavTab[] = [
-  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
-  { value: 'dashboard', label: 'Dashboard', ariaLabel: 'Dashboard view', icon: <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
-  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
-  { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
-  { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
+  { value: 'dashboard', label: 'Dashboard', ariaLabel: 'Dashboard view', icon: <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
+  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
+  { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
+  { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} />, primary: true },
   { value: 'chaos', label: 'Chaos', ariaLabel: 'Service chaos view', icon: <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'async', label: 'Async', ariaLabel: 'AsyncAPI broker mock view', icon: <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'grpc', label: 'gRPC', ariaLabel: 'gRPC services view', icon: <RpcIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'sessions', label: 'Sessions', ariaLabel: 'Session inspector view', icon: <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'library', label: 'Library', ariaLabel: 'Library of captured content', icon: <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'drift', label: 'Drift', ariaLabel: 'Drift detection view', icon: <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'verification', label: 'Verify', ariaLabel: 'Verification view', icon: <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'metrics', label: 'Metrics', ariaLabel: 'Metrics view', icon: <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
 ];
+
+const PRIMARY_NAV_TABS = NAV_TABS.filter((t) => t.primary);
+const OVERFLOW_NAV_TABS = NAV_TABS.filter((t) => !t.primary);
 
 interface AppBarProps {
   onClearServer: () => Promise<void>;
@@ -158,6 +173,8 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   // region, so collapse the nav into a "hamburger" Menu instead.
   const compactNav = useMediaQuery(theme.breakpoints.down('lg'));
   const [navAnchorEl, setNavAnchorEl] = useState<null | HTMLElement>(null);
+  // Wide-screen "More" overflow menu holding the less-common views.
+  const [moreNavAnchorEl, setMoreNavAnchorEl] = useState<null | HTMLElement>(null);
 
   const connectionParams = useConnectionParams();
   const [mode, setModeState] = useState<MockServerMode | null>(null);
@@ -178,6 +195,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [crudOpen, setCrudOpen] = useState(false);
   const [fileStoreOpen, setFileStoreOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
+  const [baselineOpen, setBaselineOpen] = useState(false);
   // Mode errors are now surfaced through the app-wide notification store.
   const [http3Status, setHttp3Status] = useState<Http3Status | null>(null);
   const setNotification = useDashboardStore((s) => s.setNotification);
@@ -303,7 +321,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             </Menu>
           </>
         ) : (
-          <Box sx={{ maxWidth: '100%', flexShrink: 1 }}>
+          <Box sx={{ maxWidth: '100%', flexShrink: 1, display: 'flex', alignItems: 'center' }}>
           <ToggleButtonGroup
             value={view}
             exclusive
@@ -339,13 +357,58 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
               },
             }}
           >
-            {NAV_TABS.map((tab) => (
+            {PRIMARY_NAV_TABS.map((tab) => (
               <ToggleButton key={tab.value} value={tab.value} aria-label={tab.ariaLabel}>
                 {tab.icon}
                 {tab.label}
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
+          {/* "More" overflow menu for the less-common views so the inline strip
+              stays uncluttered. When the active view lives in here, the button
+              shows that view's label so the current selection is always visible. */}
+          <Button
+            size="small"
+            color="inherit"
+            aria-label="More views"
+            aria-haspopup="menu"
+            endIcon={<ExpandMoreIcon sx={{ fontSize: '0.875rem' }} />}
+            onClick={(e) => setMoreNavAnchorEl(e.currentTarget)}
+            sx={{
+              ml: 0.5,
+              py: 0.25,
+              px: 1,
+              fontSize: '0.7rem',
+              textTransform: 'none',
+              lineHeight: 1.4,
+              whiteSpace: 'nowrap',
+              ...(OVERFLOW_NAV_TABS.some((t) => t.value === view)
+                ? { backgroundColor: 'rgba(255, 255, 255, 0.18)' }
+                : {}),
+            }}
+          >
+            {OVERFLOW_NAV_TABS.find((t) => t.value === view)?.label ?? 'More'}
+          </Button>
+          <Menu
+            anchorEl={moreNavAnchorEl}
+            open={Boolean(moreNavAnchorEl)}
+            onClose={() => setMoreNavAnchorEl(null)}
+          >
+            {OVERFLOW_NAV_TABS.map((tab) => (
+              <MenuItem
+                key={tab.value}
+                selected={view === tab.value}
+                aria-label={tab.ariaLabel}
+                onClick={() => {
+                  setView(tab.value);
+                  setMoreNavAnchorEl(null);
+                }}
+              >
+                <ListItemIcon>{tab.icon}</ListItemIcon>
+                <ListItemText>{tab.label}</ListItemText>
+              </MenuItem>
+            ))}
+          </Menu>
           </Box>
         )}
         <Box sx={{ flex: 1 }} />
@@ -570,6 +633,15 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
             <ListItemIcon><CompareArrowsIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Diff two requests…</ListItemText>
           </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setBaselineOpen(true);
+              setToolsAnchorEl(null);
+            }}
+          >
+            <ListItemIcon><CompareArrowsIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Compare against baseline…</ListItemText>
+          </MenuItem>
         </Menu>
         <OpenApiImportDialog
           open={openApiOpen}
@@ -599,6 +671,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       <CrudDialog open={crudOpen} onClose={() => setCrudOpen(false)} connectionParams={connectionParams} />
       <FileStoreDialog open={fileStoreOpen} onClose={() => setFileStoreOpen(false)} connectionParams={connectionParams} />
       <DiffRequestsDialog open={diffOpen} onClose={() => setDiffOpen(false)} connectionParams={connectionParams} />
+      <BaselineCompareDialog open={baselineOpen} onClose={() => setBaselineOpen(false)} connectionParams={connectionParams} />
       <ConfirmDialog
         open={confirm !== null}
         title={confirm?.title ?? ''}
