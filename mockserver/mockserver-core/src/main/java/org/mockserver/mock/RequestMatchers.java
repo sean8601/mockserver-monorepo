@@ -71,6 +71,39 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     // only non-sort fields (e.g. response body) — without this, such updates
     // would leave a stale matcher serving the old behaviour.
     private final ConcurrentHashMap<String, Long> lastReconciledVersion = new ConcurrentHashMap<>();
+    // The match fields a plain HTTP request can actually exercise. Used as the
+    // denominator of the closest-expectation "matched X/Y fields" diagnostic so
+    // it is not inflated by the DNS/binary/OpenAPI/operation enum constants that
+    // an HttpRequest never touches. DNS and binary requests report against their
+    // own field sets (see applicableFieldCount).
+    private static final MatchDifference.Field[] HTTP_APPLICABLE_FIELDS = {
+        MatchDifference.Field.METHOD,
+        MatchDifference.Field.PATH,
+        MatchDifference.Field.PATH_PARAMETERS,
+        MatchDifference.Field.QUERY_PARAMETERS,
+        MatchDifference.Field.COOKIES,
+        MatchDifference.Field.HEADERS,
+        MatchDifference.Field.BODY,
+        MatchDifference.Field.SECURE,
+        MatchDifference.Field.PROTOCOL,
+        MatchDifference.Field.KEEP_ALIVE,
+    };
+    private static final MatchDifference.Field[] DNS_APPLICABLE_FIELDS = {
+        MatchDifference.Field.DNS_NAME,
+        MatchDifference.Field.DNS_TYPE,
+        MatchDifference.Field.DNS_CLASS,
+    };
+    private static final MatchDifference.Field[] BINARY_APPLICABLE_FIELDS = {
+        MatchDifference.Field.BINARY_BODY,
+    };
+    // A non-fail-fast matcher builder used exclusively by the cold-path closest-match
+    // diagnostic to obtain a non-collapsed field-difference count. Lazily created
+    // (never on the hot serving path). Note: countMatchedApplicableFields builds the
+    // one-off matcher via transformsToMatcher(Expectation), which always compiles a
+    // fresh matcher (the MatcherBuilder LRU cache is keyed on RequestDefinition and is
+    // not consulted for the Expectation overload), so each cold-path diagnostic
+    // allocates a matcher — acceptable on this already-gated, no-match cold path.
+    private volatile MatcherBuilder nonFailFastMatcherBuilder;
 
     public RequestMatchers(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, WebSocketClientRegistry webSocketClientRegistry) {
         super(scheduler);
@@ -379,8 +412,8 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     public Expectation firstMatchingExpectation(RequestDefinition requestDefinition) {
         Expectation matchedExpectation = null;
         Expectation closestMatchExpectation = null;
+        HttpRequestMatcher closestMatchMatcher = null;
         int closestMatchFailures = Integer.MAX_VALUE;
-        int totalFields = MatchDifference.Field.values().length;
         String requestNamespace = extractRequestNamespace(requestDefinition);
         // Count expectations skipped purely by the namespace gate, but only when
         // the request actually carries a namespace — the common no-namespace hot
@@ -508,18 +541,31 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 break;
             } else {
                 if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
-                    scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
+                    scheduleLazyRemoval(httpRequestMatcher);
                 }
                 int failures = matchDifference.getAllDifferences().size();
                 if (failures < closestMatchFailures && httpRequestMatcher.getExpectation() != null) {
                     closestMatchFailures = failures;
                     closestMatchExpectation = httpRequestMatcher.getExpectation();
+                    closestMatchMatcher = httpRequestMatcher;
                 }
             }
         }
 
         if (matchedExpectation == null && closestMatchExpectation != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
-            int matchedFields = totalFields - closestMatchFailures;
+            // Cold path only (no match AND INFO logging on): compute a MEANINGFUL
+            // matched/total ratio. The denominator is the number of match fields
+            // APPLICABLE to this request's protocol (an HttpRequest never exercises
+            // the DNS/binary/OpenAPI/operation fields, so counting all 16 enum
+            // constants inflated it). The numerator is computed by re-evaluating the
+            // closest matcher WITHOUT fail-fast so the count reflects every applicable
+            // field — under the default fail-fast the hot-path MatchDifference collapses
+            // to at most one recorded failure, which would report "matched N-1/N" for
+            // almost any mismatch. This extra evaluation is intentionally confined to
+            // this already-gated cold path; the hot serving scan above is untouched and
+            // keeps fail-fast.
+            int totalFields = applicableFieldCount(requestDefinition);
+            int matchedFields = countMatchedApplicableFields(closestMatchMatcher, requestDefinition, totalFields, closestMatchFailures);
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setType(EXPECTATION_NOT_MATCHED)
@@ -933,6 +979,25 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         removeHttpRequestMatcher(httpRequestMatcher, Cause.API, true, logCorrelationId);
     }
 
+    /**
+     * Schedules the lazy async removal of an inactive matcher AT MOST ONCE.
+     * Several data-plane scans independently observe a matcher as
+     * {@code !responseInProgress && !active} and would each submit a removal task
+     * for it. The removal itself is idempotent, but the duplicate submissions add
+     * needless scheduler and backend load under churn. {@link HttpRequestMatcher}
+     * (via {@code AbstractHttpRequestMatcher}) CAS-guards the claim so only the
+     * first observer actually schedules the task. A matcher that is not an
+     * {@code AbstractHttpRequestMatcher} (none in practice) falls back to scheduling
+     * unconditionally so removal is never lost.
+     */
+    private void scheduleLazyRemoval(HttpRequestMatcher httpRequestMatcher) {
+        boolean shouldSchedule = !(httpRequestMatcher instanceof org.mockserver.matchers.AbstractHttpRequestMatcher)
+            || ((org.mockserver.matchers.AbstractHttpRequestMatcher) httpRequestMatcher).tryScheduleRemoval();
+        if (shouldSchedule) {
+            scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
+        }
+    }
+
     @SuppressWarnings("rawtypes")
     private void removeHttpRequestMatcher(HttpRequestMatcher httpRequestMatcher, Cause cause, boolean notifyAndUpdateMetrics, String logCorrelationId) {
         if (httpRequestMatchers.remove(httpRequestMatcher)) {
@@ -1013,7 +1078,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             return httpRequestMatchers.stream()
                 .filter(httpRequestMatcher -> {
                     if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
-                        scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
+                        scheduleLazyRemoval(httpRequestMatcher);
                         return false;
                     }
                     return true;
@@ -1025,7 +1090,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             HttpRequestMatcher requestMatcher = matcherBuilder.transformsToMatcher(requestDefinition);
             getHttpRequestMatchersCopy().forEach(httpRequestMatcher -> {
                 if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
-                    scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
+                    scheduleLazyRemoval(httpRequestMatcher);
                 } else {
                     RequestDefinition expectationDefinition = httpRequestMatcher.getExpectation().getHttpRequest();
                     if (notFilterableByRequest(requestDefinition, expectationDefinition) || requestMatcher.matches(expectationDefinition)) {
@@ -1126,7 +1191,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             return httpRequestMatchers.stream()
                 .filter(httpRequestMatcher -> {
                     if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
-                        scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
+                        scheduleLazyRemoval(httpRequestMatcher);
                         return false;
                     }
                     return true;
@@ -1137,7 +1202,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             HttpRequestMatcher requestMatcher = matcherBuilder.transformsToMatcher(requestDefinition);
             getHttpRequestMatchersCopy().forEach(httpRequestMatcher -> {
                 if (!httpRequestMatcher.isResponseInProgress() && !httpRequestMatcher.isActive()) {
-                    scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID()));
+                    scheduleLazyRemoval(httpRequestMatcher);
                 } else {
                     RequestDefinition expectationDefinition = httpRequestMatcher.getExpectation().getHttpRequest();
                     if (notFilterableByRequest(requestDefinition, expectationDefinition) || requestMatcher.matches(expectationDefinition)) {
@@ -1147,6 +1212,117 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             });
             return httpRequestMatchers;
         }
+    }
+
+    /**
+     * Number of match fields APPLICABLE to the given request's protocol — the
+     * correct denominator for the closest-expectation "matched X/Y fields"
+     * diagnostic. An {@link HttpRequest} (the common case) exercises the ten HTTP
+     * fields only; a {@link DnsRequestDefinition} exercises the three DNS fields;
+     * a {@link BinaryRequestDefinition} exercises the single binary-body field.
+     * Anything else (e.g. OpenAPI) falls back to the full enum size.
+     */
+    private static int applicableFieldCount(RequestDefinition requestDefinition) {
+        MatchDifference.Field[] applicable = applicableFields(requestDefinition);
+        return applicable != null ? applicable.length : MatchDifference.Field.values().length;
+    }
+
+    /**
+     * Computes how many of the request's applicable fields the closest expectation
+     * actually matched, for the cold-path "matched X/Y fields" diagnostic only.
+     * <p>
+     * The hot-path {@link MatchDifference} that produced {@code closestMatchFailures}
+     * was evaluated with the default fail-fast matching, which stops at the first
+     * failing field and therefore records at most one difference — so a naive
+     * {@code applicable - closestMatchFailures} would report an almost-perfect match
+     * for nearly any mismatch. To get a real count this re-evaluates the closest
+     * matcher with fail-fast DISABLED (via {@link #nonFailFastMatcherBuilder}) and a
+     * detailed {@link MatchDifference}, then counts the applicable fields that appear
+     * in the difference map as failures. This runs ONLY in the already-gated cold
+     * path (no match AND INFO logging on); the hot serving scan is untouched and keeps
+     * fail-fast.
+     * <p>
+     * For request/expectation protocols where a non-fail-fast rebuild is not safe or
+     * not meaningful (e.g. OpenAPI, whose matcher also consults context-path config),
+     * this falls back to the fail-fast-collapsed count, clamped to be non-negative.
+     */
+    private int countMatchedApplicableFields(HttpRequestMatcher closestMatchMatcher, RequestDefinition requestDefinition, int applicableFields, int collapsedFailures) {
+        MatchDifference.Field[] applicable = applicableFields(requestDefinition);
+        if (applicable != null && closestMatchMatcher != null && closestMatchMatcher.getExpectation() != null) {
+            RequestDefinition expectationDefinition = closestMatchMatcher.getExpectation().getHttpRequest();
+            // Only re-evaluate the protocols whose matchers do not depend on extra
+            // configuration beyond fail-fast (HTTP, DNS, binary). OpenAPI expectations
+            // compile against context-path config, so a fresh non-fail-fast builder
+            // could diverge — those take the conservative fallback below.
+            boolean safeToRebuild = expectationDefinition instanceof HttpRequest
+                || expectationDefinition instanceof DnsRequestDefinition
+                || expectationDefinition instanceof BinaryRequestDefinition;
+            if (safeToRebuild) {
+                try {
+                    HttpRequestMatcher nonFailFastMatcher = nonFailFastMatcherBuilder().transformsToMatcher(closestMatchMatcher.getExpectation());
+                    // suppressMatchResultLogging: this re-evaluation is diagnostic-only — it must
+                    // NOT write EXPECTATION_MATCHED / EXPECTATION_NOT_MATCHED events into the event
+                    // log (those would be uncorrelated duplicates of the not-matched scan above).
+                    MatchDifference detailed = new MatchDifference(true, requestDefinition).suppressMatchResultLogging();
+                    nonFailFastMatcher.matches(detailed, requestDefinition);
+                    Map<MatchDifference.Field, List<String>> differences = detailed.getAllDifferences();
+                    int failed = 0;
+                    for (MatchDifference.Field field : applicable) {
+                        if (differences.containsKey(field)) {
+                            failed++;
+                        }
+                    }
+                    return Math.max(0, applicableFields - failed);
+                } catch (Throwable throwable) {
+                    if (mockServerLogger.isEnabledForInstance(TRACE)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(TRACE)
+                                .setMessageFormat("exception computing non-fail-fast closest-match field count:{}")
+                                .setArguments(throwable.getMessage())
+                                .setThrowable(throwable)
+                        );
+                    }
+                    // fall through to the conservative fail-fast-collapsed estimate
+                }
+            }
+        }
+        return Math.max(0, applicableFields - collapsedFailures);
+    }
+
+    private static MatchDifference.Field[] applicableFields(RequestDefinition requestDefinition) {
+        if (requestDefinition instanceof HttpRequest) {
+            return HTTP_APPLICABLE_FIELDS;
+        }
+        if (requestDefinition instanceof DnsRequestDefinition) {
+            return DNS_APPLICABLE_FIELDS;
+        }
+        if (requestDefinition instanceof BinaryRequestDefinition) {
+            return BINARY_APPLICABLE_FIELDS;
+        }
+        return null;
+    }
+
+    private MatcherBuilder nonFailFastMatcherBuilder() {
+        MatcherBuilder builder = nonFailFastMatcherBuilder;
+        if (builder == null) {
+            synchronized (this) {
+                builder = nonFailFastMatcherBuilder;
+                if (builder == null) {
+                    // A configuration identical to the operator's for matching purposes,
+                    // except fail-fast is OFF so all fields are evaluated for the count.
+                    // HTTP/DNS/binary property matchers consult no other configuration at
+                    // match time, so a fresh default config differing only in fail-fast is
+                    // semantically equivalent for the protocols this builder is used for.
+                    Configuration nonFailFastConfiguration = Configuration.configuration()
+                        .matchersFailFast(false)
+                        .detailedMatchFailures(true);
+                    builder = new MatcherBuilder(nonFailFastConfiguration, mockServerLogger);
+                    nonFailFastMatcherBuilder = builder;
+                }
+            }
+        }
+        return builder;
     }
 
     public Map<MatchDifference.Field, List<String>> findClosestMatchDiff(HttpRequest httpRequest) {
