@@ -26,6 +26,9 @@ import {
   type VerifyResult,
 } from '../lib/verification';
 import VerificationReview from './VerificationReview';
+import HumanErrorAlert from './HumanErrorAlert';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { monospaceFontFamily } from '../theme';
 
 const METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -83,19 +86,19 @@ function buildHttpResponse(form: ResponseForm): Record<string, unknown> {
 function RequestFields({ form, onChange }: { form: RequestForm; onChange: (f: RequestForm) => void }) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Box sx={{ display: 'flex', gap: 1 }}>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         <Select
           size="small"
           displayEmpty
           value={form.method}
           onChange={(e) => onChange({ ...form, method: e.target.value })}
-          sx={{ width: 195 }}
+          sx={{ width: { xs: '100%', sm: 195 } }}
           renderValue={(v) => (v ? String(v) : 'Any method')}
         >
           {METHODS.map((m) => <MenuItem key={m || 'any'} value={m}>{m || 'Any method'}</MenuItem>)}
         </Select>
         <TextField size="small" label="Path" placeholder="/api/orders" value={form.path}
-          onChange={(e) => onChange({ ...form, path: e.target.value })} sx={{ flex: 1 }} />
+          onChange={(e) => onChange({ ...form, path: e.target.value })} sx={{ flex: 1, minWidth: 160 }} />
       </Box>
       <Box sx={{ display: 'flex', gap: 1 }}>
         <TextField size="small" label="Headers (Name: value per line)" multiline minRows={1} maxRows={4}
@@ -105,7 +108,7 @@ function RequestFields({ form, onChange }: { form: RequestForm; onChange: (f: Re
       </Box>
       <TextField size="small" label="Body (substring/JSON match)" multiline minRows={1} maxRows={6}
         value={form.body} onChange={(e) => onChange({ ...form, body: e.target.value })}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }} />
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: (theme) => theme.typography.body2.fontSize } } }} />
     </Box>
   );
 }
@@ -114,12 +117,12 @@ function ResponseFields({ form, onChange }: { form: ResponseForm; onChange: (f: 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <TextField size="small" label="Status code" placeholder="200" value={form.statusCode}
-        onChange={(e) => onChange({ ...form, statusCode: e.target.value })} sx={{ width: 150 }} />
+        onChange={(e) => onChange({ ...form, statusCode: e.target.value })} sx={{ width: { xs: '100%', sm: 150 } }} />
       <TextField size="small" label="Response headers (Name: value per line)" multiline minRows={1} maxRows={4}
         value={form.headers} onChange={(e) => onChange({ ...form, headers: e.target.value })} sx={{ flex: 1 }} />
       <TextField size="small" label="Response body (substring/JSON match)" multiline minRows={1} maxRows={6}
         value={form.body} onChange={(e) => onChange({ ...form, body: e.target.value })}
-        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }} />
+        slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: (theme) => theme.typography.body2.fontSize } } }} />
     </Box>
   );
 }
@@ -183,7 +186,7 @@ function ResultAlert({ result }: { result: VerifyResult | null }) {
   return (
     <Alert severity="error" sx={{ mt: 1.5 }}>
       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Verification failed</Typography>
-      <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.75rem', m: 0, mt: 0.5 }}>
+      <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: monospaceFontFamily, fontSize: (theme) => theme.typography.subtitle2.fontSize, m: 0, mt: 0.5 }}>
         {result.failureMessage}
       </Box>
     </Alert>
@@ -215,7 +218,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VerifyResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
 
   const run = useCallback(async (fn: () => Promise<VerifyResult>) => {
     setBusy(true);
@@ -224,7 +227,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
     try {
       setResult(await fn());
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -304,7 +307,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
           </MatcherSection>
           <Box sx={{ display: 'flex', gap: 1, mt: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography variant="body2" color="text.secondary">Received</Typography>
-            <Select size="small" value={timesMode} onChange={(e) => setTimesMode(e.target.value as VerificationTimesMode)} sx={{ width: 150 }}>
+            <Select size="small" value={timesMode} onChange={(e) => setTimesMode(e.target.value as VerificationTimesMode)} sx={{ width: { xs: '100%', sm: 150 } }}>
               <MenuItem value="atLeast">at least</MenuItem>
               <MenuItem value="atMost">at most</MenuItem>
               <MenuItem value="exactly">exactly</MenuItem>
@@ -367,7 +370,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
         </Paper>
       )}
 
-      {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
+      {error && <HumanErrorAlert error={error} sx={{ mt: 1.5 }} onClose={() => setError(null)} />}
       <ResultAlert result={result} />
 
       {/* Code generation panel — always shown; an empty form previews a "verify any request" call. */}

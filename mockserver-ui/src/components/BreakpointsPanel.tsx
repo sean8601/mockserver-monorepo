@@ -57,6 +57,7 @@ import type { KeyToMultiValue, KeyToValue } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import TruncatedText from './TruncatedText';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { humanizeError } from '../lib/errorMessage';
 
 const MATCHERS_POLL_INTERVAL_MS = 5000;
 
@@ -262,7 +263,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       setFormQueryParams([{ name: '', values: [''] }]);
       setFormCookies([{ name: '', value: '' }]);
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : String(e));
+      setFormError(humanizeError(e).message);
     } finally {
       setFormBusy(false);
     }
@@ -275,7 +276,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       await removeBreakpointMatcher(connectionParams, id);
       refreshMatchers();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e).message);
     } finally {
       setBusy(false);
     }
@@ -288,7 +289,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       await clearBreakpointMatchers(connectionParams);
       refreshMatchers();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e).message);
     } finally {
       setBusy(false);
     }
@@ -526,9 +527,15 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       {/* ============ TAB 0: Matchers ============ */}
       {tab === 0 && (
         <>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Register breakpoint matchers to pause proxied/forwarded exchanges that match. The dashboard resolves them interactively over the callback WebSocket.
           </Typography>
+          <Alert severity="info" variant="outlined" sx={{ mb: 1.5, py: 0.25 }}>
+            How it works: 1) add a matcher here → 2) send a matching request through MockServer →
+            3) it pauses in the <strong>Live Exchanges</strong> tab (or <strong>Live Streams</strong> for stream frames),
+            where you continue, modify, or abort it. Registering a matcher needs the callback
+            WebSocket connected{wsState === 'connected' ? '' : ` (currently ${wsState})`}.
+          </Alert>
 
           {/* Registration form */}
           <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
@@ -635,7 +642,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
           <Paper variant="outlined" sx={{ p: 1.25 }}>
             {matchers.length === 0 ? (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                No matchers registered. Register a matcher above to start pausing matching exchanges.
+                No matchers registered yet. Add one above, then send a matching request — it will
+                pause in the Live Exchanges tab for you to inspect and resolve.
               </Typography>
             ) : (
               <TableContainer>

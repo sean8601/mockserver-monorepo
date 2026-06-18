@@ -16,6 +16,7 @@ import {
   type StandardMatcher,
 } from '../lib/standardCodegen';
 import CopyButton from './CopyButton';
+import { monospaceFontFamily } from '../theme';
 
 export interface StandardReviewProps {
   matcher: StandardMatcher;
@@ -66,7 +67,7 @@ export default function StandardReview({ matcher, action, baseUrl }: StandardRev
         <Box
           component="pre"
           sx={{
-            fontFamily: 'monospace',
+            fontFamily: monospaceFontFamily,
             fontSize: '0.75rem',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all',

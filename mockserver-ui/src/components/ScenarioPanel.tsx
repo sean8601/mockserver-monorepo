@@ -12,6 +12,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TimerIcon from '@mui/icons-material/Timer';
 import ConfirmDialog from './ConfirmDialog';
+import { humanizeError } from '../lib/errorMessage';
 import {
   getScenarioState,
   setScenarioState,
@@ -142,7 +143,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       const result = await getScenarioState(connectionParams, scenarioName.trim());
       setCurrentState(result.currentState);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(humanizeError(err).message);
       setCurrentState(null);
     } finally {
       setLoading(false);
@@ -174,7 +175,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       }
       refreshList();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(humanizeError(err).message);
     } finally {
       setLoading(false);
     }
@@ -191,7 +192,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       setScheduledNextState(null);
       refreshList();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(humanizeError(err).message);
     } finally {
       setLoading(false);
     }

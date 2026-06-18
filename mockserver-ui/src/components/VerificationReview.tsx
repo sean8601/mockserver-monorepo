@@ -17,6 +17,7 @@ import {
 } from '../lib/verificationCodegen';
 import type { VerificationTimesSpec } from '../lib/verification';
 import CopyButton from './CopyButton';
+import { monospaceFontFamily } from '../theme';
 
 export interface VerificationReviewProps {
   mode: 'single' | 'sequence';
@@ -83,7 +84,7 @@ export default function VerificationReview(props: VerificationReviewProps) {
         <Box
           component="pre"
           sx={{
-            fontFamily: 'monospace',
+            fontFamily: monospaceFontFamily,
             fontSize: '0.75rem',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all',

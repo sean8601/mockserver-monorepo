@@ -82,6 +82,12 @@ import StopIcon from '@mui/icons-material/Stop';
 import LinearProgress from '@mui/material/LinearProgress';
 import { getConfiguration, updateConfiguration, type Configuration } from '../lib/configuration';
 import ConfirmDialog from './ConfirmDialog';
+import HumanErrorAlert from './HumanErrorAlert';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+
+// Responsive width helper for fixed-px form fields: full-width on a phone (xs),
+// the original fixed pixel width from `sm` up so the desktop layout is unchanged.
+const responsiveWidth = (px: number) => ({ width: { xs: '100%', sm: px } });
 
 // Responsive grid layout for chaos field rows — fields fill available width
 // and wrap uniformly via CSS Grid auto-fit instead of fixed pixel widths.
@@ -431,7 +437,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [polledAt, setPolledAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<HumanError | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -527,7 +533,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       await updateConfiguration(connectionParams, partial);
       refresh();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(humanizeError(e));
     }
   }, [connectionParams, refresh]);
 
@@ -701,7 +707,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         await action();
         refresh();
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
+        setActionError(humanizeError(e));
       } finally {
         setBusy(false);
       }
@@ -712,7 +718,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const handleRegister = useCallback(() => {
     const validationError = validateForm(form);
     if (validationError !== null) {
-      setActionError(validationError);
+      setActionError({ message: validationError });
       return;
     }
     const host = form.host.trim();
@@ -871,7 +877,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const handleRegisterTcp = useCallback(() => {
     const validationError = validateTcpForm(tcpForm);
     if (validationError !== null) {
-      setActionError(validationError);
+      setActionError({ message: validationError });
       return;
     }
     const host = tcpForm.host.trim();
@@ -901,7 +907,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const handleRegisterGrpcChaos = useCallback(() => {
     const validationError = validateGrpcChaosForm(grpcChaosForm);
     if (validationError !== null) {
-      setActionError(validationError);
+      setActionError({ message: validationError });
       return;
     }
     const service = grpcChaosForm.service.trim();
@@ -935,11 +941,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
 
   const handleStartExperiment = useCallback(() => {
     if (!expName.trim()) {
-      setActionError('Experiment name is required');
+      setActionError({ message: 'Experiment name is required' });
       return;
     }
     if (expStages.length === 0) {
-      setActionError('At least one stage is required');
+      setActionError({ message: 'At least one stage is required' });
       return;
     }
     const stages: ExperimentStageDTO[] = [];
@@ -947,11 +953,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       const s = expStages[i]!;
       const durationMillis = num(s.durationMs);
       if (durationMillis == null || durationMillis <= 0) {
-        setActionError(`Stage ${i + 1}: duration must be > 0`);
+        setActionError({ message: `Stage ${i + 1}: duration must be > 0` });
         return;
       }
       if (!s.host.trim()) {
-        setActionError(`Stage ${i + 1}: host is required`);
+        setActionError({ message: `Stage ${i + 1}: host is required` });
         return;
       }
       const profile: HttpChaosProfileDTO = {};
@@ -966,7 +972,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       const dp = num(s.dropProbability);
       if (dp != null) profile.dropConnectionProbability = dp;
       if (summarizeChaosProfile(profile).length === 0) {
-        setActionError(`Stage ${i + 1}: set at least one fault (error, latency, or drop)`);
+        setActionError({ message: `Stage ${i + 1}: set at least one fault (error, latency, or drop)` });
         return;
       }
       stages.push({ durationMillis, profiles: { [s.host.trim()]: profile } });
@@ -1035,9 +1041,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       )}
 
       {actionError && (
-        <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setActionError(null)}>
-          {actionError}
-        </Alert>
+        <HumanErrorAlert
+          error={actionError}
+          sx={{ mb: 1.5 }}
+          onClose={() => setActionError(null)}
+        />
       )}
 
       {/* Auto-halt controls (inline) */}
@@ -1073,7 +1081,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 const v = parseInt(autoHaltThreshold, 10);
                 if (!isNaN(v) && v > 0) void applyAutoHaltConfig({ chaosAutoHaltErrorThreshold: v });
               }}
-              sx={{ width: 130 }}
+              sx={responsiveWidth(130)}
             />
             <TextField
               size="small"
@@ -1088,9 +1096,9 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 const v = parseInt(autoHaltWindow, 10);
                 if (!isNaN(v) && v > 0) void applyAutoHaltConfig({ chaosAutoHaltWindowMillis: v });
               }}
-              sx={{ width: 130 }}
+              sx={responsiveWidth(130)}
             />
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+            <Typography variant="caption" color="text.secondary">
               Automatically halt chaos when errors exceed the threshold within the window.
             </Typography>
           </Box>
@@ -1444,7 +1452,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                                   size="small"
                                   label={grpcHealth[svc]}
                                   color={servingStatusColor(grpcHealth[svc]!)}
-                                  sx={{ height: 20, fontSize: '0.65rem' }}
+                                  sx={{ height: 20 }}
                                 />
                               </TableCell>
                               <TableCell align="right">
@@ -1851,12 +1859,12 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                     )}
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    <TextField size="small" label="Duration ms" placeholder="10000" value={stage.durationMs} onChange={setExpStageField(idx, 'durationMs')} sx={{ width: 120 }} />
-                    <TextField size="small" label="Host" placeholder="upstream.svc" value={stage.host} onChange={setExpStageField(idx, 'host')} sx={{ minWidth: 160 }} />
-                    <TextField size="small" label="Error status" placeholder="503" value={stage.errorStatus} onChange={setExpStageField(idx, 'errorStatus')} sx={{ width: 120 }} />
-                    <TextField size="small" label="Error prob (0-1)" placeholder="1.0" value={stage.errorProbability} onChange={setExpStageField(idx, 'errorProbability')} sx={{ width: 140 }} />
-                    <TextField size="small" label="Latency ms" placeholder="500" value={stage.latencyMs} onChange={setExpStageField(idx, 'latencyMs')} sx={{ width: 120 }} />
-                    <TextField size="small" label="Drop prob (0-1)" placeholder="0.2" value={stage.dropProbability} onChange={setExpStageField(idx, 'dropProbability')} sx={{ width: 140 }} />
+                    <TextField size="small" label="Duration ms" placeholder="10000" value={stage.durationMs} onChange={setExpStageField(idx, 'durationMs')} sx={responsiveWidth(120)} />
+                    <TextField size="small" label="Host" placeholder="upstream.svc" value={stage.host} onChange={setExpStageField(idx, 'host')} sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { sm: 160 } }} />
+                    <TextField size="small" label="Error status" placeholder="503" value={stage.errorStatus} onChange={setExpStageField(idx, 'errorStatus')} sx={responsiveWidth(120)} />
+                    <TextField size="small" label="Error prob (0-1)" placeholder="1.0" value={stage.errorProbability} onChange={setExpStageField(idx, 'errorProbability')} sx={responsiveWidth(140)} />
+                    <TextField size="small" label="Latency ms" placeholder="500" value={stage.latencyMs} onChange={setExpStageField(idx, 'latencyMs')} sx={responsiveWidth(120)} />
+                    <TextField size="small" label="Drop prob (0-1)" placeholder="0.2" value={stage.dropProbability} onChange={setExpStageField(idx, 'dropProbability')} sx={responsiveWidth(140)} />
                   </Box>
                 </Paper>
               ))}
