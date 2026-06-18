@@ -20,6 +20,10 @@ import Typography from '@mui/material/Typography';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
+import Collapse from '@mui/material/Collapse';
+import Link from '@mui/material/Link';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import type { ParsedTraffic } from '../lib/llmTraffic';
 import {
   PROVIDERS,
@@ -39,6 +43,7 @@ import {
   expectationToJsonObject,
 } from '../lib/llmExpectationCodegen';
 import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
 import CopyButton from './CopyButton';
 
 // ---------------------------------------------------------------------------
@@ -89,20 +94,37 @@ export default function CaptureAsMockDialog({
     [parsed, path, itemValue],
   );
 
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+
   // Editable state
   const [draft, setDraft] = useState<ExpectationDraft>(defaultDraft);
   const [tab, setTab] = useState(0);
   const [registering, setRegistering] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [snackOpen, setSnackOpen] = useState(false);
 
-  // Reset state when dialog opens with new data
+  // Reset all transient state (draft edits, error/details, registering flag,
+  // snackbar) whenever the captured path changes OR the dialog transitions from
+  // closed to open. Resetting on the open transition is what makes reopening the
+  // SAME captured item start clean: without it, a failed register would leave
+  // the stale error Alert and prior edits visible the next time it opened.
+  // This is the React-idiomatic "reset state on prop change" pattern (a
+  // synchronous setState during render), not an effect, so no cascading render.
   const [prevPath, setPrevPath] = useState(path);
-  if (path !== prevPath) {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (path !== prevPath || (open && !prevOpen)) {
     setPrevPath(path);
+    setPrevOpen(open);
     setDraft(defaultDraft);
     setTab(0);
     setError(null);
+    setDetailsOpen(false);
+    setRegistering(false);
+    setSnackOpen(false);
+  } else if (open !== prevOpen) {
+    setPrevOpen(open);
   }
 
   // ---- LLM draft helpers ----
@@ -167,6 +189,7 @@ export default function CaptureAsMockDialog({
   const handleRegister = useCallback(async () => {
     setRegistering(true);
     setError(null);
+    setDetailsOpen(false);
     try {
       const baseUrl = buildBaseUrl(connectionParams);
 
@@ -178,11 +201,11 @@ export default function CaptureAsMockDialog({
           setSnackOpen(true);
           onClose();
         } else {
-          setError(
+          const raw =
             typeof result.error === 'string'
               ? result.error
-              : JSON.stringify(result.error, null, 2),
-          );
+              : JSON.stringify(result.error, null, 2);
+          setError(humanizeError(new Error(raw)));
         }
       } else {
         // Generic HTTP: use PUT /mockserver/expectation
@@ -197,11 +220,13 @@ export default function CaptureAsMockDialog({
           onClose();
         } else {
           const text = await response.text();
-          setError(`Registration failed (${response.status}): ${text}`);
+          // Use the `MockServer returned <status>: <body>` shape so humanizeError
+          // can map the status to a friendly message and keep the raw body.
+          setError(humanizeError(new Error(`MockServer returned ${response.status}: ${text}`)));
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(humanizeError(err));
     } finally {
       setRegistering(false);
     }
@@ -223,6 +248,7 @@ export default function CaptureAsMockDialog({
         onClose={onClose}
         maxWidth="md"
         fullWidth
+        fullScreen={fullScreen}
         aria-labelledby="capture-as-mock-title"
       >
         <DialogTitle id="capture-as-mock-title">Capture as Mock</DialogTitle>
@@ -381,7 +407,7 @@ export default function CaptureAsMockDialog({
                   onChange={(e) => updateGenericDraft({ path: e.target.value })}
                 />
               </Box>
-              {draft.matcherPrecision !== 'loose' && draft.body && (
+              {draft.matcherPrecision !== 'loose' && (
                 <TextField
                   label="Request Body"
                   size="small"
@@ -389,8 +415,13 @@ export default function CaptureAsMockDialog({
                   multiline
                   minRows={2}
                   maxRows={6}
-                  value={draft.body}
+                  value={draft.body ?? ''}
                   onChange={(e) => updateGenericDraft({ body: e.target.value })}
+                  helperText={
+                    !draft.body
+                      ? 'No body was captured — add one to match on the request body.'
+                      : undefined
+                  }
                 />
               )}
 
@@ -471,12 +502,36 @@ export default function CaptureAsMockDialog({
 
           {error && (
             <Alert severity="error" sx={{ mt: 2 }}>
-              <Box
-                component="pre"
-                sx={{ fontFamily: 'monospace', fontSize: '0.7rem', whiteSpace: 'pre-wrap', m: 0 }}
-              >
-                {error}
-              </Box>
+              {error.message}
+              {error.details && (
+                <Box sx={{ mt: 0.5 }}>
+                  <Link
+                    component="button"
+                    type="button"
+                    variant="caption"
+                    underline="hover"
+                    onClick={() => setDetailsOpen((o) => !o)}
+                    sx={{ color: 'inherit' }}
+                  >
+                    {detailsOpen ? 'Hide details' : 'Details'}
+                  </Link>
+                  <Collapse in={detailsOpen} unmountOnExit>
+                    <Box
+                      component="pre"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.7rem',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        mt: 0.5,
+                        mb: 0,
+                      }}
+                    >
+                      {error.details}
+                    </Box>
+                  </Collapse>
+                </Box>
+              )}
             </Alert>
           )}
         </DialogContent>

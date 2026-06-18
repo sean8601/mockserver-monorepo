@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
@@ -298,6 +298,121 @@ describe('CaptureAsMockDialog', () => {
     expect(body).toHaveProperty('httpRequest');
     expect(body).toHaveProperty('httpResponse');
     expect(body).not.toHaveProperty('httpLlmResponse');
+  });
+
+  // -------------------------------------------------------------------------
+  // Dialog correctness: reset-on-reopen + addable body matcher + humanised error
+  // -------------------------------------------------------------------------
+
+  it('exposes the Request Body matcher even when no body was captured', () => {
+    const genericParsed: GenericParsed = {
+      kind: 'generic',
+      method: 'GET',
+      path: '/api/health',
+      statusCode: 200,
+    };
+
+    renderDialog({
+      parsed: genericParsed,
+      path: '/api/health',
+      itemValue: {
+        // No request body in the capture.
+        httpRequest: { method: 'GET', path: '/api/health' },
+        httpResponse: { statusCode: 200, body: '{"status":"ok"}' },
+      },
+    });
+
+    // The Request Body field must still be available so a body matcher can be ADDED.
+    const bodyField = screen.getByLabelText('Request Body');
+    expect(bodyField).toBeInTheDocument();
+    expect(bodyField).toHaveValue('');
+    expect(
+      screen.getByText(/add one to match on the request body/),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the Request Body matcher only in loose precision', async () => {
+    const user = userEvent.setup();
+    const genericParsed: GenericParsed = {
+      kind: 'generic',
+      method: 'GET',
+      path: '/api/health',
+      statusCode: 200,
+    };
+
+    renderDialog({
+      parsed: genericParsed,
+      path: '/api/health',
+      itemValue: {
+        httpRequest: { method: 'GET', path: '/api/health' },
+        httpResponse: { statusCode: 200 },
+      },
+    });
+
+    expect(screen.getByLabelText('Request Body')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Loose precision' }));
+    expect(screen.queryByLabelText('Request Body')).not.toBeInTheDocument();
+  });
+
+  it('clears a prior error and edits when the same item is reopened', async () => {
+    const user = userEvent.setup();
+    const genericParsed: GenericParsed = {
+      kind: 'generic',
+      method: 'GET',
+      path: '/api/health',
+      statusCode: 200,
+    };
+
+    // Register fails -> humanised error Alert appears.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve('boom: invalid expectation'),
+    }));
+
+    const props = {
+      open: true,
+      onClose: vi.fn(),
+      parsed: genericParsed,
+      path: '/api/health',
+      connectionParams: { host: 'localhost', port: '1080', secure: false },
+      itemValue: {
+        httpRequest: { method: 'GET', path: '/api/health' },
+        httpResponse: { statusCode: 200 },
+      },
+    };
+
+    const { rerender } = render(
+      <ThemeProvider theme={buildTheme('dark')}>
+        <CaptureAsMockDialog {...props} />
+      </ThemeProvider>,
+    );
+
+    // Edit a field, then trigger the failing register.
+    fireEvent.change(screen.getByLabelText('Response Body'), { target: { value: 'EDITED' } });
+    await user.click(screen.getByRole('button', { name: 'Register' }));
+
+    // Humanised message (400 -> "rejected as invalid") + Details expander with raw body.
+    expect(await screen.findByText(/rejected as invalid/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Details' }));
+    expect(screen.getByText(/boom: invalid expectation/)).toBeInTheDocument();
+
+    // Cancel (close) the dialog with the SAME path.
+    rerender(
+      <ThemeProvider theme={buildTheme('dark')}>
+        <CaptureAsMockDialog {...props} open={false} />
+      </ThemeProvider>,
+    );
+    // Reopen the SAME captured item.
+    rerender(
+      <ThemeProvider theme={buildTheme('dark')}>
+        <CaptureAsMockDialog {...props} open />
+      </ThemeProvider>,
+    );
+
+    // The stale error must be gone and the edit reverted to the captured default.
+    expect(screen.queryByText(/rejected as invalid/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Response Body')).not.toHaveValue('EDITED');
   });
 
   it('generates Java code for generic traffic', async () => {

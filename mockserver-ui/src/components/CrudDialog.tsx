@@ -9,6 +9,8 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { registerCrudResource, type CrudConfig, type CrudResult } from '../lib/crud';
 
@@ -21,6 +23,9 @@ export default function CrudDialog({
   onClose: () => void;
   connectionParams: ConnectionParams;
 }) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+
   const [basePath, setBasePath] = useState('');
   const [idField, setIdField] = useState('');
   const [idStrategy, setIdStrategy] = useState<'AUTO_INCREMENT' | 'UUID'>('AUTO_INCREMENT');
@@ -84,7 +89,7 @@ export default function CrudDialog({
   }, [onClose]);
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth aria-labelledby="crud-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth fullScreen={fullScreen} aria-labelledby="crud-dialog-title">
       <DialogTitle id="crud-dialog-title">Register CRUD resource</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -101,25 +106,28 @@ export default function CrudDialog({
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           <TextField
             size="small"
-            label="basePath"
+            label="Resource path"
             required
             placeholder="/api/users"
+            helperText="The base path the CRUD endpoints are mounted under."
             value={basePath}
             onChange={(e) => setBasePath(e.target.value)}
           />
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <TextField
               size="small"
-              label="idField"
+              label="ID field name"
               placeholder="id"
+              helperText="Property used as each item's identifier (default: id)."
               value={idField}
               onChange={(e) => setIdField(e.target.value)}
               sx={{ flex: 1 }}
             />
             <TextField
               size="small"
-              label="idStrategy"
+              label="ID strategy"
               select
+              helperText="How new item IDs are generated."
               value={idStrategy}
               onChange={(e) => setIdStrategy(e.target.value as 'AUTO_INCREMENT' | 'UUID')}
               sx={{ width: 180 }}
@@ -130,11 +138,12 @@ export default function CrudDialog({
           </Box>
           <TextField
             size="small"
-            label="initialData (JSON array, optional)"
+            label="Seed data (JSON array)"
             multiline
             minRows={3}
             maxRows={10}
             placeholder={'[\n  { "name": "Alice" },\n  { "name": "Bob" }\n]'}
+            helperText="Optional JSON array of items to pre-populate the resource."
             value={initialData}
             onChange={(e) => setInitialData(e.target.value)}
             slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.78rem' } } }}
