@@ -294,6 +294,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually renders, not the repo README).
 
 ### Fixed
+- **OpenAPI follow-ups (further re-review).**
+  - **XML response bodies are now real, spec-correct XML.** When an OpenAPI response content type is XML
+    (`application/xml`, `text/xml`, or a `+xml` suffix) MockServer now serialises the generated example as
+    XML using the schema's `xml` metadata (`name`/`namespace`/`prefix`/`attribute`/`wrapped`) per the
+    OpenAPI XML Object rules, instead of the previous JSON-shaped body. Array elements follow the spec
+    (unwrapped → repeated elements named after the property; `wrapped: true` → a wrapper element), fixing the
+    earlier malformed pluralised output. (Behaviour change for XML responses; JSON responses are unchanged.)
+  - **OAS 3.1 multi-type `type` arrays are preserved** when serialising a schema: `type: ["string","null"]`
+    now becomes `type: string` + `nullable: true` (and `["string","integer"]` is kept as a Draft-07 type
+    array) instead of being silently dropped.
+  - **Negated request matchers re-validate.** The `not` flag (emitted as `"not": true` by the request and
+    OpenAPIDefinition serializers) is now declared in the `httpRequest` and `openAPIDefinition` JSON schemas,
+    so a serialized negated matcher no longer fails schema validation on re-import.
+  - **Validation errors are meaningful and bounded.** Unexpected exceptions during request/response/contract/
+    traffic validation are now reported with context (request vs response, operation, aspect) and the
+    exception type rather than a raw — sometimes `null` — message, capped to a single bounded line; the full
+    throwable is logged.
 - **OpenAPI handling hardened across both directions (audit follow-up to #2357).** A review of the
   OpenAPI subsystem found and fixed a batch of correctness defects:
   - **Range status-code keys** (`1XX`–`5XX`, legal in OpenAPI 3.x) no longer crash a spec import. A
