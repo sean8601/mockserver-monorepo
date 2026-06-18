@@ -75,6 +75,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `timeToLive`, `priority` and `id`, so recordings still replay correctly. Note: because credentials are
   replaced with a placeholder, a recording that relies on the original credential to authenticate against an
   upstream must be retrieved with redaction disabled.
+- **LLM model/pricing catalog refresh**: `org.mockserver.llm.cost.LlmPricing` now recognises current
+  model families — Claude Opus 4.5–4.8, Sonnet 4.5/4.6, Haiku 4.5 and Fable 5; OpenAI gpt-4.1 family
+  and o3/o4 reasoning models; Gemini 2.5 flash-lite/flash/pro — in addition to the existing entries.
+  More-specific prefixes are matched first so e.g. `claude-opus-4-8` resolves to its own tier rather
+  than the generic `claude-opus-4`. `gpt-5*` entries are explicitly approximated placeholders (mapped
+  to the nearest known tier, flagged in a code comment) so a recognised model is still priced instead
+  of dropped — confirm those figures against the provider price list before relying on them.
+- **Cached and reasoning token usage fields**: `org.mockserver.model.Usage` gains three optional,
+  back-compatible fields — `cachedInputTokens`, `cacheCreationTokens` and `reasoningTokens`. The
+  runtime-LLM provider clients decode them from each provider's usage shape (OpenAI
+  `prompt_tokens_details.cached_tokens` / `completion_tokens_details.reasoning_tokens`, OpenAI Responses
+  `input_tokens_details` / `output_tokens_details`, Anthropic `cache_read_input_tokens` /
+  `cache_creation_input_tokens`, Gemini `cachedContentTokenCount` / `thoughtsTokenCount`), and the GenAI
+  telemetry spans emit them as `mockserver.gen_ai.usage.{cached_input,cache_creation,reasoning}_tokens`.
+  Absent fields (a provider that doesn't report them) leave behaviour unchanged, so cost dashboards can
+  now split cached-input and reasoning spend without mis-billing older recordings.
+- **Multimodal image request recognition**: the conversation decoders now recognise image content parts
+  so a mocked LLM request can match on image presence — OpenAI `image_url`, Anthropic `image`
+  (base64 source), and Gemini `inline_data` / `inlineData`. `ParsedMessage` exposes `hasImage()`,
+  `imageCount()` and `getImages()` (each `ImagePart` carries the declared media type where the provider
+  shape includes it). Request-side only — MockServer recognises images, it does not store the bytes or
+  generate image responses.
 - **Expectation code generation in every client language**: the retrieve endpoint can now produce
   copy-paste-ready client code from recorded or active expectations in **Java, JavaScript, Python, Go,
   C#, Ruby, Rust and PHP**, alongside the existing Java output. Call

@@ -17,6 +17,7 @@ import static io.opentelemetry.api.common.AttributeKey.longKey;
 import static io.opentelemetry.api.common.AttributeKey.stringArrayKey;
 import static io.opentelemetry.api.common.AttributeKey.stringKey;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.model.Completion.completion;
 import static org.mockserver.model.ToolUse.toolUse;
@@ -63,6 +64,39 @@ public class GenAiSpansTest {
         assertThat(span.getAttributes().get(longKey("gen_ai.usage.input_tokens")), is(10L));
         assertThat(span.getAttributes().get(longKey("gen_ai.usage.output_tokens")), is(2L));
         assertThat(span.getAttributes().get(longKey("mockserver.gen_ai.tool_call_count")), is(1L));
+    }
+
+    @Test
+    public void emitsCachedAndReasoningTokenAttributesWhenPresent() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        Tracer tracer = tracerFor(spanExporter);
+
+        GenAiSpans.recordCompletion(tracer, Provider.OPENAI, "gpt-4o",
+            completion()
+                .withText("hi")
+                .withUsage(usage()
+                    .withInputTokens(100).withOutputTokens(40)
+                    .withCachedInputTokens(80).withCacheCreationTokens(5).withReasoningTokens(25)));
+
+        SpanData span = spanExporter.getFinishedSpanItems().get(0);
+        assertThat(span.getAttributes().get(longKey("gen_ai.usage.input_tokens")), is(100L));
+        assertThat(span.getAttributes().get(longKey("gen_ai.usage.output_tokens")), is(40L));
+        assertThat(span.getAttributes().get(longKey("mockserver.gen_ai.usage.cached_input_tokens")), is(80L));
+        assertThat(span.getAttributes().get(longKey("mockserver.gen_ai.usage.cache_creation_tokens")), is(5L));
+        assertThat(span.getAttributes().get(longKey("mockserver.gen_ai.usage.reasoning_tokens")), is(25L));
+    }
+
+    @Test
+    public void omitsCachedAndReasoningAttributesWhenAbsent() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        Tracer tracer = tracerFor(spanExporter);
+
+        GenAiSpans.recordCompletion(tracer, Provider.OPENAI, "gpt-4o",
+            completion().withText("hi").withUsage(usage().withInputTokens(10).withOutputTokens(2)));
+
+        SpanData span = spanExporter.getFinishedSpanItems().get(0);
+        assertThat(span.getAttributes().get(longKey("mockserver.gen_ai.usage.cached_input_tokens")), is(nullValue()));
+        assertThat(span.getAttributes().get(longKey("mockserver.gen_ai.usage.reasoning_tokens")), is(nullValue()));
     }
 
     @Test

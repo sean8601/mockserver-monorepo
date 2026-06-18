@@ -97,6 +97,13 @@ public class GeminiLlmClient extends AbstractLlmClient {
             if (usageNode.has("candidatesTokenCount")) {
                 usage.withOutputTokens(usageNode.path("candidatesTokenCount").asInt());
             }
+            if (usageNode.has("cachedContentTokenCount")) {
+                usage.withCachedInputTokens(usageNode.path("cachedContentTokenCount").asInt());
+            }
+            // Gemini reports reasoning ("thinking") tokens as thoughtsTokenCount.
+            if (usageNode.has("thoughtsTokenCount")) {
+                usage.withReasoningTokens(usageNode.path("thoughtsTokenCount").asInt());
+            }
             completion.withUsage(usage);
         }
         return completion;

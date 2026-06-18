@@ -81,6 +81,19 @@ public final class GenAiSpans {
                         if (usage.getOutputTokens() != null) {
                             span.setAttribute("gen_ai.usage.output_tokens", usage.getOutputTokens().longValue());
                         }
+                        // Cached-input and reasoning token counts have no GenAI semconv
+                        // attribute yet — emit under the mockserver namespace (like the
+                        // tool-call count) so cost dashboards can split cached/reasoning
+                        // spend. Omitted entirely when the provider didn't report them.
+                        if (usage.getCachedInputTokens() != null) {
+                            span.setAttribute("mockserver.gen_ai.usage.cached_input_tokens", usage.getCachedInputTokens().longValue());
+                        }
+                        if (usage.getCacheCreationTokens() != null) {
+                            span.setAttribute("mockserver.gen_ai.usage.cache_creation_tokens", usage.getCacheCreationTokens().longValue());
+                        }
+                        if (usage.getReasoningTokens() != null) {
+                            span.setAttribute("mockserver.gen_ai.usage.reasoning_tokens", usage.getReasoningTokens().longValue());
+                        }
                     }
                     if (completion.getToolCalls() != null && !completion.getToolCalls().isEmpty()) {
                         // non-standard extension (no semconv attribute for a count) — namespaced

@@ -181,6 +181,7 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
                 String textContent = "";
                 List<ToolUse> toolCalls = new ArrayList<>();
                 Map<String, String> toolResults = new LinkedHashMap<>();
+                List<ParsedMessage.ImagePart> images = new ArrayList<>();
 
                 // Parse text content
                 if (contentNode != null) {
@@ -193,6 +194,9 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
                             if ("text".equals(partType)) {
                                 String text = part.has("text") ? part.get("text").asText("") : "";
                                 textBuilder.append(text);
+                            } else if ("image_url".equals(partType)) {
+                                // OpenAI image part: {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}
+                                images.add(new ParsedMessage.ImagePart(mediaTypeFromDataUrl(part.path("image_url").path("url").asText(""))));
                             }
                         }
                         textContent = textBuilder.toString();
@@ -235,7 +239,8 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
                     role,
                     textContent,
                     toolCalls.isEmpty() ? null : toolCalls,
-                    toolResults.isEmpty() ? null : toolResults
+                    toolResults.isEmpty() ? null : toolResults,
+                    images.isEmpty() ? null : images
                 ));
             }
 
@@ -243,6 +248,22 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
         } catch (Exception e) {
             return ParsedConversation.empty();
         }
+    }
+
+    /**
+     * Extract the media type from an OpenAI image data URL
+     * ({@code data:image/png;base64,...}), or {@code null} for a remote https URL.
+     */
+    private static String mediaTypeFromDataUrl(String url) {
+        if (url != null && url.startsWith("data:")) {
+            int semi = url.indexOf(';');
+            int comma = url.indexOf(',');
+            int end = semi >= 0 ? semi : (comma >= 0 ? comma : -1);
+            if (end > 5) {
+                return url.substring(5, end);
+            }
+        }
+        return null;
     }
 
     private static ParsedMessage.Role mapOpenAiRole(String rawRole) {

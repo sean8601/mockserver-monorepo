@@ -64,6 +64,14 @@ public class OpenAiLlmClient extends AbstractLlmClient {
             if (usageNode.has("completion_tokens")) {
                 usage.withOutputTokens(usageNode.path("completion_tokens").asInt());
             }
+            JsonNode promptDetails = usageNode.path("prompt_tokens_details");
+            if (promptDetails.isObject() && promptDetails.has("cached_tokens")) {
+                usage.withCachedInputTokens(promptDetails.path("cached_tokens").asInt());
+            }
+            JsonNode completionDetails = usageNode.path("completion_tokens_details");
+            if (completionDetails.isObject() && completionDetails.has("reasoning_tokens")) {
+                usage.withReasoningTokens(completionDetails.path("reasoning_tokens").asInt());
+            }
             completion.withUsage(usage);
         }
         return completion;

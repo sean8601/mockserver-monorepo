@@ -94,6 +94,12 @@ public class AnthropicLlmClient extends AbstractLlmClient {
             if (usageNode.has("output_tokens")) {
                 usage.withOutputTokens(usageNode.path("output_tokens").asInt());
             }
+            if (usageNode.has("cache_read_input_tokens")) {
+                usage.withCachedInputTokens(usageNode.path("cache_read_input_tokens").asInt());
+            }
+            if (usageNode.has("cache_creation_input_tokens")) {
+                usage.withCacheCreationTokens(usageNode.path("cache_creation_input_tokens").asInt());
+            }
             completion.withUsage(usage);
         }
         return completion;

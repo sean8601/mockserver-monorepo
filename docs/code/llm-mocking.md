@@ -67,6 +67,18 @@ The expanded events are handed to `HttpSseResponseActionHandler` which already h
 
 Predicates are stored as `ConversationPredicates` on `HttpLlmResponse` for JSON round-tripping. The matcher is lazily reconstructed from predicates after deserialisation.
 
+### Multimodal (image) recognition
+
+The decoders recognise **image content parts** on the request side so a mocked request can be matched on image presence. Each `ParsedMessage` exposes `hasImage()`, `imageCount()`, and `getImages()` (a list of `ImagePart`, each carrying the declared media type where the provider shape includes it):
+
+| Provider | Image shape recognised |
+|----------|------------------------|
+| OPENAI / AZURE_OPENAI | `image_url` content part (media type parsed from a `data:` URL; `null` for a remote `https` URL) |
+| ANTHROPIC / BEDROCK | `image` block with a `source.media_type` |
+| GEMINI | `inline_data` / `inlineData` part with `mime_type` / `mimeType` |
+
+This is **request-side recognition only** — MockServer notes that a message contains an image (and how many, and the media type) so conversation matchers can assert it; it does not store the image bytes or generate image responses.
+
 ### Normalised prompt matching
 
 Agent prompts are dynamically assembled, so exact-byte matching is brittle. `NormalizationOptions` (carried on `ConversationPredicates`) applies a **deterministic** transform to the latest-message text before the text predicates run, via `PromptNormalizer.normalize(text, options)`:
@@ -274,6 +286,9 @@ classDiagram
     class Usage {
         +inputTokens: Integer
         +outputTokens: Integer
+        +cachedInputTokens: Integer
+        +cacheCreationTokens: Integer
+        +reasoningTokens: Integer
     }
     class StreamingPhysics {
         +timeToFirstToken: Delay
@@ -313,6 +328,9 @@ classDiagram
         +textContent: String
         +toolName: String
         +toolCallId: String
+        +images: List~ImagePart~
+        +hasImage() boolean
+        +imageCount() int
     }
     class IsolationSource {
         +kind: Kind
@@ -361,7 +379,7 @@ This SPI is never on the deterministic assertion/matching path. The features tha
 Optional, off-by-default OTLP export, in two independent parts (both fail-soft — a setup error logs one line and never affects the server or a response; `io.opentelemetry` is relocated in the shaded jar):
 
 - **Metrics** (`org.mockserver.metrics.OtelMetricsExporter`, `mockserver.otelMetricsEnabled`) — bridges the existing `Metrics.Name` gauges (the same set exposed for Prometheus, including the LLM/SSE/chaos counters) to OTLP as observable gauges that read the current values, so Prometheus and OTLP stay consistent. An alternative to the Prometheus endpoint.
-- **GenAI spans** (`org.mockserver.telemetry.GenAiSpanExporter` + `GenAiSpans`, `mockserver.otelTracesEnabled`) — emits one span per LLM completion with GenAI semantic-convention attributes (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.response.finish_reasons`, tool-call count). These are spans MockServer codes deliberately — **no auto-instrumentation**. `GenAiSpans` is a process-wide no-op until `GenAiSpanExporter` installs a tracer. Spans fire on two paths:
+- **GenAI spans** (`org.mockserver.telemetry.GenAiSpanExporter` + `GenAiSpans`, `mockserver.otelTracesEnabled`) — emits one span per LLM completion with GenAI semantic-convention attributes (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.response.finish_reasons`, tool-call count). When a provider reports them, cached-input and reasoning token counts are also emitted under the `mockserver.gen_ai.usage.*` namespace (`cached_input_tokens`, `cache_creation_tokens`, `reasoning_tokens`) — there is no GenAI semconv attribute for these yet, and they are omitted entirely when absent. These are spans MockServer codes deliberately — **no auto-instrumentation**. `GenAiSpans` is a process-wide no-op until `GenAiSpanExporter` installs a tracer. Spans fire on two paths:
   - **Mock action path** — `HttpLlmResponseActionHandler` calls `GenAiSpans.recordCompletion()` for mocked responses (streaming and non-streaming).
   - **Forward/proxy path** — `HttpActionHandler.emitForwardGenAiSpan()` detects LLM traffic via `LlmProviderSniffer` (maps the forwarded request's target host to a `Provider`), parses the upstream response using the provider's `LlmClient.parseCompletionResponse()`, and records a completion span. Covers matched-expectation forwards and unmatched proxy-pass. Streaming forward paths emit the GenAI span in the completion listener after the full SSE body is captured. Model is extracted from the response body (most providers include it), falling back to the request body.
 
