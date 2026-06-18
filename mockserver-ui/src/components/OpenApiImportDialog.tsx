@@ -7,6 +7,8 @@ import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import Typography from '@mui/material/Typography';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import { importOpenApi } from '../lib/openapiImport';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 
@@ -23,6 +25,8 @@ interface OpenApiImportDialogProps {
  * operations.
  */
 export default function OpenApiImportDialog({ open, onClose, connectionParams }: OpenApiImportDialogProps) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [spec, setSpec] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +54,7 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="openapi-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="openapi-dialog-title">
       <DialogTitle id="openapi-dialog-title">Import OpenAPI</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

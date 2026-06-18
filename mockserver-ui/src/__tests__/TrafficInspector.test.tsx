@@ -729,11 +729,13 @@ describe('TrafficInspector — Replay button', () => {
     const dialogReplayBtn = within(dialog).getByRole('button', { name: /Replay/i });
     await user.click(dialogReplayBtn);
 
-    // An error Alert (severity="error") should appear with the status and message
+    // An error Alert (severity="error") should appear. The replay failure is now
+    // routed through humanizeError, so a 503 surfaces the friendly internal-error
+    // message (the raw "503: Service Unavailable" text is kept for a Details pane,
+    // not shown inline by this Alert).
     const errorAlert = await within(dialog).findByRole('alert');
     expect(errorAlert).toBeInTheDocument();
-    expect(errorAlert).toHaveTextContent('503');
-    expect(errorAlert).toHaveTextContent('Service Unavailable');
+    expect(errorAlert).toHaveTextContent(/internal error/i);
 
     // The loading spinner should be gone (dialog replay button should be re-enabled)
     expect(within(dialog).getByRole('button', { name: /Replay/i })).toBeEnabled();

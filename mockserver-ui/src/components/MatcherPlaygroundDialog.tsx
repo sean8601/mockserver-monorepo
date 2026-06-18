@@ -3,6 +3,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
@@ -75,6 +77,8 @@ export default function MatcherPlaygroundDialog({
   /** Optional expectation JSON to pre-fill (e.g. "Test this expectation" from a list). */
   initialExpectation?: string;
 }) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [expectationText, setExpectationText] = useState(initialExpectation ?? DEFAULT_EXPECTATION);
   const [sample, setSample] = useState<SampleRequest>(DEFAULT_SAMPLE);
   const [result, setResult] = useState<PreviewResult | null>(null);
@@ -124,7 +128,7 @@ export default function MatcherPlaygroundDialog({
   }, [result]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen}>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
         Matcher Test Playground
         <IconButton size="small" onClick={onClose} aria-label="Close">

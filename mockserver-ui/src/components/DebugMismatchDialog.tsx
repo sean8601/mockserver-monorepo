@@ -2,6 +2,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -190,6 +192,8 @@ interface DebugMismatchDialogProps {
 }
 
 export default function DebugMismatchDialog({ connectionParams }: DebugMismatchDialogProps) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const open = useDashboardStore((s) => s.debugMismatchOpen);
   const result = useDashboardStore((s) => s.debugMismatchResult);
   const loading = useDashboardStore((s) => s.debugMismatchLoading);
@@ -226,7 +230,7 @@ export default function DebugMismatchDialog({ connectionParams }: DebugMismatchD
 
   return (
     <>
-      <Dialog open={open} onClose={close} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={close} maxWidth="md" fullWidth fullScreen={fullScreen}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             Why Didn&apos;t This Match?

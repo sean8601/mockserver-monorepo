@@ -3,6 +3,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
@@ -21,6 +23,8 @@ interface WsdlImportDialogProps {
  * creating one expectation per SOAP operation.
  */
 export default function WsdlImportDialog({ open, onClose, connectionParams }: WsdlImportDialogProps) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [wsdl, setWsdl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +52,7 @@ export default function WsdlImportDialog({ open, onClose, connectionParams }: Ws
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="wsdl-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="wsdl-dialog-title">
       <DialogTitle id="wsdl-dialog-title">Import WSDL</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

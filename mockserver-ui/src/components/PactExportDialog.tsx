@@ -3,6 +3,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Stack from '@mui/material/Stack';
@@ -24,6 +26,8 @@ interface PactExportDialogProps {
  * contract via PUT /mockserver/pact, with copy / download of the result.
  */
 export default function PactExportDialog({ open, onClose, connectionParams }: PactExportDialogProps) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [consumer, setConsumer] = useState('');
   const [provider, setProvider] = useState('');
   const [busy, setBusy] = useState(false);
@@ -90,7 +94,7 @@ export default function PactExportDialog({ open, onClose, connectionParams }: Pa
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="pact-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="pact-dialog-title">
       <DialogTitle id="pact-dialog-title">Pact contract</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

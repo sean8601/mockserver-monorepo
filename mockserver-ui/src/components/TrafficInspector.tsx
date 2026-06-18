@@ -18,6 +18,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import ReplayIcon from '@mui/icons-material/Replay';
@@ -40,7 +42,8 @@ import {
 import type { ScriptedTurn } from './ConversationView';
 import type { JsonListItem } from '../types';
 import { isCapturableTraffic } from '../lib/expectationFromCapture';
-import { buildBaseUrl } from '../lib/mcpClient';
+import { replayRequests } from '../lib/replay';
+import { humanizeError } from '../lib/errorMessage';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   summarizeTraffic,
@@ -769,25 +772,13 @@ function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogPro
     setError(null);
     setReplayResponse(null);
     try {
-      const baseUrl = buildBaseUrl(connectionParams);
       const httpRequest = (item.value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
-      const res = await fetch(`${baseUrl}/mockserver/replay`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(httpRequest),
-      });
-      const text = await res.text();
-      if (res.ok) {
-        try {
-          setReplayResponse(JSON.parse(text));
-        } catch {
-          setReplayResponse({ body: text });
-        }
-      } else {
-        setError(`Replay failed (${res.status}): ${text}`);
-      }
+      const result = await replayRequests(connectionParams, httpRequest);
+      setReplayResponse(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      // Route both server rejections (ReplayError) and network failures through
+      // the shared humaniser so the displayed message is consistent and actionable.
+      setError(humanizeError(err).message);
     } finally {
       setLoading(false);
     }
@@ -1027,6 +1018,10 @@ export default function TrafficInspector() {
   const selectedKey = useDashboardStore((s) => s.selectedTrafficKey);
   const setSelectedKey = useDashboardStore((s) => s.setSelectedTrafficKey);
   const connectionParams = useConnectionParams();
+  const theme = useTheme();
+  // On narrow screens the side-by-side master/detail split squashes the detail
+  // pane to a sliver; stack master-over-detail (column) on small screens.
+  const stacked = useMediaQuery(theme.breakpoints.down('md'));
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
   const [replayDialogOpen, setReplayDialogOpen] = useState(false);
 
@@ -1120,6 +1115,8 @@ export default function TrafficInspector() {
       sx={{
         flex: 1,
         display: 'flex',
+        // Stack master-over-detail on small screens, side-by-side on md+.
+        flexDirection: stacked ? 'column' : 'row',
         gap: 1,
         p: 1,
         overflow: 'hidden',
@@ -1132,10 +1129,14 @@ export default function TrafficInspector() {
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          width: selectedEntry && !compareMode ? '40%' : '100%',
-          minWidth: 300,
+          // When stacked, the list takes full width and a bounded share of the
+          // height so the detail pane below it stays usable; side-by-side on md+.
+          width: stacked ? '100%' : selectedEntry && !compareMode ? '40%' : '100%',
+          minWidth: stacked ? 0 : 300,
+          height: stacked && selectedEntry && !compareMode ? '45%' : undefined,
+          flexShrink: stacked && selectedEntry && !compareMode ? 0 : undefined,
           overflow: 'hidden',
-          transition: 'width 0.2s ease',
+          transition: stacked ? undefined : 'width 0.2s ease',
         }}
       >
         <Box
@@ -1204,7 +1205,7 @@ export default function TrafficInspector() {
               onClick={() => setDiffDialogOpen(true)}
               sx={{ height: 28, px: 1, fontSize: '0.7rem', textTransform: 'none', flexShrink: 0 }}
             >
-              Diff ({compareKeys.length}/2)
+              Diff ({validCompareKeys.length}/2)
             </Button>
           )}
         </Box>
@@ -1219,13 +1220,13 @@ export default function TrafficInspector() {
                 key={item.key}
                 summary={summary}
                 index={filtered.length - index}
-                selected={compareMode ? compareKeys.includes(item.key) : selectedKey === item.key}
+                selected={compareMode ? validCompareKeys.includes(item.key) : selectedKey === item.key}
                 onClick={() =>
                   compareMode ? toggleCompareKey(item.key) : handleRowClick(item.key)
                 }
                 compareMode={compareMode}
-                compareChecked={compareKeys.includes(item.key)}
-                compareDisabled={compareKeys.length >= 2}
+                compareChecked={validCompareKeys.includes(item.key)}
+                compareDisabled={validCompareKeys.length >= 2}
                 onCompareToggle={() => toggleCompareKey(item.key)}
               />
             ))

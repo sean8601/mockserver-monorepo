@@ -3,6 +3,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
@@ -28,6 +30,8 @@ export default function GenerateStubDialog({
   confidence,
   connectionParams,
 }: GenerateStubDialogProps) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [registering, setRegistering] = useState(false);
   const [registered, setRegistered] = useState<Set<number>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -55,7 +59,7 @@ export default function GenerateStubDialog({
   }, [onClose]);
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="generate-stub-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="generate-stub-dialog-title">
       <DialogTitle id="generate-stub-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         Generated Expectation
         <Chip

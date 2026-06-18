@@ -3,6 +3,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -44,6 +46,8 @@ interface FileStoreDialogProps {
 // ---------------------------------------------------------------------------
 
 export default function FileStoreDialog({ open, onClose, connectionParams }: FileStoreDialogProps) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [files, setFiles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -150,7 +154,7 @@ export default function FileStoreDialog({ open, onClose, connectionParams }: Fil
 
   return (
     <>
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth aria-labelledby="file-store-dialog-title">
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="file-store-dialog-title">
       <DialogTitle id="file-store-dialog-title">File Store</DialogTitle>
       <DialogContent dividers>
         {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}

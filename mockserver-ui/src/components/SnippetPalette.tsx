@@ -65,7 +65,10 @@ export default function SnippetPalette({ engine, onInsert }: SnippetPaletteProps
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         slotProps={{
           paper: {
-            sx: { maxHeight: 420, width: 440, overflow: 'auto' },
+            // Cap the width to the viewport (less a small margin) so the popover
+            // never overflows on a narrow phone (e.g. 375px), while keeping the
+            // comfortable 440px on wider screens.
+            sx: { maxHeight: 420, width: 'min(440px, calc(100vw - 32px))', overflow: 'auto' },
           },
         }}
       >

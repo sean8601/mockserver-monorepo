@@ -3,6 +3,8 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -36,6 +38,8 @@ export default function DiffRequestsDialog({
   initialExpected?: string;
   initialActual?: string;
 }) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [expected, setExpected] = useState(() => initialExpected ?? '');
   const [actual, setActual] = useState(() => initialActual ?? '');
   const [result, setResult] = useState<DiffResult | null>(null);
@@ -83,7 +87,7 @@ export default function DiffRequestsDialog({
   }, []);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="diff-requests-title">
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="diff-requests-title">
       <DialogTitle id="diff-requests-title">Diff two requests</DialogTitle>
       <DialogContent>
         {/* Diff result is shown at the top so it is the most visible thing in the
