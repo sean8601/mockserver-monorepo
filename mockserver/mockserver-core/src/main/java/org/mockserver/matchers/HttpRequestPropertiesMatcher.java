@@ -512,7 +512,15 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         HttpRequest httpRequest = compiled.httpRequest;
         if (bodyMatcher != null) {
             if (controlPlaneMatcher) {
-                if (httpRequest.getBody() != null && String.valueOf(httpRequest.getBody()).equalsIgnoreCase(String.valueOf(request.getBody()))) {
+                // Control-plane fast path: a clear/verify/retrieve body filter whose stringified
+                // form exactly equals the candidate request's stringified body is treated as a
+                // match. Both sides must have a real body before stringifying — otherwise
+                // String.valueOf(null) collapses to the literal "null", which would (a) make two
+                // absent bodies "match" and, worse, (b) let a literal body filter of the text
+                // "null" match a request that has NO body at all. Requiring both bodies non-null
+                // keeps a no-body request out of this fast path; it can still match through the
+                // bodyMatcher branch below if the filter genuinely matches an absent body.
+                if (httpRequest.getBody() != null && request.getBody() != null && String.valueOf(httpRequest.getBody()).equalsIgnoreCase(String.valueOf(request.getBody()))) {
                     bodyMatches = true;
                 } else if (bodyMatches(compiled, bodyMatcher, context, request)) {
                     // allow match of entries in EchoServer log (i.e. for java client integration tests)

@@ -5472,6 +5472,50 @@ public class HttpRequestPropertiesMatcherTest {
     }
 
     @Test
+    public void shouldNotMatchLiteralNullStringBodyAgainstEmptyBodyForControlPlane() {
+        // W3-3a: the control-plane body fast path stringifies both sides via String.valueOf and
+        // compares them with equalsIgnoreCase. The fast path now additionally requires the
+        // candidate request body to be non-null before stringifying, so String.valueOf((Body) null)
+        // can never collapse to the literal "null" and create a spurious fast-path match. Here the
+        // candidate request carries an empty body (getBody() non-null, getBodyAsString() == ""), so
+        // a literal "null" filter must not match. (This verdict is also enforced by the fallback
+        // body matcher, so it holds with or without the fast-path guard — the guard removes the
+        // latent String.valueOf(null) -> "null" foot-gun without changing this observable result.)
+        assertThat(updateForControlPlane(new HttpRequest().withBody(
+            exact("null")
+        )).matches(null, new HttpRequest().withBody(
+            (String) null
+        )), is(false));
+        assertThat(updateForControlPlane(new HttpRequest().withBody(
+            "null"
+        )).matches(null, new HttpRequest().withBody(
+            (String) null
+        )), is(false));
+    }
+
+    @Test
+    public void shouldMatchLiteralNullStringBodyAgainstLiteralNullForControlPlane() {
+        // W3-3a guard must not regress the genuine case: a control-plane body filter of literal
+        // "null" still matches a request whose body really is the literal text "null".
+        assertThat(updateForControlPlane(new HttpRequest().withBody(
+            exact("null")
+        )).matches(null, new HttpRequest().withBody(
+            new StringBody("null")
+        )), is(true));
+        assertThat(updateForControlPlane(new HttpRequest().withBody(
+            "null"
+        )).matches(null, new HttpRequest().withBody(
+            new StringBody("null")
+        )), is(true));
+        // and a genuine body filter against a matching genuine body still works
+        assertThat(updateForControlPlane(new HttpRequest().withBody(
+            exact("somebody")
+        )).matches(null, new HttpRequest().withBody(
+            new StringBody("somebody")
+        )), is(true));
+    }
+
+    @Test
     public void matchesMatchingBodyRegex() {
         assertThat(update(new HttpRequest().withBody(regex("some[a-z]{4}")
         )).matches(null, new HttpRequest().withBody("somebody")), is(true));
