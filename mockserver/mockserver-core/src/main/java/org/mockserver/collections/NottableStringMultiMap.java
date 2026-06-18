@@ -10,6 +10,7 @@ import java.util.*;
 
 import static org.mockserver.collections.ImmutableEntry.entry;
 import static org.mockserver.collections.SubSetMatcher.containsSubset;
+import static org.mockserver.model.NottableString.string;
 
 /**
  * @author jamesdbloom
@@ -76,6 +77,23 @@ public class NottableStringMultiMap extends ObjectWithReflectiveEqualsHashCodeTo
             }
             case MATCHING_KEY: {
                 for (NottableString matcherKey : subset.backingMap.keySet()) {
+                    // A notted matcher key (e.g. "!X") asserts that the key is ABSENT, mirroring the
+                    // SUB_SET semantic in SubSetMatcher#nottedAndPresent. Without this special case
+                    // getAll(matcherKey) would "match" every actual key that is NOT X (via the XOR
+                    // not-semantics in RegexStringMatcher), aggregating a bag of unrelated values from
+                    // those keys — which is not a meaningful "this key must be absent" assertion. So
+                    // instead fail iff some actual (non-notted) key matches the un-notted matcher key,
+                    // and otherwise treat the absence requirement as satisfied (no values to assert).
+                    if (matcherKey.isNot()) {
+                        if (containsUnNottedKey(matcherKey)) {
+                            if (context != null) {
+                                context.addDifference(mockServerLogger, "multimap matching key match failed for notted key:{}", matcherKey);
+                            }
+                            return false;
+                        }
+                        continue;
+                    }
+
                     List<NottableString> matchedValuesForKey = getAll(matcherKey);
                     if (matchedValuesForKey.isEmpty() && !matcherKey.isOptional()) {
                         if (context != null) {
@@ -137,6 +155,24 @@ public class NottableStringMultiMap extends ObjectWithReflectiveEqualsHashCodeTo
 
     public boolean isEmpty() {
         return backingMap.isEmpty();
+    }
+
+    /**
+     * Returns true when some actual (non-notted) key matches the un-notted form of the given notted
+     * matcher key — i.e. the key the {@code "!X"} matcher asserts must be absent is in fact present.
+     * Mirrors {@link SubSetMatcher} {@code nottedAndPresent} so MATCHING_KEY and SUB_SET agree on the
+     * "this key must be absent" semantic for a notted key.
+     */
+    private boolean containsUnNottedKey(NottableString nottedKey) {
+        if (!isEmpty()) {
+            NottableString unNottedKey = string(nottedKey.getValue());
+            for (NottableString actualKey : backingMap.keySet()) {
+                if (!actualKey.isNot() && regexStringMatcher.matches(unNottedKey, actualKey)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private List<NottableString> getAll(NottableString key) {
