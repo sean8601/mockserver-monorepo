@@ -45,12 +45,24 @@ import static org.mockserver.model.NottableString.string;
  * simple expectations without boilerplate "match anything" patterns.
  * </p>
  *
+ * <p>
+ * <strong>Concurrency:</strong> a single matcher instance is shared between the control plane
+ * (which rebuilds the compiled criterion in {@link #apply(RequestDefinition)} when an expectation
+ * is created or updated — a single-writer path) and the data plane (which reads the compiled
+ * criterion in {@link #matches} from many Netty event-loop threads concurrently). To stop a
+ * concurrent control-plane update from exposing a half-rebuilt matcher to an in-flight match, all
+ * per-criterion compiled state lives in an immutable {@link Compiled} holder built fully inside
+ * {@code apply()} and published through a single {@code volatile} reference ({@link #compiled}).
+ * {@code matches()} snapshots that reference once on entry and reads everything from the snapshot,
+ * so it sees either the entire old criterion or the entire new one — never a torn mix.
+ * </p>
+ *
  * @author jamesdbloom
  */
 @SuppressWarnings("rawtypes")
 public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
 
-    private static final String[] excludedFields = {"mockServerLogger", "methodMatcher", "pathMatcher", "pathParameterMatcher", "queryStringParameterMatcher", "bodyMatcher", "headerMatcher", "cookieMatcher", "keepAliveMatcher", "bodyDTOMatcher", "sslMatcher", "controlPlaneMatcher", "responseInProgress", "objectMapper"};
+    private static final String[] excludedFields = {"mockServerLogger", "compiled", "objectMapperWithStrictBodyDTODeserializer", "matcherBuilder", "expandedParameterDecoder", "controlPlaneMatcher", "responseInProgress", "objectMapper"};
     private static final String COMMA = ",";
     private static final String REQUEST_NOT_OPERATOR_IS_ENABLED = COMMA + NEW_LINE + "request 'not' operator is enabled";
     private static final String EXPECTATION_REQUEST_NOT_OPERATOR_IS_ENABLED = COMMA + NEW_LINE + "expectation's request 'not' operator is enabled";
@@ -59,21 +71,103 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     private static final ObjectWriter TO_STRING_OBJECT_WRITER = ObjectMapperFactory.createObjectMapper(true, false);
     private final ExpandedParameterDecoder expandedParameterDecoder;
     private int hashCode;
-    private HttpRequest httpRequest;
-    private List<HttpRequest> httpRequests;
-    private RegexStringMatcher methodMatcher = null;
-    private RegexStringMatcher pathMatcher = null;
-    private MultiValueMapMatcher pathParameterMatcher = null;
-    private MultiValueMapMatcher queryStringParameterMatcher = null;
-    private BodyMatcher bodyMatcher = null;
-    private MultiValueMapMatcher headerMatcher = null;
-    private HashMapMatcher cookieMatcher = null;
-    private BooleanMatcher keepAliveMatcher = null;
-    private BooleanMatcher sslMatcher = null;
-    private ExactStringMatcher protocolMatcher = null;
+    /**
+     * The fully-built, immutable compiled criterion. Reassigned (never mutated) by {@code apply()}
+     * on the single-writer control-plane path and read by {@code matches()} on data-plane threads;
+     * {@code volatile} provides the happens-before edge so a reader sees a wholly-built holder.
+     */
+    private volatile Compiled compiled = Compiled.EMPTY;
     private ObjectMapper objectMapperWithStrictBodyDTODeserializer;
-    private JsonSchemaBodyDecoder jsonSchemaBodyParser;
     private MatcherBuilder matcherBuilder;
+
+    /**
+     * Immutable snapshot of every per-criterion compiled field. Built in full by
+     * {@link HttpRequestPropertiesMatcher#apply(RequestDefinition)} and published atomically via the
+     * single {@code volatile} {@link HttpRequestPropertiesMatcher#compiled} reference, so a
+     * concurrent {@code matches()} either sees this whole object or the previous one — never a
+     * field-by-field torn mix.
+     */
+    private static final class Compiled {
+
+        /**
+         * The pre-{@code apply()} state: matches the original instance-field defaults where every
+         * compiled field (including {@code httpRequests}) was {@code null} until the first
+         * {@code apply()} ran.
+         */
+        private static final Compiled EMPTY = new Compiled();
+
+        private final HttpRequest httpRequest;
+        private final List<HttpRequest> httpRequests;
+        private final RegexStringMatcher methodMatcher;
+        private final RegexStringMatcher pathMatcher;
+        private final MultiValueMapMatcher pathParameterMatcher;
+        private final MultiValueMapMatcher queryStringParameterMatcher;
+        private final BodyMatcher bodyMatcher;
+        private final MultiValueMapMatcher headerMatcher;
+        private final HashMapMatcher cookieMatcher;
+        private final BooleanMatcher keepAliveMatcher;
+        private final BooleanMatcher sslMatcher;
+        private final ExactStringMatcher protocolMatcher;
+        private final JsonSchemaBodyDecoder jsonSchemaBodyParser;
+
+        /**
+         * Pre-apply EMPTY state only — every field {@code null} (httpRequests included), matching
+         * the original uninitialised instance-field defaults.
+         */
+        private Compiled() {
+            this.httpRequest = null;
+            this.httpRequests = null;
+            this.methodMatcher = null;
+            this.pathMatcher = null;
+            this.pathParameterMatcher = null;
+            this.queryStringParameterMatcher = null;
+            this.bodyMatcher = null;
+            this.headerMatcher = null;
+            this.cookieMatcher = null;
+            this.keepAliveMatcher = null;
+            this.sslMatcher = null;
+            this.protocolMatcher = null;
+            this.jsonSchemaBodyParser = null;
+        }
+
+        /**
+         * Holder for a null (or non-HttpRequest) criterion: every field matcher is null, mirroring
+         * the original behaviour where {@code apply(null)} left all the {@code with*} fields unset
+         * but set {@code httpRequests = singletonList(null)}.
+         */
+        private Compiled(HttpRequest httpRequest) {
+            this(httpRequest, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        private Compiled(
+            HttpRequest httpRequest,
+            RegexStringMatcher methodMatcher,
+            RegexStringMatcher pathMatcher,
+            MultiValueMapMatcher pathParameterMatcher,
+            MultiValueMapMatcher queryStringParameterMatcher,
+            BodyMatcher bodyMatcher,
+            MultiValueMapMatcher headerMatcher,
+            HashMapMatcher cookieMatcher,
+            BooleanMatcher keepAliveMatcher,
+            BooleanMatcher sslMatcher,
+            ExactStringMatcher protocolMatcher,
+            JsonSchemaBodyDecoder jsonSchemaBodyParser
+        ) {
+            this.httpRequest = httpRequest;
+            this.httpRequests = Collections.singletonList(httpRequest);
+            this.methodMatcher = methodMatcher;
+            this.pathMatcher = pathMatcher;
+            this.pathParameterMatcher = pathParameterMatcher;
+            this.queryStringParameterMatcher = queryStringParameterMatcher;
+            this.bodyMatcher = bodyMatcher;
+            this.headerMatcher = headerMatcher;
+            this.cookieMatcher = cookieMatcher;
+            this.keepAliveMatcher = keepAliveMatcher;
+            this.sslMatcher = sslMatcher;
+            this.protocolMatcher = protocolMatcher;
+            this.jsonSchemaBodyParser = jsonSchemaBodyParser;
+        }
+    }
 
     public HttpRequestPropertiesMatcher(Configuration configuration, MockServerLogger mockServerLogger) {
         super(configuration, mockServerLogger);
@@ -81,38 +175,50 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     }
 
     public HttpRequest getHttpRequest() {
-        return httpRequest;
+        return compiled.httpRequest;
     }
 
     public boolean hasBodyMatcher() {
-        return bodyMatcher != null;
+        return compiled.bodyMatcher != null;
     }
 
     @Override
     public List<HttpRequest> getHttpRequests() {
-        return httpRequests;
+        return compiled.httpRequests;
     }
 
     @Override
     public boolean apply(RequestDefinition requestDefinition) {
         HttpRequest httpRequest = requestDefinition instanceof HttpRequest httpReq ? httpReq : null;
-        if (this.httpRequest == null || !this.httpRequest.equals(httpRequest)) {
+        Compiled current = this.compiled;
+        if (current.httpRequest == null || !current.httpRequest.equals(httpRequest)) {
             this.hashCode = 0;
-            this.httpRequest = httpRequest;
-            this.httpRequests = Collections.singletonList(this.httpRequest);
+            Compiled rebuilt;
             if (httpRequest != null) {
-                withMethod(httpRequest.getMethod());
-                withPath(httpRequest);
-                withPathParameters(httpRequest.getPathParameters());
-                withQueryStringParameters(httpRequest.getQueryStringParameters());
-                withBody(httpRequest.getBody());
-                withHeaders(httpRequest.getHeaders());
-                withCookies(httpRequest.getCookies());
-                withKeepAlive(httpRequest.isKeepAlive());
-                withSsl(httpRequest.isSecure());
-                withProtocol(httpRequest.getProtocol());
-                this.jsonSchemaBodyParser = new JsonSchemaBodyDecoder(configuration, mockServerLogger, expectation, httpRequest);
+                // Build every per-criterion field matcher into a fully-populated immutable holder
+                // first, then publish it through a single volatile assignment, so a concurrent
+                // matches() never observes a new httpRequest paired with a stale or null field
+                // matcher — it sees either the whole previous holder or the whole new one.
+                rebuilt = new Compiled(
+                    httpRequest,
+                    new RegexStringMatcher(mockServerLogger, httpRequest.getMethod(), controlPlaneMatcher),
+                    new RegexStringMatcher(mockServerLogger, pathParametersParser.normalisePathWithParametersForMatching(httpRequest), controlPlaneMatcher),
+                    new MultiValueMapMatcher(mockServerLogger, httpRequest.getPathParameters(), controlPlaneMatcher),
+                    new MultiValueMapMatcher(mockServerLogger, httpRequest.getQueryStringParameters(), controlPlaneMatcher),
+                    buildBodyMatcher(httpRequest.getBody()),
+                    new MultiValueMapMatcher(mockServerLogger, httpRequest.getHeaders(), controlPlaneMatcher),
+                    new HashMapMatcher(mockServerLogger, httpRequest.getCookies(), controlPlaneMatcher),
+                    new BooleanMatcher(mockServerLogger, httpRequest.isKeepAlive()),
+                    new BooleanMatcher(mockServerLogger, httpRequest.isSecure()),
+                    new ExactStringMatcher(mockServerLogger, httpRequest.getProtocol() != null ? string(httpRequest.getProtocol().name()) : null),
+                    new JsonSchemaBodyDecoder(configuration, mockServerLogger, expectation, httpRequest)
+                );
+            } else {
+                rebuilt = new Compiled(null);
             }
+            // single volatile publish — the happens-before edge that gives data-plane readers a
+            // wholly-built (never torn) view of the new criterion
+            this.compiled = rebuilt;
             return true;
         } else {
             return false;
@@ -124,58 +230,21 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         return this;
     }
 
-    private void withMethod(NottableString method) {
-        this.methodMatcher = new RegexStringMatcher(mockServerLogger, method, controlPlaneMatcher);
-    }
-
-    private void withPath(HttpRequest httpRequest) {
-        this.pathMatcher = new RegexStringMatcher(mockServerLogger, pathParametersParser.normalisePathWithParametersForMatching(httpRequest), controlPlaneMatcher);
-    }
-
-    private void withPathParameters(Parameters parameters) {
-        this.pathParameterMatcher = new MultiValueMapMatcher(mockServerLogger, parameters, controlPlaneMatcher);
-    }
-
-    private void withQueryStringParameters(Parameters parameters) {
-        this.queryStringParameterMatcher = new MultiValueMapMatcher(mockServerLogger, parameters, controlPlaneMatcher);
-    }
-
-    private void withBody(Body body) {
-        this.bodyMatcher = buildBodyMatcher(body);
-    }
-
     private BodyMatcher buildBodyMatcher(Body body) {
         return BodyMatcherBuilder.buildBodyMatcher(configuration, mockServerLogger, body, controlPlaneMatcher);
     }
 
-    private void withHeaders(Headers headers) {
-        this.headerMatcher = new MultiValueMapMatcher(mockServerLogger, headers, controlPlaneMatcher);
-    }
-
-    private void withCookies(Cookies cookies) {
-        this.cookieMatcher = new HashMapMatcher(mockServerLogger, cookies, controlPlaneMatcher);
-    }
-
-    private void withKeepAlive(Boolean keepAlive) {
-        this.keepAliveMatcher = new BooleanMatcher(mockServerLogger, keepAlive);
-    }
-
-    private void withSsl(Boolean isSsl) {
-        this.sslMatcher = new BooleanMatcher(mockServerLogger, isSsl);
-    }
-
-    private void withProtocol(Protocol protocol) {
-        this.protocolMatcher = new ExactStringMatcher(mockServerLogger, protocol != null ? string(protocol.name()) : null);
-    }
-
     public boolean matches(final MatchDifference context, final RequestDefinition requestDefinition) {
         if (requestDefinition instanceof HttpRequest request) {
+            // snapshot the compiled criterion once so the whole match runs against a single,
+            // wholly-built version even if the control plane rebuilds it concurrently
+            final Compiled compiled = this.compiled;
             // The "because" message is only consumed by the INFO log below, so only
             // allocate the builder when it will be used (a no-op otherwise — see
             // the matching gate in failFast). Null when not logging at INFO.
             boolean logBecause = !controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging()) && mockServerLogger.isEnabledForInstance(Level.INFO);
             StringBuilder becauseBuilder = logBecause ? new StringBuilder() : null;
-            boolean overallMatch = matches(context, request, becauseBuilder);
+            boolean overallMatch = matches(compiled, context, request, becauseBuilder);
             if (!controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging())) {
                 if (overallMatch) {
                     if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -238,21 +307,22 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         }
     }
 
-    private boolean matches(MatchDifference context, HttpRequest request, StringBuilder becauseBuilder) {
+    private boolean matches(Compiled compiled, MatchDifference context, HttpRequest request, StringBuilder becauseBuilder) {
         if (isActive()) {
-            if (request == this.httpRequest) {
+            final HttpRequest httpRequest = compiled.httpRequest;
+            if (request == httpRequest) {
                 return true;
-            } else if (this.httpRequest == null) {
+            } else if (httpRequest == null) {
                 return true;
             } else {
                 MatchDifferenceCount matchDifferenceCount = new MatchDifferenceCount(request);
                 if (request != null) {
-                    boolean methodMatches = StringUtils.isBlank(request.getMethod().getValue()) || matches(METHOD, context, methodMatcher, request.getMethod());
-                    if (failFast(methodMatcher, context, matchDifferenceCount, becauseBuilder, methodMatches, METHOD)) {
+                    boolean methodMatches = StringUtils.isBlank(request.getMethod().getValue()) || matches(METHOD, context, compiled.methodMatcher, request.getMethod());
+                    if (failFast(compiled, compiled.methodMatcher, context, matchDifferenceCount, becauseBuilder, methodMatches, METHOD)) {
                         return false;
                     }
 
-                    boolean pathMatches = StringUtils.isBlank(request.getPath().getValue()) || matches(PATH, context, pathMatcher, controlPlaneMatcher ? pathParametersParser.normalisePathWithParametersForMatching(request) : request.getPath());
+                    boolean pathMatches = StringUtils.isBlank(request.getPath().getValue()) || matches(PATH, context, compiled.pathMatcher, controlPlaneMatcher ? pathParametersParser.normalisePathWithParametersForMatching(request) : request.getPath());
                     // extractPathParameters clones (or allocates) the request's path Parameters and
                     // runs the path-template regex even when this expectation declares no {pathParam}
                     // templates. When the matcher has no path parameters the extraction is pure
@@ -276,22 +346,22 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                             }
                         }
                     }
-                    if (failFast(pathMatcher, context, matchDifferenceCount, becauseBuilder, pathMatches, PATH)) {
+                    if (failFast(compiled, compiled.pathMatcher, context, matchDifferenceCount, becauseBuilder, pathMatches, PATH)) {
                         return false;
                     }
 
-                    boolean bodyMatches = bodyMatches(context, request);
-                    if (failFast(bodyMatcher, context, matchDifferenceCount, becauseBuilder, bodyMatches, BODY)) {
+                    boolean bodyMatches = bodyMatches(compiled, context, request);
+                    if (failFast(compiled, compiled.bodyMatcher, context, matchDifferenceCount, becauseBuilder, bodyMatches, BODY)) {
                         return false;
                     }
 
-                    boolean headersMatch = matches(HEADERS, context, headerMatcher, request.getHeaders());
-                    if (failFast(headerMatcher, context, matchDifferenceCount, becauseBuilder, headersMatch, HEADERS)) {
+                    boolean headersMatch = matches(HEADERS, context, compiled.headerMatcher, request.getHeaders());
+                    if (failFast(compiled, compiled.headerMatcher, context, matchDifferenceCount, becauseBuilder, headersMatch, HEADERS)) {
                         return false;
                     }
 
-                    boolean cookiesMatch = matches(COOKIES, context, cookieMatcher, request.getCookies());
-                    if (failFast(cookieMatcher, context, matchDifferenceCount, becauseBuilder, cookiesMatch, COOKIES)) {
+                    boolean cookiesMatch = matches(COOKIES, context, compiled.cookieMatcher, request.getCookies());
+                    if (failFast(compiled, compiled.cookieMatcher, context, matchDifferenceCount, becauseBuilder, cookiesMatch, COOKIES)) {
                         return false;
                     }
 
@@ -300,7 +370,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                         if (!controlPlaneMatcher) {
                             expandedParameterDecoder.splitParameters(httpRequest.getPathParameters(), pathParameters);
                         }
-                        MultiValueMapMatcher pathParameterMatcher = this.pathParameterMatcher;
+                        MultiValueMapMatcher pathParameterMatcher = compiled.pathParameterMatcher;
                         if (controlPlaneMatcher) {
                             Parameters controlPlaneParameters;
                             try {
@@ -313,37 +383,37 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                         }
                         pathParametersMatches = matches(PATH_PARAMETERS, context, pathParameterMatcher, pathParameters);
                     }
-                    if (failFast(this.pathParameterMatcher, context, matchDifferenceCount, becauseBuilder, pathParametersMatches, PATH_PARAMETERS)) {
+                    if (failFast(compiled, compiled.pathParameterMatcher, context, matchDifferenceCount, becauseBuilder, pathParametersMatches, PATH_PARAMETERS)) {
                         return false;
                     }
 
                     if (!controlPlaneMatcher) {
                         expandedParameterDecoder.splitParameters(httpRequest.getQueryStringParameters(), request.getQueryStringParameters());
                     }
-                    boolean queryStringParametersMatches = matches(QUERY_PARAMETERS, context, queryStringParameterMatcher, request.getQueryStringParameters());
-                    if (failFast(queryStringParameterMatcher, context, matchDifferenceCount, becauseBuilder, queryStringParametersMatches, QUERY_PARAMETERS)) {
+                    boolean queryStringParametersMatches = matches(QUERY_PARAMETERS, context, compiled.queryStringParameterMatcher, request.getQueryStringParameters());
+                    if (failFast(compiled, compiled.queryStringParameterMatcher, context, matchDifferenceCount, becauseBuilder, queryStringParametersMatches, QUERY_PARAMETERS)) {
                         return false;
                     }
 
-                    boolean keepAliveMatches = matches(KEEP_ALIVE, context, keepAliveMatcher, request.isKeepAlive());
-                    if (failFast(keepAliveMatcher, context, matchDifferenceCount, becauseBuilder, keepAliveMatches, KEEP_ALIVE)) {
+                    boolean keepAliveMatches = matches(KEEP_ALIVE, context, compiled.keepAliveMatcher, request.isKeepAlive());
+                    if (failFast(compiled, compiled.keepAliveMatcher, context, matchDifferenceCount, becauseBuilder, keepAliveMatches, KEEP_ALIVE)) {
                         return false;
                     }
 
-                    boolean sslMatches = matches(SECURE, context, sslMatcher, request.isSecure());
-                    if (failFast(sslMatcher, context, matchDifferenceCount, becauseBuilder, sslMatches, SECURE)) {
+                    boolean sslMatches = matches(SECURE, context, compiled.sslMatcher, request.isSecure());
+                    if (failFast(compiled, compiled.sslMatcher, context, matchDifferenceCount, becauseBuilder, sslMatches, SECURE)) {
                         return false;
                     }
 
-                    boolean protocolMatches = matches(PROTOCOL, context, protocolMatcher, request.getProtocol() != null ? string(request.getProtocol().name()) : null);
-                    if (failFast(protocolMatcher, context, matchDifferenceCount, becauseBuilder, protocolMatches, PROTOCOL)) {
+                    boolean protocolMatches = matches(PROTOCOL, context, compiled.protocolMatcher, request.getProtocol() != null ? string(request.getProtocol().name()) : null);
+                    if (failFast(compiled, compiled.protocolMatcher, context, matchDifferenceCount, becauseBuilder, protocolMatches, PROTOCOL)) {
                         return false;
                     }
 
                     boolean finalMatchResult = applyNotOperators(
                         matchDifferenceCount.getFailures() == 0,
                         request.isNot(),
-                        this.httpRequest.isNot(),
+                        httpRequest.isNot(),
                         not
                     );
                     if (!controlPlaneMatcher && finalMatchResult) {
@@ -352,14 +422,14 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                     }
                     return finalMatchResult;
                 } else {
-                    return applyNotOperators(true, false, this.httpRequest.isNot(), not);
+                    return applyNotOperators(true, false, httpRequest.isNot(), not);
                 }
             }
         }
         return false;
     }
 
-    private boolean failFast(Matcher<?> matcher, MatchDifference context, MatchDifferenceCount matchDifferenceCount, StringBuilder becauseBuilder, boolean fieldMatches, MatchDifference.Field fieldName) {
+    private boolean failFast(Compiled compiled, Matcher<?> matcher, MatchDifference context, MatchDifferenceCount matchDifferenceCount, StringBuilder becauseBuilder, boolean fieldMatches, MatchDifference.Field fieldName) {
         // The human-readable "because" message is only ever consumed when INFO
         // logging is on, so matches(...) allocates becauseBuilder only then (and
         // never for a control-plane matcher); a null builder is the single source
@@ -382,7 +452,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                     .append(Joiner.on(NEW_LINE).join(context.getDifferences(fieldName)));
             }
             if (!fieldMatches) {
-                List<String> hints = generateHintsForField(fieldName, matchDifferenceCount.getHttpRequest());
+                List<String> hints = generateHintsForField(compiled, fieldName, matchDifferenceCount.getHttpRequest());
                 for (String hint : hints) {
                     becauseBuilder.append(NEW_LINE).append(hint);
                 }
@@ -394,7 +464,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                     becauseBuilder
                         .append(REQUEST_NOT_OPERATOR_IS_ENABLED);
                 }
-                if (this.httpRequest.isNot()) {
+                if (compiled.httpRequest.isNot()) {
                     becauseBuilder
                         .append(EXPECTATION_REQUEST_NOT_OPERATOR_IS_ENABLED);
                 }
@@ -412,14 +482,15 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             return applyNotOperators(
                 matchDifferenceCount.getFailures() != 0,
                 matchDifferenceCount.getHttpRequest().isNot(),
-                this.httpRequest.isNot(),
+                compiled.httpRequest.isNot(),
                 not
             );
         }
         return false;
     }
 
-    private List<String> generateHintsForField(MatchDifference.Field fieldName, HttpRequest request) {
+    private List<String> generateHintsForField(Compiled compiled, MatchDifference.Field fieldName, HttpRequest request) {
+        HttpRequest httpRequest = compiled.httpRequest;
         if (httpRequest == null || request == null) {
             return Collections.emptyList();
         }
@@ -435,13 +506,15 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
         }
     }
 
-    private boolean bodyMatches(MatchDifference context, HttpRequest request) {
+    private boolean bodyMatches(Compiled compiled, MatchDifference context, HttpRequest request) {
         boolean bodyMatches;
+        BodyMatcher bodyMatcher = compiled.bodyMatcher;
+        HttpRequest httpRequest = compiled.httpRequest;
         if (bodyMatcher != null) {
             if (controlPlaneMatcher) {
                 if (httpRequest.getBody() != null && String.valueOf(httpRequest.getBody()).equalsIgnoreCase(String.valueOf(request.getBody()))) {
                     bodyMatches = true;
-                } else if (bodyMatches(bodyMatcher, context, request)) {
+                } else if (bodyMatches(compiled, bodyMatcher, context, request)) {
                     // allow match of entries in EchoServer log (i.e. for java client integration tests)
                     bodyMatches = true;
                 } else {
@@ -450,6 +523,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                             BodyDTO bodyDTO = getObjectMapperWithStrictBodyDTODeserializer().readValue(request.getBodyAsJsonOrXmlString(), BodyDTO.class);
                             if (bodyDTO != null) {
                                 bodyMatches = bodyMatches(
+                                    compiled,
                                     buildBodyMatcher(bodyDTO.buildObject()),
                                     context,
                                     httpRequest
@@ -466,7 +540,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                     }
                 }
             } else {
-                bodyMatches = bodyMatches(bodyMatcher, context, request);
+                bodyMatches = bodyMatches(compiled, bodyMatcher, context, request);
             }
         } else {
             bodyMatches = true;
@@ -475,8 +549,9 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     }
 
     @SuppressWarnings("unchecked")
-    private boolean bodyMatches(BodyMatcher bodyMatcher, MatchDifference context, HttpRequest request) {
+    private boolean bodyMatches(Compiled compiled, BodyMatcher bodyMatcher, MatchDifference context, HttpRequest request) {
         boolean bodyMatches;
+        HttpRequest httpRequest = compiled.httpRequest;
         if (httpRequest.getBody().getOptional() != null && httpRequest.getBody().getOptional() && request.getBody() == null) {
             bodyMatches = true;
         } else if (bodyMatcher instanceof MultipartMatcher) {
@@ -520,7 +595,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             ) {
                 // json body matcher
                 try {
-                    bodyMatches = matches(BODY, context, bodyMatcher, jsonSchemaBodyParser.convertToJson(request, bodyMatcher));
+                    bodyMatches = matches(BODY, context, bodyMatcher, compiled.jsonSchemaBodyParser.convertToJson(request, bodyMatcher));
                 } catch (IllegalArgumentException iae) {
                     if (context != null) {
                         context.addDifference(mockServerLogger, iae, iae.getMessage());
@@ -553,7 +628,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     public String toString() {
         try {
             return TO_STRING_OBJECT_WRITER
-                .writeValueAsString(httpRequest);
+                .writeValueAsString(compiled.httpRequest);
         } catch (Exception e) {
             return super.toString();
         }
@@ -580,13 +655,13 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             return false;
         }
         HttpRequestPropertiesMatcher that = (HttpRequestPropertiesMatcher) o;
-        return Objects.equals(httpRequest, that.httpRequest);
+        return Objects.equals(compiled.httpRequest, that.compiled.httpRequest);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), httpRequest);
+            hashCode = Objects.hash(super.hashCode(), compiled.httpRequest);
         }
         return hashCode;
     }
