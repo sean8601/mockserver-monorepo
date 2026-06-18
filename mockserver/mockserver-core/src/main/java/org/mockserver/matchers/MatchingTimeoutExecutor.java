@@ -34,17 +34,29 @@ import static org.slf4j.event.Level.WARN;
  * The pool is <em>bounded</em> rather than unbounded-cached: an unbounded cached pool would spawn
  * one thread per concurrent match, so a burst of slow (ReDoS) patterns under load could create
  * thousands of threads and exhaust memory — turning the DoS protection into a DoS amplifier. The
- * bounded pool caps live evaluator threads at {@code availableProcessors * 2}; a
- * {@link SynchronousQueue} means there is no work backlog, and on saturation submission is
- * <em>rejected</em> (rather than blocking the calling Netty worker). A rejection is treated exactly
- * like a timeout — the safe sentinel ({@code onTimeout}) is returned, i.e. a non-match — so we never
- * block unboundedly and never silently run a match without the timeout protection.
+ * bounded pool caps live evaluator threads at a generous {@code max(64, availableProcessors * 16)};
+ * a {@link SynchronousQueue} means there is no work backlog, so a task either gets a thread
+ * immediately (creating one up to the cap) or — only under extreme saturation beyond the cap — is
+ * <em>rejected</em>.
+ * <p>
+ * <strong>Rejection must never corrupt a match result.</strong> A rejected submission is NOT
+ * treated as a timeout (which would turn a would-be match into a silent non-match). Instead the
+ * task is run <em>inline</em> on the calling thread and its real result returned. This deliberately
+ * sacrifices the per-call timeout / DoS-isolation guarantee for that one call (the inline regex
+ * could in theory pin the calling thread), but only when more than {@code max(64, cores*16)}
+ * evaluations are already in flight — a regime where correctness of the result is far more
+ * important than timeout isolation for a mock server. The generous cap makes this path effectively
+ * unreachable under realistic concurrency; when it does fire it logs a distinct WARN so operators
+ * can detect saturation.
  */
 public final class MatchingTimeoutExecutor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MatchingTimeoutExecutor.class);
 
-    private static final int MAX_POOL_SIZE = Math.max(2, Runtime.getRuntime().availableProcessors() * 2);
+    // Generous cap: high enough that rejection is effectively unreachable under realistic concurrent
+    // load (so a would-be match is never lost to saturation), but still bounded so a ReDoS burst
+    // cannot spawn unlimited threads. Core is 0 with a 60s keep-alive so idle evaluator threads reap.
+    private static final int MAX_POOL_SIZE = Math.max(64, Runtime.getRuntime().availableProcessors() * 16);
 
     private static final ExecutorService EXECUTOR = new ThreadPoolExecutor(
         0,
@@ -52,14 +64,16 @@ public final class MatchingTimeoutExecutor {
         60L,
         TimeUnit.SECONDS,
         // SynchronousQueue: no backlog — a task either gets a thread immediately (creating one up to
-        // MAX_POOL_SIZE) or is rejected, which we convert to the safe sentinel below.
+        // MAX_POOL_SIZE) or is rejected. We prefer direct hand-off with a large max over a sizeable
+        // queue because any queueing time counts against future.get's timeout budget, distorting the
+        // timeout. On rejection we run inline (never the unsafe non-match sentinel) — see callWithTimeout.
         new SynchronousQueue<>(),
         new ThreadFactoryBuilder()
             .setNameFormat("mockserver-match-eval-%d")
             .setDaemon(true)
             .build(),
-        // AbortPolicy: throw RejectedExecutionException on saturation so the caller falls back to the
-        // safe sentinel instead of blocking a Netty worker thread.
+        // AbortPolicy: throw RejectedExecutionException on saturation so the caller can run the task
+        // inline (preserving the real match result) instead of blocking or corrupting the result.
         new ThreadPoolExecutor.AbortPolicy()
     );
 
@@ -108,14 +122,16 @@ public final class MatchingTimeoutExecutor {
             future = EXECUTOR.submit(cleanTask);
             SUBMITTED_TASK_COUNT.incrementAndGet();
         } catch (RejectedExecutionException ree) {
-            // pool saturated (all MAX_POOL_SIZE evaluator threads busy, SynchronousQueue has no
-            // backlog). Treat exactly like a timeout: fire the callback and return the safe sentinel
-            // (non-match) rather than blocking the calling thread or silently running the task
-            // without the timeout protection.
-            if (onTimeoutCallback != null) {
-                onTimeoutCallback.fired(timeoutMillis);
-            }
-            return onTimeout;
+            // Extreme saturation: more than MAX_POOL_SIZE (max(64, cores*16)) evaluations already in
+            // flight, and the SynchronousQueue has no backlog. We must NOT treat this like a timeout —
+            // doing so would silently turn a would-be match into a non-match (an intermittent
+            // correctness regression under legitimate concurrent load). Instead run the task inline on
+            // the calling thread and return its REAL result. This sacrifices the per-call timeout /
+            // DoS-isolation guarantee for this one call only (the inline regex could pin this thread),
+            // which is the correct trade for a mock server: never corrupt a match result. This path is
+            // effectively unreachable under realistic concurrency given the generous cap.
+            LOGGER.warn("match evaluation pool saturated ({} threads in use); ran match inline without timeout isolation — raise mockserver.regexMatchingTimeoutMillis headroom or reduce concurrent matching load if this recurs", MAX_POOL_SIZE);
+            return callInline(cleanTask);
         }
         try {
             return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
@@ -142,6 +158,21 @@ public final class MatchingTimeoutExecutor {
                 throw (Error) cause;
             }
             throw ee;
+        }
+    }
+
+    /**
+     * Run the (already interrupt-clearing) task on the calling thread when the pool rejects it.
+     * Mirrors the normal path's exception contract: a checked Exception thrown by the task — notably
+     * {@link java.util.regex.PatternSyntaxException} — propagates so callers can catch it precisely,
+     * and any residual interrupt flag is cleared afterwards (as {@code cleanTask} does up front) so we
+     * never leave the calling thread spuriously interrupted.
+     */
+    private static <T> T callInline(Callable<T> cleanTask) throws Exception {
+        try {
+            return cleanTask.call();
+        } finally {
+            Thread.interrupted();
         }
     }
 
