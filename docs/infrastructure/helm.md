@@ -257,8 +257,12 @@ docker build -t mockserver/mockserver-webhook:6.1.1-SNAPSHOT docker/webhook
 
 ### Health Checks
 
-- **Readiness probe:** TCP socket check on port 1080
-- **Liveness probe:** TCP socket check on port 1080
+The two probes are deliberately split so a slow startup does not get the pod restarted, but traffic is still gated until the server is seeded:
+
+- **Readiness probe:** `httpGet /mockserver/ready` on the service port. This endpoint returns `503` until MockServer's synchronous startup work — expectation initializers (`initializationJsonPath` / `initializationClass`), OpenAPI seeding, gRPC descriptor loading — has completed, then `200`. So Kubernetes does not route traffic to the pod before the seeded expectations exist.
+- **Liveness probe:** `httpGet /liveness/probe` on the service port. The liveness path answers `200` the instant the port binds (set via `MOCKSERVER_LIVENESS_HTTP_GET_PATH`), so a slow-but-valid initializer never causes a liveness-failure restart loop.
+
+> Pair this with `MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR=true` when a *broken* initializer should crash the pod (CrashLoopBackOff surfaces the misconfiguration) rather than the pod coming up with zero seeded expectations. The readiness probe handles the *slow* case; fail-on-error handles the *broken* case. See [configuration-reference.md](../code/configuration-reference.md#readiness-vs-liveness).
 
 ### Installation
 

@@ -364,6 +364,12 @@ components:
           enum:
             - SEQUENTIAL
             - RANDOM
+            - WEIGHTED
+        responseWeights:
+          type: array
+          items:
+            type: integer
+            minimum: 1
       oneOf:
         - required:
             - httpResponse

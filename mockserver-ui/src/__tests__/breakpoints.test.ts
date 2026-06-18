@@ -42,7 +42,50 @@ describe('registerBreakpointMatcher', () => {
     expect(body.httpRequest).toEqual({ method: 'GET', path: '/api/.*' });
     expect(body.phases).toEqual(['REQUEST']);
     expect(body.clientId).toBe('my-client-id');
+    expect(body.skipCount).toBeUndefined();
     expect(result.id).toBe('match-1');
+  });
+
+  it('includes skipCount in the body when a positive value is provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: 'match-2', phases: ['REQUEST'] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await registerBreakpointMatcher(
+      params,
+      { path: '/api/.*' },
+      ['REQUEST'],
+      'my-client-id',
+      2,
+    );
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body as string);
+    expect(body.skipCount).toBe(2);
+  });
+
+  it('omits skipCount when it is zero', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: 'match-3', phases: ['REQUEST'] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await registerBreakpointMatcher(
+      params,
+      { path: '/api/.*' },
+      ['REQUEST'],
+      'my-client-id',
+      0,
+    );
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body as string);
+    expect(body.skipCount).toBeUndefined();
   });
 });
 

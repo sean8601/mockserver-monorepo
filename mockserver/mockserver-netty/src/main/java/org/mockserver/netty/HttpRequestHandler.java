@@ -155,7 +155,19 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
             if (!httpState.handle(request, responseWriter, false)) {
 
-                if (request.matches("PUT", PATH_PREFIX + "/status", "/status") ||
+                if (request.matches("GET", PATH_PREFIX + "/ready", "/ready")) {
+
+                    // Readiness probe — distinct from liveness/status, which answer 200 the instant
+                    // the port binds. Stays 503 until the synchronous expectation initializers and
+                    // OpenAPI seeding have completed (HttpState.isInitializationComplete()), so an
+                    // orchestrator does not route traffic before the seeded expectations exist.
+                    if (httpState.isInitializationComplete()) {
+                        responseWriter.writeResponse(request, OK, "{\"status\":\"READY\"}", "application/json");
+                    } else {
+                        responseWriter.writeResponse(request, SERVICE_UNAVAILABLE, "{\"status\":\"NOT_READY\"}", "application/json");
+                    }
+
+                } else if (request.matches("PUT", PATH_PREFIX + "/status", "/status") ||
                     isNotBlank(configuration.livenessHttpGetPath()) && request.matches("GET", configuration.livenessHttpGetPath())) {
 
                     responseWriter.writeResponse(request, OK, portBindingSerializer.serialize(portBinding(server.getLocalPorts())), "application/json");

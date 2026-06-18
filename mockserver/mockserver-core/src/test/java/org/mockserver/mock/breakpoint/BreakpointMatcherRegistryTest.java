@@ -316,4 +316,154 @@ public class BreakpointMatcherRegistryTest {
         assertThat(registry.findMatch(request().withMethod("GET").withPath("/test"),
             BreakpointPhase.REQUEST), is(nullValue()));
     }
+
+    // --- conditional (Nth-hit / skip-count) breakpoints ---
+
+    @Test
+    public void shouldNotPauseWithinSkipWindowAndPauseAfter() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // skipCount = 2 => do NOT pause on hits 1 and 2, DO pause from hit 3
+        registry.register(
+            request().withPath("/api/skip"),
+            EnumSet.of(BreakpointPhase.REQUEST),
+            "client-1", 2,
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/api/skip");
+
+        // hit 1 — matches but skipped
+        assertThat("hit 1 should not pause",
+            registry.findMatch(matching, BreakpointPhase.REQUEST), is(nullValue()));
+        // hit 2 — matches but skipped
+        assertThat("hit 2 should not pause",
+            registry.findMatch(matching, BreakpointPhase.REQUEST), is(nullValue()));
+        // hit 3 — pauses
+        assertThat("hit 3 should pause",
+            registry.findMatch(matching, BreakpointPhase.REQUEST), is(notNullValue()));
+        // hit 4 — still pauses
+        assertThat("hit 4 should pause",
+            registry.findMatch(matching, BreakpointPhase.REQUEST), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldPauseEveryTimeWhenSkipCountAbsent() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // no skipCount => legacy behaviour: pause on every hit
+        registry.register(
+            request().withPath("/api/always"),
+            EnumSet.of(BreakpointPhase.REQUEST),
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/api/always");
+        for (int i = 1; i <= 5; i++) {
+            assertThat("hit " + i + " should pause",
+                registry.findMatch(matching, BreakpointPhase.REQUEST), is(notNullValue()));
+        }
+    }
+
+    @Test
+    public void shouldTreatNullAndZeroAndNegativeSkipCountAsPauseEveryTime() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // skipCount = 0 and a negative value both mean "pause every time"
+        registry.register(request().withPath("/zero"),
+            EnumSet.of(BreakpointPhase.REQUEST), "c", 0, configuration, logger);
+        registry.register(request().withPath("/neg"),
+            EnumSet.of(BreakpointPhase.REQUEST), "c", -3, configuration, logger);
+
+        assertThat(registry.findMatch(request().withPath("/zero"), BreakpointPhase.REQUEST), is(notNullValue()));
+        assertThat(registry.findMatch(request().withPath("/zero"), BreakpointPhase.REQUEST), is(notNullValue()));
+        assertThat(registry.findMatch(request().withPath("/neg"), BreakpointPhase.REQUEST), is(notNullValue()));
+        assertThat(registry.findMatch(request().withPath("/neg"), BreakpointPhase.REQUEST), is(notNullValue()));
+
+        // skipCount normalised to null on the entry
+        for (BreakpointMatcher entry : registry.entries()) {
+            assertThat(entry.getSkipCount(), is(nullValue()));
+        }
+    }
+
+    @Test
+    public void shouldKeepSkipCounterPerBreakpoint() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // two independent breakpoints with their own counters
+        registry.register(request().withPath("/a"),
+            EnumSet.of(BreakpointPhase.REQUEST), "c", 1, configuration, logger);
+        registry.register(request().withPath("/b"),
+            EnumSet.of(BreakpointPhase.REQUEST), "c", 1, configuration, logger);
+
+        HttpRequest a = request().withPath("/a");
+        HttpRequest b = request().withPath("/b");
+
+        // hit /a once (skipped) — should not advance /b's counter
+        assertThat(registry.findMatch(a, BreakpointPhase.REQUEST), is(nullValue()));
+        // /b's first hit is still skipped (its own counter is independent)
+        assertThat(registry.findMatch(b, BreakpointPhase.REQUEST), is(nullValue()));
+        // /a second hit pauses
+        assertThat(registry.findMatch(a, BreakpointPhase.REQUEST), is(notNullValue()));
+        // /b second hit pauses
+        assertThat(registry.findMatch(b, BreakpointPhase.REQUEST), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldExposeSkipCountAndHitCountOnEntry() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        String id = registry.register(request().withPath("/hits"),
+            EnumSet.of(BreakpointPhase.REQUEST), "c", 2, configuration, logger);
+
+        BreakpointMatcher entry = registry.entries().get(0);
+        assertThat(entry.getId(), is(id));
+        assertThat(entry.getSkipCount(), is(2));
+        assertThat(entry.getHitCount(), is(0L));
+
+        registry.findMatch(request().withPath("/hits"), BreakpointPhase.REQUEST);
+        registry.findMatch(request().withPath("/hits"), BreakpointPhase.REQUEST);
+        assertThat(entry.getHitCount(), is(2L));
+    }
+
+    @Test
+    public void shouldIncrementSkipCounterAtomicallyUnderConcurrency() throws Exception {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        final int skip = 100;
+        final int threads = 8;
+        final int hitsPerThread = 50; // 400 total hits, skip 100 => 300 pauses
+        registry.register(request().withPath("/conc"),
+            EnumSet.of(BreakpointPhase.REQUEST), "c", skip, configuration, logger);
+
+        final java.util.concurrent.atomic.AtomicInteger pauses = new java.util.concurrent.atomic.AtomicInteger(0);
+        final java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<Thread> workers = new java.util.ArrayList<>();
+        for (int t = 0; t < threads; t++) {
+            Thread worker = new Thread(() -> {
+                try {
+                    start.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                for (int i = 0; i < hitsPerThread; i++) {
+                    if (registry.findMatch(request().withPath("/conc"), BreakpointPhase.REQUEST) != null) {
+                        pauses.incrementAndGet();
+                    }
+                }
+            });
+            workers.add(worker);
+            worker.start();
+        }
+        start.countDown();
+        for (Thread worker : workers) {
+            worker.join();
+        }
+
+        int totalHits = threads * hitsPerThread;
+        // exactly `skip` hits are skipped, the rest pause — no lost/double counts
+        assertThat(pauses.get(), is(totalHits - skip));
+        assertThat(registry.entries().get(0).getHitCount(), is((long) totalHits));
+    }
 }

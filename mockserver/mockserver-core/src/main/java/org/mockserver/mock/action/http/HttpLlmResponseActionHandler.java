@@ -2,6 +2,7 @@ package org.mockserver.mock.action.http;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockserver.llm.LlmErrorBodies;
 import org.mockserver.llm.LlmQuotaRegistry;
 import org.mockserver.llm.LlmRateLimitHeaders;
 import org.mockserver.llm.ProviderCodec;
@@ -270,10 +271,20 @@ public class HttpLlmResponseActionHandler {
         if (!ChaosProbability.shouldInject(chaos.getErrorProbability(), chaos.getSeed())) {
             return null;
         }
+        int status = chaos.getErrorStatus();
+        // Emit a provider-correct error body (so client SDK retry/backoff logic can be
+        // tested faithfully), falling back to the generic body for an unknown/null
+        // provider. The error kind is derived from the status (429 → rate-limit,
+        // 529 → overloaded, other → server error).
+        LlmErrorBodies.Kind kind = LlmErrorBodies.kindForStatus(status);
+        String body = LlmErrorBodies.bodyFor(httpLlmResponse.getProvider(), kind, status, "injected chaos error");
+        if (body == null) {
+            body = "{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}";
+        }
         HttpResponse errorResponse = response()
-            .withStatusCode(chaos.getErrorStatus())
+            .withStatusCode(status)
             .withHeader("content-type", "application/json")
-            .withBody("{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}");
+            .withBody(body);
         // applyRateLimitHeaders is the single owner of the Retry-After header (and the
         // provider-specific rate-limit headers) so it is never emitted twice.
         applyRateLimitHeaders(errorResponse, httpLlmResponse.getProvider(), true, chaos);
@@ -351,10 +362,19 @@ public class HttpLlmResponseActionHandler {
 
     private HttpResponse buildQuotaErrorResponse(LlmChaosProfile chaos, String errorType, String message, Provider provider) {
         int status = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : 429;
+        // A quota breach is a rate-limit error: emit the provider-correct error body
+        // (so client SDK retry/backoff logic reads the right error.type/code), falling
+        // back to the generic body — which preserves the distinct quota_exceeded /
+        // token_quota_exceeded error types — for an unknown/null provider.
+        LlmErrorBodies.Kind kind = LlmErrorBodies.kindForStatus(status);
+        String body = LlmErrorBodies.bodyFor(provider, kind, status, message);
+        if (body == null) {
+            body = "{\"error\":{\"type\":\"" + errorType + "\",\"message\":\"" + message + "\"}}";
+        }
         HttpResponse errorResponse = response()
             .withStatusCode(status)
             .withHeader("content-type", "application/json")
-            .withBody("{\"error\":{\"type\":\"" + errorType + "\",\"message\":\"" + message + "\"}}");
+            .withBody(body);
         // applyRateLimitHeaders is the single owner of the Retry-After header (and the
         // provider-specific rate-limit headers) so it is never emitted twice.
         applyRateLimitHeaders(errorResponse, provider, true, chaos);

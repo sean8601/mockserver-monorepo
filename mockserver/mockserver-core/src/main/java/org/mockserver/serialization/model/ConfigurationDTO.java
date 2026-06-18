@@ -83,6 +83,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean validateProxyEnforce;
     private Boolean generateRealisticExampleValues;
     private Boolean watchInitializationJson;
+    private Boolean failOnInitializationError;
 
     private Boolean persistExpectations;
     private String persistedExpectationsPath;
@@ -217,6 +218,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.validateProxyEnforce = configuration.validateProxyEnforce();
             this.generateRealisticExampleValues = configuration.generateRealisticExampleValues();
             this.watchInitializationJson = configuration.watchInitializationJson();
+            this.failOnInitializationError = configuration.failOnInitializationError();
 
             this.persistExpectations = configuration.persistExpectations();
             this.persistedExpectationsPath = configuration.persistedExpectationsPath();
@@ -397,6 +399,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.validateProxyEnforce(validateProxyEnforce);
         configuration.generateRealisticExampleValues(generateRealisticExampleValues);
         configuration.watchInitializationJson(watchInitializationJson);
+        configuration.failOnInitializationError(failOnInitializationError);
 
         configuration.persistExpectations(persistExpectations);
         configuration.persistedExpectationsPath(persistedExpectationsPath);
@@ -647,6 +650,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (watchInitializationJson != null) {
             target.watchInitializationJson(watchInitializationJson);
+        }
+        if (failOnInitializationError != null) {
+            target.failOnInitializationError(failOnInitializationError);
         }
         if (persistExpectations != null) {
             target.persistExpectations(persistExpectations);
@@ -1327,6 +1333,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setWatchInitializationJson(Boolean watchInitializationJson) {
         this.watchInitializationJson = watchInitializationJson;
+        return this;
+    }
+
+    public Boolean getFailOnInitializationError() {
+        return failOnInitializationError;
+    }
+
+    public ConfigurationDTO setFailOnInitializationError(Boolean failOnInitializationError) {
+        this.failOnInitializationError = failOnInitializationError;
         return this;
     }
 

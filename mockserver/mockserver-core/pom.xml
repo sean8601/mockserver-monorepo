@@ -583,6 +583,8 @@
                         <exclude>**/RegexStringMatcherTest.java</exclude>
                         <exclude>**/InetAddressValidatorTest.java</exclude>
                         <exclude>**/JsonSchemaValidatorRemoteRefTest.java</exclude>
+                        <!-- Constructs a real HttpState (mutates ServiceChaosRegistry / Metrics / CrossProtocolEventBus singletons) -->
+                        <exclude>**/HttpStateReadinessTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -667,6 +669,7 @@
                                 <include>**/RegexStringMatcherTest.java</include>
                                 <include>**/InetAddressValidatorTest.java</include>
                                 <include>**/JsonSchemaValidatorRemoteRefTest.java</include>
+                                <include>**/HttpStateReadinessTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

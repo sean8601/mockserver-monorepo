@@ -52,43 +52,72 @@ public class BreakpointMatcherRegistry {
      */
     public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
                            Configuration configuration, MockServerLogger logger) {
-        return register(matcher, phases, null, configuration, logger);
+        return register(matcher, phases, null, null, configuration, logger);
     }
 
     /**
      * Registers a new breakpoint matcher with a required owner clientId.
      *
+     * @see #register(RequestDefinition, Set, String, Integer, Configuration, MockServerLogger)
+     */
+    public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
+                           String clientId,
+                           Configuration configuration, MockServerLogger logger) {
+        return register(matcher, phases, clientId, null, configuration, logger);
+    }
+
+    /**
+     * Registers a new breakpoint matcher with a required owner clientId and an
+     * optional skip-count for conditional (Nth-hit) breakpoints.
+     *
      * <p>The {@code clientId} identifies the callback WebSocket client that owns
      * this breakpoint. Matched exchanges are dispatched over the callback WebSocket
      * to that client for interactive resolution.
      *
+     * <p>The optional {@code skipCount} delays the first pause: the breakpoint
+     * still matches on every hit but only pauses once it has been hit more than
+     * {@code skipCount} times. {@code null} (or a non-positive value) means pause
+     * on every hit (legacy behaviour).
+     *
      * @param matcher       the request definition to match against
      * @param phases        the set of phases at which matching exchanges should break
      * @param clientId      the callback WS client that owns this breakpoint (required in production)
+     * @param skipCount     the number of matching hits to skip before pausing, or {@code null} to pause every time
      * @param configuration the active server configuration (passed to MatcherBuilder)
      * @param logger        the server logger (passed to MatcherBuilder)
      * @return the assigned UUID id for the registered breakpoint
      */
     public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
-                           String clientId,
+                           String clientId, Integer skipCount,
                            Configuration configuration, MockServerLogger logger) {
         String id = UUIDService.getUUID();
         HttpRequestMatcher prebuilt = new MatcherBuilder(configuration, logger).transformsToMatcher(matcher);
-        BreakpointMatcher entry = new BreakpointMatcher(id, matcher, phases, prebuilt, clientId);
+        BreakpointMatcher entry = new BreakpointMatcher(id, matcher, phases, prebuilt, clientId, skipCount);
         entries.add(entry);
         return id;
     }
 
     /**
      * Finds the first registered breakpoint whose phases contain the given phase
-     * AND whose prebuilt matcher matches the given request.
+     * AND whose prebuilt matcher matches the given request AND which should pause
+     * for this hit.
      *
      * <p>Returns {@code null} if the registry is empty or no matcher matches.
      * This method is allocation-light and safe to call on the Netty event loop.
      *
+     * <p><b>Conditional (skip-count) breakpoints:</b> when a matcher matches, its
+     * per-matcher hit counter is incremented (atomically, via
+     * {@link BreakpointMatcher#shouldPause()}). If the matcher is configured with a
+     * {@code skipCount} and this hit still falls within the skip window, the hit is
+     * recorded but the matcher does NOT pause — {@code findMatch} treats it as the
+     * winning match and returns {@code null} (do not pause) rather than falling
+     * through to a later matcher. This preserves first-match semantics: the first
+     * matcher to match a request "owns" the decision for that hit. A matcher with no
+     * {@code skipCount} always pauses (legacy behaviour).
+     *
      * @param request the inbound request to match against
      * @param phase   the phase to check
-     * @return the first matching {@link BreakpointMatcher}, or {@code null}
+     * @return the first matching {@link BreakpointMatcher} that should pause, or {@code null}
      */
     public BreakpointMatcher findMatch(RequestDefinition request, BreakpointPhase phase) {
         if (entries.isEmpty()) {
@@ -96,7 +125,9 @@ public class BreakpointMatcherRegistry {
         }
         for (BreakpointMatcher entry : entries) {
             if (entry.getPhases().contains(phase) && entry.getPrebuiltMatcher().matches(request)) {
-                return entry;
+                // First matcher to match owns the decision for this hit. Record the
+                // hit and pause only if it falls outside any configured skip window.
+                return entry.shouldPause() ? entry : null;
             }
         }
         return null;

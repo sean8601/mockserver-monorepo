@@ -116,6 +116,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   const [formQueryParams, setFormQueryParams] = useState<KeyToMultiValue[]>([{ name: '', values: [''] }]);
   const [formCookies, setFormCookies] = useState<KeyToValue[]>([{ name: '', value: '' }]);
   const [formPhases, setFormPhases] = useState<Set<MatcherPhase>>(new Set(['REQUEST', 'RESPONSE']));
+  const [formSkipCount, setFormSkipCount] = useState('');
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -246,6 +247,17 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       httpRequest.path = '.*';
     }
 
+    // Optional Nth-hit / skip-count: pause only after this many matching hits.
+    let skipCount: number | undefined;
+    if (formSkipCount.trim() !== '') {
+      const parsed = Number(formSkipCount);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        setFormError('Skip count must be a non-negative integer.');
+        return;
+      }
+      skipCount = parsed;
+    }
+
     setFormBusy(true);
     setFormError(null);
     try {
@@ -254,6 +266,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         httpRequest,
         [...formPhases],
         clientId,
+        skipCount,
       );
       refreshMatchers();
       // Reset form
@@ -262,12 +275,13 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       setFormHeaders([{ name: '', values: [''] }]);
       setFormQueryParams([{ name: '', values: [''] }]);
       setFormCookies([{ name: '', value: '' }]);
+      setFormSkipCount('');
     } catch (e) {
       setFormError(humanizeError(e).message);
     } finally {
       setFormBusy(false);
     }
-  }, [connectionParams, clientId, formMethod, formPath, formHeaders, formQueryParams, formCookies, formPhases, refreshMatchers]);
+  }, [connectionParams, clientId, formMethod, formPath, formHeaders, formQueryParams, formCookies, formPhases, formSkipCount, refreshMatchers]);
 
   const handleRemoveMatcher = useCallback(async (id: string) => {
     setBusy(true);
@@ -566,6 +580,17 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 placeholder="/api/.*"
                 sx={{ flex: 1, minWidth: 200 }}
               />
+              <TextField
+                label="Skip count"
+                value={formSkipCount}
+                onChange={(e) => setFormSkipCount(e.target.value)}
+                size="small"
+                type="number"
+                placeholder="0"
+                title="Pause only after this many matching hits (0 / blank = pause every time)"
+                slotProps={{ htmlInput: { min: 0, step: 1 }, inputLabel: { shrink: true } }}
+                sx={{ width: 120, flexShrink: 0 }}
+              />
             </Box>
             <MultiValueField label="Headers" items={formHeaders} onChange={setFormHeaders} disabled={formBusy} />
             <MultiValueField label="Query parameters" items={formQueryParams} onChange={setFormQueryParams} disabled={formBusy} />
@@ -653,6 +678,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                       <TableCell>ID</TableCell>
                       <TableCell>Matcher</TableCell>
                       <TableCell>Phases</TableCell>
+                      <TableCell align="right">Skip</TableCell>
                       <TableCell>Owner</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
@@ -681,6 +707,11 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                               />
                             ))}
                           </Box>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                            {m.skipCount && m.skipCount > 0 ? m.skipCount : '-'}
+                          </Typography>
                         </TableCell>
                         <TableCell>
                           <TruncatedText text={m.clientId ?? '-'} maxWidth={100} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />

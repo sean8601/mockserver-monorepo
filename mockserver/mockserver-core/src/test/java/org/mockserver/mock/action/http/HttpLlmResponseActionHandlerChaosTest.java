@@ -38,7 +38,8 @@ public class HttpLlmResponseActionHandlerChaosTest {
         assertThat(response, is(notNullValue()));
         assertThat(response.getStatusCode(), is(429));
         assertThat(response.getFirstHeader("Retry-After"), is("30"));
-        assertThat(response.getBodyAsString(), containsString("chaos_injected"));
+        // OpenAI 429 → OpenAI-correct rate-limit error envelope (not the generic body)
+        assertThat(response.getBodyAsString(), containsString("rate_limit_exceeded"));
     }
 
     @Test
@@ -221,6 +222,65 @@ public class HttpLlmResponseActionHandlerChaosTest {
         assertThat(response.getFirstHeader("x-ratelimit-reset-requests"), is("60s"));
         // Not limited, so no retry-after
         assertThat(response.getFirstHeader("retry-after"), is(""));
+    }
+
+    // --- Provider-specific error bodies ---
+
+    @Test
+    public void anthropicOverloadEmitsOverloadedErrorBody() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.ANTHROPIC)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorStatus(529).withErrorProbability(1.0)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(529));
+        assertThat(response.getBodyAsString(), containsString("\"type\":\"error\""));
+        assertThat(response.getBodyAsString(), containsString("\"overloaded_error\""));
+    }
+
+    @Test
+    public void anthropicRateLimitEmitsRateLimitErrorBody() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.ANTHROPIC)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorStatus(429)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getBodyAsString(), containsString("\"rate_limit_error\""));
+    }
+
+    @Test
+    public void openAiServerErrorEmitsOpenAiEnvelope() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.OPENAI)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorStatus(503).withErrorProbability(1.0)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(503));
+        assertThat(response.getBodyAsString(), containsString("\"server_error\""));
+        assertThat(response.getBodyAsString(), containsString("\"code\":503"));
+    }
+
+    @Test
+    public void openAiRateLimitEmitsRateLimitExceededEnvelope() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.OPENAI)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorStatus(429)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getBodyAsString(), containsString("\"rate_limit_exceeded\""));
+    }
+
+    @Test
+    public void unknownProviderFallsBackToGenericBody() {
+        // a null provider has no provider-specific shape, so the generic body is used
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorStatus(500).withErrorProbability(1.0)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(500));
+        assertThat(response.getBodyAsString(), containsString("\"chaos_injected\""));
     }
 
     @Test

@@ -75,6 +75,17 @@ public class ExpectationToJavaSerializer implements ToJavaSerializer<Expectation
             if (expectation.getResponseMode() != null) {
                 appendNewLineAndIndent(numberOfSpacesToIndent * INDENT_SIZE, output).append(".withResponseMode(org.mockserver.mock.ResponseMode.").append(expectation.getResponseMode().name()).append(")");
             }
+            if (expectation.getResponseWeights() != null && !expectation.getResponseWeights().isEmpty()) {
+                StringBuilder weights = new StringBuilder();
+                List<Integer> responseWeights = expectation.getResponseWeights();
+                for (int i = 0; i < responseWeights.size(); i++) {
+                    if (i > 0) {
+                        weights.append(", ");
+                    }
+                    weights.append(responseWeights.get(i));
+                }
+                appendNewLineAndIndent(numberOfSpacesToIndent * INDENT_SIZE, output).append(".withResponseWeights(java.util.Arrays.asList(").append(weights).append("))");
+            }
             if (expectation.getHttpResponses() != null && !expectation.getHttpResponses().isEmpty()) {
                 HttpResponseToJavaSerializer responseSerializer = new HttpResponseToJavaSerializer();
                 appendNewLineAndIndent(numberOfSpacesToIndent * INDENT_SIZE, output).append(".respond(java.util.Arrays.asList(");

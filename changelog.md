@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Weighted/probabilistic response selection**: a new `WEIGHTED` `ResponseMode` selects among an
+  expectation's multiple `httpResponses` by relative weight (via the index-aligned `responseWeights` list,
+  e.g. `[90, 10]` for a 90%/10% split). Missing or non-positive weights default to 1; a non-positive total
+  falls back to uniform selection. Weights round-trip in expectation JSON and Java code generation.
+- **Conditional (Nth-hit) breakpoints**: breakpoint matchers accept an optional `skipCount` that skips the
+  first N matching hits and only pauses afterward (per-breakpoint, thread-safe counter); exposed via the
+  `/mockserver/breakpoint` API and a "Skip count" field in the dashboard Breakpoints panel.
+- **Provider-correct LLM chaos error bodies**: LLM chaos error injection now emits the body shape the real
+  provider returns — Anthropic `overloaded_error`/`rate_limit_error`, the OpenAI `server_error`/
+  `rate_limit_exceeded` envelope, Gemini's Google-API status, Ollama's plain message — so client SDK
+  retry/backoff logic can be tested realistically; falls back to the generic body for an unspecified provider.
+- **Readiness endpoint `GET /mockserver/ready`**: returns 503 until expectation initializers and OpenAPI
+  seeding complete, then 200 — distinct from the always-200 liveness/status endpoints. The Helm chart now
+  points the readiness probe at it and liveness at the existing path, so Kubernetes no longer routes traffic
+  to a pod whose expectations aren't loaded yet.
+- **`failOnInitializationError`** (`MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR`, default false): when enabled, a
+  malformed initialization JSON/OpenAPI file or a broken initialization class fails server startup instead
+  of logging a warning and continuing with zero expectations.
 - **JSONPath / XPath request-body extraction in Velocity and JavaScript response templates**: the Velocity
   and JavaScript template engines now expose the same `jsonPath` / `xPath` request-body extraction the
   Mustache engine already had, so a field can be pulled out of the request body without hand-parsing it.

@@ -162,6 +162,7 @@ public class Configuration {
     private Boolean validateProxyEnforce;
     private Boolean generateRealisticExampleValues;
     private Boolean watchInitializationJson;
+    private Boolean failOnInitializationError;
 
     // mock persistence
     private Boolean persistExpectations;
@@ -2045,6 +2046,25 @@ public class Configuration {
      */
     public Configuration watchInitializationJson(Boolean watchInitializationJson) {
         this.watchInitializationJson = watchInitializationJson;
+        return this;
+    }
+
+    public Boolean failOnInitializationError() {
+        if (failOnInitializationError == null) {
+            return ConfigurationProperties.failOnInitializationError();
+        }
+        return failOnInitializationError;
+    }
+
+    /**
+     * <p>If enabled a failure to load any expectation initializer (a malformed initialization JSON / OpenAPI file or a broken initialization class) will fail server startup with an exception rather than logging a warning and continuing with zero expectations from that source.</p>
+     *
+     * <p>The default is false (a failed initializer is logged at WARN and startup continues).</p>
+     *
+     * @param failOnInitializationError if enabled a failed expectation initializer load fails server startup
+     */
+    public Configuration failOnInitializationError(Boolean failOnInitializationError) {
+        this.failOnInitializationError = failOnInitializationError;
         return this;
     }
 

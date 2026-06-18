@@ -371,7 +371,9 @@ public class HttpLlmResponseActionHandlerTest {
         assertThat(quotaError, is(notNullValue()));
         assertThat(quotaError.getStatusCode(), is(429));
         assertThat(quotaError.getFirstHeader("Retry-After"), is("30"));
-        assertThat(quotaError.getBodyAsString(), containsString("quota_exceeded"));
+        // Anthropic-correct rate-limit body; the request-vs-token distinction is in the message
+        assertThat(quotaError.getBodyAsString(), containsString("rate_limit_error"));
+        assertThat(quotaError.getBodyAsString(), containsString("LLM request quota exceeded"));
     }
 
     @Test
@@ -433,7 +435,9 @@ public class HttpLlmResponseActionHandlerTest {
         HttpResponse tokenError = handler.chaosErrorResponseOrNull(firstResponse);
         assertThat(tokenError, is(notNullValue()));
         assertThat(tokenError.getStatusCode(), is(429));
-        assertThat(tokenError.getBodyAsString(), containsString("token_quota_exceeded"));
+        // Anthropic-correct rate-limit body; the token-quota distinction is in the message
+        assertThat(tokenError.getBodyAsString(), containsString("rate_limit_error"));
+        assertThat(tokenError.getBodyAsString(), containsString("LLM token quota exceeded"));
     }
 
     @Test
@@ -456,7 +460,8 @@ public class HttpLlmResponseActionHandlerTest {
         HttpResponse tokenError = handler.chaosErrorResponseOrNull(llmResp);
         assertThat(tokenError, is(notNullValue()));
         assertThat(tokenError.getStatusCode(), is(429));
-        assertThat(tokenError.getBodyAsString(), containsString("token_quota_exceeded"));
+        assertThat(tokenError.getBodyAsString(), containsString("rate_limit_error"));
+        assertThat(tokenError.getBodyAsString(), containsString("LLM token quota exceeded"));
     }
 
     @Test
@@ -504,7 +509,8 @@ public class HttpLlmResponseActionHandlerTest {
         HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
         assertThat(error, is(notNullValue()));
         assertThat(error.getStatusCode(), is(429));
-        assertThat(error.getBodyAsString(), containsString("token_quota_exceeded"));
+        assertThat(error.getBodyAsString(), containsString("rate_limit_error"));
+        assertThat(error.getBodyAsString(), containsString("LLM token quota exceeded"));
     }
 
     @Test
@@ -528,8 +534,10 @@ public class HttpLlmResponseActionHandlerTest {
         // 2nd -> request quota exceeded (tokens still fine)
         HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
         assertThat(error, is(notNullValue()));
-        assertThat(error.getBodyAsString(), containsString("quota_exceeded"));
-        assertThat(error.getBodyAsString(), not(containsString("token_quota_exceeded")));
+        // request-quota (not token) fired: Anthropic rate-limit body, request message
+        assertThat(error.getBodyAsString(), containsString("rate_limit_error"));
+        assertThat(error.getBodyAsString(), containsString("LLM request quota exceeded"));
+        assertThat(error.getBodyAsString(), not(containsString("token")));
     }
 
     @Test
@@ -554,7 +562,9 @@ public class HttpLlmResponseActionHandlerTest {
         assertThat(error, is(notNullValue()));
         assertThat(error.getStatusCode(), is(529));
         assertThat(error.getFirstHeader("Retry-After"), is("60"));
-        assertThat(error.getBodyAsString(), containsString("token_quota_exceeded"));
+        // 529 → Anthropic overloaded_error shape; the token-quota distinction is in the message
+        assertThat(error.getBodyAsString(), containsString("overloaded_error"));
+        assertThat(error.getBodyAsString(), containsString("LLM token quota exceeded"));
     }
 
     @Test
@@ -576,7 +586,8 @@ public class HttpLlmResponseActionHandlerTest {
         HttpResponse error = handler.chaosErrorResponseOrNull(llmResp);
         assertThat(error, is(notNullValue()));
         assertThat(error.getStatusCode(), is(429));
-        assertThat(error.getBodyAsString(), containsString("quota_exceeded"));
+        assertThat(error.getBodyAsString(), containsString("rate_limit_error"));
+        assertThat(error.getBodyAsString(), containsString("LLM request quota exceeded"));
     }
 
     // --- estimateTokenCount unit tests ---

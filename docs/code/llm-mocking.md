@@ -214,6 +214,21 @@ Structured-output validation against a JSON Schema works on **both sides** of a 
 
 Truncation, malformed-SSE, and the stateful quota are fully deterministic; the probabilistic error path is deterministic at probability 0.0/1.0. Each injection increments the `LLM_CHAOS_INJECTED_COUNT` metric. The profile round-trips as the top-level `chaos` field on `HttpLlmResponse` (alongside `completion`, `embedding`, and `conversationPredicates`) and is exposed per turn in the dashboard wizard and via the `chaos` MCP parameter.
 
+### Provider-specific error bodies
+
+Both chaos error paths (the probabilistic `errorStatus` and a stateful quota breach) emit the **provider-correct JSON error body** for the detected provider, so client SDK retry/backoff logic — which parses the body's `error.type` / `error.code` — can be exercised faithfully against a mock. `LlmErrorBodies` (`org.mockserver.llm`) is a pure, deterministic helper that maps a `Provider` + a coarse error `Kind` (derived from the HTTP status) to the body shape. When the provider is `null`/unknown, the handler falls back to the previous generic body (`{"error":{"type":"chaos_injected"|"quota_exceeded"|"token_quota_exceeded",...}}`), so behaviour is unchanged for an unspecified provider.
+
+The error `Kind` is derived from the status: `429 → RATE_LIMIT`, `529 → OVERLOADED`, any other status `→ SERVER_ERROR`.
+
+| Provider | Body shape (by error kind) |
+|----------|----------------------------|
+| ANTHROPIC / BEDROCK | `{"type":"error","error":{"type":"overloaded_error"\|"rate_limit_error"\|"api_error","message":...}}` — Bedrock delivers the Anthropic body unchanged |
+| OPENAI / OPENAI_RESPONSES / AZURE_OPENAI | `{"error":{"message":...,"type":"rate_limit_exceeded"\|"server_error","param":null,"code":...}}` — `code` is the numeric status for `server_error`, the string `"rate_limit_exceeded"` for a 429 |
+| GEMINI | `{"error":{"code":<status>,"message":...,"status":"UNAVAILABLE"\|"RESOURCE_EXHAUSTED"\|"INTERNAL"}}` |
+| OLLAMA | `{"error":"<message>"}` (a plain message string) |
+
+The `Retry-After` and provider-specific rate-limit *headers* (see below) are still applied on top of the body by the same code path, so a 429/529 carries both the correct body and the correct headers.
+
 ### Token-based quota (TPM/TPD)
 
 Real LLM providers (OpenAI, Anthropic) enforce token-per-minute (TPM) and token-per-day (TPD) limits in addition to request-count limits. MockServer models this with two additional `LlmChaosProfile` fields: `tokenQuotaLimit` (Long, >= 1) and `tokenQuotaWindowMillis` (Long, >= 1). When both are set alongside `quotaName`, each response charges its cumulative token count (from `Usage.inputTokens + outputTokens`, or `ceil(text.length()/4)` as a fallback when no Usage is present) against a separate fixed-window counter in `LlmQuotaRegistry` under the key `quotaName + ":tokens"`. Once the in-window token sum exceeds `tokenQuotaLimit`, the response path returns a 429 (or custom `quotaErrorStatus`) with error type `token_quota_exceeded` and the `Retry-After` header when set. The request-count quota and token quota are independent counters that can coexist on the same profile; the request-count quota is checked first. Embeddings contribute zero tokens. The `LlmQuotaRegistry.tryAcquire(name, limit, windowMillis, amount)` overload supports arbitrary increment amounts for this purpose.
@@ -566,6 +581,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/semantic/SemanticPromptMatcher.java` + `SemanticMatching.java` | Opt-in LLM-judge fuzzy match + its off-by-default static gate |
 | `llm/adversarial/AdversarialResponseLibrary.java` | Curated adversarial-response payloads for agent-resilience testing |
 | `model/LlmChaosProfile.java` | Fault/chaos profile carried on `HttpLlmResponse` |
+| `llm/LlmErrorBodies.java` | Pure helper mapping a `Provider` + error kind to the provider-correct chaos/quota error JSON body |
 | `mock/action/http/HttpLlmResponseActionHandler.java` | Encodes LLM responses and applies chaos (error / truncation / malformed SSE) |
 | `fixture/FixtureRedactor.java` | Masks sensitive headers and (optional) JSON body fields when recording fixtures |
 | `llm/drift/StructuralShapeDiff.java` | Pure JSON shape diff (added/removed/type-changed paths) |

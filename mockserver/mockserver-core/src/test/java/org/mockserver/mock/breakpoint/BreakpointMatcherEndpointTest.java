@@ -121,6 +121,72 @@ public class BreakpointMatcherEndpointTest {
         assertThat(BreakpointMatcherRegistry.getInstance().size(), is(1));
     }
 
+    @Test
+    public void shouldRegisterWithSkipCount() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/api/cond\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\",\"skipCount\":2}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        // response echoes skipCount
+        assertThat(responseWriter.response.getBodyAsString(), containsString("\"skipCount\""));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("2"));
+
+        // the registered matcher carries the skipCount and pauses only from hit 3
+        BreakpointMatcher entry = BreakpointMatcherRegistry.getInstance().entries().get(0);
+        assertThat(entry.getSkipCount(), is(2));
+    }
+
+    @Test
+    public void shouldListSkipCount() {
+        registerMatcher("{\"httpRequest\":{\"path\":\"/cond\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\",\"skipCount\":3}");
+
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        httpState.handle(request("/mockserver/breakpoint/matchers").withMethod("GET"), responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("\"skipCount\""));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("3"));
+    }
+
+    @Test
+    public void shouldOmitSkipCountWhenAbsent() {
+        registerMatcher("{\"httpRequest\":{\"path\":\"/plain\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\"}");
+
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        httpState.handle(request("/mockserver/breakpoint/matchers").withMethod("GET"), responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBodyAsString(), not(containsString("skipCount")));
+        assertThat(BreakpointMatcherRegistry.getInstance().entries().get(0).getSkipCount(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldReturn400WhenSkipCountNegative() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/neg\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\",\"skipCount\":-1}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("skipCount"));
+    }
+
+    @Test
+    public void shouldReturn400WhenSkipCountNotInteger() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/nan\"},\"phases\":[\"REQUEST\"],\"clientId\":\"test-client\",\"skipCount\":\"two\"}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("skipCount"));
+    }
+
     // --- validation ---
 
     @Test

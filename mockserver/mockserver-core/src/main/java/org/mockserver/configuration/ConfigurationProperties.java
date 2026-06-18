@@ -197,6 +197,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_VALIDATE_PROXY_ENFORCE = "mockserver.validateProxyEnforce";
     private static final String MOCKSERVER_GENERATE_REALISTIC_EXAMPLE_VALUES = "mockserver.generateRealisticExampleValues";
     private static final String MOCKSERVER_WATCH_INITIALIZATION_JSON = "mockserver.watchInitializationJson";
+    private static final String MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR = "mockserver.failOnInitializationError";
 
     // mock persistence
     private static final String MOCKSERVER_PERSIST_EXPECTATIONS = "mockserver.persistExpectations";
@@ -2422,6 +2423,21 @@ public class ConfigurationProperties {
      */
     public static void watchInitializationJson(boolean enable) {
         setProperty(MOCKSERVER_WATCH_INITIALIZATION_JSON, "" + enable);
+    }
+
+    public static boolean failOnInitializationError() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR, "MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR", "" + false));
+    }
+
+    /**
+     * <p>If enabled a failure to load any expectation initializer (a malformed initialization JSON / OpenAPI file or a broken initialization class) will fail server startup with an exception rather than logging a warning and continuing with zero expectations from that source.</p>
+     *
+     * <p>The default is false (a failed initializer is logged at WARN and startup continues).</p>
+     *
+     * @param enable if enabled a failed expectation initializer load fails server startup
+     */
+    public static void failOnInitializationError(boolean enable) {
+        setProperty(MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR, "" + enable);
     }
 
     // mock persistence

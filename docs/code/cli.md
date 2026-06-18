@@ -295,10 +295,20 @@ repository, not the reactor**. A single `-am package` after local source changes
 working tree. (The release pipeline is unaffected — it shades the artifact published to Maven
 Central, or builds fresh in a clean container.)
 
+## Readiness vs liveness for orchestrators
+
+Operators wiring health checks (Kubernetes, Compose, load balancers) have two distinct endpoints:
+
+- **Liveness** — `PUT /mockserver/status` or the configurable `GET` `mockserver.livenessHttpGetPath`. Both answer `200` the instant the server port binds, so they confirm the process is alive but say nothing about whether expectations have been seeded.
+- **Readiness** — `GET /mockserver/ready` (alias `GET /ready`). Returns `503 {"status":"NOT_READY"}` until the synchronous startup work (expectation initializers from `--init` / `initializationClass`, OpenAPI seeding from `--openapi`, gRPC descriptor loading) has completed, then `200 {"status":"READY"}`. Point a readiness probe here so traffic is not routed before the seeded mocks exist.
+
+To make a *broken* initializer (malformed JSON/OpenAPI or a failing initializer class) abort startup instead of starting with zero seeded expectations, set `-Dmockserver.failOnInitializationError=true` (or `MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR=true`). Default is `false` (log a WARN and continue). The readiness probe handles the *slow* case; this flag handles the *broken* case.
+
 ## Source files
 
 | File | Role |
 |---|---|
 | `mockserver/mockserver-netty/src/main/java/org/mockserver/cli/Main.java` | Entire CLI: top command, all subcommands, preprocessing, validation |
+| `mockserver/mockserver-netty/src/main/java/org/mockserver/netty/HttpRequestHandler.java` | Routes `GET /mockserver/ready` to the readiness signal (`HttpState.isInitializationComplete()`) |
 | `mockserver/mockserver-core/src/main/java/org/mockserver/configuration/ConfigurationProperties.java` | Property store; the CLI writes here for `--openapi`, `--init`, `--persist` |
 | `mockserver/mockserver-core/src/main/java/org/mockserver/version/Version.java` | Version string used by `VersionCommand` and `MockServerVersionProvider` |

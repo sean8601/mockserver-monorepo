@@ -225,16 +225,32 @@ PUT /mockserver/breakpoint/matcher
 
 Any forwarded/proxied request that matches `httpRequest` will be paused at the specified phases. Registrations persist until explicitly removed or until `/mockserver/reset` is called (which clears all matchers).
 
+#### Conditional (Nth-hit / skip-count) breakpoints
+
+An optional `skipCount` makes a breakpoint conditional: the matcher still **matches** on every hit but only **pauses** once it has been hit more than `skipCount` times. With `"skipCount": 2`, the breakpoint does NOT pause on hits 1 and 2 and DOES pause from hit 3 onward. Absent (or `0`/null) means pause every time — the legacy behaviour.
+
+```
+PUT /mockserver/breakpoint/matcher
+{
+  "httpRequest": { "path": "/api/.*" },
+  "phases": ["REQUEST"],
+  "clientId": "my-ws-client-id",
+  "skipCount": 2
+}
+```
+
+The hit counter lives on `BreakpointMatcher` as an `AtomicLong` and is incremented exactly once per matching exchange/phase inside `BreakpointMatcherRegistry.findMatch` (via `BreakpointMatcher.shouldPause()`), so it is correct under concurrent matching on the data plane / event loop. The counter is **per-breakpoint** (each registered matcher has its own). First-match semantics are preserved: the first matcher to match a request owns the decision for that hit — if it is still inside its skip window, `findMatch` returns `null` (do not pause) rather than falling through to a later matcher. `skipCount` is validated as a non-negative integer at registration (400 otherwise); `0` is normalised to "no skip".
+
 ### Matcher-registry endpoints
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases, clientId}` | Register a matcher; returns `{id, phases, clientId}` |
-| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases,clientId}]}` |
+| PUT | `/mockserver/breakpoint/matcher` | `{httpRequest, phases, clientId, skipCount?}` | Register a matcher; returns `{id, phases, clientId, skipCount?}` (`skipCount` echoed only when set) |
+| GET/PUT | `/mockserver/breakpoint/matchers` | — | List all registered matchers: `{matchers:[{id,httpRequest,phases,clientId,skipCount?}]}` (`skipCount` present only when set) |
 | PUT | `/mockserver/breakpoint/matcher/remove` | `{id}` | Remove a matcher by id; returns `{status:"removed",id}` or 404 |
 | PUT | `/mockserver/breakpoint/matcher/clear` | — | Remove all matchers; returns `{status:"cleared",count}` |
 
-**Validation:** `httpRequest` and `phases` are required; `phases` must be non-empty and contain only `REQUEST`, `RESPONSE`, `RESPONSE_STREAM`, or `INBOUND_STREAM` — unknown values return 400. The registry is cleared on `/mockserver/reset`.
+**Validation:** `httpRequest` and `phases` are required; `phases` must be non-empty and contain only `REQUEST`, `RESPONSE`, `RESPONSE_STREAM`, or `INBOUND_STREAM` — unknown values return 400. The optional `skipCount` must be a non-negative integer (400 otherwise). The registry is cleared on `/mockserver/reset`.
 
 **Matching semantics:** the `httpRequest` body uses the same matcher fields as an expectation request matcher (`method`, `path`, `headers`, `queryStringParameters`, `body`, etc.). An exchange pauses at a phase if any registered matcher matches the request for that phase.
 
@@ -441,7 +457,7 @@ The dashboard is also a full callback WebSocket client: it connects to `/_mockse
 ## Key classes
 
 ### Breakpoint matcher registry
-- `BreakpointMatcher` — a registered breakpoint: request matcher, phases, required `clientId`
+- `BreakpointMatcher` — a registered breakpoint: request matcher, phases, required `clientId`, optional `skipCount` (Nth-hit) with a per-matcher `AtomicLong` hit counter and `shouldPause()` decision
 - `BreakpointMatcherRegistry` — process-wide singleton registry of breakpoint matchers with `findMatch`, `removeByClientId`
 - `BreakpointPhase` — enum: REQUEST, RESPONSE, RESPONSE_STREAM, INBOUND_STREAM
 
@@ -508,10 +524,11 @@ The Breakpoints panel has three tabs:
 ### Matchers tab
 
 - A **matcher-builder form** to register a breakpoint matcher with method, path
-  (regex), and phase checkboxes (Request, Response, Response stream frames,
-  Inbound stream frames). On submit, calls
-  `PUT /mockserver/breakpoint/matcher {httpRequest, phases, clientId}` with the
-  dashboard's assigned `clientId`.
+  (regex), phase checkboxes (Request, Response, Response stream frames,
+  Inbound stream frames), and an optional **Skip count** field (Nth-hit /
+  conditional breakpoint). On submit, calls
+  `PUT /mockserver/breakpoint/matcher {httpRequest, phases, clientId, skipCount?}`
+  with the dashboard's assigned `clientId`.
 - Lists all registered matchers (`GET /mockserver/breakpoint/matchers`) with
   remove and clear-all actions.
 

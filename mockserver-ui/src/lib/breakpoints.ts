@@ -29,6 +29,8 @@ export interface BreakpointMatcherEntry {
   httpRequest?: Record<string, unknown>;
   phases: MatcherPhase[];
   clientId?: string;
+  /** Optional Nth-hit / skip-count: pause only after this many matching hits. */
+  skipCount?: number;
 }
 
 export interface BreakpointMatcherListResponse {
@@ -45,9 +47,11 @@ export async function registerBreakpointMatcher(
   httpRequest: Record<string, unknown>,
   phases: MatcherPhase[],
   clientId?: string,
+  skipCount?: number,
 ): Promise<{ id: string; phases: MatcherPhase[] }> {
   const body: Record<string, unknown> = { httpRequest, phases };
   if (clientId) body.clientId = clientId;
+  if (typeof skipCount === 'number' && skipCount > 0) body.skipCount = skipCount;
   const res = await fetch(matcherEndpoint(params), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

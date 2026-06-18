@@ -137,6 +137,11 @@ public class HttpState {
     private volatile org.mockserver.llm.client.LlmBackend llmBackend;
     // optional — set by the runtime (NettyHttpClient) to enable PUT /mockserver/replay
     private volatile java.util.function.Function<HttpRequest, CompletableFuture<HttpResponse>> replayHandler;
+    // readiness flag — flipped true once the constructor (incl. synchronous expectation
+    // initializers / OpenAPI seeding) has completed. The liveness/status endpoints answer 200 the
+    // instant the port binds, but a readiness probe should stay not-ready until seeding finishes so
+    // an orchestrator does not route traffic before the seeded expectations exist.
+    private volatile boolean initializationComplete = false;
 
     public static void setPort(final HttpRequest request) {
         if (request != null && request.getSocketAddress() != null) {
@@ -261,6 +266,20 @@ public class HttpState {
             );
         }
         initGrpcDescriptorStore();
+        // All synchronous startup work (expectation initializers, OpenAPI seeding, gRPC descriptor
+        // loading) is now complete — flip the readiness flag so the /mockserver/ready probe reports
+        // ready. Set last so a partially-constructed HttpState never reports ready.
+        this.initializationComplete = true;
+    }
+
+    /**
+     * @return true once the HttpState constructor (including synchronous expectation initializers and
+     * OpenAPI seeding) has completed. Backs the readiness probe (/mockserver/ready), which returns
+     * 503 until this is true and 200 thereafter — distinct from the liveness/status endpoints, which
+     * answer 200 the instant the port binds.
+     */
+    public boolean isInitializationComplete() {
+        return initializationComplete;
     }
 
     private void initGrpcDescriptorStore() {
@@ -4573,9 +4592,22 @@ public class HttpState {
                     .withBody("{\"error\":\"'clientId' field is required (must be the callback WebSocket client id)\"}", MediaType.JSON_UTF_8);
             }
 
+            // optional skipCount — conditional (Nth-hit) breakpoint: do not pause
+            // on the first skipCount matching hits; absent/null => pause every time.
+            com.fasterxml.jackson.databind.JsonNode skipCountNode = node.get("skipCount");
+            Integer skipCount = null;
+            if (skipCountNode != null && !skipCountNode.isNull() && !skipCountNode.isMissingNode()) {
+                if (!skipCountNode.isIntegralNumber() || !skipCountNode.canConvertToInt() || skipCountNode.asInt() < 0) {
+                    return response().withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":\"'skipCount' must be a non-negative integer\"}", MediaType.JSON_UTF_8);
+                }
+                int sc = skipCountNode.asInt();
+                skipCount = sc > 0 ? sc : null;
+            }
+
             // register
             String id = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                .register(requestMatcher, phases, clientId, configuration, mockServerLogger);
+                .register(requestMatcher, phases, clientId, skipCount, configuration, mockServerLogger);
 
             // build response
             com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
@@ -4586,6 +4618,9 @@ public class HttpState {
             }
             result.set("phases", phasesArray);
             result.put("clientId", clientId);
+            if (skipCount != null) {
+                result.put("skipCount", skipCount);
+            }
 
             return response().withStatusCode(CREATED.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
@@ -4614,6 +4649,9 @@ public class HttpState {
                 matcherNode.set("phases", phasesArray);
                 if (matcher.getClientId() != null) {
                     matcherNode.put("clientId", matcher.getClientId());
+                }
+                if (matcher.getSkipCount() != null) {
+                    matcherNode.put("skipCount", matcher.getSkipCount());
                 }
                 matchersArray.add(matcherNode);
             }

@@ -118,8 +118,16 @@
     "responseMode": {
       "enum": [
         "SEQUENTIAL",
-        "RANDOM"
+        "RANDOM",
+        "WEIGHTED"
       ]
+    },
+    "responseWeights": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
     },
     "times": {
       "$ref": "#/definitions/times"

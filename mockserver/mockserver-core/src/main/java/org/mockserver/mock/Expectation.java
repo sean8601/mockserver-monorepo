@@ -62,6 +62,7 @@ public class Expectation extends ObjectWithJsonToString {
     private List<ExpectationStep> steps;
     private List<HttpResponse> httpResponses;
     private ResponseMode responseMode;
+    private List<Integer> responseWeights;
     private List<CrossProtocolScenario> crossProtocolScenarios;
     private List<CaptureRule> capture;
     private String namespace;
@@ -637,6 +638,23 @@ public class Expectation extends ObjectWithJsonToString {
         return this;
     }
 
+    public List<Integer> getResponseWeights() {
+        return responseWeights != null ? Collections.unmodifiableList(responseWeights) : null;
+    }
+
+    /**
+     * Specify the relative weight of each response in {@code httpResponses} (index-aligned), used when
+     * {@link ResponseMode#WEIGHTED} selection is active. A missing or {@code null} weight defaults to 1.
+     * Weights are ignored unless the response mode is {@code WEIGHTED}.
+     */
+    public Expectation withResponseWeights(List<Integer> responseWeights) {
+        if (responseWeights != null && !responseWeights.isEmpty()) {
+            this.responseWeights = new ArrayList<>(responseWeights);
+            this.hashCode = 0;
+        }
+        return this;
+    }
+
     public Expectation withBeforeActions(AfterAction... beforeActions) {
         if (beforeActions != null && beforeActions.length > 0) {
             this.beforeActions = new ArrayList<>(Arrays.asList(beforeActions));
@@ -907,9 +925,45 @@ public class Expectation extends ObjectWithJsonToString {
         if (responseMode == ResponseMode.RANDOM) {
             return httpResponses.get(ThreadLocalRandom.current().nextInt(httpResponses.size()));
         }
+        if (responseMode == ResponseMode.WEIGHTED) {
+            return selectWeightedResponse();
+        }
         Integer consumed = lastConsumedCount.get();
         int count = Math.max(0, (consumed != null ? consumed : matchCount.get()) - 1);
         return httpResponses.get(count % httpResponses.size());
+    }
+
+    /**
+     * Selects a response with probability proportional to its weight using cumulative-weight random
+     * selection. A missing or non-positive weight is treated as 1. If the total effective weight is
+     * non-positive (which cannot happen given the floor-of-1 per response, but is guarded defensively),
+     * selection falls back to uniform random.
+     */
+    @JsonIgnore
+    private HttpResponse selectWeightedResponse() {
+        int size = httpResponses.size();
+        int total = 0;
+        int[] effectiveWeights = new int[size];
+        for (int i = 0; i < size; i++) {
+            Integer weight = (responseWeights != null && i < responseWeights.size()) ? responseWeights.get(i) : null;
+            int effective = (weight != null && weight > 0) ? weight : 1;
+            effectiveWeights[i] = effective;
+            total += effective;
+        }
+        if (total <= 0) {
+            // defensive uniform fallback
+            return httpResponses.get(ThreadLocalRandom.current().nextInt(size));
+        }
+        int target = ThreadLocalRandom.current().nextInt(total);
+        int cumulative = 0;
+        for (int i = 0; i < size; i++) {
+            cumulative += effectiveWeights[i];
+            if (target < cumulative) {
+                return httpResponses.get(i);
+            }
+        }
+        // unreachable given target < total, but keep the compiler and edge-cases happy
+        return httpResponses.get(size - 1);
     }
 
     @JsonIgnore
@@ -1259,7 +1313,8 @@ public class Expectation extends ObjectWithJsonToString {
             .thenRespondWithDns(dnsResponse)
             .thenError(httpError)
             .thenRespond(httpResponses)
-            .withResponseMode(responseMode);
+            .withResponseMode(responseMode)
+            .withResponseWeights(responseWeights);
         if (beforeActions != null) {
             clone.beforeActions = new ArrayList<>(beforeActions);
         }
@@ -1326,6 +1381,7 @@ public class Expectation extends ObjectWithJsonToString {
             Objects.equals(steps, that.steps) &&
             Objects.equals(httpResponses, that.httpResponses) &&
             Objects.equals(responseMode, that.responseMode) &&
+            Objects.equals(responseWeights, that.responseWeights) &&
             Objects.equals(namespace, that.namespace) &&
             Objects.equals(scenarioName, that.scenarioName) &&
             Objects.equals(scenarioState, that.scenarioState) &&
@@ -1337,7 +1393,7 @@ public class Expectation extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, namespace, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios, capture);
+            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, responseWeights, namespace, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios, capture);
         }
         return hashCode;
     }

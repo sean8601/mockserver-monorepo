@@ -53,7 +53,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Dev mode | `devMode` |
 | Memory usage | `maxExpectations`, `maxLogEntries`, `maxWebSocketExpectations`, `outputMemoryUsageCsv` |
 | HTTP behaviour | `nioEventLoopThreadCount`, `actionHandlerThreadCount`, `webSocketClientEventLoopThreadCount`, `clientNioEventLoopThreadCount`, `streamingResponsesEnabled`, `maxStreamingCaptureBytes` |
-| Initialisation / OpenAPI | `initializationClass`, `initializationJsonPath`, `persistExpectations`, `persistedExpectationsPath`, `openAPIContextPathPrefix`, `openAPIResponseValidation`, `generateRealisticExampleValues`, `validateProxyOpenAPISpec`, `validateProxyEnforce` |
+| Initialisation / OpenAPI | `initializationClass`, `initializationJsonPath`, `persistExpectations`, `persistedExpectationsPath`, `openAPIContextPathPrefix`, `openAPIResponseValidation`, `generateRealisticExampleValues`, `validateProxyOpenAPISpec`, `validateProxyEnforce`, `failOnInitializationError` |
 | CORS | `enableCORSForAPI`, `enableCORSForAllResponses`, `corsAllowOrigin`, `corsAllowMethods`, `corsAllowHeaders`, `corsAllowCredentials` |
 | Default response headers | `defaultResponseHeaders` |
 | Proxy auth | `forwardHttpsProxy`, `forwardSocksProxy`, `proxyAuthenticationUsername`, `proxyAuthenticationPassword`, `proxyAuthenticationRealm` |
@@ -89,6 +89,23 @@ The example file documents the most commonly tuned properties (≈220 lines). Fo
 Opt-in (default `false`). When `true`, MockServer masks sensitive header values — `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` (which also covers bearer/token credentials carried in those headers) — with `***REDACTED***` on the recorded-expectation retrieval path (`HttpState.postProcessRecordedExpectations`). Because that path feeds every retrieve format, redaction covers retrieve-as-JSON, retrieve-as-code (generated client code), and persisted recorded JSON. Redaction reuses `FixtureRedactor` (the same masking already applied on the import path) and operates on copies, so the live event log is never mutated. On this path it uses the constraint-preserving variant (`redact(..., preserveConstraints=true)`), so the redacted recordings keep their original `times`, `timeToLive`, `priority`, and `id` — only the sensitive values are masked.
 
 **Trade-off:** a redacted recorded expectation can no longer replay against an upstream that requires the masked credential, so this is off by default — enable it only when you want to share or persist recordings without leaking proxied secrets.
+
+### `failOnInitializationError`
+
+Opt-in (default `false`). By default a malformed `initializationJsonPath` / `initializationOpenAPIPath` file or a broken `initializationClass` logs a single `WARN` and yields **zero** expectations from that source while the server still finishes starting — a silent, hard-to-notice failure mode in CI and Kubernetes. When `true`, any such load failure throws an `ExpectationInitializerException` from the `HttpState` constructor, so startup fails (non-zero exit / propagated exception) instead of continuing with missing expectations. Use it in pipelines and orchestrated deployments where a half-initialised mock is worse than a crash. The throw happens inside `ExpectationInitializerLoader.failFastIfConfigured(...)`, immediately after the existing WARN log.
+
+This pairs with the readiness signal (below): fail-fast catches a *broken* initializer; the readiness probe gates traffic until a *slow* (but valid) initializer finishes.
+
+## Readiness vs liveness
+
+`PUT /mockserver/status` and the configurable `livenessHttpGetPath` (`GET`) both answer `200` the instant the server port binds — **before** expectation initializers / OpenAPI seeding complete. That is the correct liveness semantic (the process is alive) but the wrong readiness semantic (it should not receive traffic yet).
+
+`GET /mockserver/ready` (alias `GET /ready`) is the readiness signal:
+
+- returns `503 {"status":"NOT_READY"}` until the synchronous `HttpState` constructor (expectation initializers, OpenAPI seeding, gRPC descriptor loading) has completed, then
+- returns `200 {"status":"READY"}` thereafter.
+
+It is backed by a thread-safe `volatile boolean` flipped as the **last** action of the `HttpState` constructor (`HttpState.isInitializationComplete()`), so a partially-constructed server never reports ready. The Helm chart points the readiness probe at `/mockserver/ready` and the liveness probe at the always-200 liveness path (see [helm.md](../infrastructure/helm.md)).
 
 ## Adding a property
 

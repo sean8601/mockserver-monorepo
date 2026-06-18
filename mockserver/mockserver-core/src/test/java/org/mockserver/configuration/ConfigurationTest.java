@@ -1282,6 +1282,32 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetFailOnInitializationError() {
+        boolean original = ConfigurationProperties.failOnInitializationError();
+        try {
+            // then - default value
+            assertThat(configuration.failOnInitializationError(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.failOnInitializationError(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.failOnInitializationError(), equalTo(true));
+            assertThat(System.getProperty("mockserver.failOnInitializationError"), equalTo("true"));
+            assertThat(configuration.failOnInitializationError(), equalTo(true));
+            ConfigurationProperties.failOnInitializationError(original);
+
+            // when - setter
+            configuration.failOnInitializationError(true);
+
+            // then - getter
+            assertThat(configuration.failOnInitializationError(), equalTo(true));
+        } finally {
+            ConfigurationProperties.failOnInitializationError(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetPersistExpectations() {
         boolean original = ConfigurationProperties.persistExpectations();
         try {

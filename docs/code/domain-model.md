@@ -437,7 +437,7 @@ These endpoints are handled in `HttpState.handleScenarioPut()`, `HttpState.handl
 
 #### Sequential/Cycling Responses (`httpResponses`)
 
-An expectation can return multiple responses by setting `httpResponses` (a `List<HttpResponse>`) instead of `httpResponse`. Each match returns the next response, cycling back to the first after the last. The `responseMode` field (`ResponseMode.SEQUENTIAL` or `ResponseMode.RANDOM`) controls selection. Sequential mode uses `(matchCount - 1) % size` because `matchCount` is incremented in `consumeMatch()` before `getPrimaryAction()` is called.
+An expectation can return multiple responses by setting `httpResponses` (a `List<HttpResponse>`) instead of `httpResponse`. Each match returns the next response, cycling back to the first after the last. The `responseMode` field (`ResponseMode.SEQUENTIAL`, `ResponseMode.RANDOM`, or `ResponseMode.WEIGHTED`) controls selection. Sequential mode uses `(matchCount - 1) % size` because `matchCount` is incremented in `consumeMatch()` before `getPrimaryAction()` is called. `WEIGHTED` mode selects probabilistically using the index-aligned `responseWeights` list (`List<Integer>`); a missing or non-positive weight defaults to `1`, and a non-positive total falls back to uniform random.
 
 #### Before & After Actions (`beforeActions` / `afterActions`)
 

@@ -173,6 +173,34 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
     for interactive resolution. Omitting <span class="inline_code">clientId</span> returns a 400 error.
 </p>
 
+<h3>Conditional breakpoints (skip the first N hits)</h3>
+
+<p>
+    By default a breakpoint pauses <em>every</em> matching request. Add an optional
+    <span class="inline_code">skipCount</span> to skip the first N matching hits and only start pausing
+    afterwards — useful when the request you want to inspect is, say, the third retry or the tenth call
+    in a loop. The breakpoint still matches on every hit; it just does not pause until it has been hit
+    more than <span class="inline_code">skipCount</span> times.
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code"># Do NOT pause on the first 2 matching requests; pause from the 3rd onward
+curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest": { "path": "/api/.*" },
+    "phases": ["REQUEST"],
+    "clientId": "my-ws-client-id",
+    "skipCount": 2
+  }'
+</code></pre>
+
+<p>
+    <span class="inline_code">skipCount</span> must be a non-negative integer. <span class="inline_code">0</span> or
+    omitting the field means pause every time (the default). The hit counter is per-breakpoint, so each
+    registered matcher has its own independent count. In the dashboard, the same option is exposed as the
+    <strong>Skip count</strong> field in the matcher-registration form.
+</p>
+
 <h3>Matcher management endpoints</h3>
 
 <table class="table table-bordered table-striped">
@@ -183,13 +211,15 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
         <tr>
             <td>PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matcher</span></td>
-            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "..."}</span> (clientId is required).
+            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "...", "skipCount": N}</span>
+                (clientId is required; <span class="inline_code">skipCount</span> is optional — skip the first N matching hits).
                 Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td>
         </tr>
         <tr>
             <td>GET / PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matchers</span></td>
-            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases, clientId}]}</span>.</td>
+            <td>List all registered matchers. Returns <span class="inline_code">{"matchers": [{id, httpRequest, phases, clientId, skipCount}]}</span>
+                (<span class="inline_code">skipCount</span> present only when set).</td>
         </tr>
         <tr>
             <td>PUT</td>

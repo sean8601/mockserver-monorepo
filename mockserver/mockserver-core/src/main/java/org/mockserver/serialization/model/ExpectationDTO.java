@@ -52,6 +52,8 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<HttpResponseDTO> httpResponses;
     private ResponseMode responseMode;
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<Integer> responseWeights;
     private org.mockserver.serialization.model.TimesDTO times;
     private TimeToLiveDTO timeToLive;
     private String namespace;
@@ -175,6 +177,10 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
                 this.httpResponses = httpResponsesList.stream().map(HttpResponseDTO::new).collect(Collectors.toList());
             }
             this.responseMode = expectation.getResponseMode();
+            List<Integer> responseWeightsList = expectation.getResponseWeights();
+            if (responseWeightsList != null && !responseWeightsList.isEmpty()) {
+                this.responseWeights = new java.util.ArrayList<>(responseWeightsList);
+            }
             Times times = expectation.getTimes();
             if (times != null) {
                 this.times = new org.mockserver.serialization.model.TimesDTO(times);
@@ -347,6 +353,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .withSteps(this.steps != null ? this.steps.stream().map(ExpectationStepDTO::buildObject).collect(Collectors.toList()) : null)
             .thenRespond(this.httpResponses != null ? this.httpResponses.stream().map(HttpResponseDTO::buildObject).collect(Collectors.toList()) : null)
             .withResponseMode(this.responseMode)
+            .withResponseWeights(this.responseWeights)
             .withCrossProtocolScenarios(this.crossProtocolScenarios)
             .withCapture(this.capture != null ? this.capture.stream().map(CaptureRuleDTO::buildObject).collect(Collectors.toList()) : null);
         if (this.crossProtocolScenarios != null) {
@@ -637,6 +644,16 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
 
     public ExpectationDTO setResponseMode(ResponseMode responseMode) {
         this.responseMode = responseMode;
+        return this;
+    }
+
+    public List<Integer> getResponseWeights() {
+        return responseWeights;
+    }
+
+    @JsonSetter("responseWeights")
+    public ExpectationDTO setResponseWeights(List<Integer> responseWeights) {
+        this.responseWeights = responseWeights;
         return this;
     }
 
