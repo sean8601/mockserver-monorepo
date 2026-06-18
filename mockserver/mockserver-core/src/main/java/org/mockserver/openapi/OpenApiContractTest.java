@@ -95,7 +95,8 @@ public class OpenApiContractTest {
                     results.add(new ContractTestResult(
                         operationId, method, pathTemplate, null,
                         0, false,
-                        Collections.singletonList("contract test error: " + e.getMessage())
+                        Collections.singletonList(OpenAPIValidationErrors.unexpectedError(
+                            "contract test for operation " + operationId + " (" + method.toUpperCase() + " " + pathTemplate + ")", e, mockServerLogger))
                     ));
                 }
             }

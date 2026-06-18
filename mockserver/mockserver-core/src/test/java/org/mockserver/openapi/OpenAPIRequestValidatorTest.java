@@ -151,6 +151,22 @@ public class OpenAPIRequestValidatorTest {
             logger
         );
         assertThat(errors, hasSize(1));
-        assertThat(errors.get(0), containsString("OpenAPI request validation error"));
+        // the message names what was being validated and the exception type, and never echoes a bare "null"
+        assertThat(errors.get(0), containsString("OpenAPI request validation failed"));
+        assertThat(errors.get(0), not(endsWith(": null")));
+    }
+
+    @Test
+    public void shouldProduceMeaningfulErrorWhenExceptionMessageIsNull() {
+        // given - an exception with no message (getMessage() == null), e.g. a bare NPE
+        Throwable nullMessageThrowable = new NullPointerException();
+
+        // when - the same helper the validator uses turns it into a caller-facing error string
+        String error = OpenAPIValidationErrors.unexpectedError("OpenAPI request validation", nullMessageThrowable, logger);
+
+        // then - the context AND the exception type are present, and there is no literal "null"
+        assertThat(error, containsString("OpenAPI request validation"));
+        assertThat(error, containsString("NullPointerException"));
+        assertThat(error, not(containsString("null")));
     }
 }

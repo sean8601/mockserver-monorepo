@@ -136,9 +136,44 @@ public class OpenAPIResponseValidatorTest {
         // when
         List<String> errors = OpenAPIResponseValidator.validate(specWithNoDefault, "testOp", response, mockServerLogger);
 
-        // then
+        // then - the message names the requested status code AND the statuses that ARE defined
         assertThat(errors, hasSize(1));
         assertThat(errors.get(0), containsString("response status code 404 not defined"));
+        assertThat(errors.get(0), containsString("defined response status codes are"));
+        assertThat(errors.get(0), containsString("200"));
+    }
+
+    @Test
+    public void shouldProduceMeaningfulErrorWhenExceptionMessageIsNull() {
+        // given - an exception with no message (getMessage() == null), e.g. a bare NPE
+        Throwable nullMessageThrowable = new NullPointerException();
+
+        // when - the same helper the validator uses turns it into a caller-facing error string
+        String error = OpenAPIValidationErrors.unexpectedError("OpenAPI response validation for operation showPetById", nullMessageThrowable, mockServerLogger);
+
+        // then - the operation context AND the exception type are present, and there is no literal "null"
+        assertThat(error, containsString("OpenAPI response validation for operation showPetById"));
+        assertThat(error, containsString("NullPointerException"));
+        assertThat(error, not(containsString("null")));
+    }
+
+    @Test
+    public void shouldBoundAndSingleLineAnOversizedExceptionMessage() {
+        // given - an exception whose message is huge and multi-line (untrusted / pathological)
+        StringBuilder huge = new StringBuilder("line one\nline two\t");
+        for (int i = 0; i < 5_000; i++) {
+            huge.append("x");
+        }
+        Throwable throwable = new RuntimeException(huge.toString());
+
+        // when
+        String error = OpenAPIValidationErrors.unexpectedError("OpenAPI response validation for operation listPets", throwable, mockServerLogger);
+
+        // then - the message is single-line and bounded, but still meaningful
+        assertThat(error, containsString("OpenAPI response validation for operation listPets"));
+        assertThat(error, containsString("RuntimeException"));
+        assertThat("must be single line", error, not(containsString("\n")));
+        assertThat("must be bounded", error.length(), lessThan(500));
     }
 
     @Test

@@ -40,7 +40,7 @@ public class OpenAPIRequestValidator {
             Operation operation = matchedOperation.get();
             validateRequestBody(operation, request, logger, errors);
         } catch (Throwable throwable) {
-            errors.add("OpenAPI request validation error: " + throwable.getMessage());
+            errors.add(OpenAPIValidationErrors.unexpectedError("OpenAPI request validation", throwable, logger));
         }
         return errors;
     }
@@ -157,7 +157,7 @@ public class OpenAPIRequestValidator {
                 errors.add("request body validation error: " + validationResult);
             }
         } catch (Throwable throwable) {
-            errors.add("failed to validate request body against schema: " + throwable.getMessage());
+            errors.add(OpenAPIValidationErrors.unexpectedError("validating request body against schema", throwable, logger));
         }
     }
 }

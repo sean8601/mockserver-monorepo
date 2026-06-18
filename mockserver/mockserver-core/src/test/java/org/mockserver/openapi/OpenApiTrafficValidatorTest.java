@@ -218,6 +218,12 @@ public class OpenApiTrafficValidatorTest {
         assertThat(results, hasSize(2));
         assertThat(results.get(0).isPassed(), is(false));
         assertThat(results.get(0).getRequestErrors(), is(not(empty())));
+        // the error names what was being validated and the exception type, never a bare "null"
+        String error = results.get(0).getRequestErrors().get(0);
+        assertThat(error, containsString("OpenAPI traffic validation"));
+        assertThat(error, containsString("NullPointerException"));
+        // must never degrade to a bare "...: null" (the empty-message case)
+        assertThat(error, not(endsWith(": null")));
         assertThat(results.get(1).isPassed(), is(true));
     }
 

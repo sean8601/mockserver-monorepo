@@ -78,14 +78,17 @@ public class OpenAPIResponseValidator {
             }
 
             if (apiResponse == null) {
-                errors.add("response status code " + statusCode + " not defined in OpenAPI spec for operation " + operationId);
+                String availableStatuses = operation.getResponses() != null && !operation.getResponses().isEmpty()
+                    ? String.join(", ", operation.getResponses().keySet())
+                    : "none";
+                errors.add("response status code " + statusCode + " not defined in OpenAPI spec for operation " + operationId + " - defined response status codes are " + availableStatuses);
                 return errors;
             }
 
-            validateResponseBody(apiResponse, response, logger, errors);
-            validateResponseHeaders(apiResponse, response, logger, errors);
+            validateResponseBody(apiResponse, operationId, response, logger, errors);
+            validateResponseHeaders(apiResponse, operationId, response, logger, errors);
         } catch (Throwable throwable) {
-            errors.add("OpenAPI response validation error: " + throwable.getMessage());
+            errors.add(OpenAPIValidationErrors.unexpectedError("OpenAPI response validation for operation " + operationId, throwable, logger));
         }
         return errors;
     }
@@ -105,7 +108,7 @@ public class OpenAPIResponseValidator {
     }
 
     @SuppressWarnings("unchecked")
-    private static void validateResponseBody(ApiResponse apiResponse, HttpResponse response, MockServerLogger logger, List<String> errors) {
+    private static void validateResponseBody(ApiResponse apiResponse, String operationId, HttpResponse response, MockServerLogger logger, List<String> errors) {
         if (apiResponse.getContent() == null || apiResponse.getContent().isEmpty()) {
             return;
         }
@@ -145,12 +148,12 @@ public class OpenAPIResponseValidator {
                 errors.add("response body validation error: " + validationResult);
             }
         } catch (Throwable throwable) {
-            errors.add("failed to validate response body against schema: " + throwable.getMessage());
+            errors.add(OpenAPIValidationErrors.unexpectedError("validating response body against schema for operation " + operationId, throwable, logger));
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static void validateResponseHeaders(ApiResponse apiResponse, HttpResponse response, MockServerLogger logger, List<String> errors) {
+    private static void validateResponseHeaders(ApiResponse apiResponse, String operationId, HttpResponse response, MockServerLogger logger, List<String> errors) {
         if (apiResponse.getHeaders() == null || apiResponse.getHeaders().isEmpty()) {
             return;
         }
@@ -200,7 +203,7 @@ public class OpenAPIResponseValidator {
                     errors.add("response header " + headerName + " validation error: " + validationResult);
                 }
             } catch (Throwable throwable) {
-                errors.add("failed to validate response header " + headerName + " against schema: " + throwable.getMessage());
+                errors.add(OpenAPIValidationErrors.unexpectedError("validating response header " + headerName + " against schema for operation " + operationId, throwable, logger));
             }
         }
     }

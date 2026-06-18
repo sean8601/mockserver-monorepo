@@ -50,7 +50,8 @@ public class OpenApiTrafficValidator {
                 String requestMethod = request != null && request.getMethod() != null ? request.getMethod().getValue().toUpperCase() : "GET";
                 results.add(new TrafficValidationResult(
                     requestMethod, requestPath, null,
-                    Collections.singletonList("OpenAPI traffic validation error: " + throwable.getMessage()),
+                    Collections.singletonList(OpenAPIValidationErrors.unexpectedError(
+                        "OpenAPI traffic validation for " + requestMethod + " " + requestPath, throwable, mockServerLogger)),
                     Collections.emptyList(),
                     false
                 ));
