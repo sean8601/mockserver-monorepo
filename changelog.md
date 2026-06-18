@@ -429,6 +429,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
+- **Notted key in `MATCHING_KEY` mode now asserts key-absence**: a notted matcher key (e.g. `!X`) used with
+  `KeyMatchStyle.MATCHING_KEY` (for headers/query/cookies) previously aggregated values from every key that
+  was not `X` and matched against that bag — a meaningless result. It now means "no key equal to `X` is
+  present", consistent with the default `SUB_SET` behaviour.
+- **Clearer "closest expectation" diagnostics**: the "closest expectation matched X/Y fields" log no longer
+  counts non-HTTP fields (DNS/binary/OpenAPI) in the denominator for an HTTP request, and no longer collapses
+  the matched-field count to a misleading near-maximum when fail-fast matching is enabled — the count now
+  reflects the fields actually compared. This is a diagnostic-only change (INFO level); matching behaviour is
+  unchanged.
+- **Control-plane body filter hardening**: a control-plane body filter (used by clear/verify/retrieve) no
+  longer treats an absent body via stringification, removing a latent case where a literal `"null"` body
+  filter could match a request with no body.
 - **Scenario state no longer advances when a matching expectation is skipped**: a scenario expectation
   whose scenario state matched but which was then skipped by a percentage (`withPercentage`) gate
   previously advanced the scenario to its next state even though it was never served (a
