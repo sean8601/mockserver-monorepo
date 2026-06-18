@@ -14,6 +14,61 @@ sitemap:
 
 <p>MockServer's <strong>AsyncAPI broker mocking</strong> lets you drive Kafka and MQTT brokers with realistic example messages, all derived directly from an <a target="_blank" href="https://www.asyncapi.com/" rel="noopener noreferrer">AsyncAPI</a> 2.x or 3.x specification. MockServer can also <strong>subscribe</strong> to broker channels to record incoming messages for verification &mdash; mirroring how HTTP requests are recorded.</p>
 
+<a id="asyncapi_quickstart" class="anchor" href="#asyncapi_quickstart">&nbsp;</a>
+
+<h2>See it in action</h2>
+
+<p>The fastest way to try AsyncAPI mocking: supply a spec and a Kafka bootstrap address and MockServer publishes example messages immediately.</p>
+
+<ol>
+    <li><strong>Start Kafka</strong> (for example with Docker Compose — a minimal single-node Kafka is sufficient).</li>
+    <li><strong>Load your AsyncAPI spec</strong> and tell MockServer to publish example messages on load and record everything that arrives on each channel:</li>
+</ol>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/asyncapi \
+  -H "Content-Type: application/json" \
+  -d '{
+    "spec": {
+      "asyncapi": "2.6.0",
+      "info": { "title": "Orders API", "version": "1.0.0" },
+      "channels": {
+        "orders": {
+          "publish": {
+            "message": {
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "orderId": { "type": "integer" },
+                  "status": { "type": "string", "enum": ["pending", "shipped"] }
+                },
+                "required": ["orderId"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "brokerConfig": {
+      "kafkaBootstrapServers": "localhost:9092",
+      "publishOnLoad": true,
+      "consume": true
+    }
+  }'</code></pre>
+
+<ol start="3">
+    <li><strong>Verify a message was published</strong> to the <span class="inline_code">orders</span> channel:</li>
+</ol>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/asyncapi/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel": "orders",
+    "count": { "atLeast": 1 }
+  }'
+# 202 Accepted = verification passed</code></pre>
+
+<p>For a Java usage example and runnable code see the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples" rel="noopener noreferrer">examples folder</a>. The full REST API reference, schema validation details, and MQTT configuration follow below.</p>
+
 <a id="asyncapi_how_it_works" class="anchor" href="#asyncapi_how_it_works">&nbsp;</a>
 
 <h2>How it works</h2>

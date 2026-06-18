@@ -31,6 +31,49 @@ layout: default
 
 <pre class="prettyprint code"><code class="code">docker run -d --rm -p <span class="numeric_literal">1080</span>:<span class="numeric_literal">1080</span> mockserver/mockserver</code></pre>
 
+<a id="first_mock" class="anchor" href="#first_mock">&nbsp;</a>
+
+<h2>Your first mock in 30 seconds</h2>
+
+<p>Once MockServer is running, create an expectation and call it:</p>
+
+<pre class="prettyprint code"><code class="code"># 1. Create an expectation — return "Hello" for GET /hello
+curl -s -X PUT http://localhost:1080/mockserver/expectation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest":  { "method": "GET", "path": "/hello" },
+    "httpResponse": { "statusCode": 200, "body": "Hello from MockServer!" }
+  }'
+
+# 2. Call the mock
+curl http://localhost:1080/hello
+# Hello from MockServer!</code></pre>
+
+<p>That's it. Read the <a href="/mock_server/getting_started.html">Getting Started guide</a> to learn how to match on headers, body, query parameters, and more, and how to verify what your code sent.</p>
+
+<a id="quick_links" class="anchor" href="#quick_links">&nbsp;</a>
+
+<h2>Quick links by use case</h2>
+
+<table class="comparison_table">
+    <thead>
+        <tr>
+            <th>I want to&hellip;</th>
+            <th>Start here</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr><td>Write unit tests for a REST service</td><td><a href="/mock_server/getting_started.html">Getting Started</a></td></tr>
+        <tr><td>Test an AI application that calls an LLM</td><td><a href="/mock_server/llm_response_mocking.html">LLM Response Mocking</a></td></tr>
+        <tr><td>Inject chaos / test resilience</td><td><a href="/mock_server/chaos_testing.html">Chaos Testing</a></td></tr>
+        <tr><td>Assert which requests my code sent</td><td><a href="/mock_server/verification.html">Verification</a></td></tr>
+        <tr><td>Mock a gRPC service</td><td><a href="/mock_server/grpc_mocking.html">gRPC Mocking</a></td></tr>
+        <tr><td>Debug live traffic with breakpoints</td><td><a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> &amp; <a href="/proxy/getting_started.html">Proxying</a></td></tr>
+        <tr><td>Model multi-step API flows</td><td><a href="/mock_server/creating_expectations.html#stateful_scenarios">Stateful Scenarios</a></td></tr>
+        <tr><td>Import a Postman collection or HAR file</td><td><a href="/mock_server/importing_expectations.html">Importing Expectations</a></td></tr>
+    </tbody>
+</table>
+
 <a id="what_is_mockserver" class="anchor" href="#what_is_mockserver">&nbsp;</a>
 
 <h2>What is MockServer</h2>

@@ -12,4 +12,51 @@ sitemap:
   lastmod: 2026-05-12T00:00:00+00:00
 ---
 
+<a id="grpc_quickstart" class="anchor" href="#grpc_quickstart">&nbsp;</a>
+
+<h2>See it in action</h2>
+
+<p>MockServer converts gRPC (protobuf over HTTP/2) to JSON internally so you can mock gRPC services with the same expectation format used for REST. Here is the minimal end-to-end flow:</p>
+
+<ol>
+    <li><strong>Compile your <span class="inline_code">.proto</span> to a descriptor set</strong> and mount it in Docker (or point at the directory with <span class="inline_code">MOCKSERVER_GRPC_PROTO_DIRECTORY</span>):</li>
+</ol>
+
+<pre class="prettyprint code"><code class="code">protoc --descriptor_set_out=service.dsc --include_imports service.proto
+
+docker run -d --rm \
+  -p 1080:1080 \
+  -v $(pwd)/service.dsc:/protos/service.dsc \
+  -e MOCKSERVER_GRPC_DESCRIPTOR_DIRECTORY=/protos \
+  mockserver/mockserver</code></pre>
+
+<ol start="2">
+    <li><strong>Create a gRPC expectation</strong> (MockServer adds <span class="inline_code">x-grpc-service</span> and <span class="inline_code">x-grpc-method</span> headers automatically; match on them to target a specific RPC):</li>
+</ol>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/expectation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest": {
+      "method": "POST",
+      "path": "/com.example.grpc.GreetingService/Greeting",
+      "headers": {
+        "x-grpc-service": ["com.example.grpc.GreetingService"],
+        "x-grpc-method": ["Greeting"]
+      },
+      "body": { "type": "JSON", "json": "{\"name\": \"World\"}" }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": { "grpc-status": ["0"] },
+      "body": "{\"greeting\": \"Hello World\"}"
+    }
+  }'</code></pre>
+
+<ol start="3">
+    <li><strong>Call the gRPC endpoint</strong> from your application or a gRPC client &mdash; MockServer encodes the JSON response back to protobuf binary and returns it as a valid gRPC response.</li>
+</ol>
+
+<p>For runnable Java, Python, and Ruby code examples see the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/java" rel="noopener noreferrer">examples folder</a>. The detailed reference (streaming RPCs, descriptor upload, Docker configuration) follows below.</p>
+
 {% include_subpage _includes/grpc_mocking.html %}

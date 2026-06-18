@@ -11,6 +11,24 @@ changefreq: 'monthly'
 lastmod: 2019-11-10T08:00:00+01:00
 ---
 
+<a id="why_response_templates" class="anchor" href="#why_response_templates">&nbsp;</a>
+
+<h2>Why use response templates?</h2>
+
+<p>A static mock always returns the same body regardless of what the client sent. Response templates let the mock <strong>react to the incoming request</strong> &mdash; echoing a request field back in the response, generating a unique ID, or returning different data depending on a query parameter. This makes a single expectation cover an entire family of requests without enumerating every combination.</p>
+
+<p>For example, a Mustache template can echo the requested user ID straight back in the response body:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpRequest":  { "path": "/users/{id}" },
+  "httpResponseTemplate": {
+    "templateType": "MUSTACHE",
+    "template": "{\"id\": \"{% raw %}{{request.pathParameters.id.[0]}}{% endraw %}\", \"name\": \"User {% raw %}{{request.pathParameters.id.[0]}}{% endraw %}\"}"
+  }
+}</code></pre>
+
+<p>Templates are evaluated at request time, so the response is always fresh. See the sections below for the full template format reference, available variables, and helper objects.</p>
+
 <a id="response_templates" class="anchor" href="#response_templates">&nbsp;</a>
 
 <h2>Response Templates</h2>

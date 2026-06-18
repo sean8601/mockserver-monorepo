@@ -14,6 +14,41 @@ keywords: llm mocking, openai mock, anthropic mock, gemini mock, bedrock mock, a
 ---
 
 <p>
+    When you test an application that calls an LLM, you face two problems: the real API is slow, costs money,
+    and returns different results every run. MockServer solves both: tell it which provider your application targets
+    and what the completion should contain, and it returns a byte-for-byte correct response &mdash; including the
+    full streaming SSE framing &mdash; without touching the network.
+</p>
+
+<p>
+    <strong>In practice:</strong> point your application at MockServer instead of <span class="inline_code">api.openai.com</span>
+    (or the equivalent endpoint for your provider), create one expectation, and your test gets a deterministic,
+    instant, free LLM response every time.
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code"># Start MockServer
+docker run -d --rm -p 1080:1080 mockserver/mockserver
+
+# Create an OpenAI-compatible completion mock
+curl -s -X PUT http://localhost:1080/mockserver/expectation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest":  { "method": "POST", "path": "/v1/chat/completions" },
+    "httpLlmResponse": {
+      "provider": "OPENAI",
+      "model": "gpt-4o",
+      "completion": {
+        "text": "MockServer is a free, open-source HTTP mock server.",
+        "stopReason": "stop",
+        "usage": { "inputTokens": 12, "outputTokens": 9 }
+      }
+    }
+  }'
+
+# Your application can now call http://localhost:1080/v1/chat/completions
+# and receive a correctly formatted OpenAI response.</code></pre>
+
+<p>
     MockServer can mock LLM API responses from any major provider using the <span class="inline_code">httpLlmResponse</span> action.
     You describe the completion in a provider-neutral format and MockServer encodes it into the correct wire format
     for the target provider &mdash; headers, JSON structure, streaming framing, and all.

@@ -11,6 +11,130 @@ sitemap:
   lastmod: 2019-11-10T08:00:00+01:00
 ---
 
+<a id="common_configurations" class="anchor" href="#common_configurations">&nbsp;</a>
+
+<h2>Common configurations</h2>
+
+<p>Copy-paste one of these blocks as a starting point. All values can be overridden by system properties or environment variables at runtime.</p>
+
+<h3>Local development</h3>
+
+<p>Low memory footprint, verbose logs, CORS enabled for browser-based testing:</p>
+
+<pre class="prettyprint code"><code class="code"># mockserver.properties — local dev
+mockserver.devMode=true
+mockserver.logLevel=DEBUG
+mockserver.enableCORSForAPI=true
+mockserver.enableCORSForAllResponses=true</code></pre>
+
+<p>Or with Docker:</p>
+
+<pre class="prettyprint code"><code class="code">docker run -d --rm -p 1080:1080 \
+  -e MOCKSERVER_DEV_MODE=true \
+  -e MOCKSERVER_LOG_LEVEL=DEBUG \
+  -e MOCKSERVER_ENABLE_CORS_FOR_API=true \
+  -e MOCKSERVER_ENABLE_CORS_FOR_ALL_RESPONSES=true \
+  mockserver/mockserver</code></pre>
+
+<h3>CI (shared, parallel test runs)</h3>
+
+<p>Cap memory so multiple MockServer instances can run on the same CI node, load expectations from a JSON file, and reduce log noise:</p>
+
+<pre class="prettyprint code"><code class="code"># mockserver.properties — CI
+mockserver.logLevel=WARN
+mockserver.maxExpectations=1024
+mockserver.maxLogEntries=4096
+mockserver.initializationJsonPath=/ci/expectations.json</code></pre>
+
+<h3>Production / shared team instance</h3>
+
+<p>Higher limits, metrics enabled, CORS off, TLS enforced (supply your own certificates):</p>
+
+<pre class="prettyprint code"><code class="code"># mockserver.properties — production
+mockserver.logLevel=INFO
+mockserver.maxExpectations=16384
+mockserver.maxLogEntries=65536
+mockserver.metricsEnabled=true
+mockserver.enableCORSForAPI=false
+mockserver.enableCORSForAllResponses=false</code></pre>
+
+<a id="top10_properties" class="anchor" href="#top10_properties">&nbsp;</a>
+
+<h2>Top 10 most-changed properties</h2>
+
+<table class="comparison_table">
+    <thead>
+        <tr>
+            <th>Property</th>
+            <th>Env variable</th>
+            <th>Default</th>
+            <th>Why you'd change it</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="inline_code">devMode</span></td>
+            <td><span class="inline_code">MOCKSERVER_DEV_MODE</span></td>
+            <td><span class="this_value">false</span></td>
+            <td>Enable on your laptop to cap memory (1k expectations / 1k log entries) and avoid wasted heap</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">logLevel</span></td>
+            <td><span class="inline_code">MOCKSERVER_LOG_LEVEL</span></td>
+            <td><span class="this_value">INFO</span></td>
+            <td>Set to <span class="inline_code">DEBUG</span> while debugging a mismatch; set to <span class="inline_code">WARN</span> in CI to reduce noise</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">maxExpectations</span></td>
+            <td><span class="inline_code">MOCKSERVER_MAX_EXPECTATIONS</span></td>
+            <td><span class="this_value">heap-based (up to 15,000)</span></td>
+            <td>Lower to reduce memory on constrained hosts; use a power-of-2 to avoid wasted ring-buffer slots</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">maxLogEntries</span></td>
+            <td><span class="inline_code">MOCKSERVER_MAX_LOG_ENTRIES</span></td>
+            <td><span class="this_value">heap-based (up to 100,000)</span></td>
+            <td>Lower for high-throughput or large-body workloads; each HTTP request generates 2–3 log entries</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">maxSocketTimeout</span></td>
+            <td><span class="inline_code">MOCKSERVER_MAX_SOCKET_TIMEOUT</span></td>
+            <td><span class="this_value">20,000 ms</span></td>
+            <td>Increase when your system-under-test is slow; decrease to fail fast in unit tests</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">enableCORSForAPI</span></td>
+            <td><span class="inline_code">MOCKSERVER_ENABLE_CORS_FOR_API</span></td>
+            <td><span class="this_value">false</span></td>
+            <td>Enable when calling the MockServer REST API from a browser-based test</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">enableCORSForAllResponses</span></td>
+            <td><span class="inline_code">MOCKSERVER_ENABLE_CORS_FOR_ALL_RESPONSES</span></td>
+            <td><span class="this_value">false</span></td>
+            <td>Enable to allow browsers to receive mock responses from a different origin</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">initializationJsonPath</span></td>
+            <td><span class="inline_code">MOCKSERVER_INITIALIZATION_JSON_PATH</span></td>
+            <td><span class="this_value">(none)</span></td>
+            <td>Load a set of expectations from a JSON file when MockServer starts — useful for shared or CI setups</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">metricsEnabled</span></td>
+            <td><span class="inline_code">MOCKSERVER_METRICS_ENABLED</span></td>
+            <td><span class="this_value">false</span></td>
+            <td>Enable to expose Prometheus metrics at <span class="inline_code">/mockserver/metrics</span></td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">proxyRemotePort</span> + <span class="inline_code">proxyRemoteHost</span></td>
+            <td><span class="inline_code">MOCKSERVER_PROXY_REMOTE_PORT</span></td>
+            <td><span class="this_value">(none)</span></td>
+            <td>Forward unmatched requests to a real upstream server, turning MockServer into a selective proxy</td>
+        </tr>
+    </tbody>
+</table>
+
 <h2>Settings Properties</h2>
 
 <p><strong>Note:</strong> configuration properties loaded from property files and environment variables are read once at startup and cached. Changes to property files or environment variables after MockServer has started will not take effect. To change configuration at runtime, use the REST API (<span class="inline_code">PUT /mockserver/configuration</span>) or programmatic <span class="inline_code">ConfigurationProperties</span> method calls. System property changes via <span class="inline_code">ConfigurationProperties</span> static methods are read dynamically for properties that support runtime changes (e.g., <span class="inline_code">logLevel</span>).</p>
