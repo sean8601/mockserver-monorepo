@@ -91,18 +91,29 @@ public class XmlExampleSerializer {
                     sharedChildren.put((Example) obj, sharedChildren.containsKey(obj));
                 }
             }
-            for (String key : or.keySet()) {
-                Object obj = or.get(key);
-                if (obj instanceof Example) {
-                    Example example = (Example) obj;
-                    // apply the element name only for the duration of the recursive write, then restore it
-                    // so a shared instance is never permanently renamed (mirrors the ArrayExample branch)
-                    String savedName = example.getName();
-                    if (Boolean.TRUE.equals(sharedChildren.get(example)) || savedName == null) {
-                        example.setName(key);
+            // Two passes: write ATTRIBUTE children first, then ELEMENT children. StAX requires every
+            // attribute be written immediately after the start element and before ANY child element
+            // content — so an attribute property declared AFTER an element property (a routine authoring
+            // order) would otherwise throw "Attribute not associated with any element" and the whole body
+            // would be lost. Property-declaration order is irrelevant to attribute placement in XML.
+            for (boolean attributePass : new boolean[]{true, false}) {
+                for (String key : or.keySet()) {
+                    Object obj = or.get(key);
+                    if (obj instanceof Example) {
+                        Example example = (Example) obj;
+                        boolean isAttribute = example.getAttribute() != null && example.getAttribute();
+                        if (isAttribute != attributePass) {
+                            continue;
+                        }
+                        // apply the element name only for the duration of the recursive write, then restore it
+                        // so a shared instance is never permanently renamed (mirrors the ArrayExample branch)
+                        String savedName = example.getName();
+                        if (Boolean.TRUE.equals(sharedChildren.get(example)) || savedName == null) {
+                            example.setName(key);
+                        }
+                        writeTo(writer, example);
+                        example.setName(savedName);
                     }
-                    writeTo(writer, example);
-                    example.setName(savedName);
                 }
             }
             writer.writeEndElement();

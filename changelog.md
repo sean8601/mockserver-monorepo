@@ -305,7 +305,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     explicit `items.xml.name` are named after the array property (e.g. `<tags>`) instead of the literal
     `<array>`, and a recursive `$ref` the parser cannot inline (e.g. `Tree{children:[$ref Tree]}`) now renders
     its items/properties under the property name (`<children>`) rather than the schema component name
-    (`<Tree>`). (Behaviour change for XML
+    (`<Tree>`), and an object that declares an element-typed property *before* an attribute-typed one
+    (`xml.attribute: true`) now renders correctly — attributes are written immediately after the start
+    element regardless of declaration order, instead of aborting the write (`Attribute not associated
+    with any element`) and returning an empty body. (Behaviour change for XML
     responses; JSON responses are unchanged.)
   - **OAS 3.1 multi-type `type` arrays are preserved** when serialising a schema: `type: ["string","null"]`
     now becomes `type: string` + `nullable: true` (and `["string","integer"]` is kept as a Draft-07 type

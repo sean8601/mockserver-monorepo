@@ -1520,4 +1520,25 @@ public class OpenAPIConverterTest {
         assertThat("must NOT render the schema component name as an element", body, not(containsString("<Tree>")));
     }
 
+    @Test
+    public void shouldRenderXmlAttributeDeclaredAfterElementProperty() {
+        // an object whose element property (name) is declared BEFORE its attribute property (id,
+        // xml.attribute: true). StAX requires attributes be written immediately after the start
+        // element and before any child element — so the serializer must write attribute children
+        // first regardless of declaration order, otherwise it throws "Attribute not associated with
+        // any element", the write is aborted and the whole response body comes back null/empty.
+        String specUrlOrPayload = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_xml_attribute_ordering.yaml");
+
+        List<Expectation> actualExpectations = new OpenAPIConverter(mockServerLogger).buildExpectations(specUrlOrPayload, null);
+
+        String body = actualExpectations.stream()
+            .filter(e -> "getTag".equals(((OpenAPIDefinition) e.getHttpRequest()).getOperationId()))
+            .findFirst().orElseThrow(AssertionError::new)
+            .getHttpResponse().getBodyAsString();
+        assertThat("attribute-after-element must not abort the write to an empty body", body, is(notNullValue()));
+        assertThat("body must carry the wrapping element", body, containsString("<Tag"));
+        assertThat("the attribute must be rendered on the element", body, containsString("id=\""));
+        assertThat("the element child must still be present", body, containsString("<name>"));
+    }
+
 }
