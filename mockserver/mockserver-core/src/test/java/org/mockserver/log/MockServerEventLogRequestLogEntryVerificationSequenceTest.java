@@ -96,7 +96,7 @@ public class MockServerEventLogRequestLogEntryVerificationSequenceTest {
     }
 
     @Test
-    public void shouldPassVerificationSequenceWithNoRequest() {
+    public void shouldFailVerificationSequenceWithNoRequest() {
         // when
         mockServerEventLog.add(
             new LogEntry()
@@ -124,14 +124,14 @@ public class MockServerEventLogRequestLogEntryVerificationSequenceTest {
                 .setType(RECEIVED_REQUEST)
         );
 
-        // then
+        // then -- an entirely-empty sequence (no expectationIds, requests or responses) is rejected, not vacuously passed
         assertThat(verify(
                 new VerificationSequence()
                     .withRequests(
 
                     )
             ),
-            is(""));
+            is("No expectations, requests or responses specified in verification sequence"));
     }
 
     @Test

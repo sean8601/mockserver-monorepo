@@ -901,7 +901,7 @@ public abstract class AbstractProxyIntegrationTest {
                 );
             fail("expected exception to be thrown");
         } catch (AssertionError ae) {
-            assertThat(ae.getMessage(), startsWith("Request sequence not found"));
+            assertThat(ae.getMessage(), startsWith("Response sequence not found"));
         }
     }
 

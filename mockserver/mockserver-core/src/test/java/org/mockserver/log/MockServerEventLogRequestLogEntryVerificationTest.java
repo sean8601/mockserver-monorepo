@@ -957,7 +957,7 @@ public class MockServerEventLogRequestLogEntryVerificationTest {
                 .withRequests(request().withPath("path_one"), request().withPath("path_two"))
                 .withResponses(response().withStatusCode(404), response().withStatusCode(200))
         );
-        assertThat(result, containsString("Request sequence not found"));
+        assertThat(result, containsString("Response sequence not found"));
     }
 
     // --- Fix #1: response verification must exclude NO_MATCH_RESPONSE auto-404s ---
