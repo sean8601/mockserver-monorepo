@@ -438,6 +438,49 @@ class AsyncMockServerClient:
                 return [Expectation.from_dict(e) for e in parsed]
         return []
 
+    async def retrieve_expectations_as_code(
+        self, fmt: str = "java", request: HttpRequest | None = None
+    ) -> str:
+        """Retrieve the active expectations as MockServer SDK setup code.
+
+        Returns the builder code that recreates the expectations, generated in
+        the requested language (``fmt`` is one of ``java``, ``javascript``,
+        ``python``, ``go``, ``csharp``, ``ruby``, ``rust`` or ``php``).
+        """
+        body = json.dumps(request.to_dict()) if request else ""
+        status, response_body = await self._request(
+            "PUT",
+            "/mockserver/retrieve",
+            body,
+            {"type": "ACTIVE_EXPECTATIONS", "format": fmt.upper()},
+        )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to retrieve expectations as code (status={status}): {response_body}"
+            )
+        return response_body or ""
+
+    async def retrieve_recorded_expectations_as_code(
+        self, fmt: str = "java", request: HttpRequest | None = None
+    ) -> str:
+        """Retrieve the recorded (proxied) request/response pairs as MockServer
+        SDK setup code, generated in the requested language (``fmt`` is one of
+        ``java``, ``javascript``, ``python``, ``go``, ``csharp``, ``ruby``,
+        ``rust`` or ``php``).
+        """
+        body = json.dumps(request.to_dict()) if request else ""
+        status, response_body = await self._request(
+            "PUT",
+            "/mockserver/retrieve",
+            body,
+            {"type": "RECORDED_EXPECTATIONS", "format": fmt.upper()},
+        )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to retrieve recorded expectations as code (status={status}): {response_body}"
+            )
+        return response_body or ""
+
     async def retrieve_recorded_requests_and_responses(
         self, request: HttpRequest | None = None
     ) -> list[HttpRequestAndHttpResponse]:

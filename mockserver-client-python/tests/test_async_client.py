@@ -341,6 +341,27 @@ class TestRetrieve:
         assert "type=RECORDED_EXPECTATIONS" in MockHandler.last_path
 
     @pytest.mark.asyncio
+    async def test_retrieve_expectations_as_code(self, mock_server):
+        MockHandler.response_body = (
+            'new MockServerClient("localhost", 1080).when(request().withPath("/code"));'
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        code = await client.retrieve_expectations_as_code("java")
+        assert isinstance(code, str)
+        assert "/code" in code
+        assert "type=ACTIVE_EXPECTATIONS" in MockHandler.last_path
+        assert "format=JAVA" in MockHandler.last_path
+
+    @pytest.mark.asyncio
+    async def test_retrieve_recorded_expectations_as_code(self, mock_server):
+        MockHandler.response_body = "# generated python\n"
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        code = await client.retrieve_recorded_expectations_as_code("python")
+        assert isinstance(code, str)
+        assert "type=RECORDED_EXPECTATIONS" in MockHandler.last_path
+        assert "format=PYTHON" in MockHandler.last_path
+
+    @pytest.mark.asyncio
     async def test_retrieve_recorded_requests_and_responses(self, mock_server):
         MockHandler.response_body = json.dumps([
             {

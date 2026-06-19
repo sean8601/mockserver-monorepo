@@ -21,6 +21,8 @@ export type CaCertPemFilePath = string;
 export type KeysToMultiValues = KeyToMultiValue;
 
 export type ClearType = 'EXPECTATIONS' | 'LOG' | 'ALL';
+export type CodeFormat = 'java' | 'javascript' | 'python' | 'go' | 'csharp' | 'ruby' | 'rust' | 'php'
+    | 'JAVA' | 'JAVASCRIPT' | 'PYTHON' | 'GO' | 'CSHARP' | 'RUBY' | 'RUST' | 'PHP';
 
 export interface ClockStatus {
     currentInstant: string;
@@ -138,6 +140,10 @@ export interface MockServerClient {
     retrieveActiveExpectations(pathOrRequestDefinition: PathOrRequestDefinition): Promise<Expectation[]>;
 
     retrieveRecordedExpectations(pathOrRequestDefinition: PathOrRequestDefinition): Promise<Expectation[]>;
+
+    retrieveExpectationsAsCode(format: CodeFormat, pathOrRequestDefinition?: PathOrRequestDefinition): Promise<string>;
+
+    retrieveRecordedExpectationsAsCode(format: CodeFormat, pathOrRequestDefinition?: PathOrRequestDefinition): Promise<string>;
 
     retrieveLogMessages(pathOrRequestDefinition: PathOrRequestDefinition): Promise<string[]>;
 

@@ -502,6 +502,17 @@ type RetrieveFormat string
 const (
 	FormatJSON       RetrieveFormat = "json"
 	FormatLogEntries RetrieveFormat = "log_entries"
+	// Code-generation formats. These return MockServer SDK setup code (the
+	// builder code that recreates the expectations) for the requested client
+	// language, rather than JSON.
+	FormatJava       RetrieveFormat = "java"
+	FormatJavaScript RetrieveFormat = "javascript"
+	FormatPython     RetrieveFormat = "python"
+	FormatGo         RetrieveFormat = "go"
+	FormatCSharp     RetrieveFormat = "csharp"
+	FormatRuby       RetrieveFormat = "ruby"
+	FormatRust       RetrieveFormat = "rust"
+	FormatPHP        RetrieveFormat = "php"
 )
 
 // Retrieve retrieves recorded data from MockServer. The result is the raw JSON
@@ -587,6 +598,31 @@ func (c *Client) RetrieveRecordedExpectations(rb *RequestBuilder) ([]Expectation
 // RetrieveLogMessages retrieves log messages, optionally filtered.
 func (c *Client) RetrieveLogMessages(rb *RequestBuilder) ([]byte, error) {
 	return c.Retrieve(rb, RetrieveLogs, FormatJSON)
+}
+
+// RetrieveExpectationsAsCode retrieves the active expectations as MockServer SDK
+// setup code (the builder code that recreates the expectations) in the requested
+// language. The format is one of the code-generation formats (e.g. FormatJava,
+// FormatJavaScript, FormatPython, FormatGo, FormatCSharp, FormatRuby, FormatRust,
+// FormatPHP). The generated code is returned as a string.
+func (c *Client) RetrieveExpectationsAsCode(rb *RequestBuilder, format RetrieveFormat) (string, error) {
+	data, err := c.Retrieve(rb, RetrieveActiveExpectations, format)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// RetrieveRecordedExpectationsAsCode retrieves the recorded (proxied) request/
+// response pairs as MockServer SDK setup code in the requested language. The
+// format is one of the code-generation formats (e.g. FormatJava, FormatGo). The
+// generated code is returned as a string.
+func (c *Client) RetrieveRecordedExpectationsAsCode(rb *RequestBuilder, format RetrieveFormat) (string, error) {
+	data, err := c.Retrieve(rb, RetrieveRecordedExpectations, format)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // StatusResponse contains the response from the status endpoint.

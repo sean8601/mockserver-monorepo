@@ -438,6 +438,33 @@ impl MockServerClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// Retrieve the active expectations as MockServer SDK setup code (the
+    /// builder code that recreates the expectations) in the requested language.
+    ///
+    /// `format` must be one of the code-generation variants of
+    /// [`RetrieveFormat`] (e.g. [`RetrieveFormat::Java`],
+    /// [`RetrieveFormat::Rust`]). The generated code is returned as a string.
+    pub fn retrieve_expectations_as_code(
+        &self,
+        format: RetrieveFormat,
+        request: Option<&HttpRequest>,
+    ) -> Result<String> {
+        self.do_retrieve(request, RetrieveType::ActiveExpectations, format)
+    }
+
+    /// Retrieve the recorded (proxied) request/response pairs as MockServer SDK
+    /// setup code in the requested language.
+    ///
+    /// `format` must be one of the code-generation variants of
+    /// [`RetrieveFormat`]. The generated code is returned as a string.
+    pub fn retrieve_recorded_expectations_as_code(
+        &self,
+        format: RetrieveFormat,
+        request: Option<&HttpRequest>,
+    ) -> Result<String> {
+        self.do_retrieve(request, RetrieveType::RecordedExpectations, format)
+    }
+
     /// Retrieve log messages matching the optional filter.
     pub fn retrieve_log_messages(&self, request: Option<&HttpRequest>) -> Result<Vec<String>> {
         let text = self.do_retrieve(request, RetrieveType::Logs, RetrieveFormat::LogEntries)?;

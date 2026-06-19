@@ -427,6 +427,31 @@ RSpec.describe MockServer::Client do
   end
 
   # -------------------------------------------------------------------
+  # retrieve_expectations_as_code
+  # -------------------------------------------------------------------
+  describe '#retrieve_expectations_as_code' do
+    it 'returns the generated code string for the requested format' do
+      generated = 'new MockServerClient("localhost", 1080).when(request().withPath("/code"));'
+      stub_request(:put, "#{base_url}/mockserver/retrieve?format=JAVA&type=ACTIVE_EXPECTATIONS")
+        .to_return(status: 200, body: generated)
+
+      result = client.retrieve_expectations_as_code(format: 'java')
+      expect(result).to eq(generated)
+    end
+  end
+
+  describe '#retrieve_recorded_expectations_as_code' do
+    it 'returns the generated code string for the requested format' do
+      generated = "# generated python\n"
+      stub_request(:put, "#{base_url}/mockserver/retrieve?format=PYTHON&type=RECORDED_EXPECTATIONS")
+        .to_return(status: 200, body: generated)
+
+      result = client.retrieve_recorded_expectations_as_code(format: 'python')
+      expect(result).to eq(generated)
+    end
+  end
+
+  # -------------------------------------------------------------------
   # retrieve_recorded_requests_and_responses
   # -------------------------------------------------------------------
   describe '#retrieve_recorded_requests_and_responses' do

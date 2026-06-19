@@ -334,6 +334,8 @@ async function test() {
 
     requestResponse = await client.uploadGrpcDescriptor(Buffer.from([]));
     requestResponse = await client.uploadGrpcDescriptor(new Uint8Array([]));
+    let generatedCode: string = await client.retrieveExpectationsAsCode('java', '/somePath');
+    let recordedCode: string = await client.retrieveRecordedExpectationsAsCode('python');
     let grpcServices: GrpcService[] = await client.retrieveGrpcServices();
     let firstServiceName: string = grpcServices[0].name;
     let firstMethodStreaming: boolean = grpcServices[0].methods[0].clientStreaming;

@@ -1175,3 +1175,15 @@ fn test_openapi_expectation_inline_payload() {
     let json = serde_json::to_value(&exp).unwrap();
     assert_eq!(json["specUrlOrPayload"], payload);
 }
+
+#[test]
+fn test_retrieve_format_code_query_values() {
+    assert_eq!(RetrieveFormat::Java.as_str(), "JAVA");
+    assert_eq!(RetrieveFormat::JavaScript.as_str(), "JAVASCRIPT");
+    assert_eq!(RetrieveFormat::Python.as_str(), "PYTHON");
+    assert_eq!(RetrieveFormat::Go.as_str(), "GO");
+    assert_eq!(RetrieveFormat::CSharp.as_str(), "CSHARP");
+    assert_eq!(RetrieveFormat::Ruby.as_str(), "RUBY");
+    assert_eq!(RetrieveFormat::Rust.as_str(), "RUST");
+    assert_eq!(RetrieveFormat::Php.as_str(), "PHP");
+}

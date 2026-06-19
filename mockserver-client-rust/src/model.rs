@@ -1574,10 +1574,22 @@ impl RetrieveType {
 }
 
 /// The response format for retrieve calls.
+///
+/// In addition to JSON and log-entry formats, MockServer can return the
+/// retrieved expectations as SDK setup code (the builder code that recreates
+/// the expectations) in a range of languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetrieveFormat {
     Json,
     LogEntries,
+    Java,
+    JavaScript,
+    Python,
+    Go,
+    CSharp,
+    Ruby,
+    Rust,
+    Php,
 }
 
 impl RetrieveFormat {
@@ -1586,6 +1598,14 @@ impl RetrieveFormat {
         match self {
             RetrieveFormat::Json => "JSON",
             RetrieveFormat::LogEntries => "LOG_ENTRIES",
+            RetrieveFormat::Java => "JAVA",
+            RetrieveFormat::JavaScript => "JAVASCRIPT",
+            RetrieveFormat::Python => "PYTHON",
+            RetrieveFormat::Go => "GO",
+            RetrieveFormat::CSharp => "CSHARP",
+            RetrieveFormat::Ruby => "RUBY",
+            RetrieveFormat::Rust => "RUST",
+            RetrieveFormat::Php => "PHP",
         }
     }
 }

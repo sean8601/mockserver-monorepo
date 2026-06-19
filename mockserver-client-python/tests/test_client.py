@@ -225,6 +225,23 @@ class TestSyncRetrieve:
             result = client.retrieve_recorded_expectations()
             assert len(result) == 1
 
+    def test_retrieve_expectations_as_code(self, sync_mock_server):
+        SyncMockHandler.response_body = 'when(request().withPath("/code"));'
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            code = client.retrieve_expectations_as_code("java")
+            assert isinstance(code, str)
+            assert "/code" in code
+            assert "type=ACTIVE_EXPECTATIONS" in SyncMockHandler.last_path
+            assert "format=JAVA" in SyncMockHandler.last_path
+
+    def test_retrieve_recorded_expectations_as_code(self, sync_mock_server):
+        SyncMockHandler.response_body = "# generated python"
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            code = client.retrieve_recorded_expectations_as_code("python")
+            assert code == "# generated python"
+            assert "type=RECORDED_EXPECTATIONS" in SyncMockHandler.last_path
+            assert "format=PYTHON" in SyncMockHandler.last_path
+
     def test_retrieve_log_messages(self, sync_mock_server):
         SyncMockHandler.response_body = json.dumps(["msg1", "msg2"])
         with MockServerClient("127.0.0.1", sync_mock_server) as client:

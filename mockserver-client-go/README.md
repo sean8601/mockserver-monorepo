@@ -136,6 +136,14 @@ requests, _ := client.RetrieveRecordedRequests(mockserver.Request().Path("/api/.
 // Recorded expectations
 recorded, _ := client.RetrieveRecordedExpectations(nil)
 
+// Active expectations as generated MockServer SDK setup code
+// (format: FormatJava, FormatJavaScript, FormatPython, FormatGo,
+//  FormatCSharp, FormatRuby, FormatRust or FormatPHP)
+code, _ := client.RetrieveExpectationsAsCode(nil, mockserver.FormatJava)
+
+// Recorded request/response pairs as generated SDK setup code
+recordedCode, _ := client.RetrieveRecordedExpectationsAsCode(nil, mockserver.FormatGo)
+
 // Log messages
 logs, _ := client.RetrieveLogMessages(nil)
 ```

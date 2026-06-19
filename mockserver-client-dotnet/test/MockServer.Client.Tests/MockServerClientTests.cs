@@ -415,6 +415,34 @@ public class MockServerClientTests
     }
 
     [Fact]
+    public void RetrieveExpectationsAsCode_SendsCorrectRequestAndReturnsCode()
+    {
+        var (client, handler) = CreateClient();
+        handler.ResponseStatusCode = HttpStatusCode.OK;
+        handler.ResponseBody = "new MockServerClient().When(request().WithPath(\"/code\"));";
+
+        var code = client.RetrieveExpectationsAsCode("java");
+
+        handler.LastRequest!.RequestUri!.PathAndQuery.Should().Contain("type=active_expectations");
+        handler.LastRequest!.RequestUri!.PathAndQuery.Should().Contain("format=JAVA");
+        code.Should().Contain("/code");
+    }
+
+    [Fact]
+    public void RetrieveRecordedExpectationsAsCode_SendsCorrectRequest()
+    {
+        var (client, handler) = CreateClient();
+        handler.ResponseStatusCode = HttpStatusCode.OK;
+        handler.ResponseBody = "# generated python";
+
+        var code = client.RetrieveRecordedExpectationsAsCode("python");
+
+        handler.LastRequest!.RequestUri!.PathAndQuery.Should().Contain("type=recorded_expectations");
+        handler.LastRequest!.RequestUri!.PathAndQuery.Should().Contain("format=PYTHON");
+        code.Should().Be("# generated python");
+    }
+
+    [Fact]
     public void RetrieveLogMessages_SendsCorrectRequest()
     {
         var (client, handler) = CreateClient();

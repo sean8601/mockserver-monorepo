@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (unknown prompt → JSON-RPC `INVALID_PARAMS`); `sampling/createMessage` returns a deterministic mocked completion in
   the MCP sampling result shape (`role`, `content`, `model`, `stopReason`), echoing the client's preferred model hint
   and an optional `mockResponse` text override. New `McpPromptRegistry` configures the built-in prompt set.
+- **Non-Java clients can now retrieve expectations as generated MockServer SDK setup code**: the Go, Node, Python,
+  Ruby, .NET, PHP and Rust clients gain `retrieveExpectationsAsCode(format)` / `retrieveRecordedExpectationsAsCode(format)`
+  (idiomatic naming per client) that call the existing `PUT /mockserver/retrieve?format=JAVA|JAVASCRIPT|PYTHON|GO|CSHARP|RUBY|RUST|PHP`
+  endpoint and return the generated builder code (the `when(...).respond(...)` setup that recreates the active or
+  recorded expectations) as a string. Previously only the Java client and the dashboard UI exposed code retrieval;
+  the other clients hard-coded `format=JSON`. Server behaviour is unchanged — this only plumbs the existing
+  capability into the client libraries.
 - **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
   recognises `input_audio` content parts on the request side (so conversation matchers can assert a message
   contains audio, and in what `format` — e.g. `wav`/`mp3`), mirroring the existing image-part recognition;

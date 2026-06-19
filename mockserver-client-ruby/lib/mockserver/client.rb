@@ -429,6 +429,44 @@ module MockServer
       []
     end
 
+    # Retrieve the active expectations as MockServer SDK setup code (the builder
+    # code that recreates the expectations) in the requested language.
+    # @param format [String] one of "java", "javascript", "python", "go",
+    #   "csharp", "ruby", "rust" or "php" (case-insensitive)
+    # @param request [HttpRequest, nil]
+    # @return [String] the generated code
+    def retrieve_expectations_as_code(format: 'java', request: nil)
+      body = request ? JSON.generate(request.to_h) : ''
+      status, response_body = do_request(
+        'PUT', '/mockserver/retrieve', body,
+        { 'type' => 'ACTIVE_EXPECTATIONS', 'format' => format.to_s.upcase }
+      )
+      if status >= 400
+        raise Error, "Failed to retrieve expectations as code (status=#{status}): #{response_body}"
+      end
+
+      response_body || ''
+    end
+
+    # Retrieve the recorded (proxied) request/response pairs as MockServer SDK
+    # setup code in the requested language.
+    # @param format [String] one of "java", "javascript", "python", "go",
+    #   "csharp", "ruby", "rust" or "php" (case-insensitive)
+    # @param request [HttpRequest, nil]
+    # @return [String] the generated code
+    def retrieve_recorded_expectations_as_code(format: 'java', request: nil)
+      body = request ? JSON.generate(request.to_h) : ''
+      status, response_body = do_request(
+        'PUT', '/mockserver/retrieve', body,
+        { 'type' => 'RECORDED_EXPECTATIONS', 'format' => format.to_s.upcase }
+      )
+      if status >= 400
+        raise Error, "Failed to retrieve recorded expectations as code (status=#{status}): #{response_body}"
+      end
+
+      response_body || ''
+    end
+
     # Retrieve recorded requests and responses.
     # @param request [HttpRequest, nil]
     # @return [Array<HttpRequestAndHttpResponse>]

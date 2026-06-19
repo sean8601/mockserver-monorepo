@@ -574,6 +574,37 @@ class MockServerClientTest extends TestCase
         $this->assertStringContainsString('type=RECORDED_EXPECTATIONS', (string) $history[0]['request']->getUri());
     }
 
+    public function testRetrieveExpectationsAsCode(): void
+    {
+        $history = [];
+        $generated = 'new MockServerClient("localhost", 1080)->when(...);';
+        $client = $this->createClientWithMock([
+            new Response(200, [], $generated),
+        ], $history);
+
+        $result = $client->retrieveExpectationsAsCode('java');
+
+        $this->assertSame($generated, $result);
+        $uri = (string) $history[0]['request']->getUri();
+        $this->assertStringContainsString('type=ACTIVE_EXPECTATIONS', $uri);
+        $this->assertStringContainsString('format=JAVA', $uri);
+    }
+
+    public function testRetrieveRecordedExpectationsAsCode(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '# generated python'),
+        ], $history);
+
+        $result = $client->retrieveRecordedExpectationsAsCode('python');
+
+        $this->assertSame('# generated python', $result);
+        $uri = (string) $history[0]['request']->getUri();
+        $this->assertStringContainsString('type=RECORDED_EXPECTATIONS', $uri);
+        $this->assertStringContainsString('format=PYTHON', $uri);
+    }
+
     public function testRetrieveLogMessages(): void
     {
         $history = [];

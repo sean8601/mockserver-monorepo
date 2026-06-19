@@ -1552,6 +1552,55 @@ var mockServerClient;
             };
         };
         /**
+         * Retrieve the active expectations as MockServer SDK setup code (the
+         * builder code that recreates the expectations) in the requested
+         * language, instead of as JSON. The result is the generated code string.
+         *
+         * @param format                the code-generation language, one of "java",
+         *                              "javascript", "python", "go", "csharp",
+         *                              "ruby", "rust" or "php" (case-insensitive)
+         * @param pathOrRequestMatcher  if a string is passed in the value will be treated as the path, however
+         *                              if an object is passed in the value will be treated as a full request
+         *                              matcher object, if null is passed in it will be treated as match all
+         */
+        var retrieveExpectationsAsCode = function (format, pathOrRequestMatcher) {
+            return {
+                then: function (sucess, error) {
+                    return makeRequest(host, port, "/mockserver/retrieve?type=ACTIVE_EXPECTATIONS&format=" + encodeURIComponent((format || "JAVA").toUpperCase()), addDefaultRequestMatcherHeaders(pathOrRequestMatcher))
+                        .then(function (result) {
+                            sucess(result.body);
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
+        /**
+         * Retrieve the recorded (proxied) request-response pairs as MockServer
+         * SDK setup code (the builder code that recreates the expectations) in
+         * the requested language, instead of as JSON. The result is the
+         * generated code string.
+         *
+         * @param format                the code-generation language, one of "java",
+         *                              "javascript", "python", "go", "csharp",
+         *                              "ruby", "rust" or "php" (case-insensitive)
+         * @param pathOrRequestMatcher  if a string is passed in the value will be treated as the path, however
+         *                              if an object is passed in the value will be treated as a full request
+         *                              matcher object, if null is passed in it will be treated as match all
+         */
+        var retrieveRecordedExpectationsAsCode = function (format, pathOrRequestMatcher) {
+            return {
+                then: function (sucess, error) {
+                    return makeRequest(host, port, "/mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=" + encodeURIComponent((format || "JAVA").toUpperCase()), addDefaultRequestMatcherHeaders(pathOrRequestMatcher))
+                        .then(function (result) {
+                            sucess(result.body);
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
+        /**
          * Retrieve logs messages for expectation matching, verification, clearing, etc,
          * log messages are filtered by request matcher as follows:
          * - use a string value to match on path,
@@ -1959,6 +2008,8 @@ var mockServerClient;
             retrieveRecordedRequestsAndResponsesAsHar: retrieveRecordedRequestsAndResponsesAsHar,
             retrieveActiveExpectations: retrieveActiveExpectations,
             retrieveRecordedExpectations: retrieveRecordedExpectations,
+            retrieveExpectationsAsCode: retrieveExpectationsAsCode,
+            retrieveRecordedExpectationsAsCode: retrieveRecordedExpectationsAsCode,
             retrieveLogMessages: retrieveLogMessages,
             addBreakpoint: addBreakpoint,
             addRequestBreakpoint: addRequestBreakpoint,

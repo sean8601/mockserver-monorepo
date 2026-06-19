@@ -400,6 +400,61 @@ public sealed class MockServerClient : IDisposable
     }
 
     /// <summary>
+    /// Retrieve the active expectations as MockServer SDK setup code (the builder
+    /// code that recreates the expectations) in the requested language.
+    /// </summary>
+    /// <param name="format">the code-generation language, one of "java", "javascript",
+    /// "python", "go", "csharp", "ruby", "rust" or "php" (case-insensitive)</param>
+    /// <param name="filter">an optional request filter</param>
+    public string RetrieveExpectationsAsCode(string format = "java", HttpRequest? filter = null)
+        => RetrieveExpectationsAsCodeAsync(format, filter).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Retrieve the active expectations as MockServer SDK setup code in the
+    /// requested language (async).
+    /// </summary>
+    public async Task<string> RetrieveExpectationsAsCodeAsync(string format = "java", HttpRequest? filter = null)
+    {
+        var json = filter != null ? JsonSerializer.Serialize(filter, JsonOptions) : "";
+        var (statusCode, body) = await PutAsync(
+            "/mockserver/retrieve?type=active_expectations&format=" + Uri.EscapeDataString(format.ToUpperInvariant()),
+            json).ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to retrieve expectations as code (HTTP {statusCode}): {body}");
+
+        return body ?? "";
+    }
+
+    /// <summary>
+    /// Retrieve the recorded (proxied) request/response pairs as MockServer SDK
+    /// setup code (the builder code that recreates the expectations) in the
+    /// requested language.
+    /// </summary>
+    /// <param name="format">the code-generation language, one of "java", "javascript",
+    /// "python", "go", "csharp", "ruby", "rust" or "php" (case-insensitive)</param>
+    /// <param name="filter">an optional request filter</param>
+    public string RetrieveRecordedExpectationsAsCode(string format = "java", HttpRequest? filter = null)
+        => RetrieveRecordedExpectationsAsCodeAsync(format, filter).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Retrieve the recorded request/response pairs as MockServer SDK setup code
+    /// in the requested language (async).
+    /// </summary>
+    public async Task<string> RetrieveRecordedExpectationsAsCodeAsync(string format = "java", HttpRequest? filter = null)
+    {
+        var json = filter != null ? JsonSerializer.Serialize(filter, JsonOptions) : "";
+        var (statusCode, body) = await PutAsync(
+            "/mockserver/retrieve?type=recorded_expectations&format=" + Uri.EscapeDataString(format.ToUpperInvariant()),
+            json).ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to retrieve recorded expectations as code (HTTP {statusCode}): {body}");
+
+        return body ?? "";
+    }
+
+    /// <summary>
     /// Retrieve log messages matching an optional filter.
     /// </summary>
     public List<string> RetrieveLogMessages(HttpRequest? filter = null)

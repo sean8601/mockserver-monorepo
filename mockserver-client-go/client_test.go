@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -319,6 +320,66 @@ func TestClient_Verify_URL(t *testing.T) {
 	}
 	if receivedMethod != "PUT" {
 		t.Errorf("expected method PUT, got %s", receivedMethod)
+	}
+}
+
+func TestClient_RetrieveExpectationsAsCode_URLAndFormat(t *testing.T) {
+	var receivedPath string
+	var receivedQuery string
+	generated := "new MockServerClient().when(request().withPath(\"/hello\"));"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		receivedQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+		w.Write([]byte(generated))
+	}))
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	code, err := client.RetrieveExpectationsAsCode(nil, FormatJava)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if code != generated {
+		t.Errorf("expected generated code %q, got %q", generated, code)
+	}
+	if receivedPath != "/mockserver/retrieve" {
+		t.Errorf("expected path /mockserver/retrieve, got %s", receivedPath)
+	}
+	if !strings.Contains(receivedQuery, "type=active_expectations") {
+		t.Errorf("expected type=active_expectations in query, got %s", receivedQuery)
+	}
+	if !strings.Contains(receivedQuery, "format=java") {
+		t.Errorf("expected format=java in query, got %s", receivedQuery)
+	}
+}
+
+func TestClient_RetrieveRecordedExpectationsAsCode_URLAndFormat(t *testing.T) {
+	var receivedQuery string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+		w.Write([]byte("# generated python"))
+	}))
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	code, err := client.RetrieveRecordedExpectationsAsCode(Request().Path("/hello"), FormatPython)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if code != "# generated python" {
+		t.Errorf("unexpected generated code %q", code)
+	}
+	if !strings.Contains(receivedQuery, "type=recorded_expectations") {
+		t.Errorf("expected type=recorded_expectations in query, got %s", receivedQuery)
+	}
+	if !strings.Contains(receivedQuery, "format=python") {
+		t.Errorf("expected format=python in query, got %s", receivedQuery)
 	}
 }
 

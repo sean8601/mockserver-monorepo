@@ -219,6 +219,28 @@ class MockServerClient:
     ) -> list[Expectation]:
         return self._run(self._async_client.retrieve_recorded_expectations(request))
 
+    def retrieve_expectations_as_code(
+        self, fmt: str = "java", request: HttpRequest | None = None
+    ) -> str:
+        """Retrieve the active expectations as MockServer SDK setup code in the
+        requested language (``java``, ``javascript``, ``python``, ``go``,
+        ``csharp``, ``ruby``, ``rust`` or ``php``).
+        """
+        return self._run(
+            self._async_client.retrieve_expectations_as_code(fmt, request)
+        )
+
+    def retrieve_recorded_expectations_as_code(
+        self, fmt: str = "java", request: HttpRequest | None = None
+    ) -> str:
+        """Retrieve the recorded (proxied) request/response pairs as MockServer
+        SDK setup code in the requested language (``java``, ``javascript``,
+        ``python``, ``go``, ``csharp``, ``ruby``, ``rust`` or ``php``).
+        """
+        return self._run(
+            self._async_client.retrieve_recorded_expectations_as_code(fmt, request)
+        )
+
     def retrieve_recorded_requests_and_responses(
         self, request: HttpRequest | None = None
     ) -> list[HttpRequestAndHttpResponse]:

@@ -438,6 +438,34 @@ class MockServerClient
     }
 
     /**
+     * Retrieve the active expectations as MockServer SDK setup code (the builder
+     * code that recreates the expectations) in the requested language.
+     *
+     * @param string $format One of java, javascript, python, go, csharp, ruby,
+     *                        rust or php (case-insensitive)
+     * @param HttpRequest|null $request Filter (null = all)
+     * @return string The generated code
+     */
+    public function retrieveExpectationsAsCode(string $format = 'java', ?HttpRequest $request = null): string
+    {
+        return $this->retrieveRaw($request, 'ACTIVE_EXPECTATIONS', strtoupper($format));
+    }
+
+    /**
+     * Retrieve the recorded (proxied) request/response pairs as MockServer SDK
+     * setup code in the requested language.
+     *
+     * @param string $format One of java, javascript, python, go, csharp, ruby,
+     *                        rust or php (case-insensitive)
+     * @param HttpRequest|null $request Filter (null = all)
+     * @return string The generated code
+     */
+    public function retrieveRecordedExpectationsAsCode(string $format = 'java', ?HttpRequest $request = null): string
+    {
+        return $this->retrieveRaw($request, 'RECORDED_EXPECTATIONS', strtoupper($format));
+    }
+
+    /**
      * Retrieve log messages matching the given filter.
      *
      * @param HttpRequest|null $request Filter (null = all)
@@ -686,6 +714,31 @@ class MockServerClient
         }
 
         return [];
+    }
+
+    /**
+     * Retrieve raw (non-JSON) response body, e.g. generated SDK code.
+     *
+     * @param HttpRequest|null $request Filter
+     * @param string $type ACTIVE_EXPECTATIONS or RECORDED_EXPECTATIONS
+     * @param string $format Code-generation format (JAVA, PYTHON, GO, ...)
+     * @return string
+     */
+    private function retrieveRaw(?HttpRequest $request, string $type, string $format): string
+    {
+        $path = '/mockserver/retrieve?type=' . urlencode($type) . '&format=' . urlencode($format);
+        $body = $request !== null ? json_encode($request->toArray(), JSON_THROW_ON_ERROR) : '';
+
+        $response = $this->put($path, $body);
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status >= 400) {
+            throw new MockServerException("Retrieve ({$type}) failed (HTTP {$status}): {$responseBody}");
+        }
+
+        return $responseBody;
     }
 
     /**

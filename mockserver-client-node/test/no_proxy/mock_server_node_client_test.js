@@ -935,6 +935,22 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         assert.equal(expectations[1].httpResponse.statusCode, 201);
     });
 
+    it('should retrieve active expectations as generated code', async function () {
+        await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);
+
+        var code = await client.retrieveExpectationsAsCode('java', '/somePathOne');
+        assert.equal(typeof code, 'string');
+        assert.ok(code.length > 0, 'expected non-empty generated code');
+        assert.ok(code.indexOf('/somePathOne') !== -1, 'generated code should reference the path');
+    });
+
+    it('should retrieve recorded expectations as generated code', async function () {
+        // No proxied traffic has been recorded, so the generated code is empty,
+        // but the call must succeed and return a string for the requested format.
+        var code = await client.retrieveRecordedExpectationsAsCode('python');
+        assert.equal(typeof code, 'string');
+    });
+
     it('should retrieve all expectations using object matcher', async function () {
         await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);
         await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);
