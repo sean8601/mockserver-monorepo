@@ -148,6 +148,98 @@ public class ConfigurationPropertiesEffectiveConfigGlobalStateTest {
         }
     }
 
+    @Test
+    public void unsetButAlreadyReadKeyReportsDefaultNotRuntimeSet() throws Exception {
+        // readPropertyHierarchically caches EVERY value it resolves, including the built-in default
+        // of a property left unset in all tiers. The diagnostic must not mistake that memoised
+        // default for a programmatic runtime override.
+        String previousDefault = System.getProperty(DEFAULT_KEY);
+        String previousCachedDefault = getCacheEntry(DEFAULT_KEY);
+        boolean wasProgrammaticallySet = isProgrammaticallySet(DEFAULT_KEY);
+        try {
+            // Ensure no tier supplies a value and no stale cache/registry entry survives.
+            System.clearProperty(DEFAULT_KEY);
+            clearCacheEntry(DEFAULT_KEY);
+            removeProgrammaticallySet(DEFAULT_KEY);
+
+            // Read the accessor: this populates the cache with the built-in default (false) WITHOUT
+            // going through a setter, so the key is cached but not in the programmatic-set registry.
+            ConfigurationProperties.metricsEnabled();
+            assertThat("precondition: accessor should cache the default", getCacheEntry(DEFAULT_KEY), is("false"));
+
+            ConfigurationProperties.ResolvedProperty resolved = find(ConfigurationProperties.effectiveConfiguration(), DEFAULT_KEY)
+                .orElseThrow(() -> new AssertionError("expected " + DEFAULT_KEY + " in effective configuration"));
+            // The memoised default must be reported as the default, NOT runtime-set with the value false.
+            assertThat(resolved.getValue(), is("(default)"));
+            assertThat(resolved.getSource(), is(SOURCE_DEFAULT));
+        } finally {
+            clearCacheEntry(DEFAULT_KEY);
+            restoreProgrammaticallySet(DEFAULT_KEY, wasProgrammaticallySet);
+            restoreCacheEntry(DEFAULT_KEY, previousCachedDefault);
+            restore(DEFAULT_KEY, previousDefault);
+        }
+    }
+
+    @Test
+    public void programmaticSetterThatOverridesDefaultIsReportedNotAsDefault() throws Exception {
+        // A genuine programmatic override (metricsEnabled(true)) must report the override value and a
+        // concrete source — never (default) — even though the property has no static tier value.
+        String previousDefault = System.getProperty(DEFAULT_KEY);
+        String previousCachedDefault = getCacheEntry(DEFAULT_KEY);
+        boolean wasProgrammaticallySet = isProgrammaticallySet(DEFAULT_KEY);
+        try {
+            System.clearProperty(DEFAULT_KEY);
+            clearCacheEntry(DEFAULT_KEY);
+            removeProgrammaticallySet(DEFAULT_KEY);
+
+            ConfigurationProperties.metricsEnabled(true);
+
+            ConfigurationProperties.ResolvedProperty resolved = find(ConfigurationProperties.effectiveConfiguration(), DEFAULT_KEY)
+                .orElseThrow(() -> new AssertionError("expected " + DEFAULT_KEY + " in effective configuration"));
+            assertThat(resolved.getValue(), is("true"));
+            assertThat(resolved.getValue(), not("(default)"));
+            // The setter also writes the JVM system property, so the source is attributed to that tier.
+            assertThat(resolved.getSource(), is(SOURCE_SYSTEM_PROPERTY));
+        } finally {
+            clearCacheEntry(DEFAULT_KEY);
+            removeProgrammaticallySet(DEFAULT_KEY);
+            restoreProgrammaticallySet(DEFAULT_KEY, wasProgrammaticallySet);
+            restoreCacheEntry(DEFAULT_KEY, previousCachedDefault);
+            restore(DEFAULT_KEY, previousDefault);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<String> programmaticallySetKeys() throws Exception {
+        java.lang.reflect.Field field = ConfigurationProperties.class.getDeclaredField("programmaticallySetKeys");
+        field.setAccessible(true);
+        Object set = field.get(null);
+        return set instanceof java.util.Set ? (java.util.Set<String>) set : null;
+    }
+
+    private static boolean isProgrammaticallySet(String key) throws Exception {
+        java.util.Set<String> set = programmaticallySetKeys();
+        return set != null && set.contains(key);
+    }
+
+    private static void removeProgrammaticallySet(String key) throws Exception {
+        java.util.Set<String> set = programmaticallySetKeys();
+        if (set != null) {
+            set.remove(key);
+        }
+    }
+
+    private static void restoreProgrammaticallySet(String key, boolean wasSet) throws Exception {
+        java.util.Set<String> set = programmaticallySetKeys();
+        if (set != null) {
+            if (wasSet) {
+                set.add(key);
+            } else {
+                set.remove(key);
+            }
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static java.util.Map<String, String> propertyCache() throws Exception {
         java.lang.reflect.Field cacheField = ConfigurationProperties.class.getDeclaredField("propertyCache");

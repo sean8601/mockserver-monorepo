@@ -4015,6 +4015,12 @@ public class ConfigurationProperties {
 
     private static Map<String, String> propertyCache;
 
+    // Keys written via a programmatic setter (setProperty). Used ONLY by the effective-configuration
+    // diagnostic to distinguish a genuine runtime override from a value that was merely cached by a
+    // first read (readPropertyHierarchically caches every value it resolves, including built-in
+    // defaults). It never affects how any value resolves.
+    private static Set<String> programmaticallySetKeys;
+
     private static Map<String, String> getPropertyCache() {
         if (propertyCache == null) {
             propertyCache = new ConcurrentHashMap<>();
@@ -4022,13 +4028,22 @@ public class ConfigurationProperties {
         return propertyCache;
     }
 
+    private static Set<String> getProgrammaticallySetKeys() {
+        if (programmaticallySetKeys == null) {
+            programmaticallySetKeys = ConcurrentHashMap.newKeySet();
+        }
+        return programmaticallySetKeys;
+    }
+
     private static void setProperty(String systemPropertyKey, String value) {
         getPropertyCache().put(systemPropertyKey, value);
+        getProgrammaticallySetKeys().add(systemPropertyKey);
         System.setProperty(systemPropertyKey, value);
     }
 
     private static void clearProperty(String systemPropertyKey) {
         getPropertyCache().remove(systemPropertyKey);
+        getProgrammaticallySetKeys().remove(systemPropertyKey);
         System.clearProperty(systemPropertyKey);
     }
 
@@ -4366,6 +4381,7 @@ public class ConfigurationProperties {
             }
         }
 
+        Set<String> programmaticKeys = getProgrammaticallySetKeys();
         List<ResolvedProperty> resolved = new ArrayList<>();
         for (Map.Entry<String, String> entry : systemPropertyKeyToEnvKey.entrySet()) {
             String systemPropertyKey = entry.getKey();
@@ -4378,19 +4394,25 @@ public class ConfigurationProperties {
 
             String source;
             String resolvedValue;
-            if (cachedValue != null) {
-                // A cached value is in effect. Attribute it to the originating tier when the tier
-                // resolution agrees; otherwise it is a programmatic runtime override.
+            if (cachedValue != null && programmaticKeys.contains(systemPropertyKey) && !cachedValue.equals(tierValue)) {
+                // A programmatic setter changed the value to something none of the static tiers
+                // supply: this is a genuine runtime override. (When the cached value DOES equal the
+                // tier value, the setter agreed with the tier — fall through and attribute it to the
+                // tier so e.g. a setter that also writes the system property reports system-property.)
                 resolvedValue = cachedValue;
-                source = cachedValue.equals(tierValue) && !SOURCE_DEFAULT.equals(tierSource)
-                    ? tierSource
-                    : SOURCE_RUNTIME_SET;
-            } else if (SOURCE_DEFAULT.equals(tierSource)) {
-                resolvedValue = null;
-                source = SOURCE_DEFAULT;
-            } else {
+                source = SOURCE_RUNTIME_SET;
+            } else if (!SOURCE_DEFAULT.equals(tierSource)) {
+                // A static tier (system property > properties file > environment variable) supplies a
+                // value. readPropertyHierarchically caches that same value on first read, so whether or
+                // not it is cached the reported value and source are the tier's.
                 resolvedValue = tierValue;
                 source = tierSource;
+            } else {
+                // No tier supplies a value. A cached value here is the built-in default that
+                // readPropertyHierarchically memoised on first read (it caches every value it resolves,
+                // including defaults) — NOT a runtime override. Report it as the default.
+                resolvedValue = null;
+                source = SOURCE_DEFAULT;
             }
 
             String value;
