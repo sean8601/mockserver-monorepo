@@ -1103,6 +1103,42 @@ fn test_expectation_with_grpc_stream_response() {
 }
 
 // ---------------------------------------------------------------------------
+// `respond_with_*` fluent-alias existence (compile-time guard)
+//
+// The Python/PHP/.NET clients expose the advanced response builders under
+// `respond_with_*` names. This test references each Rust alias inside a
+// never-called closure so it only compiles if every alias exists with the
+// expected argument type — a regression guard requiring no running server.
+// (The aliases consume the chain and call `upsert`, so they cannot be
+// invoked without a live server; referencing them is enough to lock the
+// public surface.)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_respond_with_aliases_exist_on_fluent_chain() {
+    // These helpers are intentionally never invoked; they exist purely so the
+    // compiler type-checks that each `respond_with_*` alias is present on
+    // `ForwardChainExpectation` and accepts the matching response type. The
+    // aliases consume the chain and call `upsert`, so they cannot run without
+    // a live server — referencing them is enough to lock the public surface.
+    fn _sse(c: ForwardChainExpectation<'_>) -> Result<Vec<Expectation>> {
+        c.respond_with_sse(HttpSseResponse::new())
+    }
+    fn _ws(c: ForwardChainExpectation<'_>) -> Result<Vec<Expectation>> {
+        c.respond_with_web_socket(HttpWebSocketResponse::new())
+    }
+    fn _dns(c: ForwardChainExpectation<'_>) -> Result<Vec<Expectation>> {
+        c.respond_with_dns(DnsResponse::new())
+    }
+    fn _bin(c: ForwardChainExpectation<'_>) -> Result<Vec<Expectation>> {
+        c.respond_with_binary(BinaryResponse::new())
+    }
+    fn _grpc(c: ForwardChainExpectation<'_>) -> Result<Vec<Expectation>> {
+        c.respond_with_grpc_stream(GrpcStreamResponse::new())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // OpenApiExpectation tests
 // ---------------------------------------------------------------------------
 

@@ -1008,6 +1008,40 @@ impl<'a> ForwardChainExpectation<'a> {
         client.upsert(&[expectation])
     }
 
+    // ------------------------------------------------------------------
+    // `respond_with_*` aliases (cross-client naming parity)
+    //
+    // The Python, PHP, and .NET clients expose these advanced response
+    // builders under `respond_with_*` names. These aliases give the Rust
+    // fluent chain the same surface so examples translate verbatim across
+    // clients; each simply delegates to its idiomatic Rust counterpart.
+    // ------------------------------------------------------------------
+
+    /// Alias of [`respond_sse`](Self::respond_sse) for cross-client naming parity.
+    pub fn respond_with_sse(self, sse: HttpSseResponse) -> Result<Vec<Expectation>> {
+        self.respond_sse(sse)
+    }
+
+    /// Alias of [`respond_web_socket`](Self::respond_web_socket) for cross-client naming parity.
+    pub fn respond_with_web_socket(self, ws: HttpWebSocketResponse) -> Result<Vec<Expectation>> {
+        self.respond_web_socket(ws)
+    }
+
+    /// Alias of [`respond_dns`](Self::respond_dns) for cross-client naming parity.
+    pub fn respond_with_dns(self, dns: DnsResponse) -> Result<Vec<Expectation>> {
+        self.respond_dns(dns)
+    }
+
+    /// Alias of [`respond_binary`](Self::respond_binary) for cross-client naming parity.
+    pub fn respond_with_binary(self, binary: BinaryResponse) -> Result<Vec<Expectation>> {
+        self.respond_binary(binary)
+    }
+
+    /// Alias of [`respond_grpc_stream`](Self::respond_grpc_stream) for cross-client naming parity.
+    pub fn respond_with_grpc_stream(self, grpc: GrpcStreamResponse) -> Result<Vec<Expectation>> {
+        self.respond_grpc_stream(grpc)
+    }
+
     fn into_parts(self) -> (&'a MockServerClient, Expectation) {
         let ForwardChainExpectation {
             client,
