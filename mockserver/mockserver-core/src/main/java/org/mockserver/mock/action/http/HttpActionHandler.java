@@ -831,10 +831,10 @@ public class HttpActionHandler {
                             }
                         }
 
-                        long forwardStartNanos = System.nanoTime();
+                        long forwardStartNanos = org.mockserver.time.TimeService.nanoTime();
                         final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, remoteAddress, potentiallyHttpProxy ? 1000 : configuration.socketConnectionTimeoutInMillis()), null, remoteAddress);
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-                        long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
+                        long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
                         if (response == null) {
                             response = badGatewayResponse();
                         }
@@ -870,7 +870,7 @@ public class HttpActionHandler {
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
                                 attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
-                                long streamResponseTimeMs = (System.nanoTime() - streamForwardStartNanos) / 1_000_000;
+                                long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - streamForwardStartNanos) / 1_000_000;
                                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                                 // validation proxy: validate completed streaming response (report-only)
                                 if (validationEnabled) {
@@ -1017,7 +1017,7 @@ public class HttpActionHandler {
                 return;
             }
 
-            long forwardStartNanos = System.nanoTime();
+            long forwardStartNanos = org.mockserver.time.TimeService.nanoTime();
             final HttpForwardActionResult responseFuture = new HttpForwardActionResult(
                 requestToForward,
                 httpClient.sendRequest(requestToForward, remoteAddress,
@@ -1025,7 +1025,7 @@ public class HttpActionHandler {
                 null, remoteAddress
             );
             HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-            long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
+            long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
             if (response == null) {
                 response = badGatewayResponse();
             }
@@ -1055,7 +1055,7 @@ public class HttpActionHandler {
                     byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                     setCapturedStreamingBody(logResponse, captured);
                     attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
-                    long streamResponseTimeMs = (System.nanoTime() - streamForwardStartNanos) / 1_000_000;
+                    long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - streamForwardStartNanos) / 1_000_000;
                     logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                     if (validationEnabled) {
                         validateProxyResponse(originalRequest, logResponse, true);
@@ -1222,10 +1222,10 @@ public class HttpActionHandler {
                             return;
                         }
 
-                        long forwardStartNanos = System.nanoTime();
+                        long forwardStartNanos = org.mockserver.time.TimeService.nanoTime();
                         final HttpForwardActionResult responseFuture = new HttpForwardActionResult(clonedRequest, httpClient.sendRequest(clonedRequest, targetAddress), null, targetAddress);
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-                        long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
+                        long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
                         if (response == null) {
                             response = badGatewayResponse();
                         }
@@ -1242,7 +1242,7 @@ public class HttpActionHandler {
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
                                 attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
-                                long streamResponseTimeMs = (System.nanoTime() - streamForwardStartNanos) / 1_000_000;
+                                long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - streamForwardStartNanos) / 1_000_000;
                                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                                 // validation proxy: validate completed streaming response (report-only)
                                 if (validationEnabled) {
@@ -2184,9 +2184,9 @@ public class HttpActionHandler {
     void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx) {
         scheduler.submit(responseFuture, () -> {
             try {
-                long forwardStartNanos = System.nanoTime();
+                long forwardStartNanos = org.mockserver.time.TimeService.nanoTime();
                 HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
-                long responseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
+                long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
 
                 // chaos: drop connection takes priority over error and latency
                 if (shouldDropConnection(chaos, matchCount)) {
@@ -2350,7 +2350,7 @@ public class HttpActionHandler {
                 byte[] captured = streamingBody.capturedBytes();
                 setCapturedStreamingBody(logResponse, captured);
                 attachStreamingHeaders(logResponse, streamingBody);
-                long streamResponseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
+                long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                 mockServerLogger.logEvent(
                     new LogEntry()
