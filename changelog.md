@@ -529,6 +529,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   placeholders while loading instead of a bare spinner. Server error messages shown in the UI are now
   humanised (a short, actionable message with the raw server detail tucked behind a "Details" toggle)
   instead of dumping raw server output.
+- **Dashboard UI: viewport virtualization for long lists** (behaviour-preserving): the Log Messages,
+  Active Expectations and Requests panels now window their rows — only the entries in (or near) the
+  visible area are mounted in the DOM instead of mounting every row, so panels with tens of thousands
+  of entries (e.g. a 50k-entry log) scroll smoothly instead of bogging down the browser. Rows are
+  measured dynamically so expand/collapse still works, and filtering, ordering, auto-scroll-to-top,
+  selection and live append are unchanged. In a non-layout/headless environment (or a panel laid out at
+  zero height) the list falls back to rendering every row so content stays reachable.
 - **Clearer error when a client's binary launcher finds no release bundle**: the Go, Node, Python, Ruby,
   Rust and PHP clients' auto-download launchers now detect an HTTP 404 on the MockServer release bundle and
   fail with an actionable message — naming the requested version and pointing to a version that ships
