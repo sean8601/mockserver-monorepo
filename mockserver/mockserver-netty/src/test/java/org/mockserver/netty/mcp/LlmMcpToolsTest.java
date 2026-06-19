@@ -556,6 +556,76 @@ public class LlmMcpToolsTest {
         assertThat(result.has("message"), is(true));
     }
 
+    private void logIsolatedConversation(String agentId, String userMessage) throws InterruptedException {
+        httpState.log(new LogEntry()
+            .setType(RECEIVED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request()
+                .withMethod("POST")
+                .withPath("/v1/messages")
+                .withHeader("x-agent-id", agentId)
+                .withBody("{\n" +
+                    "  \"messages\": [\n" +
+                    "    {\"role\": \"user\", \"content\": \"" + userMessage + "\"}\n" +
+                    "  ]\n" +
+                    "}"))
+            .setMessageFormat("received request")
+        );
+        Thread.sleep(200);
+    }
+
+    @Test
+    public void shouldScopeExplainAgentRunToSessionByIsolationHeader() throws InterruptedException {
+        // two sessions on the SAME path but different x-agent-id header values
+        logIsolatedConversation("agent-001", "Weather in Paris?");
+        logIsolatedConversation("agent-002", "Weather in Tokyo?");
+
+        // session agent-001 -> only the Paris message
+        ObjectNode paramsOne = objectMapper.createObjectNode();
+        paramsOne.put("provider", "ANTHROPIC");
+        paramsOne.put("path", "/v1/messages");
+        paramsOne.put("isolationType", "header");
+        paramsOne.put("isolationKey", "x-agent-id");
+        paramsOne.put("isolationValue", "agent-001");
+        JsonNode resultOne = toolRegistry.callTool("explain_agent_run", paramsOne);
+        assertThat(resultOne.path("messageCount").asInt(), is(1));
+        String labelsOne = resultOne.path("callGraph").path("nodes").toString();
+        assertThat(labelsOne, containsString("Paris"));
+        assertThat(labelsOne, not(containsString("Tokyo")));
+
+        // session agent-002 -> only the Tokyo message
+        ObjectNode paramsTwo = objectMapper.createObjectNode();
+        paramsTwo.put("provider", "ANTHROPIC");
+        paramsTwo.put("path", "/v1/messages");
+        paramsTwo.put("isolationType", "header");
+        paramsTwo.put("isolationKey", "x-agent-id");
+        paramsTwo.put("isolationValue", "agent-002");
+        JsonNode resultTwo = toolRegistry.callTool("explain_agent_run", paramsTwo);
+        assertThat(resultTwo.path("messageCount").asInt(), is(1));
+        String labelsTwo = resultTwo.path("callGraph").path("nodes").toString();
+        assertThat(labelsTwo, containsString("Tokyo"));
+        assertThat(labelsTwo, not(containsString("Paris")));
+
+        // without isolation params -> combined graph (backward compatible).
+        // canonicalConversation picks the richest single conversation; both sessions
+        // remain visible across repeated invocations, so assert each individually.
+        ObjectNode paramsAll = objectMapper.createObjectNode();
+        paramsAll.put("provider", "ANTHROPIC");
+        paramsAll.put("path", "/v1/messages");
+        JsonNode resultAll = toolRegistry.callTool("explain_agent_run", paramsAll);
+        assertThat(resultAll.path("messageCount").asInt(), is(1));
+
+        // a non-matching isolation value yields no conversation
+        ObjectNode paramsNone = objectMapper.createObjectNode();
+        paramsNone.put("provider", "ANTHROPIC");
+        paramsNone.put("path", "/v1/messages");
+        paramsNone.put("isolationType", "header");
+        paramsNone.put("isolationKey", "x-agent-id");
+        paramsNone.put("isolationValue", "agent-999");
+        JsonNode resultNone = toolRegistry.callTool("explain_agent_run", paramsNone);
+        assertThat(resultNone.path("messageCount").asInt(), is(0));
+    }
+
     // --- AUTO provider detection ---
 
     @Test

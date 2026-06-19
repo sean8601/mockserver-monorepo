@@ -3709,6 +3709,14 @@ public class McpToolRegistry {
             providerEnum.add(name);
         }
         properties.putObject("path").put("type", "string").put("description", "Optional request path filter (e.g. /v1/messages)");
+        ObjectNode isolationTypeProp = properties.putObject("isolationType");
+        isolationTypeProp.put("type", "string").put("description", "Optional: scope the run to a single session by the isolation source the conversation was isolated on.");
+        ArrayNode isolationTypeEnum = isolationTypeProp.putArray("enum");
+        isolationTypeEnum.add("header");
+        isolationTypeEnum.add("query_parameter");
+        isolationTypeEnum.add("cookie");
+        properties.putObject("isolationKey").put("type", "string").put("description", "Optional: the header/query-parameter/cookie name used to isolate the session (e.g. x-agent-id).");
+        properties.putObject("isolationValue").put("type", "string").put("description", "Optional: the value identifying the session (e.g. agent-001).");
         ArrayNode required = schema.putArray("required");
         required.add("provider");
 
@@ -3727,7 +3735,10 @@ public class McpToolRegistry {
                 return errorResult("'provider' is required");
             }
             String path = emptyToNull(params.path("path").asText(null));
-            List<HttpRequest> requests = retrieveRecordedHttpRequests(path);
+            String isolationType = emptyToNull(params.path("isolationType").asText(null));
+            String isolationKey = emptyToNull(params.path("isolationKey").asText(null));
+            String isolationValue = emptyToNull(params.path("isolationValue").asText(null));
+            List<HttpRequest> requests = retrieveRecordedHttpRequests(path, isolationType, isolationKey, isolationValue);
             Provider provider = resolveProviderOrAuto(params, requests);
             if (provider == null) {
                 return "AUTO".equalsIgnoreCase(providerStr.trim())
@@ -4236,9 +4247,31 @@ public class McpToolRegistry {
      * as concrete {@link HttpRequest}s for LLM analysis.
      */
     private List<HttpRequest> retrieveRecordedHttpRequests(String path) {
+        return retrieveRecordedHttpRequests(path, null, null, null);
+    }
+
+    private List<HttpRequest> retrieveRecordedHttpRequests(String path, String isolationType, String isolationKey, String isolationValue) {
         HttpRequest filter = request();
         if (path != null && !path.isEmpty()) {
             filter.withPath(path);
+        }
+        if (isolationKey != null && !isolationKey.trim().isEmpty()
+            && isolationValue != null && !isolationValue.trim().isEmpty()
+            && isolationType != null) {
+            switch (isolationType.trim().toLowerCase()) {
+                case "header":
+                    filter.withHeader(isolationKey, isolationValue);
+                    break;
+                case "query_parameter":
+                    filter.withQueryStringParameter(isolationKey, isolationValue);
+                    break;
+                case "cookie":
+                    filter.withCookie(isolationKey, isolationValue);
+                    break;
+                default:
+                    // unknown isolation type: no extra filter (graceful)
+                    break;
+            }
         }
         HttpRequest retrieveRequest = request()
             .withMethod("PUT")
