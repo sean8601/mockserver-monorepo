@@ -39,6 +39,8 @@ export type Expectation = {
   httpWebSocketResponse?: HttpWebSocketResponse;
   grpcStreamResponse?: GrpcStreamResponse;
   grpcBidiResponse?: GrpcBidiResponse;
+  binaryResponse?: BinaryResponse;
+  dnsResponse?: DnsResponse;
   times?: Times;
   timeToLive?: TimeToLive;
   chaos?: HttpChaosProfile;
@@ -370,6 +372,33 @@ export interface GrpcBidiResponse {
   messages?: GrpcStreamMessage[];
   rules?: GrpcBidiRule[];
   closeConnection?: boolean;
+  delay?: Delay;
+  primary?: boolean;
+}
+
+export interface BinaryResponse {
+  /** base64-encoded binary payload */
+  binaryData?: string;
+  delay?: Delay;
+  primary?: boolean;
+}
+
+export interface DnsRecord {
+  name?: string;
+  type?: "A" | "AAAA" | "CNAME" | "MX" | "SRV" | "TXT" | "PTR";
+  dnsClass?: string;
+  ttl?: number;
+  value?: string;
+  priority?: number;
+  weight?: number;
+  port?: number;
+}
+
+export interface DnsResponse {
+  answerRecords?: DnsRecord[];
+  authorityRecords?: DnsRecord[];
+  additionalRecords?: DnsRecord[];
+  responseCode?: "NOERROR" | "FORMERR" | "SERVFAIL" | "NXDOMAIN" | "NOTIMP" | "REFUSED";
   delay?: Delay;
   primary?: boolean;
 }

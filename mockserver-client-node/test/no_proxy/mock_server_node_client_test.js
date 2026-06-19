@@ -956,6 +956,106 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         assert.equal(expectations.length, 3);
     });
 
+    it('should setup an SSE response expectation using respondWithSse', async function () {
+        await client.respondWithSse('/sse', {
+            statusCode: 200,
+            events: [
+                { event: 'message', data: 'first' },
+                { event: 'message', data: 'second' }
+            ],
+            closeConnection: true
+        });
+
+        var expectations = await client.retrieveActiveExpectations('/sse');
+        assert.equal(expectations.length, 1);
+        assert.equal(expectations[0].httpRequest.path, '/sse');
+        assert.ok(expectations[0].httpSseResponse, 'httpSseResponse should be present');
+        assert.equal(expectations[0].httpSseResponse.events.length, 2);
+        assert.equal(expectations[0].httpSseResponse.events[0].data, 'first');
+        assert.equal(expectations[0].httpSseResponse.closeConnection, true);
+        assert.ok(!expectations[0].httpResponse, 'no httpResponse action should be set');
+    });
+
+    it('should setup a WebSocket response expectation using respondWithWebSocket', async function () {
+        await client.respondWithWebSocket('/ws', {
+            messages: [
+                { text: 'hello' },
+                { text: 'world' }
+            ],
+            closeConnection: false
+        });
+
+        var expectations = await client.retrieveActiveExpectations('/ws');
+        assert.equal(expectations.length, 1);
+        assert.equal(expectations[0].httpRequest.path, '/ws');
+        assert.ok(expectations[0].httpWebSocketResponse, 'httpWebSocketResponse should be present');
+        assert.equal(expectations[0].httpWebSocketResponse.messages.length, 2);
+        assert.equal(expectations[0].httpWebSocketResponse.messages[0].text, 'hello');
+        assert.ok(!expectations[0].httpResponse, 'no httpResponse action should be set');
+    });
+
+    it('should setup a DNS response expectation using respondWithDns', async function () {
+        await client.respondWithDns('/dns', {
+            answerRecords: [
+                { name: 'example.com', type: 'A', ttl: 300, value: '127.0.0.1' }
+            ],
+            responseCode: 'NOERROR'
+        });
+
+        var expectations = await client.retrieveActiveExpectations('/dns');
+        assert.equal(expectations.length, 1);
+        assert.equal(expectations[0].httpRequest.path, '/dns');
+        assert.ok(expectations[0].dnsResponse, 'dnsResponse should be present');
+        assert.equal(expectations[0].dnsResponse.answerRecords.length, 1);
+        assert.equal(expectations[0].dnsResponse.answerRecords[0].value, '127.0.0.1');
+        assert.equal(expectations[0].dnsResponse.responseCode, 'NOERROR');
+        assert.ok(!expectations[0].httpResponse, 'no httpResponse action should be set');
+    });
+
+    it('should setup a binary response expectation using respondWithBinary', async function () {
+        var base64Data = Buffer.from('hello binary').toString('base64');
+        await client.respondWithBinary('/binary', {
+            binaryData: base64Data
+        });
+
+        var expectations = await client.retrieveActiveExpectations('/binary');
+        assert.equal(expectations.length, 1);
+        assert.equal(expectations[0].httpRequest.path, '/binary');
+        assert.ok(expectations[0].binaryResponse, 'binaryResponse should be present');
+        assert.equal(expectations[0].binaryResponse.binaryData, base64Data);
+        assert.ok(!expectations[0].httpResponse, 'no httpResponse action should be set');
+    });
+
+    it('should setup a gRPC stream response expectation using respondWithGrpcStream', async function () {
+        await client.respondWithGrpcStream('/my.Service/StreamItems', {
+            statusName: 'OK',
+            messages: [
+                { json: '{"value":"first"}' },
+                { json: '{"value":"second"}' }
+            ],
+            closeConnection: true
+        });
+
+        var expectations = await client.retrieveActiveExpectations('/my.Service/StreamItems');
+        assert.equal(expectations.length, 1);
+        assert.equal(expectations[0].httpRequest.path, '/my.Service/StreamItems');
+        assert.ok(expectations[0].grpcStreamResponse, 'grpcStreamResponse should be present');
+        assert.equal(expectations[0].grpcStreamResponse.messages.length, 2);
+        assert.equal(expectations[0].grpcStreamResponse.statusName, 'OK');
+        assert.ok(!expectations[0].httpResponse, 'no httpResponse action should be set');
+    });
+
+    it('should honour times on respondWithSse', async function () {
+        await client.respondWithSse('/sse-times', {
+            events: [ { event: 'message', data: 'x' } ]
+        }, 3);
+
+        var expectations = await client.retrieveActiveExpectations('/sse-times');
+        assert.equal(expectations.length, 1);
+        assert.equal(expectations[0].times.remainingTimes, 3);
+        assert.ok(!expectations[0].times.unlimited, 'expectation should not be unlimited');
+    });
+
     it('should retrieve some requests using object matcher', async function () {
         await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);
         await client.mockSimpleResponse('/somePathOne', {name: 'one'}, 201);

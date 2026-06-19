@@ -668,13 +668,13 @@ var mockServerClient;
             if (Array.isArray(expectation)) {
                 for (var i = 0; i < expectation.length; i++) {
                     expectation[i].httpRequest = addDefaultRequestMatcherHeaders(expectation[i].httpRequest);
-                    if (!expectation[i].httpResponseTemplate && !expectation[i].httpResponseClassCallback && !expectation[i].httpResponseObjectCallback && !expectation[i].httpForward && !expectation[i].httpForwardTemplate && !expectation[i].httpForwardClassCallback && !expectation[i].httpForwardObjectCallback && !expectation[i].httpOverrideForwardedRequest && !expectation[i].httpError && !expectation[i].httpSseResponse && !expectation[i].httpWebSocketResponse && !expectation[i].httpLlmResponse) {
+                    if (!expectation[i].httpResponseTemplate && !expectation[i].httpResponseClassCallback && !expectation[i].httpResponseObjectCallback && !expectation[i].httpForward && !expectation[i].httpForwardTemplate && !expectation[i].httpForwardClassCallback && !expectation[i].httpForwardObjectCallback && !expectation[i].httpOverrideForwardedRequest && !expectation[i].httpError && !expectation[i].httpSseResponse && !expectation[i].httpWebSocketResponse && !expectation[i].grpcStreamResponse && !expectation[i].binaryResponse && !expectation[i].dnsResponse && !expectation[i].httpLlmResponse) {
                         expectation[i].httpResponse = addDefaultResponseMatcherHeaders(expectation[i].httpResponse);
                     }
                 }
             } else {
                 expectation.httpRequest = addDefaultRequestMatcherHeaders(expectation.httpRequest);
-                if (!expectation.httpResponseTemplate && !expectation.httpResponseClassCallback && !expectation.httpResponseObjectCallback && !expectation.httpForward && !expectation.httpForwardTemplate && !expectation.httpForwardClassCallback && !expectation.httpForwardObjectCallback && !expectation.httpOverrideForwardedRequest && !expectation.httpError && !expectation.httpSseResponse && !expectation.httpWebSocketResponse && !expectation.httpLlmResponse) {
+                if (!expectation.httpResponseTemplate && !expectation.httpResponseClassCallback && !expectation.httpResponseObjectCallback && !expectation.httpForward && !expectation.httpForwardTemplate && !expectation.httpForwardClassCallback && !expectation.httpForwardObjectCallback && !expectation.httpOverrideForwardedRequest && !expectation.httpError && !expectation.httpSseResponse && !expectation.httpWebSocketResponse && !expectation.grpcStreamResponse && !expectation.binaryResponse && !expectation.dnsResponse && !expectation.httpLlmResponse) {
                     expectation.httpResponse = addDefaultResponseMatcherHeaders(expectation.httpResponse);
                 }
             }
@@ -917,6 +917,143 @@ var mockServerClient;
          */
         var mockSimpleResponse = function (path, responseBody, statusCode) {
             return mockAnyResponse(createExpectation(path, responseBody, statusCode));
+        };
+        /**
+         * Build the expectation object shared by all advanced response builders.
+         * The requestMatcher may be a path string or a full request matcher object.
+         * The supplied responseAction is set on the expectation under the given
+         * top-level action property name (matching the MockServer JSON model).
+         */
+        var createAdvancedResponseExpectation = function (responseActionProperty, requestMatcher, responseAction, times, priority, timeToLive, id) {
+            var request = (typeof requestMatcher === "string") ? createRequestMatcher(requestMatcher) : requestMatcher;
+            var timesObject;
+            if (typeof times === "number") {
+                timesObject = {
+                    remainingTimes: times,
+                    unlimited: false
+                };
+            } else if (typeof times === "object" && times !== null) {
+                timesObject = times;
+            } else {
+                timesObject = {
+                    remainingTimes: 1,
+                    unlimited: false
+                };
+            }
+            var expectation = {
+                id: typeof id === "string" ? id : undefined,
+                priority: typeof priority === "number" ? priority : undefined,
+                httpRequest: request,
+                times: timesObject,
+                timeToLive: (typeof timeToLive === "object" && timeToLive !== null) ? timeToLive : undefined
+            };
+            expectation[responseActionProperty] = responseAction;
+            return expectation;
+        };
+        /**
+         * Setup an expectation that responds with a Server-Sent Events (SSE) stream
+         *, for example:
+         *
+         *   client.respondWithSse('/events', {
+         *       events: [
+         *           { event: 'message', data: 'first' },
+         *           { event: 'message', data: 'second' }
+         *       ],
+         *       closeConnection: true
+         *   });
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param sseResponse the SSE response action (httpSseResponse), with events/headers/statusCode/closeConnection
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var respondWithSse = function (requestMatcher, sseResponse, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("httpSseResponse", requestMatcher, sseResponse, times, priority, timeToLive, id));
+        };
+        /**
+         * Setup an expectation that responds over a WebSocket connection
+         *, for example:
+         *
+         *   client.respondWithWebSocket('/ws', {
+         *       messages: [
+         *           { text: 'hello' }
+         *       ],
+         *       closeConnection: false
+         *   });
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param webSocketResponse the WebSocket response action (httpWebSocketResponse), with messages/matchers/subprotocol/closeConnection
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var respondWithWebSocket = function (requestMatcher, webSocketResponse, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("httpWebSocketResponse", requestMatcher, webSocketResponse, times, priority, timeToLive, id));
+        };
+        /**
+         * Setup an expectation that responds to a DNS query
+         *, for example:
+         *
+         *   client.respondWithDns('example.com', {
+         *       answerRecords: [
+         *           { name: 'example.com', type: 'A', ttl: 300, value: '127.0.0.1' }
+         *       ],
+         *       responseCode: 'NOERROR'
+         *   });
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param dnsResponse the DNS response action (dnsResponse), with answerRecords/authorityRecords/additionalRecords/responseCode
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var respondWithDns = function (requestMatcher, dnsResponse, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("dnsResponse", requestMatcher, dnsResponse, times, priority, timeToLive, id));
+        };
+        /**
+         * Setup an expectation that responds with raw binary data
+         *, for example:
+         *
+         *   client.respondWithBinary('/binary', {
+         *       binaryData: Buffer.from('hello').toString('base64')
+         *   });
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param binaryResponse the binary response action (binaryResponse), with binaryData (base64-encoded) and optional delay
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var respondWithBinary = function (requestMatcher, binaryResponse, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("binaryResponse", requestMatcher, binaryResponse, times, priority, timeToLive, id));
+        };
+        /**
+         * Setup an expectation that responds with a gRPC server-streaming response
+         *, for example:
+         *
+         *   client.respondWithGrpcStream('/my.Service/StreamItems', {
+         *       statusName: 'OK',
+         *       messages: [
+         *           { json: '{"value":"first"}' },
+         *           { json: '{"value":"second"}' }
+         *       ],
+         *       closeConnection: true
+         *   });
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param grpcStreamResponse the gRPC stream response action (grpcStreamResponse), with messages/statusName/statusMessage/headers/closeConnection
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var respondWithGrpcStream = function (requestMatcher, grpcStreamResponse, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("grpcStreamResponse", requestMatcher, grpcStreamResponse, times, priority, timeToLive, id));
         };
         var simplifyVerificationError = function (message) {
             if (typeof message === "string") {
@@ -1791,6 +1928,11 @@ var mockServerClient;
             mockWithForwardCallback: mockWithForwardCallback,
             mockWithForwardAndResponseCallback: mockWithForwardAndResponseCallback,
             mockSimpleResponse: mockSimpleResponse,
+            respondWithSse: respondWithSse,
+            respondWithWebSocket: respondWithWebSocket,
+            respondWithDns: respondWithDns,
+            respondWithBinary: respondWithBinary,
+            respondWithGrpcStream: respondWithGrpcStream,
             setDefaultHeaders: setDefaultHeaders,
             verify: verify,
             verifyResponse: verifyResponse,

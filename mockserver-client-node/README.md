@@ -93,6 +93,51 @@ mockServerClient("localhost", 1080)
 
 For the full documentation see [MockServer - Creating Expectations](https://mock-server.com/mock_server/creating_expectations.html).
 
+### Advanced Response Builders
+
+For non-HTTP and streaming protocols there are dedicated builders that take a path (or full request matcher)
+plus the response action object, with optional `times`, `priority`, `timeToLive`, and `id` arguments:
+
+```javascript
+// Server-Sent Events (SSE)
+client.respondWithSse('/events', {
+    events: [
+        { event: 'message', data: 'first' },
+        { event: 'message', data: 'second' }
+    ],
+    closeConnection: true
+});
+
+// WebSocket
+client.respondWithWebSocket('/ws', {
+    messages: [ { text: 'hello' } ],
+    closeConnection: false
+});
+
+// DNS
+client.respondWithDns('example.com', {
+    answerRecords: [
+        { name: 'example.com', type: 'A', ttl: 300, value: '127.0.0.1' }
+    ],
+    responseCode: 'NOERROR'
+});
+
+// Raw binary
+client.respondWithBinary('/binary', {
+    binaryData: Buffer.from('hello').toString('base64')
+});
+
+// gRPC server-streaming
+client.respondWithGrpcStream('/my.Service/StreamItems', {
+    statusName: 'OK',
+    messages: [
+        { json: '{"value":"first"}' },
+        { json: '{"value":"second"}' }
+    ],
+    closeConnection: true
+});
+```
+
 ## Verify Requests
 
 It is also possible to verify that request were made:

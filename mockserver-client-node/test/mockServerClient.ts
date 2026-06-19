@@ -226,6 +226,30 @@ async function test() {
     requestResponse = await client.mockSimpleResponse('some/path', {});
     requestResponse = await client.mockSimpleResponse('some/path', {}, 500);
 
+    // advanced response builders (type-checking only)
+    requestResponse = await client.respondWithSse('/sse', {
+        statusCode: 200,
+        events: [{event: 'message', data: 'hello'}],
+        closeConnection: true
+    });
+    requestResponse = await client.respondWithSse(requestDefinition, {events: [{data: 'x'}]}, 3, 10, {unlimited: true}, 'sse-id');
+    requestResponse = await client.respondWithWebSocket('/ws', {
+        messages: [{text: 'hello'}],
+        closeConnection: false
+    });
+    requestResponse = await client.respondWithDns('/dns', {
+        answerRecords: [{name: 'example.com', type: 'A', ttl: 300, value: '127.0.0.1'}],
+        responseCode: 'NOERROR'
+    });
+    requestResponse = await client.respondWithBinary('/binary', {
+        binaryData: Buffer.from('hello').toString('base64')
+    });
+    requestResponse = await client.respondWithGrpcStream('/my.Service/Stream', {
+        statusName: 'OK',
+        messages: [{json: '{"value":"first"}'}],
+        closeConnection: true
+    });
+
     let _this = client.setDefaultHeaders(
         [
             {"name": "Content-Type", "values": ["application/json; charset=utf-8"]},
