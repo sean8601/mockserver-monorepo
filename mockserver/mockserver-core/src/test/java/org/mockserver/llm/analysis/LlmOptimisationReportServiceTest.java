@@ -60,6 +60,22 @@ public class LlmOptimisationReportServiceTest {
     }
 
     @Test
+    public void excludesResponseLessPreLogGhostPairs() {
+        // The LLM dispatch path writes an informational request-only EXPECTATION_RESPONSE
+        // (no httpResponse) alongside the real one. The report must count the call ONCE,
+        // not double-count, and must not falsely trip DUPLICATE_CONSECUTIVE_CALL.
+        LogEventRequestAndResponse real = openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10);
+        LogEventRequestAndResponse ghost = new LogEventRequestAndResponse()
+            .withHttpRequest(real.getHttpRequest()); // same request, NO response
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(ghost, real);
+
+        LlmOptimisationReportService.Result result = service.build(pairs, noFilter());
+        LlmOptimisationReport report = result.getReport();
+        assertEquals(1, report.getTotals().getCallCount());
+        assertTrue(report.getSignals().stream().noneMatch(s -> "DUPLICATE_CONSECUTIVE_CALL".equals(s.getId())));
+    }
+
+    @Test
     public void includesMockedLocalhostLlmTraffic() {
         // Regression: MOCKED LLM traffic (served by MockServer on localhost, as in
         // `npm run demo`) has no provider host, so host-based sniff() misses it. The

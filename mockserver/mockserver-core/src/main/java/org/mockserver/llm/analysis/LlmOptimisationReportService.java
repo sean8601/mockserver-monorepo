@@ -82,6 +82,14 @@ public class LlmOptimisationReportService {
                 if (pair == null || pair.getHttpRequest() == null) {
                     continue;
                 }
+                // Skip response-less entries. The LLM/SSE dispatch path writes an
+                // informational request-only EXPECTATION_RESPONSE pre-log (no httpResponse)
+                // alongside the real one, so counting both would double-count every mocked
+                // LLM call and falsely trip DUPLICATE_CONSECUTIVE_CALL. The report only
+                // summarises completed exchanges that carry a real response/usage.
+                if (pair.getHttpResponse() == null) {
+                    continue;
+                }
                 HttpRequest request = pair.getHttpRequest();
                 // detectForAnalysis (not sniff) so MOCKED LLM traffic on localhost — e.g. the
                 // demo, and any mocked conversations — is included, matching the Sessions view.
