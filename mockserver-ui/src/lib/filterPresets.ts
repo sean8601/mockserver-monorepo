@@ -69,6 +69,8 @@ export interface FilterPreset {
   name: string;
   method: string;
   path: string;
+  /** Request-body substring filter (optional; defaults to '' for older presets). */
+  body: string;
   secure: boolean;
   keepAlive: boolean;
   regex: boolean;
@@ -99,6 +101,7 @@ function coercePreset(raw: unknown): FilterPreset | null {
     name: r['name'],
     method: typeof r['method'] === 'string' ? r['method'] : '',
     path: typeof r['path'] === 'string' ? r['path'] : '',
+    body: typeof r['body'] === 'string' ? r['body'] : '',
     secure: r['secure'] === true,
     keepAlive: r['keepAlive'] === true,
     regex: r['regex'] === true,

@@ -219,6 +219,8 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
   const setActionTypeFilter = useDashboardStore((s) => s.setActionTypeFilter);
   const llmProviderFilter = useDashboardStore((s) => s.llmProviderFilter);
   const setLlmProviderFilter = useDashboardStore((s) => s.setLlmProviderFilter);
+  const logShowForwarded = useDashboardStore((s) => s.logShowForwarded);
+  const setLogShowForwarded = useDashboardStore((s) => s.setLogShowForwarded);
 
   const hasLlmExpectations = useMemo(
     () => activeExpectations.some((e) => 'httpLlmResponse' in e.value),
@@ -227,6 +229,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
 
   const [method, setMethod] = useState('');
   const [path, setPath] = useState('');
+  const [body, setBody] = useState('');
   const [secure, setSecure] = useState(false);
   const [keepAlive, setKeepAlive] = useState(false);
   const [regex, setRegex] = useState(false);
@@ -259,6 +262,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
       // In regex mode an invalid pattern is held back rather than shipped to the
       // server (it would match nothing or error); the field shows the error.
       if (path && !(regex && validateRegex(path).error)) filter.path = path;
+      if (body) filter.body = body;
       if (keepAlive) filter.keepAlive = true;
       if (secure) filter.secure = true;
 
@@ -277,7 +281,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
 
       onFilterChange(filter);
     }, 300);
-  }, [filterEnabled, method, path, secure, keepAlive, regex, headers, queryParams, cookies, onFilterChange]);
+  }, [filterEnabled, method, path, body, secure, keepAlive, regex, headers, queryParams, cookies, onFilterChange]);
 
   useEffect(() => {
     emitFilter();
@@ -300,6 +304,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
       name,
       method,
       path,
+      body,
       secure,
       keepAlive,
       regex,
@@ -312,13 +317,14 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
     persist(upsertPreset(presets, preset));
     setPresetName('');
   }, [
-    presetName, method, path, secure, keepAlive, regex, headers, queryParams, cookies,
+    presetName, method, path, body, secure, keepAlive, regex, headers, queryParams, cookies,
     actionTypeFilter, llmProviderFilter, presets, persist,
   ]);
 
   const applyPreset = useCallback((preset: FilterPreset) => {
     setMethod(preset.method);
     setPath(preset.path);
+    setBody(preset.body ?? '');
     setSecure(preset.secure);
     setKeepAlive(preset.keepAlive);
     setRegex(preset.regex);
@@ -405,6 +411,15 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                 helperText={pathRegexError}
                 sx={{ width: { xs: '100%', sm: 200 } }}
               />
+              <TextField
+                size="small"
+                label="Body contains"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                disabled={disabled}
+                placeholder="text in the request body"
+                sx={{ width: { xs: '100%', sm: 200 } }}
+              />
               <FormControlLabel
                 control={
                   <Switch
@@ -458,6 +473,24 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                 disabled={disabled}
               />
             )}
+          </Box>
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="caption" color="primary" sx={{ mb: 0.5, display: 'block' }}>
+              Log Display
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={logShowForwarded}
+                  onChange={(e) => setLogShowForwarded(e.target.checked)}
+                />
+              }
+              label="Show forwarded"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -0.5 }}>
+              Hide proxied / forwarded request entries from the Log panel when off.
+            </Typography>
           </Box>
           <Box sx={{ mt: 2 }}>
             <MultiValueField label="Headers" items={headers} onChange={setHeaders} disabled={disabled} />

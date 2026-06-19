@@ -59,6 +59,9 @@ interface DashboardState {
   proxiedSearch: string;
   trafficSearch: string;
 
+  /** When false, FORWARDED_REQUEST log entries are hidden from the Log panel. */
+  logShowForwarded: boolean;
+
   error: string | null;
 
   /** Transient toast/snackbar for action feedback (success/info/warning/error). */
@@ -109,6 +112,7 @@ interface DashboardState {
   setAutoScroll: (enabled: boolean) => void;
   toggleAutoScroll: () => void;
   setLogSearch: (term: string) => void;
+  setLogShowForwarded: (show: boolean) => void;
   setExpectationSearch: (term: string) => void;
   setReceivedSearch: (term: string) => void;
   setProxiedSearch: (term: string) => void;
@@ -157,6 +161,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   receivedSearch: '',
   proxiedSearch: '',
   trafficSearch: '',
+
+  logShowForwarded: true,
 
   error: null,
   notification: null,
@@ -247,6 +253,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   setAutoScroll: (enabled) => set({ autoScroll: enabled }),
   toggleAutoScroll: () => set((s) => ({ autoScroll: !s.autoScroll })),
   setLogSearch: (term) => set({ logSearch: term }),
+  setLogShowForwarded: (show) => set({ logShowForwarded: show }),
   setExpectationSearch: (term) => set({ expectationSearch: term }),
   setReceivedSearch: (term) => set({ receivedSearch: term }),
   setProxiedSearch: (term) => set({ proxiedSearch: term }),

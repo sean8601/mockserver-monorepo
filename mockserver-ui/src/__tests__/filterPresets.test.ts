@@ -14,6 +14,7 @@ function makePreset(overrides: Partial<FilterPreset> = {}): FilterPreset {
     name: 'preset',
     method: '',
     path: '',
+    body: '',
     secure: false,
     keepAlive: false,
     regex: false,

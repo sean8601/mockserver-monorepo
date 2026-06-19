@@ -20,6 +20,7 @@ describe('FilterPanel', () => {
     useDashboardStore.setState({
       filterEnabled: false,
       filterExpanded: false,
+      logShowForwarded: true,
     });
   });
 
@@ -72,6 +73,35 @@ describe('FilterPanel', () => {
       const lastCall = onFilterChange.mock.calls[onFilterChange.mock.calls.length - 1]![0];
       expect(lastCall).toHaveProperty('path', '/api');
     });
+  });
+
+  it('includes the body-content filter when enabled', async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    useDashboardStore.setState({ filterExpanded: true });
+    renderFilterPanel(onFilterChange);
+
+    await user.click(screen.getByLabelText('Enabled'));
+
+    const bodyInput = screen.getByLabelText('Body contains');
+    await user.type(bodyInput, 'order-123');
+
+    await waitFor(() => {
+      const lastCall = onFilterChange.mock.calls[onFilterChange.mock.calls.length - 1]![0];
+      expect(lastCall).toHaveProperty('body', 'order-123');
+    });
+  });
+
+  it('toggles the "Show forwarded" log display switch through the store', async () => {
+    const user = userEvent.setup();
+    useDashboardStore.setState({ filterExpanded: true, logShowForwarded: true });
+    renderFilterPanel();
+
+    const toggle = screen.getByLabelText('Show forwarded');
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+    expect(useDashboardStore.getState().logShowForwarded).toBe(false);
   });
 
   it('shows Action Type chip cluster when expanded', async () => {

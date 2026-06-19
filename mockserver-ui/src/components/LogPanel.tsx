@@ -7,18 +7,21 @@ import LogEntry from './LogEntry';
 import LogGroup from './LogGroup';
 import ProgressiveList from './ProgressiveList';
 import { useExpansion } from '../hooks/useExpansion';
-import { matchesLogSearch } from '../lib/searchMatcher';
+import { matchesLogSearch, isForwardedLogEntry } from '../lib/searchMatcher';
 
 export default function LogPanel() {
   const logMessages = useDashboardStore((s) => s.logMessages);
   const search = useDashboardStore((s) => s.logSearch);
   const setSearch = useDashboardStore((s) => s.setLogSearch);
+  const showForwarded = useDashboardStore((s) => s.logShowForwarded);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const filtered = useMemo(
-    () => (search ? logMessages.filter((m) => matchesLogSearch(m, search)) : logMessages),
-    [logMessages, search],
-  );
+  const filtered = useMemo(() => {
+    let rows = logMessages;
+    if (!showForwarded) rows = rows.filter((m) => !isForwardedLogEntry(m));
+    if (search) rows = rows.filter((m) => matchesLogSearch(m, search));
+    return rows;
+  }, [logMessages, search, showForwarded]);
 
   const expansion = useExpansion();
 
@@ -26,7 +29,7 @@ export default function LogPanel() {
     <Panel
       title="Log Messages"
       count={logMessages.length}
-      filteredCount={search ? filtered.length : undefined}
+      filteredCount={(search || !showForwarded) ? filtered.length : undefined}
       searchValue={search}
       onSearchChange={setSearch}
       searchInputRef={searchRef}

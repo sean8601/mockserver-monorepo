@@ -74,6 +74,8 @@ export interface WebSocketMessage {
 export interface RequestFilter {
   method?: string;
   path?: string;
+  /** Substring matched against the request body text. */
+  body?: string;
   keepAlive?: boolean;
   secure?: boolean;
   headers?: KeyToMultiValue[];
