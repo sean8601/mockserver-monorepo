@@ -174,6 +174,12 @@ const PROVIDERS = {
 
 const SCENARIO = '__llm_conv_weather_agent__iso=header:x-agent-id';
 
+// A SECOND isolated conversation on a different provider (OpenAI), path
+// (/v1/chat/completions) and isolation key (header x-session-id). Driving it
+// for several session ids gives the Sessions tab additional distinct lanes
+// under a different provider, alongside the weather-agent lanes above.
+const SUPPORT_SCENARIO = '__llm_conv_support_bot__iso=header:x-session-id';
+
 // ---------------------------------------------------------------------------
 // 1. Plain HTTP expectations
 // ---------------------------------------------------------------------------
@@ -501,6 +507,44 @@ async function conversationExpectations() {
           dropVolatileFields: ['request_id', 'timestamp'],
         },
       },
+    },
+  });
+
+  // Second isolated conversation: an OpenAI "support bot" isolated by the
+  // x-session-id header (SUPPORT_SCENARIO). A two-turn loop — user question →
+  // assistant tool_use (lookup_order) → user tool_result → assistant final
+  // answer — driven below for several session ids so the Sessions tab shows
+  // additional distinct OpenAI lanes. turnIndex counts prior user turns.
+  await expectation('support bot · turn 0 (tool_use)', {
+    scenarioName: SUPPORT_SCENARIO,
+    priority: 15,
+    httpRequest: { method: 'POST', path: '/v1/chat/completions' },
+    httpLlmResponse: {
+      provider: 'OPENAI',
+      model: 'gpt-4o',
+      completion: {
+        text: 'Let me look up your order status.',
+        toolCalls: [{ id: 'call_s0', name: 'lookup_order', arguments: '{"orderId":"A-4291"}' }],
+        stopReason: 'tool_calls',
+        usage: { inputTokens: 180, outputTokens: 32 },
+      },
+      conversationPredicates: { turnIndex: 0, latestMessageRole: 'USER' },
+    },
+  });
+
+  await expectation('support bot · turn 1 (final answer, after tool_result)', {
+    scenarioName: SUPPORT_SCENARIO,
+    priority: 15,
+    httpRequest: { method: 'POST', path: '/v1/chat/completions' },
+    httpLlmResponse: {
+      provider: 'OPENAI',
+      model: 'gpt-4o',
+      completion: {
+        text: 'Your order A-4291 shipped yesterday and arrives Thursday.',
+        stopReason: 'stop',
+        usage: { inputTokens: 300, outputTokens: 22 },
+      },
+      conversationPredicates: { turnIndex: 1, containsToolResultFor: 'lookup_order' },
     },
   });
 }
@@ -1017,7 +1061,7 @@ async function llmTraffic() {
 }
 
 async function agentLoops() {
-  log('\n→ Agent loops (Sessions + call graph, grouped by x-agent-id)');
+  log('\n→ Agent loops (Sessions + call graph, grouped by x-agent-id + x-session-id)');
 
   // A full two-turn weather agent loop for agent-001: user → assistant tool_use
   // → user tool_result → assistant final answer. The request bodies carry the
@@ -1043,7 +1087,7 @@ async function agentLoops() {
     ],
   };
 
-  for (const agent of ['agent-001', 'agent-002']) {
+  for (const agent of ['agent-001', 'agent-002', 'agent-003', 'agent-004']) {
     await traffic(`${agent} turn 1`, 'POST', '/v1/messages', {
       body: turn1Body,
       headers: { 'x-agent-id': agent },
@@ -1051,6 +1095,44 @@ async function agentLoops() {
     await traffic(`${agent} turn 2`, 'POST', '/v1/messages', {
       body: turn2Body,
       headers: { 'x-agent-id': agent },
+    });
+  }
+
+  // Second isolated conversation: an OpenAI "support bot" grouped by the
+  // x-session-id header (SUPPORT_SCENARIO above). Same two-turn shape but a
+  // clearly different question / tool / answer so the lanes read distinctly.
+  // Driven to /v1/chat/completions to match the conversation expectation path.
+  const supportTurn1Body = {
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'Where is my order A-4291?' }],
+  };
+  const supportTurn2Body = {
+    model: 'gpt-4o',
+    messages: [
+      { role: 'user', content: 'Where is my order A-4291?' },
+      {
+        role: 'assistant',
+        content: 'Let me look up your order status.',
+        tool_calls: [
+          {
+            id: 'call_s0',
+            type: 'function',
+            function: { name: 'lookup_order', arguments: '{"orderId":"A-4291"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call_s0', content: 'shipped 2024-01-01, ETA Thursday' },
+    ],
+  };
+
+  for (const session of ['sess-alpha', 'sess-bravo', 'sess-charlie']) {
+    await traffic(`${session} turn 1`, 'POST', '/v1/chat/completions', {
+      body: supportTurn1Body,
+      headers: { 'x-session-id': session },
+    });
+    await traffic(`${session} turn 2`, 'POST', '/v1/chat/completions', {
+      body: supportTurn2Body,
+      headers: { 'x-session-id': session },
     });
   }
 }
