@@ -96,6 +96,9 @@ public class Configuration {
     private Long maxFutureTimeoutInMillis;
     private Boolean matchersFailFast;
     private Boolean matchExactCase;
+    private Boolean forwardConnectionPoolEnabled;
+    private Integer forwardConnectionPoolMaxIdlePerKey;
+    private Long forwardConnectionPoolIdleTimeoutMillis;
 
     // socket
     private Long maxSocketTimeoutInMillis;
@@ -1211,6 +1214,66 @@ public class Configuration {
      */
     public Configuration matchExactCase(Boolean matchExactCase) {
         this.matchExactCase = matchExactCase;
+        return this;
+    }
+
+    public Boolean forwardConnectionPoolEnabled() {
+        if (forwardConnectionPoolEnabled == null) {
+            return ConfigurationProperties.forwardConnectionPoolEnabled();
+        }
+        return forwardConnectionPoolEnabled;
+    }
+
+    /**
+     * If false (the default) every forwarded or proxied request opens a fresh upstream connection
+     * that is closed once the response is received. If true idle keep-alive HTTP/1.1 upstream
+     * connections are pooled (keyed by host, port and scheme) and reused for subsequent requests
+     * to the same upstream. Only plain HTTP/1.1 keep-alive connections are pooled; HTTP/2, HTTP/3,
+     * binary forwarding, streaming responses, proxy-tunnelled connections and connections the
+     * upstream closed or that returned "Connection: close" are never pooled.
+     *
+     * @param forwardConnectionPoolEnabled enable pooling of idle keep-alive upstream HTTP/1.1 connections
+     */
+    public Configuration forwardConnectionPoolEnabled(Boolean forwardConnectionPoolEnabled) {
+        this.forwardConnectionPoolEnabled = forwardConnectionPoolEnabled;
+        return this;
+    }
+
+    public Integer forwardConnectionPoolMaxIdlePerKey() {
+        if (forwardConnectionPoolMaxIdlePerKey == null) {
+            return ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey();
+        }
+        return forwardConnectionPoolMaxIdlePerKey;
+    }
+
+    /**
+     * Maximum number of idle keep-alive upstream connections retained per upstream (host, port,
+     * scheme) when {@code forwardConnectionPoolEnabled} is true. Surplus connections are closed
+     * rather than pooled. Default is 8.
+     *
+     * @param forwardConnectionPoolMaxIdlePerKey maximum idle connections retained per upstream
+     */
+    public Configuration forwardConnectionPoolMaxIdlePerKey(Integer forwardConnectionPoolMaxIdlePerKey) {
+        this.forwardConnectionPoolMaxIdlePerKey = forwardConnectionPoolMaxIdlePerKey;
+        return this;
+    }
+
+    public Long forwardConnectionPoolIdleTimeoutMillis() {
+        if (forwardConnectionPoolIdleTimeoutMillis == null) {
+            return ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis();
+        }
+        return forwardConnectionPoolIdleTimeoutMillis;
+    }
+
+    /**
+     * How long in milliseconds an idle pooled upstream connection is retained before it is closed
+     * and evicted when {@code forwardConnectionPoolEnabled} is true. Default is 30,000 ms; 0
+     * disables idle eviction.
+     *
+     * @param forwardConnectionPoolIdleTimeoutMillis idle retention time in milliseconds, 0 to disable
+     */
+    public Configuration forwardConnectionPoolIdleTimeoutMillis(Long forwardConnectionPoolIdleTimeoutMillis) {
+        this.forwardConnectionPoolIdleTimeoutMillis = forwardConnectionPoolIdleTimeoutMillis;
         return this;
     }
 

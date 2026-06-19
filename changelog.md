@@ -28,6 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are now matched using the same sub-set / notted semantics as the request side — extra response cookies are
   allowed, a missing required cookie fails the match, and notted cookie values are honoured. Responses with no
   cookie template are unconstrained (additive; default response matching is unchanged).
+- **Upstream connection pooling opt-in `forwardConnectionPoolEnabled`** (`MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED`,
+  default false): when enabled, idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host, port and
+  scheme) and reused for subsequent forwarded/proxied requests to the same upstream, eliminating repeated TCP and
+  TLS handshakes for proxy-heavy workloads. The pool degrades gracefully — surplus connections beyond
+  `forwardConnectionPoolMaxIdlePerKey` (default 8) are closed rather than blocking, idle connections are evicted
+  after `forwardConnectionPoolIdleTimeoutMillis` (default 30000ms), and connections the upstream closed or that
+  returned `Connection: close` are never reused. Only plain HTTP/1.1 keep-alive connections are pooled; HTTP/2,
+  HTTP/3, binary forwarding, streaming responses and proxy-tunnelled connections are never pooled. The default
+  (false) is byte-for-byte the existing fresh-connection-per-request behaviour.
+- **Cached forward-proxy PEM parsing**: forward-proxy private key and certificate-chain PEM material is now parsed
+  once and cached by its configuration value, so an unchanged forward-proxy key/chain is not re-parsed on every
+  client TLS context (re)build.
 - **Case-sensitive matching opt-in `matchExactCase`** (`MOCKSERVER_MATCH_EXACT_CASE`, default false): when
   enabled, request matching of the method, path and regex string body becomes case-sensitive (exact case)
   instead of the historical case-insensitive behaviour, so an expectation for `/Path` no longer matches a

@@ -941,6 +941,55 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardBinaryRequestsWithoutWaitingForResponse="true"</code></pre>
 </div>
 
+<button id="button_configuration_forward_connection_pool_enabled" class="accordion title"><strong>Reuse Upstream Connections (Connection Pooling)</strong></button>
+<div class="panel title">
+    <p>By default every forwarded or proxied request opens a fresh upstream connection that is closed once the response is received. Enable this setting to pool idle keep-alive HTTP/1.1 upstream connections (keyed by host, port and scheme) and reuse them for subsequent requests to the same upstream. This eliminates repeated TCP and TLS handshakes and can significantly improve throughput for proxy-heavy workloads that repeatedly call the same upstream.</p>
+    <p>Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2, HTTP/3, binary forwarding, streaming (Server-Sent Events) responses, and proxy-tunnelled connections are never pooled. A connection the upstream closed, or that returned <span class="inline_code">Connection: close</span>, is never reused. The default (off) is unchanged from previous behaviour.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardConnectionPoolEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardConnectionPoolEnabled=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolEnabled="true"</code></pre>
+</div>
+
+<button id="button_configuration_forward_connection_pool_max_idle_per_key" class="accordion title"><strong>Maximum Idle Pooled Connections Per Upstream</strong></button>
+<div class="panel title">
+    <p>The maximum number of idle keep-alive upstream connections retained per upstream (host, port and scheme) when connection pooling is enabled. When this limit is reached, surplus connections are closed rather than pooled, so the pool degrades gracefully under load and never blocks. Values below 1 are treated as 1. Only relevant when <span class="inline_code">forwardConnectionPoolEnabled</span> is true.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">8</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey(int maxIdlePerKey)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolMaxIdlePerKey=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardConnectionPoolMaxIdlePerKey=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolMaxIdlePerKey="16"</code></pre>
+</div>
+
+<button id="button_configuration_forward_connection_pool_idle_timeout_millis" class="accordion title"><strong>Idle Pooled Connection Timeout In Millis</strong></button>
+<div class="panel title">
+    <p>How long in milliseconds an idle pooled upstream connection is retained before it is closed and evicted when connection pooling is enabled. Set to 0 to disable idle eviction (connections are still discarded when the upstream closes them). Only relevant when <span class="inline_code">forwardConnectionPoolEnabled</span> is true.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">30000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis(long idleTimeoutMillis)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolIdleTimeoutMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardConnectionPoolIdleTimeoutMillis=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolIdleTimeoutMillis="60000"</code></pre>
+</div>
+
 <button id="button_configuration_http_proxy" class="accordion title"><strong>HTTP Proxy For Forwarded Requests</strong></button>
 <div class="panel title">
     <p>Use HTTP proxy (i.e. via Host header) for all outbound / forwarded requests</p>

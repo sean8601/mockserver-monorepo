@@ -91,6 +91,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_MAX_FUTURE_TIMEOUT = "mockserver.maxFutureTimeout";
     private static final String MOCKSERVER_MATCHERS_FAIL_FAST = "mockserver.matchersFailFast";
     private static final String MOCKSERVER_MATCH_EXACT_CASE = "mockserver.matchExactCase";
+    private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED = "mockserver.forwardConnectionPoolEnabled";
+    private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY = "mockserver.forwardConnectionPoolMaxIdlePerKey";
+    private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS = "mockserver.forwardConnectionPoolIdleTimeoutMillis";
 
     // socket
     private static final String MOCKSERVER_MAX_SOCKET_TIMEOUT = "mockserver.maxSocketTimeout";
@@ -1391,6 +1394,62 @@ public class ConfigurationProperties {
      */
     public static void matchExactCase(boolean enable) {
         setProperty(MOCKSERVER_MATCH_EXACT_CASE, "" + enable);
+    }
+
+    public static boolean forwardConnectionPoolEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + false));
+    }
+
+    /**
+     * If false (the default) every forwarded or proxied request opens a fresh upstream TCP (and TLS)
+     * connection that is closed once the response is received, matching the historical behaviour.
+     * If true idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host, port and
+     * scheme) and reused for subsequent requests to the same upstream, eliminating repeated
+     * connection and TLS handshakes for proxy-heavy workloads.
+     * <p>
+     * Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2 and HTTP/3 (which multiplex
+     * differently), binary forwarding, streaming responses, proxy-tunnelled connections, and any
+     * connection the upstream closed or that returned "Connection: close" are never pooled and fall
+     * back to a fresh connection.
+     *
+     * @param enable enable pooling and reuse of idle keep-alive upstream HTTP/1.1 connections
+     */
+    public static void forwardConnectionPoolEnabled(boolean enable) {
+        setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "" + enable);
+    }
+
+    public static int forwardConnectionPoolMaxIdlePerKey() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY, "MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY", 8));
+    }
+
+    /**
+     * Maximum number of idle keep-alive upstream connections retained per upstream (host, port,
+     * scheme). Surplus connections are closed rather than pooled, so the pool degrades gracefully
+     * under saturation. Only relevant when {@code forwardConnectionPoolEnabled} is true.
+     * <p>
+     * Default is 8.
+     *
+     * @param maxIdlePerKey maximum idle connections retained per upstream
+     */
+    public static void forwardConnectionPoolMaxIdlePerKey(int maxIdlePerKey) {
+        setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY, "" + maxIdlePerKey);
+    }
+
+    public static long forwardConnectionPoolIdleTimeoutMillis() {
+        return Math.max(0L, readLongProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS, "MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS", 30_000L));
+    }
+
+    /**
+     * How long in milliseconds an idle pooled upstream connection is retained before it is closed
+     * and evicted. Only relevant when {@code forwardConnectionPoolEnabled} is true.
+     * <p>
+     * Default is 30,000 ms. Set to 0 to disable idle eviction (connections are still discarded
+     * when the upstream closes them).
+     *
+     * @param idleTimeoutMillis idle retention time in milliseconds, 0 to disable eviction
+     */
+    public static void forwardConnectionPoolIdleTimeoutMillis(long idleTimeoutMillis) {
+        setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS, "" + idleTimeoutMillis);
     }
 
     // socket

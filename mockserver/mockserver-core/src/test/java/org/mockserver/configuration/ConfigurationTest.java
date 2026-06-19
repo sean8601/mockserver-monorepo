@@ -567,6 +567,84 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetForwardConnectionPoolEnabled() {
+        boolean original = ConfigurationProperties.forwardConnectionPoolEnabled();
+        try {
+            // then - default value
+            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.forwardConnectionPoolEnabled(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardConnectionPoolEnabled(), equalTo(true));
+            assertThat(System.getProperty("mockserver.forwardConnectionPoolEnabled"), equalTo("true"));
+            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(true));
+            ConfigurationProperties.forwardConnectionPoolEnabled(original);
+
+            // when - setter
+            configuration.forwardConnectionPoolEnabled(true);
+
+            // then - getter
+            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(true));
+        } finally {
+            ConfigurationProperties.forwardConnectionPoolEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardConnectionPoolMaxIdlePerKey() {
+        int original = ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey();
+        try {
+            // then - default value
+            assertThat(configuration.forwardConnectionPoolMaxIdlePerKey(), equalTo(8));
+
+            // when - system property setter
+            ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey(16);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey(), equalTo(16));
+            assertThat(System.getProperty("mockserver.forwardConnectionPoolMaxIdlePerKey"), equalTo("16"));
+            assertThat(configuration.forwardConnectionPoolMaxIdlePerKey(), equalTo(16));
+            ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey(original);
+
+            // when - setter
+            configuration.forwardConnectionPoolMaxIdlePerKey(4);
+
+            // then - getter
+            assertThat(configuration.forwardConnectionPoolMaxIdlePerKey(), equalTo(4));
+        } finally {
+            ConfigurationProperties.forwardConnectionPoolMaxIdlePerKey(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardConnectionPoolIdleTimeoutMillis() {
+        long original = ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis();
+        try {
+            // then - default value
+            assertThat(configuration.forwardConnectionPoolIdleTimeoutMillis(), equalTo(30_000L));
+
+            // when - system property setter
+            ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis(60_000);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis(), equalTo(60_000L));
+            assertThat(System.getProperty("mockserver.forwardConnectionPoolIdleTimeoutMillis"), equalTo("60000"));
+            assertThat(configuration.forwardConnectionPoolIdleTimeoutMillis(), equalTo(60_000L));
+            ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis(original);
+
+            // when - setter
+            configuration.forwardConnectionPoolIdleTimeoutMillis(15_000L);
+
+            // then - getter
+            assertThat(configuration.forwardConnectionPoolIdleTimeoutMillis(), equalTo(15_000L));
+        } finally {
+            ConfigurationProperties.forwardConnectionPoolIdleTimeoutMillis(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetMatchersFailFast() {
         boolean original = ConfigurationProperties.matchersFailFast();
         try {
