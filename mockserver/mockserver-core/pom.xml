@@ -272,6 +272,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+            <!-- RFC 6902 JSON Patch / RFC 7386 JSON Merge Patch applied to forwarded response
+                 bodies; declared directly rather than relying on the json-schema-validator
+                 transitive so the API stays available if that transitive changes. -->
+            <groupId>com.github.java-json-tools</groupId>
+            <artifactId>json-patch</artifactId>
+        </dependency>
 
         <!-- open api -->
         <dependency>

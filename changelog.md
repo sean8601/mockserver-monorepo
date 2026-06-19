@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modifier may now carry a `condition` (gate on exact `statusCode`, `statusCodeRange` class range,
   `responseHasHeader`, or `requestHasHeader`) and/or an ordered `modifiers` chain where each modifier sees the
   previous one's output. Legacy single-modifier expectations behave byte-for-byte identically.
+- **JSON Patch / JSON Merge Patch on forwarded response bodies**: an `httpOverrideForwardedRequest` /
+  forward-template response modifier may now carry an inline `jsonPatch` (RFC 6902 array of
+  `add`/`remove`/`replace`/`move`/`copy`/`test` operations) and/or `jsonMergePatch` (RFC 7386 object) that is
+  applied to a forwarded/proxied upstream response body when that body is valid JSON — letting you change one
+  field of a real upstream response instead of replacing the whole body. `jsonPatch` runs before
+  `jsonMergePatch`. A non-JSON body, a malformed patch, or a failed `test` operation leaves the body unchanged
+  (the forward never errors), and an absent patch is byte-for-byte unchanged.
 - **gRPC bidi-stream response templating**: a `grpcBidiResponse` message may set `templateType`
   (`VELOCITY`/`MUSTACHE`) so its `json` is rendered as a response template against the matched inbound message
   (exposing `request.body`, `jsonPath`, and the `scenario` state helper). Static (no `templateType`) responses

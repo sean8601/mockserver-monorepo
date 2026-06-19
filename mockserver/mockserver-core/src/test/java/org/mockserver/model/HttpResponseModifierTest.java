@@ -1,18 +1,36 @@
 package org.mockserver.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.Test;
+import org.mockserver.serialization.ObjectMapperFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockserver.model.Header.header;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.HttpResponseModifier.responseModifier;
 import static org.mockserver.model.HttpResponseModifierCondition.responseModifierCondition;
 
 public class HttpResponseModifierTest {
+
+    private static JsonNode json(String value) {
+        try {
+            return ObjectMapperFactory.createObjectMapper().readTree(value);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static JsonNode tree(HttpResponse response) {
+        return json(response.getBodyAsString());
+    }
 
     // ---- backward-compatible single-modifier behaviour -------------------------------------
 
@@ -184,5 +202,175 @@ public class HttpResponseModifierTest {
         responseModifier()
             .withHeaders(Collections.singletonList(header("X", "y")), null, null)
             .applyTo(null, null);
+    }
+
+    // ---- RFC 6902 JSON Patch ---------------------------------------------------------------
+
+    @Test
+    public void jsonPatchReplacesOneField() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"name\":\"old\",\"keep\":true}"));
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"replace\",\"path\":\"/name\",\"value\":\"new\"}]"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.get("name").asText(), is("new"));
+        assertThat(patched.get("keep").asBoolean(), is(true));
+    }
+
+    @Test
+    public void jsonPatchAddsField() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1}"));
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"add\",\"path\":\"/b\",\"value\":2}]"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.get("a").asInt(), is(1));
+        assertThat(patched.get("b").asInt(), is(2));
+    }
+
+    @Test
+    public void jsonPatchRemovesField() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1,\"secret\":\"hide\"}"));
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"remove\",\"path\":\"/secret\"}]"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.has("secret"), is(false));
+        assertThat(patched.get("a").asInt(), is(1));
+    }
+
+    @Test
+    public void jsonPatchMovesField() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"from\":\"v\"}"));
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"move\",\"from\":\"/from\",\"path\":\"/to\"}]"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.has("from"), is(false));
+        assertThat(patched.get("to").asText(), is("v"));
+    }
+
+    @Test
+    public void jsonPatchFailingTestOperationLeavesBodyUnchanged() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1}"));
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"test\",\"path\":\"/a\",\"value\":999},{\"op\":\"add\",\"path\":\"/b\",\"value\":2}]"))
+            .applyTo(response, null);
+
+        // the test op fails so the whole patch is rejected and the body is untouched
+        JsonNode patched = tree(response);
+        assertThat(patched.get("a").asInt(), is(1));
+        assertThat(patched.has("b"), is(false));
+    }
+
+    // ---- RFC 7386 JSON Merge Patch ---------------------------------------------------------
+
+    @Test
+    public void jsonMergePatchSetsAndAddsFields() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"name\":\"old\",\"nested\":{\"a\":1}}"));
+        responseModifier()
+            .withJsonMergePatch(json("{\"name\":\"new\",\"nested\":{\"b\":2},\"extra\":true}"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.get("name").asText(), is("new"));
+        // merge patch recurses into nested objects: a is kept, b is added
+        assertThat(patched.get("nested").get("a").asInt(), is(1));
+        assertThat(patched.get("nested").get("b").asInt(), is(2));
+        assertThat(patched.get("extra").asBoolean(), is(true));
+    }
+
+    @Test
+    public void jsonMergePatchNullDeletesField() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1,\"secret\":\"hide\"}"));
+        responseModifier()
+            .withJsonMergePatch(json("{\"secret\":null}"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.has("secret"), is(false));
+        assertThat(patched.get("a").asInt(), is(1));
+    }
+
+    // ---- combined / negative / charset behaviour -------------------------------------------
+
+    @Test
+    public void jsonPatchAppliedBeforeMergePatchWhenBothPresent() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1}"));
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"add\",\"path\":\"/b\",\"value\":2}]"))
+            .withJsonMergePatch(json("{\"a\":10,\"b\":null,\"c\":3}"))
+            .applyTo(response, null);
+
+        JsonNode patched = tree(response);
+        assertThat(patched.get("a").asInt(), is(10));
+        // b was added by patch then deleted by merge patch
+        assertThat(patched.has("b"), is(false));
+        assertThat(patched.get("c").asInt(), is(3));
+    }
+
+    @Test
+    public void nonJsonBodyLeftUntouchedByPatch() {
+        HttpResponse response = response().withStatusCode(200).withBody("this is not json");
+        responseModifier()
+            .withJsonPatch(json("[{\"op\":\"add\",\"path\":\"/b\",\"value\":2}]"))
+            .applyTo(response, null);
+
+        assertThat(response.getBodyAsString(), is("this is not json"));
+    }
+
+    @Test
+    public void absentPatchLeavesBodyByteForByteUnchanged() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1}"));
+        BodyWithContentType originalBody = response.getBody();
+        responseModifier()
+            .withHeaders(Collections.singletonList(header("X-Added", "value")), null, null)
+            .applyTo(response, null);
+
+        assertThat(response.getBody(), is(originalBody));
+        assertThat(response.getFirstHeader("X-Added"), is("value"));
+    }
+
+    @Test
+    public void emptyBodyLeftUntouchedByPatch() {
+        HttpResponse response = response().withStatusCode(204);
+        responseModifier()
+            .withJsonMergePatch(json("{\"a\":1}"))
+            .applyTo(response, null);
+
+        assertThat(response.getBodyAsString(), nullValue());
+    }
+
+    @Test
+    public void patchPreservesContentTypeCharset() {
+        HttpResponse response = response().withStatusCode(200)
+            .withBody(new JsonBody("{\"name\":\"old\"}", null, MediaType.parse("application/json; charset=utf-16"), JsonBody.DEFAULT_MATCH_TYPE));
+        responseModifier()
+            .withJsonMergePatch(json("{\"name\":\"new\"}"))
+            .applyTo(response, null);
+
+        BodyWithContentType body = response.getBody();
+        assertThat(body.getContentType(), containsString("utf-16"));
+        // raw bytes are encoded with the preserved charset, not the default
+        byte[] utf16 = "{\"name\":\"new\"}".getBytes(StandardCharsets.UTF_16);
+        assertThat(body.getRawBytes().length, is(utf16.length));
+        assertThat(tree(response).get("name").asText(), is("new"));
+    }
+
+    @Test
+    public void patchAppliedWithinChain() {
+        HttpResponse response = response().withStatusCode(200).withBody(JsonBody.json("{\"a\":1}"));
+        HttpResponseModifier patchChild = responseModifier()
+            .withJsonMergePatch(json("{\"a\":2}"));
+        responseModifier()
+            .withModifiers(Collections.singletonList(patchChild))
+            .applyTo(response, null);
+
+        assertThat(tree(response).get("a").asInt(), is(2));
+        assertThat(response.getBodyAsString(), not(containsString("\"a\":1")));
     }
 }

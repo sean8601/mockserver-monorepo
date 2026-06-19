@@ -496,6 +496,45 @@ public class JsonSchemaExpectationValidatorTest {
     }
 
     @Test
+    public void shouldValidateExpectationWithResponseModifierJsonPatchAndMergePatch() {
+        // when
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"somePath\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpOverrideForwardedRequest\" : {" + NEW_LINE +
+            "    \"responseModifier\" : {" + NEW_LINE +
+            "      \"jsonPatch\" : [ {" + NEW_LINE +
+            "        \"op\" : \"replace\"," + NEW_LINE +
+            "        \"path\" : \"/name\"," + NEW_LINE +
+            "        \"value\" : \"new\"" + NEW_LINE +
+            "      } ]," + NEW_LINE +
+            "      \"jsonMergePatch\" : {" + NEW_LINE +
+            "        \"removed\" : null" + NEW_LINE +
+            "      }" + NEW_LINE +
+            "    }" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldRejectResponseModifierWithJsonPatchOfWrongType() {
+        // jsonPatch must be an array; an object is invalid
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"somePath\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpOverrideForwardedRequest\" : {" + NEW_LINE +
+            "    \"responseModifier\" : {" + NEW_LINE +
+            "      \"jsonPatch\" : {" + NEW_LINE +
+            "        \"op\" : \"replace\"" + NEW_LINE +
+            "      }" + NEW_LINE +
+            "    }" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(not("")));
+    }
+
+    @Test
     public void shouldValidateValidCompleteExpectationWithHttpForwardValidateAction() {
         // when
         assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +

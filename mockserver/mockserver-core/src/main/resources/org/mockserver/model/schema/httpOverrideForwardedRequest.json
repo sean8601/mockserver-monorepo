@@ -143,6 +143,12 @@
               "items": {
                 "$ref": "#/definitions/responseModifier"
               }
+            },
+            "jsonPatch": {
+              "type": "array"
+            },
+            "jsonMergePatch": {
+              "type": "object"
             }
           }
         },
@@ -243,6 +249,12 @@
           "items": {
             "$ref": "#/definitions/responseModifier"
           }
+        },
+        "jsonPatch": {
+          "type": "array"
+        },
+        "jsonMergePatch": {
+          "type": "object"
         }
       }
     }

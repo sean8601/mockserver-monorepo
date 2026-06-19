@@ -1,5 +1,6 @@
 package org.mockserver.serialization.model;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import org.mockserver.model.HttpResponseModifier;
 import org.mockserver.model.HttpResponseModifierCondition;
@@ -9,7 +10,9 @@ import java.util.Arrays;
 import java.util.Collections;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockserver.model.Header.header;
@@ -82,5 +85,41 @@ public class HttpResponseModifierDTOTest {
         assertThat(deserialized.buildObject(), is(dto.buildObject()));
         assertThat(deserialized.getCondition(), nullValue());
         assertThat(deserialized.getModifiers(), nullValue());
+    }
+
+    @Test
+    public void buildObjectRoundTripsJsonPatchAndMergePatch() throws Exception {
+        ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        HttpResponseModifier original = responseModifier()
+            .withJsonPatch(objectMapper.readTree("[{\"op\":\"replace\",\"path\":\"/a\",\"value\":1}]"))
+            .withJsonMergePatch(objectMapper.readTree("{\"b\":2,\"c\":null}"));
+
+        HttpResponseModifier built = new HttpResponseModifierDTO(original).buildObject();
+
+        assertThat(built, is(original));
+        assertThat(built.getJsonPatch(), notNullValue());
+        assertThat(built.getJsonPatch().isArray(), is(true));
+        assertThat(built.getJsonMergePatch(), notNullValue());
+        assertThat(built.getJsonMergePatch().get("b").asInt(), is(2));
+    }
+
+    @Test
+    public void jsonRoundTripPreservesPatchesInline() throws Exception {
+        ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        HttpResponseModifierDTO dto = new HttpResponseModifierDTO(responseModifier()
+            .withJsonPatch(objectMapper.readTree("[{\"op\":\"add\",\"path\":\"/x\",\"value\":\"y\"}]"))
+            .withJsonMergePatch(objectMapper.readTree("{\"z\":true}")));
+
+        String json = objectMapper.writeValueAsString(dto);
+        // patches serialise as inline JSON (array / object), not escaped strings
+        assertThat(json, containsString("\"jsonPatch\":[{"));
+        assertThat(json, containsString("\"jsonMergePatch\":{"));
+        // would-be escaped-string form must NOT appear
+        assertThat(json, not(containsString("\"jsonPatch\":\"")));
+
+        HttpResponseModifierDTO deserialized = objectMapper.readValue(json, HttpResponseModifierDTO.class);
+        assertThat(deserialized.buildObject(), is(dto.buildObject()));
+        assertThat(deserialized.getJsonPatch().get(0).get("op").asText(), is("add"));
+        assertThat(deserialized.getJsonMergePatch().get("z").asBoolean(), is(true));
     }
 }

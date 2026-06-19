@@ -555,6 +555,14 @@
                 <artifactId>json-path</artifactId>
                 <version>3.0.0</version>
             </dependency>
+            <!-- RFC 6902 JSON Patch and RFC 7386 JSON Merge Patch; already resolves
+                 transitively via json-schema-validator, declared here so the version is
+                 pinned and mockserver-core can depend on it directly. -->
+            <dependency>
+                <groupId>com.github.java-json-tools</groupId>
+                <artifactId>json-patch</artifactId>
+                <version>1.13</version>
+            </dependency>
 
             <!-- open api -->
             <dependency>

@@ -2740,6 +2740,12 @@ components:
                   additionalProperties: false
                   items:
                     "$ref": "#/components/schemas/ResponseModifier"
+                jsonPatch:
+                  description: "RFC 6902 JSON Patch (array of add/remove/replace/move/copy/test operations) applied to a forwarded response body when that body is valid JSON; applied before jsonMergePatch; a non-JSON body or a failed operation leaves the body unchanged"
+                  type: array
+                jsonMergePatch:
+                  description: "RFC 7386 JSON Merge Patch applied to a forwarded response body when that body is valid JSON; members overwrite, or when null delete, the corresponding body members; a non-JSON body leaves the body unchanged"
+                  type: object
         - type: object
           additionalProperties: false
           properties:
@@ -2846,6 +2852,12 @@ components:
           additionalProperties: false
           items:
             "$ref": "#/components/schemas/ResponseModifier"
+        jsonPatch:
+          description: "RFC 6902 JSON Patch (array of add/remove/replace/move/copy/test operations) applied to a forwarded response body when that body is valid JSON; applied before jsonMergePatch; a non-JSON body or a failed operation leaves the body unchanged"
+          type: array
+        jsonMergePatch:
+          description: "RFC 7386 JSON Merge Patch applied to a forwarded response body when that body is valid JSON; members overwrite, or when null delete, the corresponding body members; a non-JSON body leaves the body unchanged"
+          type: object
     KeyToMultiValue:
       oneOf:
         - type: array
