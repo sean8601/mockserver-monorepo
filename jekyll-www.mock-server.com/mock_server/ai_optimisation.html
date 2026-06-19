@@ -9,7 +9,7 @@ subsection: true
 sitemap:
   priority: 0.8
   changefreq: 'monthly'
-  lastmod: 2026-06-19T00:00:00+00:00
+  lastmod: 2026-06-19T12:00:00+00:00
 keywords: llm cost optimisation, ai cost reduction, prompt caching, token reduction, mockserver optimisation, llm proxy, inference cost, agent cost
 ---
 
@@ -32,7 +32,7 @@ keywords: llm cost optimisation, ai cost reduction, prompt caching, token reduct
 <h2>How It Works</h2>
 
 <ol>
-    <li><a href="#proxy-setup">Start MockServer as a proxy and capture LLM traffic</a></li>
+    <li><a href="#proxy-setup">Start MockServer as a proxy and capture LLM traffic</a> — including <a href="#opencode-real-traffic">real traffic from a headless OpenCode run</a></li>
     <li><a href="#export-brief">Export the optimisation brief</a> — via the dashboard, MCP tool, or REST endpoint</li>
     <li><a href="#signals">Act on the detected opportunities</a> — six signal types, each mapped to a concrete lever</li>
 </ol>
@@ -76,6 +76,67 @@ claude   # or: opencode, python my_agent.py, etc.</code></pre>
     <code class="code inline">npm run demo</code>). LLM traffic is recognised by request shape
     (the provider's API path), so it works regardless of the upstream host.
 </p>
+
+<a id="opencode-real-traffic" class="anchor" href="#opencode-real-traffic">&nbsp;</a>
+
+<h3>Generate real traffic with OpenCode</h3>
+
+<p>
+    The offline <code class="code inline">npm run demo</code> dataset includes a crafted,
+    deterministic agent run that fires every optimisation signal — great for a first look.
+    To analyse <strong>your own</strong> agent's real spend instead, proxy a headless
+    <a href="https://opencode.ai" rel="noopener noreferrer" target="_blank">OpenCode</a> run
+    through MockServer and pointed at a real provider.
+</p>
+
+<p class="alert">
+    <strong>Heads-up:</strong> this generates <strong>real, non-deterministic</strong> LLM
+    traffic — it needs network access and <strong>your own provider API key</strong>, and the
+    captured run varies each time. It is <em>not</em> wired into <code class="code inline">npm run demo</code>,
+    which stays offline. Never commit or share API keys.
+</p>
+
+<p>
+    The repository ships a helper script,
+    <code class="code inline">mockserver-ui/scripts/demo-opencode-proxy.sh</code>, that starts MockServer
+    as an HTTPS proxy with a machine-local CA, extracts that CA, and prints the exact environment
+    to run OpenCode through it:
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code"># Start the proxy and print the run instructions
+./mockserver-ui/scripts/demo-opencode-proxy.sh
+
+# …or start the proxy AND run a one-shot OpenCode prompt through it
+./mockserver-ui/scripts/demo-opencode-proxy.sh "summarise the README and suggest one improvement"</code></pre>
+
+<p>The equivalent done by hand, so you can run OpenCode in your own shell:</p>
+
+<pre class="prettyprint lang-bash code"><code class="code"># 1. Start MockServer as an HTTPS proxy with a unique, machine-local CA
+#    (the default CA private key is public — never trust it for real traffic).
+docker run -d --rm --name mockserver-proxy -p 1080:1080 mockserver/mockserver \
+  -serverPort 1080 \
+  -Dmockserver.dynamicallyCreateCertificateAuthorityCertificate=true \
+  -Dmockserver.directoryToSaveDynamicSSLCertificate=/dynamic-certs
+
+# 2. Trigger CA generation, then copy the CA out of the container
+curl -sk https://localhost:1080/ >/dev/null
+docker exec mockserver-proxy cat /dynamic-certs/CertificateAuthorityCertificate.pem > mockserver-ca.pem
+
+# 3. Route OpenCode through the proxy and trust the CA
+export HTTPS_PROXY=http://localhost:1080
+export NODE_EXTRA_CA_CERTS=$PWD/mockserver-ca.pem   # OpenCode is a Node.js tool
+export SSL_CERT_FILE=$PWD/mockserver-ca.pem          # any Python helpers
+
+# 4. Point OpenCode at a REAL provider with YOUR OWN API key, then run it headless
+export OPENAI_API_KEY=sk-...            # or ANTHROPIC_API_KEY=sk-ant-...
+opencode run "summarise the README and suggest one improvement"</code></pre>
+
+<p>
+    OpenCode's LLM calls are now captured by MockServer. Open the dashboard
+    <strong>Optimise</strong> tab, or curl the report, to see signals computed from your real run:
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown"</code></pre>
 
 <a id="export-brief" class="anchor" href="#export-brief">&nbsp;</a>
 

@@ -593,6 +593,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
 
 ### Changed
+- **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
+  support-agent run (mocked OpenAI Chat Completions with realistic token usage) designed to fire all
+  six optimisation signals (`REPEATED_SYSTEM_PROMPT`, `LARGE_STATIC_CONTEXT_RESENT`,
+  `DETERMINISTIC_TOOL_CALL`, `OVERSIZED_TOOL_RESULT`, `OUTPUT_TOKEN_BLOAT`,
+  `DUPLICATE_CONSECUTIVE_CALL`), so the dashboard **Optimise** tab (and
+  `GET /mockserver/llm/optimisationReport`) is populated out of the box. An optional, documented
+  recipe — `mockserver-ui/scripts/demo-opencode-proxy.sh` plus the "Generate real traffic with
+  OpenCode" section of the AI optimisation docs — shows how to capture **real** agent traffic by
+  proxying a headless OpenCode run (your own API key) through MockServer; it is deliberately not part
+  of the offline, deterministic `npm run demo`.
 - **Efficiency: fewer allocations on hot expectation/log paths** (behaviour-preserving): clearing the
   whole event log (a `clear` with no filter) no longer rebuilds an uncached request matcher per call and
   no longer scans each entry through a matcher — an empty filter now short-circuits to clearing exactly
