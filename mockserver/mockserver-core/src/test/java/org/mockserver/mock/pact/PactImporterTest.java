@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockserver.model.HttpRequest.request;
@@ -262,5 +263,90 @@ public class PactImporterTest {
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().toLowerCase().contains("parse"));
         }
+    }
+
+    // ---- provider states ----
+
+    @Test
+    public void importsV3ProviderStateAsScenarioGate() {
+        String pact = "{"
+            + "\"interactions\":[{"
+            + "  \"description\":\"get user 1\","
+            + "  \"providerStates\":[{\"name\":\"a user with id 1 exists\",\"params\":{\"id\":1}}],"
+            + "  \"request\":{\"method\":\"GET\",\"path\":\"/users/1\"},"
+            + "  \"response\":{\"status\":200,\"body\":{\"id\":1}}"
+            + "}]}";
+
+        Expectation expectation = importer.importExpectations(pact, ImportRedaction.Options.disabled()).get(0);
+
+        assertEquals(PactProviderStates.SCENARIO_NAME, expectation.getScenarioName());
+        assertEquals("a user with id 1 exists", expectation.getScenarioState());
+    }
+
+    @Test
+    public void importsV2ProviderStateAsScenarioGate() {
+        String pact = "{"
+            + "\"interactions\":[{"
+            + "  \"description\":\"get user 1\","
+            + "  \"providerState\":\"a user with id 1 exists\","
+            + "  \"request\":{\"method\":\"GET\",\"path\":\"/users/1\"},"
+            + "  \"response\":{\"status\":200}"
+            + "}]}";
+
+        Expectation expectation = importer.importExpectations(pact, ImportRedaction.Options.disabled()).get(0);
+
+        assertEquals(PactProviderStates.SCENARIO_NAME, expectation.getScenarioName());
+        assertEquals("a user with id 1 exists", expectation.getScenarioState());
+    }
+
+    @Test
+    public void statelessInteractionHasNoScenarioGate() {
+        String pact = "{"
+            + "\"interactions\":[{"
+            + "  \"description\":\"get users\","
+            + "  \"request\":{\"method\":\"GET\",\"path\":\"/users\"},"
+            + "  \"response\":{\"status\":200}"
+            + "}]}";
+
+        Expectation expectation = importer.importExpectations(pact, ImportRedaction.Options.disabled()).get(0);
+
+        assertNull(expectation.getScenarioName());
+        assertNull(expectation.getScenarioState());
+    }
+
+    @Test
+    public void providerStatePreservedThroughRedaction() {
+        // redaction (default) rebuilds the expectation — the provider-state gate must survive
+        String pact = "{"
+            + "\"interactions\":[{"
+            + "  \"description\":\"secured user\","
+            + "  \"providerStates\":[{\"name\":\"a user exists\"}],"
+            + "  \"request\":{\"method\":\"GET\",\"path\":\"/users/1\",\"headers\":{\"Authorization\":[\"Bearer secret-token\"]}},"
+            + "  \"response\":{\"status\":200}"
+            + "}]}";
+
+        Expectation expectation = importer.importExpectations(pact).get(0);
+
+        // sensitive header redacted ...
+        assertTrue(!req(expectation).getFirstHeader("Authorization").contains("secret-token"));
+        // ... but the provider-state gate is preserved
+        assertEquals(PactProviderStates.SCENARIO_NAME, expectation.getScenarioName());
+        assertEquals("a user exists", expectation.getScenarioState());
+    }
+
+    @Test
+    public void providerStateRoundTripsThroughExportThenImport() {
+        Expectation original = new Expectation(
+            request().withMethod("GET").withPath("/users/1")
+        ).withId("getUser")
+            .withScenarioName(PactProviderStates.SCENARIO_NAME)
+            .withScenarioState("a user exists")
+            .thenRespond(response().withStatusCode(200));
+
+        String pact = new PactExporter().export(List.of(original), "c", "p");
+        Expectation reimported = importer.importExpectations(pact, ImportRedaction.Options.disabled()).get(0);
+
+        assertEquals(PactProviderStates.SCENARIO_NAME, reimported.getScenarioName());
+        assertEquals("a user exists", reimported.getScenarioState());
     }
 }

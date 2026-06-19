@@ -154,6 +154,14 @@ public class FixtureRedactor {
             result.withId(expectation.getId());
         }
 
+        // Scenario state carries no sensitive data — it is matching metadata (e.g. Pact
+        // provider-state preconditions). Preserve it across redaction so a state-gated
+        // expectation keeps gating after import.
+        result
+            .withScenarioName(expectation.getScenarioName())
+            .withScenarioState(expectation.getScenarioState())
+            .withNewScenarioState(expectation.getNewScenarioState());
+
         if (redactedSseResponse != null) {
             result.thenRespondWithSse(redactedSseResponse);
         } else if (redactedResponse != null) {

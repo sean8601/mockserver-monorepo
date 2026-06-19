@@ -34,6 +34,12 @@ sitemap:
 
 <p>JSON request bodies are matched semantically (key-order and whitespace insensitive). The expectation ID is set to the interaction's <span class="inline_code">description</span> field, or <span class="inline_code">pact-&lt;index&gt;</span> when the description is blank. Re-importing the same contract updates existing expectations in place.</p>
 
+<h3>Provider states</h3>
+
+<p>A Pact interaction's provider state — its <span class="inline_code">providerState</span> (v2) or <span class="inline_code">providerStates</span> (v3) "given&nbsp;..." precondition — is preserved on import. The generated expectation is gated on a scenario named <span class="inline_code">pact-provider-state</span> whose required state is the provider-state name, so the interaction only matches once that provider state has been <em>activated</em>. Interactions without a provider state are unaffected and always match.</p>
+
+<p>During <a href="#pact_verify_endpoint">verification</a> MockServer activates each interaction's provider state before matching it, so a contract that uses provider states verifies end-to-end. Provider states are also round-tripped on <a href="#pact_export_endpoint">export</a>. Only the first provider state on an interaction gates matching (a scenario holds one active state at a time).</p>
+
 <h3>matchingRules mapping</h3>
 
 <p>Pact v3 <span class="inline_code">matchingRules.request</span> are translated to MockServer matcher values:</p>

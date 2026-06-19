@@ -138,7 +138,20 @@ public class PactImporter {
         final String description = interaction.path("description").asText("");
         final String id = isBlank(description) ? "pact-" + index : description;
 
-        return new Expectation(httpRequest).withId(id).thenRespond(httpResponse);
+        final Expectation expectation = new Expectation(httpRequest).withId(id).thenRespond(httpResponse);
+
+        // Preserve the interaction's provider state(s) (the "given ..." precondition). The gating
+        // state name is mapped onto MockServer's scenario-state mechanism so the generated
+        // expectation only matches once that provider state has been activated. Stateless
+        // interactions leave scenarioName/scenarioState null and always match.
+        final String providerState = PactProviderStates.gatingStateOf(interaction);
+        if (providerState != null) {
+            expectation
+                .withScenarioName(PactProviderStates.SCENARIO_NAME)
+                .withScenarioState(providerState);
+        }
+
+        return expectation;
     }
 
     private HttpRequest buildRequest(JsonNode requestNode, JsonNode requestRules) {

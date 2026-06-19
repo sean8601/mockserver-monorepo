@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pact provider-state preconditions on import, verify, and export**: a Pact interaction's `providerState`
+  (v2) / `providerStates` (v3) — the "given ..." precondition — is now preserved on import and mapped onto a
+  MockServer scenario (`scenarioName` = `pact-provider-state`, `scenarioState` = the state name), so an imported
+  interaction only matches once that provider state has been activated. Pact verification activates each
+  interaction's provider state before matching (the provider-state callback) and restores prior state
+  afterwards, and export round-trips the provider state. Stateless interactions are unchanged.
 - **Request-driven (template) response delay**: a `delay` may carry a `template`+`templateType` (`VELOCITY`/
   `MUSTACHE`) rendered against the request to compute the delay in milliseconds (e.g. larger payloads respond
   slower). Static and statistical-distribution delays are unchanged; an invalid/blank render falls back safely.
