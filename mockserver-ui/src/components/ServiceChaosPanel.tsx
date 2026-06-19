@@ -1013,11 +1013,15 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         flex: 1,
         overflow: 'auto',
         p: 1.5,
-        // Give switch/checkbox toggles a small gap between the control and its
-        // label so the label doesn't hug the indicator (e.g. "GraphQL errors",
-        // "Omit grpc-status", "Down", "Loop").
-        '& .MuiFormControlLabel-labelPlacementEnd .MuiFormControlLabel-label': { ml: 0.75 },
-        '& .MuiFormControlLabel-labelPlacementStart .MuiFormControlLabel-label': { mr: 0.75 },
+        // MUI's FormControlLabel defaults to a negative outer margin (-11px) which
+        // pulls switch/checkbox toggles past the container's left edge so they look
+        // cramped (e.g. "GraphQL errors", "Omit grpc-status", "Down", "Loop").
+        // Neutralise that overhang so the toggle has proper left spacing, and keep a
+        // clear gap between the indicator and its label.
+        '& .MuiFormControlLabel-labelPlacementEnd': { ml: 0 },
+        '& .MuiFormControlLabel-labelPlacementStart': { mr: 0 },
+        '& .MuiFormControlLabel-labelPlacementEnd .MuiFormControlLabel-label': { ml: 1 },
+        '& .MuiFormControlLabel-labelPlacementStart .MuiFormControlLabel-label': { mr: 1 },
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
