@@ -16,6 +16,7 @@ import static org.mockserver.mock.Expectation.when;
 import static org.mockserver.model.Completion.completion;
 import static org.mockserver.model.ConversationPredicates.conversationPredicates;
 import static org.mockserver.model.EmbeddingResponse.embedding;
+import static org.mockserver.model.RerankResponse.rerank;
 import static org.mockserver.model.HttpLlmResponse.llmResponse;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.ToolUse.toolUse;
@@ -137,6 +138,37 @@ public class ExpectationLlmRoundTripTest {
         assertThat(result.getHttpLlmResponse().getModel(), is("text-embedding-3-small"));
         assertThat(result.getHttpLlmResponse().getEmbedding().getDimensions(), is(1536));
         assertThat(result.getHttpLlmResponse().getEmbedding().getDeterministicFromInput(), is(true));
+    }
+
+    @Test
+    public void shouldRoundTripRerankExpectation() {
+        // given
+        Expectation original = when(request().withPath("/v1/rerank"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.COHERE)
+                    .withRerank(
+                        rerank()
+                            .withTopN(3)
+                            .withDeterministicFromInput(true)
+                            .withSeed(42L)
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then
+        assertThat(deserialized, is(notNullValue()));
+        assertThat(deserialized.length, is(1));
+        Expectation result = deserialized[0];
+        assertThat(result.getHttpLlmResponse(), is(notNullValue()));
+        assertThat(result.getHttpLlmResponse().getProvider(), is(Provider.COHERE));
+        assertThat(result.getHttpLlmResponse().getRerank(), is(notNullValue()));
+        assertThat(result.getHttpLlmResponse().getRerank().getTopN(), is(3));
+        assertThat(result.getHttpLlmResponse().getRerank().getDeterministicFromInput(), is(true));
+        assertThat(result.getHttpLlmResponse().getRerank().getSeed(), is(42L));
     }
 
     @Test

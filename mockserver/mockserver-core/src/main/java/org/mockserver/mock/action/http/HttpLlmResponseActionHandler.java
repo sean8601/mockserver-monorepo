@@ -77,7 +77,13 @@ public class HttpLlmResponseActionHandler {
             // Embedding path
             if (httpLlmResponse.getEmbedding() != null) {
                 String inputText = extractInputFromRequest(request);
-                return codecInstance.encodeEmbedding(httpLlmResponse.getEmbedding(), inputText);
+                return codecInstance.encodeEmbedding(httpLlmResponse.getEmbedding(), inputText, model);
+            }
+
+            // Rerank path
+            if (httpLlmResponse.getRerank() != null) {
+                List<String> documents = extractDocumentsFromRequest(request);
+                return codecInstance.encodeRerank(httpLlmResponse.getRerank(), documents);
             }
 
             // Non-streaming completion path
@@ -111,10 +117,10 @@ public class HttpLlmResponseActionHandler {
                     .withBody("{\"error\":\"streaming LLM responses must be dispatched through the SSE handler\"}");
             }
 
-            // No completion or embedding configured
+            // No completion, embedding, or rerank configured
             return response()
                 .withStatusCode(400)
-                .withBody("{\"error\":\"httpLlmResponse must have either a completion or embedding configured\"}");
+                .withBody("{\"error\":\"httpLlmResponse must have either a completion, embedding, or rerank configured\"}");
         } catch (UnsupportedOperationException e) {
             return response()
                 .withStatusCode(400)
@@ -559,6 +565,37 @@ public class HttpLlmResponseActionHandler {
             }
         }
         return "";
+    }
+
+    /**
+     * Extracts the candidate documents from a rerank request body. Both Cohere
+     * and Voyage use a {@code documents} array; entries may be plain strings or
+     * objects carrying a {@code text} field (Cohere's structured form). Returns
+     * an empty list when the body is absent or unparseable.
+     */
+    private List<String> extractDocumentsFromRequest(HttpRequest request) {
+        List<String> documents = new ArrayList<>();
+        if (request.getBody() != null) {
+            String bodyString = request.getBody().toString();
+            try {
+                JsonNode bodyNode = OBJECT_MAPPER.readTree(bodyString);
+                JsonNode docsNode = bodyNode.get("documents");
+                if (docsNode != null && docsNode.isArray()) {
+                    for (JsonNode doc : docsNode) {
+                        if (doc.isTextual()) {
+                            documents.add(doc.asText());
+                        } else if (doc.isObject() && doc.has("text")) {
+                            documents.add(doc.get("text").asText());
+                        } else {
+                            documents.add(doc.toString());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // not parseable, return what we have (possibly empty)
+            }
+        }
+        return documents;
     }
 
     private String supportedProvidersJson() {

@@ -60,6 +60,8 @@ curl -s -X PUT http://localhost:1080/mockserver/expectation \
     <li><a href="#supported_providers">Supported providers</a></li>
     <li><a href="#streaming">Streaming responses</a></li>
     <li><a href="#tool_calls">Tool calls</a></li>
+    <li><a href="#embeddings">Embeddings</a></li>
+    <li><a href="#rerank">Rerank</a></li>
     <li><a href="#multimodal">Multimodal request recognition (images and audio)</a></li>
     <li><a href="#conversations">Multi-turn conversations</a></li>
     <li><a href="#session_isolation">Session isolation</a></li>
@@ -379,6 +381,16 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
             <td><span class="inline_code">/api/chat</span></td>
             <td>Ollama local model API format</td>
         </tr>
+        <tr>
+            <td><span class="inline_code">COHERE</span></td>
+            <td><span class="inline_code">/v1/rerank</span></td>
+            <td>Cohere rerank API format (rerank only &mdash; see <a href="#rerank">Rerank</a>)</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">VOYAGE</span></td>
+            <td><span class="inline_code">/v1/rerank</span></td>
+            <td>Voyage AI rerank API format (rerank only &mdash; see <a href="#rerank">Rerank</a>)</td>
+        </tr>
     </tbody>
 </table>
 
@@ -489,6 +501,101 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
     }
   }
 }</code></pre>
+
+<a id="embeddings" class="anchor" href="#embeddings">&nbsp;</a>
+<h2>Embeddings</h2>
+
+<p>
+    Mock an embeddings endpoint by setting <span class="inline_code">embedding</span> instead of
+    <span class="inline_code">completion</span>. MockServer returns a provider-correct embeddings response with a
+    vector of the requested size. Set <span class="inline_code">deterministicFromInput</span> to
+    <span class="inline_code">true</span> so the same input text always produces the same (L2-normalised) vector
+    &mdash; ideal for reproducible tests of retrieval / vector-search code.
+</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpRequest": {
+    "method": "POST",
+    "path": "/v1/embeddings"
+  },
+  "httpLlmResponse": {
+    "provider": "OPENAI",
+    "model": "text-embedding-3-small",
+    "embedding": {
+      "dimensions": 1536,
+      "deterministicFromInput": true,
+      "seed": 42
+    }
+  }
+}</code></pre>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Provider</th><th>Response shape</th><th>Default dimensions</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">OPENAI</span> / <span class="inline_code">AZURE_OPENAI</span></td><td><span class="inline_code">{"object":"list","data":[{"embedding":[...]}]}</span></td><td>1536</td></tr>
+        <tr><td><span class="inline_code">GEMINI</span></td><td><span class="inline_code">{"embedding":{"values":[...]}}</span></td><td>768</td></tr>
+        <tr><td><span class="inline_code">OLLAMA</span></td><td><span class="inline_code">{"embeddings":[[...]]}</span> (the <span class="inline_code">/api/embed</span> shape)</td><td>768</td></tr>
+        <tr><td><span class="inline_code">BEDROCK</span> (Titan)</td><td><span class="inline_code">{"embedding":[...],"inputTextTokenCount":N}</span></td><td>1024</td></tr>
+        <tr><td><span class="inline_code">BEDROCK</span> (Cohere)</td><td><span class="inline_code">{"embeddings":[[...]]}</span> (when <span class="inline_code">model</span> starts with <span class="inline_code">cohere</span>)</td><td>1024</td></tr>
+    </tbody>
+</table>
+
+<p>
+    <span class="inline_code">dimensions</span> overrides the vector length; <span class="inline_code">seed</span> makes the
+    deterministic vector reproducible across runs. <span class="inline_code">ANTHROPIC</span> and
+    <span class="inline_code">OPENAI_RESPONSES</span> have no embeddings endpoint and return an error if used for an
+    embedding mock.
+</p>
+
+<a id="rerank" class="anchor" href="#rerank">&nbsp;</a>
+<h2>Rerank</h2>
+
+<p>
+    Mock a rerank endpoint by setting <span class="inline_code">rerank</span> with the
+    <span class="inline_code">COHERE</span> or <span class="inline_code">VOYAGE</span> provider. MockServer reads the
+    candidate documents from the request body's <span class="inline_code">documents</span> array and returns one
+    result per document &mdash; each with its original <span class="inline_code">index</span> and a
+    <span class="inline_code">relevance_score</span> &mdash; sorted from most to least relevant. Set
+    <span class="inline_code">deterministicFromInput</span> to <span class="inline_code">true</span> so the same documents
+    always score the same way. Use <span class="inline_code">topN</span> to return only the top few results.
+</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpRequest": {
+    "method": "POST",
+    "path": "/v1/rerank"
+  },
+  "httpLlmResponse": {
+    "provider": "COHERE",
+    "rerank": {
+      "topN": 3,
+      "deterministicFromInput": true,
+      "seed": 42
+    }
+  }
+}</code></pre>
+
+<p>
+    Each provider returns its own response envelope around the same per-document scores
+    (<span class="inline_code">{"index": N, "relevance_score": F}</span>), sorted by descending relevance:
+</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Provider</th><th>Response shape</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">COHERE</span></td><td><span class="inline_code">{"results": [{"index": 1, "relevance_score": 0.9123}, ...]}</span></td></tr>
+        <tr><td><span class="inline_code">VOYAGE</span></td><td><span class="inline_code">{"object": "list", "data": [{"index": 1, "relevance_score": 0.9123}, ...], "usage": {"total_tokens": 0}}</span></td></tr>
+    </tbody>
+</table>
+
+<p>
+    Documents may be plain strings or objects with a <span class="inline_code">text</span> field (Cohere's
+    structured form) &mdash; both are read from the request's <span class="inline_code">documents</span> array.
+</p>
 
 <a id="multimodal" class="anchor" href="#multimodal">&nbsp;</a>
 <h2>Multimodal Request Recognition (Images and Audio)</h2>

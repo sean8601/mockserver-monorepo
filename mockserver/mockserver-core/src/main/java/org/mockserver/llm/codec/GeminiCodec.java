@@ -278,9 +278,33 @@ public class GeminiCodec implements ProviderCodec {
         }
     }
 
+    /**
+     * Encodes a Gemini {@code embedContent} response
+     * ({@code POST /v1beta/models/{model}:embedContent}). The response carries a
+     * single {@code embedding} object with a {@code values} array
+     * ({@code {"embedding":{"values":[...]}}}). The Gemini default dimensionality
+     * for {@code text-embedding-004} is 768.
+     */
     @Override
     public HttpResponse encodeEmbedding(EmbeddingResponse embedding, String input) {
-        throw new UnsupportedOperationException("Gemini embeddings use a different endpoint shape not yet supported");
+        double[] vector = EmbeddingVectors.build(embedding, input, 768);
+
+        ObjectNode root = OBJECT_MAPPER.createObjectNode();
+        ObjectNode embeddingObj = root.putObject("embedding");
+        ArrayNode values = embeddingObj.putArray("values");
+        for (double v : vector) {
+            values.add(v);
+        }
+
+        try {
+            String json = OBJECT_MAPPER.writeValueAsString(root);
+            return response()
+                .withStatusCode(200)
+                .withHeader("content-type", "application/json")
+                .withBody(json);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to encode Gemini embedding response", e);
+        }
     }
 
     private static ParsedMessage.Role mapGeminiRole(String rawRole) {

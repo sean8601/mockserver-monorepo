@@ -27,20 +27,25 @@ flowchart LR
 
 - `encode(Completion, model)` -- non-streaming response
 - `encodeStreaming(Completion, model, StreamingPhysics)` -- SSE event list
-- `encodeEmbedding(EmbeddingResponse, input)` -- embeddings
+- `encodeEmbedding(EmbeddingResponse, input)` / `encodeEmbedding(EmbeddingResponse, input, model)` -- embeddings (the model-aware overload lets Bedrock pick Titan vs Cohere; most codecs ignore the model and inherit the two-arg default)
+- `encodeRerank(RerankResponse, documents)` -- rerank results (Cohere/Voyage)
 - `decode(HttpRequest)` -- parse inbound request to `ParsedConversation` (for conversation matchers)
+
+All embedding codecs share `EmbeddingVectors` (deterministic-from-input or random, then L2-normalised); only the JSON envelope differs per provider. Embedding shapes: OpenAI/Azure `{"object":"list","data":[{"embedding":[...]}]}` (default 1536 dims); Gemini `{"embedding":{"values":[...]}}` (768); Ollama `{"embeddings":[[...]]}` — the `/api/embed` shape (768); Bedrock Titan `{"embedding":[...],"inputTextTokenCount":N}` or Bedrock Cohere `{"embeddings":[[...]]}` when the model id starts with `cohere` (1024). `ANTHROPIC` and `OPENAI_RESPONSES` have no embeddings endpoint and throw (surfaced as a 400 by the handler). Rerank shares `RerankScoring` (per-document relevance scores — reproducible when `deterministicFromInput` is set, else random — descending, capped to `topN`) and emits the provider-correct envelope via a `RerankScoring.Envelope` selector: Cohere `{"results":[{"index":N,"relevance_score":F}, ...]}`, Voyage `{"object":"list","data":[...],"usage":{"total_tokens":N}}`.
 
 Currently registered codecs:
 
 | Provider | Codec class | Status |
 |----------|-------------|--------|
-| ANTHROPIC | `AnthropicCodec` | Complete |
-| OPENAI | `OpenAiChatCompletionsCodec` | Complete |
-| OPENAI_RESPONSES | `OpenAiResponsesCodec` | Complete |
-| GEMINI | `GeminiCodec` | Complete |
-| BEDROCK | `BedrockCodec` | Complete (delegates to `AnthropicCodec`; streaming uses `application/vnd.amazon.eventstream` binary framing via `BedrockEventStreamEncoder`; SigV4 signing is a follow-up) |
+| ANTHROPIC | `AnthropicCodec` | Complete (no embeddings endpoint) |
+| OPENAI | `OpenAiChatCompletionsCodec` | Complete (chat + embeddings) |
+| OPENAI_RESPONSES | `OpenAiResponsesCodec` | Complete (no embeddings endpoint) |
+| GEMINI | `GeminiCodec` | Complete (chat + embeddings) |
+| BEDROCK | `BedrockCodec` | Complete (delegates chat to `AnthropicCodec`; streaming uses `application/vnd.amazon.eventstream` binary framing via `BedrockEventStreamEncoder`; SigV4 signing is a follow-up; embeddings = Titan default / Cohere by model) |
 | AZURE_OPENAI | `AzureOpenAiCodec` | Complete (delegates to `OpenAiChatCompletionsCodec`) |
-| OLLAMA | `OllamaCodec` | Complete (see security audit for NDJSON wire-format limitation) |
+| OLLAMA | `OllamaCodec` | Complete (chat + embeddings; see security audit for NDJSON wire-format limitation) |
+| COHERE | `CohereCodec` | Rerank only (`/v1/rerank`) |
+| VOYAGE | `VoyageCodec` | Rerank only (`/v1/rerank`) |
 
 ## Streaming Physics
 
@@ -293,6 +298,7 @@ classDiagram
         +model: String
         +completion: Completion
         +embedding: EmbeddingResponse
+        +rerank: RerankResponse
         +conversationPredicates: ConversationPredicates
     }
     class Completion {
@@ -327,6 +333,11 @@ classDiagram
         +deterministicFromInput: Boolean
         +seed: Integer
     }
+    class RerankResponse {
+        +topN: Integer
+        +deterministicFromInput: Boolean
+        +seed: Long
+    }
     class Provider {
         <<enum>>
         ANTHROPIC
@@ -336,6 +347,8 @@ classDiagram
         BEDROCK
         AZURE_OPENAI
         OLLAMA
+        COHERE
+        VOYAGE
     }
     class ConversationPredicates {
         +turnIndex: Integer
@@ -372,6 +385,7 @@ classDiagram
     HttpLlmResponse --> Provider
     HttpLlmResponse --> Completion
     HttpLlmResponse --> EmbeddingResponse
+    HttpLlmResponse --> RerankResponse
     HttpLlmResponse --> ConversationPredicates
     Completion --> ToolUse
     Completion --> Usage
@@ -560,7 +574,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 
 | File | Role |
 |------|------|
-| `llm/ProviderCodecRegistry.java` | Codec registry singleton; all 7 providers registered at boot |
+| `llm/ProviderCodecRegistry.java` | Codec registry singleton; all 9 providers registered at boot (7 chat + 2 rerank-only) |
 | `llm/codec/AnthropicCodec.java` | Anthropic Messages API encoder/decoder |
 | `llm/codec/OpenAiChatCompletionsCodec.java` | OpenAI Chat Completions encoder/decoder |
 | `llm/codec/OpenAiResponsesCodec.java` | OpenAI Responses API encoder/decoder |
@@ -569,6 +583,11 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/codec/BedrockEventStreamEncoder.java` | AWS event-stream binary framing encoder/decoder (`application/vnd.amazon.eventstream`) |
 | `llm/codec/AzureOpenAiCodec.java` | Azure OpenAI wrapper (delegates to OpenAI codec) |
 | `llm/codec/OllamaCodec.java` | Ollama encoder/decoder |
+| `llm/codec/CohereCodec.java` | Cohere rerank-only codec (`/v1/rerank`) |
+| `llm/codec/VoyageCodec.java` | Voyage AI rerank-only codec (`/v1/rerank`) |
+| `llm/codec/EmbeddingVectors.java` | Shared deterministic/L2-normalised embedding-vector generation used by every embedding codec |
+| `llm/codec/RerankScoring.java` | Shared deterministic rerank scoring + `{"results":[...]}` envelope used by the rerank codecs |
+| `model/RerankResponse.java` | Rerank action config (`topN`, `deterministicFromInput`, `seed`) carried on `HttpLlmResponse` |
 | `llm/StreamingPhysicsExpander.java` | Converts `Completion` + `StreamingPhysics` to `List<SseEvent>` |
 | `llm/IsolationSource.java` | Session isolation key extraction descriptor |
 | `llm/LlmScenarioNames.java` | Scenario name generation with isolation encoding |

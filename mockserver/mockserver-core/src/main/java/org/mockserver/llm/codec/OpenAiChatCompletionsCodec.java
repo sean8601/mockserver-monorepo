@@ -11,16 +11,11 @@ import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.StreamingPhysicsExpander;
 import org.mockserver.model.*;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.UUID;
 
 import static org.mockserver.model.HttpResponse.response;
@@ -292,19 +287,7 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
 
     @Override
     public HttpResponse encodeEmbedding(EmbeddingResponse embedding, String input) {
-        int dimensions = embedding.getDimensions() != null ? embedding.getDimensions() : 1536;
-        long seed = embedding.getSeed() != null ? embedding.getSeed() : 0L;
-        boolean deterministic = Boolean.TRUE.equals(embedding.getDeterministicFromInput());
-
-        double[] vector;
-        if (deterministic && input != null) {
-            vector = generateDeterministicVector(input, dimensions, seed);
-        } else {
-            vector = generateRandomVector(dimensions);
-        }
-
-        // L2-normalise
-        normalizeL2(vector);
+        double[] vector = EmbeddingVectors.build(embedding, input, 1536);
 
         // Build response
         ObjectNode root = OBJECT_MAPPER.createObjectNode();
@@ -322,7 +305,7 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
         root.put("model", "text-embedding-3-small");
 
         // approximate token count from input
-        int approxTokens = input != null ? Math.max(1, input.length() / 4) : 0;
+        int approxTokens = EmbeddingVectors.approximateTokens(input);
         ObjectNode usage = root.putObject("usage");
         usage.put("prompt_tokens", approxTokens);
         usage.put("total_tokens", approxTokens);
@@ -339,53 +322,11 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
     }
 
     static double[] generateDeterministicVector(String input, int dimensions, long seed) {
-        try {
-            byte[] seedBytes = String.valueOf(seed).getBytes(StandardCharsets.UTF_8);
-            byte[] dimensionsBytes = String.valueOf(dimensions).getBytes(StandardCharsets.UTF_8);
-            byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(seedBytes);
-            digest.update((byte) ':');
-            digest.update(dimensionsBytes);
-            digest.update((byte) ':');
-            digest.update(inputBytes);
-            byte[] hash = digest.digest();
-
-            // First 8 bytes as big-endian long
-            ByteBuffer buffer = ByteBuffer.wrap(hash, 0, 8);
-            long hashLong = buffer.getLong();
-
-            Random random = new Random(hashLong);
-            double[] vector = new double[dimensions];
-            for (int i = 0; i < dimensions; i++) {
-                vector[i] = random.nextDouble() * 2 - 1;
-            }
-            return vector;
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
-    private static double[] generateRandomVector(int dimensions) {
-        Random random = new Random();
-        double[] vector = new double[dimensions];
-        for (int i = 0; i < dimensions; i++) {
-            vector[i] = random.nextDouble() * 2 - 1;
-        }
-        return vector;
+        return EmbeddingVectors.generateDeterministicVector(input, dimensions, seed);
     }
 
     static void normalizeL2(double[] vector) {
-        double sumOfSquares = 0;
-        for (double v : vector) {
-            sumOfSquares += v * v;
-        }
-        double norm = Math.sqrt(sumOfSquares);
-        if (norm > 0) {
-            for (int i = 0; i < vector.length; i++) {
-                vector[i] /= norm;
-            }
-        }
+        EmbeddingVectors.normalizeL2(vector);
     }
 
     private String buildChunk(String id, long created, String model, String deltaJson, String finishReason) {

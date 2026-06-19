@@ -56,16 +56,20 @@ public class HttpLlmResponseActionHandlerTest {
     }
 
     @Test
-    public void shouldReturn200ForAllRegisteredProviders() {
-        // After M4 every Provider enum value has a registered codec, so the
-        // handler must return 200 for all of them. The "unregistered provider"
-        // safety-net path is still reachable in code (e.g., during a future
-        // milestone that adds a new Provider value without a codec) but cannot
-        // be exercised from production paths today.
+    public void shouldReturn200ForAllChatProviders() {
+        // Every chat-capable Provider enum value has a registered codec, so the
+        // handler must return 200 for all of them given a completion. The
+        // "unregistered provider" safety-net path is still reachable in code but
+        // cannot be exercised from production paths today. Rerank-only providers
+        // (COHERE, VOYAGE) have no completion path and are tested via their
+        // dedicated rerank tests.
         HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
         HttpRequest request = request().withPath("/test");
 
         for (Provider provider : Provider.values()) {
+            if (provider == Provider.COHERE || provider == Provider.VOYAGE) {
+                continue;
+            }
             HttpLlmResponse llmResponse = llmResponse()
                 .withProvider(provider)
                 .withCompletion(completion().withText("test"));
@@ -196,7 +200,7 @@ public class HttpLlmResponseActionHandlerTest {
     }
 
     @Test
-    public void shouldReturn400WhenNoCompletionOrEmbeddingConfigured() {
+    public void shouldReturn400WhenNoCompletionEmbeddingOrRerankConfigured() {
         // given
         HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
         HttpLlmResponse llmResponse = llmResponse()
@@ -208,7 +212,7 @@ public class HttpLlmResponseActionHandlerTest {
 
         // then
         assertThat(response.getStatusCode(), is(400));
-        assertThat(response.getBodyAsString(), containsString("must have either a completion or embedding configured"));
+        assertThat(response.getBodyAsString(), containsString("must have either a completion, embedding, or rerank configured"));
     }
 
     @Test

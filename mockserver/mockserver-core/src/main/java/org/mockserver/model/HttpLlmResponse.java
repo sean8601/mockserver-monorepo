@@ -11,6 +11,7 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
     private String model;
     private Completion completion;
     private EmbeddingResponse embedding;
+    private RerankResponse rerank;
     private ConversationPredicates conversationPredicates;
     private LlmChaosProfile chaos;
     @JsonIgnore
@@ -58,6 +59,16 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
 
     public EmbeddingResponse getEmbedding() {
         return embedding;
+    }
+
+    public HttpLlmResponse withRerank(RerankResponse rerank) {
+        this.rerank = rerank;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public RerankResponse getRerank() {
+        return rerank;
     }
 
     public HttpLlmResponse withConversationPredicates(ConversationPredicates conversationPredicates) {
@@ -151,6 +162,7 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
             Objects.equals(model, that.model) &&
             Objects.equals(completion, that.completion) &&
             Objects.equals(embedding, that.embedding) &&
+            Objects.equals(rerank, that.rerank) &&
             Objects.equals(conversationPredicates, that.conversationPredicates) &&
             Objects.equals(chaos, that.chaos);
     }
@@ -158,7 +170,7 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), provider, model, completion, embedding, conversationPredicates, chaos);
+            hashCode = Objects.hash(super.hashCode(), provider, model, completion, embedding, rerank, conversationPredicates, chaos);
         }
         return hashCode;
     }

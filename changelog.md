@@ -16,6 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **LLM embeddings for Gemini/Ollama/Bedrock, plus rerank mocking (Cohere/Voyage)**: `httpLlmResponse` embeddings
+  now work for three more providers (previously only OpenAI/Azure-OpenAI returned a real embedding response):
+  - **Gemini** — emits the `embedContent` shape (`{"embedding":{"values":[...]}}`, default 768 dimensions).
+  - **Ollama** — emits the `/api/embed` batch shape (`{"embeddings":[[...]]}` with `model` and `prompt_eval_count`,
+    default 768 dimensions), which also satisfies clients reading the legacy `/api/embeddings` `embedding` array.
+  - **Bedrock** — emits the Amazon Titan shape (`{"embedding":[...],"inputTextTokenCount":N}`) by default, or the
+    Cohere-on-Bedrock shape (`{"embeddings":[[...]]}`) when the model id starts with `cohere` (default 1024 dimensions).
+
+  All embedding vectors are deterministic from the input (when `deterministicFromInput` is set) and L2-normalised,
+  via a new shared `EmbeddingVectors` helper (the OpenAI codec now uses it too — no behaviour change). A new
+  **rerank** action mocks rerank endpoints: set `rerank` on `httpLlmResponse` with `provider` `COHERE` or `VOYAGE`
+  (both new rerank-only providers). MockServer returns one result per candidate document from the request's
+  `documents` array (each `{"index":N,"relevance_score":F}`), sorted by descending relevance and optionally capped
+  to `topN`, in the provider-correct envelope — Cohere `{"results":[...]}`, Voyage
+  `{"object":"list","data":[...],"usage":{...}}`. Scores are reproducible when `deterministicFromInput` is set
+  (opt-in, matching embeddings).
 - **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
   recognises `input_audio` content parts on the request side (so conversation matchers can assert a message
   contains audio, and in what `format` — e.g. `wav`/`mp3`), mirroring the existing image-part recognition;

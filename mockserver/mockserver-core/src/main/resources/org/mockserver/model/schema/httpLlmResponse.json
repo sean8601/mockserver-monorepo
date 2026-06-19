@@ -15,7 +15,9 @@
         "GEMINI",
         "BEDROCK",
         "AZURE_OPENAI",
-        "OLLAMA"
+        "OLLAMA",
+        "COHERE",
+        "VOYAGE"
       ]
     },
     "model": {
@@ -102,6 +104,22 @@
       "properties": {
         "dimensions": {
           "type": "integer"
+        },
+        "deterministicFromInput": {
+          "type": "boolean"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      }
+    },
+    "rerank": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "topN": {
+          "type": "integer",
+          "minimum": 0
         },
         "deterministicFromInput": {
           "type": "boolean"
