@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `topN`, in the provider-correct envelope — Cohere `{"results":[...]}`, Voyage
   `{"object":"list","data":[...],"usage":{...}}`. Scores are reproducible when `deterministicFromInput` is set
   (opt-in, matching embeddings).
+- **MCP control plane: `prompts/list`, `prompts/get` and `sampling/createMessage`**: MockServer's own MCP server
+  (`/mockserver/mcp`, over HTTP/1.1, HTTP/2 and HTTP/3) now advertises the `prompts` and `sampling` capabilities and
+  serves three new JSON-RPC methods. `prompts/list` returns the configured prompts (name, description, arguments);
+  `prompts/get` returns a prompt's messages with `{{argument}}` placeholders substituted from the supplied arguments
+  (unknown prompt → JSON-RPC `INVALID_PARAMS`); `sampling/createMessage` returns a deterministic mocked completion in
+  the MCP sampling result shape (`role`, `content`, `model`, `stopReason`), echoing the client's preferred model hint
+  and an optional `mockResponse` text override. New `McpPromptRegistry` configures the built-in prompt set.
 - **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
   recognises `input_audio` content parts on the request side (so conversation matchers can assert a message
   contains audio, and in what `format` — e.g. `wav`/`mp3`), mirroring the existing image-part recognition;
