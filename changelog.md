@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stripped, so saving creates a brand-new expectation while preserving `priority` and every other field). Each
   row also shows a `P<n>` chip with the expectation's match `priority` (defaults to `0`; higher wins), and a
   header "Priority" toggle re-orders the list by priority descending so the match order is visible at a glance.
+- **Dashboard: scenario state-machine diagram**: the Scenario State Machine panel now renders the selected
+  scenario's states and transitions as a live Mermaid `stateDiagram-v2`, with the current state highlighted.
+  The graph is built from what the panel observes — states it has seen and transitions it has watched happen
+  (selecting a scenario, setting a state, scheduling a timed `current → next` transition, or triggering one) —
+  so the state machine takes shape as you drive it. State names are sanitised so they cannot break the diagram
+  (or inject markup), and if Mermaid fails to render the panel falls back to showing the diagram source.
 - **One-command record round-trip**: `GET/PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=...`
   now accepts an optional `forwardUnmatchedTo=<upstream>` parameter. When supplied, the call arms
   record-and-forward of unmatched requests to that upstream for the session — subsequent traffic that
