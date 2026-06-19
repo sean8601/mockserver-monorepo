@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -26,6 +26,7 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import { useDashboardStore } from '../store';
 import { useConnectionParams } from '../hooks/useConnectionParams';
+import { useDragResize } from '../hooks/useDragResize';
 import JsonViewer from './JsonViewer';
 import ErrorBoundary from './ErrorBoundary';
 import CaptureAsMockDialog from './CaptureAsMockDialog';
@@ -1026,6 +1027,33 @@ export default function TrafficInspector() {
   // On narrow screens the side-by-side master/detail split squashes the detail
   // pane to a sliver; stack master-over-detail (column) on small screens.
   const stacked = useMediaQuery(theme.breakpoints.down('md'));
+
+  // Side-by-side master/detail split width (pixels), drag-resizable via a
+  // vertical divider between the master list and the detail pane. Persisted so
+  // the chosen width survives reloads. Min keeps the list usable; max is a
+  // generous cap (the detail pane stays flex:1 and re-clamps if the row is
+  // narrower, since computeFromPointer clamps to the live container width).
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const MASTER_MIN = 260;
+  const MASTER_MAX = 900;
+  const masterWidth = useDragResize({
+    orientation: 'vertical',
+    initial: 380,
+    min: MASTER_MIN,
+    max: MASTER_MAX,
+    step: 16,
+    storageKey: 'mockserver-traffic-master-width',
+    ariaLabel: 'Resize traffic list',
+    computeFromPointer: (event) => {
+      const rect = rowRef.current?.getBoundingClientRect();
+      if (!rect) return 380;
+      // Clamp the upper bound to leave at least ~360px for the detail pane.
+      const next = event.clientX - rect.left;
+      const dynamicMax = Math.max(MASTER_MIN, rect.width - 360);
+      return Math.min(next, dynamicMax);
+    },
+  });
+
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
   const [replayDialogOpen, setReplayDialogOpen] = useState(false);
 
@@ -1114,8 +1142,13 @@ export default function TrafficInspector() {
 
   const canDiff = validCompareKeys.length === 2;
 
+  // The side-by-side master/detail split is user-resizable only when the detail
+  // pane is actually shown (not stacked, an entry selected, not comparing).
+  const resizableSplit = !stacked && Boolean(selectedEntry) && !compareMode;
+
   return (
     <Box
+      ref={rowRef}
       sx={{
         flex: 1,
         display: 'flex',
@@ -1134,13 +1167,27 @@ export default function TrafficInspector() {
           display: 'flex',
           flexDirection: 'column',
           // When stacked, the list takes full width and a bounded share of the
-          // height so the detail pane below it stays usable; side-by-side on md+.
-          width: stacked ? '100%' : selectedEntry && !compareMode ? '40%' : '100%',
+          // height so the detail pane below it stays usable. Side-by-side with a
+          // detail pane the width is user-resizable (pixels); otherwise full width.
+          width: stacked
+            ? '100%'
+            : resizableSplit
+              ? masterWidth.value
+              : '100%',
+          flexShrink: stacked
+            ? selectedEntry && !compareMode
+              ? 0
+              : undefined
+            : resizableSplit
+              ? 0
+              : undefined,
           minWidth: stacked ? 0 : 300,
           height: stacked && selectedEntry && !compareMode ? '45%' : undefined,
-          flexShrink: stacked && selectedEntry && !compareMode ? 0 : undefined,
           overflow: 'hidden',
-          transition: stacked ? undefined : 'width 0.2s ease',
+          // Disable the width transition while actively dragging so the pane
+          // tracks the pointer 1:1.
+          transition:
+            stacked || masterWidth.dragging ? undefined : 'width 0.2s ease',
         }}
       >
         <Box
@@ -1237,6 +1284,30 @@ export default function TrafficInspector() {
           )}
         </Box>
       </Paper>
+
+      {/* Drag handle between master list and detail pane (side-by-side only). */}
+      {resizableSplit && (
+        <Box
+          data-testid="traffic-master-resizer"
+          {...masterWidth.getHandleProps()}
+          sx={{
+            flexShrink: 0,
+            width: 8,
+            mx: -0.5,
+            borderRadius: 1,
+            backgroundColor: 'transparent',
+            transition: theme.transitions.create('background-color', {
+              duration: theme.transitions.duration.shorter,
+            }),
+            '&:hover, &:focus-visible, &:active': {
+              backgroundColor: theme.palette.primary.main,
+              opacity: 0.55,
+            },
+            '&:focus-visible': { outline: 'none' },
+            cursor: 'col-resize',
+          }}
+        />
+      )}
 
       {/* Detail pane (hidden while picking requests to compare) */}
       {selectedEntry && !compareMode && (

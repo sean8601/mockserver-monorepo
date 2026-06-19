@@ -742,3 +742,84 @@ describe('TrafficInspector — Replay button', () => {
     expect(within(dialog).queryByRole('progressbar')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Master/detail resize-divider tests.
+ *
+ * The vertical drag handle between the master list and the detail pane appears
+ * ONLY in the side-by-side case (not stacked, an entry selected, not comparing).
+ * jsdom has no layout, so we assert handle presence/absence and accessibility,
+ * not pixel widths — the default master width renders without measurement.
+ */
+function stubMatchMedia(matches: boolean) {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
+const simpleRequest = {
+  key: 'req-resize',
+  value: {
+    httpRequest: {
+      method: 'GET',
+      path: '/api/widgets',
+      headers: [{ name: 'host', values: ['example.com'] }],
+    },
+    httpResponse: { statusCode: 200 },
+  },
+};
+
+describe('TrafficInspector — master/detail resize divider', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({
+      proxiedRequests: [],
+      recordedRequests: [],
+      activeExpectations: [],
+      trafficSearch: '',
+      selectedTrafficKey: null,
+    });
+  });
+
+  afterEach(() => {
+    // @ts-expect-error allow deleting the optional stub
+    delete window.matchMedia;
+  });
+
+  it('renders the resize divider when an entry is selected side-by-side (desktop)', () => {
+    useDashboardStore.setState({
+      recordedRequests: [simpleRequest],
+      selectedTrafficKey: 'req-resize',
+    });
+    renderTrafficInspector();
+    const handle = screen.getByTestId('traffic-master-resizer');
+    expect(handle).toBeInTheDocument();
+    expect(handle).toHaveAttribute('role', 'separator');
+    expect(handle).toHaveAttribute('aria-orientation', 'vertical');
+  });
+
+  it('does NOT render the divider when nothing is selected', () => {
+    useDashboardStore.setState({
+      recordedRequests: [simpleRequest],
+      selectedTrafficKey: null,
+    });
+    renderTrafficInspector();
+    expect(screen.queryByTestId('traffic-master-resizer')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render the divider on a stacked (small-screen) viewport even with a selection', () => {
+    stubMatchMedia(true);
+    useDashboardStore.setState({
+      recordedRequests: [simpleRequest],
+      selectedTrafficKey: 'req-resize',
+    });
+    renderTrafficInspector();
+    expect(screen.queryByTestId('traffic-master-resizer')).not.toBeInTheDocument();
+  });
+});

@@ -3873,7 +3873,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
 
   return (
     <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-      <Box sx={{ maxWidth: 920, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Typography variant="h5">
             Mocks
