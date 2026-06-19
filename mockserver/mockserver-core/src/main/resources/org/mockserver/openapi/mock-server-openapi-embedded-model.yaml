@@ -511,6 +511,8 @@ components:
           $ref: "#/components/schemas/KeyToMultiValue"
         statusCode:
           type: integer
+        statusCodeRange:
+          type: string
         reasonPhrase:
           type: string
     HttpTemplate:

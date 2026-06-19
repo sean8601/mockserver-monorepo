@@ -1,5 +1,6 @@
 package org.mockserver.matchers;
 
+import org.apache.commons.lang3.StringUtils;
 import org.mockserver.codec.JsonSchemaBodyDecoder;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
@@ -31,6 +32,7 @@ import static org.mockserver.model.NottableString.string;
 public class HttpResponseMatcher {
 
     private final HttpResponse template;
+    private final StatusCodeMatcher statusCodeMatcher;
     private final RegexStringMatcher reasonPhraseMatcher;
     private final MultiValueMapMatcher headerMatcher;
     private final HashMapMatcher cookieMatcher;
@@ -43,6 +45,13 @@ public class HttpResponseMatcher {
         this.template = template;
         this.mockServerLogger = mockServerLogger;
         if (template != null) {
+            // statusCode: when either an exact statusCode or a statusCodeRange expression is set,
+            // a StatusCodeMatcher enforces the constraint (exact equality, class range such as "2XX",
+            // or numeric operator such as ">= 400"). When NEITHER is set there is no status
+            // constraint and the matcher is null (match all) — byte-for-byte the prior behaviour.
+            this.statusCodeMatcher = (template.getStatusCode() != null || StringUtils.isNotBlank(template.getStatusCodeRange()))
+                ? new StatusCodeMatcher(template.getStatusCode(), template.getStatusCodeRange(), mockServerLogger)
+                : null;
             // reason-phrase honours the opt-in matchExactCase flag, matching the response body's
             // exact-case behaviour (built via BodyMatcherBuilder, which already consults the flag).
             this.reasonPhraseMatcher = template.getReasonPhrase() != null
@@ -66,6 +75,7 @@ public class HttpResponseMatcher {
                 ? new JsonSchemaBodyDecoder(configuration, mockServerLogger, null, null)
                 : null;
         } else {
+            this.statusCodeMatcher = null;
             this.reasonPhraseMatcher = null;
             this.headerMatcher = null;
             this.cookieMatcher = null;
@@ -106,12 +116,18 @@ public class HttpResponseMatcher {
 
         boolean matches = true;
 
-        // statusCode: exact integer equality when set on template
-        if (template.getStatusCode() != null) {
-            if (!template.getStatusCode().equals(actual.getStatusCode())) {
+        // statusCode: exact integer equality (default), class range ("2XX"), or numeric operator
+        // (">= 400"), delegated to StatusCodeMatcher. A null actual status never matches a template
+        // status constraint (preserving the prior exact-equals semantics where equals(null) is false).
+        if (statusCodeMatcher != null) {
+            boolean statusMatches = actual.getStatusCode() != null && statusCodeMatcher.matches(actual.getStatusCode());
+            if (!statusMatches) {
                 if (context != null) {
+                    Object expected = StringUtils.isNotBlank(template.getStatusCodeRange())
+                        ? template.getStatusCodeRange()
+                        : template.getStatusCode();
                     context.currentField(OPERATION);
-                    context.addDifference(mockServerLogger, "statusCode match failed expected:{}found:{}", template.getStatusCode(), actual.getStatusCode());
+                    context.addDifference(mockServerLogger, "statusCode match failed expected:{}found:{}", expected, actual.getStatusCode());
                 }
                 matches = false;
             }

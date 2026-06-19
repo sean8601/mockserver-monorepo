@@ -62,6 +62,41 @@ public class HttpResponseMatcherTest {
     }
 
     @Test
+    public void shouldMatchStatusCodeClassRange() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withStatusCodeRange("2XX"));
+        assertThat(matcher.matches(response().withStatusCode(200)), is(true));
+        assertThat(matcher.matches(response().withStatusCode(201)), is(true));
+        assertThat(matcher.matches(response().withStatusCode(299)), is(true));
+        assertThat(matcher.matches(response().withStatusCode(300)), is(false));
+        assertThat(matcher.matches(response().withStatusCode(404)), is(false));
+    }
+
+    @Test
+    public void shouldMatchStatusCodeNumericOperator() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withStatusCodeRange(">= 400"));
+        assertThat(matcher.matches(response().withStatusCode(404)), is(true));
+        assertThat(matcher.matches(response().withStatusCode(500)), is(true));
+        assertThat(matcher.matches(response().withStatusCode(200)), is(false));
+    }
+
+    @Test
+    public void shouldNotMatchNullActualStatusWhenTemplateHasStatusCodeRange() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withStatusCodeRange("2XX"));
+        // actual response with no status code does not satisfy a range constraint
+        assertThat(matcher.matches(response()), is(false));
+    }
+
+    @Test
+    public void shouldNotMatchWhenStatusCodeRangeIsUnparseable() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withStatusCodeRange("garbage"));
+        assertThat(matcher.matches(response().withStatusCode(200)), is(false));
+    }
+
+    @Test
     public void shouldNotMatchNullActualWhenTemplateHasStatusCode() {
         HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
             response().withStatusCode(200));

@@ -129,4 +129,18 @@ public class HttpResponseDTOSerializerTest {
         );
     }
 
+    @Test
+    public void shouldReturnFormattedResponseWithStatusCodeRange() throws JsonProcessingException {
+        assertThat(ObjectMapperFactory.createObjectMapper(true, false).writeValueAsString(
+            new HttpResponseDTO(
+                response()
+                    .withStatusCodeRange("2XX")
+            )
+            ),
+            is("{" + NEW_LINE +
+                "  \"statusCodeRange\" : \"2XX\"" + NEW_LINE +
+                "}")
+        );
+    }
+
 }

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Response verification: status-code range / operator matching**: a response template may now match a
+  status code by class range (`statusCodeRange: "2XX"` matches `200`–`299`, case-insensitive `2xx` is also
+  accepted) or numeric operator (`">= 400"`, `"> 200"`, `"< 300"`, `"<= 204"`, `"== 201"`) instead of only
+  an exact `statusCode`. The new `statusCodeRange` field is verification-only — it is never written to the
+  wire when a response is served — and round-trips in JSON. When `statusCodeRange` is absent the historical
+  exact-`statusCode` matching is byte-for-byte unchanged.
 - **Response matcher: reason-phrase honours `matchExactCase`**: when `matchExactCase` is enabled, the
   response reason-phrase is now matched case-sensitively (parity with the response body), so a template
   reason-phrase `OK` no longer matches an actual `ok`. The default (false) keeps the historical

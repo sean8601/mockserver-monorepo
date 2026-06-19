@@ -25,6 +25,7 @@ import static org.mockserver.model.NottableString.string;
 public class HttpResponse extends Action<HttpResponse> implements HttpMessage<HttpResponse, BodyWithContentType> {
     private int hashCode;
     private Integer statusCode;
+    private String statusCodeRange;
     private String reasonPhrase;
     private BodyWithContentType body;
     private Headers headers;
@@ -80,6 +81,32 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
 
     public Integer getStatusCode() {
         return statusCode;
+    }
+
+    /**
+     * A status-code range or numeric-operator expression used <b>only when verifying</b> a recorded
+     * response (it is never written to the wire when serving). When set it drives status matching in
+     * place of an exact {@link #withStatusCode(Integer)} comparison. Supported forms:
+     * <ul>
+     *   <li>class range — a single digit followed by {@code XX} (case-insensitive), e.g. {@code "2XX"}
+     *       matches {@code 200..299}, {@code "5xx"} matches {@code 500..599};</li>
+     *   <li>numeric operator — a leading comparison operator and a number, e.g. {@code ">= 400"},
+     *       {@code "> 200"}, {@code "< 300"}, {@code "<= 204"}, {@code "== 201"}.</li>
+     * </ul>
+     * When {@code statusCodeRange} is null/blank the exact {@link #getStatusCode()} value is used,
+     * preserving the historical exact-match behaviour. When both are set the range takes precedence
+     * for matching and the exact {@link #getStatusCode()} is not consulted.
+     *
+     * @param statusCodeRange a status-code range ({@code "2XX"}) or operator ({@code ">= 400"}) expression
+     */
+    public HttpResponse withStatusCodeRange(String statusCodeRange) {
+        this.statusCodeRange = statusCodeRange;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getStatusCodeRange() {
+        return statusCodeRange;
     }
 
     /**
@@ -720,6 +747,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     public HttpResponse shallowClone() {
         return response()
             .withStatusCode(statusCode)
+            .withStatusCodeRange(statusCodeRange)
             .withReasonPhrase(reasonPhrase)
             .withBody(body)
             .withHeaders(headers)
@@ -736,6 +764,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     public HttpResponse clone() {
         return response()
             .withStatusCode(statusCode)
+            .withStatusCodeRange(statusCodeRange)
             .withReasonPhrase(reasonPhrase)
             .withBody(body)
             .withHeaders(headers != null ? headers.clone() : null)
@@ -806,6 +835,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
         }
         HttpResponse that = (HttpResponse) o;
         return Objects.equals(statusCode, that.statusCode) &&
+            Objects.equals(statusCodeRange, that.statusCodeRange) &&
             Objects.equals(reasonPhrase, that.reasonPhrase) &&
             Objects.equals(body, that.body) &&
             Objects.equals(headers, that.headers) &&
@@ -818,7 +848,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), statusCode, reasonPhrase, body, headers, trailers, cookies, connectionOptions, streamId);
+            hashCode = Objects.hash(super.hashCode(), statusCode, statusCodeRange, reasonPhrase, body, headers, trailers, cookies, connectionOptions, streamId);
         }
         return hashCode;
     }

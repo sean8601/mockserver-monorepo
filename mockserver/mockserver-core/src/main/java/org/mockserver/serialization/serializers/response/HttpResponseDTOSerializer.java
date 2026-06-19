@@ -23,6 +23,9 @@ public class HttpResponseDTOSerializer extends StdSerializer<HttpResponseDTO> {
         if (httpResponseDTO.getStatusCode() != null) {
             jgen.writeObjectField("statusCode", httpResponseDTO.getStatusCode());
         }
+        if (httpResponseDTO.getStatusCodeRange() != null) {
+            jgen.writeObjectField("statusCodeRange", httpResponseDTO.getStatusCodeRange());
+        }
         if (httpResponseDTO.getReasonPhrase() != null) {
             jgen.writeObjectField("reasonPhrase", httpResponseDTO.getReasonPhrase());
         }

@@ -11,6 +11,7 @@ import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
  */
 public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString implements DTO<HttpResponse> {
     private Integer statusCode;
+    private String statusCodeRange;
     private String reasonPhrase;
     private BodyWithContentTypeDTO body;
     private Cookies cookies;
@@ -27,6 +28,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     public HttpResponseDTO(HttpResponse httpResponse) {
         if (httpResponse != null) {
             statusCode = httpResponse.getStatusCode();
+            statusCodeRange = httpResponse.getStatusCodeRange();
             reasonPhrase = httpResponse.getReasonPhrase();
             body = BodyWithContentTypeDTO.createWithContentTypeDTO(httpResponse.getBody());
             headers = httpResponse.getHeaders();
@@ -41,6 +43,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     public HttpResponse buildObject() {
         return new HttpResponse()
             .withStatusCode(statusCode)
+            .withStatusCodeRange(statusCodeRange)
             .withReasonPhrase(reasonPhrase)
             .withBody(body != null ? body.buildObject() : null)
             .withHeaders(headers)
@@ -57,6 +60,15 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public HttpResponseDTO setStatusCode(Integer statusCode) {
         this.statusCode = statusCode;
+        return this;
+    }
+
+    public String getStatusCodeRange() {
+        return statusCodeRange;
+    }
+
+    public HttpResponseDTO setStatusCodeRange(String statusCodeRange) {
+        this.statusCodeRange = statusCodeRange;
         return this;
     }
 

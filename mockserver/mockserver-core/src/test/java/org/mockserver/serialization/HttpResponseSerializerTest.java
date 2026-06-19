@@ -105,4 +105,45 @@ public class HttpResponseSerializerTest {
         verify(objectWriter).writeValueAsString(new HttpResponseDTO[]{fullHttpResponseDTO, fullHttpResponseDTO});
     }
 
+    @Test
+    public void shouldRoundTripStatusCodeRangeClassRange() {
+        // given a real serializer (not the mock-injected one)
+        HttpResponseSerializer serializer = new HttpResponseSerializer(new MockServerLogger());
+        HttpResponse original = new HttpResponse().withStatusCodeRange("2XX");
+
+        // when serialised then deserialised
+        String json = serializer.serialize(original);
+        HttpResponse roundTripped = serializer.deserialize(json);
+
+        // then the status-code range survives the round trip
+        assertThat(json.contains("\"statusCodeRange\""), is(true));
+        assertThat(roundTripped.getStatusCodeRange(), is("2XX"));
+        assertThat(roundTripped, is(original));
+    }
+
+    @Test
+    public void shouldRoundTripStatusCodeRangeNumericOperator() {
+        HttpResponseSerializer serializer = new HttpResponseSerializer(new MockServerLogger());
+        HttpResponse original = new HttpResponse().withStatusCode(500).withStatusCodeRange(">= 400");
+
+        String json = serializer.serialize(original);
+        HttpResponse roundTripped = serializer.deserialize(json);
+
+        assertThat(roundTripped.getStatusCode(), is(500));
+        assertThat(roundTripped.getStatusCodeRange(), is(">= 400"));
+        assertThat(roundTripped, is(original));
+    }
+
+    @Test
+    public void shouldOmitStatusCodeRangeWhenNull() {
+        HttpResponseSerializer serializer = new HttpResponseSerializer(new MockServerLogger());
+        HttpResponse original = new HttpResponse().withStatusCode(200);
+
+        String json = serializer.serialize(original);
+
+        // a plain exact-status response never emits statusCodeRange (backward-compatible output)
+        assertThat(json.contains("statusCodeRange"), is(false));
+        assertThat(serializer.deserialize(json).getStatusCodeRange(), is((String) null));
+    }
+
 }

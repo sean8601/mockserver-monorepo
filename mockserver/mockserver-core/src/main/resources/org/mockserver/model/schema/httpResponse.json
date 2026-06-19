@@ -24,6 +24,9 @@
     "statusCode": {
       "type": "integer"
     },
+    "statusCodeRange": {
+      "type": "string"
+    },
     "reasonPhrase": {
       "type": "string"
     },
