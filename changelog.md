@@ -289,6 +289,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     source" when a tool name or message contains special characters (e.g. parentheses) — tool-call
     labels are now quoted so Mermaid always renders. Also fixed cramped spacing above filled experiment
     stage fields.
+  - **Clearer unscoped Sessions lane**: the `<unscoped>` lane (a catch-all of unrelated LLM requests
+    across providers) no longer shows a single correlated agent-run graph that couldn't represent it,
+    and its Conversation is now labelled "Conversation (latest of N)" with a note that it groups N
+    requests across M providers and only the most recent is shown (expand a request to see the others).
   - **Consistency pass**: control-plane error messages are humanised everywhere (a short message with the
     raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
     come from a single typography scale, and "Capture as mock" can hand a captured request straight to
