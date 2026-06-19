@@ -14,6 +14,18 @@ interface AgentRunGraphProps {
   connectionParams: { host: string; port: string; secure: boolean };
   provider: string;
   path: string | null;
+  /**
+   * Optional session-isolation scope. When all three are present and non-empty
+   * they are forwarded to explain_agent_run so the server filters recorded
+   * requests to a single session before building the call graph; otherwise the
+   * graph is built globally (path-scoped only), which merges every session that
+   * shares the endpoint. The three fields mirror the server contract:
+   * isolationType (header|query_parameter|cookie), isolationKey (the
+   * header/param/cookie name) and isolationValue (its value for this session).
+   */
+  isolationType?: string;
+  isolationKey?: string;
+  isolationValue?: string;
 }
 
 /**
@@ -30,7 +42,14 @@ interface AgentRunGraphProps {
  * user opens a graph. If rendering fails (or mermaid cannot load) the component
  * falls back to showing the Mermaid source text so the data is never lost.
  */
-export default function AgentRunGraph({ connectionParams, provider, path }: AgentRunGraphProps) {
+export default function AgentRunGraph({
+  connectionParams,
+  provider,
+  path,
+  isolationType,
+  isolationKey,
+  isolationValue,
+}: AgentRunGraphProps) {
   const [graph, setGraph] = useState<CallGraph | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +67,14 @@ export default function AgentRunGraph({ connectionParams, provider, path }: Agen
       if (path) {
         args['path'] = path;
       }
+      // Only forward the isolation scope when ALL three fields are present and
+      // non-empty — a partial scope cannot be resolved to a session server-side
+      // and would silently behave like the unscoped (merged) lookup.
+      if (isolationType && isolationKey && isolationValue) {
+        args['isolationType'] = isolationType;
+        args['isolationKey'] = isolationKey;
+        args['isolationValue'] = isolationValue;
+      }
       const result = await callMcpTool(baseUrl, 'explain_agent_run', args);
       if (result.ok && result.result) {
         const parsed = parseCallGraph(result.result['callGraph']);
@@ -64,7 +91,7 @@ export default function AgentRunGraph({ connectionParams, provider, path }: Agen
     } finally {
       setLoading(false);
     }
-  }, [connectionParams, provider, path]);
+  }, [connectionParams, provider, path, isolationType, isolationKey, isolationValue]);
 
   // First click opens (and loads the graph on demand); second click hides it. The
   // graph is read-only/deterministic, so a re-open shows the cached result.

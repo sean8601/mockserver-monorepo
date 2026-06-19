@@ -15,7 +15,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useDashboardStore } from '../store';
-import { groupBySession, shortenScenarioName, type Session, type SessionRequest } from '../lib/sessionGrouping';
+import { groupBySession, parseIsolationSource, shortenScenarioName, type Session, type SessionRequest } from '../lib/sessionGrouping';
 import { getModelLabel, getTokenSummary, getNumericTokens } from '../lib/llmTraffic';
 import { estimateCostUsd } from '../lib/llmPricing';
 import {
@@ -300,6 +300,15 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
   const graphProvider = graphRequest ? KIND_TO_PROVIDER[graphRequest.parsed.kind] : null;
   const graphPath = graphRequest ? graphRequest.path : null;
 
+  // Derive the isolation scope for this lane so the call graph can be filtered to
+  // this single session server-side (otherwise two sessions on the same endpoint
+  // would render the same merged graph). `scenarioName` retains the full
+  // `…__iso=header:x-agent-id` form, from which parseIsolationSource yields the
+  // source type/key; the value is the session's isolationKey. For the <unscoped>
+  // lane parseIsolationSource returns null, so the scope props stay undefined —
+  // but the graph is only rendered for scoped lanes anyway.
+  const isolationSource = parseIsolationSource(session.scenarioName);
+
   const handleChipClick = useCallback(
     (index: number) => {
       setExpandedRequest(expandedRequest === index ? null : index);
@@ -428,7 +437,14 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
           it and would not match the conversation transcript above. */}
       {graphProvider && !isUnscoped && (
         <Box sx={{ px: 1.5, pb: 0.75 }}>
-          <AgentRunGraph connectionParams={connectionParams} provider={graphProvider} path={graphPath} />
+          <AgentRunGraph
+            connectionParams={connectionParams}
+            provider={graphProvider}
+            path={graphPath}
+            isolationType={isolationSource?.sourceType}
+            isolationKey={isolationSource?.sourceKey}
+            isolationValue={session.isolationKey}
+          />
         </Box>
       )}
     </Paper>

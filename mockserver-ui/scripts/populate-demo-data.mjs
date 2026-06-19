@@ -470,7 +470,7 @@ async function conversationExpectations() {
       provider: 'ANTHROPIC',
       model: 'claude-sonnet-4-20250514',
       completion: {
-        text: 'It is 18°C and sunny in Paris.',
+        text: 'Here is the current weather for that city.',
         stopReason: 'end_turn',
         usage: { inputTokens: 360, outputTokens: 24 },
       },
@@ -1063,31 +1063,42 @@ async function llmTraffic() {
 async function agentLoops() {
   log('\n→ Agent loops (Sessions + call graph, grouped by x-agent-id + x-session-id)');
 
-  // A full two-turn weather agent loop for agent-001: user → assistant tool_use
-  // → user tool_result → assistant final answer. The request bodies carry the
-  // growing history the call graph is reconstructed from.
-  const turn1Body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: 'What is the weather in Paris?' }],
-  };
-  const turn2Body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    messages: [
-      { role: 'user', content: 'What is the weather in Paris?' },
-      {
-        role: 'assistant',
-        content: [
-          { type: 'text', text: 'Let me search for the weather.' },
-          { type: 'tool_use', id: 'toolu_w0', name: 'search_weather', input: { city: 'Paris' } },
-        ],
-      },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_w0', content: '18C, sunny' }] },
-    ],
+  // A full two-turn weather agent loop per agent: user → assistant tool_use →
+  // user tool_result → assistant final answer. The request bodies carry the
+  // growing history the call graph is reconstructed from. Each agent asks about
+  // a DIFFERENT city so that, once the call graph is scoped to a single session
+  // server-side, each lane's graph shows a distinct USER question instead of the
+  // same merged Paris graph. The turn expectations match on turnIndex / path /
+  // containsToolResultFor (NOT the city), so varying the city text is safe.
+  const agentCities = {
+    'agent-001': 'Paris',
+    'agent-002': 'Tokyo',
+    'agent-003': 'London',
+    'agent-004': 'Berlin',
   };
 
-  for (const agent of ['agent-001', 'agent-002', 'agent-003', 'agent-004']) {
+  for (const [agent, city] of Object.entries(agentCities)) {
+    const turn1Body = {
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: `What is the weather in ${city}?` }],
+    };
+    const turn2Body = {
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [
+        { role: 'user', content: `What is the weather in ${city}?` },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'Let me search for the weather.' },
+            { type: 'tool_use', id: 'toolu_w0', name: 'search_weather', input: { city } },
+          ],
+        },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_w0', content: `18C, sunny in ${city}` }] },
+      ],
+    };
+
     await traffic(`${agent} turn 1`, 'POST', '/v1/messages', {
       body: turn1Body,
       headers: { 'x-agent-id': agent },

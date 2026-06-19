@@ -110,6 +110,75 @@ describe('AgentRunGraph', () => {
     expect(mermaidRender).not.toHaveBeenCalled();
   });
 
+  it('forwards the isolation scope to explain_agent_run when all three props are provided', async () => {
+    mermaidRender.mockResolvedValue({ svg: '<svg/>' });
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider theme={buildTheme('dark')}>
+        <AgentRunGraph
+          connectionParams={params}
+          provider="anthropic"
+          path="/v1/messages"
+          isolationType="header"
+          isolationKey="x-agent-id"
+          isolationValue="agent-002"
+        />
+      </ThemeProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Show graph' }));
+    await waitFor(() => expect(callMcpTool).toHaveBeenCalled());
+
+    const [, tool, args] = vi.mocked(callMcpTool).mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(tool).toBe('explain_agent_run');
+    expect(args).toMatchObject({
+      provider: 'anthropic',
+      path: '/v1/messages',
+      isolationType: 'header',
+      isolationKey: 'x-agent-id',
+      isolationValue: 'agent-002',
+    });
+  });
+
+  it('omits the isolation scope when the props are not provided', async () => {
+    mermaidRender.mockResolvedValue({ svg: '<svg/>' });
+    const user = userEvent.setup();
+    renderGraph();
+
+    await user.click(screen.getByRole('button', { name: 'Show graph' }));
+    await waitFor(() => expect(callMcpTool).toHaveBeenCalled());
+
+    const [, , args] = vi.mocked(callMcpTool).mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(args).not.toHaveProperty('isolationType');
+    expect(args).not.toHaveProperty('isolationKey');
+    expect(args).not.toHaveProperty('isolationValue');
+  });
+
+  it('omits the isolation scope when the scope is only partially provided', async () => {
+    mermaidRender.mockResolvedValue({ svg: '<svg/>' });
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider theme={buildTheme('dark')}>
+        <AgentRunGraph
+          connectionParams={params}
+          provider="anthropic"
+          path="/v1/messages"
+          isolationType="header"
+          isolationKey="x-agent-id"
+          // isolationValue intentionally omitted — a partial scope must not be forwarded.
+        />
+      </ThemeProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Show graph' }));
+    await waitFor(() => expect(callMcpTool).toHaveBeenCalled());
+
+    const [, , args] = vi.mocked(callMcpTool).mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(args).not.toHaveProperty('isolationType');
+    expect(args).not.toHaveProperty('isolationKey');
+    expect(args).not.toHaveProperty('isolationValue');
+  });
+
   it('lets the user toggle the Mermaid source alongside the rendered graph', async () => {
     mermaidRender.mockResolvedValue({ svg: '<svg/>' });
     const user = userEvent.setup();
