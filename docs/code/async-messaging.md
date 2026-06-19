@@ -169,6 +169,22 @@ Verify that recorded messages match the given criteria. Mirrors the semantics of
 }
 ```
 
+### `PUT /mockserver/asyncapi/http`
+
+Import an AsyncAPI spec as **HTTP mock expectations** instead of loading it into the broker-publishing mock. One `GET` expectation is created per channel, returning that channel's schema-aware example payload (the same payload `MessageExampleGenerator` produces for broker publishing). This lets a consumer poll example messages over plain HTTP with no live Kafka/MQTT/AMQP broker.
+
+It reuses the same `AsyncApiParser` and `MessageExampleGenerator` as the broker path (in `AsyncApiHttpExpectationGenerator`); the generated expectations are serialized with core's `ExpectationSerializer` and returned across the SPI as a JSON array so `HttpState` can deserialize and add them without a compile-time dependency on the parser.
+
+**Request body:** a plain AsyncAPI spec (JSON/YAML), or a wrapper `{"spec": "...", "channelPathPrefix": "/events"}`. Channel names are mapped to URL paths (dots become slashes; collisions get a numeric suffix); `channelPathPrefix` is prepended when supplied.
+
+**Responses:**
+
+| Status | Meaning |
+|--------|---------|
+| 201 Created | One GET expectation created per channel (body is the upserted expectation array) |
+| 400 Bad Request | Missing or unparseable spec, or a spec with no channels |
+| 501 Not Implemented | mockserver-async module is not on the classpath |
+
 ### Reset
 
 All async mocking state (publishers, subscribers, recorded messages) is cleared on `PUT /mockserver/reset`.

@@ -2329,6 +2329,92 @@ paths:
             example: <?xml version="1.0" encoding="UTF-8"?><definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://example.com/greeting" xmlns:xsd="http://www.w3.org/2001/XMLSchema" name="GreetingService" targetNamespace="http://example.com/greeting"><types><xsd:schema targetNamespace="http://example.com/greeting"><xsd:element name="GreetRequest"><xsd:complexType><xsd:sequence><xsd:element name="name" type="xsd:string"/></xsd:sequence></xsd:complexType></xsd:element><xsd:element name="GreetResponse"><xsd:complexType><xsd:sequence><xsd:element name="greeting" type="xsd:string"/></xsd:sequence></xsd:complexType></xsd:element></xsd:schema></types><message name="GreetRequestMessage"><part name="parameters" element="tns:GreetRequest"/></message><message name="GreetResponseMessage"><part name="parameters" element="tns:GreetResponse"/></message><portType name="GreetingPortType"><operation name="Greet"><input message="tns:GreetRequestMessage"/><output message="tns:GreetResponseMessage"/></operation></portType><binding name="GreetingBinding" type="tns:GreetingPortType"><soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/><operation name="Greet"><soap:operation soapAction="http://example.com/greeting/Greet"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation></binding><service name="GreetingService"><port name="GreetingPort" binding="tns:GreetingBinding"><soap:address location="http://localhost:1080/ws/greeting"/></port></service></definitions>
         description: WSDL document to generate expectations from
         required: true
+  /mockserver/graphql:
+    put:
+      tags:
+        - expectation
+      summary: create expectations from a GraphQL schema
+      description: >-
+        Generates expectations from a GraphQL schema (the request body is a GraphQL SDL document or an
+        introspection JSON result) and adds them. One expectation is created per root operation type
+        (query / mutation / subscription); each matches any operation of that kind and synthesizes a
+        schema-valid response per request. The optional "path" query parameter overrides the default
+        "/graphql" request path the generated expectations match.
+      parameters:
+        - in: query
+          name: path
+          required: false
+          schema:
+            type: string
+          description: request path the generated GraphQL expectations match (default "/graphql")
+      responses:
+        '201':
+          description: expectations created from the GraphQL schema
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: invalid or unparseable GraphQL schema
+          content:
+            text/plain:
+              schema:
+                type: string
+      requestBody:
+        content:
+          application/graphql:
+            schema:
+              type: string
+              description: GraphQL SDL document or introspection JSON result
+            example: "type Query { hello: String } type Mutation { ping: String }"
+        description: GraphQL schema to generate expectations from
+        required: true
+  /mockserver/asyncapi/http:
+    put:
+      tags:
+        - expectation
+      summary: create HTTP expectations from an AsyncAPI spec
+      description: >-
+        Generates HTTP expectations from an AsyncAPI 2.x/3.x spec (JSON/YAML, or a {spec, channelPathPrefix}
+        wrapper) so each channel's example message can be served over plain HTTP without a live broker. One
+        GET expectation is created per channel returning that channel's schema-aware example payload. This is
+        distinct from PUT /mockserver/asyncapi, which loads a spec into the broker-publishing mock. Requires
+        the mockserver-async module on the classpath (501 otherwise).
+      responses:
+        '201':
+          description: HTTP expectations created from the AsyncAPI spec
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: missing or unparseable AsyncAPI spec
+          content:
+            application/json:
+              schema:
+                type: object
+        '501':
+          description: the mockserver-async module is not on the classpath
+          content:
+            application/json:
+              schema:
+                type: object
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              description: AsyncAPI spec (JSON/YAML) or a {spec, channelPathPrefix} wrapper
+        description: AsyncAPI spec to import as HTTP expectations
+        required: true
   /mockserver/grpc/services:
     put:
       tags:

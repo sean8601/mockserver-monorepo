@@ -22,6 +22,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
+import org.mockserver.model.GraphQLBody;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
@@ -4961,6 +4962,70 @@ public class HttpStateTest {
         assertThat(body, not(containsString("\"bar\"")));
         assertThat(body, not(containsString("hunter2")));
         assertThat(body, containsString(FixtureRedactor.REDACTED_PLACEHOLDER));
+    }
+
+    @Test
+    public void shouldImportGraphQLSchemaAsExpectations() {
+        // given - a GraphQL SDL document
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest graphqlImport = request("/mockserver/graphql")
+            .withMethod("PUT")
+            .withBody("type Query { hello: String } type Mutation { ping: String }");
+
+        // when
+        boolean handle = httpState.handle(graphqlImport, responseWriter, false);
+
+        // then - one expectation per root operation type is created and persisted
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        Expectation[] created = expectationSerializer.deserializeArray(responseWriter.response.getBodyAsString(), false);
+        assertThat(created.length, is(2));
+
+        // and - a real GraphQL query now matches the imported query expectation
+        Expectation matchedQuery = httpState.firstMatchingExpectation(
+            request().withMethod("POST").withPath("/graphql").withBody("{\"query\":\"{ hello }\"}"));
+        assertThat(matchedQuery, is(notNullValue()));
+
+        // and - a mutation matches the (distinct) mutation expectation, not the query one
+        Expectation matchedMutation = httpState.firstMatchingExpectation(
+            request().withMethod("POST").withPath("/graphql").withBody("{\"query\":\"mutation { ping }\"}"));
+        assertThat(matchedMutation, is(notNullValue()));
+        assertThat(((GraphQLBody) ((HttpRequest) matchedMutation.getHttpRequest()).getBody()).getQuery(),
+            startsWith("mutation"));
+    }
+
+    @Test
+    public void shouldReturnBadRequestForMalformedGraphQLSchema() {
+        // given
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest graphqlImport = request("/mockserver/graphql")
+            .withMethod("PUT")
+            .withBody("type Query { this is not valid");
+
+        // when
+        boolean handle = httpState.handle(graphqlImport, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+    }
+
+    @Test
+    public void shouldRouteAsyncApiHttpImportAndReportModuleNotAvailable() {
+        // given - mockserver-async is not on the core test classpath, so the route must
+        // still be recognised and respond with 501 rather than falling through to the data plane
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest asyncApiImport = request("/mockserver/asyncapi/http")
+            .withMethod("PUT")
+            .withBody("{\"asyncapi\":\"2.6.0\",\"info\":{\"title\":\"T\",\"version\":\"1.0.0\"},\"channels\":{}}");
+
+        // when
+        boolean handle = httpState.handle(asyncApiImport, responseWriter, false);
+
+        // then
+        assertThat(handle, is(true));
+        assertThat(responseWriter.response.getStatusCode(), is(501));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("mockserver-async"));
     }
 
 }

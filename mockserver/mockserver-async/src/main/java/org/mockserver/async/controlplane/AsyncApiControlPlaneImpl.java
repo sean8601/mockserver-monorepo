@@ -439,6 +439,11 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
     }
 
     @Override
+    public String generateHttpExpectations(String requestBody) {
+        return new AsyncApiHttpExpectationGenerator().generateSerialized(requestBody);
+    }
+
+    @Override
     public void reset() {
         resetInternal();
         LOG.info("AsyncAPI control-plane reset");

@@ -1743,6 +1743,39 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/graphql", "/graphql")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    try {
+                        String path = request.getFirstQueryStringParameter("path");
+                        // SDL / introspection documents are raw text (not JSON/XML), so read the
+                        // body verbatim to preserve the exact schema the user submitted.
+                        List<Expectation> upsertedExpectations = add(
+                            new org.mockserver.graphql.GraphQLExpectationGenerator()
+                                .generate(request.getBodyAsString(), path)
+                                .toArray(new Expectation[0])
+                        );
+                        responseWriter.writeResponse(request, response()
+                            .withStatusCode(CREATED.code())
+                            .withBody(getExpectationSerializer().serialize(upsertedExpectations), MediaType.JSON_UTF_8), true);
+                    } catch (IllegalArgumentException iae) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for graphql expectation:{}error:{}")
+                                .setArguments(request, iae.getMessage())
+                                .setThrowable(iae)
+                        );
+                        responseWriter.writeResponse(
+                            request,
+                            BAD_REQUEST,
+                            iae.getMessage(),
+                            MediaType.create("text", "plain").toString()
+                        );
+                    }
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/oidc", "/oidc")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2132,6 +2165,13 @@ public class HttpState {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleAsyncApiVerify(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/asyncapi/http", "/asyncapi/http")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleAsyncApiHttpImport(request)), true);
                 }
                 canHandle.complete(true);
 
@@ -4782,6 +4822,45 @@ public class HttpState {
             String message = String.valueOf(e.getMessage());
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to load AsyncAPI spec: " + message.replace("\"", "'") + "\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleAsyncApiHttpImport(HttpRequest request) {
+        try {
+            org.mockserver.async.AsyncApiControlPlaneRegistry registry = org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance();
+            if (!registry.isAvailable()) {
+                return response().withStatusCode(NOT_IMPLEMENTED.code())
+                    .withBody("{\"error\":\"AsyncAPI messaging module is not available — mockserver-async is not on the classpath\"}", MediaType.JSON_UTF_8);
+            }
+            String body = request.getBodyAsString();
+            if (body == null || body.isBlank()) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body must contain an AsyncAPI spec (JSON/YAML) or {spec, channelPathPrefix}\"}", MediaType.JSON_UTF_8);
+            }
+            String expectationsJson = registry.generateHttpExpectations(body);
+            List<Expectation> upsertedExpectations = add(getExpectationSerializer().deserializeArray(expectationsJson, false));
+            return response().withStatusCode(CREATED.code())
+                .withBody(getExpectationSerializer().serialize(upsertedExpectations), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody(errorJson(String.valueOf(e.getMessage())), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody(errorJson("failed to import AsyncAPI spec as HTTP expectations: " + e.getMessage()), MediaType.JSON_UTF_8);
+        }
+    }
+
+    /**
+     * Build a {@code {"error": "..."}} JSON body, escaping the message via Jackson so that
+     * arbitrary exception text (quotes, backslashes, control characters) cannot corrupt the
+     * JSON structure.
+     */
+    private static String errorJson(String message) {
+        try {
+            return ObjectMapperFactory.createObjectMapper()
+                .writeValueAsString(java.util.Collections.singletonMap("error", message));
+        } catch (Exception e) {
+            return "{\"error\":\"error serializing error message\"}";
         }
     }
 
