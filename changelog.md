@@ -297,6 +297,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     across providers) no longer shows a single correlated agent-run graph that couldn't represent it,
     and its Conversation is now labelled "Conversation (latest of N)" with a note that it groups N
     requests across M providers and only the most recent is shown (expand a request to see the others).
+  - **Per-session agent-run graph**: the Sessions agent-run diagram is now built from only the selected
+    session's requests instead of every request on that path, so two sessions hitting the same endpoint
+    no longer show the same graph. The `explain_agent_run` MCP tool gains optional `isolationType` /
+    `isolationKey` / `isolationValue` parameters to scope a run to one conversation (backward
+    compatible — omitting them keeps the previous behaviour).
   - **Consistency pass**: control-plane error messages are humanised everywhere (a short message with the
     raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
     come from a single typography scale, and "Capture as mock" can hand a captured request straight to
