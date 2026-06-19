@@ -1857,8 +1857,8 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               </Box>
 
               {expStages.map((stage, idx) => (
-                <Paper key={stage.id} variant="outlined" sx={{ p: 0.75, mt: 0.75, bgcolor: 'action.hover' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                <Paper key={stage.id} variant="outlined" sx={{ px: 0.75, pt: 1, pb: 0.75, mt: 0.75, bgcolor: 'action.hover' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.25 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                       Stage {idx + 1}
                     </Typography>
