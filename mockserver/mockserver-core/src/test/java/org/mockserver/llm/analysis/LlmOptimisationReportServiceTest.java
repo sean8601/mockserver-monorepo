@@ -1,0 +1,165 @@
+package org.mockserver.llm.analysis;
+
+import org.junit.After;
+import org.junit.Test;
+import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
+import org.mockserver.model.LogEventRequestAndResponse;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
+
+public class LlmOptimisationReportServiceTest {
+
+    private final LlmOptimisationReportService service = new LlmOptimisationReportService();
+
+    @After
+    public void resetConfig() {
+        ConfigurationProperties.llmOptimisationMaxCalls(200);
+        ConfigurationProperties.fixtureBodyRedactFields("");
+    }
+
+    private static LogEventRequestAndResponse openAiPair(String host, String model, int in, int out) {
+        HttpRequest req = request().withMethod("POST").withPath("/v1/chat/completions")
+            .withHeader("Host", host)
+            .withHeader("Authorization", "Bearer sk-secret-abc")
+            .withBody("{\"model\":\"" + model + "\",\"messages\":[{\"role\":\"system\",\"content\":\"sys\"},{\"role\":\"user\",\"content\":\"hi\"}]}");
+        HttpResponse resp = response().withStatusCode(200)
+            .withBody("{\"model\":\"" + model + "\",\"choices\":[{\"message\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],"
+                + "\"usage\":{\"prompt_tokens\":" + in + ",\"completion_tokens\":" + out + "}}");
+        return new LogEventRequestAndResponse().withHttpRequest(req).withHttpResponse(resp);
+    }
+
+    private static LlmOptimisationReportService.Filter noFilter() {
+        return new LlmOptimisationReportService.Filter(null, null, null);
+    }
+
+    @Test
+    public void buildsReportFromPairs() {
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(
+            openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10),
+            openAiPair("api.openai.com", "gpt-4o-2024-08-06", 200, 20));
+        LlmOptimisationReportService.Result result = service.build(pairs, noFilter());
+
+        LlmOptimisationReport report = result.getReport();
+        assertEquals(2, report.getTotals().getCallCount());
+        assertEquals(300, report.getTotals().getInputTokens());
+        assertEquals("host:api.openai.com", report.getSession().getKey());
+        assertTrue(report.getRedaction().getRedactedHeaders().stream().anyMatch(h -> h.equalsIgnoreCase("authorization")));
+    }
+
+    @Test
+    public void emptyCaptureYieldsEmptyReportAndBrief() {
+        LlmOptimisationReportService.Result result = service.build(Collections.emptyList(), noFilter());
+        assertThat(result.getReport().getCalls(), is(empty()));
+        String brief = service.renderBrief(result);
+        assertThat(brief, containsString("No LLM traffic captured"));
+    }
+
+    @Test
+    public void nullPairsHandledGracefully() {
+        LlmOptimisationReportService.Result result = service.build(null, noFilter());
+        assertThat(result.getReport().getCalls(), is(empty()));
+    }
+
+    @Test
+    public void nonLlmTrafficIsExcluded() {
+        LogEventRequestAndResponse notLlm = new LogEventRequestAndResponse()
+            .withHttpRequest(request().withMethod("GET").withPath("/api/users").withHeader("Host", "example.com"))
+            .withHttpResponse(response().withBody("[]"));
+        LlmOptimisationReportService.Result result = service.build(
+            Collections.singletonList(notLlm), noFilter());
+        assertThat(result.getReport().getCalls(), is(empty()));
+    }
+
+    @Test
+    public void hostFilterRestrictsTraffic() {
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(
+            openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10),
+            new LogEventRequestAndResponse()
+                .withHttpRequest(request().withMethod("POST").withPath("/v1/messages").withHeader("Host", "api.anthropic.com")
+                    .withBody("{\"model\":\"claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"))
+                .withHttpResponse(response().withStatusCode(200)
+                    .withBody("{\"model\":\"claude-sonnet-4\",\"stop_reason\":\"end_turn\",\"usage\":{\"input_tokens\":50,\"output_tokens\":5}}")));
+
+        LlmOptimisationReportService.Result result = service.build(pairs,
+            new LlmOptimisationReportService.Filter(null, "api.openai.com", null));
+        assertEquals(1, result.getReport().getCalls().size());
+        assertEquals("OPENAI", result.getReport().getCalls().get(0).getProvider());
+    }
+
+    @Test
+    public void providerFilterRestrictsTraffic() {
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(
+            openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10));
+        LlmOptimisationReportService.Result anthropicOnly = service.build(pairs,
+            new LlmOptimisationReportService.Filter(null, null, "ANTHROPIC"));
+        assertThat(anthropicOnly.getReport().getCalls(), is(empty()));
+
+        LlmOptimisationReportService.Result openaiOnly = service.build(pairs,
+            new LlmOptimisationReportService.Filter(null, null, "OPENAI"));
+        assertEquals(1, openaiOnly.getReport().getCalls().size());
+    }
+
+    @Test
+    public void sessionFilterMatchesGroupingKey() {
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(
+            openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10));
+        LlmOptimisationReportService.Result match = service.build(pairs,
+            new LlmOptimisationReportService.Filter("host:api.openai.com", null, null));
+        assertEquals(1, match.getReport().getCalls().size());
+
+        LlmOptimisationReportService.Result noMatch = service.build(pairs,
+            new LlmOptimisationReportService.Filter("host:other.host", null, null));
+        assertThat(noMatch.getReport().getCalls(), is(empty()));
+    }
+
+    @Test
+    public void maxCallsBoundsReportToMostRecent() {
+        ConfigurationProperties.llmOptimisationMaxCalls(2);
+        List<LogEventRequestAndResponse> pairs = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            pairs.add(openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100 + i, 10));
+        }
+        LlmOptimisationReportService.Result result = service.build(pairs, noFilter());
+        assertEquals(2, result.getReport().getCalls().size());
+        // most recent kept: last two had input 103 and 104
+        assertEquals(103, result.getReport().getCalls().get(0).getInputTokens());
+        assertEquals(104, result.getReport().getCalls().get(1).getInputTokens());
+    }
+
+    @Test
+    public void jsonReportSchemaVersionAndGeneratedBy() {
+        LlmOptimisationReportService.Result result = service.build(
+            Collections.singletonList(openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10)), noFilter());
+        assertEquals(LlmOptimisationReport.SCHEMA_VERSION, result.getReport().getSchemaVersion());
+        assertEquals("mockserver", result.getReport().getGeneratedBy());
+    }
+
+    @Test
+    public void briefRedactsConfiguredBodyFields() {
+        ConfigurationProperties.fixtureBodyRedactFields("content");
+        HttpRequest req = request().withMethod("POST").withPath("/v1/chat/completions")
+            .withHeader("Host", "api.openai.com")
+            .withBody("{\"model\":\"gpt-4o-2024-08-06\",\"messages\":[{\"role\":\"user\",\"content\":\"super secret prompt\"}]}");
+        HttpResponse resp = response().withStatusCode(200)
+            .withBody("{\"model\":\"gpt-4o-2024-08-06\",\"choices\":[{\"message\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}");
+        LogEventRequestAndResponse pair = new LogEventRequestAndResponse().withHttpRequest(req).withHttpResponse(resp);
+
+        LlmOptimisationReportService.Result result = service.build(Collections.singletonList(pair), noFilter());
+        String brief = service.renderBrief(result);
+        assertThat(brief, org.hamcrest.Matchers.not(containsString("super secret prompt")));
+        assertTrue(result.getReport().getRedaction().getRedactedBodyFields().contains("content"));
+    }
+}

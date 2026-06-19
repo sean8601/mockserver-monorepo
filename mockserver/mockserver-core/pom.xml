@@ -602,6 +602,8 @@
                         <exclude>**/HttpStateReadinessTest.java</exclude>
                         <!-- Sets/clears mockserver.* JVM system properties to exercise the print-config effective-config diagnostic -->
                         <exclude>**/ConfigurationPropertiesEffectiveConfigGlobalStateTest.java</exclude>
+                        <!-- Mutates mockserver.llmOptimisationMaxCalls / fixtureBodyRedactFields global config -->
+                        <exclude>**/LlmOptimisationReportServiceTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -689,6 +691,7 @@
                                 <include>**/JsonSchemaValidatorRemoteRefTest.java</include>
                                 <include>**/HttpStateReadinessTest.java</include>
                                 <include>**/ConfigurationPropertiesEffectiveConfigGlobalStateTest.java</include>
+                                <include>**/LlmOptimisationReportServiceTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

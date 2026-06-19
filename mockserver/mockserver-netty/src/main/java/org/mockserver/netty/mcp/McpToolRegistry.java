@@ -143,6 +143,7 @@ public class McpToolRegistry {
         registerVerifyStructuredOutput();
         registerVerifyCostBudget();
         registerExplainAgentRun();
+        registerExportOptimisationReport();
         registerDetectLlmDrift();
         registerMockAdversarialLlmResponse();
         registerListMockTools();
@@ -3772,6 +3773,69 @@ public class McpToolRegistry {
             return resultNode;
         } catch (Exception e) {
             return errorResult("Failed to explain agent run", e);
+        }
+    }
+
+    // --- export_optimisation_report ---
+
+    private void registerExportOptimisationReport() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode formatProp = properties.putObject("format");
+        formatProp.put("type", "string").put("description",
+            "Output format: 'markdown' for the copy-paste optimisation brief (default), or 'json' for the structured LlmOptimisationReport bundle.");
+        ArrayNode formatEnum = formatProp.putArray("enum");
+        formatEnum.add("markdown");
+        formatEnum.add("json");
+        properties.putObject("session").put("type", "string").put("description",
+            "Optional session/grouping key filter (e.g. 'host:api.openai.com'); default is all captured LLM traffic.");
+        properties.putObject("host").put("type", "string").put("description",
+            "Optional upstream host filter (e.g. api.openai.com).");
+        properties.putObject("provider").put("type", "string").put("description",
+            "Optional LLM provider filter (e.g. OPENAI, ANTHROPIC).");
+
+        tools.put("export_optimisation_report", new ToolDefinition(
+            "export_optimisation_report",
+            "Turn captured LLM traffic (proxied through MockServer) into an optimisation export: a copy-paste Markdown "
+                + "'optimisation brief' (paste into any LLM for cost-reduction advice) or the structured JSON bundle. "
+                + "Includes deterministic optimisation signals (repeated system prompts, large static context resent, "
+                + "deterministic tool calls, oversized tool results, output bloat, duplicate retries) with token and cost "
+                + "estimates. Export-only and deterministic — MockServer never calls an LLM. Secrets are redacted.",
+            schema,
+            this::handleExportOptimisationReport
+        ));
+    }
+
+    private JsonNode handleExportOptimisationReport(JsonNode params) {
+        try {
+            String format = params.path("format").asText("markdown");
+            if (!"markdown".equalsIgnoreCase(format) && !"json".equalsIgnoreCase(format)) {
+                return errorResult("'format' must be one of: markdown, json");
+            }
+            org.mockserver.llm.analysis.LlmOptimisationReportService.Filter filter =
+                new org.mockserver.llm.analysis.LlmOptimisationReportService.Filter(
+                    emptyToNull(params.path("session").asText(null)),
+                    emptyToNull(params.path("host").asText(null)),
+                    emptyToNull(params.path("provider").asText(null)));
+
+            List<LogEventRequestAndResponse> pairs = retrieveRecordedPairs(null);
+            org.mockserver.llm.analysis.LlmOptimisationReportService service =
+                new org.mockserver.llm.analysis.LlmOptimisationReportService();
+            org.mockserver.llm.analysis.LlmOptimisationReportService.Result result = service.build(pairs, filter);
+
+            if ("json".equalsIgnoreCase(format)) {
+                ObjectNode resultNode = objectMapper.createObjectNode();
+                resultNode.put("format", "json");
+                resultNode.set("report", objectMapper.valueToTree(result.getReport()));
+                return resultNode;
+            }
+            ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("format", "markdown");
+            resultNode.put("brief", service.renderBrief(result));
+            return resultNode;
+        } catch (Exception e) {
+            return errorResult("Failed to export optimisation report", e);
         }
     }
 

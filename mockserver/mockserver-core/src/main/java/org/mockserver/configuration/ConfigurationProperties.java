@@ -120,6 +120,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS = "mockserver.driftResponseTimeThresholdMs";
     private static final String MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS = "mockserver.fixtureBodyRedactFields";
     private static final String MOCKSERVER_LLM_VCR_STRICT = "mockserver.llmVcrStrict";
+    private static final String MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS = "mockserver.llmOptimisationMaxCalls";
     private static final String MOCKSERVER_OTEL_METRICS_ENABLED = "mockserver.otelMetricsEnabled";
     private static final String MOCKSERVER_OTEL_TRACES_ENABLED = "mockserver.otelTracesEnabled";
     private static final String MOCKSERVER_OTEL_ENDPOINT = "mockserver.otelEndpoint";
@@ -1847,6 +1848,20 @@ public class ConfigurationProperties {
 
     public static void llmVcrStrict(boolean strict) {
         setProperty(MOCKSERVER_LLM_VCR_STRICT, "" + strict);
+    }
+
+    /**
+     * Upper bound on the number of captured LLM calls included in an
+     * optimisation report / brief ({@code GET /mockserver/llm/optimisationReport}
+     * and the {@code export_optimisation_report} MCP tool). Bounds the report
+     * size for very long sessions; the most recent calls are kept. Default 200.
+     */
+    public static int llmOptimisationMaxCalls() {
+        return readIntegerProperty(MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS, "MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS", 200);
+    }
+
+    public static void llmOptimisationMaxCalls(int maxCalls) {
+        setProperty(MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS, "" + maxCalls);
     }
 
     /**

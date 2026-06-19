@@ -242,6 +242,21 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                         }
                     }
 
+                } else if (request.matches("GET", PATH_PREFIX + "/llm/optimisationReport", "/llm/optimisationReport")) {
+
+                    if (httpState.getControlPlaneAuthenticationHandler() != null) {
+                        try {
+                            if (!httpState.getControlPlaneAuthenticationHandler().controlPlaneRequestAuthenticated(request)) {
+                                responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
+                                return;
+                            }
+                        } catch (org.mockserver.authentication.AuthenticationException e) {
+                            responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
+                            return;
+                        }
+                    }
+                    handleOptimisationReport(request, responseWriter);
+
                 } else if (request.matches("GET", PATH_PREFIX + "/http3status", "/http3status")) {
 
                     int http3Port = server instanceof MockServer ? ((MockServer) server).getHttp3Port() : -1;
@@ -375,6 +390,80 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
             );
             responseWriter.writeResponse(request, response().withStatusCode(BAD_REQUEST.code()).withBody(ex.getMessage()), true);
         }
+    }
+
+    /**
+     * Serve {@code GET /mockserver/llm/optimisationReport}. Retrieves the
+     * recorded request/response pairs from the event log, delegates to the
+     * core {@link org.mockserver.llm.analysis.LlmOptimisationReportService} to
+     * build the report / brief, and writes JSON (default) or markdown. An empty
+     * capture yields a 200 with an empty report / "no LLM traffic" brief.
+     */
+    private void handleOptimisationReport(HttpRequest request, ResponseWriter responseWriter) {
+        try {
+            String format = request.getFirstQueryStringParameter("format");
+            if (format == null || format.isEmpty()) {
+                format = "json";
+            }
+            if (!"json".equalsIgnoreCase(format) && !"markdown".equalsIgnoreCase(format)) {
+                responseWriter.writeResponse(request, BAD_REQUEST, "format must be one of: json, markdown", MediaType.create("text", "plain").toString());
+                return;
+            }
+
+            org.mockserver.llm.analysis.LlmOptimisationReportService.Filter filter =
+                new org.mockserver.llm.analysis.LlmOptimisationReportService.Filter(
+                    request.getFirstQueryStringParameter("session"),
+                    request.getFirstQueryStringParameter("host"),
+                    request.getFirstQueryStringParameter("provider"));
+
+            org.mockserver.llm.analysis.LlmOptimisationReportService service =
+                new org.mockserver.llm.analysis.LlmOptimisationReportService();
+            org.mockserver.llm.analysis.LlmOptimisationReportService.Result result =
+                service.build(retrieveRecordedPairs(), filter);
+
+            if ("markdown".equalsIgnoreCase(format)) {
+                responseWriter.writeResponse(request, OK, service.renderBrief(result), "text/markdown; charset=utf-8");
+            } else {
+                String json = ObjectMapperFactory.createObjectMapper()
+                    .writerWithDefaultPrettyPrinter().writeValueAsString(result.getReport());
+                responseWriter.writeResponse(request, OK, json, "application/json");
+            }
+        } catch (Exception e) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setHttpRequest(request)
+                    .setMessageFormat("exception building LLM optimisation report:{}")
+                    .setArguments(e.getMessage())
+                    .setThrowable(e)
+            );
+            responseWriter.writeResponse(request, response().withStatusCode(BAD_REQUEST.code()).withBody(e.getMessage()), true);
+        }
+    }
+
+    /**
+     * Retrieve all recorded request/response pairs from the event log as a list,
+     * for the optimisation report. Returns an empty list when nothing is recorded.
+     */
+    private List<org.mockserver.model.LogEventRequestAndResponse> retrieveRecordedPairs() {
+        HttpRequest retrieveRequest = HttpRequest.request()
+            .withMethod("PUT")
+            .withPath(PATH_PREFIX + "/retrieve")
+            .withQueryStringParameter("type", "REQUEST_RESPONSES")
+            .withQueryStringParameter("format", "JSON");
+        HttpResponse retrieveResponse = httpState.retrieve(retrieveRequest);
+        String body = retrieveResponse.getBodyAsString();
+        java.util.List<org.mockserver.model.LogEventRequestAndResponse> result = new java.util.ArrayList<>();
+        if (body != null && !body.trim().isEmpty()) {
+            try {
+                org.mockserver.model.LogEventRequestAndResponse[] pairs =
+                    new org.mockserver.serialization.LogEventRequestAndResponseSerializer(mockServerLogger).deserializeArray(body);
+                result.addAll(java.util.Arrays.asList(pairs));
+            } catch (IllegalArgumentException e) {
+                // no parseable pairs (e.g. "[]") — treat as none
+            }
+        }
+        return result;
     }
 
     @Override
