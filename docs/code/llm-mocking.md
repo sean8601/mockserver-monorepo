@@ -590,3 +590,84 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/StubGenerationResult.java` | Result DTO for stub generation (suggestions, confidence, explanation) |
 | `metrics/OtelMetricsExporter.java` | Optional OTLP metrics export bridging the Prometheus gauges (off by default) |
 | `telemetry/GenAiSpanExporter.java` + `GenAiSpans.java` + `OtelEndpoints.java` | Optional explicit GenAI span export per served completion (off by default) |
+| `llm/analysis/LlmOptimisationReport.java` | Structured JSON bundle — nested `Session`, `Totals`, `Call`, `ToolCall`, `Signal`, `Redaction` POJOs; schema version 1 |
+| `llm/analysis/LlmOptimisationReportBuilder.java` | Builds the report from `FORWARDED_REQUEST` log entries via `ProviderCodecRegistry` + `LlmProviderSniffer` + `LlmPricing` + `FixtureRedactor` |
+| `llm/analysis/OptimisationSignals.java` | Six deterministic signal detectors (see below); pure — no network, no LLM |
+| `llm/analysis/LlmOptimisationBriefRenderer.java` | Renders an `LlmOptimisationReport` to a pre-framed Markdown brief |
+| `llm/analysis/LlmOptimisationReportService.java` | Façade: `build(pairs, filter)` + `renderBrief(result)` — used by both the REST handler and the MCP tool |
+
+## LLM Optimisation Export
+
+MockServer can turn any captured LLM session into a structured **optimisation report** — either a copy-paste Markdown brief (pre-framed so a user can paste it into any LLM for cost-reduction advice) or a JSON bundle for programmatic use. The feature is export-only: MockServer never calls an LLM; every number is deterministic.
+
+### Data flow
+
+```mermaid
+flowchart LR
+    LOG["FORWARDED_REQUEST\nlog entries"] --> SVC["LlmOptimisationReportService\n.build(pairs, filter)"]
+    SVC --> SNIFF["LlmProviderSniffer\n(detect provider)"]
+    SVC --> CODEC["ProviderCodecRegistry\n.decode() → ParsedConversation"]
+    SVC --> PRICE["LlmPricing\n(estimate USD cost)"]
+    SVC --> REDACT["FixtureRedactor\n(strip secrets)"]
+    SVC --> BUILD["LlmOptimisationReportBuilder\n(assemble report)"]
+    BUILD --> SIG["OptimisationSignals\n(detect 6 signal types)"]
+    BUILD --> RPT["LlmOptimisationReport\n(JSON bundle)"]
+    RPT -->|"format=markdown"| RENDER["LlmOptimisationBriefRenderer\n(Markdown brief)"]
+```
+
+Only LLM traffic (where the sniffer recognises a provider) is included; non-LLM forwarded traffic is ignored.
+
+### Endpoint and MCP tool
+
+**REST** — `GET /mockserver/llm/optimisationReport` (mockserver-netty control-plane, handled by `HttpRequestHandler.handleOptimisationReport`):
+
+| Query parameter | Values | Default |
+|-----------------|--------|---------|
+| `format` | `json` \| `markdown` | `json` |
+| `session` | grouping key | all captured LLM traffic |
+| `host` | upstream hostname | all hosts |
+| `provider` | `OPENAI` \| `ANTHROPIC` \| `GEMINI` \| `BEDROCK` \| `AZURE_OPENAI` \| `OLLAMA` | all providers |
+
+CORS is enabled on this endpoint so the dashboard UI can call it even when the dashboard and control plane are on different origins.
+
+**MCP tool** — `export_optimisation_report` (registered in `McpToolRegistry.registerExportOptimisationReport`), same parameters as the REST endpoint. Returns the brief text or JSON bundle as a tool result.
+
+**Dashboard** — the Optimise screen (`OptimiseView.tsx`) fetches `format=json` for display and `format=markdown` for the "Copy optimisation brief" and "Download bundle" buttons.
+
+### Optimisation signals
+
+`OptimisationSignals.detect(calls)` runs six pure detectors and sorts the results HIGH → MEDIUM → LOW:
+
+| Signal id | Severity | Trigger | Lever |
+|-----------|----------|---------|-------|
+| `REPEATED_SYSTEM_PROMPT` | HIGH / MEDIUM | Same system-prompt fingerprint on ≥2 calls | Prompt caching / retrieval tool |
+| `LARGE_STATIC_CONTEXT_RESENT` | HIGH | Context block ≥2,000 tokens resent on ≥2 calls | Prompt caching / retrieval tool |
+| `DETERMINISTIC_TOOL_CALL` | MEDIUM | Same tool name + args fingerprint on ≥2 calls | Direct HTTP/MCP endpoint |
+| `OVERSIZED_TOOL_RESULT` | MEDIUM | Tool result ≥1,000 tokens | Trim/summarise output |
+| `OUTPUT_TOKEN_BLOAT` | LOW | Output ≥1,500 tokens or ≥3× session median | `max_tokens` / `response_format` |
+| `DUPLICATE_CONSECUTIVE_CALL` | MEDIUM | Near-identical consecutive request shape | De-duplicate / cache / retry guard |
+
+Each signal carries `estimatedWastedInputTokens` (nullable) and `estimatedSavingUsd` (nullable, scaled from per-call cost via `LlmPricing`).
+
+### Session grouping
+
+Sessions group by isolation key (when LLM conversation expectations with `IsolationSource` are active — isolation key encoded in the scenario name as `__llm_conv_<uuid>__iso=<type>:<key>`) or by upstream `Host` header otherwise. The `groupingBasis` field in the report (`ISOLATION_KEY` \| `PROXY_HOST`) records which was used.
+
+**v1 deferral.** Proxied (forwarded) LLM traffic — the optimisation use case — carries no matched-expectation scenario, so the builder groups it by upstream host (`PROXY_HOST`); server-side isolation-key grouping is deferred. The `session` filter in `LlmOptimisationReportService` therefore accepts the composite `host:<host>` key or the bare host, and the dashboard `OptimiseView` picker offers host-grouped sessions only (plus "All captured LLM traffic") so a selection always resolves rather than silently returning an empty report.
+
+### Redaction
+
+`FixtureRedactor` strips `Authorization`, `x-api-key`, `api-key`, `Cookie`, `Set-Cookie`, and `Proxy-Authorization` headers. JSON body fields named in `mockserver.fixtureBodyRedactFields` are also redacted. The `redaction` object in the report lists what was stripped.
+
+### Configuration
+
+- `mockserver.llmOptimisationMaxCalls` (int, default 200) — caps report size; only the most recent N calls are included when the session is larger. Signal thresholds are v1 constants in `OptimisationSignals` (no config properties beyond this bound).
+- `mockserver.fixtureBodyRedactFields` — shared with `record_llm_fixtures`; controls body-field redaction.
+
+### Markdown brief structure (frozen order)
+
+1. Framing preamble (verbatim instructions for the downstream LLM)
+2. Run summary (providers, models, token totals, estimated cost, latency, tool-call count)
+3. Per-call table (`# | model | in tok | out tok | cost | latency | tools | finish`)
+4. Detected opportunities (HIGH first, each as a `###` section with title, detail, affected call indices, estimated saving, recommendation)
+5. Conversations and tool definitions appendix (redacted messages + tool schemas per call)

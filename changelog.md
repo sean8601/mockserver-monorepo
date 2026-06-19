@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **LLM optimisation export**: proxy your agent's LLM calls through MockServer, then export a one-click
+  **optimisation brief** (Markdown, pre-framed for any LLM) or structured **JSON bundle**
+  (`LlmOptimisationReport`) from captured traffic. Six deterministic optimisation signals detect
+  repeated system prompts, large static context resent every turn, deterministic tool calls,
+  oversized tool results, output token bloat, and duplicate consecutive calls — each with token
+  counts, estimated USD saving, and a concrete recommended lever (prompt caching, retrieval tool,
+  direct HTTP/MCP endpoint, `max_tokens` constraint). New **Optimise** dashboard screen, new
+  `GET /mockserver/llm/optimisationReport?format=markdown|json` control-plane endpoint, and new
+  `export_optimisation_report` MCP tool. Export-only and fully deterministic — MockServer never
+  calls an LLM. Secrets (auth headers, API keys, configured body fields) are redacted before export.
+  Configured via `mockserver.llmOptimisationMaxCalls` (default 200); body-field redaction reuses
+  `mockserver.fixtureBodyRedactFields`.
 - **GraphQL and AsyncAPI spec import**: `PUT /mockserver/graphql` imports a GraphQL SDL / introspection document
   and generates an expectation per root operation type whose responses are schema-valid (built on the GraphQL
   response synthesizer); `PUT /mockserver/asyncapi/http` turns an AsyncAPI document's channels into GET
