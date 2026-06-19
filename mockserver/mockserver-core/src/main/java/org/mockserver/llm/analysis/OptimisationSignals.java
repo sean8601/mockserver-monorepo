@@ -264,31 +264,28 @@ public class OptimisationSignals {
 
     private Signal duplicateConsecutiveCall(List<Call> calls) {
         // Near-identical consecutive calls: same path, model, message count and system prompt
-        // fingerprint suggest a retry of the same request.
+        // fingerprint suggest a retry of the same request. A call is "wasted" only when it
+        // duplicates its immediate predecessor (so the first call of each duplicate run is not
+        // counted), summed correctly across multiple independent runs.
         List<Integer> affected = new ArrayList<>();
+        java.util.Set<Integer> affectedSet = new java.util.LinkedHashSet<>();
+        long wasted = 0;
         for (int i = 1; i < calls.size(); i++) {
             Call prev = calls.get(i - 1);
             Call cur = calls.get(i);
             if (sameish(prev, cur)) {
-                if (!affected.contains(prev.getIndex())) {
+                if (affectedSet.add(prev.getIndex())) {
                     affected.add(prev.getIndex());
                 }
-                affected.add(cur.getIndex());
+                if (affectedSet.add(cur.getIndex())) {
+                    affected.add(cur.getIndex());
+                }
+                // cur is a retry of prev within this run, so its input tokens are wasted.
+                wasted += cur.getInputTokens();
             }
         }
         if (affected.isEmpty()) {
             return null;
-        }
-        // Wasted input ~ the duplicated calls' input tokens (all but the first in each run).
-        long wasted = 0;
-        boolean first = true;
-        for (Call call : calls) {
-            if (affected.contains(call.getIndex())) {
-                if (!first) {
-                    wasted += call.getInputTokens();
-                }
-                first = false;
-            }
         }
         return new Signal()
             .setId("DUPLICATE_CONSECUTIVE_CALL")

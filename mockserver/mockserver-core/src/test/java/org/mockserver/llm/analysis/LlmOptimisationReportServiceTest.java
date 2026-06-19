@@ -74,6 +74,16 @@ public class LlmOptimisationReportServiceTest {
     }
 
     @Test
+    public void nullEntriesAndNullRequestsAreSkipped() {
+        List<LogEventRequestAndResponse> pairs = new ArrayList<>();
+        pairs.add(null);
+        pairs.add(new LogEventRequestAndResponse().withHttpResponse(response().withBody("{}"))); // null request
+        pairs.add(openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10));
+        LlmOptimisationReportService.Result result = service.build(pairs, noFilter());
+        assertEquals(1, result.getReport().getCalls().size());
+    }
+
+    @Test
     public void nonLlmTrafficIsExcluded() {
         LogEventRequestAndResponse notLlm = new LogEventRequestAndResponse()
             .withHttpRequest(request().withMethod("GET").withPath("/api/users").withHeader("Host", "example.com"))

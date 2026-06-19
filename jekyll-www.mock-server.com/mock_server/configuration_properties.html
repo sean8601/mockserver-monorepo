@@ -1339,6 +1339,16 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_LLM_VCR_STRICT=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmVcrStrict="true"</code></pre>
+    <p><strong>Optimisation report size limit</strong> &mdash; the maximum number of captured LLM calls included in an optimisation report or brief (the <code>GET /mockserver/llm/optimisationReport</code> endpoint and the <code>export_optimisation_report</code> MCP tool). Bounds the report size for very long sessions; the most recent calls are kept. Default <code>200</code>.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">200</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmOptimisationMaxCalls(int maxCalls)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmOptimisationMaxCalls=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmOptimisationMaxCalls="500"</code></pre>
 </div>
 
 <button id="button_configuration_drift" class="accordion title"><strong>Drift Detection</strong></button>

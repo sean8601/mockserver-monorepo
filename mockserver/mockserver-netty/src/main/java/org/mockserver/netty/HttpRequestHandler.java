@@ -437,7 +437,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     .setArguments(e.getMessage())
                     .setThrowable(e)
             );
-            responseWriter.writeResponse(request, response().withStatusCode(BAD_REQUEST.code()).withBody(e.getMessage()), true);
+            responseWriter.writeResponse(request, INTERNAL_SERVER_ERROR, "Internal error generating optimisation report", MediaType.create("text", "plain").toString());
         }
     }
 

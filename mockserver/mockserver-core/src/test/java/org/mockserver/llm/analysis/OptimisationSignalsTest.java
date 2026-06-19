@@ -158,6 +158,21 @@ public class OptimisationSignalsTest {
     }
 
     @Test
+    public void duplicateWastedTokensCountedPerGroupNotAcrossGroups() {
+        // Two independent duplicate runs: (0,1) and (3,4), with a distinct call 2 between.
+        Call a0 = call(0).setMessageCount(3).setSystemPromptFingerprint("g1").setInputTokens(500);
+        Call a1 = call(1).setMessageCount(3).setSystemPromptFingerprint("g1").setInputTokens(500);
+        Call b2 = call(2).setMessageCount(7).setSystemPromptFingerprint("mid").setInputTokens(999);
+        Call c3 = call(3).setMessageCount(4).setSystemPromptFingerprint("g2").setInputTokens(700);
+        Call c4 = call(4).setMessageCount(4).setSystemPromptFingerprint("g2").setInputTokens(700);
+        Signal signal = findSignal(signals.detect(Arrays.asList(a0, a1, b2, c3, c4)),
+            "DUPLICATE_CONSECUTIVE_CALL").orElseThrow(AssertionError::new);
+        assertThat(signal.getAffectedCalls(), contains(0, 1, 3, 4));
+        // wasted = the retry of each group (call 1 + call 4), NOT call 3.
+        assertEquals(Long.valueOf(1200), signal.getEstimatedWastedInputTokens());
+    }
+
+    @Test
     public void nonDuplicateConsecutiveDoesNotTrigger() {
         Call a = call(0).setMessageCount(3).setInputTokens(500);
         Call b = call(1).setMessageCount(5).setInputTokens(900);

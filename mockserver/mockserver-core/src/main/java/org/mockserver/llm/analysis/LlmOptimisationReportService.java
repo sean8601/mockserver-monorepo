@@ -79,10 +79,10 @@ public class LlmOptimisationReportService {
         String groupingKey = null;
         if (pairs != null) {
             for (LogEventRequestAndResponse pair : pairs) {
-                if (!(pair.getHttpRequest() instanceof HttpRequest)) {
+                if (pair == null || pair.getHttpRequest() == null) {
                     continue;
                 }
-                HttpRequest request = (HttpRequest) pair.getHttpRequest();
+                HttpRequest request = pair.getHttpRequest();
                 Optional<Provider> providerOpt = LlmProviderSniffer.sniff(request);
                 if (!providerOpt.isPresent()) {
                     continue; // not LLM traffic
