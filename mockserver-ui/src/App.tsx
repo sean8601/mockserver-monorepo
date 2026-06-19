@@ -42,6 +42,10 @@ const MetricsView = lazy(() => import('./components/MetricsView'));
 // Composer tab is opened, keeping it off the initial dashboard load.
 const ComposerView = lazy(() => import('./components/ComposerView'));
 
+// Lazy-loaded so the Optimise screen's report rendering stays off the initial
+// dashboard load (it is only needed when the Optimise tab is opened).
+const OptimiseView = lazy(() => import('./components/OptimiseView'));
+
 export default function App() {
   const themeMode = useDashboardStore((s) => s.themeMode);
   const view = useDashboardStore((s) => s.view);
@@ -150,6 +154,11 @@ export default function App() {
             {view === 'metrics' && (
               <Suspense fallback={<Box sx={{ p: 2 }}>Loading metrics…</Box>}>
                 <MetricsView connectionParams={params} />
+              </Suspense>
+            )}
+            {view === 'optimise' && (
+              <Suspense fallback={<Box sx={{ p: 2 }}>Loading optimise…</Box>}>
+                <OptimiseView connectionParams={params} />
               </Suspense>
             )}
             {view === 'chaos' && <ServiceChaosPanel connectionParams={params} />}

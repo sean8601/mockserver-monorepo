@@ -33,6 +33,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PostAddIcon from '@mui/icons-material/PostAdd';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
 import SpeedIcon from '@mui/icons-material/Speed';
+import SavingsIcon from '@mui/icons-material/Savings';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
@@ -148,6 +149,7 @@ const NAV_TABS: NavTab[] = [
   { value: 'contract', label: 'Contract', ariaLabel: 'Contract test view', icon: <FactCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'cluster', label: 'Cluster', ariaLabel: 'Cluster status view', icon: <HubOutlinedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'metrics', label: 'Metrics', ariaLabel: 'Metrics view', icon: <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'optimise', label: 'Optimise', ariaLabel: 'Optimise view', icon: <SavingsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
 ];
 
 interface AppBarProps {
