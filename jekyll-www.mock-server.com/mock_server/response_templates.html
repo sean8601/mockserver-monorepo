@@ -59,6 +59,10 @@ lastmod: 2019-11-10T08:00:00+01:00
             <li><a href="#math_helper">Calc Helper</a> &mdash; random numbers, rounding, min/max, abs, ceil/floor, number formatting</li>
             <li><a href="#crypto_helper">Crypto Helper</a> &mdash; MD5, SHA-1, SHA-256, SHA-512 digests and HMAC-SHA-256 signatures, all as lowercase hex</li>
             <li><a href="#regex_helper">Regex Helper</a> &mdash; test patterns, capture groups, and replace substrings using Java regex</li>
+            <li><a href="#html_helper">HTML Helper</a> &mdash; escape and unescape HTML entities</li>
+            <li><a href="#csv_helper">CSV Helper</a> &mdash; parse CSV text into rows and format a row back to CSV</li>
+            <li><a href="#xpath_helper">XPath Helper</a> &mdash; evaluate an XPath expression against an XML document (XXE-safe)</li>
+            <li><a href="#yaml_helper">YAML Helper</a> &mdash; convert YAML to JSON and read a field from a YAML document</li>
         </ul>
     </li>
     <li><a href="#response_template_security"><strong>Security Considerations</strong></a> &mdash; restrict the Java classes templates can reach via <code class="inline code">velocityDisallowClassLoading</code> and <code class="inline code">javascriptDisallowedClasses</code></li>
@@ -976,6 +980,85 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
     <li><strong>Velocity:</strong> <code class="inline code">$regex.group($!request.path, "/orders/([^/]+)", 1)</code> (extract the order ID from the path)</li>
     <li><strong>JavaScript:</strong> <code class="inline code">regex.replaceAll(request.headers["Authorization"][0], "^Bearer ", "")</code> (strip the Bearer prefix from a token)</li>
     <li><strong>Mustache:</strong> regex helper methods require arguments and cannot be invoked from Mustache &mdash; use Velocity or JavaScript instead</li>
+</ul>
+
+<a id="html_helper" class="anchor" href="#html_helper">&nbsp;</a>
+
+<h3>HTML Helper (<code>html</code>)</h3>
+
+<p>Escapes and unescapes HTML entities (HTML 4.0). Use this to safely embed request data in an HTML response body, or to recover the original text from an escaped value.</p>
+
+<table class="table">
+    <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
+    <tbody>
+        <tr><td><code>html.escape(value)</code></td><td>Escapes characters using HTML entities</td><td><code>html.escape("&lt;a&gt; &amp; &lt;b&gt;")</code> &rarr; <code>"&amp;lt;a&amp;gt; &amp;amp; &amp;lt;b&amp;gt;"</code></td></tr>
+        <tr><td><code>html.unescape(value)</code></td><td>Reverses HTML entity escaping</td><td><code>html.unescape("&amp;lt;a&amp;gt;")</code> &rarr; <code>"&lt;a&gt;"</code></td></tr>
+    </tbody>
+</table>
+
+<p>Usage examples:</p>
+<ul>
+    <li><strong>Velocity:</strong> <code class="inline code">$html.escape($!request.body)</code> (safely embed the request body in HTML)</li>
+    <li><strong>JavaScript:</strong> <code class="inline code">html.unescape(request.queryStringParameters["q"][0])</code></li>
+</ul>
+
+<a id="csv_helper" class="anchor" href="#csv_helper">&nbsp;</a>
+
+<h3>CSV Helper (<code>csv</code>)</h3>
+
+<p>Parses CSV text into rows (each row a list of fields) and formats a list of fields back into a CSV line. Quoting and quote-doubling follow RFC 4180: fields containing a comma, double-quote, or newline are wrapped in double quotes and embedded quotes are doubled.</p>
+
+<table class="table">
+    <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
+    <tbody>
+        <tr><td><code>csv.parse(text)</code></td><td>Parses CSV text into a list of rows, each a list of fields</td><td><code>csv.parse("a,b\n1,2")</code> &rarr; <code>[["a","b"],["1","2"]]</code></td></tr>
+        <tr><td><code>csv.row(list)</code></td><td>Formats a list of fields into a single CSV line, quoting where required</td><td><code>csv.row(["a","b,c"])</code> &rarr; <code>"a,\"b,c\""</code></td></tr>
+    </tbody>
+</table>
+
+<p>Usage examples:</p>
+<ul>
+    <li><strong>JavaScript:</strong> <code class="inline code">csv.parse(request.body)[0][1]</code> (read the second field of the first CSV row)</li>
+    <li><strong>JavaScript:</strong> <code class="inline code">csv.row(["id","name","total"])</code> (build a CSV header line for a response)</li>
+</ul>
+
+<a id="xpath_helper" class="anchor" href="#xpath_helper">&nbsp;</a>
+
+<h3>XPath Helper (<code>xpath</code>)</h3>
+
+<p>Evaluates an XPath expression against an XML document and returns the string result. The XML parser disables DOCTYPE declarations and external entity resolution, so it is safe against XXE; an unparseable document or invalid expression yields <code>""</code>.</p>
+
+<table class="table">
+    <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
+    <tbody>
+        <tr><td><code>xpath.evaluate(xml, expression)</code></td><td>Returns the string result of the XPath expression against the XML</td><td><code>xpath.evaluate("&lt;o&gt;&lt;id&gt;42&lt;/id&gt;&lt;/o&gt;", "/o/id")</code> &rarr; <code>"42"</code></td></tr>
+    </tbody>
+</table>
+
+<p>Usage examples:</p>
+<ul>
+    <li><strong>Velocity:</strong> <code class="inline code">$xpath.evaluate($!request.body, "/order/id")</code> (extract an element from an XML request body)</li>
+    <li><strong>JavaScript:</strong> <code class="inline code">xpath.evaluate(request.body, "/order/@status")</code> (read an attribute value)</li>
+</ul>
+
+<a id="yaml_helper" class="anchor" href="#yaml_helper">&nbsp;</a>
+
+<h3>YAML Helper (<code>yaml</code>)</h3>
+
+<p>Converts a YAML document to JSON and reads a top-level field out of a YAML document. Scalar fields are returned verbatim; object/array fields are returned as JSON.</p>
+
+<table class="table">
+    <thead><tr><th>Method</th><th>Description</th><th>Example</th></tr></thead>
+    <tbody>
+        <tr><td><code>yaml.toJson(yaml)</code></td><td>Converts a YAML document to its JSON representation</td><td><code>yaml.toJson("name: Bob")</code> &rarr; <code>"{\"name\":\"Bob\"}"</code></td></tr>
+        <tr><td><code>yaml.parse(yaml, field)</code></td><td>Returns a top-level field value (scalars verbatim, objects/arrays as JSON)</td><td><code>yaml.parse("name: Bob", "name")</code> &rarr; <code>"Bob"</code></td></tr>
+    </tbody>
+</table>
+
+<p>Usage examples:</p>
+<ul>
+    <li><strong>Velocity:</strong> <code class="inline code">$yaml.toJson($!request.body)</code> (turn a YAML request body into a JSON response)</li>
+    <li><strong>JavaScript:</strong> <code class="inline code">yaml.parse(request.body, "version")</code></li>
 </ul>
 
 <a id="mustache_templates" class="anchor" href="#mustache_templates">&nbsp;</a>

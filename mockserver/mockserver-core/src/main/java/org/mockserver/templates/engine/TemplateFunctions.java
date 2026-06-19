@@ -4,13 +4,17 @@ import com.google.common.collect.ImmutableMap;
 import net.datafaker.Faker;
 import org.mockserver.serialization.Base64Converter;
 import org.mockserver.templates.engine.helpers.CryptoTemplateHelper;
+import org.mockserver.templates.engine.helpers.CsvTemplateHelper;
 import org.mockserver.templates.engine.helpers.DateTemplateHelper;
+import org.mockserver.templates.engine.helpers.HtmlTemplateHelper;
 import org.mockserver.templates.engine.helpers.JsonTemplateHelper;
 import org.mockserver.templates.engine.helpers.JwtTemplateHelper;
 import org.mockserver.templates.engine.helpers.MathTemplateHelper;
 import org.mockserver.templates.engine.helpers.RegexTemplateHelper;
 import org.mockserver.templates.engine.helpers.ScenarioTemplateHelper;
 import org.mockserver.templates.engine.helpers.StringTemplateHelper;
+import org.mockserver.templates.engine.helpers.XmlXPathTemplateHelper;
+import org.mockserver.templates.engine.helpers.YamlTemplateHelper;
 import org.mockserver.time.TimeService;
 import org.mockserver.uuid.UUIDService;
 
@@ -53,6 +57,10 @@ public class TemplateFunctions implements Supplier<Object> {
         .put("crypto", new CryptoTemplateHelper())
         .put("regex", new RegexTemplateHelper())
         .put("scenario", new ScenarioTemplateHelper())
+        .put("html", new HtmlTemplateHelper())
+        .put("csv", new CsvTemplateHelper())
+        .put("xpath", new XmlXPathTemplateHelper())
+        .put("yaml", new YamlTemplateHelper())
         .build();
 
     private final Supplier<String> supplier;
