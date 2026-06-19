@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Deterministic fuzzy / similarity body matcher**: a request body matcher `FuzzyBody`
+  (`{"type":"FUZZY","fuzzy":"...","threshold":0.8,"ignoreCase":false}`, DSL `FuzzyBody.fuzzy(...)`) matches when
+  the request body is similar enough to an expected string by a deterministic Jaro-Winkler ratio at or above a
+  configurable threshold (default `0.8`) — a non-LLM alternative to exact/regex body matching.
 - **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
   containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
   schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched

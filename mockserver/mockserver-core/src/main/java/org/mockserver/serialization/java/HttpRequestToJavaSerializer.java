@@ -104,6 +104,11 @@ public class HttpRequestToJavaSerializer implements ToJavaSerializer<HttpRequest
                     output.append(".withBody(");
                     output.append("new RegexBody(\"").append(StringEscapeUtils.escapeJava(regexBody.getValue())).append("\")");
                     output.append(")");
+                } else if (request.getBody() instanceof FuzzyBody fuzzyBody) {
+                    appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
+                    output.append(".withBody(");
+                    output.append("new FuzzyBody(\"").append(StringEscapeUtils.escapeJava(fuzzyBody.getValue())).append("\", ").append(fuzzyBody.getThreshold()).append("d, ").append(fuzzyBody.isIgnoreCase()).append(")");
+                    output.append(")");
                 } else if (request.getBody() instanceof StringBody stringBody) {
                     appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
                     output.append(".withBody(");

@@ -42,6 +42,8 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
             result = new MultipartBodyDTO(multipartBody, multipartBody.getNot());
         } else if (body instanceof RegexBody regexBody) {
             result = new RegexBodyDTO(regexBody, regexBody.getNot());
+        } else if (body instanceof FuzzyBody fuzzyBody) {
+            result = new FuzzyBodyDTO(fuzzyBody, fuzzyBody.getNot());
         } else if (body instanceof StringBody stringBody) {
             result = new StringBodyDTO(stringBody, stringBody.getNot());
         } else if (body instanceof XmlBody xmlBody) {
@@ -104,6 +106,8 @@ public abstract class BodyDTO extends NotDTO implements DTO<Body<?>> {
             }
         } else if (body instanceof RegexBodyDTO regexBodyDTO) {
             return regexBodyDTO.getRegex();
+        } else if (body instanceof FuzzyBodyDTO fuzzyBodyDTO) {
+            return fuzzyBodyDTO.getFuzzy();
         } else if (body instanceof StringBodyDTO stringBodyDTO) {
             return stringBodyDTO.getString();
         } else if (body instanceof XmlBodyDTO xmlBodyDTO) {

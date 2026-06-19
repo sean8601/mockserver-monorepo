@@ -138,6 +138,20 @@ public class HttpRequestToJavaSerializerTest {
     }
 
     @Test
+    public void shouldSerializeFullObjectWithFuzzyBodyRequestAsJava() {
+        // when
+        assertThat(
+            new HttpRequestToJavaSerializer().serialize(1,
+                new HttpRequest()
+                    .withBody(
+                        new FuzzyBody("some fuzzy value", 0.8d, false)
+                    )
+            ), is(NEW_LINE +
+                "        request()" + NEW_LINE +
+                "                .withBody(new FuzzyBody(\"some fuzzy value\", 0.8d, false))"));
+    }
+
+    @Test
     public void shouldEscapeJsonBodies() {
         assertThat(
             new HttpRequestToJavaSerializer().serialize(1,

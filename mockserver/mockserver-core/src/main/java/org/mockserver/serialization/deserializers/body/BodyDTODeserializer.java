@@ -46,6 +46,7 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
         fieldNameToType.put("jsonPath".toLowerCase(), Body.Type.JSON_PATH);
         fieldNameToType.put("parameters".toLowerCase(), Body.Type.PARAMETERS);
         fieldNameToType.put("regex".toLowerCase(), Body.Type.REGEX);
+        fieldNameToType.put("fuzzy".toLowerCase(), Body.Type.FUZZY);
         fieldNameToType.put("string".toLowerCase(), Body.Type.STRING);
         fieldNameToType.put("xml".toLowerCase(), Body.Type.XML);
         fieldNameToType.put("xmlSchema".toLowerCase(), Body.Type.XML_SCHEMA);
@@ -76,6 +77,8 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
         MediaType contentType = null;
         Charset charset = null;
         boolean subString = false;
+        double fuzzyThreshold = FuzzyBody.DEFAULT_THRESHOLD;
+        boolean fuzzyIgnoreCase = FuzzyBody.DEFAULT_IGNORE_CASE;
         MatchType matchType = JsonBody.DEFAULT_MATCH_TYPE;
         boolean matchNumbersAsStrings = false;
         Parameters parameters = null;
@@ -174,7 +177,7 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
                             }
                         }
                     }
-                    if (containsIgnoreCase(key, "string", "regex", "json", "jsonSchema", "jsonPath", "xml", "xmlSchema", "xpath", "base64Bytes", "filePath", "moduleName") && type != Body.Type.PARAMETERS) {
+                    if (containsIgnoreCase(key, "string", "regex", "fuzzy", "json", "jsonSchema", "jsonPath", "xml", "xmlSchema", "xpath", "base64Bytes", "filePath", "moduleName") && type != Body.Type.PARAMETERS) {
                         String fieldName = String.valueOf(entry.getKey()).toLowerCase();
                         if (fieldNameToType.containsKey(fieldName)) {
                             type = fieldNameToType.get(fieldName);
@@ -241,6 +244,23 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
                                 );
                             }
                         }
+                    }
+                    if (key.equalsIgnoreCase("threshold")) {
+                        try {
+                            fuzzyThreshold = Double.parseDouble(String.valueOf(entry.getValue()));
+                        } catch (NumberFormatException nfe) {
+                            if (MockServerLogger.isEnabled(DEBUG)) {
+                                MOCK_SERVER_LOGGER.logEvent(
+                                    new LogEntry()
+                                        .setLogLevel(DEBUG)
+                                        .setMessageFormat("ignoring invalid fuzzy threshold with value \"" + entry.getValue() + "\"")
+                                        .setThrowable(nfe)
+                                );
+                            }
+                        }
+                    }
+                    if (key.equalsIgnoreCase("ignoreCase")) {
+                        fuzzyIgnoreCase = Boolean.parseBoolean(String.valueOf(entry.getValue()));
                     }
                     if (key.equalsIgnoreCase("parameterStyles") && entry.getValue() instanceof Map) {
                         try {
@@ -445,6 +465,9 @@ public class BodyDTODeserializer extends StdDeserializer<BodyDTO> {
                         break;
                     case REGEX:
                         result = new RegexBodyDTO(new RegexBody(valueJsonValue), not);
+                        break;
+                    case FUZZY:
+                        result = new FuzzyBodyDTO(new FuzzyBody(valueJsonValue, fuzzyThreshold, fuzzyIgnoreCase), not);
                         break;
                     case STRING:
                         if (contentType != null && isNotBlank(contentType.toString())) {

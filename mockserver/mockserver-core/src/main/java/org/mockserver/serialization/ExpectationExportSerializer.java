@@ -274,6 +274,7 @@ public class ExpectationExportSerializer {
                 return;
             }
             case REGEX:
+            case FUZZY:
             case JSON_SCHEMA:
             case JSON_PATH:
             case XPATH:

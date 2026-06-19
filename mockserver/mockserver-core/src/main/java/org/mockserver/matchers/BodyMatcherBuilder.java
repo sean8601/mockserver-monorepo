@@ -36,6 +36,10 @@ public class BodyMatcherBuilder {
                     RegexBody regexBody = (RegexBody) body;
                     bodyMatcher = new RegexStringMatcher(mockServerLogger, NottableString.string(regexBody.getValue()), controlPlaneMatcher, caseSensitive);
                     break;
+                case FUZZY:
+                    FuzzyBody fuzzyBody = (FuzzyBody) body;
+                    bodyMatcher = new FuzzyMatcher(mockServerLogger, fuzzyBody.getValue(), fuzzyBody.getThreshold(), fuzzyBody.isIgnoreCase());
+                    break;
                 case PARAMETERS:
                     ParameterBody parameterBody = (ParameterBody) body;
                     bodyMatcher = new ParameterStringMatcher(configuration, mockServerLogger, parameterBody.getValue(), controlPlaneMatcher);

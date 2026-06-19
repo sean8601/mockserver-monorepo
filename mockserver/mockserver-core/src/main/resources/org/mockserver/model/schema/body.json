@@ -186,6 +186,32 @@
         },
         "type": {
           "enum": [
+            "FUZZY"
+          ]
+        },
+        "fuzzy": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "ignoreCase": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "not": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "type": {
+          "enum": [
             "STRING"
           ]
         },
