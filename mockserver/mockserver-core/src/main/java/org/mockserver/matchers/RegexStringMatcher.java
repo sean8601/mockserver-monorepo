@@ -116,6 +116,17 @@ public class RegexStringMatcher extends BodyMatcher<NottableString> {
                 context.addDifference(mockServerLogger, "numeric comparison match failed expected:{}found:{}", matcher, matched);
             }
             return numericMatch;
+        } else if (numericComparison && AcceptHeaderMatcher.isAcceptDirective(matcherValue)) {
+            // match by HTTP content-negotiation (e.g. "accept:application/json"): the actual
+            // Accept header value (matched) must make the desired media type acceptable per
+            // RFC 7231 (q-values, type/* and */* wildcards, preference order). Only enabled for
+            // key/value map matching (headers/cookies/query/params), not body/path/method/reason-phrase.
+            // a blank or non-acceptable actual value simply does not match and never throws.
+            boolean acceptMatch = matched != null && AcceptHeaderMatcher.matches(matcherValue, matched.getValue());
+            if (!acceptMatch && context != null) {
+                context.addDifference(mockServerLogger, "accept header content-negotiation match failed expected:{}found:{}", matcher, matched);
+            }
+            return acceptMatch;
         } else {
             if (matched != null) {
                 final String matchedValue = matched.getValue();
