@@ -6,7 +6,7 @@
  * drive the body value through that textarea.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
@@ -54,7 +54,9 @@ describe('Composer body matcher JSON validation gate', () => {
     await user.click(bodyType);
     await user.click(await screen.findByRole('option', { name: 'JSON' }));
 
-    const bodyEditor = screen.getByTestId('monaco-textarea');
+    // Scope to the request-body matcher editor (its aria-label tracks the body
+    // type) — the static response action also renders a Monaco editor.
+    const bodyEditor = within(screen.getByLabelText('JSON body matcher')).getByTestId('monaco-textarea');
     // Unclosed array — invalid JSON. `[[` escapes userEvent's `[` special key
     // so the literal text typed is `[1,2`.
     await user.type(bodyEditor, '[[1,2');
@@ -78,7 +80,7 @@ describe('Composer body matcher JSON validation gate', () => {
     await user.click(bodyType);
     await user.click(await screen.findByRole('option', { name: 'JSON Schema' }));
 
-    const bodyEditor = screen.getByTestId('monaco-textarea');
+    const bodyEditor = within(screen.getByLabelText('JSON Schema')).getByTestId('monaco-textarea');
     // Unclosed array — invalid JSON (`[[` escapes userEvent's `[` special key).
     await user.type(bodyEditor, '[[1,2');
 
@@ -95,7 +97,7 @@ describe('Composer body matcher JSON validation gate', () => {
     await user.click(bodyType);
     await user.click(await screen.findByRole('option', { name: 'Regex' }));
 
-    const bodyEditor = screen.getByTestId('monaco-textarea');
+    const bodyEditor = within(screen.getByLabelText('Regex pattern')).getByTestId('monaco-textarea');
     // Not valid JSON, but valid for a regex body matcher — must not block.
     await user.type(bodyEditor, '^Hello.*$');
 

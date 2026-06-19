@@ -433,6 +433,17 @@ const JSON_SCHEMA_META = {
   },
 } as const;
 
+// Map a response Content-Type to the Monaco language used by the response-body
+// editor. JSON content types get `json` (syntax highlighting + live
+// well-formedness validation, mirroring the request-body editor); XML content
+// types get `xml`; everything else falls back to plaintext.
+function responseBodyLanguage(contentType: string): string {
+  const ct = contentType.toLowerCase();
+  if (ct.includes('json')) return 'json';
+  if (ct.includes('xml')) return 'xml';
+  return 'plaintext';
+}
+
 // Map a body matcher type to the Monaco language and (optionally) a JSON Schema
 // to validate against. Types that are not document bodies (json-path, xpath,
 // regex, parameters, wasm, binary) fall back to plaintext with no validation.
@@ -1505,15 +1516,14 @@ function StaticHttpPanel({
           </TextField>
         </Box>
       ) : (
-        <TextField
+        <JsonEditor
           label="Response body"
-          multiline
-          minRows={6}
-          maxRows={20}
+          ariaLabel="Response body"
+          language={responseBodyLanguage(state.contentType)}
           value={state.body}
-          onChange={(e) => setState({ ...state, body: e.target.value })}
+          onChange={(next) => setState({ ...state, body: next })}
           placeholder='{"ok":true}'
-          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
+          height={200}
         />
       )}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
@@ -3471,19 +3481,29 @@ function QuickMockForm({
             placeholder="application/json"
           />
         </Box>
-        <TextField
-          label="Response body"
-          fullWidth
-          multiline
-          minRows={3}
-          maxRows={12}
-          value={staticState.body}
-          onChange={(e) => setStaticState({ ...staticState, body: e.target.value })}
-          placeholder={'{"hello":"world"}'}
-          disabled={staticState.bodyFromFile}
-          helperText={staticState.bodyFromFile ? 'This mock serves its body from a file — switch to Advanced to edit that.' : undefined}
-          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
-        />
+        {staticState.bodyFromFile ? (
+          <TextField
+            label="Response body"
+            fullWidth
+            multiline
+            minRows={3}
+            maxRows={12}
+            value={staticState.body}
+            disabled
+            helperText="This mock serves its body from a file — switch to Advanced to edit that."
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
+          />
+        ) : (
+          <JsonEditor
+            label="Response body"
+            ariaLabel="Response body"
+            language={responseBodyLanguage(staticState.contentType)}
+            value={staticState.body}
+            onChange={(next) => setStaticState({ ...staticState, body: next })}
+            placeholder={'{"hello":"world"}'}
+            height={160}
+          />
+        )}
       </Box>
 
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>

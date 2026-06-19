@@ -64,7 +64,10 @@ describe('ComposerView Quick / Advanced mode', () => {
     expect(screen.getByLabelText('Path')).toBeInTheDocument();
     expect(screen.getByLabelText('Status code')).toBeInTheDocument();
     expect(screen.getByLabelText('Content-Type')).toBeInTheDocument();
-    expect(screen.getByLabelText('Response body')).toBeInTheDocument();
+    // Response body is now a Monaco editor (test-setup renders it as a textarea
+    // with data-testid="monaco-textarea"); the "Response body" caption labels it.
+    expect(screen.getByText('Response body')).toBeInTheDocument();
+    expect(screen.getByTestId('monaco-textarea')).toBeInTheDocument();
     // Advanced machinery is hidden (the kind selector, action-type radios, and
     // cross-cutting panels). Note "2 · Respond with" is intentionally shared
     // with the Quick card, so it is NOT a discriminator.
@@ -102,7 +105,8 @@ describe('ComposerView Quick / Advanced mode', () => {
     await user.clear(screen.getByLabelText('Status code'));
     await user.type(screen.getByLabelText('Status code'), '200');
     // user.type treats { and } as special key syntax — escape them as {{ / }}.
-    await user.type(screen.getByLabelText('Response body'), '{{"ok":true}}');
+    // The response body is a Monaco editor (mocked as a textarea in test-setup).
+    await user.type(screen.getByTestId('monaco-textarea'), '{{"ok":true}}');
 
     await user.click(screen.getByRole('button', { name: /Register mock/ }));
 
