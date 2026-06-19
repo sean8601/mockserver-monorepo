@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that when `toolChoice` is `required` and a tool call is configured, the mocked response's `finish_reason` is
   `tool_calls` (non-streaming and streaming). Absent `toolChoice` leaves the existing finish-reason behaviour
   unchanged.
+- **gRPC example synthesis from descriptors**: a matched gRPC expectation with a successful
+  (`grpc-status: 0`) response and *no* hand-authored response body now returns a schema-valid
+  example message synthesized from the loaded proto descriptor's response type, instead of an
+  empty frame. The new `GrpcExampleSynthesizer` walks the message's fields and emits
+  deterministic, type-correct placeholders — scalars, enums (first declared value), nested
+  messages, repeated fields (single element), map entries, `oneof` (first field only), and the
+  protobuf well-known types (`Timestamp`, `Duration`, scalar wrappers, etc.). Recursion is
+  bounded so self-referential schemas terminate safely. Explicit response bodies are always
+  used as-is and never overwritten — synthesis only fills the "no body provided" gap.
 - **LLM optimisation export**: proxy your agent's LLM calls through MockServer, then export a one-click
   **optimisation brief** (Markdown, pre-framed for any LLM) or structured **JSON bundle**
   (`LlmOptimisationReport`) from captured traffic. Six deterministic optimisation signals detect
