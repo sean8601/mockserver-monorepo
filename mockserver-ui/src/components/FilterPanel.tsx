@@ -19,7 +19,7 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import SaveIcon from '@mui/icons-material/Save';
 import type { KeyToMultiValue, KeyToValue, RequestFilter } from '../types';
 import { useDashboardStore } from '../store';
-import { ACTION_TYPES, LLM_PROVIDERS, PROVIDER_DISPLAY } from '../lib/clientFilters';
+import { ACTION_TYPES, buildBodyMatcher, LLM_PROVIDERS, PROVIDER_DISPLAY } from '../lib/clientFilters';
 import {
   deletePreset,
   loadPresets,
@@ -262,7 +262,10 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
       // In regex mode an invalid pattern is held back rather than shipped to the
       // server (it would match nothing or error); the field shows the error.
       if (path && !(regex && validateRegex(path).error)) filter.path = path;
-      if (body) filter.body = body;
+      // "Body contains" must be a substring (contains) match, not full-body
+      // equality — see buildBodyMatcher for why the STRING/subString DTO is sent
+      // rather than a bare string.
+      if (body) filter.body = buildBodyMatcher(body);
       if (keepAlive) filter.keepAlive = true;
       if (secure) filter.secure = true;
 
