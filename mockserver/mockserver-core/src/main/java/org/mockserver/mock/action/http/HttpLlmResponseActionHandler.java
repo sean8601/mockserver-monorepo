@@ -3,6 +3,7 @@ package org.mockserver.mock.action.http;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockserver.llm.LlmErrorBodies;
+import org.mockserver.llm.LlmErrorBody;
 import org.mockserver.llm.LlmQuotaRegistry;
 import org.mockserver.llm.LlmRateLimitHeaders;
 import org.mockserver.llm.ProviderCodec;
@@ -265,30 +266,92 @@ public class HttpLlmResponseActionHandler {
         if (quotaError != null) {
             return quotaError;
         }
-        if (chaos.getErrorStatus() == null) {
+        // The probabilistic error fires when an errorStatus is set, OR when only an
+        // errorKind is declared (the provider's natural status then supplies the code).
+        LlmErrorBody.Kind kind = parseErrorKind(chaos.getErrorKind());
+        if (chaos.getErrorStatus() == null && kind == null) {
             return null;
         }
         if (!ChaosProbability.shouldInject(chaos.getErrorProbability(), chaos.getSeed())) {
             return null;
         }
-        int status = chaos.getErrorStatus();
-        // Emit a provider-correct error body (so client SDK retry/backoff logic can be
-        // tested faithfully), falling back to the generic body for an unknown/null
-        // provider. The error kind is derived from the status (429 → rate-limit,
-        // 529 → overloaded, other → server error).
-        LlmErrorBodies.Kind kind = LlmErrorBodies.kindForStatus(status);
-        String body = LlmErrorBodies.bodyFor(httpLlmResponse.getProvider(), kind, status, "injected chaos error");
-        if (body == null) {
-            body = "{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}";
-        }
+        Provider provider = httpLlmResponse.getProvider();
+        ProviderError providerError = resolveProviderError(provider, kind, chaos.getErrorStatus());
         HttpResponse errorResponse = response()
-            .withStatusCode(status)
+            .withStatusCode(providerError.statusCode)
             .withHeader("content-type", "application/json")
-            .withBody(body);
+            .withBody(providerError.jsonBody);
         // applyRateLimitHeaders is the single owner of the Retry-After header (and the
         // provider-specific rate-limit headers) so it is never emitted twice.
-        applyRateLimitHeaders(errorResponse, httpLlmResponse.getProvider(), true, chaos);
+        applyRateLimitHeaders(errorResponse, provider, true, chaos);
         return errorResponse;
+    }
+
+    /** Parse a case-insensitive errorKind string to an {@link LlmErrorBody.Kind}, or null when unset/unrecognised. */
+    private static LlmErrorBody.Kind parseErrorKind(String errorKind) {
+        if (errorKind == null || errorKind.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return LlmErrorBody.Kind.valueOf(errorKind.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** Resolved (status, body) for an injected error: provider-specific when available, else the generic chaos body. */
+    private static final class ProviderError {
+        final int statusCode;
+        final String jsonBody;
+
+        ProviderError(int statusCode, String jsonBody) {
+            this.statusCode = statusCode;
+            this.jsonBody = jsonBody;
+        }
+    }
+
+    private static final String GENERIC_CHAOS_BODY =
+        "{\"error\":{\"type\":\"chaos_injected\",\"message\":\"injected chaos error\"}}";
+
+    /**
+     * Resolve the body + status for an injected probabilistic error.
+     *
+     * <p>Two layered behaviours, both emitting a provider-correct error body so client
+     * SDK retry/backoff logic can be tested faithfully:
+     * <ul>
+     *   <li><strong>Explicit {@code errorKind}</strong> ({@code kind != null}) — the
+     *       profile declares intent (OVERLOAD/RATE_LIMIT/SERVER_ERROR). The status is the
+     *       explicit {@code explicitStatus} when set, otherwise the provider's
+     *       <em>natural</em> status for that kind (e.g. Anthropic OVERLOAD → 529). This is
+     *       the only path that works with no {@code errorStatus} at all.</li>
+     *   <li><strong>Status-derived</strong> ({@code kind == null}, {@code explicitStatus}
+     *       non-null) — the kind is derived from the status (429 → rate-limit, 529 →
+     *       overloaded, other → server error) and the provider's body emitted at that
+     *       exact status. Preserves the automatic provider-shape behaviour for callers
+     *       that only set {@code errorStatus}.</li>
+     * </ul>
+     * For an unknown/null provider (no provider-specific shape) both paths fall back to
+     * the generic chaos body; a missing status then defaults to 500.
+     */
+    private static ProviderError resolveProviderError(Provider provider, LlmErrorBody.Kind kind, Integer explicitStatus) {
+        if (kind != null) {
+            // Explicit errorKind: the branch helper supplies the provider's natural status for the kind.
+            LlmErrorBody.ErrorShape shape = LlmErrorBody.bodyFor(provider, kind);
+            if (shape != null) {
+                int status = explicitStatus != null ? explicitStatus : shape.getStatusCode();
+                return new ProviderError(status, shape.getJsonBody());
+            }
+        } else if (explicitStatus != null) {
+            // No errorKind, but an explicit status: derive the kind from the status and
+            // emit the provider-correct body at that status (automatic provider shaping).
+            LlmErrorBodies.Kind statusKind = LlmErrorBodies.kindForStatus(explicitStatus);
+            String body = LlmErrorBodies.bodyFor(provider, statusKind, explicitStatus, "injected chaos error");
+            if (body != null) {
+                return new ProviderError(explicitStatus, body);
+            }
+        }
+        int status = explicitStatus != null ? explicitStatus : 500;
+        return new ProviderError(status, GENERIC_CHAOS_BODY);
     }
 
     /**
@@ -361,13 +424,31 @@ public class HttpLlmResponseActionHandler {
     }
 
     private HttpResponse buildQuotaErrorResponse(LlmChaosProfile chaos, String errorType, String message, Provider provider) {
+        // When the profile opts in to an explicit errorKind (e.g. forcing OVERLOAD for a
+        // quota breach instead of the default rate-limit shape), emit the active provider's
+        // distinct error body at that kind's natural status, so client SDK backoff logic
+        // can parse it. An explicit quotaErrorStatus still overrides the status.
+        LlmErrorBody.Kind explicitKind = parseErrorKind(chaos.getErrorKind());
+        if (explicitKind != null) {
+            LlmErrorBody.ErrorShape shape = LlmErrorBody.bodyFor(provider, explicitKind);
+            if (shape != null) {
+                int providerStatus = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : shape.getStatusCode();
+                HttpResponse providerResponse = response()
+                    .withStatusCode(providerStatus)
+                    .withHeader("content-type", "application/json")
+                    .withBody(shape.getJsonBody());
+                applyRateLimitHeaders(providerResponse, provider, true, chaos);
+                return providerResponse;
+            }
+        }
         int status = chaos.getQuotaErrorStatus() != null ? chaos.getQuotaErrorStatus() : 429;
-        // A quota breach is a rate-limit error: emit the provider-correct error body
-        // (so client SDK retry/backoff logic reads the right error.type/code), falling
-        // back to the generic body — which preserves the distinct quota_exceeded /
-        // token_quota_exceeded error types — for an unknown/null provider.
-        LlmErrorBodies.Kind kind = LlmErrorBodies.kindForStatus(status);
-        String body = LlmErrorBodies.bodyFor(provider, kind, status, message);
+        // No explicit errorKind: a quota breach is a rate-limit error, so emit the
+        // provider-correct error body derived from the status (so client SDK retry/backoff
+        // logic reads the right error.type/code), falling back to the generic body — which
+        // preserves the distinct quota_exceeded / token_quota_exceeded error types — for an
+        // unknown/null provider.
+        LlmErrorBodies.Kind statusKind = LlmErrorBodies.kindForStatus(status);
+        String body = LlmErrorBodies.bodyFor(provider, statusKind, status, message);
         if (body == null) {
             body = "{\"error\":{\"type\":\"" + errorType + "\",\"message\":\"" + message + "\"}}";
         }

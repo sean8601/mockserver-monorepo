@@ -239,6 +239,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider returns — Anthropic `overloaded_error`/`rate_limit_error`, the OpenAI `server_error`/
   `rate_limit_exceeded` envelope, Gemini's Google-API status, Ollama's plain message — so client SDK
   retry/backoff logic can be tested realistically; falls back to the generic body for an unspecified provider.
+  An optional `errorKind` on the LLM chaos profile (`OVERLOAD` | `RATE_LIMIT` | `SERVER_ERROR`) lets you
+  declare the error intent directly: the active provider's distinct body **and its natural HTTP status** are
+  emitted (e.g. `OVERLOAD` → Anthropic 529 `overloaded_error`, OpenAI 503 `server_error`) without having to
+  pick the status yourself. It applies to both probabilistic and quota-breach errors, works even when no
+  explicit `errorStatus` is set, and an explicit status still overrides the code while keeping the
+  provider-correct body. Case-insensitive; an unrecognised value falls back to the existing behaviour.
 - **Readiness endpoint `GET /mockserver/ready`**: returns 503 until expectation initializers and OpenAPI
   seeding complete, then 200 — distinct from the always-200 liveness/status endpoints. The Helm chart now
   points the readiness probe at it and liveness at the existing path, so Kubernetes no longer routes traffic

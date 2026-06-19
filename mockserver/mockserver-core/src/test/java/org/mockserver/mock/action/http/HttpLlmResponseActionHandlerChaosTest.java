@@ -293,4 +293,130 @@ public class HttpLlmResponseActionHandlerChaosTest {
         assertThat(response.getFirstHeader("x-ratelimit-limit-requests"), is(""));
         assertThat(response.getFirstHeader("retry-after"), is(""));
     }
+
+    // --- Provider-specific overload / error bodies (errorKind) ---
+
+    @Test
+    public void anthropicOverloadErrorKindYields529OverloadedBody() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.ANTHROPIC)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorKind("OVERLOAD")));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(529));
+        assertThat(response.getBodyAsString(), containsString("overloaded_error"));
+    }
+
+    @Test
+    public void anthropicErrorKindIsCaseInsensitive() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.ANTHROPIC)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorKind("overload")));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(529));
+        assertThat(response.getBodyAsString(), containsString("overloaded_error"));
+    }
+
+    @Test
+    public void openAiRateLimitErrorKindYieldsOpenAiEnvelope() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.OPENAI)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorKind("RATE_LIMIT")));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getBodyAsString(), containsString("rate_limit_exceeded"));
+    }
+
+    @Test
+    public void openAiOverloadErrorKindYields503ServerError() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.OPENAI)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorKind("OVERLOAD")));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(503));
+        assertThat(response.getBodyAsString(), containsString("server_error"));
+    }
+
+    @Test
+    public void explicitErrorStatusOverridesProviderNaturalStatusButKeepsBody() {
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withProvider(Provider.ANTHROPIC)
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorKind("OVERLOAD").withErrorStatus(503)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(503));
+        assertThat(response.getBodyAsString(), containsString("overloaded_error"));
+    }
+
+    @Test
+    public void unknownProviderWithErrorKindFallsBackToGenericBody() {
+        // null provider -> LlmErrorBody returns null, so the generic chaos body is used.
+        // Need an errorStatus because the generic fallback has no natural status.
+        HttpResponse response = handler.chaosErrorResponseOrNull(
+            HttpLlmResponse.llmResponse()
+                .withChaos(LlmChaosProfile.llmChaosProfile().withErrorKind("OVERLOAD").withErrorStatus(503)));
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(503));
+        assertThat(response.getBodyAsString(), containsString("chaos_injected"));
+    }
+
+    @Test
+    public void unrecognisedErrorKindWithoutStatusDoesNotFire() {
+        // An unrecognised kind parses to null; with no errorStatus there is nothing to inject.
+        assertThat(handler.chaosErrorResponseOrNull(withChaos(
+            LlmChaosProfile.llmChaosProfile().withErrorKind("bogus"))), is(nullValue()));
+    }
+
+    @Test
+    public void quotaBreachWithErrorKindYieldsProviderBody() {
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withChaos(LlmChaosProfile.llmChaosProfile()
+                .withErrorKind("RATE_LIMIT")
+                .withQuotaName("anthropic-kind-quota")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(30_000L));
+        handler.chaosErrorResponseOrNull(llmResponse); // within quota
+        HttpResponse response = handler.chaosErrorResponseOrNull(llmResponse); // exceeds quota
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getStatusCode(), is(429));
+        assertThat(response.getBodyAsString(), containsString("rate_limit_error"));
+    }
+
+    @Test
+    public void quotaBreachWithoutErrorKindUsesProviderRateLimitBody() {
+        // No errorKind: a 429 quota breach for a known provider still emits the
+        // provider-correct rate-limit body (status-derived), not the generic body.
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withChaos(LlmChaosProfile.llmChaosProfile()
+                .withQuotaName("anthropic-generic-quota")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(30_000L));
+        handler.chaosErrorResponseOrNull(llmResponse);
+        HttpResponse response = handler.chaosErrorResponseOrNull(llmResponse);
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getBodyAsString(), containsString("rate_limit_error"));
+    }
+
+    @Test
+    public void quotaBreachWithoutErrorKindOrProviderKeepsGenericBody() {
+        // Unknown/null provider has no provider-specific shape, so the generic quota
+        // body (with its distinct quota_exceeded error type) is preserved.
+        org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        HttpLlmResponse llmResponse = HttpLlmResponse.llmResponse()
+            .withChaos(LlmChaosProfile.llmChaosProfile()
+                .withQuotaName("no-provider-generic-quota")
+                .withQuotaLimit(1)
+                .withQuotaWindowMillis(30_000L));
+        handler.chaosErrorResponseOrNull(llmResponse);
+        HttpResponse response = handler.chaosErrorResponseOrNull(llmResponse);
+        assertThat(response, is(notNullValue()));
+        assertThat(response.getBodyAsString(), containsString("quota_exceeded"));
+    }
 }

@@ -52,6 +52,7 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
     private Integer quotaErrorStatus;  // stateful quota: status when exceeded (default 429)
     private Long tokenQuotaLimit;     // stateful token quota: max tokens allowed per window (TPM/TPD)
     private Long tokenQuotaWindowMillis; // stateful token quota: window length in milliseconds
+    private String errorKind;          // optional: OVERLOAD | RATE_LIMIT | SERVER_ERROR -> emit the active provider's error body/status
 
     public static LlmChaosProfile llmChaosProfile() {
         return new LlmChaosProfile();
@@ -221,6 +222,28 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
         return tokenQuotaWindowMillis;
     }
 
+    /**
+     * Optional provider-specific error shape. When set to {@code OVERLOAD},
+     * {@code RATE_LIMIT}, or {@code SERVER_ERROR}, an injected chaos / quota error
+     * emits the <em>active provider's</em> distinct error body (e.g. Anthropic's
+     * {@code overloaded_error} at HTTP 529, OpenAI's {@code rate_limit_exceeded}
+     * envelope), so client SDK retry/backoff logic that parses the body can be
+     * tested faithfully. When unset (or the provider is unknown), the generic
+     * chaos body is used and any explicit {@code errorStatus}/{@code quotaErrorStatus}
+     * still applies. An explicit status, when set, overrides the provider's natural
+     * status for the kind while keeping the provider-correct body. Case-insensitive;
+     * an unrecognised value falls back to the generic body.
+     */
+    public LlmChaosProfile withErrorKind(String errorKind) {
+        this.errorKind = errorKind;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getErrorKind() {
+        return errorKind;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -245,14 +268,15 @@ public class LlmChaosProfile extends ObjectWithJsonToString {
             Objects.equals(quotaWindowMillis, that.quotaWindowMillis) &&
             Objects.equals(quotaErrorStatus, that.quotaErrorStatus) &&
             Objects.equals(tokenQuotaLimit, that.tokenQuotaLimit) &&
-            Objects.equals(tokenQuotaWindowMillis, that.tokenQuotaWindowMillis);
+            Objects.equals(tokenQuotaWindowMillis, that.tokenQuotaWindowMillis) &&
+            Objects.equals(errorKind, that.errorKind);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
             hashCode = Objects.hash(errorStatus, retryAfter, errorProbability, truncateMode, truncateAtFraction, malformedSse, seed,
-                quotaName, quotaLimit, quotaWindowMillis, quotaErrorStatus, tokenQuotaLimit, tokenQuotaWindowMillis);
+                quotaName, quotaLimit, quotaWindowMillis, quotaErrorStatus, tokenQuotaLimit, tokenQuotaWindowMillis, errorKind);
         }
         return hashCode;
     }
