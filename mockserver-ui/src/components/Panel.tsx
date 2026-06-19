@@ -17,6 +17,11 @@ interface PanelProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
+  /**
+   * Optional controls rendered in the panel header, between the count chip and
+   * the search box (e.g. a sort toggle). Omitted by most panels.
+   */
+  headerActions?: ReactNode;
   children: ReactNode;
 }
 
@@ -27,6 +32,7 @@ export default function Panel({
   searchValue,
   onSearchChange,
   searchInputRef,
+  headerActions,
   children,
 }: PanelProps) {
   const autoScroll = useDashboardStore((s) => s.autoScroll);
@@ -80,6 +86,11 @@ export default function Panel({
             size="small"
             sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
           />
+        )}
+        {headerActions && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {headerActions}
+          </Box>
         )}
         <TextField
           id={`${title.toLowerCase().replace(/\s+/g, '-')}-search`}

@@ -1,8 +1,11 @@
 import { useMemo, useRef, useState, useCallback } from 'react';
 import Typography from '@mui/material/Typography';
+import Tooltip from '@mui/material/Tooltip';
+import ToggleButton from '@mui/material/ToggleButton';
+import SortIcon from '@mui/icons-material/Sort';
 import { useDashboardStore } from '../store';
 import Panel from './Panel';
-import JsonListItemComponent from './JsonListItem';
+import JsonListItemComponent, { extractPriority } from './JsonListItem';
 import ProgressiveList from './ProgressiveList';
 import ConfirmDialog from './ConfirmDialog';
 import { useExpansion } from '../hooks/useExpansion';
@@ -20,6 +23,19 @@ function expectationIdOf(item: JsonListItem): string | null {
   return typeof id === 'string' ? id : null;
 }
 
+/**
+ * Build a duplicate of an expectation suitable for the Composer's create flow:
+ * a deep-ish copy of the value with its `id` removed so that saving it through
+ * the normal create path mints a brand-new expectation rather than overwriting
+ * the original. Priority and every other field are preserved. Purely
+ * client-side — no backend call.
+ */
+export function duplicateValueWithoutId(value: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = structuredClone(value);
+  delete copy['id'];
+  return copy;
+}
+
 export default function ExpectationPanel() {
   const params = useConnectionParams();
   const expectations = useDashboardStore((s) => s.activeExpectations);
@@ -35,6 +51,11 @@ export default function ExpectationPanel() {
   // delete is in flight.
   const [pendingDelete, setPendingDelete] = useState<JsonListItem | null>(null);
 
+  // When true, rows are sorted by match priority (descending), which mirrors
+  // the order MockServer evaluates equally-specific mocks. Off by default so
+  // the list keeps its natural (insertion) order.
+  const [sortByPriority, setSortByPriority] = useState(false);
+
   // Guards the confirm handler against re-entrancy: the ConfirmDialog button
   // fires onConfirm() before the close re-render lands, so a fast double-click
   // could otherwise dispatch two DELETE requests for the same expectation.
@@ -49,16 +70,38 @@ export default function ExpectationPanel() {
     [expectations, filterEnabled, actionTypeFilter, llmProviderFilter],
   );
 
-  const filtered = useMemo(
+  const searched = useMemo(
     () => (search ? clientFiltered.filter((e) => matchesItemSearch(e.value, search)) : clientFiltered),
     [clientFiltered, search],
   );
+
+  // When priority sorting is on, order by priority descending (higher wins =
+  // matched first). Use a stable sort over a copy and treat a missing priority
+  // as 0 so non-expectation-shaped rows don't jump around. Insertion order is
+  // preserved when the toggle is off.
+  const filtered = useMemo(() => {
+    if (!sortByPriority) return searched;
+    return [...searched].sort(
+      (a, b) => (extractPriority(b.value) ?? 0) - (extractPriority(a.value) ?? 0),
+    );
+  }, [searched, sortByPriority]);
 
   const expansion = useExpansion();
 
   const handleEdit = useCallback(
     (item: JsonListItem) => {
       editExpectation(item.value);
+    },
+    [editExpectation],
+  );
+
+  // Duplicate: load a COPY of the expectation into the Composer with its id
+  // stripped so saving creates a new expectation. Reuses the same Composer
+  // hand-off as Edit; the id-less value makes the Composer treat it as a fresh
+  // draft rather than an update.
+  const handleDuplicate = useCallback(
+    (item: JsonListItem) => {
+      editExpectation(duplicateValueWithoutId(item.value));
     },
     [editExpectation],
   );
@@ -92,6 +135,21 @@ export default function ExpectationPanel() {
         filteredCount={filtered.length !== expectations.length ? filtered.length : undefined}
         searchValue={search}
         onSearchChange={setSearch}
+        headerActions={
+          <Tooltip title="Sort by match priority (highest first)">
+            <ToggleButton
+              value="priority"
+              selected={sortByPriority}
+              onChange={() => setSortByPriority((prev) => !prev)}
+              size="small"
+              aria-label="Sort by priority"
+              sx={{ height: 24, px: 0.75, py: 0, textTransform: 'none', gap: 0.25 }}
+            >
+              <SortIcon sx={{ fontSize: '1rem' }} />
+              <Typography variant="caption">Priority</Typography>
+            </ToggleButton>
+          </Tooltip>
+        }
       >
         {filtered.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
@@ -117,6 +175,7 @@ export default function ExpectationPanel() {
                   expanded={expansion.isExpanded(item.key)}
                   onToggleExpand={expansion.toggle}
                   onEdit={hasId ? handleEdit : undefined}
+                  onDuplicate={hasId ? handleDuplicate : undefined}
                   onDelete={hasId ? setPendingDelete : undefined}
                 />
               );

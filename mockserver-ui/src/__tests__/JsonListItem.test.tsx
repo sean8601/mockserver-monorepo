@@ -477,4 +477,60 @@ describe('JsonListItem', () => {
     expect(onDelete).toHaveBeenCalledWith(item);
     expect(container.querySelector('.w-rjv')).not.toBeInTheDocument();
   });
+
+  it('renders a Duplicate button and invokes onDuplicate without toggling the body', async () => {
+    const user = userEvent.setup();
+    const onDuplicate = vi.fn();
+    const item = { key: 'e3', value: { id: 'e3', httpRequest: { method: 'GET', path: '/c' } } };
+    const { container } = render(
+      <JsonListItem item={item} index={1} onDuplicate={onDuplicate} />,
+    );
+
+    await user.click(screen.getByLabelText('Duplicate expectation'));
+    expect(onDuplicate).toHaveBeenCalledWith(item);
+    expect(container.querySelector('.w-rjv')).not.toBeInTheDocument();
+  });
+
+  it('does not render the Duplicate button when no onDuplicate is provided', () => {
+    render(
+      <JsonListItem
+        item={{ key: 'e4', value: { id: 'e4', httpRequest: { method: 'GET', path: '/d' } } }}
+        index={1}
+        onEdit={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText('Duplicate expectation')).not.toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------
+  // Priority chip
+  // -----------------------------------------------------------------------
+
+  it('renders a priority chip showing the numeric priority (incl. default 0)', () => {
+    const { rerender } = render(
+      <JsonListItem
+        item={{ key: 'p0', value: { id: 'p0', priority: 0, httpRequest: { method: 'GET', path: '/p' } } }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('P0')).toBeInTheDocument();
+
+    rerender(
+      <JsonListItem
+        item={{ key: 'p10', value: { id: 'p10', priority: 10, httpRequest: { method: 'GET', path: '/p' } } }}
+        index={1}
+      />,
+    );
+    expect(screen.getByText('P10')).toBeInTheDocument();
+  });
+
+  it('does not render a priority chip when the value carries no numeric priority', () => {
+    render(
+      <JsonListItem
+        item={{ key: 'np', value: { id: 'np', httpRequest: { method: 'GET', path: '/np' } } }}
+        index={1}
+      />,
+    );
+    expect(screen.queryByText(/^P\d+$/)).not.toBeInTheDocument();
+  });
 });

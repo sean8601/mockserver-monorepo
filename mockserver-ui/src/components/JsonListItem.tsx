@@ -9,6 +9,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import BoltIcon from '@mui/icons-material/Bolt';
 import EditIcon from '@mui/icons-material/Edit';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import type { JsonListItem as JsonListItemType } from '../types';
 import type { ConversationPredicates } from '../lib/llmTraffic';
@@ -40,6 +41,13 @@ interface JsonListItemProps {
    * Active Expectations panel; omitted for Received / Proxied request rows.
    */
   onEdit?: (item: JsonListItemType) => void;
+  /**
+   * When provided, a "Duplicate" icon button is rendered (revealed on row
+   * hover) that loads a COPY of this expectation into the Composer with its id
+   * stripped, so saving creates a brand-new expectation. Only wired up by the
+   * Active Expectations panel.
+   */
+  onDuplicate?: (item: JsonListItemType) => void;
   /**
    * When provided, a "Delete" icon button is rendered (revealed on row hover)
    * that removes this single expectation. Only wired up by the Active
@@ -135,6 +143,17 @@ function descriptionIsJustId(description: unknown, value: Record<string, unknown
   return description.trim() === id;
 }
 
+/**
+ * Read the expectation's match `priority` (higher wins; defaults to 0 when
+ * absent). Returns null when the value carries no numeric priority field so the
+ * caller can suppress the chip for non-expectation rows (Received / Proxied
+ * requests, which have no priority).
+ */
+export function extractPriority(value: Record<string, unknown>): number | null {
+  const raw = value['priority'];
+  return typeof raw === 'number' ? raw : null;
+}
+
 function extractIsolationLabel(scenarioName: string | undefined): string | null {
   if (!scenarioName) return null;
   const isoMatch = /__iso=([^_]+):(.+)$/.exec(scenarioName);
@@ -222,7 +241,7 @@ function extractChaosSummary(value: Record<string, unknown>): string | null {
   return parts.length > 0 ? parts.join(', ') : 'enabled';
 }
 
-function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onToggleExpand, onEdit, onDelete }: JsonListItemProps) {
+function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onToggleExpand, onEdit, onDuplicate, onDelete }: JsonListItemProps) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp ?? internalExpanded;
   const handleToggle = () => {
@@ -237,6 +256,7 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
   const llmBadge = useMemo(() => extractLlmBadge(item.value), [item.value]);
   const requestParts = useMemo(() => extractRequestParts(item.value), [item.value]);
   const chaosSummary = useMemo(() => extractChaosSummary(item.value), [item.value]);
+  const priority = useMemo(() => extractPriority(item.value), [item.value]);
 
   return (
     <Box
@@ -346,8 +366,24 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
           ) : (
             <Box sx={{ flex: 1, minWidth: 0 }} />
           )}
-          {(onEdit || onDelete) && (
-            // Per-row Edit / Delete actions for Active Expectations. Hidden until
+          {priority != null && (
+            // Priority chip for Active Expectations: higher priority wins when
+            // several mocks match the same request. Always shown (incl. the
+            // default 0) so the match order is visible at a glance; emphasised
+            // when non-default. Stays visible (not hover-gated) so it can be
+            // scanned and sorted against.
+            <Tooltip title={`Match priority ${priority} (higher wins)`}>
+              <Chip
+                label={`P${priority}`}
+                size="small"
+                color={priority !== 0 ? 'primary' : 'default'}
+                variant="outlined"
+                sx={{ height: 18, ml: 0.5, flexShrink: 0, fontSize: (t) => t.typography.caption.fontSize }}
+              />
+            </Tooltip>
+          )}
+          {(onEdit || onDuplicate || onDelete) && (
+            // Per-row Edit / Duplicate / Delete actions for Active Expectations. Hidden until
             // the row is hovered (see the parent's `&:hover .row-actions` rule)
             // so they don't clutter the dense list. stopPropagation keeps a click
             // from toggling the row's expand state.
@@ -372,6 +408,18 @@ function JsonListItem({ item, index, turnPosition, expanded: expandedProp, onTog
                     sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}
                   >
                     <EditIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              {onDuplicate && (
+                <Tooltip title="Duplicate as new expectation">
+                  <IconButton
+                    size="small"
+                    aria-label="Duplicate expectation"
+                    onClick={(e) => { e.stopPropagation(); onDuplicate(item); }}
+                    sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: '1rem' } }}
+                  >
+                    <ContentCopyIcon />
                   </IconButton>
                 </Tooltip>
               )}
