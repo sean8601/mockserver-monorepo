@@ -228,6 +228,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     are remembered. The Mocks form now fills the full width like every other tab.
   - **Clearer controls**: the Mocks "Quick mock / Advanced" switch is now an obvious cyan toggle, and
     the Service Chaos switch toggles no longer hug the left edge.
+  - **Inspect and re-run a chaos experiment**: while an experiment is running, the Chaos → Experiments
+    panel now lists its stages (duration, host, faults) with the active stage highlighted, and an
+    "Edit & restart" button loads the running definition into the editor so it can be tweaked and
+    re-started (or restarted after stopping).
+  - **Agent-run graph fix**: the Sessions agent-run diagram no longer falls back to "showing the Mermaid
+    source" when a tool name or message contains special characters (e.g. parentheses) — tool-call
+    labels are now quoted so Mermaid always renders. Also fixed cramped spacing above filled experiment
+    stage fields.
   - **Consistency pass**: control-plane error messages are humanised everywhere (a short message with the
     raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
     come from a single typography scale, and "Capture as mock" can hand a captured request straight to
