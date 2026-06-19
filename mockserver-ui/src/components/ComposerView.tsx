@@ -3896,7 +3896,28 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
               setMode(next);
             }}
             aria-label="Form complexity"
-            sx={{ '& .MuiToggleButton-root': { textTransform: 'none', px: 1.5, py: 0.25, fontSize: '0.78rem' } }}
+            color="primary"
+            sx={{
+              // Make the active mode obvious and on-brand: the selected segment is
+              // a solid cyan (primary) pill, the other a cyan outline, so it clearly
+              // reads as a two-option switch you can toggle.
+              '& .MuiToggleButton-root': {
+                textTransform: 'none',
+                px: 1.75,
+                py: 0.4,
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                color: 'primary.main',
+                borderColor: 'primary.main',
+                transition: (t) => t.transitions.create(['background-color', 'color', 'border-color']),
+                '&:not(.Mui-selected):hover': { backgroundColor: 'action.hover' },
+                '&.Mui-selected': {
+                  color: 'primary.contrastText',
+                  backgroundColor: 'primary.main',
+                  '&:hover': { backgroundColor: 'primary.dark' },
+                },
+              },
+            }}
           >
             <ToggleButton value="quick" aria-label="Quick mock">Quick mock</ToggleButton>
             <ToggleButton value="advanced" aria-label="Advanced">Advanced</ToggleButton>
