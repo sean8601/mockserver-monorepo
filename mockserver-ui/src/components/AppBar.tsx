@@ -36,6 +36,8 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
+import FactCheckIcon from '@mui/icons-material/FactCheck';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RpcIcon from '@mui/icons-material/Cable';
@@ -143,6 +145,8 @@ const NAV_TABS: NavTab[] = [
   { value: 'library', label: 'Library', ariaLabel: 'Library of captured content', icon: <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'drift', label: 'Drift', ariaLabel: 'Drift detection view', icon: <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'verification', label: 'Verify', ariaLabel: 'Verification view', icon: <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'contract', label: 'Contract', ariaLabel: 'Contract test view', icon: <FactCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'cluster', label: 'Cluster', ariaLabel: 'Cluster status view', icon: <HubOutlinedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'metrics', label: 'Metrics', ariaLabel: 'Metrics view', icon: <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
 ];
 

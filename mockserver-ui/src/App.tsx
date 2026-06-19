@@ -26,6 +26,8 @@ import VerificationView from './components/VerificationView';
 import AsyncApiPanel from './components/AsyncApiPanel';
 import GrpcServicesPanel from './components/GrpcServicesPanel';
 import BreakpointsPanel from './components/BreakpointsPanel';
+import ContractTestPanel from './components/ContractTestPanel';
+import ClusterPanel from './components/ClusterPanel';
 import OnboardingPanel from './components/OnboardingPanel';
 import DebugMismatchDialog from './components/DebugMismatchDialog';
 import GenerateStubDialog from './components/GenerateStubDialog';
@@ -149,6 +151,8 @@ export default function App() {
             {view === 'async' && <AsyncApiPanel connectionParams={params} />}
             {view === 'grpc' && <GrpcServicesPanel connectionParams={params} />}
             {view === 'breakpoints' && <BreakpointsPanel connectionParams={params} />}
+            {view === 'contract' && <ContractTestPanel connectionParams={params} />}
+            {view === 'cluster' && <ClusterPanel connectionParams={params} />}
           </ErrorBoundary>
         </Box>
         <Snackbar

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dashboard: Contract Test and Cluster panels**: two new dashboard tabs. **Contract** runs an OpenAPI spec
+  (URL or inline) against a live service via `PUT /mockserver/contractTest` and renders the report as a
+  pass/fail-per-operation table with per-operation validation errors and a passed/failed summary. **Cluster**
+  reads `GET /mockserver/cluster` and shows the state-backend cluster status (clustered flag, node id,
+  coordinator, named cluster, and a member list with coordinator/local markers), auto-refreshing with a manual
+  refresh; a standalone server reports a single local node.
 - **Deterministic fuzzy / similarity body matcher**: a request body matcher `FuzzyBody`
   (`{"type":"FUZZY","fuzzy":"...","threshold":0.8,"ignoreCase":false}`, DSL `FuzzyBody.fuzzy(...)`) matches when
   the request body is similar enough to an expected string by a deterministic Jaro-Winkler ratio at or above a
