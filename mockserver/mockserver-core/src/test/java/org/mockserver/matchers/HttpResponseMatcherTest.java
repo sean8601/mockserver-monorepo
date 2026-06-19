@@ -10,14 +10,21 @@ import org.mockserver.model.MultipartBody;
 import org.mockserver.model.Parameter;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.BinaryBody.binary;
+import static org.mockserver.model.Cookie.cookie;
+import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.JsonBody.json;
 import static org.mockserver.model.JsonPathBody.jsonPath;
+import static org.mockserver.model.NottableString.not;
+import static org.mockserver.model.NottableString.string;
 import static org.mockserver.model.StringBody.exact;
 import static org.mockserver.model.XmlBody.xml;
 
@@ -317,5 +324,156 @@ public class HttpResponseMatcherTest {
             response()
                 .withHeaders(new Header("Content-Type", "application/xml"))
                 .withBody("<root><name>value</name>")), is(false));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // ITEM 1 — reason-phrase honours matchExactCase (parity with the response body, which already
+    // honours it via BodyMatcherBuilder). A per-instance Configuration is used so these tests stay
+    // in the parallel Surefire phase (no global singleton mutation).
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldMatchReasonPhraseCaseInsensitiveByDefault() {
+        // default matchExactCase=false: "OK" template matches lowercase "ok" actual
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withReasonPhrase("OK"));
+        assertThat(matcher.matches(response().withReasonPhrase("ok")), is(true));
+    }
+
+    @Test
+    public void shouldNotMatchWhenActualReasonPhraseIsNull() {
+        // a template reason-phrase against an actual response with no reason phrase is a clean non-match
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withReasonPhrase("OK"));
+        assertThat(matcher.matches(response().withStatusCode(204)), is(false));
+    }
+
+    @Test
+    public void shouldNotMatchReasonPhraseCaseMismatchWhenMatchExactCase() {
+        Configuration exactCaseConfiguration = configuration().matchExactCase(true);
+        HttpResponseMatcher matcher = new HttpResponseMatcher(exactCaseConfiguration, mockServerLogger,
+            response().withReasonPhrase("OK"));
+        // exact case enabled: "OK" must NOT match "ok"
+        assertThat(matcher.matches(response().withReasonPhrase("ok")), is(false));
+        // ...but identical case still matches
+        assertThat(matcher.matches(response().withReasonPhrase("OK")), is(true));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // ITEM 2 — cookie matching mirrors the request matcher (HashMapMatcher): sub-set semantics,
+    // missing required cookies fail, notted values behave correctly.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldMatchCookie() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withCookie("session", "abc123"));
+        assertThat(matcher.matches(response().withCookie("session", "abc123")), is(true));
+    }
+
+    @Test
+    public void shouldNotMatchMissingRequiredCookie() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withCookie("session", "abc123"));
+        // actual response has no cookies -> required cookie absent -> non-match
+        assertThat(matcher.matches(response().withStatusCode(200)), is(false));
+        // actual response has a different cookie value -> non-match
+        assertThat(matcher.matches(response().withCookie("session", "other")), is(false));
+    }
+
+    @Test
+    public void shouldMatchCookieSubSetAllowingExtraResponseCookies() {
+        // sub-set semantics: an extra cookie in the actual response does not break the match
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withCookie("session", "abc123"));
+        assertThat(matcher.matches(
+            response()
+                .withCookie("session", "abc123")
+                .withCookie("tracking", "xyz")), is(true));
+    }
+
+    @Test
+    public void shouldMatchNottedCookieValue() {
+        // a notted cookie value must NOT equal the actual value
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withCookie(cookie(string("session"), not("forbidden"))));
+        assertThat(matcher.matches(response().withCookie("session", "allowed")), is(true));
+        assertThat(matcher.matches(response().withCookie("session", "forbidden")), is(false));
+    }
+
+    @Test
+    public void shouldIgnoreCookiesWhenTemplateHasNone() {
+        // additive: no cookie template -> cookies place no constraint on the response
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withStatusCode(200));
+        assertThat(matcher.matches(
+            response()
+                .withStatusCode(200)
+                .withCookie("any", "value")), is(true));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // ITEM 3 — matches(MatchDifference, actual) records per-field differences while computing the
+    // SAME boolean result as matches(actual). detailedMatchFailures must be true for the
+    // MatchDifference to record differences.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldPopulateDifferencesForStatusAndBodyMismatch() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response()
+                .withStatusCode(200)
+                .withBody(json("{ \"status\": \"ok\" }")));
+        HttpResponse actual = response()
+            .withStatusCode(500)
+            .withBody("{ \"status\": \"error\" }");
+
+        MatchDifference context = new MatchDifference(true, request());
+        boolean result = matcher.matches(context, actual);
+
+        assertThat(result, is(false));
+        // statusCode mismatch records under OPERATION; body mismatch under BODY
+        Map<MatchDifference.Field, ?> differences = context.getAllDifferences();
+        assertThat(context.getDifferences(MatchDifference.Field.OPERATION), is(notNullValue()));
+        assertThat(context.getDifferences(MatchDifference.Field.BODY), is(notNullValue()));
+        // boolean parity with the no-context overload
+        assertThat(matcher.matches(actual), is(false));
+    }
+
+    @Test
+    public void shouldRecordNoDifferencesForMatchingResponse() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response()
+                .withStatusCode(200)
+                .withBody(json("{ \"status\": \"ok\" }")));
+        HttpResponse actual = response()
+            .withStatusCode(200)
+            .withBody("{ \"status\": \"ok\" }");
+
+        MatchDifference context = new MatchDifference(true, request());
+        boolean result = matcher.matches(context, actual);
+
+        assertThat(result, is(true));
+        assertThat(context.getAllDifferences().isEmpty(), is(true));
+        assertThat(context.getDifferences(MatchDifference.Field.OPERATION), is(nullValue()));
+        // boolean parity with the no-context overload
+        assertThat(matcher.matches(actual), is(true));
+    }
+
+    @Test
+    public void shouldComputeSameBooleanWithAndWithoutContext() {
+        HttpResponseMatcher matcher = new HttpResponseMatcher(configuration, mockServerLogger,
+            response().withStatusCode(200).withHeader("Content-Type", "application/json"));
+        HttpResponse matchingActual = response()
+            .withStatusCode(200)
+            .withHeader("Content-Type", "application/json");
+        HttpResponse mismatchingActual = response()
+            .withStatusCode(404)
+            .withHeader("Content-Type", "application/json");
+
+        assertThat(matcher.matches(new MatchDifference(true, request()), matchingActual),
+            is(matcher.matches(matchingActual)));
+        assertThat(matcher.matches(new MatchDifference(true, request()), mismatchingActual),
+            is(matcher.matches(mismatchingActual)));
     }
 }

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Response matcher: reason-phrase honours `matchExactCase`**: when `matchExactCase` is enabled, the
+  response reason-phrase is now matched case-sensitively (parity with the response body), so a template
+  reason-phrase `OK` no longer matches an actual `ok`. The default (false) keeps the historical
+  case-insensitive behaviour unchanged.
+- **Response matcher: structured cookie matching**: a response template's structured cookies (`Set-Cookie`)
+  are now matched using the same sub-set / notted semantics as the request side — extra response cookies are
+  allowed, a missing required cookie fails the match, and notted cookie values are honoured. Responses with no
+  cookie template are unconstrained (additive; default response matching is unchanged).
 - **Case-sensitive matching opt-in `matchExactCase`** (`MOCKSERVER_MATCH_EXACT_CASE`, default false): when
   enabled, request matching of the method, path and regex string body becomes case-sensitive (exact case)
   instead of the historical case-insensitive behaviour, so an expectation for `/Path` no longer matches a

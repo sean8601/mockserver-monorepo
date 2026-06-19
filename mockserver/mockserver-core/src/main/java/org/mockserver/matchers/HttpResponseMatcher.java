@@ -5,6 +5,10 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpResponse;
 
+import static org.mockserver.matchers.MatchDifference.Field.BODY;
+import static org.mockserver.matchers.MatchDifference.Field.COOKIES;
+import static org.mockserver.matchers.MatchDifference.Field.HEADERS;
+import static org.mockserver.matchers.MatchDifference.Field.OPERATION;
 import static org.mockserver.model.NottableString.string;
 
 /**
@@ -18,6 +22,10 @@ import static org.mockserver.model.NottableString.string;
  * converted to JSON for the JSON family of matchers, an optional template body matches an absent
  * response body, multipart and binary (including original/compressed) bodies are handled, and an
  * absent actual body against a JSON/XML matcher is a clean non-match rather than a swallowed NPE.
+ * <p>
+ * Cookie matching mirrors the request matcher: when the template declares structured cookies they
+ * are matched (sub-set semantics, extra response cookies allowed, notted values supported) via the
+ * same {@link HashMapMatcher} the request side uses.
  */
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class HttpResponseMatcher {
@@ -25,6 +33,7 @@ public class HttpResponseMatcher {
     private final HttpResponse template;
     private final RegexStringMatcher reasonPhraseMatcher;
     private final MultiValueMapMatcher headerMatcher;
+    private final HashMapMatcher cookieMatcher;
     private final BodyMatcher bodyMatcher;
     private final Boolean bodyOptional;
     private final JsonSchemaBodyDecoder jsonSchemaBodyParser;
@@ -34,11 +43,17 @@ public class HttpResponseMatcher {
         this.template = template;
         this.mockServerLogger = mockServerLogger;
         if (template != null) {
+            // reason-phrase honours the opt-in matchExactCase flag, matching the response body's
+            // exact-case behaviour (built via BodyMatcherBuilder, which already consults the flag).
             this.reasonPhraseMatcher = template.getReasonPhrase() != null
-                ? new RegexStringMatcher(mockServerLogger, string(template.getReasonPhrase()), false)
+                ? new RegexStringMatcher(mockServerLogger, string(template.getReasonPhrase()), false, configuration != null && configuration.matchExactCase())
                 : null;
             this.headerMatcher = template.getHeaders() != null && !template.getHeaders().isEmpty()
                 ? new MultiValueMapMatcher(mockServerLogger, template.getHeaders(), false)
+                : null;
+            // cookies: reuse the request side's HashMapMatcher for sub-set / notted semantics
+            this.cookieMatcher = template.getCookies() != null && !template.getCookies().isEmpty()
+                ? new HashMapMatcher(mockServerLogger, template.getCookies(), false)
                 : null;
             this.bodyMatcher = template.getBody() != null
                 ? BodyMatcherBuilder.buildBodyMatcher(configuration, mockServerLogger, template.getBody(), false)
@@ -53,6 +68,7 @@ public class HttpResponseMatcher {
         } else {
             this.reasonPhraseMatcher = null;
             this.headerMatcher = null;
+            this.cookieMatcher = null;
             this.bodyMatcher = null;
             this.bodyOptional = null;
             this.jsonSchemaBodyParser = null;
@@ -64,6 +80,23 @@ public class HttpResponseMatcher {
      * A null template matches everything.
      */
     public boolean matches(HttpResponse actual) {
+        return matches(null, actual);
+    }
+
+    /**
+     * Returns {@code true} when the actual response matches the template, recording per-field
+     * differences into {@code context} when it is non-null. The boolean result is identical to
+     * {@link #matches(HttpResponse)}.
+     * <p>
+     * Response fields are bucketed onto existing {@link MatchDifference.Field} constants rather than
+     * introducing new enum constants: {@code Field} is the shared field vocabulary established by the
+     * request matcher, and any code that enumerates {@code Field.values()} would observe a longer
+     * array if response-only constants were added. statusCode and
+     * reasonPhrase both record under {@link MatchDifference.Field#OPERATION} (a neutral bucket);
+     * headers, cookies and body use their natural {@link MatchDifference.Field#HEADERS},
+     * {@link MatchDifference.Field#COOKIES} and {@link MatchDifference.Field#BODY} buckets.
+     */
+    public boolean matches(MatchDifference context, HttpResponse actual) {
         if (template == null) {
             return true;
         }
@@ -71,44 +104,69 @@ public class HttpResponseMatcher {
             return false;
         }
 
+        boolean matches = true;
+
         // statusCode: exact integer equality when set on template
         if (template.getStatusCode() != null) {
             if (!template.getStatusCode().equals(actual.getStatusCode())) {
-                return false;
+                if (context != null) {
+                    context.currentField(OPERATION);
+                    context.addDifference(mockServerLogger, "statusCode match failed expected:{}found:{}", template.getStatusCode(), actual.getStatusCode());
+                }
+                matches = false;
             }
         }
 
         // reasonPhrase: regex match when set on template
         if (reasonPhraseMatcher != null) {
-            if (!reasonPhraseMatcher.matches(actual.getReasonPhrase())) {
-                return false;
+            if (context != null) {
+                context.currentField(OPERATION);
+            }
+            if (!reasonPhraseMatcher.matches(context, string(actual.getReasonPhrase()))) {
+                matches = false;
             }
         }
 
         // headers: reuse existing MultiValueMapMatcher
         if (headerMatcher != null) {
-            if (!headerMatcher.matches(null, actual.getHeaders())) {
-                return false;
+            if (context != null) {
+                context.currentField(HEADERS);
+            }
+            if (!headerMatcher.matches(context, actual.getHeaders())) {
+                matches = false;
+            }
+        }
+
+        // cookies: reuse the request side's HashMapMatcher (sub-set / notted semantics)
+        if (cookieMatcher != null) {
+            if (context != null) {
+                context.currentField(COOKIES);
+            }
+            if (!cookieMatcher.matches(context, actual.getCookies())) {
+                matches = false;
             }
         }
 
         // body: share the exact dispatch used by request matching so the response body matcher has
         // full parity (JSON conversion of XML/form bodies, optional body, multipart, binary
-        // original/compressed, null-safe JSON/XML). A null context is passed because response-side
-        // match diagnostics are added in a later change; the dispatch tolerates a null context.
+        // original/compressed, null-safe JSON/XML). BodyMatching sets currentField(BODY) itself and
+        // records body differences into the (optional) context.
         if (bodyMatcher != null) {
+            if (context != null) {
+                context.currentField(BODY);
+            }
             if (!BodyMatching.bodyMatches(
                 bodyMatcher,
                 bodyOptional,
                 BodyMatching.of(actual),
-                null,
+                context,
                 jsonSchemaBodyParser,
                 mockServerLogger
             )) {
-                return false;
+                matches = false;
             }
         }
 
-        return true;
+        return matches;
     }
 }
