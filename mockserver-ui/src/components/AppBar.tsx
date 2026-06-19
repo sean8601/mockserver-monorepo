@@ -124,8 +124,12 @@ interface NavTab {
   value: ViewMode;
   label: string;
   ariaLabel: string;
-  /** One-line summary of what the tab is for, shown in a bar under the nav. */
-  description: string;
+  /**
+   * One-line summary of what the tab is for, shown in a bar under the nav.
+   * Optional — tabs that omit it (e.g. Get Started, which is self-explanatory)
+   * render no description bar.
+   */
+  description?: string;
   icon: ReactNode;
 }
 
@@ -136,14 +140,14 @@ interface NavTab {
 // no "More" button at all. On narrow screens the full list lives in the
 // hamburger Menu. The order here is the order shown in every menu.
 const NAV_TABS: NavTab[] = [
-  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', description: 'Guided setup — connect a client and create your first mock in minutes.', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'get-started', label: 'Get Started', ariaLabel: 'Get started view', icon: <RocketLaunchIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'dashboard', label: 'Dashboard', ariaLabel: 'Dashboard view', description: 'Live view of incoming requests, active expectations, and what matched.', icon: <DashboardIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
-  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', description: 'Inspect recorded request and response traffic in detail.', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'traffic', label: 'Traffic', ariaLabel: 'Traffic inspector view', description: 'Browse recorded request and response traffic — select an item to open its full details.', icon: <TrafficIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', description: 'Pause matching requests or responses mid-flight to inspect and edit them.', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', description: 'Create, edit, and manage mock expectations.', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'chaos', label: 'Chaos', ariaLabel: 'Service chaos view', description: 'Inject latency, errors, and faults to test how your system handles failure.', icon: <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'optimise', label: 'LLM Optimise', ariaLabel: 'LLM Optimise view', description: 'Analyse captured LLM traffic to optimise prompts, inference cost, safety, and speed.', icon: <SavingsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
-  { value: 'async', label: 'Async', ariaLabel: 'AsyncAPI broker mock view', description: 'Mock AsyncAPI message brokers and publish messages to topics and queues.', icon: <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'async', label: 'Async', ariaLabel: 'AsyncAPI broker mock view', description: 'Mock event-driven APIs from an AsyncAPI spec — publish test messages to Kafka, MQTT, and AMQP (RabbitMQ) brokers.', icon: <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'grpc', label: 'gRPC', ariaLabel: 'gRPC services view', description: 'Mock gRPC services and inspect gRPC calls.', icon: <RpcIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'sessions', label: 'Sessions', ariaLabel: 'Session inspector view', description: 'Trace related requests grouped into sessions, including LLM agent runs.', icon: <AccountTreeIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'library', label: 'Library', ariaLabel: 'Library of captured content', description: 'Browse and reuse captured requests, responses, and content.', icon: <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
@@ -157,7 +161,9 @@ const NAV_TABS: NavTab[] = [
 // Lookup of the active view's one-line description, for the bar under the nav.
 // Exported so App can render it without duplicating the per-tab copy.
 export const NAV_TAB_DESCRIPTIONS: Partial<Record<ViewMode, string>> = Object.fromEntries(
-  NAV_TABS.map((t) => [t.value, t.description]),
+  NAV_TABS
+    .filter((t): t is NavTab & { description: string } => Boolean(t.description))
+    .map((t) => [t.value, t.description]),
 );
 
 interface AppBarProps {

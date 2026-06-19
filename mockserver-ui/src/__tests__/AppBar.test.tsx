@@ -242,15 +242,21 @@ describe('AppBar responsive navigation', () => {
     expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
   });
 
-  it('exposes a one-line description for every nav tab, including LLM Optimise', () => {
-    // The description bar under the nav reads from this map, so every tab must
-    // carry a non-empty summary and the LLM Optimise tab must mention what it does.
+  it('exposes a one-line description for nav tabs that have one', () => {
+    // The description bar under the nav reads from this map. Every entry present
+    // must be non-empty; the LLM Optimise tab must mention what it does, the
+    // Traffic tab must hint that selecting an item opens its detail, and the
+    // self-explanatory Get Started tab is intentionally omitted (no bar).
     const views = Object.keys(NAV_TAB_DESCRIPTIONS);
-    expect(views.length).toBeGreaterThan(0);
+    // Exact count guards against descriptions being accidentally dropped from
+    // other tabs: 15 tabs carry one (every tab except the omitted Get Started).
+    expect(views.length).toBe(15);
     for (const v of views) {
       expect(NAV_TAB_DESCRIPTIONS[v as keyof typeof NAV_TAB_DESCRIPTIONS]?.length ?? 0).toBeGreaterThan(0);
     }
+    expect(NAV_TAB_DESCRIPTIONS['get-started']).toBeUndefined();
     expect(NAV_TAB_DESCRIPTIONS.optimise).toMatch(/prompts.*inference cost.*safety.*speed/i);
+    expect(NAV_TAB_DESCRIPTIONS.traffic).toMatch(/select an item/i);
   });
 
   it('does not render the keyboard-shortcut caption (the ? dialog replaces it)', () => {

@@ -615,8 +615,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Dashboard navigation**: the **Optimise** tab is renamed **LLM Optimise** and moved to sit
-  immediately after **Chaos**, and every dashboard tab now shows a one-line description bar beneath
-  the navigation explaining what the screen is for (for example, LLM Optimise: "Analyse captured LLM
+  immediately after **Chaos**, and dashboard tabs now show a one-line description bar beneath the
+  navigation explaining what the screen is for (for example, LLM Optimise: "Analyse captured LLM
   traffic to optimise prompts, inference cost, safety, and speed").
 - **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
   support-agent run (mocked OpenAI Chat Completions with realistic token usage) designed to fire all
