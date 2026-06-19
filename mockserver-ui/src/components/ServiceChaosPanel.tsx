@@ -1008,7 +1008,18 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const grpcCombinedActiveCount = grpcHealthOverrides.length + grpcChaosServices.length;
 
   return (
-    <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
+    <Box
+      sx={{
+        flex: 1,
+        overflow: 'auto',
+        p: 1.5,
+        // Give switch/checkbox toggles a small gap between the control and its
+        // label so the label doesn't hug the indicator (e.g. "GraphQL errors",
+        // "Omit grpc-status", "Down", "Loop").
+        '& .MuiFormControlLabel-labelPlacementEnd .MuiFormControlLabel-label': { ml: 0.75 },
+        '& .MuiFormControlLabel-labelPlacementStart .MuiFormControlLabel-label': { mr: 0.75 },
+      }}
+    >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
           Service Chaos
