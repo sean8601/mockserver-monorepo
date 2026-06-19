@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Accept-header content-negotiation matching**: a header matcher value may use an opt-in `accept:<media-type>`
+  directive that matches when the request's `Accept` header finds the media type acceptable per RFC 7231 —
+  honouring q-weights (`q=0` excludes), `type/*` and `*/*` wildcards, and specificity/preference ordering.
+  Existing exact/regex header matching is unchanged when the directive is absent.
+- **Conditional and chainable response modifiers**: an `httpOverrideForwardedRequest` / forward-template response
+  modifier may now carry a `condition` (gate on exact `statusCode`, `statusCodeRange` class range,
+  `responseHasHeader`, or `requestHasHeader`) and/or an ordered `modifiers` chain where each modifier sees the
+  previous one's output. Legacy single-modifier expectations behave byte-for-byte identically.
+- **gRPC bidi-stream response templating**: a `grpcBidiResponse` message may set `templateType`
+  (`VELOCITY`/`MUSTACHE`) so its `json` is rendered as a response template against the matched inbound message
+  (exposing `request.body`, `jsonPath`, and the `scenario` state helper). Static (no `templateType`) responses
+  are emitted byte-for-byte unchanged.
+- **Editor extensions: author/verify/record against a running server**: the VS Code and JetBrains extensions add
+  scratch-request match analysis (shows whether a request matched and the nearest-miss diff), Verify/Delete
+  actions on `*.mockserver.json` expectations, generate-stubs-from-OpenAPI, and record-to-code (write recorded
+  expectations into a workspace file as JSON or DSL).
 - **Dashboard: Contract Test and Cluster panels**: two new dashboard tabs. **Contract** runs an OpenAPI spec
   (URL or inline) against a live service via `PUT /mockserver/contractTest` and renders the report as a
   pass/fail-per-operation table with per-operation validation errors and a passed/failed summary. **Cluster**
