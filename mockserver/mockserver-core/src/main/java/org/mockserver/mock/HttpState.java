@@ -4120,63 +4120,90 @@ public class HttpState {
                 ? org.apache.commons.lang3.StringUtils.removeEnd(target.getRawPath(), "/") : "";
             final long timeoutMillis = configuration.maxSocketTimeoutInMillis();
 
-            // HTTP sender: targets each example request at the service-under-test and blocks on the
-            // wired async HTTP client. Runs on the control-plane request thread; no breakpoints apply.
-            java.util.function.Function<HttpRequest, HttpResponse> httpSender = exampleRequest -> {
-                HttpRequest outbound = exampleRequest
-                    .withSocketAddress(targetHost, targetPort, https ? SocketAddress.Scheme.HTTPS : SocketAddress.Scheme.HTTP)
-                    .withSecure(https)
-                    .withHeader(HOST.toString(), targetPort == (https ? 443 : 80) ? targetHost : (targetHost + ":" + targetPort));
-                if (!contextPath.isEmpty()) {
-                    String path = outbound.getPath() != null ? outbound.getPath().getValue() : "/";
-                    outbound.withPath(contextPath + path);
-                }
+            final String specRef = spec;
+
+            // The contract-test run drives a per-operation loop, each iteration of which BLOCKS on the
+            // wired async HTTP client (.get(timeoutMillis)). This must NOT run on the Netty event-loop
+            // (worker) thread: because the outbound NettyHttpClient shares the same workerGroup, the
+            // outbound I/O can be assigned to the very thread parked in .get() — self-deadlocking the
+            // event loop — and even without that it holds the worker thread for the full
+            // maxSocketTimeout × operationCount, starving every connection pinned to that thread.
+            // Offload the entire run onto the scheduler's (non-I/O) executor and complete canHandle /
+            // write the response from that worker, mirroring the async pattern of handleReplay.
+            scheduler.getExecutorService().submit(() -> {
                 try {
-                    HttpResponse upstream = replayHandler.apply(outbound)
-                        .get(timeoutMillis, MILLISECONDS);
-                    return upstream != null ? upstream : response().withStatusCode(0);
-                } catch (Exception e) {
-                    throw new RuntimeException("failed to send contract-test request to " + baseUrl + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()), e);
-                }
-            };
+                    // HTTP sender: targets each example request at the service-under-test and blocks on
+                    // the wired async HTTP client. Runs on the off-loop worker thread; no breakpoints apply.
+                    java.util.function.Function<HttpRequest, HttpResponse> httpSender = exampleRequest -> {
+                        HttpRequest outbound = exampleRequest
+                            .withSocketAddress(targetHost, targetPort, https ? SocketAddress.Scheme.HTTPS : SocketAddress.Scheme.HTTP)
+                            .withSecure(https)
+                            .withHeader(HOST.toString(), targetPort == (https ? 443 : 80) ? targetHost : (targetHost + ":" + targetPort));
+                        if (!contextPath.isEmpty()) {
+                            String path = outbound.getPath() != null ? outbound.getPath().getValue() : "/";
+                            outbound.withPath(contextPath + path);
+                        }
+                        try {
+                            HttpResponse upstream = replayHandler.apply(outbound)
+                                .get(timeoutMillis, MILLISECONDS);
+                            return upstream != null ? upstream : response().withStatusCode(0);
+                        } catch (Exception e) {
+                            throw new RuntimeException("failed to send contract-test request to " + baseUrl + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()), e);
+                        }
+                    };
 
-            List<org.mockserver.openapi.OpenApiContractTest.ContractTestResult> results =
-                new org.mockserver.openapi.OpenApiContractTest(mockServerLogger)
-                    .runContractTests(spec, baseUrl, operationIdFilter, httpSender);
+                    List<org.mockserver.openapi.OpenApiContractTest.ContractTestResult> results =
+                        new org.mockserver.openapi.OpenApiContractTest(mockServerLogger)
+                            .runContractTests(specRef, baseUrl, operationIdFilter, httpSender);
 
-            int passed = 0;
-            for (org.mockserver.openapi.OpenApiContractTest.ContractTestResult result : results) {
-                if (result.isPassed()) {
-                    passed++;
-                }
-            }
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
-            com.fasterxml.jackson.databind.node.ObjectNode reportNode = objectMapper.createObjectNode();
-            reportNode.put("baseUrl", baseUrl);
-            reportNode.put("totalOperations", results.size());
-            reportNode.put("passed", passed);
-            reportNode.put("failed", results.size() - passed);
-            reportNode.put("allPassed", passed == results.size());
-            com.fasterxml.jackson.databind.node.ArrayNode resultsNode = reportNode.putArray("results");
-            for (org.mockserver.openapi.OpenApiContractTest.ContractTestResult result : results) {
-                com.fasterxml.jackson.databind.node.ObjectNode resultNode = resultsNode.addObject();
-                resultNode.put("operationId", result.getOperationId());
-                resultNode.put("method", result.getMethod());
-                resultNode.put("path", result.getPath());
-                resultNode.put("statusCodeReceived", result.getStatusCodeReceived());
-                resultNode.put("passed", result.isPassed());
-                com.fasterxml.jackson.databind.node.ArrayNode errorsNode = resultNode.putArray("validationErrors");
-                if (result.getValidationErrors() != null) {
-                    for (String error : result.getValidationErrors()) {
-                        errorsNode.add(error);
+                    int passed = 0;
+                    for (org.mockserver.openapi.OpenApiContractTest.ContractTestResult result : results) {
+                        if (result.isPassed()) {
+                            passed++;
+                        }
                     }
-                }
-            }
+                    com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+                    com.fasterxml.jackson.databind.node.ObjectNode reportNode = objectMapper.createObjectNode();
+                    reportNode.put("baseUrl", baseUrl);
+                    reportNode.put("totalOperations", results.size());
+                    reportNode.put("passed", passed);
+                    reportNode.put("failed", results.size() - passed);
+                    reportNode.put("allPassed", passed == results.size());
+                    com.fasterxml.jackson.databind.node.ArrayNode resultsNode = reportNode.putArray("results");
+                    for (org.mockserver.openapi.OpenApiContractTest.ContractTestResult result : results) {
+                        com.fasterxml.jackson.databind.node.ObjectNode resultNode = resultsNode.addObject();
+                        resultNode.put("operationId", result.getOperationId());
+                        resultNode.put("method", result.getMethod());
+                        resultNode.put("path", result.getPath());
+                        resultNode.put("statusCodeReceived", result.getStatusCodeReceived());
+                        resultNode.put("passed", result.isPassed());
+                        com.fasterxml.jackson.databind.node.ArrayNode errorsNode = resultNode.putArray("validationErrors");
+                        if (result.getValidationErrors() != null) {
+                            for (String error : result.getValidationErrors()) {
+                                errorsNode.add(error);
+                            }
+                        }
+                    }
 
-            responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
-                .withStatusCode(OK.code())
-                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(reportNode), MediaType.JSON_UTF_8)), true);
-            canHandle.complete(true);
+                    responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                        .withStatusCode(OK.code())
+                        .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(reportNode), MediaType.JSON_UTF_8)), true);
+                } catch (Exception e) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.ERROR)
+                            .setHttpRequest(controlPlaneRequest)
+                            .setMessageFormat("exception handling contract test request:{}error:{}")
+                            .setArguments(controlPlaneRequest, e.getMessage())
+                            .setThrowable(e)
+                    );
+                    responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                        .withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":" + jsonEncodeString(e.getMessage() != null ? e.getMessage() : "unknown error") + "}", MediaType.JSON_UTF_8)), true);
+                } finally {
+                    canHandle.complete(true);
+                }
+            });
         } catch (Exception e) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -4191,6 +4218,15 @@ public class HttpState {
                 .withBody("{\"error\":" + jsonEncodeString(e.getMessage() != null ? e.getMessage() : "unknown error") + "}", MediaType.JSON_UTF_8)), true);
             canHandle.complete(true);
         }
+    }
+
+    /**
+     * Package-private test hook: invokes {@link #handleContractTest} directly so tests can observe
+     * that the handler offloads its blocking per-operation work off the calling (event-loop) thread
+     * rather than running it inline.
+     */
+    void handleContractTestForTest(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
+        handleContractTest(controlPlaneRequest, responseWriter, canHandle);
     }
 
     /**

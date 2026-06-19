@@ -93,10 +93,17 @@ public class HttpStateTest {
     @ClassRule
     public static final GlobalFixedTime fixedTime = new GlobalFixedTime();
 
+    private java.util.concurrent.ScheduledExecutorService schedulerExecutor;
+
     @Before
     public void prepareTestFixture() {
         configuration.detailedVerificationFailures(false);
         Scheduler scheduler = mock(Scheduler.class);
+        // Several control-plane handlers (e.g. contract-test) deliberately offload their blocking
+        // work off the Netty event loop onto the scheduler's executor; back the mock with a real
+        // executor so that offloaded work actually runs.
+        schedulerExecutor = java.util.concurrent.Executors.newScheduledThreadPool(2);
+        org.mockito.Mockito.when(scheduler.getExecutorService()).thenReturn(schedulerExecutor);
         httpState = new HttpState(configuration, new MockServerLogger(configuration, MockServerLogger.class), scheduler);
         openMocks(this);
     }
@@ -104,10 +111,14 @@ public class HttpStateTest {
     @After
     public void resetClock() {
         TimeService.reset();
+        if (schedulerExecutor != null) {
+            schedulerExecutor.shutdownNow();
+        }
     }
 
     private static class FakeResponseWriter extends ResponseWriter {
-        public HttpResponse response;
+        public volatile HttpResponse response;
+        private final java.util.concurrent.CountDownLatch responseLatch = new java.util.concurrent.CountDownLatch(1);
 
         protected FakeResponseWriter() {
             super(configuration(), new MockServerLogger());
@@ -116,6 +127,17 @@ public class HttpStateTest {
         @Override
         public void sendResponse(HttpRequest request, HttpResponse response) {
             this.response = response;
+            responseLatch.countDown();
+        }
+
+        /**
+         * Block until {@link #sendResponse} has been called (the response may be produced on a
+         * different thread when the handler offloads its work). Fails the test on timeout.
+         */
+        public void awaitResponse() throws InterruptedException {
+            if (!responseLatch.await(30, SECONDS)) {
+                fail("timed out waiting for the handler to write a response");
+            }
         }
     }
 
@@ -275,6 +297,101 @@ public class HttpStateTest {
         assertThat(result.get("operationId").asText(), is("listPets"));
         assertThat(result.get("passed").asBoolean(), is(false));
         assertThat(result.get("validationErrors").size(), is(greaterThan(0)));
+    }
+
+    @Test
+    public void shouldRunContractTestOffTheCallingThreadWithAsynchronousReplayHandler() throws Exception {
+        // given — a replay handler whose future is completed from a SEPARATE thread after a short
+        // delay (NOT CompletableFuture.completedFuture). This is what a real wired NettyHttpClient
+        // does, and it is the case that would self-deadlock if the per-operation .get(timeout) ran
+        // on the Netty event-loop thread. The contract-test handler MUST offload that blocking
+        // .get() onto the scheduler executor, so the calling thread must NOT block.
+        String spec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");
+        java.util.concurrent.ExecutorService asyncCompleter = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            final Thread callingThread = Thread.currentThread();
+            final java.util.concurrent.atomic.AtomicReference<Thread> senderThread = new java.util.concurrent.atomic.AtomicReference<>();
+            httpState.setReplayHandler(req -> {
+                senderThread.set(Thread.currentThread());
+                CompletableFuture<HttpResponse> future = new CompletableFuture<>();
+                asyncCompleter.submit(() -> {
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
+                    }
+                    future.complete(response()
+                        .withStatusCode(200)
+                        .withHeader("content-type", "application/json")
+                        .withBody("[{\"id\":1,\"name\":\"Fido\"}]"));
+                });
+                return future;
+            });
+            HttpRequest contractTestRequest = request("/mockserver/contractTest")
+                .withMethod("PUT")
+                .withBody("{\"spec\":" + org.mockserver.serialization.ObjectMapperFactory.createObjectMapper().writeValueAsString(spec)
+                    + ",\"baseUrl\":\"http://localhost:1080\",\"operationId\":\"listPets\"}");
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+            CompletableFuture<Boolean> canHandle = new CompletableFuture<>();
+
+            // when — invoke the handler directly so we can observe that the calling thread returns
+            // before the (asynchronously completed) work has produced a response.
+            httpState.handleContractTestForTest(contractTestRequest, responseWriter, canHandle);
+
+            // then — the handler returned without blocking; the response is produced later, on the
+            // off-loop worker, and the per-operation .get() did NOT run on the calling thread.
+            assertThat("handler must offload and return before the async future completes",
+                responseWriter.response, is(nullValue()));
+            responseWriter.awaitResponse();
+            assertThat(canHandle.get(30, SECONDS), is(true));
+            assertThat(senderThread.get(), is(notNullValue()));
+            assertThat("the blocking per-operation .get() must not run on the calling (event-loop) thread",
+                senderThread.get(), is(not(callingThread)));
+
+            assertThat(responseWriter.response.getStatusCode(), is(200));
+            com.fasterxml.jackson.databind.JsonNode report =
+                org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                    .readTree(responseWriter.response.getBodyAsString());
+            assertThat(report.get("totalOperations").asInt(), is(1));
+            assertThat(report.get("passed").asInt(), is(1));
+            assertThat(report.get("allPassed").asBoolean(), is(true));
+        } finally {
+            asyncCompleter.shutdownNow();
+        }
+    }
+
+    @Test
+    public void shouldHonourPerOperationTimeoutWhenReplayFutureNeverCompletes() throws Exception {
+        // given — a replay handler that returns a future that NEVER completes. The per-operation
+        // .get(maxSocketTimeout) must bound the wait so a single hung upstream operation cannot
+        // hang the run forever — and crucially it must do so off the event loop.
+        configuration.maxSocketTimeoutInMillis(200L);
+        String spec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");
+        httpState.setReplayHandler(req -> new CompletableFuture<>()); // never completes
+        HttpRequest contractTestRequest = request("/mockserver/contractTest")
+            .withMethod("PUT")
+            .withBody("{\"spec\":" + org.mockserver.serialization.ObjectMapperFactory.createObjectMapper().writeValueAsString(spec)
+                + ",\"baseUrl\":\"http://localhost:1080\",\"operationId\":\"listPets\"}");
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        CompletableFuture<Boolean> canHandle = new CompletableFuture<>();
+
+        // when
+        long start = System.currentTimeMillis();
+        httpState.handleContractTestForTest(contractTestRequest, responseWriter, canHandle);
+        responseWriter.awaitResponse();
+        long elapsed = System.currentTimeMillis() - start;
+
+        // then — the per-operation timeout was honoured (failed, not hung), and it completed well
+        // within the response-await window rather than hanging.
+        assertThat(canHandle.get(30, SECONDS), is(true));
+        assertThat("the never-completing operation must time out, not hang", elapsed, is(lessThan(20_000L)));
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        com.fasterxml.jackson.databind.JsonNode report =
+            org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                .readTree(responseWriter.response.getBodyAsString());
+        assertThat(report.get("totalOperations").asInt(), is(1));
+        assertThat(report.get("failed").asInt(), is(1));
+        assertThat(report.get("allPassed").asBoolean(), is(false));
     }
 
     @Test
