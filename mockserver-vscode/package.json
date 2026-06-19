@@ -128,6 +128,35 @@
       {
         "command": "mockserver.listWasm",
         "title": "MockServer: List WASM Modules"
+      },
+      {
+        "command": "mockserver.openDebugger",
+        "title": "MockServer: Open Debugger (Breakpoints)",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "mockserver.addBreakpoint",
+        "title": "MockServer: Add Breakpoint Matcher"
+      },
+      {
+        "command": "mockserver.clearBreakpoints",
+        "title": "MockServer: Clear All Breakpoints"
+      },
+      {
+        "command": "mockserver.chaosStatus",
+        "title": "MockServer: Show Chaos Experiment Status"
+      },
+      {
+        "command": "mockserver.stopChaos",
+        "title": "MockServer: Stop Chaos Experiment"
+      },
+      {
+        "command": "mockserver.contractTest",
+        "title": "MockServer: Run OpenAPI Contract Test"
+      },
+      {
+        "command": "mockserver.showCallGraph",
+        "title": "MockServer: Show Agent-Run Call Graph"
       }
     ],
     "viewsContainers": {
@@ -322,11 +351,13 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.80.0",
+    "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.0.0",
     "ovsx": "^0.9.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
-    "jsonc-parser": "^3.3.1"
+    "jsonc-parser": "^3.3.1",
+    "ws": "^8.21.0"
   }
 }

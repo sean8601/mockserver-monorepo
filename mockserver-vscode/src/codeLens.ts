@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { detectMockServerUsage, isCodeAwareFile } from "./codeAware";
 
 /**
  * Adds "Load into running MockServer", "Verify", "Diff against live", and "Delete"
@@ -60,4 +61,36 @@ export class ScratchRequestCodeLensProvider implements vscode.CodeLensProvider {
 /** Document selector matching the scratch-request files this extension understands. */
 export const REQUEST_FILE_SELECTOR: vscode.DocumentSelector = [
     { scheme: "file", pattern: "**/*.mockserver-request.json" },
+];
+
+/**
+ * Phase 4 test/code-aware integration: adds a run/inspect CodeLens above each
+ * detected MockServer usage site (`new MockServerClient(...)`,
+ * `@MockServerSettings`, Testcontainers `MockServerContainer`) in source files.
+ * Detection is a best-effort regex scan (see codeAware.ts), not a full AST parse.
+ */
+export class CodeAwareCodeLensProvider implements vscode.CodeLensProvider {
+    provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+        if (!isCodeAwareFile(document.uri.fsPath)) {
+            return [];
+        }
+        return detectMockServerUsage(document.getText()).map((hit) => {
+            const range = new vscode.Range(hit.line, 0, hit.line, 0);
+            return new vscode.CodeLens(range, {
+                title: `$(server) ${hit.label}`,
+                command: "mockserver.openDashboardInEditor",
+                arguments: [],
+            });
+        });
+    }
+}
+
+/** Document selector for source files the code-aware CodeLens scans. */
+export const CODE_AWARE_FILE_SELECTOR: vscode.DocumentSelector = [
+    { scheme: "file", language: "java" },
+    { scheme: "file", language: "kotlin" },
+    { scheme: "file", language: "javascript" },
+    { scheme: "file", language: "typescript" },
+    { scheme: "file", language: "groovy" },
+    { scheme: "file", language: "scala" },
 ];

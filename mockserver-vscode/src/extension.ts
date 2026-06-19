@@ -6,10 +6,18 @@ import {
     EXPECTATION_FILE_SELECTOR,
     ScratchRequestCodeLensProvider,
     REQUEST_FILE_SELECTOR,
+    CodeAwareCodeLensProvider,
+    CODE_AWARE_FILE_SELECTOR,
 } from "./codeLens";
 import * as client from "./mockServerClient";
 import { MockServerActionsProvider } from "./actionsView";
 import { MockServerDashboardViewProvider } from "./dashboardView";
+import { DriftQuickFixProvider, DRIFT_DIAGNOSTIC_CODE } from "./driftQuickFix";
+import { BreakpointDebuggerPanel } from "./breakpointPanel";
+import { BreakpointClient, buildCallbackWsUrl, CallbackSocket } from "./breakpointClient";
+import { buildMatcherRegistrationBody } from "./breakpointProtocol";
+import { LlmCompletionProvider } from "./llmCompletionProvider";
+import { fetchAgentCallGraph, toMermaid, FetchWithHeaders } from "./callGraph";
 
 let outputChannel: vscode.OutputChannel;
 let extensionVersion = "latest";
@@ -28,6 +36,23 @@ const httpFetch: client.FetchLike = async (url, init) => {
     const res = await fetch(url, init);
     return { ok: res.ok, status: res.status, text: () => res.text() };
 };
+
+// Adapter that also exposes a response header (the MCP session id), for the
+// agent-run call-graph fetch over POST /mockserver/mcp.
+const httpFetchWithHeaders: FetchWithHeaders = async (url, init) => {
+    const res = await fetch(url, init);
+    return {
+        ok: res.ok,
+        status: res.status,
+        text: () => res.text(),
+        header: (name: string) => res.headers.get(name),
+    };
+};
+
+// The single in-IDE debugger panel (Phase 5) and the drift quick-fix provider
+// (Phase 4). Created in activate() so they share the extension lifecycle.
+let debuggerPanel: BreakpointDebuggerPanel | undefined;
+let driftQuickFixProvider: DriftQuickFixProvider;
 
 // Backing store for the read-only "live expectations" documents shown in the
 // diff view, exposed under the `mockserver-live` URI scheme.
@@ -124,6 +149,18 @@ export function activate(context: vscode.ExtensionContext): void {
         "mockserver.statusBarMenu",
         showStatusBarMenu
     );
+    // Phase 5 debugger
+    const openDebuggerCmd = vscode.commands.registerCommand("mockserver.openDebugger", openDebugger);
+    const addBreakpointCmd = vscode.commands.registerCommand("mockserver.addBreakpoint", addBreakpoint);
+    const clearBreakpointsCmd = vscode.commands.registerCommand(
+        "mockserver.clearBreakpoints",
+        clearBreakpoints
+    );
+    // Phase 6 chaos / contract-test / call-graph
+    const chaosStatusCmd = vscode.commands.registerCommand("mockserver.chaosStatus", showChaosStatus);
+    const stopChaosCmd = vscode.commands.registerCommand("mockserver.stopChaos", stopChaos);
+    const contractTestCmd = vscode.commands.registerCommand("mockserver.contractTest", runContractTest);
+    const callGraphCmd = vscode.commands.registerCommand("mockserver.showCallGraph", showCallGraph);
 
     // Activity Bar "Actions" tree (the grouped buttons). The provider reads the
     // configured port fresh for its status item; refreshView re-fires its change
@@ -159,6 +196,30 @@ export function activate(context: vscode.ExtensionContext): void {
         REQUEST_FILE_SELECTOR,
         new ScratchRequestCodeLensProvider()
     );
+    // Phase 4: run/inspect CodeLens above MockServer usage sites in source files.
+    const codeAwareCodeLensProvider = vscode.languages.registerCodeLensProvider(
+        CODE_AWARE_FILE_SELECTOR,
+        new CodeAwareCodeLensProvider()
+    );
+    // Phase 4: drift quick-fix lightbulb on drift diagnostics.
+    driftQuickFixProvider = new DriftQuickFixProvider();
+    const driftCodeActionProvider = vscode.languages.registerCodeActionsProvider(
+        EXPECTATION_FILE_SELECTOR,
+        driftQuickFixProvider,
+        { providedCodeActionKinds: DriftQuickFixProvider.providedCodeActionKinds }
+    );
+    // Phase 6: LLM authoring completion inside httpLlmResponse blocks.
+    const llmCompletionProvider = vscode.languages.registerCompletionItemProvider(
+        EXPECTATION_FILE_SELECTOR,
+        new LlmCompletionProvider(),
+        '"',
+        ":"
+    );
+    // Phase 5: the in-IDE HTTP debugger panel (one per session).
+    debuggerPanel = new BreakpointDebuggerPanel(context.extensionUri, (handlers) => {
+        const url = buildCallbackWsUrl(getConfig().port);
+        return new BreakpointClient(url, defaultSocketFactory, handlers);
+    });
     const contentProvider = vscode.workspace.registerTextDocumentContentProvider(
         LIVE_SCHEME,
         liveContentProvider
@@ -184,16 +245,27 @@ export function activate(context: vscode.ExtensionContext): void {
         uploadWasmCmd,
         listWasmCmd,
         statusBarMenuCmd,
+        openDebuggerCmd,
+        addBreakpointCmd,
+        clearBreakpointsCmd,
+        chaosStatusCmd,
+        stopChaosCmd,
+        contractTestCmd,
+        callGraphCmd,
         refreshViewCmd,
         actionsView,
         dashboardView,
         statusBarItem,
         codeLensProvider,
         requestCodeLensProvider,
+        codeAwareCodeLensProvider,
+        driftCodeActionProvider,
+        llmCompletionProvider,
         contentProvider,
         liveContentChanged,
         driftDiagnostics,
-        outputChannel
+        outputChannel,
+        { dispose: () => debuggerPanel?.dispose() }
     );
 }
 
@@ -616,6 +688,7 @@ async function showDriftDiagnostics(uri?: vscode.Uri): Promise<void> {
         const records = await client.retrieveDriftRecords(client.buildBaseUrl(port), httpFetch);
         if (records.length === 0) {
             driftDiagnostics.delete(target);
+            driftQuickFixProvider.clearRecords(target);
             vscode.window.showInformationMessage(
                 "No drift detected. Drift is recorded when MockServer proxies traffic to a real " +
                 "upstream and a matching stub expectation differs from the real response."
@@ -623,14 +696,23 @@ async function showDriftDiagnostics(uri?: vscode.Uri): Promise<void> {
             return;
         }
         const mapped = client.mapDriftToDiagnostics(records, doc.getText());
+        // Tag each diagnostic with the drift code so the quick-fix provider finds
+        // it, and remember the record per line so the lightbulb can map it back to
+        // the JSON node (Phase 4 "update stub to match upstream").
+        const lineToRecord = new Map<number, client.DriftRecord>();
         const diagnostics = mapped.map((d) => {
             const lineLength = doc.lineAt(d.line).text.length;
             const range = new vscode.Range(d.line, 0, d.line, lineLength);
-            return new vscode.Diagnostic(range, d.message, toDiagnosticSeverity(d.severity));
+            const diagnostic = new vscode.Diagnostic(range, d.message, toDiagnosticSeverity(d.severity));
+            diagnostic.code = DRIFT_DIAGNOSTIC_CODE;
+            diagnostic.source = "MockServer";
+            lineToRecord.set(d.line, d.record);
+            return diagnostic;
         });
         driftDiagnostics.set(target, diagnostics);
+        driftQuickFixProvider.setRecords(target, lineToRecord);
         vscode.window.showInformationMessage(
-            `${diagnostics.length} drift record(s) shown as diagnostics.`
+            `${diagnostics.length} drift record(s) shown as diagnostics. Use the lightbulb to update a stub to match upstream.`
         );
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to retrieve drift — ${(e as Error).message}`);
@@ -797,4 +879,219 @@ function formatScratchResponse(
     }
     const header = analysis ? client.formatMatchAnalysis(analysis) + "\n\n" : "";
     return `${header}HTTP ${response.status}\n\n${body}`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — the in-IDE HTTP debugger over the breakpoint callback WebSocket.
+// ---------------------------------------------------------------------------
+
+// The runtime socket factory wraps a `ws` WebSocket in the CallbackSocket shape
+// the BreakpointClient needs. `ws` is required lazily so the extension module
+// loads even in environments (e.g. the unit-test harness) that never connect.
+const defaultSocketFactory = (url: string): CallbackSocket => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const WebSocket = require("ws") as new (address: string) => {
+        send(data: string): void;
+        close(): void;
+        on(event: string, listener: (arg?: unknown) => void): void;
+    };
+    const ws = new WebSocket(url);
+    return {
+        send: (data) => ws.send(data),
+        close: () => ws.close(),
+        on: (event, listener) => ws.on(event, (arg?: unknown) => listener(arg)),
+    };
+};
+
+// Reveal the debugger panel and open the callback WebSocket. Surfaces the
+// prerequisite (breakpoints fire only on traffic THROUGH MockServer) in the panel.
+async function openDebugger(): Promise<void> {
+    debuggerPanel?.reveal();
+}
+
+// Prompt for a request matcher (method + path regex) and the phases to pause,
+// then register a breakpoint matcher tied to the debugger's callback-WS clientId.
+async function addBreakpoint(): Promise<void> {
+    if (!debuggerPanel) {
+        return;
+    }
+    // The debugger panel must be connected first so it has a clientId to own the matcher.
+    debuggerPanel.reveal();
+    if (!debuggerPanel.isConnected() || !debuggerPanel.getClientId()) {
+        vscode.window.showWarningMessage(
+            "MockServer debugger is connecting. Try adding the breakpoint again in a moment — " +
+            "the debugger needs an active callback WebSocket to own the breakpoint."
+        );
+        return;
+    }
+    const pathRegex = await vscode.window.showInputBox({
+        prompt: "Breakpoint path matcher (regex)",
+        placeHolder: "/api/.*",
+        value: "/.*",
+        validateInput: (v) => (v.trim().length === 0 ? "Enter a path matcher (e.g. /api/.*)" : undefined),
+    });
+    if (pathRegex === undefined) {
+        return;
+    }
+    const method = await vscode.window.showInputBox({
+        prompt: "Method matcher (optional, e.g. GET — leave blank for any)",
+        placeHolder: "GET",
+    });
+    if (method === undefined) {
+        return;
+    }
+    const phasePick = await vscode.window.showQuickPick(
+        [
+            { label: "Request only", phases: ["REQUEST"] },
+            { label: "Request + Response", phases: ["REQUEST", "RESPONSE"] },
+            { label: "Response only", phases: ["RESPONSE"] },
+            { label: "Request + Response + Stream frames", phases: ["REQUEST", "RESPONSE", "RESPONSE_STREAM"] },
+        ],
+        { placeHolder: "Phases to pause at" }
+    );
+    if (!phasePick) {
+        return;
+    }
+    const httpRequest: Record<string, unknown> = { path: pathRegex };
+    if (method.trim().length > 0) {
+        httpRequest.method = method.trim();
+    }
+    const body = buildMatcherRegistrationBody(httpRequest, phasePick.phases, debuggerPanel.getClientId()!);
+    const { port } = getConfig();
+    try {
+        const result = await client.registerBreakpointMatcher(client.buildBaseUrl(port), body, httpFetch);
+        vscode.window.showInformationMessage(
+            `Breakpoint registered (${result.phases.join(", ")}). Drive traffic THROUGH MockServer to hit it.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to register breakpoint — ${(e as Error).message}`);
+    }
+}
+
+// Clear all registered breakpoint matchers from the server.
+async function clearBreakpoints(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        await client.clearBreakpointMatchers(client.buildBaseUrl(port), httpFetch);
+        vscode.window.showInformationMessage("Cleared all MockServer breakpoint matchers.");
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to clear breakpoints — ${(e as Error).message}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — chaos panel, contract-test runner, agent-run call graph.
+// ---------------------------------------------------------------------------
+
+// Show the current chaos-experiment status in an editor tab.
+async function showChaosStatus(): Promise<void> {
+    const { port } = getConfig();
+    try {
+        const status = await client.getChaosExperimentStatus(client.buildBaseUrl(port), httpFetch);
+        const doc = await vscode.workspace.openTextDocument({
+            content: client.formatChaosStatus(status),
+            language: "text",
+        });
+        await vscode.window.showTextDocument(doc);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to get chaos status — ${(e as Error).message}`);
+    }
+}
+
+// Stop and clear the current chaos experiment (after a modal confirmation).
+async function stopChaos(): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+        "Stop and clear the current MockServer chaos experiment?",
+        { modal: true },
+        "Stop"
+    );
+    if (choice !== "Stop") {
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        await client.stopChaosExperiment(client.buildBaseUrl(port), httpFetch);
+        vscode.window.showInformationMessage("Chaos experiment stopped.");
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to stop chaos — ${(e as Error).message}`);
+    }
+}
+
+// Run an OpenAPI contract test: the active OpenAPI spec file against a service URL.
+async function runContractTest(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("Open an OpenAPI/Swagger spec file first.");
+        return;
+    }
+    const doc = await vscode.workspace.openTextDocument(target);
+    const spec = doc.getText();
+    if (!client.looksLikeOpenApiSpec(spec)) {
+        vscode.window.showWarningMessage(
+            "The active editor doesn't look like an OpenAPI/Swagger spec. Open your spec and try again."
+        );
+        return;
+    }
+    const serviceUrl = await vscode.window.showInputBox({
+        prompt: "Base URL of the service under test",
+        placeHolder: "http://localhost:8080",
+        validateInput: (v) =>
+            /^https?:\/\//.test(v.trim()) ? undefined : "Enter an http(s):// base URL.",
+    });
+    if (serviceUrl === undefined) {
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const report = await client.runContractTest(
+            client.buildBaseUrl(port),
+            { spec, baseUrl: serviceUrl.trim() },
+            httpFetch
+        );
+        const out = await vscode.workspace.openTextDocument({
+            content: client.formatContractTestReport(report),
+            language: "text",
+        });
+        await vscode.window.showTextDocument(out);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: contract test failed — ${(e as Error).message}`);
+    }
+}
+
+// Fetch the agent-run call graph (via the explain_agent_run MCP tool) and render
+// it as a Mermaid flowchart in a new Markdown editor tab (VS Code's built-in
+// Markdown preview renders Mermaid where the Markdown Preview Mermaid extension is
+// present; the fenced source is always readable).
+async function showCallGraph(): Promise<void> {
+    const sessionId = await vscode.window.showInputBox({
+        prompt: "Agent run / session id to explain (leave blank for the latest run)",
+        placeHolder: "session-123",
+    });
+    if (sessionId === undefined) {
+        return;
+    }
+    const args: Record<string, unknown> = {};
+    if (sessionId.trim().length > 0) {
+        args.sessionId = sessionId.trim();
+    }
+    const { port } = getConfig();
+    try {
+        const graph = await fetchAgentCallGraph(
+            client.buildBaseUrl(port),
+            args,
+            httpFetchWithHeaders
+        );
+        if (!graph || graph.nodes.length === 0) {
+            vscode.window.showInformationMessage(
+                "No agent-run call graph available. Proxy or mock an LLM agent run first."
+            );
+            return;
+        }
+        const markdown = `# MockServer agent-run call graph\n\n\`\`\`mermaid\n${toMermaid(graph)}\n\`\`\`\n`;
+        const doc = await vscode.workspace.openTextDocument({ content: markdown, language: "markdown" });
+        await vscode.window.showTextDocument(doc);
+        await vscode.commands.executeCommand("markdown.showPreview", doc.uri);
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to fetch call graph — ${(e as Error).message}`);
+    }
 }

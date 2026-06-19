@@ -127,8 +127,53 @@ is active.
 | **Find Requests by Trace** | Prompts for a W3C `traceparent` value or bare 32-hex trace id, then opens every request belonging to that distributed trace in a new JSON tab. |
 | **Send Test Request** | Fires the request described by a `*.mockserver-request.json` file at the running server and shows `HTTP <status>` + body (pretty-printed when JSON) in a new tab. A **Send to MockServer** CodeLens appears at the top of the file. |
 | **Show Drift Report** | Fetches drift records (`GET /mockserver/drift`) and shows a readable one-line-per-record report. Drift is captured when MockServer proxies traffic and a matching stub expectation differs structurally from the real upstream response. |
-| **Show Drift as Diagnostics** | Maps each drift record to the matching expectation line in the open `*.mockserver.json` file as an inline diagnostic (error / warning / info). Re-run to refresh; no drift clears them. |
+| **Show Drift as Diagnostics** | Maps each drift record to the matching expectation line in the open `*.mockserver.json` file as an inline diagnostic (error / warning / info). Re-run to refresh; no drift clears them. Each diagnostic carries a **lightbulb quick-fix** — "update stub to match upstream" — that swaps the stub's declared value for the value the real upstream now returns (or falls back to "diff against live" when the value can't be located unambiguously). |
 | **Reset (Clear Expectations & Logs)** | Clears all expectations and the request log (`PUT /mockserver/reset`) after a confirmation prompt. |
+
+### Test/code-aware gutters
+
+Open a Java, Kotlin, JS/TS, Groovy, or Scala file that uses MockServer and a **run/inspect CodeLens** appears
+above each usage site it finds — `new MockServerClient(...)`, a JUnit 5 `@MockServerSettings` annotation, or a
+Testcontainers `MockServerContainer`. Clicking it reveals the docked dashboard for the configured instance.
+Detection is a best-effort regex scan, not a full parse, so an occasional extra lens is harmless.
+
+### In-IDE HTTP debugger (breakpoints)
+
+Pause real traffic flowing through MockServer and inspect/modify it without leaving the editor.
+
+> **Prerequisite:** breakpoints fire **only on traffic flowing through MockServer** — proxied/forwarded
+> exchanges, matched mock responses, and the unmatched-404 path. Point your app at MockServer as a proxy or mock
+> endpoint first; this is not a JVM-style attach to an arbitrary process.
+
+| Command | What it does |
+|---------|-------------|
+| **Open Debugger (Breakpoints)** | Opens the debugger panel and connects the breakpoint callback WebSocket (`/_mockserver_callback_websocket`). A status dot shows the connection state. |
+| **Add Breakpoint Matcher** | Prompts for a path regex, an optional method, and the phases to pause at, then registers a matcher (`PUT /mockserver/breakpoint/matcher`) owned by the debugger's callback-WS client. |
+| **Clear All Breakpoints** | Removes all registered breakpoint matchers (`PUT /mockserver/breakpoint/matcher/clear`). |
+
+When a matching request flows through MockServer, the paused exchange appears in the panel:
+
+- **REQUEST phase** — **Continue** (forward the original), **Modify** (edit the request JSON, then forward), or
+  **Abort** (write a response downstream without forwarding). Abort is REQUEST-phase only.
+- **RESPONSE phase** — **Continue** (write the original response) or **Modify** (edit the response JSON).
+- **Stream frames** (SSE/chunked/gRPC/WebSocket) — per frame: **Continue / Modify / Inject / Drop / Close**
+  (frame bodies are Base64).
+
+The server's safety rails apply unchanged: paused exchanges auto-continue after `breakpointTimeoutMillis`
+(30s default), at most `breakpointMaxHeld` (50) are held at once, and disconnecting the panel cleans up the
+debugger's matchers.
+
+### LLM authoring, call graph, chaos, and contract tests
+
+| Command | What it does |
+|---------|-------------|
+| **Show Agent-Run Call Graph** | Fetches the agent-run call graph (via the `explain_agent_run` MCP tool) and renders it as a Mermaid flowchart in a Markdown tab — the same graph the dashboard draws. |
+| **Show Chaos Experiment Status** | Reads `GET /mockserver/chaosExperiment` and shows the current experiment's status and stage progress. |
+| **Stop Chaos Experiment** | Stops and clears the running experiment (`DELETE /mockserver/chaosExperiment`) after a confirmation. |
+| **Run OpenAPI Contract Test** | Runs the active OpenAPI spec against a service URL via `PUT /mockserver/contractTest` and opens a per-operation pass/fail report with validation errors. |
+
+Inside an `httpLlmResponse` block of a `*.mockserver.json` file you also get **authoring completion** for
+provider names, representative model names, and the block's fields.
 
 ### Dashboard
 
@@ -191,6 +236,13 @@ All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift
 | `mockserver.reset` | MockServer: Reset (Clear Expectations & Logs) |
 | `mockserver.uploadWasm` | MockServer: Upload WASM Module |
 | `mockserver.listWasm` | MockServer: List WASM Modules |
+| `mockserver.openDebugger` | MockServer: Open Debugger (Breakpoints) |
+| `mockserver.addBreakpoint` | MockServer: Add Breakpoint Matcher |
+| `mockserver.clearBreakpoints` | MockServer: Clear All Breakpoints |
+| `mockserver.chaosStatus` | MockServer: Show Chaos Experiment Status |
+| `mockserver.stopChaos` | MockServer: Stop Chaos Experiment |
+| `mockserver.contractTest` | MockServer: Run OpenAPI Contract Test |
+| `mockserver.showCallGraph` | MockServer: Show Agent-Run Call Graph |
 
 ## Settings
 

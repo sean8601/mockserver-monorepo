@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scratch-request match analysis (shows whether a request matched and the nearest-miss diff), Verify/Delete
   actions on `*.mockserver.json` expectations, generate-stubs-from-OpenAPI, and record-to-code (write recorded
   expectations into a workspace file as JSON or DSL).
+- **VS Code extension: in-IDE HTTP debugger + code-aware integration + power-user panels**: the VS Code extension
+  adds an in-IDE breakpoint debugger over the MockServer callback WebSocket — register a request matcher, receive
+  paused exchanges, and **Continue / Modify / Abort** (Abort is REQUEST-phase only; RESPONSE phase is
+  Continue/Modify), plus per-frame stream editing (Continue/Modify/Drop/Inject/Close). Breakpoints fire only on
+  traffic flowing **through** MockServer (proxied/forwarded/matched-mock). Also: a drift quick-fix lightbulb
+  ("update stub to match upstream") that swaps the stub's value for the live upstream value; run/inspect gutter
+  CodeLens on `new MockServerClient(...)`, `@MockServerSettings`, and Testcontainers `MockServerContainer`
+  usages; `httpLlmResponse` authoring completion; an agent-run call-graph rendered as Mermaid; a chaos status /
+  stop panel; and an OpenAPI contract-test runner with a per-operation pass/fail report. Everything talks only to
+  the configured local MockServer — nothing phones home.
 - **Dashboard: Contract Test and Cluster panels**: two new dashboard tabs. **Contract** runs an OpenAPI spec
   (URL or inline) against a live service via `PUT /mockserver/contractTest` and renders the report as a
   pass/fail-per-operation table with per-operation validation errors and a passed/failed summary. **Cluster**

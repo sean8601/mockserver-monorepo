@@ -832,6 +832,8 @@ export interface DriftDiagnostic {
     message: string;
     /** Severity bucket, mapped from the drift type / confidence. */
     severity: "error" | "warning" | "info";
+    /** The raw drift record, so a quick-fix can map it back to the JSON node. */
+    record: DriftRecord;
 }
 
 /**
@@ -948,6 +950,262 @@ export function mapDriftToDiagnostics(records: DriftRecord[], docText: string): 
             line: found >= 0 ? found : 0,
             message,
             severity: driftSeverity(record),
+            record,
         };
     });
+}
+
+/**
+ * Describe the suggested fix for a drift record as a one-line, human-readable
+ * action title for a quick-fix lightbulb. Pure and `vscode`-free.
+ *
+ * "Update stub to match upstream" — the upstream now returns `actualValue` at
+ * `field`; the stub still declares `expectedValue`. We name the field and the
+ * value the upstream returned so the fix is self-explanatory before applying.
+ */
+export function describeDriftFix(record: DriftRecord): string {
+    const actual = formatDriftValue(record.actualValue);
+    if (record.driftType === "SCHEMA_FIELD_ADDED") {
+        return `Update stub: add ${record.field} (upstream now returns ${actual})`;
+    }
+    if (record.driftType.startsWith("SCHEMA_FIELD_REMOVED")) {
+        return `Update stub: remove ${record.field} (upstream no longer returns it)`;
+    }
+    return `Update stub: set ${record.field} to ${actual} (matches upstream)`;
+}
+
+// ---------------------------------------------------------------------------
+// Breakpoint matcher management (Phase 5 debugger) — registration / list /
+// remove / clear. Resolution is over the callback WebSocket, not REST.
+// ---------------------------------------------------------------------------
+
+/** A registered breakpoint matcher as returned by the list endpoint. */
+export interface BreakpointMatcherEntry {
+    id: string;
+    httpRequest?: Record<string, unknown>;
+    phases: string[];
+    clientId?: string;
+    skipCount?: number;
+}
+
+/**
+ * Register a breakpoint matcher via `PUT /mockserver/breakpoint/matcher`. The
+ * body must already carry `clientId` (the callback-WS client to dispatch to).
+ * Returns the server-assigned `{ id, phases }`. Throws (with status + body) on
+ * a non-ok response so a server without breakpoints surfaces clearly.
+ */
+export async function registerBreakpointMatcher(
+    baseUrl: string,
+    body: Record<string, unknown>,
+    fetchFn: FetchLike
+): Promise<{ id: string; phases: string[] }> {
+    const res = await fetchFn(`${baseUrl}/mockserver/breakpoint/matcher`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    const text = await res.text();
+    try {
+        const parsed = JSON.parse(text) as { id?: string; phases?: string[] };
+        return { id: parsed.id ?? "", phases: Array.isArray(parsed.phases) ? parsed.phases : [] };
+    } catch {
+        return { id: "", phases: [] };
+    }
+}
+
+/** List registered breakpoint matchers via `GET /mockserver/breakpoint/matchers`. */
+export async function listBreakpointMatchers(
+    baseUrl: string,
+    fetchFn: FetchLike
+): Promise<BreakpointMatcherEntry[]> {
+    const res = await fetchFn(`${baseUrl}/mockserver/breakpoint/matchers`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    try {
+        const parsed = JSON.parse(await res.text()) as { matchers?: BreakpointMatcherEntry[] };
+        return Array.isArray(parsed.matchers) ? parsed.matchers : [];
+    } catch {
+        return [];
+    }
+}
+
+/** Remove a breakpoint matcher by id via `PUT /mockserver/breakpoint/matcher/remove`. */
+export async function removeBreakpointMatcher(
+    baseUrl: string,
+    id: string,
+    fetchFn: FetchLike
+): Promise<void> {
+    const res = await fetchFn(`${baseUrl}/mockserver/breakpoint/matcher/remove`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+}
+
+/** Clear all breakpoint matchers via `PUT /mockserver/breakpoint/matcher/clear`. */
+export async function clearBreakpointMatchers(baseUrl: string, fetchFn: FetchLike): Promise<void> {
+    const res = await fetchFn(`${baseUrl}/mockserver/breakpoint/matcher/clear`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Chaos experiment panel (Phase 6) — start / status / stop over
+// `/mockserver/chaosExperiment`. DTO shapes mirror the dashboard's
+// chaosExperiment.ts client (the authoritative reference).
+// ---------------------------------------------------------------------------
+
+/** Status snapshot returned by `GET /mockserver/chaosExperiment`. */
+export interface ChaosExperimentStatus {
+    name: string | null;
+    status: string;
+    currentStageIndex: number;
+    totalStages: number;
+    stageElapsedMillis: number;
+    stageRemainingMillis: number;
+    loopIteration: number;
+    totalElapsedMillis: number;
+}
+
+/** Retrieve the current chaos-experiment status. */
+export async function getChaosExperimentStatus(
+    baseUrl: string,
+    fetchFn: FetchLike
+): Promise<ChaosExperimentStatus> {
+    const res = await fetchFn(`${baseUrl}/mockserver/chaosExperiment`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    return JSON.parse(await res.text()) as ChaosExperimentStatus;
+}
+
+/** Start a chaos experiment via `PUT /mockserver/chaosExperiment`. */
+export async function startChaosExperiment(
+    baseUrl: string,
+    definition: Record<string, unknown>,
+    fetchFn: FetchLike
+): Promise<void> {
+    const res = await fetchFn(`${baseUrl}/mockserver/chaosExperiment`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(definition),
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+}
+
+/** Stop and clear the current chaos experiment via `DELETE /mockserver/chaosExperiment`. */
+export async function stopChaosExperiment(baseUrl: string, fetchFn: FetchLike): Promise<void> {
+    const res = await fetchFn(`${baseUrl}/mockserver/chaosExperiment`, { method: "DELETE" });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+}
+
+/**
+ * Format a chaos status snapshot as a readable, multi-line summary for an editor
+ * tab: status, the running experiment's stage progress, and elapsed time. Pure.
+ */
+export function formatChaosStatus(status: ChaosExperimentStatus): string {
+    const lines = [`MockServer chaos experiment — status: ${status.status}`];
+    if (status.name) {
+        lines.push(`Experiment: ${status.name}`);
+    }
+    if (status.status === "running" || status.status === "starting") {
+        lines.push(
+            `Stage ${status.currentStageIndex + 1} of ${status.totalStages} ` +
+                `(${Math.round(status.stageRemainingMillis / 1000)}s remaining in stage)`
+        );
+        if (status.loopIteration > 0) {
+            lines.push(`Loop iteration: ${status.loopIteration}`);
+        }
+    }
+    return lines.join("\n") + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Contract / resiliency test runner (Phase 6) — `PUT /mockserver/contractTest`.
+// ---------------------------------------------------------------------------
+
+/** A single operation's contract-test outcome. */
+export interface ContractTestOperationResult {
+    operationId: string;
+    method: string;
+    path: string;
+    statusCodeReceived: number;
+    passed: boolean;
+    validationErrors: string[];
+}
+
+/** The full contract-test report returned by the server. */
+export interface ContractTestReport {
+    baseUrl: string;
+    totalOperations: number;
+    passed: number;
+    failed: number;
+    allPassed: boolean;
+    results: ContractTestOperationResult[];
+}
+
+/**
+ * Run an OpenAPI contract test against a live service via
+ * `PUT /mockserver/contractTest`. `spec` is a URL/path/inline spec; `baseUrl` is
+ * the service under test. Throws (with status + body) on a non-ok response.
+ */
+export async function runContractTest(
+    serverBaseUrl: string,
+    request: { spec: string; baseUrl: string; operationId?: string },
+    fetchFn: FetchLike
+): Promise<ContractTestReport> {
+    const body: Record<string, unknown> = { spec: request.spec, baseUrl: request.baseUrl };
+    if (request.operationId && request.operationId.trim()) {
+        body.operationId = request.operationId.trim();
+    }
+    const res = await fetchFn(`${serverBaseUrl}/mockserver/contractTest`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    return JSON.parse(await res.text()) as ContractTestReport;
+}
+
+/**
+ * Format a contract-test report as a readable, per-operation pass/fail summary
+ * for an editor tab. Pure and `vscode`-free.
+ */
+export function formatContractTestReport(report: ContractTestReport): string {
+    const header =
+        `MockServer contract test against ${report.baseUrl} — ` +
+        `${report.passed}/${report.totalOperations} passed` +
+        (report.allPassed ? " (all passed)" : `, ${report.failed} failed`);
+    const lines = report.results.map((r) => {
+        const mark = r.passed ? "✓" : "✗";
+        const base = `${mark} ${r.method} ${r.path} [${r.operationId}] → HTTP ${r.statusCodeReceived}`;
+        if (r.passed || r.validationErrors.length === 0) {
+            return base;
+        }
+        return [base, ...r.validationErrors.map((e) => `    • ${e}`)].join("\n");
+    });
+    return [header, "", ...lines].join("\n") + "\n";
 }

@@ -18,6 +18,7 @@ interface Subscription {
 interface FakeContext {
     subscriptions: Disposable[];
     extension: { packageJSON: { version: string } };
+    extensionUri: { toString(): string };
 }
 
 const registeredCommands: Map<string, Function> = new Map();
@@ -55,6 +56,12 @@ const vscodeStub = {
         registerCodeLensProvider(_selector: any, _provider: any): Disposable {
             return { dispose() {} };
         },
+        registerCodeActionsProvider(_selector: any, _provider: any, _meta?: any): Disposable {
+            return { dispose() {} };
+        },
+        registerCompletionItemProvider(_selector: any, _provider: any, ..._triggers: any[]): Disposable {
+            return { dispose() {} };
+        },
         createDiagnosticCollection(_name?: string) {
             return {
                 set(_uri: any, _diags?: any) {},
@@ -66,7 +73,29 @@ const vscodeStub = {
     },
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
     Diagnostic: class {
+        code: any;
+        source: any;
         constructor(public range: any, public message: string, public severity?: number) {}
+    },
+    CodeActionKind: { QuickFix: { value: "quickfix" } },
+    CodeAction: class {
+        edit: any;
+        command: any;
+        diagnostics: any;
+        isPreferred?: boolean;
+        constructor(public title: string, public kind?: any) {}
+    },
+    WorkspaceEdit: class {
+        replace(_uri: any, _range: any, _text: string) {}
+    },
+    CompletionItemKind: { Value: 11 },
+    CompletionItem: class {
+        insertText: any;
+        detail: any;
+        constructor(public label: string, public kind?: number) {}
+    },
+    Position: class {
+        constructor(public line: number, public character: number) {}
     },
     EventEmitter: class {
         event = (_listener?: any): Disposable => ({ dispose() {} });
@@ -136,6 +165,9 @@ const vscodeStub = {
     },
     Uri: {
         parse(value: string) { return { toString: () => value }; },
+        joinPath(base: any, ...parts: string[]) {
+            return { toString: () => `${base?.toString?.() ?? ""}/${parts.join("/")}` };
+        },
     },
 };
 
@@ -177,6 +209,7 @@ async function runTests(): Promise<void> {
     const fakeContext: FakeContext = {
         subscriptions: [],
         extension: { packageJSON: { version: "9.9.9" } },
+        extensionUri: { toString: () => "file:///ext" },
     };
     extension.activate(fakeContext);
 
@@ -1223,6 +1256,679 @@ async function runTests(): Promise<void> {
         const lenses = provider.provideCodeLenses({ uri: { toString: () => "file:///x.mockserver-request.json" } });
         assert.strictEqual(lenses.length, 1);
         assert.strictEqual(lenses[0].command.command, "mockserver.sendRequest");
+    });
+
+    // --- Phase 5: breakpoint protocol (pure, frozen WS contract) ---
+    const bp = require("../breakpointProtocol");
+
+    await test("parseInboundMessage decodes a WebSocketClientIdDTO registration", () => {
+        const raw = JSON.stringify({
+            type: "org.mockserver.serialization.model.WebSocketClientIdDTO",
+            value: JSON.stringify({ clientId: "client-42" }),
+        });
+        const parsed = bp.parseInboundMessage(raw);
+        assert.strictEqual(parsed.kind, "clientId");
+        assert.strictEqual(parsed.clientId, "client-42");
+    });
+
+    await test("parseInboundMessage decodes a REQUEST-phase HttpRequest with breakpoint headers", () => {
+        const request = {
+            method: "GET",
+            path: "/api/x",
+            headers: {
+                WebSocketCorrelationId: ["corr-1"],
+                "X-MockServer-BreakpointId": ["bp-1"],
+                "X-MockServer-RequestTimestamp": ["1700000000000"],
+            },
+        };
+        const raw = JSON.stringify({ type: "org.mockserver.model.HttpRequest", value: JSON.stringify(request) });
+        const parsed = bp.parseInboundMessage(raw);
+        assert.strictEqual(parsed.kind, "exchange");
+        assert.strictEqual(parsed.exchange.phase, "REQUEST");
+        assert.strictEqual(parsed.exchange.correlationId, "corr-1");
+        assert.strictEqual(parsed.exchange.breakpointId, "bp-1");
+        assert.strictEqual(parsed.exchange.requestTimestamp, 1700000000000);
+    });
+
+    await test("parseInboundMessage decodes a RESPONSE-phase HttpRequestAndHttpResponse", () => {
+        const pair = {
+            httpRequest: { path: "/a", headers: { websocketcorrelationid: "corr-2" } },
+            httpResponse: { statusCode: 200, body: "ok" },
+        };
+        const raw = JSON.stringify({
+            type: "org.mockserver.model.HttpRequestAndHttpResponse",
+            value: JSON.stringify(pair),
+        });
+        const parsed = bp.parseInboundMessage(raw);
+        assert.strictEqual(parsed.kind, "exchange");
+        assert.strictEqual(parsed.exchange.phase, "RESPONSE");
+        assert.strictEqual(parsed.exchange.correlationId, "corr-2");
+        assert.strictEqual(parsed.exchange.httpResponse.statusCode, 200);
+    });
+
+    await test("parseInboundMessage decodes a PausedStreamFrameDTO", () => {
+        const frame = {
+            correlationId: "corr-3",
+            streamId: "s-1",
+            sequenceNumber: 2,
+            direction: "OUTBOUND",
+            phase: "RESPONSE_STREAM",
+            body: "aGVsbG8=",
+        };
+        const raw = JSON.stringify({
+            type: "org.mockserver.serialization.model.PausedStreamFrameDTO",
+            value: JSON.stringify(frame),
+        });
+        const parsed = bp.parseInboundMessage(raw);
+        assert.strictEqual(parsed.kind, "streamFrame");
+        assert.strictEqual(parsed.frame.streamId, "s-1");
+        assert.strictEqual(parsed.frame.sequenceNumber, 2);
+    });
+
+    await test("parseInboundMessage ignores junk and unknown types", () => {
+        assert.strictEqual(bp.parseInboundMessage("not json").kind, "ignored");
+        assert.strictEqual(
+            bp.parseInboundMessage(JSON.stringify({ type: "org.mockserver.model.Unknown", value: "{}" })).kind,
+            "ignored"
+        );
+    });
+
+    await test("REQUEST-phase CONTINUE replies with the original HttpRequest echoing the correlation id", () => {
+        const exchange = {
+            phase: "REQUEST",
+            correlationId: "corr-1",
+            breakpointId: "bp-1",
+            requestTimestamp: null,
+            httpRequest: { method: "GET", path: "/a" },
+        };
+        const reply = bp.buildRequestPhaseReply(exchange, { action: "CONTINUE" });
+        assert.strictEqual(reply.type, "org.mockserver.model.HttpRequest");
+        const value = JSON.parse(reply.value);
+        assert.strictEqual(value.path, "/a");
+        assert.deepStrictEqual(value.headers.WebSocketCorrelationId, ["corr-1"]);
+    });
+
+    await test("REQUEST-phase MODIFY replies with the replacement HttpRequest", () => {
+        const exchange = {
+            phase: "REQUEST",
+            correlationId: "corr-1",
+            breakpointId: null,
+            requestTimestamp: null,
+            httpRequest: { method: "GET", path: "/a" },
+        };
+        const reply = bp.buildRequestPhaseReply(exchange, {
+            action: "MODIFY",
+            replacement: { method: "POST", path: "/b" },
+        });
+        assert.strictEqual(reply.type, "org.mockserver.model.HttpRequest");
+        const value = JSON.parse(reply.value);
+        assert.strictEqual(value.method, "POST");
+        assert.strictEqual(value.path, "/b");
+        assert.deepStrictEqual(value.headers.WebSocketCorrelationId, ["corr-1"]);
+    });
+
+    await test("REQUEST-phase ABORT replies with an HttpResponse (write downstream, do not forward)", () => {
+        const exchange = {
+            phase: "REQUEST",
+            correlationId: "corr-1",
+            breakpointId: null,
+            requestTimestamp: null,
+            httpRequest: { method: "GET", path: "/a" },
+        };
+        const reply = bp.buildRequestPhaseReply(exchange, {
+            action: "ABORT",
+            response: { statusCode: 503, body: "nope" },
+        });
+        assert.strictEqual(reply.type, "org.mockserver.model.HttpResponse");
+        const value = JSON.parse(reply.value);
+        assert.strictEqual(value.statusCode, 503);
+        assert.deepStrictEqual(value.headers.WebSocketCorrelationId, ["corr-1"]);
+    });
+
+    await test("REQUEST-phase MODIFY into a response shape (statusCode) becomes an HttpResponse ABORT", () => {
+        const exchange = {
+            phase: "REQUEST",
+            correlationId: "c",
+            breakpointId: null,
+            requestTimestamp: null,
+            httpRequest: { method: "GET", path: "/a" },
+        };
+        const reply = bp.buildRequestPhaseReply(exchange, {
+            action: "MODIFY",
+            replacement: { statusCode: 418 },
+        });
+        assert.strictEqual(reply.type, "org.mockserver.model.HttpResponse");
+    });
+
+    await test("RESPONSE-phase CONTINUE replies with the original HttpResponse echoing the correlation id", () => {
+        const exchange = {
+            phase: "RESPONSE",
+            correlationId: "corr-2",
+            breakpointId: null,
+            requestTimestamp: null,
+            httpRequest: { path: "/a" },
+            httpResponse: { statusCode: 200, body: "ok" },
+        };
+        const reply = bp.buildResponsePhaseReply(exchange, { action: "CONTINUE" });
+        assert.strictEqual(reply.type, "org.mockserver.model.HttpResponse");
+        const value = JSON.parse(reply.value);
+        assert.strictEqual(value.statusCode, 200);
+        assert.deepStrictEqual(value.headers.WebSocketCorrelationId, ["corr-2"]);
+    });
+
+    await test("RESPONSE-phase MODIFY replies with the replacement HttpResponse", () => {
+        const exchange = {
+            phase: "RESPONSE",
+            correlationId: "corr-2",
+            breakpointId: null,
+            requestTimestamp: null,
+            httpRequest: { path: "/a" },
+            httpResponse: { statusCode: 200 },
+        };
+        const reply = bp.buildResponsePhaseReply(exchange, {
+            action: "MODIFY",
+            replacement: { statusCode: 404, body: "gone" },
+        });
+        const value = JSON.parse(reply.value);
+        assert.strictEqual(value.statusCode, 404);
+        assert.strictEqual(value.body, "gone");
+    });
+
+    await test("buildResponsePhaseReply rejects ABORT (REQUEST-phase only)", () => {
+        assert.throws(
+            () =>
+                bp.buildResponsePhaseReply(
+                    { phase: "RESPONSE", correlationId: "c", breakpointId: null, requestTimestamp: null, httpRequest: {}, httpResponse: {} },
+                    { action: "ABORT", response: { statusCode: 503 } }
+                ),
+            /ABORT is not a valid RESPONSE-phase decision/
+        );
+    });
+
+    await test("buildStreamFrameReply throws when MODIFY/INJECT has no body", () => {
+        const frame = { correlationId: "c", streamId: "s", sequenceNumber: 0, direction: "OUTBOUND", phase: "RESPONSE_STREAM", body: "aGk=" };
+        assert.throws(() => bp.buildStreamFrameReply(frame, { action: "MODIFY" }), /Base64 body is required/);
+        assert.throws(() => bp.buildStreamFrameReply(frame, { action: "INJECT" }), /Base64 body is required/);
+    });
+
+    await test("buildDecisionReply dispatches on phase", () => {
+        const req = bp.buildDecisionReply(
+            { phase: "REQUEST", correlationId: "c", breakpointId: null, requestTimestamp: null, httpRequest: { path: "/a" } },
+            { action: "CONTINUE" }
+        );
+        assert.strictEqual(req.type, "org.mockserver.model.HttpRequest");
+        const resp = bp.buildDecisionReply(
+            { phase: "RESPONSE", correlationId: "c", breakpointId: null, requestTimestamp: null, httpRequest: {}, httpResponse: {} },
+            { action: "CONTINUE" }
+        );
+        assert.strictEqual(resp.type, "org.mockserver.model.HttpResponse");
+    });
+
+    await test("abortAllowed is true only for REQUEST phase", () => {
+        assert.strictEqual(bp.abortAllowed("REQUEST"), true);
+        assert.strictEqual(bp.abortAllowed("RESPONSE"), false);
+    });
+
+    await test("buildStreamFrameReply echoes the correlation id and includes body only for MODIFY/INJECT", () => {
+        const frame = { correlationId: "corr-3", streamId: "s", sequenceNumber: 0, direction: "OUTBOUND", phase: "RESPONSE_STREAM", body: "aGk=" };
+        const cont = JSON.parse(bp.buildStreamFrameReply(frame, { action: "CONTINUE" }).value);
+        assert.strictEqual(cont.correlationId, "corr-3");
+        assert.strictEqual(cont.action, "CONTINUE");
+        assert.ok(!("body" in cont), "CONTINUE must not carry a body");
+        const modify = JSON.parse(bp.buildStreamFrameReply(frame, { action: "MODIFY", body: "Ynll" }).value);
+        assert.strictEqual(modify.body, "Ynll");
+        const drop = JSON.parse(bp.buildStreamFrameReply(frame, { action: "DROP" }).value);
+        assert.ok(!("body" in drop), "DROP must not carry a body");
+        const replyType = bp.buildStreamFrameReply(frame, { action: "CLOSE" }).type;
+        assert.strictEqual(replyType, "org.mockserver.serialization.model.StreamFrameDecisionDTO");
+    });
+
+    await test("buildMatcherRegistrationBody requires clientId and includes skipCount only when positive", () => {
+        const base = bp.buildMatcherRegistrationBody({ path: "/a" }, ["REQUEST"], "client-1");
+        assert.deepStrictEqual(base, { httpRequest: { path: "/a" }, phases: ["REQUEST"], clientId: "client-1" });
+        const skip = bp.buildMatcherRegistrationBody({ path: "/a" }, ["REQUEST"], "client-1", 3);
+        assert.strictEqual(skip.skipCount, 3);
+        const zero = bp.buildMatcherRegistrationBody({ path: "/a" }, ["REQUEST"], "client-1", 0);
+        assert.ok(!("skipCount" in zero), "skipCount 0 must be omitted");
+    });
+
+    // --- Phase 5: breakpoint client (fake socket, no real network) ---
+    const { BreakpointClient, buildCallbackWsUrl } = require("../breakpointClient");
+
+    function makeFakeSocket() {
+        const listeners: Record<string, ((arg?: any) => void)[]> = {};
+        const sent: string[] = [];
+        let closed = false;
+        return {
+            sent,
+            isClosed: () => closed,
+            emit(event: string, arg?: any) {
+                (listeners[event] || []).forEach((l) => l(arg));
+            },
+            socket: {
+                send: (data: string) => sent.push(data),
+                close: () => { closed = true; },
+                on: (event: string, listener: (arg?: any) => void) => {
+                    (listeners[event] = listeners[event] || []).push(listener);
+                },
+            },
+        };
+    }
+
+    await test("buildCallbackWsUrl targets the local callback websocket endpoint", () => {
+        assert.strictEqual(
+            buildCallbackWsUrl(1080),
+            "ws://localhost:1080/_mockserver_callback_websocket"
+        );
+    });
+
+    await test("BreakpointClient routes a clientId message to onClientId and exposes it", () => {
+        const fake = makeFakeSocket();
+        let clientId = "";
+        const c = new BreakpointClient("ws://x", () => fake.socket, {
+            onClientId: (id: string) => { clientId = id; },
+            onExchange: () => {},
+            onStreamFrame: () => {},
+            onState: () => {},
+        });
+        c.connect();
+        fake.emit("message", JSON.stringify({
+            type: "org.mockserver.serialization.model.WebSocketClientIdDTO",
+            value: JSON.stringify({ clientId: "abc" }),
+        }));
+        assert.strictEqual(clientId, "abc");
+        assert.strictEqual(c.getClientId(), "abc");
+    });
+
+    await test("BreakpointClient routes a paused exchange and reply() sends an envelope over the socket", () => {
+        const fake = makeFakeSocket();
+        let exchange: any;
+        const c = new BreakpointClient("ws://x", () => fake.socket, {
+            onClientId: () => {},
+            onExchange: (e: any) => { exchange = e; },
+            onStreamFrame: () => {},
+            onState: () => {},
+        });
+        c.connect();
+        fake.emit("message", JSON.stringify({
+            type: "org.mockserver.model.HttpRequest",
+            value: JSON.stringify({ path: "/a", headers: { WebSocketCorrelationId: ["c1"] } }),
+        }));
+        assert.ok(exchange, "exchange handler should fire");
+        c.reply(bp.buildDecisionReply(exchange, { action: "CONTINUE" }));
+        assert.strictEqual(fake.sent.length, 1);
+        const sent = JSON.parse(fake.sent[0]);
+        assert.strictEqual(sent.type, "org.mockserver.model.HttpRequest");
+    });
+
+    await test("BreakpointClient reports connection state transitions and close()", () => {
+        const fake = makeFakeSocket();
+        const states: string[] = [];
+        const c = new BreakpointClient("ws://x", () => fake.socket, {
+            onClientId: () => {},
+            onExchange: () => {},
+            onStreamFrame: () => {},
+            onState: (s: string) => states.push(s),
+        });
+        c.connect();
+        fake.emit("open");
+        assert.ok(states.includes("connecting"), "should report connecting");
+        assert.ok(states.includes("connected"), "should report connected on open");
+        c.close();
+        assert.ok(fake.isClosed(), "user close should close the socket");
+    });
+
+    // --- Phase 4: code-aware usage detection (pure regex scan) ---
+    const codeAware = require("../codeAware");
+
+    await test("detectMockServerUsage finds new MockServerClient(...), @MockServerSettings, and MockServerContainer", () => {
+        const src = [
+            "public class T {",
+            "  @MockServerSettings(ports = {1080})",
+            "  void t() {",
+            "    var client = new MockServerClient(\"localhost\", 1080);",
+            "    MockServerContainer ms = new MockServerContainer(IMG);",
+            "  }",
+            "}",
+        ].join("\n");
+        const hits = codeAware.detectMockServerUsage(src);
+        const kinds = hits.map((h: any) => h.kind);
+        assert.ok(kinds.includes("client"), "should detect MockServerClient");
+        assert.ok(kinds.includes("junit5"), "should detect @MockServerSettings");
+        assert.ok(kinds.includes("testcontainers"), "should detect MockServerContainer");
+    });
+
+    await test("detectMockServerUsage returns one hit per line and correct zero-based lines", () => {
+        const src = "x\nnew MockServerClient()\n";
+        const hits = codeAware.detectMockServerUsage(src);
+        assert.strictEqual(hits.length, 1);
+        assert.strictEqual(hits[0].line, 1);
+    });
+
+    await test("isCodeAwareFile matches code extensions and rejects json", () => {
+        assert.strictEqual(codeAware.isCodeAwareFile("/a/T.java"), true);
+        assert.strictEqual(codeAware.isCodeAwareFile("/a/T.kt"), true);
+        assert.strictEqual(codeAware.isCodeAwareFile("/a/x.mockserver.json"), false);
+    });
+
+    await test("CodeAwareCodeLensProvider yields a lens per usage in a code file and none for json", () => {
+        const { CodeAwareCodeLensProvider } = require("../codeLens");
+        const provider = new CodeAwareCodeLensProvider();
+        const javaLenses = provider.provideCodeLenses({
+            uri: { fsPath: "/a/T.java" },
+            getText: () => "new MockServerClient()\n@MockServerSettings\n",
+        });
+        assert.strictEqual(javaLenses.length, 2);
+        assert.strictEqual(javaLenses[0].command.command, "mockserver.openDashboardInEditor");
+        const jsonLenses = provider.provideCodeLenses({
+            uri: { fsPath: "/a/x.mockserver.json" },
+            getText: () => "new MockServerClient()",
+        });
+        assert.strictEqual(jsonLenses.length, 0, "json files are not code-aware-scanned");
+    });
+
+    // --- Phase 4: drift quick-fix edit computation (pure) ---
+    const driftFix = require("../driftFix");
+
+    await test("computeDriftFixEdit swaps the stub's expected value for the upstream actual value", () => {
+        const docText = [
+            "[",
+            "  {",
+            '    "id": "exp-1",',
+            '    "httpResponse": { "statusCode": 200 }',
+            "  }",
+            "]",
+        ].join("\n");
+        const record = {
+            expectationId: "exp-1",
+            driftType: "STATUS",
+            field: "$.statusCode",
+            expectedValue: 200,
+            actualValue: 503,
+            confidence: 1.0,
+            epochTimeMs: 1,
+        };
+        const edit = driftFix.computeDriftFixEdit(record, docText);
+        assert.ok(edit, "an edit should be computed");
+        assert.strictEqual(edit.replacement, "503");
+        // Applying the edit should replace the 200 literal with 503.
+        const applied = docText.slice(0, edit.start) + edit.replacement + docText.slice(edit.end);
+        assert.ok(applied.includes('"statusCode": 503'), `applied edit wrong: ${applied}`);
+    });
+
+    await test("computeDriftFixEdit returns null when the value cannot be located or values are absent", () => {
+        const docText = '[{"id":"exp-1","httpResponse":{"statusCode":200}}]';
+        assert.strictEqual(
+            driftFix.computeDriftFixEdit(
+                { expectationId: "exp-1", driftType: "SCHEMA_FIELD_ADDED", field: "$.x", confidence: 1, epochTimeMs: 1 },
+                docText
+            ),
+            null,
+            "no expected/actual value → no edit"
+        );
+        assert.strictEqual(
+            driftFix.computeDriftFixEdit(
+                { expectationId: "missing", driftType: "STATUS", field: "$.s", expectedValue: 999, actualValue: 503, confidence: 1, epochTimeMs: 1 },
+                docText
+            ),
+            null,
+            "unlocatable expectation/value → no edit"
+        );
+    });
+
+    await test("computeDriftFixEdit scopes the value search to the matching expectation", () => {
+        const docText = [
+            '[{"id":"exp-1","httpResponse":{"statusCode":200}},',
+            '{"id":"exp-2","httpResponse":{"statusCode":200}}]',
+        ].join("\n");
+        const edit = driftFix.computeDriftFixEdit(
+            { expectationId: "exp-2", driftType: "STATUS", field: "$.statusCode", expectedValue: 200, actualValue: 404, confidence: 1, epochTimeMs: 1 },
+            docText
+        );
+        assert.ok(edit, "edit for exp-2 should be found");
+        // The edit must fall within the exp-2 region (after the exp-2 id), not exp-1's 200.
+        assert.ok(edit.start > docText.indexOf('"exp-2"'), "edit must target exp-2's value, not exp-1's");
+    });
+
+    await test("describeDriftFix renders a readable, type-aware action title", () => {
+        assert.ok(
+            client.describeDriftFix({ expectationId: "a", driftType: "SCHEMA_FIELD_ADDED", field: "$.newField", actualValue: 1, confidence: 1, epochTimeMs: 1 }).includes("add $.newField")
+        );
+        assert.ok(
+            client.describeDriftFix({ expectationId: "a", driftType: "STATUS", field: "$.statusCode", expectedValue: 200, actualValue: 503, confidence: 1, epochTimeMs: 1 }).includes("set $.statusCode to 503")
+        );
+    });
+
+    await test("mapDriftToDiagnostics attaches the raw record for the quick-fix to map back", () => {
+        const records = [
+            { expectationId: "exp-1", driftType: "STATUS", field: "$.s", expectedValue: 200, actualValue: 503, confidence: 1, epochTimeMs: 1 },
+        ];
+        const diags = client.mapDriftToDiagnostics(records, '[{"id":"exp-1"}]');
+        assert.strictEqual(diags[0].record.expectationId, "exp-1");
+        assert.strictEqual(diags[0].record.actualValue, 503);
+    });
+
+    // --- Phase 5/6: breakpoint matcher + chaos + contract REST helpers ---
+    await test("registerBreakpointMatcher PUTs the body and returns the server id+phases", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 201, text: () => Promise.resolve('{"id":"bp-9","phases":["REQUEST"]}') });
+        };
+        const out = await client.registerBreakpointMatcher(
+            "http://localhost:1080",
+            bp.buildMatcherRegistrationBody({ path: "/a" }, ["REQUEST"], "client-1"),
+            fakeFetch
+        );
+        assert.ok(captured.url.endsWith("/mockserver/breakpoint/matcher"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "PUT");
+        assert.strictEqual(JSON.parse(captured.init.body).clientId, "client-1");
+        assert.strictEqual(out.id, "bp-9");
+        assert.deepStrictEqual(out.phases, ["REQUEST"]);
+    });
+
+    await test("listBreakpointMatchers GETs /breakpoint/matchers and returns the matchers array", async () => {
+        let url = "";
+        const fakeFetch = (u: string) => {
+            url = u;
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"matchers":[{"id":"a","phases":["REQUEST"]}]}') });
+        };
+        const out = await client.listBreakpointMatchers("http://localhost:1080", fakeFetch);
+        assert.ok(url.endsWith("/mockserver/breakpoint/matchers"), `url=${url}`);
+        assert.strictEqual(out.length, 1);
+        assert.strictEqual(out[0].id, "a");
+    });
+
+    await test("removeBreakpointMatcher and clearBreakpointMatchers PUT the right endpoints", async () => {
+        const urls: string[] = [];
+        const fakeFetch = (url: string) => {
+            urls.push(url);
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
+        };
+        await client.removeBreakpointMatcher("http://localhost:1080", "id-1", fakeFetch);
+        await client.clearBreakpointMatchers("http://localhost:1080", fakeFetch);
+        assert.ok(urls[0].endsWith("/mockserver/breakpoint/matcher/remove"), `url0=${urls[0]}`);
+        assert.ok(urls[1].endsWith("/mockserver/breakpoint/matcher/clear"), `url1=${urls[1]}`);
+    });
+
+    await test("getChaosExperimentStatus GETs the endpoint and formatChaosStatus summarises a run", async () => {
+        let captured: any = {};
+        const status = { name: "exp", status: "running", currentStageIndex: 1, totalStages: 3, stageElapsedMillis: 1000, stageRemainingMillis: 4000, loopIteration: 0, totalElapsedMillis: 5000 };
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(status)) });
+        };
+        const out = await client.getChaosExperimentStatus("http://localhost:1080", fakeFetch);
+        assert.ok(captured.url.endsWith("/mockserver/chaosExperiment"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "GET");
+        assert.strictEqual(out.status, "running");
+        const text = client.formatChaosStatus(out);
+        assert.ok(text.includes("running"), "summary should include status");
+        assert.ok(text.includes("Stage 2 of 3"), "summary should show 1-based stage progress");
+    });
+
+    await test("startChaosExperiment PUTs and stopChaosExperiment DELETEs the endpoint", async () => {
+        const calls: any[] = [];
+        const fakeFetch = (url: string, init: any) => {
+            calls.push({ url, method: init?.method });
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
+        };
+        await client.startChaosExperiment("http://localhost:1080", { name: "e", stages: [] }, fakeFetch);
+        await client.stopChaosExperiment("http://localhost:1080", fakeFetch);
+        assert.strictEqual(calls[0].method, "PUT");
+        assert.strictEqual(calls[1].method, "DELETE");
+    });
+
+    await test("runContractTest PUTs /contractTest and formatContractTestReport lists per-operation pass/fail", async () => {
+        let captured: any = {};
+        const report = {
+            baseUrl: "http://svc:8080",
+            totalOperations: 2,
+            passed: 1,
+            failed: 1,
+            allPassed: false,
+            results: [
+                { operationId: "getA", method: "GET", path: "/a", statusCodeReceived: 200, passed: true, validationErrors: [] },
+                { operationId: "getB", method: "GET", path: "/b", statusCodeReceived: 500, passed: false, validationErrors: ["body did not match schema"] },
+            ],
+        };
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(report)) });
+        };
+        const out = await client.runContractTest("http://localhost:1080", { spec: "openapi: 3.0.0", baseUrl: "http://svc:8080" }, fakeFetch);
+        assert.ok(captured.url.endsWith("/mockserver/contractTest"), `url=${captured.url}`);
+        assert.strictEqual(JSON.parse(captured.init.body).baseUrl, "http://svc:8080");
+        const text = client.formatContractTestReport(out);
+        assert.ok(text.includes("1/2 passed"), "summary should show pass count");
+        assert.ok(text.includes("✗ GET /b"), "failing op should be marked");
+        assert.ok(text.includes("body did not match schema"), "validation errors should be listed");
+    });
+
+    // --- Phase 6: agent-run call graph (pure transform + MCP parse) ---
+    const callGraph = require("../callGraph");
+
+    await test("toMermaid renders nodes and edges as a flowchart matching the dashboard", () => {
+        const graph = {
+            nodes: [
+                { id: "u1", kind: "USER", label: "hello" },
+                { id: "tc1", kind: "TOOL_CALL", label: "search(x)" },
+            ],
+            edges: [{ from: "u1", to: "tc1", kind: "INVOKES" }],
+        };
+        const mermaid = callGraph.toMermaid(graph);
+        assert.ok(mermaid.startsWith("flowchart TD"), "should be a flowchart");
+        assert.ok(mermaid.includes("u1[\"USER: hello\"]"), "message node shape");
+        assert.ok(mermaid.includes("tc1(["), "tool-call node shape");
+        assert.ok(mermaid.includes("u1 -->|INVOKES| tc1"), "edge with kind label");
+    });
+
+    await test("parseCallGraph is defensive about missing/typeless fields", () => {
+        const g = callGraph.parseCallGraph({ nodes: [{ id: "a" }, { kind: "x" }], edges: [{ from: "a", to: "b" }, { from: "a" }] });
+        assert.strictEqual(g.nodes.length, 1, "only nodes with a string id survive");
+        assert.strictEqual(g.nodes[0].kind, "UNKNOWN");
+        assert.strictEqual(g.edges.length, 1, "only edges with from+to survive");
+        assert.strictEqual(callGraph.parseCallGraph(null), null);
+    });
+
+    await test("parseMcpToolResult unwraps result.content[0].text JSON and detects error envelopes", () => {
+        const wrapped = JSON.stringify({ result: { content: [{ text: JSON.stringify({ callGraph: { nodes: [], edges: [] } }) }] } });
+        const out = callGraph.parseMcpToolResult(wrapped);
+        assert.ok(out && out.callGraph, "should unwrap the tool result JSON");
+        assert.strictEqual(callGraph.parseMcpToolResult(JSON.stringify({ error: { message: "boom" } })), null);
+        assert.strictEqual(callGraph.parseMcpToolResult("not json"), null);
+    });
+
+    await test("fetchAgentCallGraph runs the MCP init handshake then tools/call and parses the graph", async () => {
+        const urls: string[] = [];
+        let toolBody: any;
+        const fakeFetch = (url: string, init: any) => {
+            urls.push(url);
+            const body = init && init.body ? JSON.parse(init.body) : {};
+            if (body.method === "initialize") {
+                return Promise.resolve({
+                    ok: true, status: 200,
+                    text: () => Promise.resolve("{}"),
+                    header: (n: string) => (n === "Mcp-Session-Id" ? "sess-1" : null),
+                });
+            }
+            if (body.method === "tools/call") {
+                toolBody = body;
+                return Promise.resolve({
+                    ok: true, status: 200,
+                    text: () => Promise.resolve(JSON.stringify({
+                        result: { content: [{ text: JSON.stringify({ callGraph: { nodes: [{ id: "n1", kind: "USER", label: "hi" }], edges: [] } }) }] },
+                    })),
+                    header: () => null,
+                });
+            }
+            // notifications/initialized
+            return Promise.resolve({ ok: true, status: 202, text: () => Promise.resolve(""), header: () => null });
+        };
+        const graph = await callGraph.fetchAgentCallGraph("http://localhost:1080", { sessionId: "s" }, fakeFetch);
+        assert.ok(graph, "graph should be returned");
+        assert.strictEqual(graph.nodes.length, 1);
+        assert.strictEqual(toolBody.params.name, "explain_agent_run");
+        assert.ok(urls.every((u: string) => u.endsWith("/mockserver/mcp")), "all calls hit /mockserver/mcp");
+    });
+
+    await test("fetchAgentCallGraph throws when the MCP transport fails", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("no mcp"), header: () => null });
+        await assert.rejects(
+            () => callGraph.fetchAgentCallGraph("http://localhost:1080", {}, fakeFetch),
+            /MCP initialize failed/
+        );
+    });
+
+    // --- Phase 6: LLM authoring completion (pure) ---
+    const llm = require("../llmCompletion");
+
+    await test("isInsideLlmResponse detects the cursor inside an httpLlmResponse block", () => {
+        assert.strictEqual(llm.isInsideLlmResponse('{ "httpLlmResponse": { "provider": '), true);
+        assert.strictEqual(llm.isInsideLlmResponse('{ "httpLlmResponse": { "provider": "OPEN_AI" } }'), false);
+        assert.strictEqual(llm.isInsideLlmResponse('{ "httpResponse": { '), false);
+    });
+
+    await test("llmSuggestions offers providers after provider:, models after model:, fields otherwise", () => {
+        const providers = llm.llmSuggestions('{ "httpLlmResponse": { "provider": "');
+        assert.ok(providers.some((s: any) => s.insertText === "OPEN_AI"), "should suggest providers");
+        const models = llm.llmSuggestions('{ "httpLlmResponse": { "model": "');
+        assert.ok(models.some((s: any) => s.insertText === "gpt-4o"), "should suggest models");
+        const fields = llm.llmSuggestions('{ "httpLlmResponse": { ');
+        assert.ok(fields.some((s: any) => s.insertText === "completion"), "should suggest fields");
+    });
+
+    // --- Phase 5: debugger panel HTML render (pure string-building) ---
+    const { renderDebuggerHtml } = require("../breakpointPanel");
+
+    await test("renderDebuggerHtml shows the through-MockServer prerequisite when no exchanges are paused", () => {
+        const html = renderDebuggerHtml({ state: "connected", clientId: "c1", items: [] });
+        assert.ok(html.includes("flowing"), "should explain breakpoints fire only on traffic through MockServer");
+        assert.ok(html.includes("c1"), "should show the clientId");
+        assert.ok(html.includes("🟢"), "connected state dot");
+    });
+
+    await test("renderDebuggerHtml offers Abort only for REQUEST-phase exchanges", () => {
+        const reqHtml = renderDebuggerHtml({
+            state: "connected", clientId: "c",
+            items: [{ kind: "exchange", exchange: { phase: "REQUEST", correlationId: "x", breakpointId: null, requestTimestamp: null, httpRequest: { method: "GET", path: "/a" } } }],
+        });
+        assert.ok(reqHtml.includes(">Abort<"), "REQUEST phase should offer Abort");
+        const respHtml = renderDebuggerHtml({
+            state: "connected", clientId: "c",
+            items: [{ kind: "exchange", exchange: { phase: "RESPONSE", correlationId: "y", breakpointId: null, requestTimestamp: null, httpRequest: { path: "/a" }, httpResponse: { statusCode: 200 } } }],
+        });
+        assert.ok(!respHtml.includes(">Abort<"), "RESPONSE phase must NOT offer Abort");
+    });
+
+    await test("renderDebuggerHtml escapes HTML in request fields (no injection)", () => {
+        const html = renderDebuggerHtml({
+            state: "connected", clientId: "c",
+            items: [{ kind: "exchange", exchange: { phase: "REQUEST", correlationId: "z", breakpointId: null, requestTimestamp: null, httpRequest: { method: "GET", path: "/<script>" } } }],
+        });
+        assert.ok(!html.includes("/<script>"), "raw path must be HTML-escaped");
+        assert.ok(html.includes("&lt;script&gt;"), "path should appear escaped");
     });
 
     console.log(`\nResults: ${passed} passed, ${failed} failed, ${passed + failed} total`);
