@@ -579,6 +579,15 @@
                 <version>1.9.1</version>
             </dependency>
 
+            <!-- graphql schema parsing + response synthesis (schema-valid GraphQL responses).
+                 Pinned to the 22.x line: 22.x ships Java 11 bytecode and runs on the Java 17 floor.
+                 Newer majors are ceiling-pinned in .github/dependabot.yml in case they raise the floor. -->
+            <dependency>
+                <groupId>com.graphql-java</groupId>
+                <artifactId>graphql-java</artifactId>
+                <version>22.3</version>
+            </dependency>
+
             <!-- xml -->
             <dependency>
                 <groupId>jakarta.xml.bind</groupId>

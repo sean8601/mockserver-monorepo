@@ -26,6 +26,7 @@ import org.mockserver.mock.crud.CrudDispatcher;
 import org.mockserver.model.HttpForward;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.RequestDefinition;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
@@ -219,12 +220,12 @@ public class HttpActionHandlerBreakpointTest {
         HttpResponse mockResponse = response("mock body").withStatusCode(201);
         Expectation expectation = new Expectation(request).thenRespond(mockResponse);
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(mockResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(mockResponse);
         registerBreakpoint("/api/mock", BreakpointPhase.REQUEST);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
 
-        verify(mockHttpResponseActionHandler, never()).handle(any(HttpResponse.class), any(HttpRequest.class));
+        verify(mockHttpResponseActionHandler, never()).handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class));
         captureRequestCallback().handleError(response()); // CONTINUE
 
         ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
@@ -238,7 +239,7 @@ public class HttpActionHandlerBreakpointTest {
         HttpResponse mockResponse = response("mock body").withStatusCode(201);
         Expectation expectation = new Expectation(request).thenRespond(mockResponse);
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(mockResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(mockResponse);
         registerBreakpoint("/api/mock", BreakpointPhase.RESPONSE);
 
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);

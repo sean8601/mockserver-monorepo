@@ -140,7 +140,7 @@ public class HttpActionHandler {
                 // chaos: gate by the time-based outage window + apply degradation ramp (see effectiveChaos)
                 final HttpChaosProfile effectiveChaos = effectiveChaos(expectation);
                 scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
-                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action, request);
+                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action, request, expectation.getHttpRequest());
                     // chaos: inject HTTP chaos faults on early mocked responses
                     writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
                 }, expectationPostProcessor), synchronous);
@@ -325,7 +325,7 @@ public class HttpActionHandler {
             // modified request into template/class-callback generation; logging keys off the original request.
             case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
-                    req -> getHttpResponseActionHandler().handle((HttpResponse) action, req)), expectationPostProcessor), synchronous);
+                    req -> getHttpResponseActionHandler().handle((HttpResponse) action, req, expectation.getHttpRequest())), expectationPostProcessor), synchronous);
             case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
                     req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, action.getDelay());

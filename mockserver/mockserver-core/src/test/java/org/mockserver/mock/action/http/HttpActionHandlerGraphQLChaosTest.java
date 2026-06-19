@@ -123,7 +123,7 @@ public class HttpActionHandlerGraphQLChaosTest {
     private HttpResponse dispatchAndCapture(HttpRequest request, Expectation expectation, HttpResponse normalResponse) {
         expectation.consumeMatch();
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         reset(mockResponseWriter);
 
@@ -146,7 +146,7 @@ public class HttpActionHandlerGraphQLChaosTest {
             .withChaos(httpChaosProfile().withGraphqlErrors(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -180,7 +180,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withGraphqlErrorCode("INTERNAL_SERVER_ERROR"));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -209,7 +209,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withGraphqlNullifyData(false));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -234,7 +234,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withGraphqlNullifyData(false));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -258,7 +258,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withGraphqlNullifyData(false));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -283,7 +283,7 @@ public class HttpActionHandlerGraphQLChaosTest {
             .withChaos(httpChaosProfile().withGraphqlErrors(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -306,7 +306,7 @@ public class HttpActionHandlerGraphQLChaosTest {
             .withChaos(httpChaosProfile().withGraphqlErrors(false));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -327,7 +327,7 @@ public class HttpActionHandlerGraphQLChaosTest {
             .withChaos(httpChaosProfile());
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -373,7 +373,7 @@ public class HttpActionHandlerGraphQLChaosTest {
             .withChaos(httpChaosProfile().withGraphqlErrors(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -395,7 +395,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withMalformedBody(true));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -430,7 +430,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withErrorProbability(1.0));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -455,7 +455,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withGraphqlErrorMessage("error with \"quotes\" and \\backslash"));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
@@ -481,7 +481,7 @@ public class HttpActionHandlerGraphQLChaosTest {
                 .withGraphqlErrorMessage("some error"));
 
         when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
-        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class))).thenReturn(normalResponse);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(normalResponse);
 
         // when
         actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);

@@ -867,6 +867,7 @@ new MockServerClient("localhost", 1080)
         </ul>
     </li>
     <li><strong>fields</strong> (optional) - explicit list of top-level field names to match in AST modes. If not specified, fields are extracted from the <span class="inline_code">query</span> string</li>
+    <li><strong>schema</strong> (optional) - a GraphQL schema (SDL text or an introspection JSON result) used to <a href="#graphql_schema_responses">synthesize a schema-valid response</a> for the matched query without hand-authoring the response JSON</li>
 </ul>
 
 <p><strong>Example - match a GraphQL query:</strong></p>
@@ -954,6 +955,39 @@ new MockServerClient("localhost", 1080)
         "body": "{\"data\": {\"user\": {}, \"profile\": {}, \"settings\": {}}}"
     }
 }</code></pre>
+
+<a id="graphql_schema_responses" class="anchor" href="#graphql_schema_responses">&nbsp;</a>
+
+<h4>GraphQL Schema-Based Response Synthesis</h4>
+
+<p>Instead of hand-authoring the response JSON for every GraphQL query, you can register a GraphQL <strong>schema</strong> on the expectation and let MockServer build a schema-valid response automatically. Provide the schema as either <a target="_blank" href="https://graphql.org/learn/schema/" rel="noopener noreferrer">SDL</a> text (e.g. <span class="inline_code">type Query { hello: String }</span>) or an <a target="_blank" href="https://graphql.org/learn/introspection/" rel="noopener noreferrer">introspection</a> JSON result.</p>
+
+<p>When a request matches an expectation whose GraphQL body carries a <span class="inline_code">schema</span>, MockServer reads the query's selection set and returns a <span class="inline_code">{"data": {...}}</span> response that respects the schema's types:</p>
+<ul>
+    <li>only the fields the client asked for appear in the response (selection-set subsets are honoured)</li>
+    <li>scalars get sensible deterministic placeholders — <span class="inline_code">String</span>, <span class="inline_code">Int</span>, <span class="inline_code">Float</span>, <span class="inline_code">Boolean</span>, <span class="inline_code">ID</span>, plus common custom scalars such as <span class="inline_code">DateTime</span> and <span class="inline_code">JSON</span></li>
+    <li>enum fields return their first declared value</li>
+    <li>list fields return a single-element array; nested object fields recurse into their sub-selection</li>
+    <li>non-null wrappers are unwrapped; field aliases, <span class="inline_code">__typename</span>, inline fragments, and named fragment spreads are all supported</li>
+</ul>
+
+<p>This is useful for quickly standing up a realistic GraphQL mock from an existing schema — no example payloads required. To return a specific, hand-crafted payload instead, simply provide an <span class="inline_code">httpResponse</span> body as in the matching examples above.</p>
+
+<p><strong>Example - synthesize a response from an SDL schema:</strong></p>
+<pre class="prettyprint lang-java code"><code class="code">{
+    "httpRequest": {
+        "method": "POST",
+        "path": "/graphql",
+        "body": {
+            "type": "GRAPHQL",
+            "query": "{ user { name email } }",
+            "schema": "type Query { user: User } type User { id: ID name: String email: String age: Int }"
+        }
+    }
+}</code></pre>
+
+<p>A request with the query <span class="inline_code">{ user { name email } }</span> yields a schema-valid response containing only the requested fields, for example:</p>
+<pre class="prettyprint code"><code class="code">{ "data": { "user": { "name": "string", "email": "string" } } }</code></pre>
 
 <a id="graphql_subscriptions" class="anchor" href="#graphql_subscriptions">&nbsp;</a>
 

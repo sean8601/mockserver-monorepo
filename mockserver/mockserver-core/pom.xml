@@ -285,6 +285,12 @@
             <artifactId>rhino</artifactId>
         </dependency>
 
+        <!-- graphql -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
+
         <!-- xml -->
         <dependency>
             <groupId>jakarta.xml.bind</groupId>

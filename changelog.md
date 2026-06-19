@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
+  containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
+  schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched
+  query with no hand-authored response JSON — respecting field types, nullability, lists, nested objects,
+  scalars (including common custom scalars such as `DateTime`/`JSON`), enums (first declared value), field
+  aliases, `__typename`, inline fragments, and named fragment spreads. Only the requested selection set
+  appears in the response (a subset of the type is honoured). Backed by a new `com.graphql-java:graphql-java`
+  dependency (pinned to the Java-17-compatible 22.x line). The `schema` field round-trips in JSON in both the
+  nested `graphQL` form and the flat body form.
 - **Response verification: status-code range / operator matching**: a response template may now match a
   status code by class range (`statusCodeRange: "2XX"` matches `200`–`299`, case-insensitive `2xx` is also
   accepted) or numeric operator (`">= 400"`, `"> 200"`, `"< 300"`, `"<= 204"`, `"== 201"`) instead of only

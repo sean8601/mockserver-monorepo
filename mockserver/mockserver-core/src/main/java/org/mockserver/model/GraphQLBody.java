@@ -12,6 +12,7 @@ public class GraphQLBody extends Body<String> {
     private final String variablesSchema;
     private SelectionSetMatchType selectionSetMatchType;
     private List<String> fields;
+    private String schema;
 
     public GraphQLBody(String query) {
         this(query, null, null);
@@ -58,6 +59,31 @@ public class GraphQLBody extends Body<String> {
         return this;
     }
 
+    /**
+     * The GraphQL schema (SDL text or an introspection JSON result) associated with this
+     * expectation. When present, MockServer can synthesize a schema-valid response for a
+     * matched query without any hand-authored response JSON.
+     *
+     * @return the SDL/introspection schema, or {@code null} if none is registered
+     */
+    public String getSchema() {
+        return schema;
+    }
+
+    /**
+     * Register a GraphQL schema (SDL text or an introspection JSON result) on this body so
+     * that schema-valid responses can be synthesized for matched queries.
+     *
+     * @param schema SDL text (e.g. {@code "type Query { hello: String }"}) or an
+     *               introspection JSON result (the {@code data.__schema} or full envelope)
+     * @return this body for fluent chaining
+     */
+    public GraphQLBody withSchema(String schema) {
+        this.hashCode = 0;
+        this.schema = schema;
+        return this;
+    }
+
     public List<String> getFields() {
         return fields;
     }
@@ -98,13 +124,14 @@ public class GraphQLBody extends Body<String> {
             Objects.equals(operationName, that.operationName) &&
             Objects.equals(variablesSchema, that.variablesSchema) &&
             selectionSetMatchType == that.selectionSetMatchType &&
-            Objects.equals(fields, that.fields);
+            Objects.equals(fields, that.fields) &&
+            Objects.equals(schema, that.schema);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), query, operationName, variablesSchema, selectionSetMatchType, fields);
+            hashCode = Objects.hash(super.hashCode(), query, operationName, variablesSchema, selectionSetMatchType, fields, schema);
         }
         return hashCode;
     }
