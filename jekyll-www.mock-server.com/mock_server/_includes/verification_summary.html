@@ -15,7 +15,7 @@
 
 <p><strong>For request matcher count verification:</strong> MockServer filters the event log to find all <code>RECEIVED_REQUEST</code> entries matching your request matcher, counts them, and compares the count against your constraint (<code>atLeast(n)</code>, <code>exactly(n)</code>, etc.). Returns HTTP 202 if the count matches, or HTTP 406 with an error message if it does not.</p>
 
-<p><strong>For response verification:</strong> When a <strong>response matcher</strong> is included in the verification, MockServer retrieves all recorded request-response pairs (from <code>EXPECTATION_RESPONSE</code>, <code>FORWARDED_REQUEST</code>, and <code>NO_MATCH_RESPONSE</code> entries) and filters them by the response matcher. If a request matcher is also supplied, both must match the same pair. The count of matching pairs is then checked against <code>VerificationTimes</code>. On failure, MockServer returns HTTP 406 with a <code>"Response not found ..."</code> error message listing the actual responses recorded.</p>
+<p><strong>For response verification:</strong> When a <strong>response matcher</strong> is included in the verification, MockServer retrieves all recorded request-response pairs (from <code>EXPECTATION_RESPONSE</code> and <code>FORWARDED_REQUEST</code> entries — MockServer's own auto-generated no-match responses are excluded) and filters them by the response matcher. If a request matcher is also supplied, both must match the same pair. The count of matching pairs is then checked against <code>VerificationTimes</code>. On failure, MockServer returns HTTP 406 with a <code>"Response not found ..."</code> error message listing the actual responses recorded. When <code>detailedVerificationFailures</code> is enabled, a field-level diff against the closest recorded response is appended to the error message.</p>
 
 <p><strong>For expectation ID verification:</strong> MockServer retrieves all events associated with the specified expectation ID (including <code>EXPECTATION_RESPONSE</code> and <code>FORWARDED_REQUEST</code> entries) and verifies the count.</p>
 
@@ -1054,10 +1054,17 @@ $client-&gt;verify(
 
 <p>When a <strong>response matcher</strong> is supplied in a verification, MockServer switches from counting received requests to counting <strong>recorded request-response pairs</strong> whose response matches. The response matcher can match by:</p>
 <ul>
-    <li><strong>Status code</strong> — exact match (e.g., <code>200</code>, <code>404</code>)</li>
-    <li><strong>Reason phrase</strong> — regex match</li>
-    <li><strong>Headers</strong> — same header matching as request matchers (subset match, multi-value)</li>
-    <li><strong>Body</strong> — the same body matchers available for request bodies: JSON, JSON Schema, JSONPath, XML, XPath, regex, sub-string, binary, etc.</li>
+    <li><strong>Status code</strong> — exact match (e.g., <code>200</code>, <code>404</code>), or a <strong>status-code range / operator</strong> using the <code>statusCodeRange</code> field:
+        <ul>
+            <li><strong>Class range</strong>: <code>"2XX"</code> matches 200–299, <code>"5xx"</code> matches 500–599 (case-insensitive).</li>
+            <li><strong>Numeric operator</strong>: <code>"&gt;= 400"</code>, <code>"&gt; 200"</code>, <code>"&lt; 300"</code>, <code>"&lt;= 204"</code>, <code>"== 201"</code>.</li>
+            <li>When <code>statusCodeRange</code> is set it takes priority over an exact <code>statusCode</code>.</li>
+        </ul>
+    </li>
+    <li><strong>Reason phrase</strong> — string or regex match. When the <code>matchExactCase</code> configuration property is enabled, this comparison is case-sensitive (matching the request-side behaviour for path and method).</li>
+    <li><strong>Headers</strong> — same header matching as request matchers (subset match, multi-value, notted values supported).</li>
+    <li><strong>Cookies</strong> — structured cookie matching (subset match, extra cookies allowed, notted values supported), the same as request cookie matching.</li>
+    <li><strong>Body</strong> — the same body matchers available for request bodies: JSON, JSON Schema, JSONPath, XML, XPath, regex, sub-string, binary, multipart, etc. An <code>optional</code> body template matches a response with no body.</li>
 </ul>
 
 <p>If both a request matcher and a response matcher are supplied, <strong>both must match the same recorded exchange</strong>. <code>VerificationTimes</code> (<code>atLeast</code>, <code>atMost</code>, <code>exactly</code>) applies to the count of matching pairs, exactly like request verification.</p>

@@ -238,7 +238,7 @@ sequenceDiagram
     EL->>RB: Publish RUNNABLE
     RB->>RB: Consumer thread runs verifyResponse logic
 
-    Note over RB: 1. retrieveRequestResponses() using requestResponseLogPredicate
+    Note over RB: 1. retrieveRequestResponses() using responseVerificationLogPredicate (excludes NO_MATCH_RESPONSE)
     Note over RB: 2. Map LogEntry → LogEventRequestAndResponse (request + response pair)
     Note over RB: 3. If httpRequest set, filter pairs by HttpRequestMatcher
     Note over RB: 4. Build HttpResponseMatcher from httpResponse template
@@ -265,24 +265,46 @@ if (verification.getHttpResponse() != null) {
 }
 ```
 
-The `verifyResponse` path uses `requestResponseLogPredicate` (passes `EXPECTATION_RESPONSE`, `NO_MATCH_RESPONSE`, `FORWARDED_REQUEST`) rather than `requestLogPredicate` (passes only `RECEIVED_REQUEST`). This ensures all recorded exchanges are considered -- proxied responses, served expectation responses, and unmatched responses.
+The `verifyResponse` path uses `responseVerificationLogPredicate` — an alias for `expectationLogPredicate` — which passes only `EXPECTATION_RESPONSE` and `FORWARDED_REQUEST` entries. It deliberately **excludes** `NO_MATCH_RESPONSE` (MockServer's own auto-generated 404 for unmatched requests), so a template such as `response().withStatusCode(404)` does not accidentally count MockServer's own no-match responses. The `requestResponseLogPredicate` used by `/retrieve` is intentionally broader (includes `NO_MATCH_RESPONSE`); the verification predicate is a separate alias so future changes to one do not silently affect the other.
 
-#### HttpResponseMatcher
+#### Response Matching Semantics
 
-`HttpResponseMatcher` is a self-contained matcher built from the `HttpResponse` template in the verification:
+`HttpResponseMatcher` (`mockserver-core/src/main/java/org/mockserver/matchers/HttpResponseMatcher.java`) is a self-contained matcher built from the `HttpResponse` template in a `Verification` or `VerificationSequence`. Every field is optional: an unset field imposes no constraint, so a null template matches any response.
 
-| Field | Matching Strategy |
-|-------|-------------------|
-| Status code | Exact `Integer.equals()` |
-| Reason phrase | `RegexStringMatcher` (supports regex patterns) |
-| Headers | `MultiValueMapMatcher` (same as request header matching -- subset match, multi-value) |
-| Body | Delegated to `BodyMatcherBuilder.buildBodyMatcher()` -- supports all body matcher types |
+| Field | Matching strategy | Notes |
+|-------|-------------------|-------|
+| `statusCode` | Exact integer equality | Not used when `statusCodeRange` is set |
+| `statusCodeRange` | `StatusCodeMatcher` — class range or numeric operator | See below |
+| `reasonPhrase` | `RegexStringMatcher` — string or regex | Respects `matchExactCase` (see below) |
+| `headers` | `MultiValueMapMatcher` — subset match, extra response headers allowed | Notted key/value strings supported |
+| `cookies` | `HashMapMatcher` — subset match, extra cookies allowed | Same semantics as request cookie matching; notted values supported |
+| `body` | `BodyMatching` dispatch — full parity with request body matching | See below |
 
-A null template (no response matcher) matches everything, preserving backward compatibility.
+**Status-code range / operator matching (`statusCodeRange`)** — `StatusCodeMatcher` supports three forms:
 
-#### BodyMatcherBuilder
+- **Exact** (default): when `statusCodeRange` is absent/blank, exact `Integer` equality is used.
+- **Class range**: a single digit followed by `XX` (case-insensitive), e.g. `"2XX"` or `"5xx"`, matches the range `[N00, N99]`.
+- **Numeric operator**: a leading comparison operator followed by a number, e.g. `">= 400"`, `"> 200"`, `"< 300"`, `"<= 204"`, `"== 201"`. Delegated to `NumericComparisonMatcher`.
 
-`BodyMatcherBuilder` is a factory extracted from `HttpRequestPropertiesMatcher` so that the same body-matching logic can be reused for response bodies without duplication. It supports all body matcher types: `STRING`, `REGEX`, `PARAMETERS`, `XPATH`, `XML`, `JSON`, `JSON_SCHEMA`, `JSON_PATH`, `XML_SCHEMA`, `BINARY`, and `WASM`, plus `not()` negation. The `bodyMatcherMatches()` method on `HttpResponseMatcher` dispatches on the concrete `BodyMatcher` subtype to extract the appropriate representation from `HttpResponse` (binary matchers use `getBodyAsRawBytes()`, all others use `getBodyAsString()`).
+When both `statusCode` and `statusCodeRange` are set on the template, `statusCodeRange` takes priority (the matcher is built from it). An unparseable `statusCodeRange` expression is a clean non-match (logged at DEBUG; never throws).
+
+**`matchExactCase` scope** — the `reasonPhrase` matcher honours the `matchExactCase` configuration flag: when `true`, the reason-phrase comparison is case-sensitive. This mirrors the request-side behaviour for method, path, and string-body. Header names/values, cookie names/values, and query parameters are always matched case-insensitively regardless of this flag. The flag has no effect on `statusCode`/`statusCodeRange` (numeric) or on control-plane operations (clear/retrieve).
+
+**Body matching** — response body matching shares `BodyMatching` (`mockserver-core/src/main/java/org/mockserver/matchers/BodyMatching.java`) with request matching. This means:
+
+- All body matcher types are supported: string, regex, sub-string, JSON, JSON Schema, JSONPath, XML, XML Schema, GraphQL, JSON-RPC, binary, multipart.
+- `optional: true` body template matches a response with no body.
+- XML and form actual bodies are converted to JSON before JSON-family matching.
+- Binary matchers try the decompressed bytes; for response bodies (no compressed-original representation) only one byte array is tried.
+- An absent actual body is a clean non-match for JSON/XML matchers (no internal NPE).
+
+**`detailedVerificationFailures` now covers response verification** — when `detailedVerificationFailures` is `true` and a response verification fails, MockServer appends a field-level closest-response diff to the error message. It scores recorded responses by how many fields differ from the template, picks the closest one, and lists the differing fields with expected-vs-found values. This is diagnostic only and never changes the pass/fail result.
+
+**Intentional asymmetries vs. request matching** — features present on the request side that are absent from response matching:
+
+- There is no top-level `not(...)` on a response template. The `HttpResponse` model has no `isNot()` method. Per-field negation (notted header/cookie strings and body `not`) still works.
+- `connectionOptions` and HTTP trailers are not matched; they are action-configuration fields, not observable response properties.
+- Control-plane operations (clear, retrieve) do not apply `matchExactCase`.
 
 ### Sequence Verification
 
@@ -305,12 +327,13 @@ Verification can be done by request matcher or by expectation ID.
 
 When `VerificationSequence.httpResponses` is non-empty, sequence verification switches to a response-aware path that checks both requests and responses at each step:
 
-1. Retrieves all recorded request-response pairs via `retrieveRequestResponses()` (no request pre-filter)
-2. Iterates steps from `0` to `max(httpRequests.size(), httpResponses.size())`
-3. At each step, creates an `HttpRequestMatcher` from `httpRequests[i]` and an `HttpResponseMatcher` from `httpResponses[i]` (either can be null, acting as a wildcard)
-4. Uses a forward-scanning pointer (`pairLogCounter`) that only advances -- order is preserved
-5. A step passes when both matchers match the same `LogEventRequestAndResponse` entry: `requestMatches && responseMatches`
-6. If any step fails to find a match after the previous step's position, the sequence verification fails
+1. Validates inputs: an entirely-empty sequence (no expectation IDs, no requests, no responses) is rejected; when both `httpRequests` and `httpResponses` are non-empty they must be the same length, otherwise the sequence is rejected (a mismatched-length sequence previously padded with null and silently passed the unspecified steps — this is no longer allowed).
+2. Retrieves all recorded request-response pairs via `retrieveRequestResponses()` using `responseVerificationLogPredicate` (excludes `NO_MATCH_RESPONSE`).
+3. Iterates `stepCount = httpResponses.size()` steps; `httpRequests` may be empty (response-only sequence).
+4. At each step, creates an `HttpRequestMatcher` from `httpRequests[i]` (if present) and an `HttpResponseMatcher` from `httpResponses[i]`; a null matcher acts as a wildcard for that side.
+5. Uses a forward-scanning pointer (`pairLogCounter`) that only advances — order is preserved.
+6. A step passes when both matchers match the same `LogEventRequestAndResponse` entry: `requestMatches && responseMatches`.
+7. If any step fails to find a match after the previous step's position, the sequence verification fails; the failure message serializes the response side (not the request side) to make the failure actionable.
 
 ### Verification in Parallel Testing
 
