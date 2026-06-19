@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GraphQL and AsyncAPI spec import**: `PUT /mockserver/graphql` imports a GraphQL SDL / introspection document
+  and generates an expectation per root operation type whose responses are schema-valid (built on the GraphQL
+  response synthesizer); `PUT /mockserver/asyncapi/http` turns an AsyncAPI document's channels into GET
+  expectations serving schema-aware example payloads over HTTP. (Raw `.proto` import is deferred — compiled gRPC
+  descriptors still import via `PUT /mockserver/grpc/descriptors`.)
 - **Pact provider-state preconditions on import, verify, and export**: a Pact interaction's `providerState`
   (v2) / `providerStates` (v3) — the "given ..." precondition — is now preserved on import and mapped onto a
   MockServer scenario (`scenarioName` = `pact-provider-state`, `scenarioState` = the state name), so an imported
