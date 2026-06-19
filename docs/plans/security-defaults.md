@@ -1,7 +1,8 @@
 # Security Defaults — Next Major Release
 
-**Status:** Planned. All items are insecure-by-default configuration values to flip in a single major release.
+**Status:** Planned — all eight items still open (verified 2026-06-19: every property and mitigation is wired in `ConfigurationProperties.java` / `Configuration.java`, and every default is still the insecure value below; none has been flipped). Insecure-by-default configuration values to flip in a single major release.
 **Created:** 2026-05-26 (supersedes `security-remediation.md`)
+**Last verified against code:** 2026-06-19
 **Scope:** Configuration default changes only. All underlying mitigations (timeouts, validators, body limits, secure RNG, XXE blocks) have already shipped and are wired behind these properties; only the defaults remain.
 
 ## Goals
