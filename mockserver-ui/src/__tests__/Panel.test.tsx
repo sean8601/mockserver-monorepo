@@ -51,6 +51,26 @@ describe('Panel', () => {
     expect(css).toContain(':hover');
   });
 
+  it('marks the content region as a polite live region when liveRegion is set', () => {
+    render(
+      <Panel title="Logs" count={1} searchValue="" onSearchChange={() => {}} liveRegion>
+        <div>log row</div>
+      </Panel>,
+    );
+    const region = screen.getByRole('log');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toContainHTML('log row');
+  });
+
+  it('does not announce a live region by default', () => {
+    render(
+      <Panel title="Quiet" count={1} searchValue="" onSearchChange={() => {}}>
+        <div>row</div>
+      </Panel>,
+    );
+    expect(screen.queryByRole('log')).not.toBeInTheDocument();
+  });
+
   it('calls onSearchChange when typing in search', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();

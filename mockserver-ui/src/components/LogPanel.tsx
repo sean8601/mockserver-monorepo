@@ -33,6 +33,7 @@ export default function LogPanel() {
       searchValue={search}
       onSearchChange={setSearch}
       searchInputRef={searchRef}
+      liveRegion
     >
       {filtered.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>

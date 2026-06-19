@@ -4,6 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import Snackbar from '@mui/material/Snackbar';
 import { useDashboardStore } from './store';
 import { buildTheme } from './theme';
@@ -47,11 +48,39 @@ const ComposerView = lazy(() => import('./components/ComposerView'));
 // dashboard load (it is only needed when the LLM Optimise tab is opened).
 const OptimiseView = lazy(() => import('./components/OptimiseView'));
 
+// How long the WebSocket must stay down before the persistent connection-loss
+// banner appears. Brief reconnects (the common case under StrictMode remount or
+// a server restart) clear well before this, so the banner only nags on a real,
+// sustained outage.
+const CONNECTION_LOSS_BANNER_DELAY_MS = 8000;
+
 export default function App() {
   const themeMode = useDashboardStore((s) => s.themeMode);
   const view = useDashboardStore((s) => s.view);
   const error = useDashboardStore((s) => s.error);
+  const connectionStatus = useDashboardStore((s) => s.connectionStatus);
   const theme = useMemo(() => buildTheme(themeMode), [themeMode]);
+
+  // Persistent connection-loss banner: shown once the socket has been down
+  // (disconnected/error) continuously for CONNECTION_LOSS_BANNER_DELAY_MS, and
+  // dismissable by the user. It re-arms on the next sustained outage.
+  const [lostSince, setLostSince] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const isDown = connectionStatus === 'disconnected' || connectionStatus === 'error';
+  useEffect(() => {
+    if (!isDown) {
+      // Reconnected — arm the banner + dismissal for the next outage. Setting
+      // state from the effect cleanup (rather than synchronously in the body)
+      // keeps this off the synchronous render path.
+      return () => {
+        setLostSince(false);
+        setBannerDismissed(false);
+      };
+    }
+    const timer = setTimeout(() => setLostSince(true), CONNECTION_LOSS_BANNER_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [isDown]);
+  const connectionLost = isDown && lostSince;
 
   const generateStubOpen = useDashboardStore((s) => s.generateStubOpen);
   const generateStubSuggestions = useDashboardStore((s) => s.generateStubSuggestions);
@@ -143,6 +172,20 @@ export default function App() {
             >
               {NAV_TAB_DESCRIPTIONS[view]}
             </Typography>
+          )}
+          {connectionLost && !bannerDismissed && (
+            <Alert
+              severity="warning"
+              role="alert"
+              aria-live="assertive"
+              onClose={() => setBannerDismissed(true)}
+              sx={{ mx: 1, mt: 1, flexShrink: 0 }}
+              data-testid="connection-loss-banner"
+            >
+              <AlertTitle>Connection lost</AlertTitle>
+              The dashboard has lost its live connection to MockServer and is trying to
+              reconnect. Displayed data may be stale until the connection is restored.
+            </Alert>
           )}
           {(view === 'dashboard' || view === 'traffic' || view === 'sessions') && (
             <FilterPanel onFilterChange={handleFilterChange} />

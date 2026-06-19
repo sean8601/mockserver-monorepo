@@ -22,6 +22,12 @@ interface PanelProps {
    * the search box (e.g. a sort toggle). Omitted by most panels.
    */
   headerActions?: ReactNode;
+  /**
+   * When true, the scrollable content region is announced to assistive tech as
+   * a polite live region (`role="log"` + `aria-live="polite"`) so newly
+   * appended rows are read out. Used by the Log panel.
+   */
+  liveRegion?: boolean;
   children: ReactNode;
 }
 
@@ -33,6 +39,7 @@ export default function Panel({
   onSearchChange,
   searchInputRef,
   headerActions,
+  liveRegion,
   children,
 }: PanelProps) {
   const autoScroll = useDashboardStore((s) => s.autoScroll);
@@ -113,6 +120,7 @@ export default function Panel({
       </Box>
       <Box
         ref={scrollRef}
+        {...(liveRegion ? { role: 'log', 'aria-live': 'polite' as const, 'aria-relevant': 'additions' as const } : {})}
         sx={{
           flex: 1,
           overflowY: 'auto',
